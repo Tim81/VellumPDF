@@ -686,33 +686,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the same document places at x 50 and draws to exactly 350, matching what a `Width` of 300,
   already inside the box, has always produced. The clamp only rescales `Height` to match when
   `Height` was left null; an explicit `Height` is the caller asking for a non-proportional box, and
-  clamping `Width` alone is already as close to that as the box allows. Guarded on a positive
-  available width: ordinary margins wider than the content box reach a non-positive width too, not
-  only the negative insets v3.0 still defers. The XML doc on `LayoutImage.Width` now says the value
-  is an upper bound rather than a guaranteed size.
+  clamping `Width` alone is already as close to that as the box allows. The clamp converts a throw
+  into output too: a `Width` of 600 on this same page, `Height` left null so it follows the clamped
+  width, threw `ElementTooTall` before this fix — the unclamped square reservation exceeded the
+  400pt content height — and now renders at the clamped 300pt width. No document that already
+  rendered moves, since the prior outcome there was an exception rather than output a caller was
+  relying on. Guarded on a positive available width: ordinary margins wider than the content box
+  reach a non-positive width too, not only the negative insets v3.0 still defers. The XML doc on
+  `LayoutImage.Width` now says the value is an upper bound rather than a guaranteed size.
 
-- **A pie chart with a `Diameter` wider than its content box was drawn past it, and revision 1 of
-  this fix would have moved a chart that was already correct.** `PieChartRenderer` positioned a
-  wedge circle at the caller's `Diameter` with no check against the space `Layout` was handed.
-  Measured on a 400x900pt page, 50pt margins (content box [50, 350]), the chart's own `Margins` set
-  to zero: a centred `Diameter` of 320 gave an operand extent of [40, 360], twenty points wider
-  than the box on both sides. The diameter used to place and draw the chart is now clamped to
-  `ctx.Area.Width`, the area `Layout` was handed, before the chart's own margins (6pt by default)
-  deflate it. That distinction is the one that matters: with the default margins, a `Diameter` of
-  300 already spans exactly [50, 350] in a 300pt content box, a correct document, and clamping
-  against the *deflated* 288pt width instead (the first version of this fix) would have moved it to
-  [56, 344] regardless. Clamping the diameter is not sufficient on its own, and only centred charts
-  hide that: Left and Right take their offset from the area the chart's own margins deflate, so a
-  circle clamped to the content box is then shifted out of it by a margin. Measured on the same
-  page, Left gave [56, 356] and Right [44, 344]; on a 454.4pt page with a 1.2pt document margin,
-  each ran 4.8pt off the page itself. So the circle is aligned within the content box once it no
-  longer fits between its own margins, and within the margins while it still does. A box-filling
-  circle is then placed identically under all three alignments, which is what the before-and-after
-  corpus shows: the centred document's bytes are unchanged, and the other two now match it. The
-  height reservation is clamped by the same diameter, so it
-  stops holding vertical space nothing draws in and the too-tall pagination case
+- **A pie chart with a `Diameter` wider than its content box was drawn past it.** `PieChartRenderer`
+  positioned a wedge circle at the caller's `Diameter` with no check against the space `Layout` was
+  handed. Measured on a 400x900pt page, 50pt margins (content box [50, 350]), the chart's own
+  `Margins` set to zero: a centred `Diameter` of 320 gave an operand extent of [40, 360], twenty
+  points wider than the box — ten points past on each side. The diameter used to place and draw the
+  chart is now clamped to `ctx.Area.Width`, the area `Layout` was handed, before the chart's own
+  margins (6pt by default) deflate it. With the default margins, a `Diameter` of 300 already spans
+  exactly [50, 350] in a 300pt content box, a correct document, and clamping against the *deflated*
+  288pt width instead would have moved it to [56, 344] regardless. Clamping the diameter is not
+  sufficient on its own, and only centred charts hide that: Left and Right take their offset from
+  the area the chart's own margins deflate, so a circle clamped to the content box is then shifted
+  out of it by a margin. Measured on the same page, Left gave [56, 356] and Right [44, 344]; on a
+  454.4pt page with a 1.2pt document margin, each ran 4.8pt off the page itself. So the circle is
+  aligned within the content box once it no longer fits between its own margins, and within the
+  margins while it still does. A box-filling circle is then placed identically under all three
+  alignments, which is what the before-and-after corpus shows: the centred document's bytes are
+  unchanged, and the other two now match it. The height reservation is clamped by the same
+  diameter, so it stops holding vertical space nothing draws in, and the too-tall pagination case
   (`PaginationDepthTests`) still throws, since the reservation still exceeds a 180pt content area
-  at a 300pt diameter on a 200x200pt page. The XML doc on `PieChart.Diameter` now says so.
+  at a 300pt diameter on a 200x200pt page. The same clamp converts a throw into output on a taller
+  page, though: a `Diameter` of 300 with the chart's default margins on a 200x220pt page threw
+  `ElementTooTall` before this fix and now renders a 180pt circle, clamped to the content width. No
+  correct document moves either way, because the prior outcome there was an exception rather than
+  output a caller was relying on. The XML doc on `PieChart.Diameter` now says so.
 
 - **An unbreakable paragraph glyph wider than its box was placed left of the box under Centre or
   Right alignment.** `HardBreakWord` always emits the first rune of a word too wide to break any
@@ -725,16 +731,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   box narrower than one glyph, so this is the least-wrong placement rather than a correct one.
   This is the same clamp the running-band fix (#469) chose not to make on its own formula: there,
   the fitted width is proven not to exceed the box, so a floor would assert the opposite of the
-  proof beside it; here, an unbreakable glyph is proven capable of exceeding it, and the floor
-  asserts nothing false. A correctly-fitting line emits the same bytes as before, and the reason is
-  the number format rather than an equality of sums: the wrap accepts a line on a running total
-  that associates its additions differently from the fragment widths this arm re-adds, so a line
-  exactly on the boundary could reach the floor a last bit over it, but an offset that small is
-  absorbed when it is added to the box origin and formatted to five decimals. The one geometry
-  where it would not be absorbed is a box whose origin is 0, and the 179-document corpus behind
-  this release includes zero-margin lines filling their box exactly under all four alignments, with
-  no byte difference. Justify never reaches this code at all, since an over-wide line is always a
-  single hard-broken rune with no inter-word gap to count.
+  proof beside it; here, a single over-wide rune is proven capable of exceeding it, and the floor
+  asserts nothing false. The precondition really is one rune, not a word: `HardBreakWord` flushes
+  whenever a fragment plus the next character would exceed the box, so every line it emits stays
+  within the box except the one consisting of a single over-wide rune, which is what makes
+  `area.Width - lineWidth` negative here at all. Measured: a `"W"` at 160pt in a 150pt box gives x
+  50, the floor; `"WWW"` at 30pt in the same box is one line at x 82.52, an ordinary fit that never
+  reaches `HardBreakWord`. A correctly-fitting line emits the same bytes as before: the acceptance
+  check and the fragment width it re-derives associate their additions identically, left to right,
+  so the two agree through the first two words on a line and can part company only from the third
+  word on, where the wrap's own running total groups an addition differently from how it built each
+  fragment's recorded width. Even where they part company, that offset is absorbed when it is added
+  to the box origin and formatted to five decimals, unless the origin itself sits within that
+  difference of a five-decimal rounding boundary — at an origin of 50.000005pt, a difference as
+  small as 1e-13 changes "50.00001" to "50" — and 0 is the boundary instance the 179-document corpus
+  behind this release, which includes zero-margin lines filling their box exactly under all four
+  alignments, happens to cover; no document's bytes differ there. Justify is excluded because its
+  own arm of the alignment switch never applies this floor, not because an over-wide line has no
+  inter-word gap to count.
 
 - **A list marker wider than its indent overprinted the item's own text.** The marker paragraph has
   zero margins and the content paragraph is indented by a constant `ListElement.Indent`, so a
@@ -743,12 +757,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   20.00pt and already abuts the content; item 27's, `"xxvii."`, is 22.22pt, 2.22pt into text that
   was, before this fix, drawn at the same x as the marker; item 38's, `"xxxviii."`, is 29.44pt, by
   9.44pt. The gutter is now widened to the marker's own width, per item rather than per list, so
-  items 1 through 26 keep their exact indent and only item 27 on gets a ragged left text edge, a
-  caller-visible cost of the fix. The nested arm had the same defect at
-  `indent * 2` and is widened the same way, needing 27 or more children of one parent to reach it,
-  since nested ordered markers restart at 1 per parent. Neither widening can push a content
-  paragraph's own width to zero or below: a marker as wide as the whole item area keeps today's
-  indent and overprints, rather than widening until the item's text lays out nothing at all.
+  items 1 through 26 keep their exact indent, and the left text edge turns ragged from item 27 on —
+  though not every later item moves: items 29, 30, 31 and 40 also keep the exact 20pt indent, a
+  caller-visible cost of the fix limited to the items whose marker genuinely widens. The nested arm
+  had the same defect at `indent * 2` and is widened on the same principle, in a different form,
+  needing 27 or more children of one parent to reach it, since nested ordered markers restart at 1
+  per parent. Neither widening can push a content paragraph's own width to zero or below: a marker
+  as wide as the whole item area keeps today's indent and overprints, rather than widening until
+  the item's text lays out nothing at all. The fix works in advance width, because this library
+  ships advance widths and no glyph bounding boxes, so a marker whose advance exceeds the indent
+  while its ink does not will also move: a bullet list with `Indent = 3` moves every item's content
+  by 0.5pt, since the bullet's own advance is 3.5pt. That is a deliberate trade rather than an
+  oversight.
+
+- **A 211-document before-and-after corpus confirms the image, chart and list-marker fixes above
+  move only what they mean to move.** The harness comparing rendered output before and after this
+  branch was itself wrong when an earlier figure was written: it resumed its scan one character
+  into `endstream`, matching the tail of the keyword it had just consumed and silently dropping
+  every second stream. Fixed and re-run over the full 211-document set, six documents differ, and
+  every differing row keeps its text-run count, so nothing lost text. The six are the chart under
+  Left and Right at a diameter equal to the content box, the image under Centre and Right at a
+  width whose own margins put it left of the box, a bullet list with a 3pt indent, and a roman list
+  whose markers genuinely exceed the indent.
 
 ### Documentation
 

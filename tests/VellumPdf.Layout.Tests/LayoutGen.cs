@@ -56,8 +56,8 @@ internal static class LayoutGen
     /// <summary>
     /// An image display height small enough to fit inside every page this suite builds regardless
     /// of margin or band height, so the image case exercises the width clamp without also risking
-    /// <c>ElementTooTall</c> — a concern <see cref="WideExtent"/> does not have to carry, since
-    /// width and height are independent for an image the way they are not for a circle.
+    /// <c>ElementTooTall</c> (#471) — a concern <see cref="WideExtent"/> does not have to carry,
+    /// since width and height are independent for an image the way they are not for a circle.
     /// </summary>
     private static Gen<double> SafeImageHeight => Gen.Double[1.0, 50.0];
 
@@ -122,12 +122,17 @@ internal static class LayoutGen
 
     /// <summary>
     /// One generated document. Every field sits inside the range a caller can use today without
-    /// meeting a known defect: the page is large enough for the content, the margins leave a
-    /// positive content area, and the band templates fit across it. <see cref="ImageWidth"/> and
-    /// <see cref="ChartDiameterRaw"/> are the exception on their face — both can reach well past
-    /// any page this suite builds — but <see cref="Build"/> gives the image a small, independent
-    /// height and clamps the chart's raw diameter to what the rest of the same spec leaves room
-    /// for vertically, so what reaches the renderers still sits inside that same known-good range.
+    /// meeting a known defect: the page is large enough for the content and the margins leave a
+    /// positive content area. Band templates are an exception on their face —
+    /// <see cref="ShortBandTemplate"/> deliberately carries a 500-character entry, far wider than
+    /// any page this suite builds — and so is <see cref="ImageWidth"/>: <see cref="Build"/> gives
+    /// the image a small, independent height so an oversized width cannot also trip
+    /// <c>ElementTooTall</c>, but the width itself still reaches the renderer unclamped, which is
+    /// the point of the case — the renderer's own width clamp is what this property exercises.
+    /// <see cref="ChartDiameterRaw"/> is the one field <see cref="Build"/> does clamp before the
+    /// renderer sees it, to what the rest of the same spec leaves room for vertically, since a
+    /// chart's diameter drives its height as well as its width and an unclamped one would risk
+    /// <c>ElementTooTall</c> in a way this property is not testing for.
     /// </summary>
     internal sealed record DocSpec(
         double PageWidth,
@@ -164,11 +169,14 @@ internal static class LayoutGen
             (bands, iw, ih, cd) => (bands.Header, bands.Footer, iw, ih, cd));
 
     /// <summary>
-    /// The upper bound was <c>Gen.Int[0, 6]</c>, which a roman marker never reaches past item 26
-    /// and so never widens: the first ordered-roman marker wider than the default 20pt indent at
-    /// 10pt Helvetica is item 27, "xxvii." at 22.22pt. Raised so an ordered list sometimes reaches
-    /// it. This is coverage rather than a defect this range closes: the overprint sits well inside
-    /// the page, so it moves no existing property, and the marker literal is not
+    /// The upper bound was <c>Gen.Int[0, 6]</c>, which never reached the roman-numeral-length
+    /// boundary the known-answer test in <c>OffPagePlacementTests</c> pins at 10pt Helvetica — the
+    /// first ordered-roman marker wider than the default 20pt indent there is item 27, "xxvii." at
+    /// 22.22pt. It already reached the widening branch by a different route, though: FontSize runs
+    /// to 24, and "iv." and "vi." are exactly 1.0 em, wide enough to exceed a 20pt indent from font
+    /// size 20 up. Raised so an ordered list sometimes reaches the item-27 boundary at 10pt
+    /// specifically. This is coverage rather than a defect this range closes: the overprint sits
+    /// well inside the page, so it moves no existing property, and the marker literal is not
     /// <see cref="CellWord"/>, so the per-element placement counts do not move either — the
     /// known-answer test in <c>OffPagePlacementTests</c> is what actually discriminates the fix.
     /// </summary>
@@ -254,7 +262,7 @@ internal static class LayoutGen
 
         // An explicit Height, never null: with the 2×2 fixture image null Height takes the
         // clamped width and makes the image square, and on a 900x400 page at margin 0 a Width of
-        // 401 or more then throws ElementTooTall — so does Width null on that same page. That is
+        // 401 or more then throws ElementTooTall (#471) — so does Width null on that same page. That is
         // the same "only one axis is checked" family this pull request is about, but on the height
         // axis rather than the width one, and fixing it would turn an exception into output, a
         // public behaviour change outside this fix's mandate. SafeImageHeight sidesteps that
@@ -292,13 +300,21 @@ internal static class LayoutGen
         // diameter past the box lands on the box edge under all three.
         //
         // StartAngle is left at its default, and that is load-bearing rather than incidental. The
-        // arc's drawn curve bulges past the nominal radius by up to 1.00027253 times it, but the
-        // bulge is zero at the quadrant points, which is exactly where the extent lies when every
-        // segment boundary is a multiple of a quarter turn. The default start angle of a quarter
-        // turn with one slice gives precisely that, so a circle clamped to the content box has an
-        // extent equal to its diameter and the page-box property holds with no allowance. Generate
-        // a start angle off the quadrant and it would not: measured 0.0408pt outside the nominal
-        // edge at diameter 300, which is 40 times this suite's tolerance.
+        // Bezier arc approximation is exact at each segment's own endpoints and at its midpoint;
+        // with four quarter-turn segments starting at the default 90-degree angle, the circle's
+        // four extrema -- 0, 90, 180 and 270 degrees -- all land on a segment endpoint, so the
+        // drawn curve matches the nominal circle there with no bulge, and a circle clamped to the
+        // content box has an extent equal to its diameter with no allowance needed. That is not a
+        // property of every start angle off the quadrant -- 45 degrees also lands exactly, on each
+        // segment's own midpoint rather than its endpoint -- but most do bulge: measured sweeping 0
+        // to 90 degrees at a quarter-degree step, up to 0.0409pt outside the nominal edge at
+        // diameter 300, 40 times this suite's tolerance, which is why a start angle off this
+        // default is left to the direct probes in OffPagePlacementTests rather than generated here.
+        //
+        // One drawable slice is equally load-bearing: PieChartRenderer.Draw takes the
+        // seamless-circle branch only when exactly one slice carries a positive value, and that
+        // branch keeps every arc boundary on a quadrant. The multi-slice wedge branch's own
+        // MoveTo/LineTo pair ahead of each AppendArc would otherwise reach this generator's output.
         doc.Add(new PieChart
         {
             Diameter = diameter,

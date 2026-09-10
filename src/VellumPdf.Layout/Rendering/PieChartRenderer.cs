@@ -62,21 +62,26 @@ public sealed class PieChartRenderer : IRenderer
         // chart with those defaults spans exactly [50, 350] in a 300pt content box today -- a
         // correct document. Clamping against the deflated 288pt would move it to [56, 344]
         // instead, which moves bytes a document that already fits has no reason to move. Guarded
-        // on a positive width for the same reason as LayoutImageRenderer's own clamp: ordinary
-        // positive margins wider than the box reach a non-positive area too, not only the
-        // negative insets v3.0 defers.
+        // on a positive width even though, unlike LayoutImageRenderer's own clamp, ctx.Area.Width
+        // here is never deflated by this chart's own margins: ordinary positive margins cannot
+        // make it non-positive when this renderer is reached through DocumentRenderer, whose
+        // ValidateGeometry already refuses horizontal margins that reach the page width. The guard
+        // stays regardless, because PieChartRenderer and LayoutContext are both public, and a
+        // caller can lay this renderer out directly against an area DocumentRenderer would never
+        // hand it.
         _placementDiameter = ctx.Area.Width > 0
             ? Math.Min(_chart.Diameter, ctx.Area.Width)
             : _chart.Diameter;
 
         // This bounds the placement, not the emitted geometry, which overshoots it in two
         // independent ways this clamp does not attempt to absorb. AppendArc's control points
-        // overshoot the true arc: measured at diameter 300 in a 300pt box, the operand extent
-        // spans 1.000 times the diameter at the default start angle and up to 1.13216 times it at
-        // a start angle of 1.2 with one slice. And the drawn curve itself bulges past the nominal
-        // radius, by up to 1.00027253 times it (measured by evaluating the emitted cubics at
-        // 2,048 points per segment), 0.0408pt of x beyond the nominal edge at this diameter.
-        // Shrinking the chart to absorb either figure is left to the caller's own margin.
+        // overshoot the true arc: measured at diameter 300 in a 300pt box with one slice, the
+        // operand extent spans 1.000 times the diameter at the default start angle and, over every
+        // start angle, as much as 1.14237 times it, near a start angle of 0.5046. And the drawn
+        // curve itself bulges past the nominal radius, by up to 1.00027253 times it (measured by
+        // evaluating the emitted cubics at 2,048 points per segment), 0.0409pt of x beyond the
+        // nominal edge at this diameter. Shrinking the chart to absorb either figure is left to
+        // the caller's own margin.
         var totalHeight = _placementDiameter + _chart.Margins.Vertical;
         if (ctx.Area.Height < totalHeight) return LayoutResult.Nothing();
 

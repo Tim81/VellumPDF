@@ -23,8 +23,10 @@ namespace VellumPdf.Layout.Tests;
 /// every public <c>PdfCanvas</c> method name: <c>Tm</c> and <c>Tj</c> for text, <c>re</c> for table
 /// cells and backgrounds, <c>cm</c> for image placement (the one <c>PdfCanvas.Concat</c> call site,
 /// in <c>LayoutImageRenderer</c>), and <c>m</c>, <c>l</c> and <c>c</c> for separators and chart
-/// wedges. The last four are matched by no document <see cref="LayoutGen"/> currently builds; they
-/// are here for the pull requests that add an image, a separator and a chart to the generator.
+/// wedges. An operator histogram over 400 documents <see cref="LayoutGen"/> now builds confirms
+/// <c>cm</c>, <c>m</c> and <c>c</c> in all 400; <c>l</c> is still matched by none, since the
+/// generator's own chart always carries exactly one drawable slice (the branch that emits it) and
+/// never adds a separator (the other source), so it stays here for the pull request that does.
 ///
 /// It does not live in <c>PdfTestUtil</c> beside <c>DecompressAllFlatStreams</c> because that class
 /// is a grab-bag of fixture builders shared with the Barcodes suite, and this is one cohesive
@@ -49,12 +51,13 @@ internal static partial class ContentStreamReadback
     ///
     /// Two things it measures the path of rather than the ink: a glyph reaches past its origin by
     /// its side bearings, and a stroked rectangle or curve spreads half the line width outside its
-    /// own path, which for the table border's default 0.5pt is 0.25pt per edge and, since a chart
-    /// separator strokes at the same default, is now visible there too. Neither is bounded here,
-    /// and 0.25pt is well above any tolerance a caller compares against, so on a page whose margin
-    /// is near zero a quarter-point of border or wedge ink outside the page passes. Bounding ink
-    /// rather than geometry would mean carrying the stroke width and the font's bearings through
-    /// this reader.
+    /// own path, which for the table border's default 0.5pt is 0.25pt per edge. A chart's own
+    /// <c>StrokeColor</c> defaults to null, so a generated chart strokes nothing; every stroke
+    /// operator in these documents today is one of the three table cell borders. Neither is
+    /// bounded here, and 0.25pt is well above any tolerance a caller compares against, so on a
+    /// page whose margin is near zero a quarter-point of border ink outside the page passes.
+    /// Bounding ink rather than geometry would mean carrying the stroke width and the font's
+    /// bearings through this reader.
     ///
     /// "Ordered" describes concatenation order, not per-page order: every flate stream in the file
     /// is decompressed and appended with no separator, so a document with more than one content
@@ -113,9 +116,12 @@ internal static partial class ContentStreamReadback
     /// current point the way path construction defines it (ISO 32000-2 §8.5.2), and notes the
     /// exact extent of what each one draws — for <c>c</c> the curve's true extrema, not its
     /// control hull. A control-hull bound was the earlier approach here (separate <c>m</c>/<c>l</c>
-    /// and <c>c</c> passes with no current-point tracking between them), and it over-approximated
-    /// enough to matter: measured on a chart's own wedge circle, up to 1.13216 times the true
-    /// extent, comfortably wider than the tolerance a page-box property compares against.
+    /// and <c>c</c> passes with no current-point tracking between them), and it is exact only at
+    /// the default start angle -- where the hull span equals the true extent -- overshooting it at
+    /// every other one, up to 1.13216 times the true extent on a chart's own wedge circle at a
+    /// start angle of 1.2. Restoring that hull reader changes nothing a document built at the
+    /// default start angle asserts, but it is exactly what a generated start angle off the default
+    /// would need: the true-extent walk here is what makes testing one possible at all.
     /// </summary>
     private static void WalkPath(string decompressed, Action<double, double> note)
     {
@@ -164,11 +170,19 @@ internal static partial class ContentStreamReadback
             else
             {
                 // A cubic Bézier. AppendArc documents that the caller must position the current
-                // point first and emits no m of its own; every call site in this tree (both in
-                // PieChartRenderer) positions with MoveTo before calling it, so this never fires
-                // in practice. Thrown rather than defaulting the start to (0, 0), because that
+                // point first and emits no m of its own. This tree has seven AppendArc call
+                // sites -- two in PieChartRenderer, four in the Kernel graphics-primitive tests,
+                // and one in OffPagePlacementTests' own probe renderer -- and every one positions
+                // with MoveTo (or MoveTo then LineTo) before calling it, so this never fires in
+                // practice. Thrown rather than defaulting the start to (0, 0), because that
                 // default would silently drag the extent toward the origin instead of the walk
-                // failing loudly on a stream this reader cannot actually interpret.
+                // failing loudly on a stream this reader cannot actually interpret. That throw
+                // only covers hasCurrent being false outright: this walk never clears the current
+                // point after a painting operator (S, f, B), so a c that followed a paint with no
+                // fresh m would anchor to the stale point rather than throw, and the walk has no v
+                // or y arms at all, so either would silently under-read instead of failing.
+                // Nothing this library emits produces either shape, which is why the scope stops
+                // here rather than adding an untested branch.
                 if (!hasCurrent)
                     throw new InvalidOperationException(
                         "A curve operator (c) appeared with no current point to start from.");

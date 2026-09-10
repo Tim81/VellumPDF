@@ -19,6 +19,10 @@ namespace VellumPdf.Layout.Tests;
 /// glyph wider than the box. This class pins each one, plus two known-answer cases for the exact
 /// curve-extent walk every image and chart assertion here depends on.
 ///
+/// A fifth site shares the same mechanism but belongs to the table pull request rather than this
+/// one: a table cell wider than its column, filed as #473 and measured off the left edge of a
+/// 400pt page at x -83.2 under Centre and -222.4 under Right.
+///
 /// Sectioned like <see cref="RunningBandFitTests"/>: (a) image, (b) chart, (c) list marker,
 /// (d) paragraph glyph, (e) the reader's own curve extent.
 /// </summary>
@@ -426,9 +430,12 @@ public sealed class OffPagePlacementTests
 
     /// <summary>
     /// The nested arm has the same defect at indent * 2, and the fix is not
-    /// <c>Math.Max(indent * 2, markerWidth)</c>: that would never widen, since indent * 2 already
-    /// exceeds any marker that would have widened the top-level gutter. It widens past
-    /// indent * 2 only by what the marker needs beyond its own indent-wide gutter. Nested ordered
+    /// <c>Math.Max(indent * 2, markerWidth)</c>. A nested marker starts at <c>indent</c> rather
+    /// than at zero, so its right edge is <c>indent + markerWidth</c>, and that is the quantity
+    /// that has to clear the content's own left edge; comparing a bare marker width against
+    /// <c>indent * 2</c> measures a width against a position. MEASURED: at indent 20 and Helvetica
+    /// 30pt, "xxvii." is 66.66pt, so <c>Math.Max(indent * 2, markerWidth)</c> would widen there,
+    /// even though it never does at the 10pt size this class otherwise uses. Nested ordered
     /// markers restart at 1 per parent, so this needs a parent with 27 or more children to reach
     /// the same "xxvii." boundary as the top-level case.
     /// </summary>
@@ -532,9 +539,9 @@ public sealed class OffPagePlacementTests
     /// <summary>
     /// The same construction PieChartRenderer's single-slice branch uses: MoveTo the arc start,
     /// one full-circle AppendArc, ClosePath. At this start angle the earlier control-hull reader
-    /// measured up to 1.13216 times the diameter — 19.825pt of operand past the nominal edge on
+    /// measured 1.13216 times the diameter — 19.825pt of operand past the nominal edge on
     /// each side, at a diameter of 300 — while the drawn curve itself only bulges past the nominal
-    /// circle by up to 0.0408pt at that diameter. The tolerance here sits above that bulge and
+    /// circle by up to 0.0409pt at that diameter. The tolerance here sits above that bulge and
     /// nowhere near the hull's overshoot, so this discriminates a walk that bounds the drawn curve
     /// from one that still bounds its control points.
     /// </summary>
