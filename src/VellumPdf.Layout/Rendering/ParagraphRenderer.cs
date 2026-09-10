@@ -180,12 +180,17 @@ public sealed class ParagraphRenderer : IRenderer
             // is absorbed unless the origin itself lies within that divergence of a five-decimal
             // rounding boundary -- at an origin of 50.000005, a difference as small as 1e-13
             // changes "50.00001" to "50" -- and 0 is the boundary instance the corpus behind this
-            // release covers. Measured over the 211-document corpus behind this release, which
-            // includes zero-margin lines filling their box exactly under all four alignments: no
-            // paragraph document differs. Six documents in that corpus do differ, and every one is
-            // a chart, image or list case named in the changelog, none of them reaching this arm.
-            // The corpus was built to cover the common case rather than to sweep for the
-            // divergence, and no sweep was run for it.
+            // release covers, and it is not hypothetical there: at a zero-margin origin this floor
+            // emits "0" where the unfloored formula emitted "-0", measured on 93 of 1,600 generated
+            // single-line zero-margin paragraphs. Both parse as zero, so the change is invisible to
+            // a viewer, but it is a changed byte on a line that fits, and the first version of this
+            // comment claimed there were none.
+            //
+            // The 211-document corpus behind this release does not show it, and the reason is worth
+            // knowing rather than reassuring: its zero-margin case is a line filling its box
+            // exactly, which emits "0" on both sides, so the corpus covers the geometry and not the
+            // divergence. Six of its documents do differ, every one a chart, image or list case
+            // named in the changelog, none of them reaching this arm.
             //
             // Justify is excluded by the switch's own `_ => 0` arm above, not because an over-wide
             // line has no inter-word gap to count -- the caveat below shows an ordinary wrapped

@@ -228,11 +228,38 @@ public sealed class ListRenderer : IRenderer
     /// </summary>
     private static double WidestWord(TextStyle style, string text)
     {
+        // A non-breaking space is not a separator here, because it is not one to the wrap this
+        // bound exists to predict: ParagraphRenderer.NormaliseWhitespace excludes U+00A0 from the
+        // whitespace it collapses, with a comment calling it a word character, so a run joined by
+        // one is a single token to WordWrap. Splitting on it, which String.Split does through
+        // char.IsWhiteSpace, understates the widest token and lets the widened gutter hard-break a
+        // word the caller's own indent would not have. Measured at Helvetica 10pt before this was
+        // fixed: "AAAA<NBSP>AAAA" measures 56.14 whole and the bound saw 26.68, so item 38 of a
+        // roman list on an 80pt page was split into "AAAA<NBSP>AAA" and "A" while the 26 items
+        // whose gutter stayed at the indent, and had less room, stayed intact.
+        // Written as an escape rather than as the literal ParagraphRenderer uses, because an
+        // invisible literal inverts this predicate if any tool ever normalises it: a plain
+        // space would then be treated as non-breaking and nothing would separate a word.
+        const char nonBreakingSpace = '\u00A0';
+
         var widest = 0.0;
-        foreach (var word in text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
+        var start = -1;
+        for (var i = 0; i <= text.Length; i++)
         {
-            var w = style.MeasureString(word);
+            var atBreak = i == text.Length
+                || (text[i] != nonBreakingSpace && char.IsWhiteSpace(text[i]));
+
+            if (!atBreak)
+            {
+                if (start < 0) start = i;
+                continue;
+            }
+
+            if (start < 0) continue;
+
+            var w = style.MeasureString(text[start..i]);
             if (w > widest) widest = w;
+            start = -1;
         }
 
         return widest;

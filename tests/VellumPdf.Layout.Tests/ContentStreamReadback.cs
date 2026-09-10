@@ -116,12 +116,15 @@ internal static partial class ContentStreamReadback
     /// current point the way path construction defines it (ISO 32000-2 §8.5.2), and notes the
     /// exact extent of what each one draws — for <c>c</c> the curve's true extrema, not its
     /// control hull. A control-hull bound was the earlier approach here (separate <c>m</c>/<c>l</c>
-    /// and <c>c</c> passes with no current-point tracking between them), and it is exact only at
-    /// the default start angle -- where the hull span equals the true extent -- overshooting it at
-    /// every other one, up to 1.13216 times the true extent on a chart's own wedge circle at a
-    /// start angle of 1.2. Restoring that hull reader changes nothing a document built at the
-    /// default start angle asserts, but it is exactly what a generated start angle off the default
-    /// would need: the true-extent walk here is what makes testing one possible at all.
+    /// and <c>c</c> passes with no current-point tracking between them). That bound is exact at
+    /// every multiple of a quarter turn, not only at the default start angle: measured at r=150, a
+    /// start angle of pi/2 and one of 0 both give a hull span of 300.00000 against a true span of
+    /// 300.00000. Off those it over-reads, by 1.13186 times the true extent at a start angle of
+    /// 1.2, and by up to 1.14237 times the diameter near 0.5046. <c>PieChart.StartAngle</c> is
+    /// public, so both the exact angles and the worst one are reachable by a caller. Restoring the
+    /// hull reader therefore changes nothing a document built at the default start angle asserts,
+    /// which is why this walk is not a bug fix: it is what makes testing a generated start angle
+    /// possible at all.
     /// </summary>
     private static void WalkPath(string decompressed, Action<double, double> note)
     {

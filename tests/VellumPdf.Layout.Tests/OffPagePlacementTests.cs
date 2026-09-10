@@ -497,6 +497,46 @@ public sealed class OffPagePlacementTests
         Assert.Equal(20.0, content[37].X, 0.001);  // item 38: bound rejects, keeps the indent
     }
 
+    /// <summary>
+    /// The bound has to split words the way <c>WordWrap</c> does, and a non-breaking space is where
+    /// the two nearly parted company. <c>ParagraphRenderer.NormaliseWhitespace</c> excludes U+00A0
+    /// from the whitespace it collapses, calling it a word character, so a run joined by one is a
+    /// single token to the wrap; <c>String.Split</c> on default separators splits it, because
+    /// <c>char.IsWhiteSpace</c> includes it.
+    ///
+    /// Page 80pt wide at a zero margin with a 20pt indent, 38 <c>OrderedRoman</c> items of
+    /// "AAAA{U+00A0}AAAA", which measures 56.14pt whole and 26.68pt per space-delimited half at
+    /// Helvetica 10pt. A bound that split on the non-breaking space saw 26.68, accepted the widen
+    /// to item 38's 29.44pt marker, left 50.56pt, and hard-broke the token into "AAAA{U+00A0}AAA"
+    /// and "A" — while the items whose gutter stayed at the 20pt indent, and therefore had less
+    /// room at 60pt, stayed whole. That inversion is the tell, so both are asserted here.
+    /// </summary>
+    [Fact]
+    public void ListMarker_gutterBound_treatsANonBreakingSpaceAsTheWrapDoes()
+    {
+        const char nonBreakingSpace = '\u00A0';
+        var style = new TextStyle { FontRef = new FontReference(Standard14.Helvetica), FontSize = 10 };
+        var text = "AAAA" + nonBreakingSpace + "AAAA";
+
+        using var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, 80, 6000),
+            Margins = EdgeInsets.Zero,
+        };
+        var list = new ListElement(ListStyle.OrderedRoman) { DefaultStyle = style, Indent = 20 };
+        for (var i = 1; i <= 38; i++)
+            list.Add(new ListItem(text, style));
+        doc.Add(list);
+
+        var placements = ContentStreamReadback.TextPlacements(RenderAndDecompress(doc));
+
+        // Every item keeps its token whole, so the count is the item count and no fragment of it
+        // appears on its own. A bound that split on the non-breaking space produced 39 or more.
+        Assert.Equal(38, placements.Count(p => p.Text == text));
+        Assert.DoesNotContain(placements, p => p.Text == "A");
+        Assert.DoesNotContain(placements, p => p.Text == "AAAA" + nonBreakingSpace + "AAA");
+    }
+
     private static string RenderAndDecompress(Document doc)
     {
         var ms = new MemoryStream();

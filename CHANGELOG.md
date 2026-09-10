@@ -711,7 +711,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aligned within the content box once it no longer fits between its own margins, and within the
   margins while it still does. A box-filling circle is then placed identically under all three
   alignments, which is what the before-and-after corpus shows: the centred document's bytes are
-  unchanged, and the other two now match it. The height reservation is clamped by the same
+  unchanged, and the other two now match it. One case the clamp does change, which the framing above
+  would not lead you to expect: a negative horizontal inset on the chart outdents the circle out of
+  the content box, and the clamp pulls it back in. Measured on a 400x900pt page at 50pt margins with
+  a `Diameter` of 200 and a left inset of -20, Left alignment moved from [30, 230] to [50, 250]. The
+  circle was outside the content box, so the rule that nothing already inside it moves still holds,
+  but negative insets are the deferred case (#484) and this is the one place a fix here reaches them.
+  The height reservation is clamped by the same
   diameter, so it stops holding vertical space nothing draws in, and the too-tall pagination case
   (`PaginationDepthTests`) still throws, since the reservation still exceeds a 180pt content area
   at a 300pt diameter on a 200x200pt page. The same clamp converts a throw into output on a taller
@@ -737,7 +743,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   within the box except the one consisting of a single over-wide rune, which is what makes
   `area.Width - lineWidth` negative here at all. Measured: a `"W"` at 160pt in a 150pt box gives x
   50, the floor; `"WWW"` at 30pt in the same box is one line at x 82.52, an ordinary fit that never
-  reaches `HardBreakWord`. A correctly-fitting line emits the same bytes as before: the acceptance
+  reaches `HardBreakWord`. A correctly-fitting line keeps its position, and changes one byte where
+  that position is a negative zero: at a zero-margin origin the floor emits `0` where the unfloored
+  formula emitted `-0`, measured on 93 of 1,600 generated single-line zero-margin paragraphs. Both
+  parse as zero, so no viewer sees a difference, but the earlier claim that nothing moved was wrong.
+  The divergence behind it is real and narrow: the acceptance
   check and the fragment width it re-derives associate their additions identically, left to right,
   so the two agree through the first two words on a line and can part company only from the third
   word on, where the wrap's own running total groups an addition differently from how it built each

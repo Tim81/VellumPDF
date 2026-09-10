@@ -90,17 +90,22 @@ public sealed class LayoutImageRenderer : IRenderer
         // as the content box is then pushed out of it by a margin, exactly as PieChartRenderer's
         // circle was. Clamp the position into the content box rather than measuring the alignment
         // against a different width, which is what leaves an image that already fits untouched.
-        // Skipped when the width is wider than the box, which only the non-positive-width branch
-        // in Layout can leave behind, since Math.Clamp requires its bounds in order.
+        // Skipped when the width is wider than the box, because Math.Clamp requires its bounds in
+        // order. Two things reach that: the non-positive-width branch in Layout, and a negative
+        // horizontal inset, which inflates the deflated area instead of shrinking it, so a null
+        // Width takes a value wider than the box the clamp measures against. Measured on a 400x900pt
+        // page at 50pt margins with insets of -20 left and right: the image is placed [30, 370],
+        // 20pt outside the [50, 350] box on each side, exactly as it was before this branch.
+        // Negative insets are the v3.0 case (#484) and are left as they render.
         //
         // The difference is parenthesised, and that is not cosmetic. Written as
         // boxX + _occupied.Width - _w, C# left-associates it into (boxX + _occupied.Width) - _w,
         // and where the width nearly fills the box that subtraction cancels catastrophically and
         // lands a fraction below boxX, so Math.Clamp is handed a maximum below its minimum and
-        // throws. The property suite found it: generated margins produced a maximum of
-        // 49.25926 against a minimum of 49.25924. Taking the difference first cannot do that,
-        // because the guard above makes it non-negative and adding a non-negative to a finite
-        // value never decreases it.
+        // throws. The property suite found it, on generated margins, which is the only reason it
+        // was found at all. Taking the difference first cannot do that, and the reason is a proof
+        // rather than a measurement: the guard above makes the difference non-negative, and adding
+        // a non-negative to a finite value never decreases it under round-to-nearest.
         var left = areaX + xOff;
         if (_w <= _occupied.Width)
             left = Math.Clamp(left, boxX, boxX + (_occupied.Width - _w));
