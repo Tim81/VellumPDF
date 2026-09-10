@@ -94,13 +94,13 @@ public sealed partial class TableColumnAxisTests
     }
 
     /// <summary>
-    /// A row-axis fixture that must not move here: the same three-row, uneven-count shape as
-    /// <see cref="ColumnCount_widerLaterRow_drawsEveryCellInIt"/>, except the widest row is a
-    /// header rather than a later data row. That is the row-axis defect the next pull request
-    /// owns (its own header handling, not the column count), so this table's own header-repeat
-    /// logic — not touched here — still decides what draws; this only pins that resolving the
-    /// column count from three unevenly sized rows does not throw or drop a whole row's cells at
-    /// the grid level.
+    /// A row-axis fixture that must not move here: the same two-row, uneven-count shape as
+    /// <see cref="ColumnCount_widerLaterRow_drawsEveryCellInIt"/> — one cell against three — except
+    /// the narrower row is a header rather than an earlier data row. That is the row-axis defect
+    /// the next pull request owns (its own header handling, not the column count), so this table's
+    /// own header-repeat logic — not touched here — still decides what draws; this only pins that
+    /// resolving the column count from two unevenly sized rows does not throw or drop a whole
+    /// row's cells at the grid level.
     /// </summary>
     [Fact]
     public void ColumnCount_unevenRowsIncludingAHeader_resolvesWithoutLoss()
@@ -121,6 +121,43 @@ public sealed partial class TableColumnAxisTests
         Assert.Equal(1, placements.Count(p => p.Text == "H0"));
         foreach (var text in new[] { "d0", "d1", "d2" })
             Assert.Equal(1, placements.Count(p => p.Text == text));
+    }
+
+    /// <summary>
+    /// T3: the widest-row rule (#480 section 1) also widens the count for a row's own
+    /// <c>ColSpan</c>, not only for a row with more cells. Page 400x300, margin 10 (available
+    /// 380), no explicit widths, row 0 "a0 a1" (two ordinary cells, setting an apparent count of
+    /// 2), row 1 "b0" plus a "b1" with <c>ColSpan = 2</c> (a true count of 3). Before this fix the
+    /// grid resolved to two auto columns at 190pt each and the ColSpan-2 cell drew at 190pt — one
+    /// column's width, the span silently discarded. It now resolves to three columns at 152, 152
+    /// and 76, and the span cell draws at 152 + 76 = 228pt. Both shapes keep every literal inside
+    /// the content box, so this is not recovering lost content the way the "more cells" case is —
+    /// it is honouring a span width the caller asked for and the old count ignored, and any
+    /// existing document with this shape resolves to different column widths after this fix.
+    /// </summary>
+    [Fact]
+    public void ColumnCount_columnSpanOnALaterRow_resolvesTheSpanWidth()
+    {
+        using var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, 400, 300),
+            Margins = new EdgeInsets(10),
+        };
+        var st = Style();
+        var t = new TableElement { DefaultCellStyle = st };
+        var r0 = t.AddRow(); r0.AddCell("a0"); r0.AddCell("a1");
+        var r1 = t.AddRow(); r1.AddCell("b0"); r1.AddCell(new Cell("b1") { ColSpan = 2 });
+        doc.Add(t);
+
+        var rects = CellRectangles(RenderAndDecompress(doc));
+
+        Assert.Equal(4, rects.Count);
+        // Row 0: two ordinary columns. Row 1: the plain cell, then the span cell.
+        Assert.Equal(152.0, rects[0].W, 0.001);
+        Assert.Equal(152.0, rects[1].W, 0.001);
+        Assert.Equal(152.0, rects[2].W, 0.001);
+        Assert.Equal(228.0, rects[3].W, 0.001);
+        Assert.True(rects.Take(2).Sum(r => r.W) <= 380.0 + 0.001);
     }
 
     // ── (b) Explicit widths array ───────────────────────────────────────────────
@@ -178,6 +215,12 @@ public sealed partial class TableColumnAxisTests
     /// entry is never read. That was true before this fix too — this pins that reconciling the
     /// array against the count does not start reading past it, by comparing the drawn cell
     /// rectangles against the same two widths supplied alone.
+    ///
+    /// The third entry is 500, not 100 (T4): with all three entries equal, a mutation that folds
+    /// the ignored surplus entry into <c>explicitSum</c> scales both sides of the comparison by
+    /// the same factor and the assertion still passes. Measured with a genuinely surplus 500: that
+    /// mutation makes the three-entry side scale to 54.28571 per column against the expected 100,
+    /// which is what this test is supposed to catch.
     /// </summary>
     [Fact]
     public void ExplicitWidths_surplusArray_thirdEntryIgnored()
@@ -197,7 +240,7 @@ public sealed partial class TableColumnAxisTests
             return CellRectangles(RenderAndDecompress(doc)).Select(r => r.W).ToArray();
         }
 
-        Assert.Equal(RectWidths([100, 100]), RectWidths([100, 100, 100]));
+        Assert.Equal(RectWidths([100, 100]), RectWidths([100, 100, 500]));
     }
 
     /// <summary>
@@ -324,7 +367,7 @@ public sealed partial class TableColumnAxisTests
     /// <summary>
     /// Oversized and short at once: a two-entry, 500+500 array against a three-cell row, page
     /// 400x900, margin 50 (available 300). The explicit entries alone already exceed the available
-    /// width, so the auto column's residual is zero and it falls back to its own content floor --
+    /// width, so the auto column's residual is zero and it falls back to its own content floor —
     /// exactly enough to draw "c2" on one line. A first version of this fix scaled every column,
     /// auto included, by the same factor once the row overran, which pushed that floor below what
     /// "c2" needs and forced <c>TableRenderer</c>'s own hard-break (#473) for a cell that was never
@@ -354,6 +397,109 @@ public sealed partial class TableColumnAxisTests
         Assert.Equal(3, placements.Count);
         foreach (var text in new[] { "c0", "c1", "c2" })
             Assert.Equal(1, placements.Count(p => p.Text == text));
+    }
+
+    /// <summary>
+    /// T1: an explicit array that already fits pins absolute widths, not a comparison against a
+    /// second array. <see cref="ExplicitWidths_surplusArray_thirdEntryIgnored"/> and
+    /// <see cref="ExplicitWidths_negative_clampedToTheSameAutoWidthsAsZero"/> both compare two
+    /// renders against each other, so a mutation that scales every fitting array up equally —
+    /// removing the <c>total &lt;= available</c> guard from <c>ScaleToFit</c> — leaves both sides
+    /// scaled the same amount and neither test fails. Measured with that guard removed: (100, 120,
+    /// 90) on a 380pt available width becomes (122.58065, 147.09677, 110.32258) instead of staying
+    /// at (100, 120, 90), which is what this test is supposed to catch.
+    /// </summary>
+    [Fact]
+    public void ExplicitWidths_arrayThatFits_resolvesToExactWidths()
+    {
+        using var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, 400, 200),
+            Margins = new EdgeInsets(10),
+        };
+        var t = new TableElement { DefaultCellStyle = Style() };
+        t.SetColumnWidths(100, 120, 90);
+        var row = t.AddRow();
+        row.AddCell("c0"); row.AddCell("c1"); row.AddCell("c2");
+        doc.Add(t);
+
+        var widths = CellRectangles(RenderAndDecompress(doc)).Select(r => r.W).ToArray();
+
+        Assert.Equal(new[] { 100.0, 120.0, 90.0 }, widths);
+    }
+
+    /// <summary>
+    /// C1: when the auto columns' own content floors alone already exceed the available width,
+    /// scaling the explicit columns down to what is left over — <c>Math.Max(0.0, available -
+    /// autoFloorSum)</c> — reaches a budget of zero and used to zero every explicit column while
+    /// the auto column kept its unreduced floor. Page 400x300, margin 10 (available 380),
+    /// <c>SetColumnWidths(200, 0)</c> — an explicit 200pt column and an auto one — with cells
+    /// "keepme" and a 100-character run of "W" with no spaces, so the auto column's own floor (one
+    /// unbreakable word) is far wider than the whole available width on its own. Both columns must
+    /// stay above zero: the explicit column absorbs its share of the shortfall rather than
+    /// vanishing, and the auto column's floor is scaled down rather than left untouched while the
+    /// explicit column is crushed to nothing. This is also what catches a mutation that removes
+    /// the final <c>ScaleToFit</c> call from <c>ReconcileExplicitWidths</c> entirely: without it,
+    /// the row's total width is left unbounded above <paramref name="available"/> whenever the
+    /// auto floors alone overrun it.
+    /// </summary>
+    [Fact]
+    public void ExplicitWidths_bothSetsCannotBeSatisfied_neitherReachesZero()
+    {
+        using var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, 400, 300),
+            Margins = new EdgeInsets(10),
+        };
+        var t = new TableElement { DefaultCellStyle = Style() };
+        t.SetColumnWidths(200, 0);
+        var row = t.AddRow();
+        row.AddCell("keepme"); row.AddCell(new string('W', 100));
+        doc.Add(t);
+
+        var rects = CellRectangles(RenderAndDecompress(doc));
+
+        Assert.Equal(2, rects.Count);
+        Assert.All(rects, r => Assert.True(r.W > 0, $"a column resolved to {r.W}"));
+        Assert.True(rects.Sum(r => r.W) <= 380.0 + 0.001);
+    }
+
+    /// <summary>
+    /// T1: the residual left for the auto columns — <c>Math.Max(0.0, available - explicitSum)</c>
+    /// — is clamped before it reaches the one branch with no floor of its own: when every auto
+    /// column's own max-content width is zero (an empty cell with zero padding, so it never
+    /// contributes to <c>autoMaxTotal</c>), <c>result[i]</c> is assigned <c>residual / autoCount</c>
+    /// directly, with no <c>Math.Max(minW[i], …)</c> to catch a negative value the way the other
+    /// branch has. Page 200x200, margin 10 (available 180). Row 0 sets the column count to 2 with
+    /// two ordinary cells; row 1 widens it to 3 with a third cell of empty content and zero
+    /// padding, so column 2's own content floor is exactly 0 and never touched by any other row.
+    /// <c>SetColumnWidths(500, 500)</c> leaves column 2 auto with an explicit sum (1000) far past
+    /// the 180pt available width, so the residual without the clamp would be negative. The auto
+    /// column's resolved width must not be negative.
+    /// </summary>
+    [Fact]
+    public void ExplicitWidths_noAutoContentWithNegativeResidual_clampedNotNegative()
+    {
+        using var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, 200, 200),
+            Margins = new EdgeInsets(10),
+        };
+        var t = new TableElement { DefaultCellStyle = Style() };
+        t.SetColumnWidths(500, 500);
+        var r0 = t.AddRow();
+        r0.AddCell("x"); r0.AddCell("y");
+        var r1 = t.AddRow();
+        r1.AddCell("a"); r1.AddCell("b");
+        r1.AddCell(new Cell(string.Empty) { Padding = EdgeInsets.Zero });
+        doc.Add(t);
+
+        var rects = CellRectangles(RenderAndDecompress(doc));
+
+        // Row 0 draws two cells (columns 0 and 1); row 1 draws three (columns 0, 1 and the auto
+        // column 2), so the auto column's own rectangle is the fifth and last one in stream order.
+        Assert.Equal(5, rects.Count);
+        Assert.True(rects[4].W >= 0.0, $"the auto column resolved to {rects[4].W}");
     }
 
     // ── (c) Auto-width sum (#468) ─────────────────────────────────────────────
@@ -455,5 +601,141 @@ public sealed partial class TableColumnAxisTests
         var placement = Assert.Single(ContentStreamReadback.TextPlacements(RenderAndDecompress(doc)));
 
         Assert.Equal(50.0, placement.X, 0.001);
+    }
+
+    /// <summary>
+    /// T5: the origin floor keeps a single over-wide rune's line inside the cell, but the comment
+    /// ahead of it is careful to say only that — an accepted limit, not a claim that the glyph
+    /// itself stays on the page. <see cref="CellText_oneRuneWiderThanTheColumn_startsAtTheCellLeftEdge"/>
+    /// uses a 200pt page, wide enough that the glyph's own right edge never reaches the page edge,
+    /// so it cannot see this. Page 120pt wide, margin 50 (a 20pt column at x 50), zero padding, one
+    /// "W" at Helvetica 106pt. The origin still floors to the cell's own left edge at 50, and the
+    /// glyph's own right edge — 50 plus its measured width — lands at 150.064, well past the 120pt
+    /// page.
+    /// </summary>
+    [Theory]
+    [InlineData(HorizontalAlignment.Center)]
+    [InlineData(HorizontalAlignment.Right)]
+    public void CellText_oneRuneWiderThanTheColumn_glyphStillLeavesANarrowPage(HorizontalAlignment alignment)
+    {
+        using var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, 120, 600),
+            Margins = new EdgeInsets(50),
+        };
+        var st = Style(106);
+        var t = new TableElement { DefaultCellStyle = st };
+        t.SetColumnWidths(20);
+        t.AddRow().AddCell(new Cell("W") { Alignment = alignment, Padding = EdgeInsets.Zero });
+        doc.Add(t);
+
+        var placement = Assert.Single(ContentStreamReadback.TextPlacements(RenderAndDecompress(doc)));
+        var glyphWidth = st.FontRef.MeasureString("W", 106);
+        var rightEdge = placement.X + glyphWidth;
+
+        Assert.Equal(50.0, placement.X, 0.001);
+        Assert.Equal(150.064, rightEdge, 0.001);
+        Assert.True(rightEdge > 120.0, "the glyph leaves this narrow a page even with the origin floored");
+    }
+
+    // ── (e) Cell text draw order and empty-cell edges ─────────────────────────
+
+    /// <summary>
+    /// T2: the comment ahead of the offset floor in <c>TableRenderer.DrawCell</c> says a single
+    /// over-wide rune is the only way <c>innerBox.Width - lineW</c> goes negative. An empty cell
+    /// whose explicit column is narrower than its own padding reaches the same floor with no rune
+    /// at all. Page 400x400, margin 50 (content box [50, 350]), <c>SetColumnWidths(1, 200)</c> — a
+    /// 1pt explicit column, well under its own 12pt horizontal padding — with an empty first cell.
+    /// The inner width is 1 - 12 = -11, and the line is the empty string, so <c>lineW</c> is 0:
+    /// without the floor, Centre would land at x 50.5 and Right at 45, both left of the cell's own
+    /// inner edge at 56; with it, both floor to 56.
+    /// </summary>
+    [Theory]
+    [InlineData(HorizontalAlignment.Center)]
+    [InlineData(HorizontalAlignment.Right)]
+    public void CellText_emptyCellNarrowerThanItsPadding_offsetFloorsAtTheInnerEdge(HorizontalAlignment alignment)
+    {
+        using var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, 400, 400),
+            Margins = new EdgeInsets(50),
+        };
+        var t = new TableElement { DefaultCellStyle = Style() };
+        t.SetColumnWidths(1, 200);
+        var row = t.AddRow();
+        row.AddCell(new Cell(string.Empty) { Alignment = alignment });
+        row.AddCell("c1");
+        doc.Add(t);
+
+        var placement = Assert.Single(ContentStreamReadback.TextPlacements(RenderAndDecompress(doc)),
+            p => p.Text.Length == 0);
+
+        Assert.Equal(56.0, placement.X, 0.001);
+    }
+
+    /// <summary>
+    /// C3: <c>HardBreakWord</c> used to be invoked from a <c>lineW == 0</c> test — a measured
+    /// advance, not an emptiness flag — so a zero-advance character (Helvetica's DEL, U+007F) left
+    /// the line buffer holding a pending, un-flushed line while <c>lineW</c> still read 0. The next
+    /// over-wide word then believed it was starting a fresh line too, pushed its own hard-break
+    /// fragments ahead of the pending one, and the pending line was flushed only at the very end —
+    /// after content that followed it in the source. A 60pt box at Helvetica 20, cell content
+    /// U+007F followed by a space and eight "A"s: before the fix this drew "AAAA", "AAAA", then
+    /// U+007F last; guarding on <c>lineBuilder.Length == 0</c> instead — the same emptiness test
+    /// <c>ParagraphRenderer</c> already uses — restores source order: U+007F, "AAAA", "AAAA".
+    /// </summary>
+    [Fact]
+    public void CellText_zeroAdvanceCharacterBeforeAHardBreak_keepsSourceOrder()
+    {
+        using var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, 400, 400),
+            Margins = new EdgeInsets(50),
+        };
+        var st = Style(20);
+        var t = new TableElement { DefaultCellStyle = st };
+        t.SetColumnWidths(60);
+        // U+007F (DEL) built from its character code, not an inline escape: it has a zero
+        // advance in Helvetica (measured: MeasureString(DEL, 20) == 0), which is what reaches
+        // the buggy lineW == 0 branch. A real space separates it from the word that hard-breaks.
+        var del = ((char)0x7F).ToString();
+        t.AddRow().AddCell(new Cell(del + " " + new string('A', 8)) { Padding = EdgeInsets.Zero });
+        doc.Add(t);
+
+        var placements = ContentStreamReadback.TextPlacements(RenderAndDecompress(doc));
+
+        Assert.Equal(3, placements.Count);
+        Assert.Equal(del, placements[0].Text);
+        Assert.Equal("AAAA", placements[1].Text);
+        Assert.Equal("AAAA", placements[2].Text);
+    }
+
+    /// <summary>
+    /// D2: hard-breaking a cell word that used to draw as a single over-wide line (#473) can make
+    /// the row taller than the page has room for, so a document that rendered before this pull
+    /// request now throws instead. This is a deliberate, disclosed consequence of measuring the
+    /// cell correctly rather than a new validation rule — see the CHANGELOG entry this pins. Page
+    /// 400x200, zero margins, one 100pt column with zero padding, one cell holding 300 "W"s at the
+    /// default 10pt size: the hard-broken lines do not fit a 200pt page height.
+    /// </summary>
+    [Fact]
+    public void CellText_hardBrokenRowTallerThanThePage_throwsElementTooTall()
+    {
+        const string elementTooTallMessage =
+            "An element is too tall to fit on a single page and cannot be rendered. " +
+            "Reduce the element's content or increase the page size.";
+
+        using var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, 400, 200),
+            Margins = EdgeInsets.Zero,
+        };
+        var t = new TableElement { DefaultCellStyle = Style() };
+        t.SetColumnWidths(100);
+        t.AddRow().AddCell(new Cell(new string('W', 300)) { Padding = EdgeInsets.Zero });
+        doc.Add(t);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => doc.Save(new MemoryStream()));
+        Assert.Equal(elementTooTallMessage, ex.Message);
     }
 }
