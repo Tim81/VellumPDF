@@ -152,6 +152,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **CI now runs on release branches too.** It triggered only on `main` and `v1.7-conformance`.
+  Every patch tag so far, v1.5.1 through v1.8.2, was an ancestor of `main` and so collected its
+  CI as an ordinary push, which hid the gap. A patch cut from an older tag never touches `main`,
+  and `release.yml` fires on any `v*` tag and pushes to NuGet after a restore, a build and a
+  pack, running none of the gates in `ci.yml`: not the clean-room check, the vulnerable-package
+  scan, the pinned-oracle and invocation-floor asserts, the tests, the coverage threshold, the
+  format check or the AOT smoke. Because GitHub reads the workflow from the branch being pushed,
+  the trigger has to be cherry-picked onto any release branch cut from an earlier tag. (#462)
+
 - **Three rule justifications now derive from the clause rather than from veraPDF, and one of them
   reached the caller.** `ActionRule` claimed §6.5.1 "is an allow-list", and separately claimed
   derivation from the specification text while a comment a hundred lines below justified its
@@ -226,6 +235,49 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   disclosure measuring the sweep would have gone stale as the sweep ran. (#418)
 
 ### Fixed
+
+- **A document deep enough to need more than about 4,250 page continuations killed the process
+  (#459).** `DocumentRenderer` recursed once per continuation, so stack depth grew with the
+  number of pages a single element spanned. Past the limit the runtime raised a stack overflow,
+  which .NET makes unrecoverable: no `try`/`catch` in calling code could turn it into a message,
+  unlike every other malformed-input failure in this library. A list item, a table row and a
+  block element each occupy at least one line however few characters they carry, which is why
+  4,950 characters arranged as list items overflow a 200pt-tall page while the same count of
+  characters wrapped into one paragraph on a page with room for more lines does not. Both
+  pagination passes recursed, not just the one that draws: measured on the same list document,
+  the render pass died at about 4,356 `PlaceRenderer` frames, and adding a footer moved the
+  crash to about 4,181 `CountPlaceRenderer` frames in the page-counting pass that runs first.
+  Stack layout jitters a few frames between runs, and both figures come from a Release build: a
+  Debug one fails sooner, at roughly 2,456 and 2,825 frames, with the counting pass surviving
+  longer than the drawing pass rather than the reverse. Both are now loops. The conversion
+  changes nothing else: every call sat in tail position, so no local outlived it and all the
+  state that crosses a continuation already lived in fields.
+
+  Alongside it, an element may now produce at most 50,000 continuations before
+  `InvalidOperationException` is thrown naming that limit. The count resets per top-level element,
+  so a document built from many separate elements is not bounded by it. It guards a case the
+  recursion used to stop by accident: `Document.Add(IRenderer)` takes any implementation, and one
+  whose `Partial` result never advances would now loop forever, allocating pages until memory ran
+  out. It is also a ceiling on how many pages a single element may span, and the library's own
+  renderers can reach it: on a 420x400pt page laid out one table row to a page, 50,001 rows render
+  and 50,002 throw, having made progress on every page, so the message names both causes. For some
+  callers it is a new limit, and how deep the old recursion could go was never a property of this
+  library: it was the thread's stack size and whether the JIT emitted a tail call. On the default
+  stack with tiered compilation on it died below 4,000 continuations, which is where 50,000 was
+  pitched. The same document renders 50,002 pages on a 24MB thread under that same JIT, and again
+  on the default stack with `DOTNET_TieredCompilation=0` or under Native AOT, where the recursion
+  tail-calls. Anyone who had already worked around the crash either way meets the cap instead.
+
+- **The two pagination passes disagreed about an element too tall to fit (#460).** With a header or
+  footer set, `DocumentRenderer` counts pages before it draws them. Given an element that fits on no
+  page, the counting pass skipped it and carried on, while the drawing pass threw. The wrong count
+  never surfaced, because the second pass's exception ended the render before anyone could read it,
+  but the disagreement is load-bearing the moment anything reads the first pass's output, which is
+  what #288 sets out to do. The counting pass now throws the same exception, and both sites read one
+  shared message so they cannot drift apart. One visible consequence: with a running band, the
+  exception now comes from the counting pass, which creates no page objects, so a caller that
+  catches it finds an empty `PdfDocument` rather than one holding the two blank pages the drawing
+  pass had already committed. Split out of #312, which keeps the image fit modes it also asked for.
 
 - **Sixteen PDF/A clause citations named clauses that say something else, and several reached the
   emitted output.** `FontEmbeddingRule` cited ISO 19005-2 §6.3.4–§6.3.5 for font embedding, in its

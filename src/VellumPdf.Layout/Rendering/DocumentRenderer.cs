@@ -17,6 +17,44 @@ namespace VellumPdf.Layout.Rendering;
 /// </summary>
 public sealed class DocumentRenderer
 {
+    // Bounds the per-element continuation loop in both pagination passes (#459). It exists because
+    // Document.Add(IRenderer) takes any implementation and LayoutResult.Partial accepts any overflow
+    // renderer: one whose overflow never advances used to be stopped by the CLR stack overflowing,
+    // which is a crash rather than something a caller can catch, and now that both passes loop it
+    // would page forever instead.
+    //
+    // It is therefore also a hard ceiling on how many pages one top-level element may span, and the
+    // library's own renderers can reach it: measured on a 420x400pt page laid out one table row to
+    // a page, 50,001 rows render and 50,002 throw here, having made progress on every page. That is
+    // deliberate rather than ideal, and for some callers it is a new limit.
+    //
+    // How deep the old recursion could go was never a property of this library. It was the thread's
+    // stack size and whether the JIT emitted a tail call. On the default stack with tiered
+    // compilation on it died below 4,000 continuations, which is where the 50,000 was pitched. The
+    // same document renders 50,002 pages on a 24MB thread under that same JIT, and again on the
+    // default stack with DOTNET_TieredCompilation=0 or under Native AOT, where the recursion
+    // tail-calls. A caller who had already worked around the crash either way meets the cap
+    // instead. The message names the causes it can, because only one of them is the caller's own.
+    private const int MaxContinuationsPerElement = 50_000;
+
+    // Shared by PlaceRenderer and CountPlaceRenderer so the two passes cannot drift to different
+    // wording, or different verdicts, on an element neither can place (#460). It does not make the
+    // passes agree in general: with a running band and no content at all, pass 1 still counts one
+    // page where pass 2 creates none, which predates this change. Making pass 1 throw also moves
+    // the throw earlier when a band is set, so a caller that catches it is left holding an empty
+    // PdfDocument rather than the pages pass 2 had already committed; PdfDocument.Save then reports
+    // that the document has no pages.
+    private const string ElementTooTallMessage =
+        "An element is too tall to fit on a single page and cannot be rendered. " +
+        "Reduce the element's content or increase the page size.";
+
+    private static InvalidOperationException TooManyContinuations() =>
+        new($"A single element needed more than {MaxContinuationsPerElement} page continuations, so " +
+            "its layout is not converging. Either an overflow renderer never advances, or the " +
+            "element genuinely spans more pages than one element may and should be split into " +
+            "several, or its height sits within a rounding error of the content area, so " +
+            "pagination refuses and accepts it by turns.");
+
     private readonly PdfDocument _pdf;
     private readonly PdfRectangle _pageSize;
     private readonly EdgeInsets _margins;
@@ -142,40 +180,58 @@ public sealed class DocumentRenderer
 
     private void PlaceRenderer(IRenderer renderer, int totalPages)
     {
-        EnsurePage();
-
-        var availableArea = new LayoutBox(
-            ContentArea.X, _currentY,
-            ContentArea.Width, ContentArea.Bottom - _currentY);
-
-        var result = renderer.Layout(new LayoutContext(availableArea));
-
-        switch (result.Status)
+        var continuations = 0;
+        while (true)
         {
-            case LayoutResult.Outcome.Full:
-                DrawRenderer(renderer);
-                _currentY = result.OccupiedArea!.Value.Bottom;
-                break;
+            EnsurePage();
 
-            case LayoutResult.Outcome.Partial:
-                DrawRenderer(result.SplitRenderer!);
-                FinishCurrentPage(totalPages);
-                PlaceRenderer(result.OverflowRenderer!, totalPages);
-                break;
+            var availableArea = new LayoutBox(
+                ContentArea.X, _currentY,
+                ContentArea.Width, ContentArea.Bottom - _currentY);
 
-            case LayoutResult.Outcome.Nothing:
-                FinishCurrentPage(totalPages);
-                EnsurePage();
-                var retry = renderer.Layout(new LayoutContext(ContentArea));
-                if (retry.Status == LayoutResult.Outcome.Nothing)
-                {
+            var result = renderer.Layout(new LayoutContext(availableArea));
+
+            switch (result.Status)
+            {
+                case LayoutResult.Outcome.Full:
+                    DrawRenderer(renderer);
+                    _currentY = result.OccupiedArea!.Value.Bottom;
+                    return;
+
+                case LayoutResult.Outcome.Partial:
+                    DrawRenderer(result.SplitRenderer!);
                     FinishCurrentPage(totalPages);
-                    throw new InvalidOperationException(
-                        "An element is too tall to fit on a single page and cannot be rendered. " +
-                        "Reduce the element's content or increase the page size.");
-                }
-                PlaceRenderer(renderer, totalPages);
-                break;
+                    renderer = result.OverflowRenderer!;
+                    break;
+
+                case LayoutResult.Outcome.Nothing:
+                    FinishCurrentPage(totalPages);
+                    EnsurePage();
+                    var retry = renderer.Layout(new LayoutContext(ContentArea));
+                    if (retry.Status == LayoutResult.Outcome.Nothing)
+                    {
+                        FinishCurrentPage(totalPages);
+                        throw new InvalidOperationException(ElementTooTallMessage);
+                    }
+                    break;
+
+                default:
+                    // Unreachable: LayoutResult's constructor is private and its three factories
+                    // pass only these three members. Kept because a fourth Outcome used to make
+                    // this method return and skip the element; under the loop it would instead
+                    // spin to the cap and blame the renderer (#459).
+                    throw new InvalidOperationException($"Unknown layout outcome {result.Status}.");
+            }
+
+            if (++continuations > MaxContinuationsPerElement)
+            {
+                // Symmetry with the too-tall throw above: commit the open page rather than leave
+                // its canvas unflushed. The page still stays in the document. Both
+                // branches reach this throw, but only the Nothing branch can arrive with a page
+                // still open, because the Partial branch has already finished one.
+                FinishCurrentPage(totalPages);
+                throw TooManyContinuations();
+            }
         }
     }
 
@@ -284,32 +340,47 @@ public sealed class DocumentRenderer
 
     private void CountPlaceRenderer(IRenderer renderer, ref double currentY, ref int pages, LayoutBox contentArea)
     {
-        var availableArea = new LayoutBox(
-            contentArea.X, currentY,
-            contentArea.Width, contentArea.Bottom - currentY);
-
-        var result = renderer.Layout(new LayoutContext(availableArea));
-
-        switch (result.Status)
+        var continuations = 0;
+        while (true)
         {
-            case LayoutResult.Outcome.Full:
-                currentY = result.OccupiedArea!.Value.Bottom;
-                break;
+            var availableArea = new LayoutBox(
+                contentArea.X, currentY,
+                contentArea.Width, contentArea.Bottom - currentY);
 
-            case LayoutResult.Outcome.Partial:
-                pages++;
-                currentY = contentArea.Y;
-                CountPlaceRenderer(result.OverflowRenderer!, ref currentY, ref pages, contentArea);
-                break;
+            var result = renderer.Layout(new LayoutContext(availableArea));
 
-            case LayoutResult.Outcome.Nothing:
-                pages++;
-                currentY = contentArea.Y;
-                var retry = renderer.Layout(new LayoutContext(contentArea));
-                if (retry.Status == LayoutResult.Outcome.Nothing)
-                    break; // element too tall — skip (real render will throw)
-                CountPlaceRenderer(renderer, ref currentY, ref pages, contentArea);
-                break;
+            switch (result.Status)
+            {
+                case LayoutResult.Outcome.Full:
+                    currentY = result.OccupiedArea!.Value.Bottom;
+                    return;
+
+                case LayoutResult.Outcome.Partial:
+                    pages++;
+                    currentY = contentArea.Y;
+                    renderer = result.OverflowRenderer!;
+                    break;
+
+                case LayoutResult.Outcome.Nothing:
+                    pages++;
+                    currentY = contentArea.Y;
+                    var retry = renderer.Layout(new LayoutContext(contentArea));
+                    if (retry.Status == LayoutResult.Outcome.Nothing)
+                    {
+                        // This pass used to skip the element and undercount here while
+                        // PlaceRenderer threw on it; the two passes must agree (#460).
+                        throw new InvalidOperationException(ElementTooTallMessage);
+                    }
+                    break;
+
+                default:
+                    // Unreachable for the same reason as PlaceRenderer's arm above, and kept for
+                    // the same reason (#459).
+                    throw new InvalidOperationException($"Unknown layout outcome {result.Status}.");
+            }
+
+            if (++continuations > MaxContinuationsPerElement)
+                throw TooManyContinuations();
         }
     }
 

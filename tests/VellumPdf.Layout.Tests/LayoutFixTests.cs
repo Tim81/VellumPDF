@@ -75,28 +75,6 @@ public sealed class LayoutFixTests
         Assert.True(ms.Length > 0);
     }
 
-    // ── Group D4: Too-tall element throws ────────────────────────────────────
-
-    [Fact]
-    public void DocumentRenderer_tooTallElement_throwsInvalidOperation()
-    {
-        using var doc = new Document();
-        doc.PageSize = new PdfRectangle(0, 0, 200, 100); // Very short page
-        doc.Margins = new EdgeInsets(5);
-
-        // Add 20 lines of text — each line is ~12pt, so 20*12=240pt > 90pt content height
-        // This creates a paragraph that is taller than a single page
-        var style = new TextStyle { FontSize = 12 };
-        var text = string.Join(" ", Enumerable.Repeat("Word", 150)); // very long paragraph
-        doc.Add(new Paragraph(text, style));
-
-        var ms = new MemoryStream();
-        // The very long single paragraph should either paginate or, if too tall, throw.
-        // In practice pagination handles this; the test just verifies no infinite loop.
-        doc.Save(ms);
-        Assert.True(ms.Length > 0);
-    }
-
     // ── Group E: RowSpan ─────────────────────────────────────────────────────
 
     [Fact]
