@@ -362,15 +362,18 @@ public sealed class DocumentRenderer
         if (drawn.Length < text.Length) RecordTruncation(kind, pageNumber, drawn.Length, text.Length);
 
         // Nothing fits, so nothing is emitted — not an empty text object, and not the marked-content
-        // pair either. Returning before SetFont also matters: setting a font registers a page
-        // resource, so an empty band would otherwise add a /Font entry to every page.
+        // pair either. Returning before SetFont also matters: setting a font registers the font as
+        // a page resource, so an empty band would otherwise add an entry to every page's /Font
+        // dictionary, and the font object it points at to the file.
         //
-        // This is the second place the branch moves bytes for a document that was already fine,
-        // alongside the colour change. A band whose template is empty previously emitted a text
-        // object showing an empty string, and now emits nothing; measured, that removes five lines
-        // per band placement and, on a document whose only text was such a band, the page's /Font
-        // entry as well. An empty template is one of the shapes the property generator produces,
-        // so it is not a corner nobody reaches.
+        // This is one of the two places the branch moves bytes for a document that was already
+        // fine, the other being the colour operator below. A band whose template is empty
+        // previously emitted a text object showing an empty string, and now emits nothing;
+        // measured, that removes five lines per band placement, and on a document whose only text
+        // was such a band it also removes that /Font entry and its font object — the /Font
+        // dictionary itself stays, empty, because PdfPage sets it on every page unconditionally.
+        // An empty template is one of the shapes the property generator produces, so it is not a
+        // corner nobody reaches.
         if (drawn.Length == 0) return;
 
         // textWidth is bounded by contentWidth for every finite, positive font size, because
@@ -404,11 +407,11 @@ public sealed class DocumentRenderer
         // body was red and whose footer style asked for blue: the band's text object held no rg at
         // all and the footer rendered red.
         //
-        // This is the one change in this branch that moves bytes for a document that was already
-        // correct. Every banded document whose band emits any text carries one extra colour
-        // operator per band per page, including those that looked right because the inherited
-        // colour happened to be black. A band that fits nothing returns above this and gains
-        // none.
+        // This is the other of the two places the branch moves bytes for a document that was
+        // already correct, alongside the empty-template return above. Every banded document whose
+        // band emits any text carries one extra colour operator per band per page, including those
+        // that looked right because the inherited colour happened to be black. A band that fits
+        // nothing returns above this and gains none.
         //
         // Running-band text is pagination decoration, not part of the logical structure.
         // Wrap as /Artifact when the document is tagged so PDF/UA validators find no
@@ -490,10 +493,11 @@ public sealed class DocumentRenderer
     ///
     /// And when the whole string fits it takes the width from one measurement of the whole string
     /// rather than from the running total, because the metrics sum integer thousandths and scale
-    /// once at the end while this loop scales each piece. The largest drift measured over 120,000
-    /// random strings was 9.1e-13pt, and PdfCanvas formats coordinates to five decimals, so it
-    /// does not reach the output: substituting the running total moved no byte of any content
-    /// stream across every fitting-band configuration measured, and left the suite green. The
+    /// once at the end while this loop scales each piece. Every sweep run of the two orders put the
+    /// drift below 1e-11pt — 2.8e-13 over 120,000 strings of up to 60 characters at 10pt, 6.4e-12
+    /// over strings of up to 400 at 12pt — and PdfCanvas formats coordinates to five decimals, so
+    /// the gap to what the output can even represent is six orders of magnitude. Substituting the
+    /// running total moved no byte of any content stream measured and left the suite green. The
     /// whole-string measurement is kept because it is the more accurate width and costs nothing on
     /// a path that has already measured every piece, not because the alternative would visibly
     /// move bands. No test defends this line, since the mutation is invisible to the suite, so

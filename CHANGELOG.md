@@ -317,7 +317,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   box. The cut prefers the last word boundary, because a template ending in a page number cut
   mid-token would show a number that is simply wrong where dropping the token shows none. When
   nothing fits, nothing is emitted at all, not even the marked-content pair, since setting a font
-  registers a page resource and an empty band would otherwise add a `/Font` entry to every page.
+  registers it as a page resource, so an empty band would otherwise add an entry to every page's
+  `/Font` dictionary and its font object to the file.
 
   A band that already fitted keeps its exact bytes from this change, with one exception, and that
   is measured rather than assumed: the decompressed content streams of nine fitting-band
@@ -327,19 +328,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   configurations, adding embedded-font bands and bands containing escaped characters, without
   finding a difference.
 
-  The exception is a band whose template is empty. That previously emitted a text object showing
-  an empty string and now emits nothing, which removes five lines per band placement and, on a
-  document whose only text was such a band, the page's `/Font` entry too. So two changes here move
-  bytes for a document that was already fine: this one for an empty template, and the colour change
-  below for every band that draws.
+  The exception is a band whose template is empty. That previously emitted a text object showing an
+  empty string and now emits nothing, which removes five lines per band placement and, on a
+  document whose only text was such a band, that band's entry in the page's `/Font` dictionary and
+  the font object it pointed at. The dictionary itself stays, empty, because every page gets one
+  unconditionally. So two changes here move bytes for a document that was already fine: this one
+  for an empty template, and the colour change below for every band that draws.
 
   When the whole string fits, its width comes from one measurement of the whole string rather than
   from the walk's running total, because the metrics sum integer thousandths and scale once at the
   end while the walk scales each piece. That was originally justified as preventing a visible
-  shift, which measurement does not support: the drift is about 7e-13pt against a five-decimal
-  output format, and substituting the running total moved no text matrix across 360 banded
-  documents. The whole-string measurement is kept because it is the more accurate width and costs
-  nothing on a path that has already measured every piece.
+  shift, which measurement does not support: every sweep of the two orders put the drift below
+  1e-11pt against an output format of five decimals, and substituting the running total moved no
+  byte of any content stream measured. The whole-string measurement is kept because it is the more
+  accurate width and costs nothing on a path that has already measured every piece.
 
   The bound has one hole, and the code states its consequence rather than only its mechanism. A
   glyph may advance zero: 38 code points do in every face, and every character does in Symbol and
