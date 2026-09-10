@@ -320,11 +320,16 @@ public sealed class TableRenderer : IRenderer
             var lineW = cs.FontRef.MeasureString(line, cs.FontSize);
 
             // Floored at the cell's own left edge (#473), the same clamp #472 applied to a
-            // paragraph line for the same reason: WordWrapLines now hard-breaks a word wider than
-            // the column, so every line it emits stays within innerBox.Width except the one line
-            // consisting of a single over-wide rune that cannot be broken any further — the only
-            // way innerBox.Width - lineW goes negative here. The floor moves nothing for a line
-            // that already fits and keeps the one thing it can for that residue: the line's origin
+            // paragraph line for the same reason. Unlike the paragraph, this does not transfer as
+            // "the only way": WordWrapLines is called against Math.Max(1, innerBox.Width) above,
+            // while lineW is compared here against innerBox.Width itself, so the two only agree
+            // when the cell's own inner width is already at least 1pt. Every line WordWrapLines
+            // emits stays within that max(1pt, innerBox.Width) bound, but two kinds of line can
+            // still exceed innerBox.Width proper: a single over-wide rune that cannot be broken any
+            // further, the case the paragraph shares, and any line drawn in a cell whose inner
+            // width has fallen below 1pt — an empty line included, since MeasureString("") is 0 and
+            // 0 > innerBox.Width once the latter goes negative. The floor moves nothing for a line
+            // that already fits and keeps the one thing it can for both residues: the line's origin
             // stays inside the cell instead of starting left of it.
             double txOffset = cell.Alignment switch
             {
@@ -389,26 +394,49 @@ public sealed class TableRenderer : IRenderer
     }
 
     /// <summary>
-    /// Delegates to <see cref="WordWrapLines"/> rather than carrying its own line-counting walk:
-    /// the two used to be separate algorithms that happened to agree, and <c>Layout</c>'s row
-    /// height (built from this count) has to match what <c>Draw</c> actually emits or a cell's
-    /// text overruns the row it was measured against. One walk removes the chance of the two
-    /// silently drifting apart, which is also what let the hard-break below (#473) reach both
-    /// call sites from a single change instead of two that have to be kept in step by hand.
+    /// Delegates to <see cref="WordWrapLines"/> rather than carrying its own line-counting walk.
+    /// The two used to be separate algorithms, and they did not merely risk drifting apart — they
+    /// already disagreed. The old walk counted a line for every word it moved to a fresh line,
+    /// including a trailing empty token from a cell string ending in a space that does not fit,
+    /// which <see cref="WordWrapLines"/>'s own trailing <c>if (lineBuilder.Length &gt; 0)</c> never
+    /// turns into a drawn line. Measured over 4,000 random cell strings in a 40pt column at
+    /// Helvetica 12, comparing the old walk's count against the old <c>WordWrapLines</c>'s own
+    /// <c>.Count</c>: 744 disagreed, every one the old walk counting a taller row than the lines
+    /// actually drawn, never a shorter one. Known-answer case: <c>"AAAAii "</c> in the same column
+    /// counted 2 lines (a 28.8pt row) while only 1 was drawn; delegating resolves the row to the
+    /// 14.4pt height the single drawn line actually needs. <c>Layout</c>'s row height (built from
+    /// this count) has to match what <c>Draw</c> actually emits or a cell's text overruns the row
+    /// it was measured against, so this also silently shortens the row for any document whose cell
+    /// text ends in a space that does not fit — the corrected height, not a side effect, but one
+    /// the CHANGELOG has to carry since it moves geometry a caller could depend on. One walk also
+    /// removes the chance of separate algorithms drifting further apart than this, which is what
+    /// let the hard-break below (#473) reach both call sites from a single change instead of two
+    /// that would otherwise have to be kept in step by hand.
     /// </summary>
     private static int WordWrapCount(string text, TextStyle style, double maxWidth) =>
         WordWrapLines(text, style, maxWidth).Count;
 
     /// <summary>
     /// Word-wraps text into lines for drawing. A word wider than <paramref name="maxWidth"/> on
-    /// its own — the <c>lineW == 0</c> arms below, reached both for the text's first word and for
-    /// the word starting a fresh line after a wrap — used to be emitted whole regardless, which is
-    /// #473: the line then drew past the cell's own right edge, and past the page once the column
-    /// was narrow enough. <see cref="HardBreakWord"/> now breaks it at character granularity
+    /// its own — the "start of a fresh line" arms below, reached both for the text's first word and
+    /// for the word starting a fresh line after a wrap — used to be emitted whole regardless, which
+    /// is #473: the line then drew past the cell's own right edge, and past the page once the
+    /// column was narrow enough. <see cref="HardBreakWord"/> now breaks it at character granularity
     /// instead, the same behaviour <c>ParagraphRenderer.HardBreakWord</c> already has for a
     /// paragraph line — kept as its own copy rather than shared, since the two callers differ in
     /// what they know about their own box and a shared version would be a third code path to
     /// review for this pull request alone.
+    ///
+    /// "Start of a fresh line" is tested on <c>lineBuilder.Length == 0</c>, not on <c>lineW == 0</c>
+    /// as an earlier version of this method did: <c>lineW</c> is a measured advance, not an
+    /// emptiness flag, and a character whose advance is zero — 38 code points in every Standard-14
+    /// face, per the running-band metrics gap this shares with #470 — leaves the buffer holding a
+    /// pending, un-flushed line while <c>lineW</c> still reads 0. Testing <c>lineW</c> there made
+    /// the next over-wide word believe it was starting fresh too, so it pushed its own hard-break
+    /// fragments into <paramref name="maxWidth"/> ahead of the pending line, which was flushed only
+    /// at the end of the loop — the zero-advance token then drew last, after content that followed
+    /// it in the source. <c>ParagraphRenderer</c> already guards on <c>lineFrags.Count == 0</c> for
+    /// the same reason, which is why it never had this.
     /// </summary>
     private static List<string> WordWrapLines(string text, TextStyle style, double maxWidth)
     {
@@ -423,7 +451,7 @@ public sealed class TableRenderer : IRenderer
         foreach (var word in words)
         {
             var ww = style.FontRef.MeasureString(word, style.FontSize);
-            if (lineW == 0)
+            if (lineBuilder.Length == 0)
             {
                 if (ww > maxWidth)
                 {

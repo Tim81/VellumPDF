@@ -11,11 +11,14 @@ namespace VellumPdf.Layout.Rendering.Table;
 ///
 /// Width resolution order:
 ///   1. If explicit widths provided via SetColumnWidths → reconcile them against the resolved
-///      column count: a missing or zero entry means auto (see <see cref="TableElement.ColWidths"/>),
-///      a negative entry is clamped to the same auto meaning, and the auto columns share the width
-///      left over after the explicit ones. If the explicit entries alone still overrun the
-///      available width, they are scaled down to what the auto columns' own content floors leave
-///      them.
+///      column count: a missing entry, an explicit zero and a negative entry all mean auto (see
+///      <see cref="TableElement.ColWidths"/> for the first two; the negative one is a clamp
+///      rather than a documented meaning), and so does a non-finite entry, which cannot be
+///      honoured at all. The auto columns share the width left over after the explicit ones. If
+///      the explicit entries alone still overrun the available width, they are scaled down toward
+///      what the auto columns' own content floors leave them — or, on the rarer path where even
+///      those floors alone exceed the available width, scaled down together with the floors by
+///      the same ratio, so neither set is forced to zero while the other keeps its own floor.
 ///   2. Otherwise: compute min-content (longest word) and max-content (full text) widths for each
 ///      column, then distribute available width proportionally, scaled down to the available width
 ///      when the content floors alone overrun it (#468).
@@ -34,11 +37,33 @@ internal sealed class TableGridResolver
         // and TableElement exposes no column count to check against. So a later row with an extra
         // cell was losing it entirely, because the grid never had a column for it. Measured before
         // this fix, a first row of two cells and a second of three drew four literals and not five.
+        //
+        // The same widening also reaches a row whose own cells already declare more columns than
+        // an earlier row via ColSpan, not just a row with more cells: before this fix, a table
+        // whose first row set the column count with two ordinary cells silently drew a later row's
+        // ColSpan-2 cell at one column's width instead of the two it asked for, because the grid
+        // never had a second column to give it. Measured, page 400x300 at 10pt margins, row 0 "a0
+        // a1" and row 1 "b0" plus a ColSpan-2 "b1": before this fix the columns resolved to 190,
+        // 190 and the span cell drew 190pt wide, one column's worth; now they resolve to 152, 152,
+        // 76 and the span cell draws 228pt, exactly 152 + 76. Both shapes keep every literal inside
+        // the content box, so the fix is not recovering lost content — it is honouring a span width
+        // the caller set and the old count silently discarded, and any document with this shape now
+        // resolves to different column widths than before.
+        //
+        // `checked` here is not a change in kind: LINQ's `Sum` this loop replaced already threw
+        // `OverflowException` on a total past `int.MaxValue`, so a caller passing pathological
+        // ColSpan values already got a loud failure rather than a document. An unchecked `+=` would
+        // have turned that into a silently wrapped, wrong column count and a quietly wrong document
+        // instead — the same class of regression the reconciliation below exists to avoid on the
+        // width axis.
         ColCount = 0;
         foreach (var row in table.Rows)
         {
             var rowCols = 0;
-            foreach (var cell in row.Cells) rowCols += cell.ColSpan;
+            checked
+            {
+                foreach (var cell in row.Cells) rowCols += cell.ColSpan;
+            }
             if (rowCols > ColCount) ColCount = rowCols;
         }
         if (ColCount == 0) { ColWidths = []; return; }
@@ -50,7 +75,7 @@ internal sealed class TableGridResolver
 
     /// <summary>
     /// Reconciles an explicit <see cref="TableElement.ColWidths"/> array against the resolved
-    /// column count (#477). Three things follow from treating an explicit array as a literal copy,
+    /// column count (#477). Four things follow from treating an explicit array as a literal copy,
     /// the way this method used to:
     /// <list type="bullet">
     ///   <item>
@@ -69,12 +94,20 @@ internal sealed class TableGridResolver
     ///   change, so it is clamped to the same auto meaning as zero. This is a maintainer decision
     ///   rather than the plan's own, since the plan left it open.
     ///   </item>
+    ///   <item>
+    ///   A non-finite width could not be honoured at all: measured on eedaa3c, it put the literal
+    ///   token <c>NaN</c> or <c>Infinity</c>/<c>-Infinity</c> where a PDF number belongs, and
+    ///   poisoned the <c>x</c> operand of every following column besides. The file itself stayed
+    ///   well formed — only the content stream stopped conforming — but replacing the token
+    ///   changes output that no viewer could have drawn correctly either way.
+    ///   </item>
     /// </list>
     /// Auto columns share the width left over after the explicit ones, weighted by content and
     /// floored at their own minimum content width. If the explicit entries alone still leave the
     /// row over <paramref name="available"/> — the same "oversized" case an all-explicit array can
-    /// reach on its own — they are scaled down to what the auto columns' floors leave them, rather
-    /// than the floors being scaled down in turn.
+    /// reach on its own — they are scaled down toward what the auto columns' floors leave them,
+    /// rather than the floors being scaled down in turn; see the comment ahead of
+    /// <c>explicitBudget</c> below for the rarer case where even the floors do not fit.
     /// </summary>
     private double[] ReconcileExplicitWidths(TableElement table, double available, int cols)
     {
@@ -91,8 +124,10 @@ internal sealed class TableGridResolver
             // and the alternative to treating them as auto is what this method emitted before:
             // measured on eedaa3c, an explicit NaN width put the token "NaN" where a PDF number
             // belongs, positive infinity put "Infinity" and negative infinity "-Infinity", and
-            // each also poisoned the x operand of every following column. A stream carrying those
-            // tokens is not a PDF, so replacing them changes only output that was already invalid.
+            // each also poisoned the x operand of every following column. The file itself stayed
+            // well formed; it was the content stream that stopped conforming, and no validator was
+            // run against it, so replacing the token is a correctness fix rather than a proven
+            // conformance one.
             if (!double.IsFinite(raw[i]) || raw[i] <= 0)
             {
                 isAuto[i] = true;
@@ -135,19 +170,38 @@ internal sealed class TableGridResolver
         // entry is what asked for more than the table has, not the auto column sized from what was
         // left over. Shrinking the auto column instead would crush "c2" below its own longest
         // word's width and reach TableRenderer's hard-break path (#473) for content that was never
-        // the reason the row overran -- measured on an oversized+short explicit array together,
+        // the reason the row overran — measured on an oversized+short explicit array together,
         // where the residual is already zero, this was the difference between one drawn literal
         // and two hard-break fragments for the same short cell.
-        var explicitBudget = Math.Max(0.0, available - autoFloorSum);
-        if (explicitSum > explicitBudget && explicitSum > 0)
+        //
+        // That preference holds only while the auto floors themselves still fit: `explicitBudget`
+        // below is what is left for the explicit columns once the floors are reserved, and it can
+        // go negative when the floors alone already exceed `available` — a column whose longest
+        // word is wider than an equal share, the same corner AutoWidth's own ScaleToFit exists for.
+        // Reserving the explicit columns' whole sum in that case and scaling only them to a
+        // negative-clamped-to-zero budget would zero every explicit column while the auto columns
+        // kept their unreduced floor, re-introducing on the explicit side exactly the collapse this
+        // method exists to avoid on the auto side. So a negative budget is left unresolved here:
+        // both sets stay at their unscaled sum (explicit) and floor (auto) values, and the single
+        // `ScaleToFit` call below — already needed as the last-resort net for the floors-alone
+        // case — scales the whole array, explicit and auto together, by the one ratio
+        // `available / (explicitSum + autoFloorSum)`. That keeps every column's share of the
+        // shortfall proportional to what it asked for, so neither set can reach zero while the
+        // other still holds its floor. If `available` itself is zero or negative, `ScaleToFit`
+        // leaves the array unscaled — there is no ratio that fits a non-positive budget, so this
+        // last resort is not reachable for every input.
+        var explicitBudget = available - autoFloorSum;
+        if (explicitBudget > 0 && explicitSum > explicitBudget)
         {
             var scale = explicitBudget / explicitSum;
             for (var i = 0; i < cols; i++)
                 if (!isAuto[i]) result[i] *= scale;
         }
 
-        // Last-resort safety net: only reached when the auto floors alone already exceed
-        // `available`, so even an explicit budget of zero was not enough.
+        // Last-resort safety net: reached whenever the row above did not already fit `available`
+        // — either because the explicit columns were scaled down to their budget and the auto
+        // floors alone still do not leave room for it, or because the auto floors alone already
+        // exceeded `available` and the explicit columns were left unscaled above.
         ScaleToFit(result, available);
         return result;
     }
@@ -172,7 +226,7 @@ internal sealed class TableGridResolver
 
         // The floor above has no upper bound of its own: when every column's longest word alone
         // is wider than its proportional share, the sum of the floors can exceed `available`, and
-        // nothing before this scaled it back down (#468) -- the table then drew past the content
+        // nothing before this scaled it back down (#468) — the table then drew past the content
         // box, and past the page once the overrun was large enough. Scaling every column down
         // proportionally keeps their relative sizes rather than truncating the rightmost one.
         ScaleToFit(result, available);
