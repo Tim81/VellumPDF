@@ -259,7 +259,7 @@ public sealed class DocumentRenderer
             var text = Header.Resolve(pageNumber, totalPages);
             var bandY = _margins.Top;
             var bandHeight = Header.EffectiveHeight;
-            DrawBandText(ctx, canvas, rendererCtx, text, Header, bandY, bandHeight);
+            DrawBandText(ctx, canvas, text, Header, bandY, bandHeight);
         }
 
         if (Footer is not null)
@@ -267,14 +267,15 @@ public sealed class DocumentRenderer
             var text = Footer.Resolve(pageNumber, totalPages);
             var bandY = _pageSize.Height - _margins.Bottom - Footer.EffectiveHeight;
             var bandHeight = Footer.EffectiveHeight;
-            DrawBandText(ctx, canvas, rendererCtx, text, Footer, bandY, bandHeight);
+            DrawBandText(ctx, canvas, text, Footer, bandY, bandHeight);
         }
     }
 
+    // Drops the RendererContext the old signature took and never read: the body reaches everything
+    // it needs through DrawContext, which carries the same canvas.
     private void DrawBandText(
         DrawContext ctx,
         PdfCanvas canvas,
-        RendererContext rendererCtx,
         string text,
         RunningBand band,
         double bandY,
@@ -282,8 +283,16 @@ public sealed class DocumentRenderer
     {
         var style = band.Style;
         var contentWidth = _pageSize.Width - _margins.Horizontal;
-        var textWidth = style.MeasureString(text);
+        var (drawn, textWidth) = FitToWidth(style, text, contentWidth);
 
+        // Nothing fits, so nothing is emitted — not an empty text object, and not the marked-content
+        // pair either. Returning before SetFont also matters: setting a font registers a page
+        // resource, so an empty band would otherwise add a /Font entry to every page.
+        if (drawn.Length == 0) return;
+
+        // textWidth is now bounded by contentWidth, so none of these can place the run outside the
+        // content box, and no clamp is needed. That is the invariant, not a hope: FitToWidth only
+        // ever accumulates a piece whose running total still fits.
         double x = band.Alignment switch
         {
             HorizontalAlignment.Center => _margins.Left + (contentWidth - textWidth) / 2,
@@ -304,8 +313,8 @@ public sealed class DocumentRenderer
             var resourceName = ctx.UseEmbeddedFont(style.FontRef.Embedded);
             canvas.SetFontByName(resourceName, style.FontSize);
             // Show using glyph IDs
-            var gids = new ushort[text.Length];
-            var count = style.FontRef.Embedded.GetGlyphIds(text, gids);
+            var gids = new ushort[drawn.Length];
+            var count = style.FontRef.Embedded.GetGlyphIds(drawn, gids);
             canvas.SetTextMatrix(1, 0, 0, 1, x, pdfY);
             canvas.ShowGlyphs(gids.AsSpan(0, count));
         }
@@ -314,10 +323,77 @@ public sealed class DocumentRenderer
             var fontResource = ctx.GetFont(style.Font);
             canvas.SetFont(fontResource, style.FontSize);
             canvas.SetTextMatrix(1, 0, 0, 1, x, pdfY);
-            canvas.ShowText(text);
+            canvas.ShowText(drawn);
         }
         canvas.EndText();
         if (ctx.Tagged) canvas.EndMarkedContent();
+    }
+
+    /// <summary>
+    /// The longest prefix of <paramref name="text"/> whose advance width fits
+    /// <paramref name="maxWidth"/>, and that width.
+    ///
+    /// A running band used to be measured whole and emitted whole, so a template wider than the
+    /// content box was positioned by a formula that had never been given a bound and went off the
+    /// page with every glyph still written into the content stream. Truncating here is what makes
+    /// the alignment arithmetic safe, because the width it returns can never exceed maxWidth.
+    ///
+    /// It walks forward and stops, rather than measuring the whole string first, so the work is
+    /// proportional to what fits rather than to what was passed. That bound has one hole worth
+    /// naming: a glyph may advance zero — every character below 0x20, WinAnsi's five undefined
+    /// codes, and both symbolic Standard 14 faces, whose width tables are absent from the metrics
+    /// lookup entirely — so a template of those never exceeds any width and is walked to its end.
+    ///
+    /// Two subtleties. It advances two UTF-16 units only for a well-formed surrogate pair, so every
+    /// candidate cut is already on a code-point boundary and cannot leave a lone surrogate behind.
+    /// And when the whole string fits it takes the width from one measurement of the whole string
+    /// rather than from the running total, because the metrics sum integer thousandths and scale
+    /// once at the end while this loop scales each piece: the two can differ in the last bits,
+    /// which would move the emitted text matrix of every centre- and right-aligned band that fits
+    /// today.
+    /// </summary>
+    private static (string Drawn, double Width) FitToWidth(TextStyle style, string text, double maxWidth)
+    {
+        if (text.Length == 0) return (text, 0);
+
+        var width = 0.0;
+        var cut = 0;
+
+        // The last point at which the run could be cut without splitting a token, and the width up
+        // to it. Recorded as the walk passes the space so the fallback costs no second scan.
+        var lastSpaceCut = 0;
+        var lastSpaceWidth = 0.0;
+
+        var i = 0;
+        while (i < text.Length)
+        {
+            var len = char.IsHighSurrogate(text[i]) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1])
+                ? 2
+                : 1;
+
+            var piece = style.MeasureString(text.Substring(i, len));
+            if (width + piece > maxWidth) break;
+
+            width += piece;
+            i += len;
+            cut = i;
+
+            if (len == 1 && text[i - 1] == ' ')
+            {
+                lastSpaceCut = i - 1;
+                lastSpaceWidth = width - piece;
+            }
+        }
+
+        if (cut == text.Length) return (text, style.MeasureString(text));
+
+        // Prefer the last word boundary. For a band this is not only tidier: a template ending in
+        // a page number cut mid-token would show a number that is simply wrong, where dropping the
+        // token shows none. Fall back to the mid-token cut when the fitted prefix holds no interior
+        // space, which is the case a single overlong word produces.
+        return lastSpaceCut > 0
+            ? (text[..lastSpaceCut], lastSpaceWidth)
+            : (text[..cut], width);
     }
 
     // ── Pass 1: page counting ─────────────────────────────────────────────────
