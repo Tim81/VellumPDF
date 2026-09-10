@@ -284,23 +284,25 @@ internal static class LayoutGen
         var maxDiameter = Math.Max(1.0, fullPageContentHeight - 12 - 1);
         var diameter = Math.Min(spec.ChartDiameterRaw, maxDiameter);
 
-        // Centre only, not spec.Alignment. PieChartRenderer's clamp bounds the placement diameter
-        // against ctx.Area.Width (undeflated), then Draw applies it inside the area deflated by
-        // the chart's own margins — deliberately, per the acceptance table, since Centre's offset
-        // formula halves the difference and lands symmetrically inside the box even when the
-        // clamped diameter exceeds the deflated width. Left and Right have no such cushion: their
-        // offset is pinned at 0 (Left) or area.Width - diameter (Right) regardless of margins, so
-        // once the clamp lands at exactly ctx.Area.Width — any raw diameter past the content box
-        // does that — the drawn circle still overshoots the page by up to the chart's own margin.
-        // Measured: a 454.4pt-wide page, 1.2pt document margin, default 6pt chart margins and a
-        // diameter clamped to ctx.Area.Width = 451.9 puts a Left-aligned circle's right edge at
-        // 459.1, 4.8pt past the page. The acceptance table verifies Centre only, so this is the
-        // range this fix actually closes; a wide diameter under Left or Right is a corner this
-        // pull request leaves open, not one the property below should be widened into.
+        // Every alignment, because the fix covers every alignment. Clamping the diameter alone
+        // does not: it leaves the chart's own margins to push the circle out on whichever side the
+        // alignment favours, which measured 4.8pt off a 454.4pt page under both Left and Right
+        // while Centre stayed inside. Draw answers that by aligning within the content box rather
+        // than within the margins once the circle no longer fits between them, so a generated
+        // diameter past the box lands on the box edge under all three.
+        //
+        // StartAngle is left at its default, and that is load-bearing rather than incidental. The
+        // arc's drawn curve bulges past the nominal radius by up to 1.00027253 times it, but the
+        // bulge is zero at the quadrant points, which is exactly where the extent lies when every
+        // segment boundary is a multiple of a quarter turn. The default start angle of a quarter
+        // turn with one slice gives precisely that, so a circle clamped to the content box has an
+        // extent equal to its diameter and the page-box property holds with no allowance. Generate
+        // a start angle off the quadrant and it would not: measured 0.0408pt outside the nominal
+        // edge at diameter 300, which is 40 times this suite's tolerance.
         doc.Add(new PieChart
         {
             Diameter = diameter,
-            Alignment = HorizontalAlignment.Center,
+            Alignment = spec.Alignment,
             Slices = [new PieSlice(1, spec.Colour)],
         });
 

@@ -60,7 +60,7 @@ public sealed class OffPagePlacementTests
         Assert.Equal(350.0, extent.MaxX, 0.001);
     }
 
-    // ── (b) Chart, Centre ─────────────────────────────────────────────────────
+    // ── (b) Chart ─────────────────────────────────────────────────────────────
 
     /// <summary>
     /// Page 400x900, margin 50, content box [50, 350], default start angle, slice values 3 and 1.
@@ -103,7 +103,50 @@ public sealed class OffPagePlacementTests
         Assert.Equal(344.0, extent.MaxX, 0.001);
     }
 
-    private static ContentStreamReadback.Extent ChartExtent(double diameter, EdgeInsets? margins)
+    /// <summary>
+    /// Clamping the diameter is not enough on its own, and only Centre hides that. Left and Right
+    /// take their offset from the area the chart's own margins deflate, so a circle clamped to the
+    /// content box is then shifted by a margin and leaves the box on one side: measured before this
+    /// fix, on this page and the default 6pt margins, Left gave [56, 356] and Right [44, 344]
+    /// against a content box of [50, 350]. On a page with a small document margin that is off the
+    /// page rather than merely out of the box: a 452pt content box inside a 454.4pt page put Left
+    /// 4.8pt past the right edge and Right 4.8pt past the left. Draw now aligns within the content
+    /// box once the circle no longer fits between the margins, so all three land on the box.
+    ///
+    /// Centre is absent from the cases below because the test above already pins that same
+    /// document, where it carries the stronger claim: not merely inside the box but unmoved.
+    /// </summary>
+    [Theory]
+    [InlineData(HorizontalAlignment.Left)]
+    [InlineData(HorizontalAlignment.Right)]
+    public void Chart_defaultMargins_clampedDiameter_fitsTheContentBoxUnderEveryAlignment(
+        HorizontalAlignment alignment)
+    {
+        var extent = ChartExtent(diameter: 300, margins: null, alignment);
+        Assert.Equal(50.0, extent.MinX, 0.001);
+        Assert.Equal(350.0, extent.MaxX, 0.001);
+    }
+
+    /// <summary>
+    /// The other half of that rule: while the circle still fits between its own margins, the
+    /// margins are honoured and nothing moves. A 288pt diameter fits the deflated 288pt width
+    /// exactly, so Left sits against the left margin and Right against the right one.
+    /// </summary>
+    [Theory]
+    [InlineData(HorizontalAlignment.Left, 56.0, 344.0)]
+    [InlineData(HorizontalAlignment.Right, 56.0, 344.0)]
+    public void Chart_defaultMargins_diameterFittingTheMargins_keepsThem(
+        HorizontalAlignment alignment, double expectedMin, double expectedMax)
+    {
+        var extent = ChartExtent(diameter: 288, margins: null, alignment);
+        Assert.Equal(expectedMin, extent.MinX, 0.001);
+        Assert.Equal(expectedMax, extent.MaxX, 0.001);
+    }
+
+    private static ContentStreamReadback.Extent ChartExtent(
+        double diameter,
+        EdgeInsets? margins,
+        HorizontalAlignment alignment = HorizontalAlignment.Center)
     {
         using var doc = new Document
         {
@@ -111,8 +154,8 @@ public sealed class OffPagePlacementTests
             Margins = new EdgeInsets(50),
         };
         var chart = margins is { } m
-            ? new PieChart { Diameter = diameter, Margins = m, Slices = ChartSlices, Alignment = HorizontalAlignment.Center }
-            : new PieChart { Diameter = diameter, Slices = ChartSlices, Alignment = HorizontalAlignment.Center };
+            ? new PieChart { Diameter = diameter, Margins = m, Slices = ChartSlices, Alignment = alignment }
+            : new PieChart { Diameter = diameter, Slices = ChartSlices, Alignment = alignment };
         doc.Add(chart);
         return Extent(doc);
     }

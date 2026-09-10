@@ -701,7 +701,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   deflate it. That distinction is the one that matters: with the default margins, a `Diameter` of
   300 already spans exactly [50, 350] in a 300pt content box, a correct document, and clamping
   against the *deflated* 288pt width instead (the first version of this fix) would have moved it to
-  [56, 344] regardless. The height reservation is clamped by the same diameter, so it
+  [56, 344] regardless. Clamping the diameter is not sufficient on its own, and only centred charts
+  hide that: Left and Right take their offset from the area the chart's own margins deflate, so a
+  circle clamped to the content box is then shifted out of it by a margin. Measured on the same
+  page, Left gave [56, 356] and Right [44, 344]; on a 454.4pt page with a 1.2pt document margin,
+  each ran 4.8pt off the page itself. So the circle is aligned within the content box once it no
+  longer fits between its own margins, and within the margins while it still does. A box-filling
+  circle is then placed identically under all three alignments, which is what the before-and-after
+  corpus shows: the centred document's bytes are unchanged, and the other two now match it. The
+  height reservation is clamped by the same diameter, so it
   stops holding vertical space nothing draws in and the too-tall pagination case
   (`PaginationDepthTests`) still throws, since the reservation still exceeds a 180pt content area
   at a 300pt diameter on a 200x200pt page. The XML doc on `PieChart.Diameter` now says so.

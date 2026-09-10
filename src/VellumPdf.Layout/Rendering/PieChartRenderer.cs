@@ -88,10 +88,19 @@ public sealed class PieChartRenderer : IRenderer
     public void Draw(DrawContext ctx)
     {
         var area = _occupied.Deflate(_chart.Margins);
+
+        // Align within the chart's own margins while the circle fits between them, and within the
+        // content box when it does not. Clamping the diameter alone leaves the margins to push the
+        // circle out on whichever side the alignment favours, and only Centre escapes that: on a
+        // 452pt content box with the default 6pt margins, a clamped Left circle reached 4.8pt past
+        // the page and a Right one 4.8pt before it, while Centre stayed inside. The margins are
+        // what give way, because they are the chart's preference and the box is the page's limit.
+        var alignsWithin = _placementDiameter <= area.Width ? area : _occupied;
+
         var xOff = _chart.Alignment switch
         {
-            HorizontalAlignment.Center => (area.Width - _placementDiameter) / 2,
-            HorizontalAlignment.Right => area.Width - _placementDiameter,
+            HorizontalAlignment.Center => (alignsWithin.Width - _placementDiameter) / 2,
+            HorizontalAlignment.Right => alignsWithin.Width - _placementDiameter,
             _ => 0,
         };
 
@@ -99,8 +108,10 @@ public sealed class PieChartRenderer : IRenderer
         // equals _placementDiameter -- not necessarily _chart.Diameter, which the clamp in
         // Layout may have shrunk to fit the area -- and the circle is centred horizontally
         // within the content width. Reserving the unclamped Diameter here would hold vertical
-        // space nothing draws in.
-        var (x, y, _, _) = ctx.ToPdfRect(area);
+        // space nothing draws in. The vertical margins are always honoured, because the
+        // reservation includes them; only the horizontal pair can be overridden above.
+        var (_, y, _, _) = ctx.ToPdfRect(area);
+        var (x, _, _, _) = ctx.ToPdfRect(alignsWithin);
         var radius = _placementDiameter / 2;
         var cx = x + xOff + radius;
         var cy = y + radius;
