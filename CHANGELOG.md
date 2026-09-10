@@ -8,6 +8,54 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Property-based coverage for the layout engine (#466).** Test-only; nothing ships. `CsCheck`
+  was referenced by the Kernel, Reader and Barcodes test suites and not by this one, and Layout
+  had fewer tests than the Reader, Kernel, Conformance and Barcodes suites. `PropertyTests` now
+  states two invariants over generated documents — a render escapes no declared exception
+  contract, and a document places nothing outside its own page box — plus value-level properties
+  for `LayoutBox`, `EdgeInsets` and `ColorRgb`. `LayoutBox` is public and shipped and named by no
+  test in the repository; no test read an `EdgeInsets` member, so `Horizontal` and `Vertical`,
+  which the renderer's geometry check depends on, were unasserted. `ColorRgb` is the weaker case:
+  a Barcodes test already pinned `FromHex` and the kernel conversion together through an emitted
+  `1 0 1 rg`, so what is new there is per-channel coverage.
+
+  The invariants are read out of the emitted content stream rather than computed from the layout
+  code's own arithmetic, by a `ContentStreamReadback` helper that parses the operators the package
+  actually emits: `Tm` and `Tj` for text, `re` for cells and backgrounds, `cm` for the single
+  image placement, and `m`, `l` and `c` for separators and chart wedges. Every pattern is
+  line-anchored, because `c` is a prefix of `cm`: an unanchored six-number curve pattern matches
+  every image matrix as well as every real Bezier, which would feed a placement matrix into the
+  extent as control points. Measured on a stream with two `cm` lines and one `c` line, the
+  unanchored
+  pattern returns all three and the anchored one returns the curve alone.
+
+  Text is bounded by its measured width, not by its baseline origin. A left-aligned run wider than
+  the page starts at a legal coordinate and escapes to the right, so an origin-only check misses
+  it. Measured here, on a 200pt page with zero margins carrying a footer of 500 `W` at 12pt: the
+  origin catches the centred band at x = -2732 and the right-aligned one at x = -5464, while the
+  left-aligned band sits at x = 0 and only the width bound sees that its text ends at 5664. The
+  reproduction is in the pull request description.
+
+  The generators are split deliberately. They cover the range a caller uses today, where both
+  invariants hold; the degenerate values sit beside them unused, so widening a property to a
+  failing corner is a change to the property rather than a new fixture. Kernel's own render
+  property restricts itself to finite coordinates and says so, which is why it never reached
+  `PdfCanvas`'s unguarded number formatter.
+
+  Two limits are stated in the code rather than left to be discovered. The page-box property is
+  containment, not placement: any misplacement that stays inside the page passes, and dropping the
+  halving from the band's centre-alignment arm or the header height from the content area both
+  leave every property green, each measured. It also bounds geometry rather than ink, so a quarter
+  of a point of border stroke outside a near-zero margin passes. And the generator holds its table
+  cell word at two characters because generating it would turn #468 into a failing property, which
+  belongs in the pull request that fixes it.
+
+  Every property is pinned by mutation rather than by assertion. Placements are counted per
+  element, because asserting merely that some text was shown does not discriminate: stubbing the
+  paragraph renderer left all fourteen green, since the table cells and bands still emit literals.
+  With the counts derived from the generated shape, stubbing either the paragraph or the list
+  renderer now fails.
+
 - **Clause coverage can now be measured against ISO 19005-2 itself, not against veraPDF's test
   ids.** `eng/data/iso19005-2-clauses.yml` lists every clause of the standard's clause 6, and
   `eng/clause-coverage.py` reports what checks each one. Measuring coverage against a validator's
