@@ -221,6 +221,23 @@ public sealed class ListRenderer : IRenderer
 
     // ── Item building ─────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// The widest whitespace-delimited word in <paramref name="text"/>. This is the width below
+    /// which <see cref="ParagraphRenderer"/> stops wrapping and starts hard-breaking words at
+    /// glyph granularity, which is the behaviour the gutter must not introduce.
+    /// </summary>
+    private static double WidestWord(TextStyle style, string text)
+    {
+        var widest = 0.0;
+        foreach (var word in text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var w = style.MeasureString(word);
+            if (w > widest) widest = w;
+        }
+
+        return widest;
+    }
+
     private List<(ParagraphRenderer Marker, ParagraphRenderer Content)> BuildItems(double areaWidth)
     {
         var result = new List<(ParagraphRenderer, ParagraphRenderer)>();
@@ -244,12 +261,17 @@ public sealed class ListRenderer : IRenderer
             // the fix.
             var gutter = Math.Max(indent, markerWidth);
 
-            // ParagraphRenderer.Layout returns Nothing when its deflated width is non-positive,
-            // and the zero-margin marker paragraph always fits, so widening the gutter without a
-            // bound could push the content paragraph's own width to zero or below and delete the
-            // item's text entirely -- worse than the overprint this is fixing. Keep today's indent
-            // and let it overprint instead.
-            if (gutter >= areaWidth)
+            // The bound is the point where ParagraphRenderer stops wrapping and starts
+            // hard-breaking words, because a gutter that leaves too little does not overprint,
+            // it shreds. ParagraphRenderer.Layout drops the text entirely at a non-positive
+            // width, and the zero-margin marker paragraph always fits, so ListRenderer.Layout
+            // never bails on the caller's behalf. Measured on a 60pt-wide page with a 58.88pt
+            // marker, which leaves 1.12pt: item 38's two-letter text became one glyph per line
+            // and pushed the following paragraph 360pt down the page. Widening only while the
+            // widest word still fits keeps the fix from introducing a hard break that today's
+            // indent does not have, and where it cannot, today's indent and the overprint it
+            // carries are the lesser harm.
+            if (areaWidth - gutter < WidestWord(itemStyle, item.Text))
                 gutter = indent;
 
             // Marker paragraph: sits in the gutter (left portion of the line).
@@ -296,7 +318,7 @@ public sealed class ListRenderer : IRenderer
                     // parent rather than continuing the top-level sequence.
                     var childMarkerWidth = childStyle.MeasureString(childMarker);
                     var childGutter = Math.Max(indent * 2, indent + childMarkerWidth);
-                    if (childGutter >= areaWidth)
+                    if (areaWidth - childGutter < WidestWord(childStyle, child.Text))
                         childGutter = indent * 2;
 
                     var childMarkerPara = new Paragraph(childMarker, childStyle)
