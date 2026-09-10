@@ -16,6 +16,43 @@ public sealed class HeaderFooterTests
         return System.Text.Encoding.Latin1.GetString(ms.ToArray());
     }
 
+    /// <summary>
+    /// A band never set a fill colour, and no layout renderer brackets its drawing in q/Q, so the
+    /// band inherited whatever colour the page's last content left set. Bands are drawn from
+    /// FinishCurrentPage, after the content, which is what makes the inherited value the content's
+    /// rather than the page default. Measured before the fix on this exact document: the band's own
+    /// text object held no rg at all, and the last one on the page was the paragraph's 1 0 0 rg, so
+    /// a footer asking for blue rendered red.
+    /// </summary>
+    [Fact]
+    public void Document_bandWithItsOwnColour_doesNotInheritTheContentColour()
+    {
+        var red = new TextStyle { FontSize = 10, Color = new ColorRgb(1, 0, 0) };
+        var blue = new TextStyle { FontSize = 10, Color = new ColorRgb(0, 0, 1) };
+
+        using var doc = new Document
+        {
+            PageSize = new VellumPdf.Document.PdfRectangle(0, 0, 300, 200),
+            Margins = new EdgeInsets(50),
+        };
+        doc.Footer = new RunningBand("FOOTER", blue);
+        doc.Add(new Paragraph("red body text", red));
+
+        var ms = new MemoryStream();
+        doc.Save(ms);
+        var stream = PdfTestUtil.DecompressAllFlatStreams(ms.ToArray());
+
+        // The band's colour is set, once, and it is the one the style asked for.
+        Assert.Equal(1, PdfTestUtil.CountOccurrences(stream, "0 0 1 rg"));
+
+        // And it is set inside the band's own text object rather than left to the content's: the
+        // last colour operator in the stream is the band's, not the paragraph's.
+        var lastBlue = stream.LastIndexOf("0 0 1 rg", StringComparison.Ordinal);
+        var lastRed = stream.LastIndexOf("1 0 0 rg", StringComparison.Ordinal);
+        Assert.True(lastBlue > lastRed,
+            $"band colour at {lastBlue} should follow the content colour at {lastRed}");
+    }
+
     [Fact]
     public void Document_withHeader_rendersWithoutException()
     {

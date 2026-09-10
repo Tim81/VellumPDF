@@ -303,6 +303,18 @@ public sealed class DocumentRenderer
         // PDF Y: baseline of text within the band (centred vertically in the band)
         var pdfY = ctx.ToPdfY(bandY + bandHeight - (bandHeight - style.FontSize) / 2);
 
+        // The band's own fill colour is set below, after the font, matching the order
+        // ParagraphRenderer and TableRenderer emit. It has to be set unconditionally rather than
+        // only when it differs from black: no layout renderer brackets its drawing in q/Q, and a
+        // band is drawn from FinishCurrentPage after the page's content, so without this the band
+        // inherits whatever colour the last paragraph or cell left set. Measured on a page whose
+        // body was red and whose footer style asked for blue, the band's text object held no rg at
+        // all and the footer rendered red.
+        //
+        // This is the one change in this branch that moves bytes for a document that was already
+        // correct: every banded document now carries one extra colour operator per band per page,
+        // including those that looked right because the inherited colour happened to be black.
+        //
         // Running-band text is pagination decoration, not part of the logical structure.
         // Wrap as /Artifact when the document is tagged so PDF/UA validators find no
         // untagged real content.
@@ -312,6 +324,7 @@ public sealed class DocumentRenderer
         {
             var resourceName = ctx.UseEmbeddedFont(style.FontRef.Embedded);
             canvas.SetFontByName(resourceName, style.FontSize);
+            canvas.SetFillColorRgb(style.Color.R, style.Color.G, style.Color.B);
             // Show using glyph IDs
             var gids = new ushort[drawn.Length];
             var count = style.FontRef.Embedded.GetGlyphIds(drawn, gids);
@@ -322,6 +335,7 @@ public sealed class DocumentRenderer
         {
             var fontResource = ctx.GetFont(style.Font);
             canvas.SetFont(fontResource, style.FontSize);
+            canvas.SetFillColorRgb(style.Color.R, style.Color.G, style.Color.B);
             canvas.SetTextMatrix(1, 0, 0, 1, x, pdfY);
             canvas.ShowText(drawn);
         }
