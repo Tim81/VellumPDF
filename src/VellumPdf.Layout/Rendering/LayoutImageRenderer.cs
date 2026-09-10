@@ -39,6 +39,19 @@ public sealed class LayoutImageRenderer : IRenderer
                 nameof(_img));
 
         _w = _img.Width ?? area.Width;
+
+        // An explicit Width is honoured at any size, and only Height was checked against the
+        // box. Clamp it, mirroring the height check below. Guarded on a positive area.Width for
+        // more than the negative insets v3.0 defers: ordinary positive margins wider than the
+        // content box reach the same place -- EdgeInsets(200) on a 300pt box gives area.Width
+        // -100 -- and clamping against that would shrink the image to nothing instead of leaving
+        // today's mirrored `cm` exactly as it renders.
+        if (_img.Width is { } explicitWidth && area.Width > 0 && explicitWidth > area.Width)
+            _w = area.Width;
+
+        // An explicit Height is the caller asking for a non-proportional box, and clamping the
+        // width is already as close to their intent as the box allows, so only a null Height --
+        // which already follows the aspect ratio -- is rescaled to match the clamp above.
         _h = _img.Height ?? (_w / imgW * imgH);
 
         if (_h > area.Height) return LayoutResult.Nothing();
