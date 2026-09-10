@@ -118,18 +118,14 @@ internal sealed class TableGridResolver
             }
         }
 
-        var total = 0.0;
-        for (var i = 0; i < cols; i++) total += result[i];
-
-        if (total > available && total > 0)
-        {
-            var scale = available / total;
-            for (var i = 0; i < cols; i++) result[i] *= scale;
-        }
-
+        ScaleToFit(result, available);
         return result;
     }
 
+    /// <summary>
+    /// Distributes <paramref name="available"/> across every column proportionally to its
+    /// max-content width, floored at its own min-content (longest word) width (#468).
+    /// </summary>
     private static double[] AutoWidth(TableElement table, double available, int cols)
     {
         var (minW, maxW) = ContentWidths(table, cols);
@@ -143,7 +139,29 @@ internal sealed class TableGridResolver
                 ? Math.Max(minW[i], available * maxW[i] / totalMax)
                 : available / cols;
         }
+
+        // The floor above has no upper bound of its own: when every column's longest word alone
+        // is wider than its proportional share, the sum of the floors can exceed `available`, and
+        // nothing before this scaled it back down (#468) -- the table then drew past the content
+        // box, and past the page once the overrun was large enough. Scaling every column down
+        // proportionally keeps their relative sizes rather than truncating the rightmost one.
+        ScaleToFit(result, available);
         return result;
+    }
+
+    /// <summary>
+    /// Scales <paramref name="widths"/> down in place, proportionally, so their sum does not
+    /// exceed <paramref name="available"/>. A no-op when the row already fits.
+    /// </summary>
+    private static void ScaleToFit(double[] widths, double available)
+    {
+        var total = 0.0;
+        foreach (var w in widths) total += w;
+
+        if (total <= available || total <= 0) return;
+
+        var scale = available / total;
+        for (var i = 0; i < widths.Length; i++) widths[i] *= scale;
     }
 
     /// <summary>

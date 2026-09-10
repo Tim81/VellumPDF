@@ -199,20 +199,22 @@ internal static class LayoutGen
                     media.ImageWidth, media.ImageHeight, media.ChartDiameterRaw));
 
     /// <summary>
-    /// The word every generated table cell holds, and the reason it is a constant rather than a
-    /// generated string: #468. `TableGridResolver.AutoWidth` floors a column at its minimum content
-    /// width and never caps the sum, so a long enough word pushes the table off the page. Measured
-    /// on this generator's own worst corner — a 400pt page, 60pt margins, three auto-width columns
-    /// at 24pt, so a content box ending at x = 340 — and on the word family "W" followed by g's,
-    /// the rightmost cell rectangle sits at 340.00 at two and five characters, 364.13 at six, and
-    /// 404.16 at seven, where the page itself is breached. The boundary belongs to that family:
-    /// alternating W and g breaches the content box at five characters and the page at seven.
+    /// The word every generated table cell holds. #468 is why it is a constant rather than a
+    /// generated string: before that fix, `TableGridResolver.AutoWidth` floored a column at its
+    /// minimum content width and never capped the sum, so a long enough word pushed the table off
+    /// the page. Measured on this generator's own worst corner — a 400pt page, 60pt margins, three
+    /// auto-width columns at 24pt, so a content box ending at x = 340 — on the word family "W"
+    /// followed by g's, the rightmost cell rectangle's right edge sat at 340 through five
+    /// characters, 364.128 at six, and 404.16 at seven: past the content box at six, and past the
+    /// 400pt page itself at seven.
     ///
-    /// Two characters is below that boundary, so the page-box invariant holds. Generating the word
-    /// would turn #468 into a failing property, which is where it belongs: in the pull request that
-    /// fixes it, failing before and passing after.
+    /// #468's fix scales every column down to the available width when the floors push the sum
+    /// past it, so the same seven-character word now measures 340 — the content box edge — with
+    /// this generator's own worst corner. That is what lets this be the fixed word rather than a
+    /// generated one still avoiding the boundary: seven characters is exactly the case the old
+    /// comment on this field carried as a defect this property could not yet cover.
     /// </summary>
-    private const string CellWord = "Wg";
+    private const string CellWord = "Wgggggg";
 
     /// <summary>
     /// The fixture image every generated document places, the same 2×2 opaque PNG

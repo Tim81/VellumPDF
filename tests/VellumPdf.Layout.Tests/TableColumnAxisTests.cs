@@ -280,4 +280,41 @@ public sealed partial class TableColumnAxisTests
         Assert.Equal(180.0, rects.Sum(r => r.W), 0.001);
         Assert.True(rects[1].X + rects[1].W <= 200.0 + 0.001);
     }
+
+    // ── (c) Auto-width sum (#468) ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Page 400x400, margin 60 (content box [60, 340]), three auto-width columns at Helvetica
+    /// 24pt, all three cells holding the same word from the "W" followed by g's family — the
+    /// worst corner <see cref="LayoutGen.CellWord"/>'s own comment documents. Before the fix,
+    /// <c>AutoWidth</c> floored each column at its longest word and never capped the sum: measured
+    /// here, the rightmost cell's right edge sat at 340 through five characters, 364.128 at six —
+    /// past the content box — and 404.16 at seven, past the 400pt page itself. After the fix every
+    /// case caps to 340, the content box edge, regardless of word length.
+    /// </summary>
+    [Theory]
+    [InlineData("Wg", 340.0)]
+    [InlineData("Wggg", 340.0)]
+    [InlineData("Wgggg", 340.0)]
+    [InlineData("Wggggg", 340.0)]
+    [InlineData("Wgggggg", 340.0)]
+    public void AutoWidth_columnFloorsExceedingTheSum_capsToTheContentBox(string word, double expectedRightEdge)
+    {
+        using var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, 400, 400),
+            Margins = new EdgeInsets(60),
+        };
+        var st = Style(24);
+        var t = new TableElement { DefaultCellStyle = st };
+        var row = t.AddRow();
+        row.AddCell(word); row.AddCell(word); row.AddCell(word);
+        doc.Add(t);
+
+        var rects = CellRectangles(RenderAndDecompress(doc));
+        var rightEdge = rects.Max(r => r.X + r.W);
+
+        Assert.Equal(expectedRightEdge, rightEdge, 0.001);
+        Assert.True(rightEdge <= 400.0 + 0.001, "must stay on the page");
+    }
 }
