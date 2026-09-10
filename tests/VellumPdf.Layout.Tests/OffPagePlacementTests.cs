@@ -433,7 +433,7 @@ public sealed class OffPagePlacementTests
     /// <c>Math.Max(indent * 2, markerWidth)</c>. A nested marker starts at <c>indent</c> rather
     /// than at zero, so its right edge is <c>indent + markerWidth</c>, and that is the quantity
     /// that has to clear the content's own left edge; comparing a bare marker width against
-    /// <c>indent * 2</c> measures a width against a position. MEASURED: at indent 20 and Helvetica
+    /// <c>indent * 2</c> measures a width against a position. Measured: at indent 20 and Helvetica
     /// 30pt, "xxvii." is 66.66pt, so <c>Math.Max(indent * 2, markerWidth)</c> would widen there,
     /// even though it never does at the 10pt size this class otherwise uses. Nested ordered
     /// markers restart at 1 per parent, so this needs a parent with 27 or more children to reach

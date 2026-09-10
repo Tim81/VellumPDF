@@ -156,7 +156,7 @@ public sealed class ParagraphRenderer : IRenderer
             // the box, not a word: HardBreakWord flushes whenever fragmentW + charW > maxWidth, so
             // every line it emits stays within maxWidth except the one line consisting of a
             // single over-wide rune, and that is the only way (area.Width - lineWidth) goes
-            // negative here. MEASURED: "W" at 160pt in a 150pt box gives x 50, the floor; "WWW" at
+            // negative here. Measured: "W" at 160pt in a 150pt box gives x 50, the floor; "WWW" at
             // 30pt in the same box is one line at x 82.52, an ordinary fit that never reaches
             // HardBreakWord at all. No placement keeps a single over-wide rune's line fully inside
             // the box, so the floor keeps the one thing it can: the line's origin stays inside,
@@ -180,10 +180,12 @@ public sealed class ParagraphRenderer : IRenderer
             // is absorbed unless the origin itself lies within that divergence of a five-decimal
             // rounding boundary -- at an origin of 50.000005, a difference as small as 1e-13
             // changes "50.00001" to "50" -- and 0 is the boundary instance the corpus behind this
-            // release covers. Measured over a 179-document corpus, which includes zero-margin
-            // lines filling their box exactly under all four alignments: no document's bytes
-            // differ, though that corpus was built to check the common case it happens to include
-            // rather than to sweep for the divergence.
+            // release covers. Measured over the 211-document corpus behind this release, which
+            // includes zero-margin lines filling their box exactly under all four alignments: no
+            // paragraph document differs. Six documents in that corpus do differ, and every one is
+            // a chart, image or list case named in the changelog, none of them reaching this arm.
+            // The corpus was built to cover the common case rather than to sweep for the
+            // divergence, and no sweep was run for it.
             //
             // Justify is excluded by the switch's own `_ => 0` arm above, not because an over-wide
             // line has no inter-word gap to count -- the caveat below shows an ordinary wrapped

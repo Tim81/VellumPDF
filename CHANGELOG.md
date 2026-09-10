@@ -744,9 +744,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   fragment's recorded width. Even where they part company, that offset is absorbed when it is added
   to the box origin and formatted to five decimals, unless the origin itself sits within that
   difference of a five-decimal rounding boundary — at an origin of 50.000005pt, a difference as
-  small as 1e-13 changes "50.00001" to "50" — and 0 is the boundary instance the 179-document corpus
+  small as 1e-13 changes "50.00001" to "50" — and 0 is the boundary instance the 211-document corpus
   behind this release, which includes zero-margin lines filling their box exactly under all four
-  alignments, happens to cover; no document's bytes differ there. Justify is excluded because its
+  alignments, happens to cover; no paragraph document in it differs. Justify is excluded because its
   own arm of the alignment switch never applies this floor, not because an over-wide line has no
   inter-word gap to count.
 
