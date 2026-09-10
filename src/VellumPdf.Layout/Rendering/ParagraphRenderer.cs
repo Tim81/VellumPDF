@@ -163,17 +163,30 @@ public sealed class ParagraphRenderer : IRenderer
             // of the proof standing next to it; here an unbreakable glyph is proven capable of
             // exceeding it, so nothing is asserted false by keeping the origin legal.
             //
-            // The floor moves no bytes for a line that already fits: for equal finite operands
-            // IEEE 754 gives (w - lw) = +0 rather than a negative value Math.Max could act on, and
+            // The floor moves no bytes for a line that already fits, but the reason is the number
+            // format rather than an equality of sums. WordWrap accepts a line on a running total
+            // it accumulates as lineWidth + (space + word), while lineWidth above re-adds the
+            // fragment widths, which the merge arm built as (width + space) + word. Those
+            // associate differently, so a line sitting exactly on the boundary could come out a
+            // last bit over it here and give the floor a negative offset to act on. What that
+            // cannot do is move a byte: the offset is added to area.X before PdfCanvas formats it
+            // to five decimals, so a difference of that size is absorbed everywhere except a box
+            // whose origin is 0, where it would show as "-0". Measured over a 179-document
+            // corpus, which includes zero-margin lines filling their box exactly under all four
+            // alignments: no document's bytes differ. I did not construct a case where the two
+            // summations disagree, and I did not sweep for one.
+            //
             // Justify never reaches this arm at all, since an over-wide line is always a single
             // hard-broken rune with no inter-word gap to count.
             //
-            // One caveat this floor does not close: _lines is cached at the width of the first
-            // Layout call, while xOffset above uses area.Width from whichever call is current. No
-            // renderer in this tree calls Layout at two different widths for the same instance --
-            // DocumentRenderer reuses one ContentArea for both its passes, ListRenderer lays out
-            // every item at one constant width, and HeadingRenderer delegates here -- but a caller
-            // that did would still see the pre-fix formula's negative offset on an ordinary line.
+            // One caveat on that proof: _lines is cached at the width of the first Layout call,
+            // while xOffset above uses area.Width from whichever call is current, so the two
+            // widths are the same only because no renderer in this tree lays one instance out
+            // twice at different widths -- DocumentRenderer reuses one ContentArea for both its
+            // passes, ListRenderer lays out every item at one constant width, and HeadingRenderer
+            // delegates here. A caller that did lay out at two widths could bring an ordinary
+            // wrapped line to this arm over-wide, and the floor would move it to the left edge.
+            // That is the same trade this fix makes deliberately, reached by a different route.
             double xOffset = _para.Alignment switch
             {
                 HorizontalAlignment.Center => Math.Max(0, (area.Width - lineWidth) / 2),

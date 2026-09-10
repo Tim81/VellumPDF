@@ -287,12 +287,13 @@ public sealed class ListRenderer : IRenderer
 
                     // The nested marker is indented by `indent` and the nested content by
                     // `indent * 2`, so the nested gutter is also exactly `indent` and has the
-                    // same defect as the top-level one -- Math.Max(indent * 2, markerWidth) would
-                    // do nothing here, since indent * 2 already exceeds a marker that would have
-                    // widened the top-level gutter. The correct form widens past indent * 2 only
-                    // by what the marker needs beyond its own indent-wide gutter. Reaching this
-                    // needs a parent with 27 or more children, since nested ordered markers
-                    // restart at 1 per parent rather than continuing the top-level sequence.
+                    // same defect as the top-level one. The form differs because the nested
+                    // marker does not start at zero: it starts at `indent`, so its right edge is
+                    // `indent + markerWidth` and that is what has to clear the content's left
+                    // edge. Math.Max(indent * 2, markerWidth) would compare the wrong pair of
+                    // numbers, measuring a width against a position. Reaching this needs a parent
+                    // with 27 or more children, since nested ordered markers restart at 1 per
+                    // parent rather than continuing the top-level sequence.
                     var childMarkerWidth = childStyle.MeasureString(childMarker);
                     var childGutter = Math.Max(indent * 2, indent + childMarkerWidth);
                     if (childGutter >= areaWidth)

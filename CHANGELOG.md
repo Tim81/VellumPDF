@@ -726,10 +726,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   This is the same clamp the running-band fix (#469) chose not to make on its own formula: there,
   the fitted width is proven not to exceed the box, so a floor would assert the opposite of the
   proof beside it; here, an unbreakable glyph is proven capable of exceeding it, and the floor
-  asserts nothing false. A correctly-fitting line is unaffected: for equal finite operands IEEE
-  754 gives `(w - lw) = +0` rather than a value the floor would act on, and Justify never reaches
-  this code at all, since an over-wide line is always a single hard-broken rune with no inter-word
-  gap to count.
+  asserts nothing false. A correctly-fitting line emits the same bytes as before, and the reason is
+  the number format rather than an equality of sums: the wrap accepts a line on a running total
+  that associates its additions differently from the fragment widths this arm re-adds, so a line
+  exactly on the boundary could reach the floor a last bit over it, but an offset that small is
+  absorbed when it is added to the box origin and formatted to five decimals. The one geometry
+  where it would not be absorbed is a box whose origin is 0, and the 179-document corpus behind
+  this release includes zero-margin lines filling their box exactly under all four alignments, with
+  no byte difference. Justify never reaches this code at all, since an over-wide line is always a
+  single hard-broken rune with no inter-word gap to count.
 
 - **A list marker wider than its indent overprinted the item's own text.** The marker paragraph has
   zero margins and the content paragraph is indented by a constant `ListElement.Indent`, so a
