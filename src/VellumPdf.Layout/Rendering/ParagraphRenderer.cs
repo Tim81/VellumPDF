@@ -151,10 +151,33 @@ public sealed class ParagraphRenderer : IRenderer
             var wordSpacing = isJustified && wordGapCount > 0 ? slack / wordGapCount : 0.0;
 
             // Baseline X for left, center, right — for Justify treat as Left (we use Tw or Tm).
+            //
+            // Center and Right are floored at zero. HardBreakWord always emits the first rune of
+            // a word wider than the box, because a glyph that wide cannot be broken any further,
+            // which makes (area.Width - lineWidth) negative for that line. No placement keeps
+            // such a line fully inside the box, so the floor keeps the one thing it can: the
+            // line's origin stays inside, and the overflow goes right instead of the line hanging
+            // off the left edge. This is the same clamp the running-band fix (#469) chose not to
+            // make on its own alignment formula, and the two are not the same decision: there the
+            // fitted width is proven not to exceed the box, so a floor would assert the opposite
+            // of the proof standing next to it; here an unbreakable glyph is proven capable of
+            // exceeding it, so nothing is asserted false by keeping the origin legal.
+            //
+            // The floor moves no bytes for a line that already fits: for equal finite operands
+            // IEEE 754 gives (w - lw) = +0 rather than a negative value Math.Max could act on, and
+            // Justify never reaches this arm at all, since an over-wide line is always a single
+            // hard-broken rune with no inter-word gap to count.
+            //
+            // One caveat this floor does not close: _lines is cached at the width of the first
+            // Layout call, while xOffset above uses area.Width from whichever call is current. No
+            // renderer in this tree calls Layout at two different widths for the same instance --
+            // DocumentRenderer reuses one ContentArea for both its passes, ListRenderer lays out
+            // every item at one constant width, and HeadingRenderer delegates here -- but a caller
+            // that did would still see the pre-fix formula's negative offset on an ordinary line.
             double xOffset = _para.Alignment switch
             {
-                HorizontalAlignment.Center => (area.Width - lineWidth) / 2,
-                HorizontalAlignment.Right => area.Width - lineWidth,
+                HorizontalAlignment.Center => Math.Max(0, (area.Width - lineWidth) / 2),
+                HorizontalAlignment.Right => Math.Max(0, area.Width - lineWidth),
                 _ => 0,  // Left and Justify start at 0
             };
 
