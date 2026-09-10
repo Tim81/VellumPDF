@@ -155,6 +155,112 @@ public sealed class RunningBandFitTests
         Assert.Equal(expectedX, band.X, 0.001);
     }
 
+    // ── (f) The report a caller can act on ───────────────────────────────────
+
+    [Fact]
+    public void Band_truncated_isReportedOnceWithExactCounts()
+    {
+        using var doc = NewDoc();
+        doc.Footer = new RunningBand(new string(Wide, 25), Style);
+        doc.Add(new Paragraph("body", Style));
+
+        var ms = new MemoryStream();
+        doc.Save(ms);
+
+        var report = Assert.Single(doc.BandTruncations);
+        Assert.Equal(
+            new BandTruncationWarning(RunningBandKind.Footer, 1, GlyphsThatFit, 25),
+            report);
+        Assert.Equal(5, report.DroppedCharacters);
+    }
+
+    [Fact]
+    public void Band_thatFits_reportsNothing()
+    {
+        using var doc = NewDoc();
+        doc.Footer = new RunningBand(new string(Wide, GlyphsThatFit), Style);
+        doc.Add(new Paragraph("body", Style));
+
+        var ms = new MemoryStream();
+        doc.Save(ms);
+
+        Assert.Empty(doc.BandTruncations);
+    }
+
+    [Fact]
+    public void Bands_bothTruncated_areReportedSeparately()
+    {
+        using var doc = NewDoc();
+        doc.Header = new RunningBand(new string(Wide, 23), Style);
+        doc.Footer = new RunningBand(new string(Wide, 30), Style);
+        doc.Add(new Paragraph("body", Style));
+
+        var ms = new MemoryStream();
+        doc.Save(ms);
+
+        Assert.Equal(2, doc.BandTruncations.Count);
+        Assert.Contains(new BandTruncationWarning(RunningBandKind.Header, 1, GlyphsThatFit, 23),
+            doc.BandTruncations);
+        Assert.Contains(new BandTruncationWarning(RunningBandKind.Footer, 1, GlyphsThatFit, 30),
+            doc.BandTruncations);
+    }
+
+    /// <summary>
+    /// One report per band however many pages were cut, and it names the page that lost the most
+    /// rather than the first. With a page token the resolved text lengthens as the number gains
+    /// digits, so the worst page is the last one, and its dropped count is what tells a caller how
+    /// much shorter the template has to be.
+    /// </summary>
+    [Fact]
+    public void Band_truncatedOnManyPages_reportsOnceForTheWorstPage()
+    {
+        using var doc = NewDoc();
+        doc.Footer = new RunningBand(new string(Wide, 25) + " {page}", Style);
+        for (var i = 0; i < 100; i++) doc.Add(new Paragraph("line " + i, Style));
+
+        var ms = new MemoryStream();
+        doc.Save(ms);
+
+        var report = Assert.Single(doc.BandTruncations);
+        Assert.Equal(RunningBandKind.Footer, report.Band);
+        Assert.Equal(GlyphsThatFit, report.DrawnCharacters);
+
+        // Two-digit pages resolve one character longer than single-digit ones, so the worst page is
+        // a two-digit one and the count reflects that rather than page one's.
+        Assert.True(report.PageNumber >= 10, $"worst page was {report.PageNumber}");
+        Assert.Equal(28, report.ResolvedCharacters);
+        Assert.Equal(8, report.DroppedCharacters);
+    }
+
+    /// <summary>
+    /// A second save cannot double the reports, because it never reaches the collector.
+    ///
+    /// Measured rather than assumed: the second call throws
+    /// <c>InvalidOperationException</c> from the underlying <c>PdfDocument</c>, which refuses a
+    /// second write, and it throws inside the render before <c>CollectDiagnostics</c> runs. So the
+    /// first save's single report survives untouched and the collector's Clear is unreachable
+    /// through this path — defensive rather than exercised. Worth pinning anyway: the exception
+    /// names a type a layout caller never used, which is its own defect, and if that is ever fixed
+    /// so a second save proceeds, the Clear becomes load-bearing and this test starts covering it.
+    /// </summary>
+    [Fact]
+    public void Band_secondSave_throwsAndLeavesTheFirstReportIntact()
+    {
+        using var doc = NewDoc();
+        doc.Footer = new RunningBand(new string(Wide, 25), Style);
+        doc.Add(new Paragraph("body", Style));
+
+        doc.Save(new MemoryStream());
+        var afterFirst = doc.BandTruncations.Single();
+
+        var ex = Assert.Throws<InvalidOperationException>(() => doc.Save(new MemoryStream()));
+        Assert.Equal(
+            "This document has already been written; create a new PdfDocument to write again.",
+            ex.Message);
+
+        Assert.Equal(afterFirst, doc.BandTruncations.Single());
+    }
+
     // ── (e) A token that widens the string across pages ──────────────────────
 
     [Fact]

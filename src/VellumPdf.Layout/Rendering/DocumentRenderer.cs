@@ -98,11 +98,38 @@ public sealed class DocumentRenderer
 
     private readonly List<TextEncodingWarning> _textEncodingWarnings = [];
 
+    // One slot per band rather than one entry per page. A per-page list would hold two entries per
+    // page — 9,900 on the 4,950-page document the defect was reported against — and would put a
+    // list append back into the per-band-per-page path this branch exists to bound. Two slots need
+    // no cap, which is why no options type is invented for them.
+    private BandTruncationWarning? _headerTruncation;
+    private BandTruncationWarning? _footerTruncation;
+
     /// <summary>
     /// Characters written via <see cref="PdfCanvas.ShowText"/> across every page rendered so far
     /// that WinAnsiEncoding could not represent. Aggregated from each page's canvas as it finishes.
     /// </summary>
     internal IReadOnlyList<TextEncodingWarning> TextEncodingWarnings => _textEncodingWarnings;
+
+    /// <summary>
+    /// Running bands whose text did not fit the content box and was cut, at most one report per
+    /// band, each naming the page that lost the most.
+    ///
+    /// Public here, unlike <see cref="TextEncodingWarnings"/>, because there is no other route to
+    /// it: a canvas can be asked what it could not encode, but only the renderer knows the content
+    /// box a band was measured against. The tests for it drive DocumentRenderer directly, and the
+    /// layout assembly grants internal visibility only to VellumPdf.Signing.
+    /// </summary>
+    public IReadOnlyList<BandTruncationWarning> BandTruncations
+    {
+        get
+        {
+            var result = new List<BandTruncationWarning>(2);
+            if (_headerTruncation is { } header) result.Add(header);
+            if (_footerTruncation is { } footer) result.Add(footer);
+            return result;
+        }
+    }
 
     /// <summary>Header band drawn at the top of every page. Optional.</summary>
     public RunningBand? Header { get; set; }
@@ -290,7 +317,7 @@ public sealed class DocumentRenderer
             var text = Header.Resolve(pageNumber, totalPages);
             var bandY = _margins.Top;
             var bandHeight = Header.EffectiveHeight;
-            DrawBandText(ctx, canvas, text, Header, bandY, bandHeight);
+            DrawBandText(ctx, canvas, text, Header, RunningBandKind.Header, pageNumber, bandY, bandHeight);
         }
 
         if (Footer is not null)
@@ -298,7 +325,7 @@ public sealed class DocumentRenderer
             var text = Footer.Resolve(pageNumber, totalPages);
             var bandY = _pageSize.Height - _margins.Bottom - Footer.EffectiveHeight;
             var bandHeight = Footer.EffectiveHeight;
-            DrawBandText(ctx, canvas, text, Footer, bandY, bandHeight);
+            DrawBandText(ctx, canvas, text, Footer, RunningBandKind.Footer, pageNumber, bandY, bandHeight);
         }
     }
 
@@ -309,12 +336,16 @@ public sealed class DocumentRenderer
         PdfCanvas canvas,
         string text,
         RunningBand band,
+        RunningBandKind kind,
+        int pageNumber,
         double bandY,
         double bandHeight)
     {
         var style = band.Style;
         var contentWidth = _pageSize.Width - _margins.Horizontal;
         var (drawn, textWidth) = FitToWidth(style, text, contentWidth);
+
+        if (drawn.Length < text.Length) RecordTruncation(kind, pageNumber, drawn.Length, text.Length);
 
         // Nothing fits, so nothing is emitted — not an empty text object, and not the marked-content
         // pair either. Returning before SetFont also matters: setting a font registers a page
@@ -372,6 +403,23 @@ public sealed class DocumentRenderer
         }
         canvas.EndText();
         if (ctx.Tagged) canvas.EndMarkedContent();
+    }
+
+    /// <summary>
+    /// Keeps the worst cut per band. Worst rather than first because a template carrying a
+    /// <c>{page}</c> or <c>{pages}</c> token resolves to a different width on every page, and the
+    /// page that lost the most is the one that tells a caller how much shorter the template must
+    /// be. Comparing on the dropped count keeps that decision O(1) and needs no history.
+    /// </summary>
+    private void RecordTruncation(RunningBandKind kind, int pageNumber, int drawn, int resolved)
+    {
+        var report = new BandTruncationWarning(kind, pageNumber, drawn, resolved);
+        ref var slot = ref kind == RunningBandKind.Header
+            ? ref _headerTruncation
+            : ref _footerTruncation;
+
+        if (slot is not { } existing || report.DroppedCharacters > existing.DroppedCharacters)
+            slot = report;
     }
 
     /// <summary>
