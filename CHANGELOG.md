@@ -8,6 +8,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`Document.BandTruncations` and `DocumentRenderer.BandTruncations` report a running band whose
+  text was cut to fit (#365).** A band that did not fit used to be drawn off the page with every
+  glyph still written into the content stream, so the header or footer was absent from every viewer
+  while its bytes were paid for, and a caller had no way to learn this short of reading the content
+  stream. Truncating makes the loss visible in the page; this makes it detectable in code.
+
+  One report per band, not one per page. A per-page list would hold two entries per page, 9,900 of
+  them on the 4,950-page document this was reported against, and would put a list append back into
+  the per-band-per-page path the fix exists to bound. Two slots need no cap, so no options type is
+  invented for them. The report names the page that lost the most rather than the first one cut,
+  because a `{page}` or `{pages}` token lengthens the resolved text as the number gains digits, so
+  the worst page is what tells a caller how much shorter the template has to be.
+
+  It carries counts and not the text. Two existing channels already bound what a diagnostic
+  retains, and a template can be arbitrarily long, so holding one would turn a caller's own input
+  into a comparably sized retained allocation. Public on the renderer as well as the document,
+  unlike `TextEncodingWarnings`, because there is no other route to it: a canvas can be asked what
+  it could not encode, but only the renderer knows the content box a band was measured against.
+
 - **Property-based coverage for the layout engine (#466).** Test-only; nothing ships. `CsCheck`
   was referenced by the Kernel, Reader and Barcodes test suites and not by this one, and Layout
   had fewer tests than the Reader, Kernel, Conformance and Barcodes suites. `PropertyTests` now
@@ -283,6 +302,95 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   disclosure measuring the sweep would have gone stale as the sweep ran. (#418)
 
 ### Fixed
+
+- **A running band wider than the content box was drawn off the page (#365).** `DrawBandText`
+  measured the whole resolved template, positioned it by an alignment formula that had never been
+  given a bound, and emitted every glyph. Measured on a 200pt page with zero margins and a footer
+  of 500 `W` at 12pt: the centred band was placed at x = -2732 and the right-aligned one at
+  x = -5464, while the left-aligned one started legally at x = 0 and ran to 5664. In every case all
+  500 glyphs reached the content stream.
+
+  The band's text is now cut to the longest prefix that fits, walking forward and stopping rather
+  than measuring the whole string, so the work is proportional to what fits rather than to what was
+  passed. The width that comes back is bounded by the content width, which is what makes the
+  alignment arithmetic safe: no clamp is needed because no arm can place a bounded run outside the
+  box. The cut prefers the last word boundary, because a template ending in a page number cut
+  mid-token would show a number that is simply wrong where dropping the token shows none. When
+  nothing fits, nothing is emitted at all, not even the marked-content pair, since setting a font
+  registers it as a page resource, so an empty band would otherwise add an entry to every page's
+  `/Font` dictionary and its font object to the file.
+
+  A band that already fitted keeps its exact bytes from this change, with one exception, and that
+  is measured rather than assumed: the decompressed content streams of nine fitting-band
+  configurations hash identically across it — three alignments over three templates — and the
+  before build was confirmed not to contain the fix first, since equal hashes would otherwise only
+  prove the same build was measured twice. Reviewers extended the same check to twenty-one
+  configurations, adding embedded-font bands and bands containing escaped characters, without
+  finding a difference.
+
+  The exception is a band whose template is empty. That previously emitted a text object showing an
+  empty string and now emits nothing, which removes five lines per band placement and, on a
+  document whose only text was such a band, that band's entry in the page's `/Font` dictionary and
+  the font object it pointed at. The dictionary itself stays, empty, because every page gets one
+  unconditionally. So two changes here move bytes for a document that was already fine: this one
+  for an empty template, and the colour change below for every band that draws.
+
+  When the whole string fits, its width comes from one measurement of the whole string rather than
+  from the walk's running total, because the metrics sum integer thousandths and scale once at the
+  end while the walk scales each piece. That was originally justified as preventing a visible
+  shift, which measurement does not support: every sweep of the two orders put the drift below
+  1e-11pt against an output format of five decimals, and substituting the running total moved no
+  byte of any content stream measured. The whole-string measurement is kept because it is the more
+  accurate width and costs nothing on a path that has already measured every piece.
+
+  The bound has one hole, and the code states its consequence rather than only its mechanism. A
+  glyph may advance zero: 38 code points do in every face, and every character does in Symbol and
+  ZapfDingbats, the two of the fourteen Standard 14 faces with no width table. So a band in one of
+  those two faces measures zero however long it is, is never cut, and is still positioned from a
+  width of zero — the defect this fixes, surviving for those two faces, with no report to the
+  caller. Measured: a 500-glyph Symbol footer on a 300pt page emits all 500 glyphs. They are a
+  supported configuration rather than a dead corner, since the font resource omits `/Encoding` for
+  exactly them so their symbolic encoding applies. The metrics gap is #470, and it cannot be closed
+  from the layout engine, which has no width to work from.
+
+- **A running band ignored its own colour and inherited the page content's (#365).**
+  `TextStyle.Color` was dropped on the band path while the paragraph and table renderers both
+  honour it, and it is worse than dropped: neither of those two brackets its fill colour in
+  `q`/`Q` — the image and chart renderers do bracket theirs, and the chart's own comment says it
+  does so to stop exactly this — and a band is drawn after the page's content, so the band took
+  whatever colour the last paragraph or cell left set. Measured on a page whose body was red and whose footer style asked for blue, the
+  band's own text object held no `rg` operator at all and the footer rendered red. The colour a band
+  showed was therefore a property of whatever happened to be drawn above it.
+
+  This change moves bytes for every banded document that was already correct: it gains one colour
+  operator per band per page, wherever the band emits any text. A band
+  that fits nothing returns before the colour is set and gains none. Measured on a
+  twelve-band-placement document, colour operators go from 30 to 42, and the relation held at every
+  page count swept: the delta is twice the page count for a two-band document.
+
+- **The too-tall exception blamed the element when a running band was what shrank the content box
+  (#365).** Both pagination passes threw one message for every cause: reduce the element's content
+  or increase the page size. With a band set that points at the wrong thing and suggests a remedy
+  that cannot work, because the element never changed. The consumer who reported this lost a first
+  reading to it. The message now names the margins and the bands and prints both against the page
+  height, so its figures close: 200.0pt of page less 20.0pt of margins less 18.4pt of bands leaves
+  the 161.6pt it reports. An earlier draft printed only the page and the bands, inviting a
+  subtraction that lands 20pt off, and omitted reducing the margins from the remedies — the same
+  fault it was replacing. The no-band wording is unchanged byte for byte, so the existing control
+  test still passes untouched.
+
+  Writing a test to pin the new message turned up a second defect: exception messages across
+  `VellumPdf.Layout` interpolated their figures with the current culture, so a content area printed
+  as `161,6pt` on a comma-decimal machine and `161.6pt` on an English runner, and a test pinning
+  any of them would pass on CI and fail locally. All ten exception messages in the assembly that
+  interpolate a floating-point figure now format invariantly: six in `DocumentRenderer` and four in
+  `PieChartRenderer`. Getting to that count took two corrections of its own. The first pass fixed
+  four of the six in `DocumentRenderer` and claimed all of them, which the same file falsified. The
+  second wrapped two messages in `LayoutImageRenderer` as well and said twelve, but
+  `PdfImageXObject.Width` and `Height` are `int`, so those two carry no separator to vary and the
+  wrappers were no-ops; they are reverted. Left alone deliberately for the same reason:
+  interpolations of integers and enumeration members, and `LayoutBox.ToString`, which is a shipped
+  public member rather than a message.
 
 - **A document deep enough to need more than about 4,250 page continuations killed the process
   (#459).** `DocumentRenderer` recursed once per continuation, so stack depth grew with the

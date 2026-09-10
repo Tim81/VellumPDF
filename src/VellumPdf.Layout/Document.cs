@@ -30,12 +30,21 @@ public sealed class Document : IDisposable
     private TextStyle _defaultStyle = TextStyle.Default;
     private readonly List<TextEncodingWarning> _textEncodingWarnings = [];
 
+    private readonly List<BandTruncationWarning> _bandTruncations = [];
+
     /// <summary>
     /// Characters written through a Standard-14 text element that WinAnsiEncoding could not
     /// represent (each was substituted with '?' in the saved PDF). Populated by <see cref="Save(Stream)"/>
     /// and the signing-prep path; empty when every character rendered is in WinAnsi.
     /// </summary>
     public IReadOnlyList<TextEncodingWarning> TextEncodingWarnings => _textEncodingWarnings;
+
+    /// <summary>
+    /// Running bands whose text was wider than the content box and was cut to fit, from the last
+    /// save. At most one report per band, each naming the page that lost the most. Empty when both
+    /// bands fitted, or when no band was set.
+    /// </summary>
+    public IReadOnlyList<BandTruncationWarning> BandTruncations => _bandTruncations;
 
     /// <summary>Document metadata (title, author, subject, keywords, etc.).</summary>
     public PdfDocumentInfo Info => _pdf.Info;
@@ -273,6 +282,31 @@ public sealed class Document : IDisposable
 
     // ── Output ───────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Copies a finished renderer's notify-and-continue reports onto this document, replacing the
+    /// previous save's rather than accumulating across saves.
+    ///
+    /// Called from every save path — the stream and asynchronous overloads and the signing
+    /// placeholder — because each builds its own DocumentRenderer over the same PdfDocument. Three
+    /// copies of the same two lines is the drift the shared too-tall message exists to prevent
+    /// (#460), so there is one copy and the call sites are named here instead.
+    ///
+    /// Every caller collects only after its write has succeeded. Two of them did not: the
+    /// asynchronous and signing paths collected between the layout and the write, so a second call
+    /// on an already-written document ran a whole second layout — appending fresh pages to the same
+    /// PdfDocument — collected from it, and only then threw. That left reports naming a page
+    /// present in no written output, and it made this method's Clear reachable through a failure.
+    /// Collecting last means a throw leaves the previous save's reports untouched.
+    /// </summary>
+    private void CollectDiagnostics(DocumentRenderer renderer)
+    {
+        _textEncodingWarnings.Clear();
+        _textEncodingWarnings.AddRange(renderer.TextEncodingWarnings);
+
+        _bandTruncations.Clear();
+        _bandTruncations.AddRange(renderer.BandTruncations);
+    }
+
     /// <summary>Runs the layout pass and writes the resulting PDF to the given stream.</summary>
     public void Save(Stream destination)
     {
@@ -283,8 +317,7 @@ public sealed class Document : IDisposable
         };
         foreach (var r in _content) renderer.Add(r);
         renderer.Render(destination);
-        _textEncodingWarnings.Clear();
-        _textEncodingWarnings.AddRange(renderer.TextEncodingWarnings);
+        CollectDiagnostics(renderer);
     }
 
     /// <summary>Runs the layout pass and writes the resulting PDF to a file at the given path.</summary>
@@ -319,9 +352,8 @@ public sealed class Document : IDisposable
         };
         foreach (var r in _content) renderer.Add(r);
         await Task.Run(renderer.RunLayout, cancellationToken).ConfigureAwait(false);
-        _textEncodingWarnings.Clear();
-        _textEncodingWarnings.AddRange(renderer.TextEncodingWarnings);
         await _pdf.SaveAsync(destination, cancellationToken).ConfigureAwait(false);
+        CollectDiagnostics(renderer);
     }
 
     /// <summary>Asynchronously runs the layout pass and writes the resulting PDF to a file at the given path.</summary>
@@ -353,9 +385,9 @@ public sealed class Document : IDisposable
         };
         foreach (var r in _content) renderer.Add(r);
         renderer.RunLayout();
-        _textEncodingWarnings.Clear();
-        _textEncodingWarnings.AddRange(renderer.TextEncodingWarnings);
-        return _pdf.PrepareForSigning(options);
+        var prepared = _pdf.PrepareForSigning(options);
+        CollectDiagnostics(renderer);
+        return prepared;
     }
 
     /// <summary>Releases the underlying <see cref="PdfDocument"/> and its resources.</summary>
