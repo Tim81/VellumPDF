@@ -221,6 +221,50 @@ public sealed class ListRenderer : IRenderer
 
     // ── Item building ─────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// The widest whitespace-delimited word in <paramref name="text"/>. This is the width below
+    /// which <see cref="ParagraphRenderer"/> stops wrapping and starts hard-breaking words at
+    /// glyph granularity, which is the behaviour the gutter must not introduce.
+    /// </summary>
+    private static double WidestWord(TextStyle style, string text)
+    {
+        // A non-breaking space is not a separator here, because it is not one to the wrap this
+        // bound exists to predict: ParagraphRenderer.NormaliseWhitespace excludes U+00A0 from the
+        // whitespace it collapses, with a comment calling it a word character, so a run joined by
+        // one is a single token to WordWrap. Splitting on it, which String.Split does through
+        // char.IsWhiteSpace, understates the widest token and lets the widened gutter hard-break a
+        // word the caller's own indent would not have. Measured at Helvetica 10pt before this was
+        // fixed: "AAAA<NBSP>AAAA" measures 56.14 whole and the bound saw 26.68, so item 38 of a
+        // roman list on an 80pt page was split into "AAAA<NBSP>AAA" and "A" while the 26 items
+        // whose gutter stayed at the indent, and had less room, stayed intact.
+        // Written as an escape rather than as the literal ParagraphRenderer uses, because an
+        // invisible literal inverts this predicate if any tool ever normalises it: a plain
+        // space would then be treated as non-breaking and nothing would separate a word.
+        const char nonBreakingSpace = '\u00A0';
+
+        var widest = 0.0;
+        var start = -1;
+        for (var i = 0; i <= text.Length; i++)
+        {
+            var atBreak = i == text.Length
+                || (text[i] != nonBreakingSpace && char.IsWhiteSpace(text[i]));
+
+            if (!atBreak)
+            {
+                if (start < 0) start = i;
+                continue;
+            }
+
+            if (start < 0) continue;
+
+            var w = style.MeasureString(text[start..i]);
+            if (w > widest) widest = w;
+            start = -1;
+        }
+
+        return widest;
+    }
+
     private List<(ParagraphRenderer Marker, ParagraphRenderer Content)> BuildItems(double areaWidth)
     {
         var result = new List<(ParagraphRenderer, ParagraphRenderer)>();
@@ -232,6 +276,30 @@ public sealed class ListRenderer : IRenderer
             var item = _list.Items[i];
             var itemStyle = item.Style ?? defaultStyle;
             var markerText = _list.FormatMarker(i + 1);
+            var markerWidth = itemStyle.MeasureString(markerText);
+
+            // The marker paragraph has zero margins and the content paragraph is indented by
+            // _list.Indent, so a marker wider than the indent overprints the item text -- at
+            // Helvetica 10pt with the default 20pt indent, the first ordered-roman marker to do
+            // that is item 27, "xxvii." at 22.22pt (item 24's "xxiv." is exactly 20pt and still
+            // abuts). Widen the gutter to fit the marker, per item rather than per list: widening
+            // the whole list to its widest marker would move items 1 through 26, which already
+            // render correctly, and leave only a ragged left edge from item 27 on as the cost of
+            // the fix.
+            var gutter = Math.Max(indent, markerWidth);
+
+            // The bound is the point where ParagraphRenderer stops wrapping and starts
+            // hard-breaking words, because a gutter that leaves too little does not overprint,
+            // it shreds. ParagraphRenderer.Layout drops the text entirely at a non-positive
+            // width, and the zero-margin marker paragraph always fits, so ListRenderer.Layout
+            // never bails on the caller's behalf. Measured on a 60pt-wide page with a 58.88pt
+            // marker, which leaves 1.12pt: item 38's two-letter text became one glyph per line
+            // and pushed the following paragraph 360pt down the page. Widening only while the
+            // widest word still fits keeps the fix from introducing a hard break that today's
+            // indent does not have, and where it cannot, today's indent and the overprint it
+            // carries are the lesser harm.
+            if (areaWidth - gutter < WidestWord(itemStyle, item.Text))
+                gutter = indent;
 
             // Marker paragraph: sits in the gutter (left portion of the line).
             var markerPara = new Paragraph(markerText, itemStyle)
@@ -241,10 +309,10 @@ public sealed class ListRenderer : IRenderer
             };
             var markerRenderer = new ParagraphRenderer(markerPara);
 
-            // Content paragraph: indented by _list.Indent from the left edge.
+            // Content paragraph: indented by the (possibly widened) gutter from the left edge.
             var contentPara = new Paragraph(item.Text, itemStyle)
             {
-                Margins = new EdgeInsets(0, 0, 0, indent),
+                Margins = new EdgeInsets(0, 0, 0, gutter),
                 Alignment = HorizontalAlignment.Left,
             };
             var contentRenderer = new ParagraphRenderer(contentPara) { ElementLanguage = item.Language };
@@ -266,13 +334,27 @@ public sealed class ListRenderer : IRenderer
                         : _list.FormatMarker(seq);
                     seq++;
 
+                    // The nested marker is indented by `indent` and the nested content by
+                    // `indent * 2`, so the nested gutter is also exactly `indent` and has the
+                    // same defect as the top-level one. The form differs because the nested
+                    // marker does not start at zero: it starts at `indent`, so its right edge is
+                    // `indent + markerWidth` and that is what has to clear the content's left
+                    // edge. Math.Max(indent * 2, markerWidth) would compare the wrong pair of
+                    // numbers, measuring a width against a position. Reaching this needs a parent
+                    // with 27 or more children, since nested ordered markers restart at 1 per
+                    // parent rather than continuing the top-level sequence.
+                    var childMarkerWidth = childStyle.MeasureString(childMarker);
+                    var childGutter = Math.Max(indent * 2, indent + childMarkerWidth);
+                    if (areaWidth - childGutter < WidestWord(childStyle, child.Text))
+                        childGutter = indent * 2;
+
                     var childMarkerPara = new Paragraph(childMarker, childStyle)
                     {
                         Margins = new EdgeInsets(0, 0, 0, indent),
                     };
                     var childContentPara = new Paragraph(child.Text, childStyle)
                     {
-                        Margins = new EdgeInsets(0, 0, 0, indent * 2),
+                        Margins = new EdgeInsets(0, 0, 0, childGutter),
                     };
 
                     result.Add((new ParagraphRenderer(childMarkerPara), new ParagraphRenderer(childContentPara) { ElementLanguage = child.Language }));

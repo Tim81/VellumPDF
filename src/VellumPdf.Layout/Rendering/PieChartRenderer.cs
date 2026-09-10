@@ -12,6 +12,12 @@ public sealed class PieChartRenderer : IRenderer
     private readonly PieChart _chart;
     private LayoutBox _occupied;
 
+    // The diameter actually used to place and draw the chart, computed once in Layout from
+    // _chart.Diameter and the area Layout was handed. See the clamp in Layout for why it is
+    // measured against that area rather than against the width left after deflating the
+    // chart's own margins.
+    private double _placementDiameter;
+
     /// <summary>Creates a renderer for the given pie chart.</summary>
     public PieChartRenderer(PieChart chart) => _chart = chart;
 
@@ -51,7 +57,32 @@ public sealed class PieChartRenderer : IRenderer
                 $"Pie chart stroke width must be a non-negative finite number (was {_chart.StrokeWidth})."),
                 nameof(_chart));
 
-        var totalHeight = _chart.Diameter + _chart.Margins.Vertical;
+        // Clamp against the area Layout was handed, not against the width left after deflating
+        // the chart's own margins. PieChart.Margins defaults to EdgeInsets(6), and a Diameter 300
+        // chart with those defaults spans exactly [50, 350] in a 300pt content box today -- a
+        // correct document. Clamping against the deflated 288pt would move it to [56, 344]
+        // instead, which moves bytes a document that already fits has no reason to move. Guarded
+        // on a positive width even though, unlike LayoutImageRenderer's own clamp, ctx.Area.Width
+        // here is never deflated by this chart's own margins: ordinary positive margins cannot
+        // make it non-positive when this renderer is reached through DocumentRenderer, whose
+        // ValidateGeometry already refuses horizontal margins that reach the page width. The guard
+        // stays regardless, because PieChartRenderer and LayoutContext are both public, and a
+        // caller can lay this renderer out directly against an area DocumentRenderer would never
+        // hand it.
+        _placementDiameter = ctx.Area.Width > 0
+            ? Math.Min(_chart.Diameter, ctx.Area.Width)
+            : _chart.Diameter;
+
+        // This bounds the placement, not the emitted geometry, which overshoots it in two
+        // independent ways this clamp does not attempt to absorb. AppendArc's control points
+        // overshoot the true arc: measured at diameter 300 in a 300pt box with one slice, the
+        // operand extent spans 1.000 times the diameter at the default start angle and, over every
+        // start angle, as much as 1.14237 times it, near a start angle of 0.5046. And the drawn
+        // curve itself bulges past the nominal radius, by up to 1.00027253 times it (measured by
+        // evaluating the emitted cubics at 2,048 points per segment), 0.0409pt of x beyond the
+        // nominal edge at this diameter. Shrinking the chart to absorb either figure is left to
+        // the caller's own margin.
+        var totalHeight = _placementDiameter + _chart.Margins.Vertical;
         if (ctx.Area.Height < totalHeight) return LayoutResult.Nothing();
 
         _occupied = ctx.Area.WithHeight(totalHeight);
@@ -64,16 +95,43 @@ public sealed class PieChartRenderer : IRenderer
         var area = _occupied.Deflate(_chart.Margins);
         var xOff = _chart.Alignment switch
         {
-            HorizontalAlignment.Center => (area.Width - _chart.Diameter) / 2,
-            HorizontalAlignment.Right => area.Width - _chart.Diameter,
+            HorizontalAlignment.Center => (area.Width - _placementDiameter) / 2,
+            HorizontalAlignment.Right => area.Width - _placementDiameter,
             _ => 0,
         };
 
-        // Layout reserves exactly Diameter + margins, so the deflated area height equals the
-        // diameter; the circle is centred horizontally within the content width.
-        var (x, y, _, _) = ctx.ToPdfRect(area);
-        var radius = _chart.Diameter / 2;
-        var cx = x + xOff + radius;
+        // Layout reserves exactly _placementDiameter + margins, so the deflated area height
+        // equals _placementDiameter -- not necessarily _chart.Diameter, which the clamp in
+        // Layout may have shrunk to fit the area -- and the circle is centred horizontally
+        // within the content width. Reserving the unclamped Diameter here would hold vertical
+        // space nothing draws in.
+        var (areaX, y, _, _) = ctx.ToPdfRect(area);
+        var (boxX, _, _, _) = ctx.ToPdfRect(_occupied);
+
+        // Clamping the diameter is not sufficient on its own. The offset above is measured inside
+        // the area the chart's own margins deflate, so a circle as wide as the content box is then
+        // pushed out of it by a margin on whichever side the alignment favours: measured on a
+        // 400x900pt page with 50pt margins and the chart's default 6pt, a Diameter 300 circle in
+        // the [50, 350] box ran to [56, 356] under Left and [44, 344] under Right, and on a
+        // 454.4pt page with a 1.2pt document margin each of those was 4.8pt off the page itself.
+        //
+        // So the position is clamped into the content box rather than the alignment being measured
+        // against a different width. That distinction is what keeps a chart that already fits from
+        // moving: a Diameter of 290 with the default margins sits at [56, 346], inside the box,
+        // and switching the basis instead would have moved it to [50, 340]. The clamp cannot fire
+        // on a circle whose edges are already inside the box, by construction. It is skipped
+        // entirely when the diameter is wider than the box, which only the non-positive-width
+        // branch in Layout can leave behind, since Math.Clamp requires its bounds in order.
+        // The difference is parenthesised for the reason written out in LayoutImageRenderer's own
+        // clamp: left-associated, (boxX + _occupied.Width) - _placementDiameter cancels
+        // catastrophically when the circle nearly fills the box and can land below boxX, which
+        // hands Math.Clamp a maximum below its minimum. Taking the difference first cannot.
+        var left = areaX + xOff;
+        if (_placementDiameter <= _occupied.Width)
+            left = Math.Clamp(left, boxX, boxX + (_occupied.Width - _placementDiameter));
+
+        var radius = _placementDiameter / 2;
+        var cx = left + radius;
         var cy = y + radius;
 
         // Single pass: total magnitude, count of drawable (non-zero) slices, and the lone

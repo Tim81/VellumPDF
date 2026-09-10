@@ -151,10 +151,71 @@ public sealed class ParagraphRenderer : IRenderer
             var wordSpacing = isJustified && wordGapCount > 0 ? slack / wordGapCount : 0.0;
 
             // Baseline X for left, center, right — for Justify treat as Left (we use Tw or Tm).
+            //
+            // Center and Right are floored at zero. The precondition is a single rune wider than
+            // the box, not a word: HardBreakWord flushes whenever fragmentW + charW > maxWidth, so
+            // every line it emits stays within maxWidth except the one line consisting of a
+            // single over-wide rune, and that is the only way (area.Width - lineWidth) goes
+            // negative here. Measured: "W" at 160pt in a 150pt box gives x 50, the floor; "WWW" at
+            // 30pt in the same box is one line at x 82.52, an ordinary fit that never reaches
+            // HardBreakWord at all. No placement keeps a single over-wide rune's line fully inside
+            // the box, so the floor keeps the one thing it can: the line's origin stays inside,
+            // and the overflow goes right instead of the line hanging off the left edge. This is
+            // the same clamp the running-band fix (#469) chose not to make on its own alignment
+            // formula, and the two are not the same decision: there the fitted width is proven not
+            // to exceed the box, so a floor would assert the opposite of the proof standing next
+            // to it; here a single over-wide rune is proven capable of exceeding it, so nothing is
+            // asserted false by keeping the origin legal.
+            //
+            // The floor moves no bytes for a line that already fits, but the reason is the number
+            // format rather than an equality of sums. The acceptance check,
+            // lineWidth + prevSpaceW + wordW, and the fragment width the merge arm records,
+            // last.Width + prevSpaceW + wordW, associate identically, both left to right, so they
+            // cannot diverge from each other on their own. What can diverge is the running total
+            // itself: lineWidth += prevSpaceW + wordW groups the space and word together before
+            // adding them to the total, and that total becomes the left operand of the next
+            // word's own check, so the check and the recorded fragment width can part company
+            // only from the third word on. What that cannot do is move a byte: the offset is added
+            // to area.X before PdfCanvas formats it to five decimals, so a divergence at that scale
+            // is absorbed unless the origin itself lies within that divergence of a five-decimal
+            // rounding boundary -- at an origin of 50.000005, a difference as small as 1e-13
+            // changes "50.00001" to "50" -- and 0 is the boundary instance the corpus behind this
+            // release covers, and it is not hypothetical there: at a zero-margin origin this floor
+            // emits "0" where the unfloored formula emitted "-0", measured on 93 of 1,600 generated
+            // single-line zero-margin paragraphs. Both parse as zero, so the change is invisible to
+            // a viewer, but it is a changed byte on a line that fits, and the first version of this
+            // comment claimed there were none.
+            //
+            // The 211-document corpus behind this release does not show it, and the reason is worth
+            // knowing rather than reassuring: its zero-margin case is a line filling its box
+            // exactly, which emits "0" on both sides, so the corpus covers the geometry and not the
+            // divergence. Six of its documents do differ, every one a chart, image or list case
+            // named in the changelog, none of them reaching this arm.
+            //
+            // Justify is excluded by the switch's own `_ => 0` arm above, not because an over-wide
+            // line has no inter-word gap to count -- the caveat below shows an ordinary wrapped
+            // line can reach this floor too.
+            //
+            // One caveat on that proof: _lines is cached at the width of the first Layout call,
+            // while xOffset above uses area.Width from whichever call is current, so the two
+            // widths are the same only because no caller lays one ParagraphRenderer instance out
+            // twice at different widths. Grepping `new ParagraphRenderer` across src/ returns four
+            // call sites, not three: Document.cs, HeadingRenderer and ListRenderer, plus this
+            // file's own Partial arm above, whose overflow renderer carries the cached _lines
+            // forward and calls Layout again on whatever area a later page offers. That call site
+            // does not widen the risk in practice, because DocumentRenderer holds one PageSize and
+            // one set of margins for the whole document, so the later area's width matches the
+            // first. DocumentRenderer reuses one ContentArea for both of its own passes,
+            // ListRenderer lays out every item at one constant width, and HeadingRenderer
+            // delegates here without relaying it out. A caller that did lay this renderer out at
+            // two different widths -- a future per-page geometry, or a direct caller of this
+            // public renderer -- could bring an ordinary wrapped line to this arm over-wide, and
+            // the floor would move it to the left edge. That is the same trade this fix makes
+            // deliberately, reached by a different route.
             double xOffset = _para.Alignment switch
             {
-                HorizontalAlignment.Center => (area.Width - lineWidth) / 2,
-                HorizontalAlignment.Right => area.Width - lineWidth,
+                HorizontalAlignment.Center => Math.Max(0, (area.Width - lineWidth) / 2),
+                HorizontalAlignment.Right => Math.Max(0, area.Width - lineWidth),
                 _ => 0,  // Left and Justify start at 0
             };
 

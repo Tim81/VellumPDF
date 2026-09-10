@@ -12,7 +12,11 @@ public sealed class LayoutImage
     /// <summary>The image to draw.</summary>
     public PdfImageXObject Image { get; }
 
-    /// <summary>Display width in points; when null the image fits the available width.</summary>
+    /// <summary>
+    /// Display width in points; when null the image fits the available width. A value wider than
+    /// the available width is clamped to it, so this is an upper bound rather than a guaranteed
+    /// display size.
+    /// </summary>
     public double? Width { get; init; }  // null = fit to available width
 
     /// <summary>Display height in points; when null the aspect ratio is maintained.</summary>

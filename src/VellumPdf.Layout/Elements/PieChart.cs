@@ -28,7 +28,11 @@ public sealed class PieChart
     /// <summary>The slices, drawn in order. The sum of their values must be positive.</summary>
     public IReadOnlyList<PieSlice> Slices { get; init; } = [];
 
-    /// <summary>The chart diameter in points. Defaults to 200.</summary>
+    /// <summary>
+    /// The chart diameter in points. Defaults to 200. When it exceeds the width available at
+    /// layout time, the chart is placed at that width instead, so this is an upper bound on the
+    /// drawn size rather than a guaranteed one.
+    /// </summary>
     public double Diameter { get; init; } = 200;
 
     /// <summary>Margins around the chart. Defaults to 6 points on all sides.</summary>
