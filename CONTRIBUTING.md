@@ -255,7 +255,11 @@ release time.
 ## Branch and PR etiquette
 
 - **Target `main`.** All pull requests should be opened against the `main`
-  branch.
+  branch. The one exception is a patch release cut from an older tag, which
+  lives on a `release/x.y.z` branch because `main` carries work the patch must
+  not ship. CI runs on `release/**`, but GitHub reads the workflow from the
+  branch being pushed, so a branch cut from a tag older than that trigger gets
+  no CI until the workflow change is cherry-picked onto it as well (#462).
 - **One logical change per PR.** Keep pull requests focused. Split unrelated
   fixes into separate PRs.
 - **Link issues.** Reference the relevant GitHub issue in the PR description
