@@ -199,22 +199,37 @@ internal static class LayoutGen
                     media.ImageWidth, media.ImageHeight, media.ChartDiameterRaw));
 
     /// <summary>
-    /// The word every generated table cell holds. #468 is why it is a constant rather than a
-    /// generated string: before that fix, `TableGridResolver.AutoWidth` floored a column at its
-    /// minimum content width and never capped the sum, so a long enough word pushed the table off
-    /// the page. Measured on this generator's own worst corner — a 400pt page, 60pt margins, three
-    /// auto-width columns at 24pt, so a content box ending at x = 340 — on the word family "W"
-    /// followed by g's, the rightmost cell rectangle's right edge sat at 340 through five
-    /// characters, 364.128 at six, and 404.16 at seven: past the content box at six, and past the
-    /// 400pt page itself at seven.
+    /// The word every generated table cell holds, and also — via <c>DocSpec.Word</c>, which this
+    /// field fills directly in <see cref="ValidDoc"/> below rather than being drawn from its own
+    /// generator — the word <see cref="ParagraphText"/> repeats three times and every generated
+    /// list item holds. #468 is why it was ever a two-character constant rather than a generated
+    /// string: before that fix, `TableGridResolver.AutoWidth` floored a column at its minimum
+    /// content width and never capped the sum, so a long enough word pushed the table off the
+    /// page. Measured on this generator's own worst table corner — a 400pt page, 60pt margins,
+    /// three auto-width columns at 24pt, so a content box 280pt wide ending at x = 340 — on the
+    /// word family "W" followed by g's, the rightmost cell rectangle's right edge sat at 340
+    /// through five characters, 364.128 at six, and 404.16 at seven: past the content box at six,
+    /// and past the 400pt page itself at seven.
     ///
-    /// #468's fix scales every column down to the available width when the floors push the sum
-    /// past it, so the same seven-character word now measures 340 — the content box edge — with
-    /// this generator's own worst corner. That is what lets this be the fixed word rather than a
-    /// generated one still avoiding the boundary: seven characters is exactly the case the old
-    /// comment on this field carried as a defect this property could not yet cover.
+    /// It stops one character short of that six-character boundary rather than reaching or passing
+    /// it, and the reason is #473, not #468. For a cell holding one word and nothing else, this
+    /// generator's own default padding included, the same worst corner reduces to one number: a
+    /// column's content-floor width and its capped, final width coincide once the word alone
+    /// exceeds 81.33pt (a 93.33pt equal share minus the default padding), so a word crossing that
+    /// line trips #468's old overflow and #473's new hard-break at once — measured at size 24,
+    /// three repetitions plus two spaces of "Wgggg" (five characters) total 241.44pt, "Wggggg"
+    /// (six) 281.472pt against a 280pt content width. Widening the whole way would turn this
+    /// shared word into three-way-coupled test fixture: <see cref="ParagraphText"/> and every list
+    /// item would start hard-breaking too, at the exact geometry this generator already visits, and
+    /// <c>PropertyTests.ValidDocument_placesNothingOutsideThePage</c> pins each of those as one
+    /// literal per element — a correct assumption this pull request does not extend to relaxing.
+    /// "Wgggg" stays under the 81.33pt line by 5.3pt at this generator's own worst corner, so it
+    /// widens the constant without crossing into either defect; #468 itself is covered where a
+    /// property has to be — failing before the fix and passing after — by
+    /// <c>TableColumnAxisTests.AutoWidth_columnFloorsExceedingTheSum_capsToTheContentBox</c>, a
+    /// fixed fixture built for exactly this corner rather than a shared, randomly-visited one.
     /// </summary>
-    private const string CellWord = "Wgggggg";
+    private const string CellWord = "Wgggg";
 
     /// <summary>
     /// The fixture image every generated document places, the same 2×2 opaque PNG
