@@ -290,6 +290,13 @@ public sealed class Document : IDisposable
     /// placeholder — because each builds its own DocumentRenderer over the same PdfDocument. Three
     /// copies of the same two lines is the drift the shared too-tall message exists to prevent
     /// (#460), so there is one copy and the call sites are named here instead.
+    ///
+    /// Every caller collects only after its write has succeeded. Two of them did not: the
+    /// asynchronous and signing paths collected between the layout and the write, so a second call
+    /// on an already-written document ran a whole second layout — appending fresh pages to the same
+    /// PdfDocument — collected from it, and only then threw. That left reports naming a page
+    /// present in no written output, and it made this method's Clear reachable through a failure.
+    /// Collecting last means a throw leaves the previous save's reports untouched.
     /// </summary>
     private void CollectDiagnostics(DocumentRenderer renderer)
     {
@@ -345,8 +352,8 @@ public sealed class Document : IDisposable
         };
         foreach (var r in _content) renderer.Add(r);
         await Task.Run(renderer.RunLayout, cancellationToken).ConfigureAwait(false);
-        CollectDiagnostics(renderer);
         await _pdf.SaveAsync(destination, cancellationToken).ConfigureAwait(false);
+        CollectDiagnostics(renderer);
     }
 
     /// <summary>Asynchronously runs the layout pass and writes the resulting PDF to a file at the given path.</summary>
@@ -378,8 +385,9 @@ public sealed class Document : IDisposable
         };
         foreach (var r in _content) renderer.Add(r);
         renderer.RunLayout();
+        var prepared = _pdf.PrepareForSigning(options);
         CollectDiagnostics(renderer);
-        return _pdf.PrepareForSigning(options);
+        return prepared;
     }
 
     /// <summary>Releases the underlying <see cref="PdfDocument"/> and its resources.</summary>

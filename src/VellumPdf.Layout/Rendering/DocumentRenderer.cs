@@ -68,14 +68,21 @@ public sealed class DocumentRenderer
         var reserved = HeaderHeight + FooterHeight;
         if (reserved <= 0) return new InvalidOperationException(ElementTooTallMessage);
 
+        // The margin term is named, and named before the result, because without it the figures
+        // do not close: a reader shown a 200pt page and 18.4pt of bands subtracts to 181.6 and
+        // reads 161.6. The margins are the larger term here, and the old message's fault was
+        // offering a remedy that could not work, so leaving them out of both the arithmetic and
+        // the remedy list would repeat it.
         return new InvalidOperationException(
             "An element is too tall to fit on a single page and cannot be rendered. "
             + FormattableString.Invariant(
-                $"Running bands reserve {reserved:F1}pt of the {_pageSize.Height:F1}pt page height ")
+                $"On a {_pageSize.Height:F1}pt page, {_margins.Vertical:F1}pt of margins and ")
             + FormattableString.Invariant(
-                $"(header {HeaderHeight:F1}pt, footer {FooterHeight:F1}pt), leaving a content area ")
-            + FormattableString.Invariant($"{ContentArea.Height:F1}pt tall. ")
-            + "Reduce the element's content, lower the band heights, or increase the page size.");
+                $"{reserved:F1}pt of running bands (header {HeaderHeight:F1}pt, footer ")
+            + FormattableString.Invariant(
+                $"{FooterHeight:F1}pt) leave a content area {ContentArea.Height:F1}pt tall. ")
+            + "Reduce the element's content, lower the band heights, reduce the margins, or "
+            + "increase the page size.");
     }
 
     private static InvalidOperationException TooManyContinuations() =>
@@ -117,8 +124,10 @@ public sealed class DocumentRenderer
     ///
     /// Public here, unlike <see cref="TextEncodingWarnings"/>, because there is no other route to
     /// it: a canvas can be asked what it could not encode, but only the renderer knows the content
-    /// box a band was measured against. The tests for it drive DocumentRenderer directly, and the
-    /// layout assembly grants internal visibility only to VellumPdf.Signing.
+    /// box a band was measured against, and the layout assembly grants internal visibility only to
+    /// VellumPdf.Signing. Read directly by
+    /// <c>RunningBandFitTests.Band_truncation_isReadableFromTheRendererItself</c>, which is what
+    /// keeps this member from being public with nothing exercising it.
     /// </summary>
     public IReadOnlyList<BandTruncationWarning> BandTruncations
     {
@@ -352,9 +361,17 @@ public sealed class DocumentRenderer
         // resource, so an empty band would otherwise add a /Font entry to every page.
         if (drawn.Length == 0) return;
 
-        // textWidth is now bounded by contentWidth, so none of these can place the run outside the
-        // content box, and no clamp is needed. That is the invariant, not a hope: FitToWidth only
-        // ever accumulates a piece whose running total still fits.
+        // textWidth is bounded by contentWidth for every finite, positive font size, because
+        // FitToWidth only ever accumulates a piece whose running total still fits. So no clamp is
+        // needed and none of these arms can place the run outside the content box.
+        //
+        // The bound does not survive a font size that is not finite and positive, which TextStyle
+        // validates nowhere. A negative size makes every advance negative, so the break test never
+        // fires and the returned width is negative; a NaN size emits a text matrix of NaN, which is
+        // not a PDF number. Measured on a 300x400pt page, a negative size put a right-aligned band
+        // at x = 290.56 against a content edge of 250. That predates this change, since the old
+        // code computed the same width and the same x, and validating the size belongs with the
+        // rest of the geometry validation rather than here.
         double x = band.Alignment switch
         {
             HorizontalAlignment.Center => _margins.Left + (contentWidth - textWidth) / 2,
@@ -367,15 +384,19 @@ public sealed class DocumentRenderer
 
         // The band's own fill colour is set below, after the font, matching the order
         // ParagraphRenderer and TableRenderer emit. It has to be set unconditionally rather than
-        // only when it differs from black: no layout renderer brackets its drawing in q/Q, and a
-        // band is drawn from FinishCurrentPage after the page's content, so without this the band
-        // inherits whatever colour the last paragraph or cell left set. Measured on a page whose
-        // body was red and whose footer style asked for blue, the band's text object held no rg at
+        // only when it differs from black, because the two text renderers do not bracket their
+        // fill colour in q/Q. LayoutImageRenderer and PieChartRenderer do bracket theirs, and the
+        // chart says so in its own comment, but a paragraph's colour and a cell's colour leak.
+        // A band is drawn from FinishCurrentPage after the page's content, so without this the
+        // band takes whatever colour the last paragraph or cell left set. Measured on a page whose
+        // body was red and whose footer style asked for blue: the band's text object held no rg at
         // all and the footer rendered red.
         //
         // This is the one change in this branch that moves bytes for a document that was already
-        // correct: every banded document now carries one extra colour operator per band per page,
-        // including those that looked right because the inherited colour happened to be black.
+        // correct. Every banded document whose band emits any text carries one extra colour
+        // operator per band per page, including those that looked right because the inherited
+        // colour happened to be black. A band that fits nothing returns above this and gains
+        // none.
         //
         // Running-band text is pagination decoration, not part of the logical structure.
         // Wrap as /Artifact when the document is tagged so PDF/UA validators find no
@@ -432,18 +453,39 @@ public sealed class DocumentRenderer
     /// the alignment arithmetic safe, because the width it returns can never exceed maxWidth.
     ///
     /// It walks forward and stops, rather than measuring the whole string first, so the work is
-    /// proportional to what fits rather than to what was passed. That bound has one hole worth
-    /// naming: a glyph may advance zero — every character below 0x20, WinAnsi's five undefined
-    /// codes, and both symbolic Standard 14 faces, whose width tables are absent from the metrics
-    /// lookup entirely — so a template of those never exceeds any width and is walked to its end.
+    /// proportional to what fits rather than to what was passed. That bound has one hole, and it is
+    /// worth stating its consequence and not only its mechanism. A glyph may advance zero: the 38
+    /// code points U+0000 to U+001F, U+007F and WinAnsi's five undefined codes measure zero in
+    /// every face, and every character measures zero in Symbol and ZapfDingbats, the two of the
+    /// fourteen Standard 14 faces whose width tables are absent from the metrics lookup.
     ///
-    /// Two subtleties. It advances two UTF-16 units only for a well-formed surrogate pair, so every
-    /// candidate cut is already on a code-point boundary and cannot leave a lone surrogate behind.
+    /// So a band in one of those two faces measures zero however long it is, fits by definition, is
+    /// never cut, and is positioned by an alignment formula fed a width of zero. That is the defect
+    /// this method exists to fix, surviving for those two faces. Measured: a 500-glyph Symbol
+    /// footer on a 300pt page emits all 500 glyphs and reports no truncation. They are a supported
+    /// configuration rather than a dead corner, since PdfFontResource omits /Encoding for exactly
+    /// them so their symbolic encoding applies and their glyphs carry real advances in a viewer.
+    /// The metrics gap is #470; this method cannot close it, having no width to work from.
+    ///
+    /// Two subtleties. It advances two UTF-16 units for a well-formed surrogate pair, so for
+    /// well-formed input every candidate cut lands on a code-point boundary. Malformed input is a
+    /// different matter: a lone surrogate is measured and kept as one unit, so a cut can leave one
+    /// in the drawn text. The Standard 14 path tolerates that and substitutes the question-mark
+    /// glyph; the embedded path throws from char.ConvertToUtf32, and because the walk stops early
+    /// that throw now depends on whether the lone surrogate sits inside the fitted prefix. Before
+    /// this change the whole template was always measured, so it threw at any position. Malformed
+    /// UTF-16 is caller error either way, but the difference is worth knowing.
+    ///
     /// And when the whole string fits it takes the width from one measurement of the whole string
     /// rather than from the running total, because the metrics sum integer thousandths and scale
-    /// once at the end while this loop scales each piece: the two can differ in the last bits,
-    /// which would move the emitted text matrix of every centre- and right-aligned band that fits
-    /// today.
+    /// once at the end while this loop scales each piece. The drift is about 7e-13pt, and
+    /// PdfCanvas formats coordinates to five decimals, so it almost never reaches the output:
+    /// replacing this with the running total moved no text matrix across 360 banded documents, and
+    /// a 120,000-sample replication of the two orders found one formatted value differing. The
+    /// whole-string measurement is kept because it is the more accurate width and costs nothing on
+    /// a path that has already measured every piece, not because the alternative would visibly
+    /// move bands. No test defends this line, since the mutation is invisible to the suite, so
+    /// this comment is what defends it.
     /// </summary>
     private static (string Drawn, double Width) FitToWidth(TextStyle style, string text, double maxWidth)
     {
@@ -471,7 +513,12 @@ public sealed class DocumentRenderer
             i += len;
             cut = i;
 
-            if (len == 1 && text[i - 1] == ' ')
+            // Only the first space of a run is a cut point. Recording every space would land the
+            // cut on the last of a consecutive run and keep the ones before it, so the prefix
+            // would end in whitespace and the width returned would charge the alignment formula
+            // for ink that is not there — measured, 2.78pt per trailing space at 10pt, which
+            // shifts a centred or right-aligned band by that much.
+            if (len == 1 && text[i - 1] == ' ' && (i < 2 || text[i - 2] != ' '))
             {
                 lastSpaceCut = i - 1;
                 lastSpaceWidth = width - piece;
@@ -562,10 +609,12 @@ public sealed class DocumentRenderer
     {
         if (!double.IsFinite(pageSize.Width) || pageSize.Width <= 0)
             throw new ArgumentOutOfRangeException(nameof(pageSize),
-                $"Page width must be a positive finite number (was {pageSize.Width}).");
+                FormattableString.Invariant(
+                    $"Page width must be a positive finite number (was {pageSize.Width})."));
         if (!double.IsFinite(pageSize.Height) || pageSize.Height <= 0)
             throw new ArgumentOutOfRangeException(nameof(pageSize),
-                $"Page height must be a positive finite number (was {pageSize.Height}).");
+                FormattableString.Invariant(
+                    $"Page height must be a positive finite number (was {pageSize.Height})."));
 
         if (margins.Horizontal >= pageSize.Width)
             throw new ArgumentException(

@@ -5,6 +5,8 @@ using VellumPdf.Document;
 using VellumPdf.Fonts;
 using VellumPdf.Layout.Core;
 using VellumPdf.Layout.Elements;
+using VellumPdf.Layout.Rendering;
+using VellumPdf.TestSupport;
 
 namespace VellumPdf.Layout.Tests;
 
@@ -155,7 +157,79 @@ public sealed class RunningBandFitTests
         Assert.Equal(expectedX, band.X, 0.001);
     }
 
-    // ── (f) The report a caller can act on ───────────────────────────────────
+    // ── (e) The width a cut returns, which positions the band ───────────────
+
+    /// <summary>
+    /// The width returned for a word-boundary cut has to be the width of what is actually drawn,
+    /// because the alignment formula divides by it. Pinned at centre alignment: at Left the origin
+    /// is the margin whatever the width, so a Left assertion cannot see this at all.
+    ///
+    /// Mutating the returned width to include the space left every test green while moving the
+    /// band 2.78pt, the space's own advance at 10pt. This is the case that closes that.
+    /// </summary>
+    [Theory]
+    [InlineData(HorizontalAlignment.Center, 55.0)]
+    [InlineData(HorizontalAlignment.Right, 60.0)]
+    public void Band_cutAtASpace_isPositionedByTheDrawnWidthOnly(
+        HorizontalAlignment alignment, double expectedX)
+    {
+        // Nineteen glyphs is 190pt, so the cut takes the space at index 19 and draws 190pt of text
+        // in a 200pt box: centred that is 50 + (200 - 190) / 2 = 55, right-aligned 250 - 190 = 60.
+        var template = new string(Wide, 19) + " " + new string(Wide, 10);
+        var band = BandPlacement(RenderWithFooter(template, alignment));
+
+        Assert.Equal(new string(Wide, 19), band.Text);
+        Assert.Equal(expectedX, band.X, 0.001);
+    }
+
+    /// <summary>
+    /// Only the first space of a run is a cut point. Recording every space would land the cut on
+    /// the last of a consecutive run and keep the ones before it, so the drawn text would end in
+    /// whitespace and the returned width would charge the alignment for ink that is not there.
+    /// </summary>
+    [Fact]
+    public void Band_cutAtConsecutiveSpaces_keepsNoTrailingSpace()
+    {
+        var template = new string(Wide, 5) + "  " + new string(Wide, 30);
+        var band = BandPlacement(RenderWithFooter(template, HorizontalAlignment.Center));
+
+        Assert.Equal(new string(Wide, 5), band.Text);
+        Assert.Equal(50.0 + ((ContentWidth - 50.0) / 2), band.X, 0.001);
+    }
+
+    // ── (f) A token that widens the string across pages ──────────────────────
+
+    [Fact]
+    public void Band_pageTokenWidening_truncatesOnlyThePagesThatOverflow()
+    {
+        // Sized so "<19 glyphs> 9" fits and "<19 glyphs> 10" does not: the digits are 5.56pt each
+        // at 10pt and the space is 2.78pt, so page 9 needs 198.34pt and page 10 needs 203.9pt.
+        using var doc = NewDoc();
+        doc.Footer = new RunningBand(new string(Wide, 19) + " {page}", Style);
+        for (var i = 0; i < 100; i++) doc.Add(new Paragraph("line " + i, Style));
+
+        var ms = new MemoryStream();
+        doc.Save(ms);
+        var stream = PdfTestUtil.DecompressAllFlatStreams(ms.ToArray());
+
+        var bands = ContentStreamReadback.TextPlacements(stream)
+            .Where(p => p.Text.StartsWith(Wide))
+            .ToList();
+
+        Assert.True(bands.Count >= 10, $"expected at least ten pages, got {bands.Count}");
+        foreach (var b in bands)
+        {
+            var right = b.X + Standard14Metrics.MeasureString(Standard14.Helvetica, b.Text, Size);
+            Assert.True(right <= PageWidth - Margin + 0.001,
+                $"page band \"{b.Text}\" ends at {right}");
+        }
+
+        // The single-digit pages keep their page number; a two-digit one loses it to the cut, which
+        // is what the caller is told about through the warning channel rather than left to notice.
+        Assert.Contains(bands, b => b.Text.EndsWith(" 9"));
+        Assert.DoesNotContain(bands, b => b.Text.EndsWith(" 10"));
+    }
+    // ── (g) The report a caller can act on ───────────────────────────────────
 
     [Fact]
     public void Band_truncated_isReportedOnceWithExactCounts()
@@ -237,11 +311,14 @@ public sealed class RunningBandFitTests
     ///
     /// Measured rather than assumed: the second call throws
     /// <c>InvalidOperationException</c> from the underlying <c>PdfDocument</c>, which refuses a
-    /// second write, and it throws inside the render before <c>CollectDiagnostics</c> runs. So the
-    /// first save's single report survives untouched and the collector's Clear is unreachable
-    /// through this path — defensive rather than exercised. Worth pinning anyway: the exception
-    /// names a type a layout caller never used, which is its own defect, and if that is ever fixed
-    /// so a second save proceeds, the Clear becomes load-bearing and this test starts covering it.
+    /// second write, and every save path now collects only after its own write has succeeded, so
+    /// the throw comes first and the previous report survives untouched.
+    ///
+    /// Two paths did not. The asynchronous and signing paths collected between the layout and the
+    /// write, so a second call ran a whole second layout, appending pages to the same document,
+    /// collected from it, and only then threw — leaving a report naming a page present in no
+    /// output. Reordering them is what makes this test's claim true for all three rather than only
+    /// for this one.
     /// </summary>
     [Fact]
     public void Band_secondSave_throwsAndLeavesTheFirstReportIntact()
@@ -261,36 +338,67 @@ public sealed class RunningBandFitTests
         Assert.Equal(afterFirst, doc.BandTruncations.Single());
     }
 
-    // ── (e) A token that widens the string across pages ──────────────────────
 
+    // ── (h) The paths the first review round found untested ──────────────────
+
+    /// <summary>
+    /// The embedded-font branch sets the band's colour too. Deleting that one line left every
+    /// test green, because the only colour test built a style with no font reference and so took
+    /// the Standard 14 branch exclusively.
+    /// </summary>
     [Fact]
-    public void Band_pageTokenWidening_truncatesOnlyThePagesThatOverflow()
+    public void Band_embeddedFont_setsItsOwnColour()
     {
-        // Sized so "<19 glyphs> 9" fits and "<19 glyphs> 10" does not: the digits are 5.56pt each
-        // at 10pt and the space is 2.78pt, so page 9 needs 198.34pt and page 10 needs 203.9pt.
+        var fontPath = PdfTestUtil.FindPlatformFont();
+        if (fontPath is null)
+        {
+            OracleGate.Unavailable("platform TrueType font");
+            return;
+        }
+
         using var doc = NewDoc();
-        doc.Footer = new RunningBand(new string(Wide, 19) + " {page}", Style);
-        for (var i = 0; i < 100; i++) doc.Add(new Paragraph("line " + i, Style));
+        var handle = doc.LoadTrueTypeFont(fontPath);
+        var style = new TextStyle
+        {
+            FontRef = new FontReference(handle),
+            FontSize = Size,
+            Color = new ColorRgb(0, 0, 1),
+        };
+        doc.Footer = new RunningBand("FOOTER", style);
+        doc.Add(new Paragraph("red", new TextStyle { FontSize = Size, Color = new ColorRgb(1, 0, 0) }));
 
         var ms = new MemoryStream();
         doc.Save(ms);
         var stream = PdfTestUtil.DecompressAllFlatStreams(ms.ToArray());
 
-        var bands = ContentStreamReadback.TextPlacements(stream)
-            .Where(p => p.Text.StartsWith(Wide))
-            .ToList();
+        Assert.Equal(1, PdfTestUtil.CountOccurrences(stream, "0 0 1 rg"));
+        Assert.True(
+            stream.LastIndexOf("0 0 1 rg", StringComparison.Ordinal)
+            > stream.LastIndexOf("1 0 0 rg", StringComparison.Ordinal),
+            "the band's colour should follow the content's");
+    }
 
-        Assert.True(bands.Count >= 10, $"expected at least ten pages, got {bands.Count}");
-        foreach (var b in bands)
+    /// <summary>
+    /// The report is readable from the renderer as well as the document. That member exists
+    /// because the renderer is the only thing that knows the content box a band was measured
+    /// against, and its own documentation claimed a test drove it directly when none did.
+    /// </summary>
+    [Fact]
+    public void Band_truncation_isReadableFromTheRendererItself()
+    {
+        var pdf = new PdfDocument();
+        var renderer = new DocumentRenderer(
+            pdf, new PdfRectangle(0, 0, PageWidth, PageHeight), new EdgeInsets(Margin))
         {
-            var right = b.X + Standard14Metrics.MeasureString(Standard14.Helvetica, b.Text, Size);
-            Assert.True(right <= PageWidth - Margin + 0.001,
-                $"page band \"{b.Text}\" ends at {right}");
-        }
+            Footer = new RunningBand(new string(Wide, 25), Style),
+        };
+        renderer.Add(new ParagraphRenderer(new Paragraph("body", Style)));
 
-        // The single-digit pages keep their page number; a two-digit one loses it to the cut, which
-        // is what the caller is told about through the warning channel rather than left to notice.
-        Assert.Contains(bands, b => b.Text.EndsWith(" 9"));
-        Assert.DoesNotContain(bands, b => b.Text.EndsWith(" 10"));
+        var ms = new MemoryStream();
+        renderer.Render(ms);
+
+        Assert.Equal(
+            new BandTruncationWarning(RunningBandKind.Footer, 1, GlyphsThatFit, 25),
+            Assert.Single(renderer.BandTruncations));
     }
 }

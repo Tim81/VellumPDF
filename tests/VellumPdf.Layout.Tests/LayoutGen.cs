@@ -79,15 +79,27 @@ internal static class LayoutGen
         ListStyle.OrderedRoman);
 
     /// <summary>
-    /// A band template short enough to fit any page this suite generates, so the running-band
-    /// truncation defect stays out of scope here and the page-box invariant is about the content.
+    /// A band template, including ones far wider than any page this suite generates.
+    ///
+    /// These were all short while the running-band truncation defect was open, because a long one
+    /// put the page-box invariant permanently red. That defect is fixed, so the exclusion is gone
+    /// and the long templates are here: the invariant now covers the case it was written for,
+    /// across every generated alignment, page size and margin rather than the hand-picked
+    /// geometries of the band suite.
     /// </summary>
     internal static Gen<string> ShortBandTemplate => Gen.OneOfConst(
         "Page {page}",
         "Page {page} of {pages}",
         "{pages}",
         "Report",
-        "");
+        "",
+        new string('W', 500),
+        new string('W', 200) + " {page} of {pages}",
+        // Deliberately not the cell word: this template has an early space, so the word-boundary
+        // cut draws exactly its first token, and if that token were the cell word it would collide
+        // with the per-element placement counts in PropertyTests. Widening the generator is what
+        // exposed that coupling.
+        "Zz " + new string('M', 400));
 
     // ── The document under test ──────────────────────────────────────────────
 

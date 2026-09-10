@@ -93,8 +93,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `UaEncryptionPermissionsRule`, reads an encrypted document's `/Encrypt` dictionary and reports an
   error when its `/P` entry does not have bit 10 set — ISO 32000-2 Table 22 requires every writer to
   set it, even though the accessibility restriction it once gated was deprecated in PDF 2.0, because
-  PDF/UA-1 (ISO 14289-1, based on the earlier ISO 32000-1) still checks it. `PdfPreflight` gains
-  four
+  PDF/UA-1 (ISO 14289-1, based on the earlier ISO 32000-1) still checks it. `PdfPreflight` gains four
   overloads — `DetectClaimedProfiles(byte[]|Stream, string?)` and
   `Validate(byte[]|Stream, PdfConformance, string?)` — that accept a password, so an encrypted
   document requiring one can now be validated at all; the existing overloads keep opening with no
@@ -188,8 +187,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   XObjects and, by default, inside annotation `/AP /N` appearance streams, in draw order. DCT, JPX,
   JBIG2, and CCITT payloads come back verbatim with their decode parameters; every other image comes
   back as its stored samples, with a lossless PNG on request: `TryEncodePng` for grey images at 1 to
-  16 bits, RGB at 8 and 16, and indexed palettes over either at 8 bits and below;
-  `TryEncodePngWithAlpha`
+  16 bits, RGB at 8 and 16, and indexed palettes over either at 8 bits and below; `TryEncodePngWithAlpha`
   additionally interleaves a matching soft mask as PNG alpha, when the parent image and the mask
   both map to the same 8- or 16-bit depth PNG's alpha-carrying colour types require. Nothing is
   colour-converted or re-encoded, and `/Decode` is exposed but never applied. Twelve diagnostic
@@ -321,44 +319,66 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   nothing fits, nothing is emitted at all, not even the marked-content pair, since setting a font
   registers a page resource and an empty band would otherwise add a `/Font` entry to every page.
 
-  A band that already fitted is unaffected, and that is measured rather than assumed: the
-  decompressed content streams of nine fitting-band configurations hash identically before and
-  after, and the before build was confirmed not to contain the fix. Keeping that property needed
-  care, because when the whole string fits the width has to come from one measurement of the whole
-  string rather than from the walk's running total: the metrics sum integer thousandths and scale
-  once at the end while the walk scales each piece, and the two differ in the last bits, which
-  would have moved the text matrix of every centre- and right-aligned band in existence.
+  A band that already fitted keeps its exact bytes from this change, and that is measured rather
+  than assumed: the decompressed content streams of fifteen fitting-band configurations hash
+  identically across it, including embedded-font bands and bands containing escaped characters,
+  and the before build was confirmed not to contain the fix first, since equal hashes would
+  otherwise only prove the same build was measured twice. The colour change below does move those
+  bytes, so a band that fits is byte-stable across this commit and not across the release.
 
-  The bound has one hole, named in the code rather than left to be found. A glyph may advance zero,
-  which covers every character below 0x20, WinAnsi's five undefined codes, and both symbolic
-  Standard 14 faces, whose width tables are absent from the metrics lookup entirely. A template of
-  those never exceeds any width and is walked to its end.
+  When the whole string fits, its width comes from one measurement of the whole string rather than
+  from the walk's running total, because the metrics sum integer thousandths and scale once at the
+  end while the walk scales each piece. That was originally justified as preventing a visible
+  shift, which measurement does not support: the drift is about 7e-13pt against a five-decimal
+  output format, and substituting the running total moved no text matrix across 360 banded
+  documents. The whole-string measurement is kept because it is the more accurate width and costs
+  nothing on a path that has already measured every piece.
+
+  The bound has one hole, and the code states its consequence rather than only its mechanism. A
+  glyph may advance zero: 38 code points do in every face, and every character does in Symbol and
+  ZapfDingbats, the two of the fourteen Standard 14 faces with no width table. So a band in one of
+  those two faces measures zero however long it is, is never cut, and is still positioned from a
+  width of zero — the defect this fixes, surviving for those two faces, with no report to the
+  caller. Measured: a 500-glyph Symbol footer on a 300pt page emits all 500 glyphs. They are a
+  supported configuration rather than a dead corner, since the font resource omits `/Encoding` for
+  exactly them so their symbolic encoding applies. The metrics gap is #470, and it cannot be closed
+  from the layout engine, which has no width to work from.
 
 - **A running band ignored its own colour and inherited the page content's (#365).**
   `TextStyle.Color` was dropped on the band path while the paragraph and table renderers both
-  honour it, and it is worse than dropped: no layout renderer brackets its drawing in `q`/`Q`, and a
-  band is drawn after the page's content, so the band took whatever colour the last paragraph or
-  cell left set. Measured on a page whose body was red and whose footer style asked for blue, the
+  honour it, and it is worse than dropped: neither of those two brackets its fill colour in
+  `q`/`Q` — the image and chart renderers do bracket theirs, and the chart's own comment says it
+  does so to stop exactly this — and a band is drawn after the page's content, so the band took
+  whatever colour the last paragraph or cell left set. Measured on a page whose body was red and whose footer style asked for blue, the
   band's own text object held no `rg` operator at all and the footer rendered red. The colour a band
   showed was therefore a property of whatever happened to be drawn above it.
 
-  This is the one change here that moves bytes for a document that was already correct: every banded
-  document gains one colour operator per band per page. Measured on a twelve-band-placement
-  document, colour operators go from 30 to 42.
+  This is the one change here that moves bytes for a document that was already correct: a banded
+  document gains one colour operator per band per page, wherever the band emits any text. A band
+  that fits nothing returns before the colour is set and gains none. Measured on a
+  twelve-band-placement document, colour operators go from 30 to 42, and the relation held at every
+  page count swept: the delta is twice the page count for a two-band document.
 
 - **The too-tall exception blamed the element when a running band was what shrank the content box
   (#365).** Both pagination passes threw one message for every cause: reduce the element's content
   or increase the page size. With a band set that points at the wrong thing and suggests a remedy
   that cannot work, because the element never changed. The consumer who reported this lost a first
-  reading to it. The message now names the bands and prints what they reserve against the page
-  height. The no-band wording is unchanged byte for byte, so the existing control test still passes
-  untouched.
+  reading to it. The message now names the margins and the bands and prints both against the page
+  height, so its figures close: 200.0pt of page less 20.0pt of margins less 18.4pt of bands leaves
+  the 161.6pt it reports. An earlier draft printed only the page and the bands, inviting a
+  subtraction that lands 20pt off, and omitted reducing the margins from the remedies — the same
+  fault it was replacing. The no-band wording is unchanged byte for byte, so the existing control
+  test still passes untouched.
 
-  Writing a test to pin the new message turned up a second defect in the same method: every
-  exception message in `DocumentRenderer` interpolated its figures with the current culture, so a
-  content area printed as `161,6pt` on a comma-decimal machine and `161.6pt` on an English runner,
-  and a test pinning any of them would pass on CI and fail locally. All four now format
-  invariantly — the new band message and the three that were already there.
+  Writing a test to pin the new message turned up a second defect: exception messages across
+  `VellumPdf.Layout` interpolated their figures with the current culture, so a content area printed
+  as `161,6pt` on a comma-decimal machine and `161.6pt` on an English runner, and a test pinning
+  any of them would pass on CI and fail locally. Every exception message in the assembly that
+  interpolates a floating-point figure now formats invariantly: six in `DocumentRenderer`, two in
+  `LayoutImageRenderer` and four in `PieChartRenderer`. The first pass through this fixed four of
+  the six in `DocumentRenderer` and claimed all of them, which the same file falsified. Left alone
+  deliberately: `LayoutBox.ToString`, which is a shipped public member rather than a message, and
+  the interpolations of integers and enumeration members, which carry no separator to vary.
 
 - **A document deep enough to need more than about 4,250 page continuations killed the process
   (#459).** `DocumentRenderer` recursed once per continuation, so stack depth grew with the

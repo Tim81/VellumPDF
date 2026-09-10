@@ -17,12 +17,12 @@ public sealed class HeaderFooterTests
     }
 
     /// <summary>
-    /// A band never set a fill colour, and no layout renderer brackets its drawing in q/Q, so the
-    /// band inherited whatever colour the page's last content left set. Bands are drawn from
-    /// FinishCurrentPage, after the content, which is what makes the inherited value the content's
-    /// rather than the page default. Measured before the fix on this exact document: the band's own
-    /// text object held no rg at all, and the last one on the page was the paragraph's 1 0 0 rg, so
-    /// a footer asking for blue rendered red.
+    /// A band never set a fill colour, and the two text renderers do not bracket their fill colour
+    /// in q/Q, so the band inherited whatever colour the page's last content left set. Bands are
+    /// drawn from FinishCurrentPage, after the content, which is what makes the inherited value the
+    /// content's rather than the page default. Measured before the fix on this exact document: the
+    /// band's own text object held no rg at all, and the last one on the page was the paragraph's
+    /// 1 0 0 rg, so a footer asking for blue rendered red.
     /// </summary>
     [Fact]
     public void Document_bandWithItsOwnColour_doesNotInheritTheContentColour()

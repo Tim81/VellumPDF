@@ -515,9 +515,10 @@ public sealed class PaginationDepthTests
         var ex = Assert.Throws<InvalidOperationException>(() => RenderOversizedChart(withFooter: true, out pdf));
         Assert.Equal(
             "An element is too tall to fit on a single page and cannot be rendered. "
-            + "Running bands reserve 18.4pt of the 200.0pt page height "
-            + "(header 0.0pt, footer 18.4pt), leaving a content area 161.6pt tall. "
-            + "Reduce the element's content, lower the band heights, or increase the page size.",
+            + "On a 200.0pt page, 20.0pt of margins and 18.4pt of running bands "
+            + "(header 0.0pt, footer 18.4pt) leave a content area 161.6pt tall. "
+            + "Reduce the element's content, lower the band heights, reduce the margins, or "
+            + "increase the page size.",
             // Points, not commas, on every machine: the message formats invariantly, so this
             // assertion does not depend on the runner's locale. It did before this commit.
             ex.Message);

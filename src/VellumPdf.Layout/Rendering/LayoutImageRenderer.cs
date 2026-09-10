@@ -29,11 +29,13 @@ public sealed class LayoutImageRenderer : IRenderer
 
         if (!double.IsFinite(imgW) || imgW <= 0)
             throw new ArgumentException(
-                $"Image width must be a positive finite number (was {imgW}).",
+                FormattableString.Invariant(
+                $"Image width must be a positive finite number (was {imgW})."),
                 nameof(_img));
         if (!double.IsFinite(imgH) || imgH <= 0)
             throw new ArgumentException(
-                $"Image height must be a positive finite number (was {imgH}).",
+                FormattableString.Invariant(
+                $"Image height must be a positive finite number (was {imgH})."),
                 nameof(_img));
 
         _w = _img.Width ?? area.Width;

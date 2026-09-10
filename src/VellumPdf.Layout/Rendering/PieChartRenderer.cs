@@ -26,7 +26,8 @@ public sealed class PieChartRenderer : IRenderer
         {
             if (!double.IsFinite(slice.Value) || slice.Value < 0)
                 throw new ArgumentException(
-                    $"Pie slice values must be finite and non-negative (was {slice.Value}).",
+                    FormattableString.Invariant(
+                $"Pie slice values must be finite and non-negative (was {slice.Value})."),
                     nameof(_chart));
             total += slice.Value;
         }
@@ -36,15 +37,18 @@ public sealed class PieChartRenderer : IRenderer
 
         if (!double.IsFinite(_chart.Diameter) || _chart.Diameter <= 0)
             throw new ArgumentException(
-                $"Pie chart diameter must be a positive finite number (was {_chart.Diameter}).",
+                FormattableString.Invariant(
+                $"Pie chart diameter must be a positive finite number (was {_chart.Diameter})."),
                 nameof(_chart));
         if (!double.IsFinite(_chart.StartAngle))
             throw new ArgumentException(
-                $"Pie chart start angle must be a finite number (was {_chart.StartAngle}).",
+                FormattableString.Invariant(
+                $"Pie chart start angle must be a finite number (was {_chart.StartAngle})."),
                 nameof(_chart));
         if (!double.IsFinite(_chart.StrokeWidth) || _chart.StrokeWidth < 0)
             throw new ArgumentException(
-                $"Pie chart stroke width must be a non-negative finite number (was {_chart.StrokeWidth}).",
+                FormattableString.Invariant(
+                $"Pie chart stroke width must be a non-negative finite number (was {_chart.StrokeWidth})."),
                 nameof(_chart));
 
         var totalHeight = _chart.Diameter + _chart.Margins.Vertical;
@@ -170,6 +174,8 @@ public sealed class PieChartRenderer : IRenderer
         {
             if (string.IsNullOrEmpty(slice.Label)) continue;
             var percent = Math.Round(slice.Value / total * 100);
+            // No invariant wrapper here, unlike the exception messages above: percent is rounded
+            // to a whole number, so it carries no decimal separator to vary.
             parts.Add($"{slice.Label} {percent}%");
         }
 
