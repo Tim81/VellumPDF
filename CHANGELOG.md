@@ -8,6 +8,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`Document.BandTruncations` and `DocumentRenderer.BandTruncations` report a running band whose
+  text was cut to fit (#365).** A band that did not fit used to be drawn off the page with every
+  glyph still written into the content stream, so the header or footer was absent from every viewer
+  while its bytes were paid for, and a caller had no way to learn this short of reading the content
+  stream. Truncating makes the loss visible in the page; this makes it detectable in code.
+
+  One report per band, not one per page. A per-page list would hold two entries per page, 9,900 of
+  them on the 4,950-page document this was reported against, and would put a list append back into
+  the per-band-per-page path the fix exists to bound. Two slots need no cap, so no options type is
+  invented for them. The report names the page that lost the most rather than the first one cut,
+  because a `{page}` or `{pages}` token lengthens the resolved text as the number gains digits, so
+  the worst page is what tells a caller how much shorter the template has to be.
+
+  It carries counts and not the text. Two existing channels already bound what a diagnostic
+  retains, and a template can be arbitrarily long, so holding one would turn a caller's own input
+  into a comparably sized retained allocation. Public on the renderer as well as the document,
+  unlike `TextEncodingWarnings`, because there is no other route to it: a canvas can be asked what
+  it could not encode, but only the renderer knows the content box a band was measured against.
+
 - **Property-based coverage for the layout engine (#466).** Test-only; nothing ships. `CsCheck`
   was referenced by the Kernel, Reader and Barcodes test suites and not by this one, and Layout
   had fewer tests than the Reader, Kernel, Conformance and Barcodes suites. `PropertyTests` now
@@ -74,7 +93,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `UaEncryptionPermissionsRule`, reads an encrypted document's `/Encrypt` dictionary and reports an
   error when its `/P` entry does not have bit 10 set — ISO 32000-2 Table 22 requires every writer to
   set it, even though the accessibility restriction it once gated was deprecated in PDF 2.0, because
-  PDF/UA-1 (ISO 14289-1, based on the earlier ISO 32000-1) still checks it. `PdfPreflight` gains four
+  PDF/UA-1 (ISO 14289-1, based on the earlier ISO 32000-1) still checks it. `PdfPreflight` gains
+  four
   overloads — `DetectClaimedProfiles(byte[]|Stream, string?)` and
   `Validate(byte[]|Stream, PdfConformance, string?)` — that accept a password, so an encrypted
   document requiring one can now be validated at all; the existing overloads keep opening with no
@@ -168,7 +188,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   XObjects and, by default, inside annotation `/AP /N` appearance streams, in draw order. DCT, JPX,
   JBIG2, and CCITT payloads come back verbatim with their decode parameters; every other image comes
   back as its stored samples, with a lossless PNG on request: `TryEncodePng` for grey images at 1 to
-  16 bits, RGB at 8 and 16, and indexed palettes over either at 8 bits and below; `TryEncodePngWithAlpha`
+  16 bits, RGB at 8 and 16, and indexed palettes over either at 8 bits and below;
+  `TryEncodePngWithAlpha`
   additionally interleaves a matching soft mask as PNG alpha, when the parent image and the mask
   both map to the same 8- or 16-bit depth PNG's alpha-carrying colour types require. Nothing is
   colour-converted or re-encoded, and `/Decode` is exposed but never applied. Twelve diagnostic
@@ -283,6 +304,61 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   disclosure measuring the sweep would have gone stale as the sweep ran. (#418)
 
 ### Fixed
+
+- **A running band wider than the content box was drawn off the page (#365).** `DrawBandText`
+  measured the whole resolved template, positioned it by an alignment formula that had never been
+  given a bound, and emitted every glyph. Measured on a 200pt page with zero margins and a footer
+  of 500 `W` at 12pt: the centred band was placed at x = -2732 and the right-aligned one at
+  x = -5464, while the left-aligned one started legally at x = 0 and ran to 5664. In every case all
+  500 glyphs reached the content stream.
+
+  The band's text is now cut to the longest prefix that fits, walking forward and stopping rather
+  than measuring the whole string, so the work is proportional to what fits rather than to what was
+  passed. The width that comes back is bounded by the content width, which is what makes the
+  alignment arithmetic safe: no clamp is needed because no arm can place a bounded run outside the
+  box. The cut prefers the last word boundary, because a template ending in a page number cut
+  mid-token would show a number that is simply wrong where dropping the token shows none. When
+  nothing fits, nothing is emitted at all, not even the marked-content pair, since setting a font
+  registers a page resource and an empty band would otherwise add a `/Font` entry to every page.
+
+  A band that already fitted is unaffected, and that is measured rather than assumed: the
+  decompressed content streams of nine fitting-band configurations hash identically before and
+  after, and the before build was confirmed not to contain the fix. Keeping that property needed
+  care, because when the whole string fits the width has to come from one measurement of the whole
+  string rather than from the walk's running total: the metrics sum integer thousandths and scale
+  once at the end while the walk scales each piece, and the two differ in the last bits, which
+  would have moved the text matrix of every centre- and right-aligned band in existence.
+
+  The bound has one hole, named in the code rather than left to be found. A glyph may advance zero,
+  which covers every character below 0x20, WinAnsi's five undefined codes, and both symbolic
+  Standard 14 faces, whose width tables are absent from the metrics lookup entirely. A template of
+  those never exceeds any width and is walked to its end.
+
+- **A running band ignored its own colour and inherited the page content's (#365).**
+  `TextStyle.Color` was dropped on the band path while the paragraph and table renderers both
+  honour it, and it is worse than dropped: no layout renderer brackets its drawing in `q`/`Q`, and a
+  band is drawn after the page's content, so the band took whatever colour the last paragraph or
+  cell left set. Measured on a page whose body was red and whose footer style asked for blue, the
+  band's own text object held no `rg` operator at all and the footer rendered red. The colour a band
+  showed was therefore a property of whatever happened to be drawn above it.
+
+  This is the one change here that moves bytes for a document that was already correct: every banded
+  document gains one colour operator per band per page. Measured on a twelve-band-placement
+  document, colour operators go from 30 to 42.
+
+- **The too-tall exception blamed the element when a running band was what shrank the content box
+  (#365).** Both pagination passes threw one message for every cause: reduce the element's content
+  or increase the page size. With a band set that points at the wrong thing and suggests a remedy
+  that cannot work, because the element never changed. The consumer who reported this lost a first
+  reading to it. The message now names the bands and prints what they reserve against the page
+  height. The no-band wording is unchanged byte for byte, so the existing control test still passes
+  untouched.
+
+  Writing a test to pin the new message turned up a second defect in the same method: every
+  exception message in `DocumentRenderer` interpolated its figures with the current culture, so a
+  content area printed as `161,6pt` on a comma-decimal machine and `161.6pt` on an English runner,
+  and a test pinning any of them would pass on CI and fail locally. All four now format
+  invariantly — the new band message and the three that were already there.
 
 - **A document deep enough to need more than about 4,250 page continuations killed the process
   (#459).** `DocumentRenderer` recursed once per continuation, so stack depth grew with the
