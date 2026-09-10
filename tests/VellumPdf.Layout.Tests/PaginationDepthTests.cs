@@ -500,15 +500,27 @@ public sealed class PaginationDepthTests
         // and must throw the same exception PlaceRenderer would. Before the fix this pass
         // silently skipped the element and undercounted the document (#460).
         //
-        // Both passes throw the identical message by design (the shared ElementTooTallMessage
-        // constant), so the message alone cannot tell "CountPlaceRenderer threw" apart from "the
-        // return the #460 fix replaced was restored, and PlaceRenderer threw on the same element
-        // moments later instead". The page count can: CountPlaceRenderer never calls EnsurePage,
-        // so if pass 1 is the one that throws, RunLayout never reaches pass 2 and no PdfPage
-        // exists yet.
+        // Both passes reach one producer by design, so the message alone cannot tell
+        // "CountPlaceRenderer threw" apart from "the return the #460 fix replaced was restored, and
+        // PlaceRenderer threw on the same element moments later instead". The page count can:
+        // CountPlaceRenderer never calls EnsurePage, so if pass 1 is the one that throws, RunLayout
+        // never reaches pass 2 and no PdfPage exists yet.
+        //
+        // The message names the bands here, because with a footer set they are what shrank the
+        // content box and the element itself never changed. Asserted in full rather than by
+        // substring: every figure is fixed by this fixture's own geometry, since RunningBand("f")
+        // takes the default height of TextStyle.Default's leading plus four, which is
+        // 12 * 1.2 + 4 = 18.4, against a 200pt page with 10pt margins, leaving 161.6.
         PdfDocument pdf = null!;
         var ex = Assert.Throws<InvalidOperationException>(() => RenderOversizedChart(withFooter: true, out pdf));
-        Assert.Equal(ElementTooTallMessage, ex.Message);
+        Assert.Equal(
+            "An element is too tall to fit on a single page and cannot be rendered. "
+            + "Running bands reserve 18.4pt of the 200.0pt page height "
+            + "(header 0.0pt, footer 18.4pt), leaving a content area 161.6pt tall. "
+            + "Reduce the element's content, lower the band heights, or increase the page size.",
+            // Points, not commas, on every machine: the message formats invariantly, so this
+            // assertion does not depend on the runner's locale. It did before this commit.
+            ex.Message);
         Assert.Empty(pdf.Pages);
     }
 

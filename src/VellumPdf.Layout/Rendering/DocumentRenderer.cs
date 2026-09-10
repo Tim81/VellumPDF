@@ -48,6 +48,36 @@ public sealed class DocumentRenderer
         "An element is too tall to fit on a single page and cannot be rendered. " +
         "Reduce the element's content or increase the page size.";
 
+    /// <summary>
+    /// The too-tall exception, naming a running band when one is what shrank the content box.
+    ///
+    /// The message above is what both passes threw for every cause, and it cost a consumer a wrong
+    /// first reading: a footer was added to a document that had been paginating, the document
+    /// stopped rendering, and the message pointed at the element while suggesting a remedy —
+    /// reduce its content — that cannot help, because the element had not changed. The bands had.
+    ///
+    /// The no-band wording is unchanged byte for byte, so the existing control test still holds and
+    /// its passing is itself the evidence that only the band case moved. Figures follow the
+    /// margins-case throw in RunLayout, which already prints them to one decimal with a pt suffix.
+    /// A method rather than a second constant because the band clause needs the instance's own
+    /// geometry, and both passes call this one producer for the reason the constant existed: so
+    /// they cannot drift to different wording on an element neither can place (#460).
+    /// </summary>
+    private InvalidOperationException ElementTooTall()
+    {
+        var reserved = HeaderHeight + FooterHeight;
+        if (reserved <= 0) return new InvalidOperationException(ElementTooTallMessage);
+
+        return new InvalidOperationException(
+            "An element is too tall to fit on a single page and cannot be rendered. "
+            + FormattableString.Invariant(
+                $"Running bands reserve {reserved:F1}pt of the {_pageSize.Height:F1}pt page height ")
+            + FormattableString.Invariant(
+                $"(header {HeaderHeight:F1}pt, footer {FooterHeight:F1}pt), leaving a content area ")
+            + FormattableString.Invariant($"{ContentArea.Height:F1}pt tall. ")
+            + "Reduce the element's content, lower the band heights, or increase the page size.");
+    }
+
     private static InvalidOperationException TooManyContinuations() =>
         new($"A single element needed more than {MaxContinuationsPerElement} page continuations, so " +
             "its layout is not converging. Either an overflow renderer never advances, or the " +
@@ -113,7 +143,8 @@ public sealed class DocumentRenderer
         var contentArea = ContentArea;
         if (contentArea.Width <= 0 || contentArea.Height <= 0)
             throw new ArgumentException(
-                $"The computed content area has no positive size ({contentArea.Width:F1}×{contentArea.Height:F1}pt). " +
+                FormattableString.Invariant(
+                    $"The computed content area has no positive size ({contentArea.Width:F1}×{contentArea.Height:F1}pt). ") +
                 "The margins, header, and footer together exceed the page dimensions. " +
                 "Reduce the margins or band heights.",
                 "margins");
@@ -211,7 +242,7 @@ public sealed class DocumentRenderer
                     if (retry.Status == LayoutResult.Outcome.Nothing)
                     {
                         FinishCurrentPage(totalPages);
-                        throw new InvalidOperationException(ElementTooTallMessage);
+                        throw ElementTooTall();
                     }
                     break;
 
@@ -459,7 +490,7 @@ public sealed class DocumentRenderer
                     {
                         // This pass used to skip the element and undercount here while
                         // PlaceRenderer threw on it; the two passes must agree (#460).
-                        throw new InvalidOperationException(ElementTooTallMessage);
+                        throw ElementTooTall();
                     }
                     break;
 
@@ -490,12 +521,14 @@ public sealed class DocumentRenderer
 
         if (margins.Horizontal >= pageSize.Width)
             throw new ArgumentException(
-                $"Horizontal margins ({margins.Horizontal:F1}pt) meet or exceed page width ({pageSize.Width:F1}pt). " +
+                FormattableString.Invariant(
+                    $"Horizontal margins ({margins.Horizontal:F1}pt) meet or exceed page width ({pageSize.Width:F1}pt). ") +
                 "Reduce the left/right margins.",
                 nameof(margins));
         if (margins.Vertical >= pageSize.Height)
             throw new ArgumentException(
-                $"Vertical margins ({margins.Vertical:F1}pt) meet or exceed page height ({pageSize.Height:F1}pt). " +
+                FormattableString.Invariant(
+                    $"Vertical margins ({margins.Vertical:F1}pt) meet or exceed page height ({pageSize.Height:F1}pt). ") +
                 "Reduce the top/bottom margins.",
                 nameof(margins));
     }
