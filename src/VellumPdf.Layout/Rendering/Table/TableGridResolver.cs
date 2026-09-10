@@ -13,12 +13,12 @@ namespace VellumPdf.Layout.Rendering.Table;
 ///   1. If explicit widths provided via SetColumnWidths → reconcile them against the resolved
 ///      column count: a missing or zero entry means auto (see <see cref="TableElement.ColWidths"/>),
 ///      a negative entry is clamped to the same auto meaning, and the auto columns share the width
-///      left over after the explicit ones.
+///      left over after the explicit ones. If the explicit entries alone still overrun the
+///      available width, they are scaled down to what the auto columns' own content floors leave
+///      them.
 ///   2. Otherwise: compute min-content (longest word) and max-content (full text) widths for each
-///      column, then distribute available width proportionally.
-///
-/// Either way the resolved row is scaled down to the available width when the explicit entries,
-/// the content floors, or both leave it over budget.
+///      column, then distribute available width proportionally, scaled down to the available width
+///      when the content floors alone overrun it (#468).
 ///
 /// Occupancy grid: a 2D bool array [row][col] marking cells occupied by a span origin.
 /// </summary>
@@ -70,9 +70,10 @@ internal sealed class TableGridResolver
     ///   </item>
     /// </list>
     /// Auto columns share the width left over after the explicit ones, weighted by content and
-    /// floored at their own minimum content width; the whole row is then scaled to
-    /// <paramref name="available"/> if the explicit entries, the floors, or both still leave it
-    /// over budget — the same "oversized" case an all-explicit array can reach on its own.
+    /// floored at their own minimum content width. If the explicit entries alone still leave the
+    /// row over <paramref name="available"/> — the same "oversized" case an all-explicit array can
+    /// reach on its own — they are scaled down to what the auto columns' floors leave them, rather
+    /// than the floors being scaled down in turn.
     /// </summary>
     private double[] ReconcileExplicitWidths(TableElement table, double available, int cols)
     {
@@ -101,6 +102,7 @@ internal sealed class TableGridResolver
         var autoCount = 0;
         for (var i = 0; i < cols; i++) if (isAuto[i]) autoCount++;
 
+        var autoFloorSum = 0.0;
         if (autoCount > 0)
         {
             var residual = Math.Max(0.0, available - explicitSum);
@@ -115,9 +117,28 @@ internal sealed class TableGridResolver
                 result[i] = autoMaxTotal > 0
                     ? Math.Max(minW[i], residual * maxW[i] / autoMaxTotal)
                     : residual / autoCount;
+                autoFloorSum += result[i];
             }
         }
 
+        // An auto column's floor is a minimum, not a target, so the overflow this whole method
+        // exists to correct has to come out of the explicit columns first: an oversized explicit
+        // entry is what asked for more than the table has, not the auto column sized from what was
+        // left over. Shrinking the auto column instead would crush "c2" below its own longest
+        // word's width and reach TableRenderer's hard-break path (#473) for content that was never
+        // the reason the row overran -- measured on an oversized+short explicit array together,
+        // where the residual is already zero, this was the difference between one drawn literal
+        // and two hard-break fragments for the same short cell.
+        var explicitBudget = Math.Max(0.0, available - autoFloorSum);
+        if (explicitSum > explicitBudget && explicitSum > 0)
+        {
+            var scale = explicitBudget / explicitSum;
+            for (var i = 0; i < cols; i++)
+                if (!isAuto[i]) result[i] *= scale;
+        }
+
+        // Last-resort safety net: only reached when the auto floors alone already exceed
+        // `available`, so even an explicit budget of zero was not enough.
         ScaleToFit(result, available);
         return result;
     }

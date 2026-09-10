@@ -281,6 +281,41 @@ public sealed partial class TableColumnAxisTests
         Assert.True(rects[1].X + rects[1].W <= 200.0 + 0.001);
     }
 
+    /// <summary>
+    /// Oversized and short at once: a two-entry, 500+500 array against a three-cell row, page
+    /// 400x900, margin 50 (available 300). The explicit entries alone already exceed the available
+    /// width, so the auto column's residual is zero and it falls back to its own content floor --
+    /// exactly enough to draw "c2" on one line. A first version of this fix scaled every column,
+    /// auto included, by the same factor once the row overran, which pushed that floor below what
+    /// "c2" needs and forced <c>TableRenderer</c>'s own hard-break (#473) for a cell that was never
+    /// the reason the row was too wide. The auto column keeps its floor here; the two oversized
+    /// explicit columns absorb the correction instead.
+    /// </summary>
+    [Fact]
+    public void ExplicitWidths_oversizedAndShortTogether_autoColumnKeepsItsFloor()
+    {
+        using var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, 400, 900),
+            Margins = new EdgeInsets(50),
+        };
+        var t = new TableElement { DefaultCellStyle = Style() };
+        t.SetColumnWidths(500, 500);
+        var row = t.AddRow();
+        row.AddCell("c0"); row.AddCell("c1"); row.AddCell("c2");
+        doc.Add(t);
+
+        var stream = RenderAndDecompress(doc);
+        var rects = CellRectangles(stream);
+        var placements = ContentStreamReadback.TextPlacements(stream);
+
+        Assert.Equal(3, rects.Count);
+        Assert.True(rects.Sum(r => r.W) <= 300.0 + 0.001);
+        Assert.Equal(3, placements.Count);
+        foreach (var text in new[] { "c0", "c1", "c2" })
+            Assert.Equal(1, placements.Count(p => p.Text == text));
+    }
+
     // ── (c) Auto-width sum (#468) ─────────────────────────────────────────────
 
     /// <summary>
