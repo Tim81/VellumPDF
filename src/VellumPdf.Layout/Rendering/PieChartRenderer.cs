@@ -12,6 +12,12 @@ public sealed class PieChartRenderer : IRenderer
     private readonly PieChart _chart;
     private LayoutBox _occupied;
 
+    // The diameter actually used to place and draw the chart, computed once in Layout from
+    // _chart.Diameter and the area Layout was handed. See the clamp in Layout for why it is
+    // measured against that area rather than against the width left after deflating the
+    // chart's own margins.
+    private double _placementDiameter;
+
     /// <summary>Creates a renderer for the given pie chart.</summary>
     public PieChartRenderer(PieChart chart) => _chart = chart;
 
@@ -51,7 +57,27 @@ public sealed class PieChartRenderer : IRenderer
                 $"Pie chart stroke width must be a non-negative finite number (was {_chart.StrokeWidth})."),
                 nameof(_chart));
 
-        var totalHeight = _chart.Diameter + _chart.Margins.Vertical;
+        // Clamp against the area Layout was handed, not against the width left after deflating
+        // the chart's own margins. PieChart.Margins defaults to EdgeInsets(6), and a Diameter 300
+        // chart with those defaults spans exactly [50, 350] in a 300pt content box today -- a
+        // correct document. Clamping against the deflated 288pt would move it to [56, 344]
+        // instead, which moves bytes a document that already fits has no reason to move. Guarded
+        // on a positive width for the same reason as LayoutImageRenderer's own clamp: ordinary
+        // positive margins wider than the box reach a non-positive area too, not only the
+        // negative insets v3.0 defers.
+        _placementDiameter = ctx.Area.Width > 0
+            ? Math.Min(_chart.Diameter, ctx.Area.Width)
+            : _chart.Diameter;
+
+        // This bounds the placement, not the emitted geometry, which overshoots it in two
+        // independent ways this clamp does not attempt to absorb. AppendArc's control points
+        // overshoot the true arc: measured at diameter 300 in a 300pt box, the operand extent
+        // spans 1.000 times the diameter at the default start angle and up to 1.13216 times it at
+        // a start angle of 1.2 with one slice. And the drawn curve itself bulges past the nominal
+        // radius, by up to 1.00027253 times it (measured by evaluating the emitted cubics at
+        // 2,048 points per segment), 0.0408pt of x beyond the nominal edge at this diameter.
+        // Shrinking the chart to absorb either figure is left to the caller's own margin.
+        var totalHeight = _placementDiameter + _chart.Margins.Vertical;
         if (ctx.Area.Height < totalHeight) return LayoutResult.Nothing();
 
         _occupied = ctx.Area.WithHeight(totalHeight);
@@ -64,15 +90,18 @@ public sealed class PieChartRenderer : IRenderer
         var area = _occupied.Deflate(_chart.Margins);
         var xOff = _chart.Alignment switch
         {
-            HorizontalAlignment.Center => (area.Width - _chart.Diameter) / 2,
-            HorizontalAlignment.Right => area.Width - _chart.Diameter,
+            HorizontalAlignment.Center => (area.Width - _placementDiameter) / 2,
+            HorizontalAlignment.Right => area.Width - _placementDiameter,
             _ => 0,
         };
 
-        // Layout reserves exactly Diameter + margins, so the deflated area height equals the
-        // diameter; the circle is centred horizontally within the content width.
+        // Layout reserves exactly _placementDiameter + margins, so the deflated area height
+        // equals _placementDiameter -- not necessarily _chart.Diameter, which the clamp in
+        // Layout may have shrunk to fit the area -- and the circle is centred horizontally
+        // within the content width. Reserving the unclamped Diameter here would hold vertical
+        // space nothing draws in.
         var (x, y, _, _) = ctx.ToPdfRect(area);
-        var radius = _chart.Diameter / 2;
+        var radius = _placementDiameter / 2;
         var cx = x + xOff + radius;
         var cy = y + radius;
 
