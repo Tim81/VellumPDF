@@ -44,6 +44,23 @@ internal static class LayoutGen
     /// <summary>A font size a caller would plausibly ask for.</summary>
     internal static Gen<double> FontSize => Gen.Double[6.0, 24.0];
 
+    /// <summary>
+    /// A raw image width or chart diameter, wide enough to exceed even the widest page this suite
+    /// builds (900pt) before <see cref="Build"/> clamps it. The page-box property compares against
+    /// the page, not the content box, so a width merely past the content box does not fail it:
+    /// Left alignment only escapes the page once the width exceeds pageWidth - margin, and Centre
+    /// only once it exceeds pageWidth itself. This has to reach past both.
+    /// </summary>
+    private static Gen<double> WideExtent => Gen.Double[1.0, 1300.0];
+
+    /// <summary>
+    /// An image display height small enough to fit inside every page this suite builds regardless
+    /// of margin or band height, so the image case exercises the width clamp without also risking
+    /// <c>ElementTooTall</c> — a concern <see cref="WideExtent"/> does not have to carry, since
+    /// width and height are independent for an image the way they are not for a circle.
+    /// </summary>
+    private static Gen<double> SafeImageHeight => Gen.Double[1.0, 50.0];
+
     // ── Composites ───────────────────────────────────────────────────────────
 
     internal static Gen<EdgeInsets> Insets =>
@@ -106,7 +123,11 @@ internal static class LayoutGen
     /// <summary>
     /// One generated document. Every field sits inside the range a caller can use today without
     /// meeting a known defect: the page is large enough for the content, the margins leave a
-    /// positive content area, and the band templates fit across it.
+    /// positive content area, and the band templates fit across it. <see cref="ImageWidth"/> and
+    /// <see cref="ChartDiameterRaw"/> are the exception on their face — both can reach well past
+    /// any page this suite builds — but <see cref="Build"/> gives the image a small, independent
+    /// height and clamps the chart's raw diameter to what the rest of the same spec leaves room
+    /// for vertically, so what reaches the renderers still sits inside that same known-good range.
     /// </summary>
     internal sealed record DocSpec(
         double PageWidth,
@@ -120,7 +141,10 @@ internal static class LayoutGen
         ListStyle ListStyle,
         int ItemCount,
         int ColumnCount,
-        string Word);
+        string Word,
+        double ImageWidth,
+        double ImageHeight,
+        double ChartDiameterRaw);
 
     /// <summary>A band template, or no band at all.</summary>
     private static Gen<string?> OptionalBand =>
@@ -130,8 +154,26 @@ internal static class LayoutGen
     private static Gen<(string? Header, string? Footer)> Bands =>
         Gen.Select(OptionalBand, OptionalBand, (h, f) => (h, f));
 
+    /// <summary>
+    /// Bands plus the image and chart dimensions, grouped into one generator for the same reason
+    /// <see cref="Bands"/> is grouped: <see cref="ValidDoc"/> already uses eight generators, the
+    /// most <c>Gen.Select</c> takes in one call.
+    /// </summary>
+    private static Gen<(string? Header, string? Footer, double ImageWidth, double ImageHeight, double ChartDiameterRaw)> BandsAndMedia =>
+        Gen.Select(Bands, WideExtent, SafeImageHeight, WideExtent,
+            (bands, iw, ih, cd) => (bands.Header, bands.Footer, iw, ih, cd));
+
+    /// <summary>
+    /// The upper bound was <c>Gen.Int[0, 6]</c>, which a roman marker never reaches past item 26
+    /// and so never widens: the first ordered-roman marker wider than the default 20pt indent at
+    /// 10pt Helvetica is item 27, "xxvii." at 22.22pt. Raised so an ordered list sometimes reaches
+    /// it. This is coverage rather than a defect this range closes: the overprint sits well inside
+    /// the page, so it moves no existing property, and the marker literal is not
+    /// <see cref="CellWord"/>, so the per-element placement counts do not move either — the
+    /// known-answer test in <c>OffPagePlacementTests</c> is what actually discriminates the fix.
+    /// </summary>
     private static Gen<(ListStyle Style, int Count)> Items =>
-        Gen.Select(Bullets, Gen.Int[0, 6], (s, n) => (s, n));
+        Gen.Select(Bullets, Gen.Int[0, 40], (s, n) => (s, n));
 
     internal static Gen<DocSpec> ValidDoc =>
         Gen.Select(
@@ -141,11 +183,12 @@ internal static class LayoutGen
             FontSize,
             Alignment,
             Rgb,
-            Bands,
+            BandsAndMedia,
             Items,
-            (w, h, margin, size, align, colour, bands, items) =>
+            (w, h, margin, size, align, colour, media, items) =>
                 new DocSpec(w, h, new EdgeInsets(margin), size, align, colour,
-                    bands.Header, bands.Footer, items.Style, items.Count, 3, CellWord));
+                    media.Header, media.Footer, items.Style, items.Count, 3, CellWord,
+                    media.ImageWidth, media.ImageHeight, media.ChartDiameterRaw));
 
     /// <summary>
     /// The word every generated table cell holds, and the reason it is a constant rather than a
@@ -162,6 +205,17 @@ internal static class LayoutGen
     /// fixes it, failing before and passing after.
     /// </summary>
     private const string CellWord = "Wg";
+
+    /// <summary>
+    /// The fixture image every generated document places, the same 2×2 opaque PNG
+    /// <c>PdfTestUtil.CreateMinimalRgbPng</c> builds for the direct renderer tests. Built once:
+    /// the XObject is immutable and each document registers its own copy of the underlying stream,
+    /// so sharing one instance across the hundreds of documents <see cref="ValidDoc"/> generates
+    /// per run is the same reuse the byte-identity corpus harness in the scratchpad already relies
+    /// on for its own fixture image.
+    /// </summary>
+    private static readonly VellumPdf.Images.PdfImageXObject FixtureImage =
+        VellumPdf.Images.PngImageLoader.Load(PdfTestUtil.CreateMinimalRgbPng());
 
     /// <summary>Builds the document a <see cref="DocSpec"/> describes. The caller owns disposal.</summary>
     internal static Document Build(DocSpec spec)
@@ -197,6 +251,58 @@ internal static class LayoutGen
         for (var c = 0; c < spec.ColumnCount; c++)
             row.AddCell(spec.Word);
         doc.Add(table);
+
+        // An explicit Height, never null: with the 2×2 fixture image null Height takes the
+        // clamped width and makes the image square, and on a 900x400 page at margin 0 a Width of
+        // 401 or more then throws ElementTooTall — so does Width null on that same page. That is
+        // the same "only one axis is checked" family this pull request is about, but on the height
+        // axis rather than the width one, and fixing it would turn an exception into output, a
+        // public behaviour change outside this fix's mandate. SafeImageHeight sidesteps that
+        // corner entirely rather than covering it.
+        doc.Add(new LayoutImage(FixtureImage)
+        {
+            Width = spec.ImageWidth,
+            Height = spec.ImageHeight,
+            Alignment = spec.Alignment,
+        });
+
+        // A chart's Diameter drives both its width and its height, so unlike the image above it
+        // cannot be widened for horizontal coverage without also risking ElementTooTall: an
+        // oversized diameter that does not fit any page vertically is refused by
+        // PieChartRenderer.Layout today, correctly, by design (PaginationDepthTests pins exactly
+        // that). Derive the vertical budget from the rest of this same spec — page height,
+        // margins, and the running-band heights DocumentRenderer reserves — and clamp the raw
+        // generated diameter to it, so ChartDiameterRaw's reach past the page only shows up when
+        // this document's own geometry has the room to draw it without also being too tall.
+        var bandHeight = (spec.FontSize * 1.2) + 4;
+        var bandsHeight = (spec.Header is not null ? bandHeight : 0) + (spec.Footer is not null ? bandHeight : 0);
+        var fullPageContentHeight = spec.PageHeight - spec.Margins.Vertical - bandsHeight;
+        // 12pt is PieChart.Margins' default vertical inset (EdgeInsets(6), top and bottom); the
+        // chart below leaves that default in place rather than overriding it to zero, since the
+        // default absorbs AppendArc's own small overshoot past the nominal circle (see
+        // PieChartRenderer's clamp). The extra 1pt is slack under that boundary, not pinned to it.
+        var maxDiameter = Math.Max(1.0, fullPageContentHeight - 12 - 1);
+        var diameter = Math.Min(spec.ChartDiameterRaw, maxDiameter);
+
+        // Centre only, not spec.Alignment. PieChartRenderer's clamp bounds the placement diameter
+        // against ctx.Area.Width (undeflated), then Draw applies it inside the area deflated by
+        // the chart's own margins — deliberately, per the acceptance table, since Centre's offset
+        // formula halves the difference and lands symmetrically inside the box even when the
+        // clamped diameter exceeds the deflated width. Left and Right have no such cushion: their
+        // offset is pinned at 0 (Left) or area.Width - diameter (Right) regardless of margins, so
+        // once the clamp lands at exactly ctx.Area.Width — any raw diameter past the content box
+        // does that — the drawn circle still overshoots the page by up to the chart's own margin.
+        // Measured: a 454.4pt-wide page, 1.2pt document margin, default 6pt chart margins and a
+        // diameter clamped to ctx.Area.Width = 451.9 puts a Left-aligned circle's right edge at
+        // 459.1, 4.8pt past the page. The acceptance table verifies Centre only, so this is the
+        // range this fix actually closes; a wide diameter under Left or Right is a corner this
+        // pull request leaves open, not one the property below should be widened into.
+        doc.Add(new PieChart
+        {
+            Diameter = diameter,
+            Alignment = HorizontalAlignment.Center,
+            Slices = [new PieSlice(1, spec.Colour)],
+        });
 
         return doc;
     }

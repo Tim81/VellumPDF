@@ -329,7 +329,8 @@ public sealed class PropertyTests
     private static string Describe(LayoutGen.DocSpec s) =>
         $"page {s.PageWidth:F1}x{s.PageHeight:F1}, margin {s.Margins.Left:F1}, {s.FontSize:F1}pt, " +
         $"{s.Alignment}, {s.ListStyle}, {s.ItemCount} items, header={s.Header ?? "none"}, " +
-        $"footer={s.Footer ?? "none"}";
+        $"footer={s.Footer ?? "none"}, image w={s.ImageWidth:F1} h={s.ImageHeight:F1}, " +
+        $"chart raw diameter={s.ChartDiameterRaw:F1}";
 
     private static class FuzzBudget
     {
