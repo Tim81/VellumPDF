@@ -678,6 +678,65 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   than these six, since #400 greps for `Stopwatch` and `TimeSpan.FromSeconds` as well, and its own
   twin case was a `Stopwatch` assertion rather than a `Timeout`.
 
+- **An image with an explicit `Width` wider than its content box was drawn past its right edge.**
+  `LayoutImageRenderer.Layout` checked `Height` against the available area but let `Width` through
+  at whatever size a caller asked for. Measured on a 400x500pt page, 50pt margins (content box
+  [50, 350]), `Height` 20: a centred `Width` of 320 placed the image at x 40, drawing to x 360,
+  ten points past the content box on both sides. `Width` is now clamped to the available width, so
+  the same document places at x 50 and draws to exactly 350, matching what a `Width` of 300,
+  already inside the box, has always produced. The clamp only rescales `Height` to match when
+  `Height` was left null; an explicit `Height` is the caller asking for a non-proportional box, and
+  clamping `Width` alone is already as close to that as the box allows. Guarded on a positive
+  available width: ordinary margins wider than the content box reach a non-positive width too, not
+  only the negative insets v3.0 still defers. The XML doc on `LayoutImage.Width` now says the value
+  is an upper bound rather than a guaranteed size.
+
+- **A pie chart with a `Diameter` wider than its content box was drawn past it, and revision 1 of
+  this fix would have moved a chart that was already correct.** `PieChartRenderer` positioned a
+  wedge circle at the caller's `Diameter` with no check against the space `Layout` was handed.
+  Measured on a 400x900pt page, 50pt margins (content box [50, 350]), the chart's own `Margins` set
+  to zero: a centred `Diameter` of 320 gave an operand extent of [40, 360], twenty points wider
+  than the box on both sides. The diameter used to place and draw the chart is now clamped to
+  `ctx.Area.Width`, the area `Layout` was handed, before the chart's own margins (6pt by default)
+  deflate it. That distinction is the one that matters: with the default margins, a `Diameter` of
+  300 already spans exactly [50, 350] in a 300pt content box, a correct document, and clamping
+  against the *deflated* 288pt width instead (the first version of this fix) would have moved it to
+  [56, 344] regardless. The height reservation is clamped by the same diameter, so it
+  stops holding vertical space nothing draws in and the too-tall pagination case
+  (`PaginationDepthTests`) still throws, since the reservation still exceeds a 180pt content area
+  at a 300pt diameter on a 200x200pt page. The XML doc on `PieChart.Diameter` now says so.
+
+- **An unbreakable paragraph glyph wider than its box was placed left of the box under Centre or
+  Right alignment.** `HardBreakWord` always emits the first rune of a word too wide to break any
+  further. That is correct: there is nothing narrower to fall back to. But the Centre and Right
+  alignment arms then positioned that line by `area.Width - lineWidth` with no floor, and that is
+  negative for such a line. Measured on a 200x600pt page, 50pt margins (content box [50, 150]), a
+  single `"W"` at font size 106 (94.4pt at size 100, 100.064pt at 106): Centre placed it at x
+  49.968, left of the box's own left edge. Floored at zero, it now starts exactly at x 50, the
+  box's left edge, and overflows to the right instead. No placement keeps the whole line inside a
+  box narrower than one glyph, so this is the least-wrong placement rather than a correct one.
+  This is the same clamp the running-band fix (#469) chose not to make on its own formula: there,
+  the fitted width is proven not to exceed the box, so a floor would assert the opposite of the
+  proof beside it; here, an unbreakable glyph is proven capable of exceeding it, and the floor
+  asserts nothing false. A correctly-fitting line is unaffected: for equal finite operands IEEE
+  754 gives `(w - lw) = +0` rather than a value the floor would act on, and Justify never reaches
+  this code at all, since an over-wide line is always a single hard-broken rune with no inter-word
+  gap to count.
+
+- **A list marker wider than its indent overprinted the item's own text.** The marker paragraph has
+  zero margins and the content paragraph is indented by a constant `ListElement.Indent`, so a
+  marker wider than that indent drew into the content instead of beside it. Measured at Helvetica
+  10pt with the default 20pt indent: an `OrderedRoman` item 24's marker, `"xxiv."`, is exactly
+  20.00pt and already abuts the content; item 27's, `"xxvii."`, is 22.22pt, 2.22pt into text that
+  was, before this fix, drawn at the same x as the marker; item 38's, `"xxxviii."`, is 29.44pt, by
+  9.44pt. The gutter is now widened to the marker's own width, per item rather than per list, so
+  items 1 through 26 keep their exact indent and only item 27 on gets a ragged left text edge, a
+  caller-visible cost of the fix. The nested arm had the same defect at
+  `indent * 2` and is widened the same way, needing 27 or more children of one parent to reach it,
+  since nested ordered markers restart at 1 per parent. Neither widening can push a content
+  paragraph's own width to zero or below: a marker as wide as the whole item area keeps today's
+  indent and overprints, rather than widening until the item's text lays out nothing at all.
+
 ### Documentation
 
 - **Where the conformance rules knowingly disagree with veraPDF is written down (#418, #419).**
