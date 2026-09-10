@@ -10,9 +10,15 @@ namespace VellumPdf.Layout.Rendering.Table;
 /// Resolves column widths and builds the cell occupancy grid.
 ///
 /// Width resolution order:
-///   1. If explicit widths provided via SetColumnWidths → use those.
-///   2. Otherwise: compute min-content (longest word) and max-content (full text)
-///      widths for each column, then distribute available width proportionally.
+///   1. If explicit widths provided via SetColumnWidths → reconcile them against the resolved
+///      column count: a missing or zero entry means auto (see <see cref="TableElement.ColWidths"/>),
+///      a negative entry is clamped to the same auto meaning, and the auto columns share the width
+///      left over after the explicit ones.
+///   2. Otherwise: compute min-content (longest word) and max-content (full text) widths for each
+///      column, then distribute available width proportionally.
+///
+/// Either way the resolved row is scaled down to the available width when the explicit entries,
+/// the content floors, or both leave it over budget.
 ///
 /// Occupancy grid: a 2D bool array [row][col] marking cells occupied by a span origin.
 /// </summary>
@@ -23,22 +29,129 @@ internal sealed class TableGridResolver
 
     public void Resolve(TableElement table, double availableWidth)
     {
-        // Determine column count from the first non-header row (or header row)
-        var firstRow = table.Rows.FirstOrDefault();
-        ColCount = firstRow?.Cells.Sum(c => c.ColSpan) ?? 0;
+        // The column count is the widest row, not merely the first (#480 section 1). A table's
+        // rows are free to carry different cell counts — nothing in ISO 32000-2's table model
+        // requires uniformity — so a later row with an extra cell was losing it entirely: the grid
+        // never had a column for it.
+        ColCount = 0;
+        foreach (var row in table.Rows)
+        {
+            var rowCols = 0;
+            foreach (var cell in row.Cells) rowCols += cell.ColSpan;
+            if (rowCols > ColCount) ColCount = rowCols;
+        }
         if (ColCount == 0) { ColWidths = []; return; }
 
-        if (table.ColWidths.Count > 0)
+        ColWidths = table.ColWidths.Count > 0
+            ? ReconcileExplicitWidths(table, availableWidth, ColCount)
+            : AutoWidth(table, availableWidth, ColCount);
+    }
+
+    /// <summary>
+    /// Reconciles an explicit <see cref="TableElement.ColWidths"/> array against the resolved
+    /// column count (#477). Three things follow from treating an explicit array as a literal copy,
+    /// the way this method used to:
+    /// <list type="bullet">
+    ///   <item>
+    ///   An array shorter than the column count silently dropped every column past its own length,
+    ///   because the renderer stops at <c>_colWidths.Length</c> — the same symptom as a zero width,
+    ///   just at the array boundary instead of inside it.
+    ///   </item>
+    ///   <item>
+    ///   Zero already means auto in two places this type's own callers document
+    ///   (<see cref="TableElement.ColWidths"/> and <see cref="TableElement.SetColumnWidths"/>) and
+    ///   neither implemented, so a zero column rendered at zero width instead.
+    ///   </item>
+    ///   <item>
+    ///   A negative width advanced <c>x</c> backwards for every following column. Refusing it would
+    ///   turn a document that renders today into a thrown exception, which is not a patch-release
+    ///   change, so it is clamped to the same auto meaning as zero. This is a maintainer decision
+    ///   rather than the plan's own, since the plan left it open.
+    ///   </item>
+    /// </list>
+    /// Auto columns share the width left over after the explicit ones, weighted by content and
+    /// floored at their own minimum content width; the whole row is then scaled to
+    /// <paramref name="available"/> if the explicit entries, the floors, or both still leave it
+    /// over budget — the same "oversized" case an all-explicit array can reach on its own.
+    /// </summary>
+    private double[] ReconcileExplicitWidths(TableElement table, double available, int cols)
+    {
+        var raw = new double[cols];
+        var isAuto = new bool[cols];
+        for (var i = 0; i < cols; i++)
         {
-            ColWidths = table.ColWidths.ToArray();
+            // A missing entry (the array shorter than the column count) reads as 0.0, the same
+            // auto sentinel as an explicit zero.
+            raw[i] = i < table.ColWidths.Count ? table.ColWidths[i] : 0.0;
+            if (raw[i] < 0 || raw[i] == 0)
+            {
+                isAuto[i] = true;
+            }
         }
-        else
+
+        var result = new double[cols];
+        var explicitSum = 0.0;
+        for (var i = 0; i < cols; i++)
         {
-            ColWidths = AutoWidth(table, availableWidth, ColCount);
+            if (isAuto[i]) continue;
+            result[i] = raw[i];
+            explicitSum += raw[i];
         }
+
+        var autoCount = 0;
+        for (var i = 0; i < cols; i++) if (isAuto[i]) autoCount++;
+
+        if (autoCount > 0)
+        {
+            var residual = Math.Max(0.0, available - explicitSum);
+            var (minW, maxW) = ContentWidths(table, cols);
+
+            var autoMaxTotal = 0.0;
+            for (var i = 0; i < cols; i++) if (isAuto[i]) autoMaxTotal += maxW[i];
+
+            for (var i = 0; i < cols; i++)
+            {
+                if (!isAuto[i]) continue;
+                result[i] = autoMaxTotal > 0
+                    ? Math.Max(minW[i], residual * maxW[i] / autoMaxTotal)
+                    : residual / autoCount;
+            }
+        }
+
+        var total = 0.0;
+        for (var i = 0; i < cols; i++) total += result[i];
+
+        if (total > available && total > 0)
+        {
+            var scale = available / total;
+            for (var i = 0; i < cols; i++) result[i] *= scale;
+        }
+
+        return result;
     }
 
     private static double[] AutoWidth(TableElement table, double available, int cols)
+    {
+        var (minW, maxW) = ContentWidths(table, cols);
+
+        // Distribute available width proportionally to max-content widths
+        var totalMax = maxW.Sum();
+        var result = new double[cols];
+        for (var i = 0; i < cols; i++)
+        {
+            result[i] = totalMax > 0
+                ? Math.Max(minW[i], available * maxW[i] / totalMax)
+                : available / cols;
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Per-column min-content (longest word) and max-content (full text) widths, shared by the
+    /// fully-auto path and the residual distribution <see cref="ReconcileExplicitWidths"/> runs for
+    /// the columns an explicit array leaves auto.
+    /// </summary>
+    private static (double[] MinW, double[] MaxW) ContentWidths(TableElement table, int cols)
     {
         var minW = new double[cols];
         var maxW = new double[cols];
@@ -66,16 +179,6 @@ internal sealed class TableGridResolver
                 col += share;
             }
         }
-
-        // Distribute available width proportionally to max-content widths
-        var totalMax = maxW.Sum();
-        var result = new double[cols];
-        for (var i = 0; i < cols; i++)
-        {
-            result[i] = totalMax > 0
-                ? Math.Max(minW[i], available * maxW[i] / totalMax)
-                : available / cols;
-        }
-        return result;
+        return (minW, maxW);
     }
 }
