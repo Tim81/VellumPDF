@@ -232,6 +232,25 @@ public sealed class ListRenderer : IRenderer
             var item = _list.Items[i];
             var itemStyle = item.Style ?? defaultStyle;
             var markerText = _list.FormatMarker(i + 1);
+            var markerWidth = itemStyle.MeasureString(markerText);
+
+            // The marker paragraph has zero margins and the content paragraph is indented by
+            // _list.Indent, so a marker wider than the indent overprints the item text -- at
+            // Helvetica 10pt with the default 20pt indent, the first ordered-roman marker to do
+            // that is item 27, "xxvii." at 22.22pt (item 24's "xxiv." is exactly 20pt and still
+            // abuts). Widen the gutter to fit the marker, per item rather than per list: widening
+            // the whole list to its widest marker would move items 1 through 26, which already
+            // render correctly, and leave only a ragged left edge from item 27 on as the cost of
+            // the fix.
+            var gutter = Math.Max(indent, markerWidth);
+
+            // ParagraphRenderer.Layout returns Nothing when its deflated width is non-positive,
+            // and the zero-margin marker paragraph always fits, so widening the gutter without a
+            // bound could push the content paragraph's own width to zero or below and delete the
+            // item's text entirely -- worse than the overprint this is fixing. Keep today's indent
+            // and let it overprint instead.
+            if (gutter >= areaWidth)
+                gutter = indent;
 
             // Marker paragraph: sits in the gutter (left portion of the line).
             var markerPara = new Paragraph(markerText, itemStyle)
@@ -241,10 +260,10 @@ public sealed class ListRenderer : IRenderer
             };
             var markerRenderer = new ParagraphRenderer(markerPara);
 
-            // Content paragraph: indented by _list.Indent from the left edge.
+            // Content paragraph: indented by the (possibly widened) gutter from the left edge.
             var contentPara = new Paragraph(item.Text, itemStyle)
             {
-                Margins = new EdgeInsets(0, 0, 0, indent),
+                Margins = new EdgeInsets(0, 0, 0, gutter),
                 Alignment = HorizontalAlignment.Left,
             };
             var contentRenderer = new ParagraphRenderer(contentPara) { ElementLanguage = item.Language };
@@ -266,13 +285,26 @@ public sealed class ListRenderer : IRenderer
                         : _list.FormatMarker(seq);
                     seq++;
 
+                    // The nested marker is indented by `indent` and the nested content by
+                    // `indent * 2`, so the nested gutter is also exactly `indent` and has the
+                    // same defect as the top-level one -- Math.Max(indent * 2, markerWidth) would
+                    // do nothing here, since indent * 2 already exceeds a marker that would have
+                    // widened the top-level gutter. The correct form widens past indent * 2 only
+                    // by what the marker needs beyond its own indent-wide gutter. Reaching this
+                    // needs a parent with 27 or more children, since nested ordered markers
+                    // restart at 1 per parent rather than continuing the top-level sequence.
+                    var childMarkerWidth = childStyle.MeasureString(childMarker);
+                    var childGutter = Math.Max(indent * 2, indent + childMarkerWidth);
+                    if (childGutter >= areaWidth)
+                        childGutter = indent * 2;
+
                     var childMarkerPara = new Paragraph(childMarker, childStyle)
                     {
                         Margins = new EdgeInsets(0, 0, 0, indent),
                     };
                     var childContentPara = new Paragraph(child.Text, childStyle)
                     {
-                        Margins = new EdgeInsets(0, 0, 0, indent * 2),
+                        Margins = new EdgeInsets(0, 0, 0, childGutter),
                     };
 
                     result.Add((new ParagraphRenderer(childMarkerPara), new ParagraphRenderer(childContentPara) { ElementLanguage = child.Language }));
