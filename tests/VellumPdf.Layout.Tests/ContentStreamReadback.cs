@@ -48,11 +48,22 @@ internal static partial class ContentStreamReadback
     /// depends on metrics this helper does not have — use <see cref="TextPlacements"/> for that.
     ///
     /// Two things it measures the path of rather than the ink: a glyph reaches past its origin by
-    /// its side bearings, and a stroked rectangle spreads half the line width outside its own path,
-    /// which for the table border's default 0.5pt is 0.25pt per edge. Neither is bounded here, and
-    /// 0.25pt is well above any tolerance a caller compares against, so on a page whose margin is
-    /// near zero a quarter-point of border ink outside the page passes. Bounding ink rather than
-    /// geometry would mean carrying the stroke width and the font's bearings through this reader.
+    /// its side bearings, and a stroked rectangle or curve spreads half the line width outside its
+    /// own path, which for the table border's default 0.5pt is 0.25pt per edge and, since a chart
+    /// separator strokes at the same default, is now visible there too. Neither is bounded here,
+    /// and 0.25pt is well above any tolerance a caller compares against, so on a page whose margin
+    /// is near zero a quarter-point of border or wedge ink outside the page passes. Bounding ink
+    /// rather than geometry would mean carrying the stroke width and the font's bearings through
+    /// this reader.
+    ///
+    /// "Ordered" describes concatenation order, not per-page order: every flate stream in the file
+    /// is decompressed and appended with no separator, so a document with more than one content
+    /// stream — more than one page, or a page with a non-content stream ahead of it — sees its
+    /// path operators in concatenation order across all of them, not in the order one page alone
+    /// would draw them. The current-point walk below still gets each subpath right, because a
+    /// stream boundary can only ever open a fresh subpath with its own <c>m</c>, never continue one
+    /// left open by a different stream.
+    ///
     /// Returns null when the stream places nothing.
     /// </summary>
     internal static Extent? GeometryExtent(string decompressed)
@@ -73,14 +84,6 @@ internal static partial class ContentStreamReadback
         foreach (Match m in TextMatrix().Matches(decompressed))
             Note(Num(m.Groups[1].Value), Num(m.Groups[2].Value));
 
-        foreach (Match m in Rect().Matches(decompressed))
-        {
-            var x = Num(m.Groups[1].Value);
-            var y = Num(m.Groups[2].Value);
-            Note(x, y);
-            Note(x + Num(m.Groups[3].Value), y + Num(m.Groups[4].Value));
-        }
-
         foreach (Match m in Matrix().Matches(decompressed))
         {
             var a = Num(m.Groups[1].Value);
@@ -100,17 +103,132 @@ internal static partial class ContentStreamReadback
             if (b == 0 && c == 0) Note(e + a, f + d);
         }
 
-        foreach (Match m in PathPoint().Matches(decompressed))
-            Note(Num(m.Groups[1].Value), Num(m.Groups[2].Value));
-
-        foreach (Match m in Curve().Matches(decompressed))
-        {
-            Note(Num(m.Groups[1].Value), Num(m.Groups[2].Value));
-            Note(Num(m.Groups[3].Value), Num(m.Groups[4].Value));
-            Note(Num(m.Groups[5].Value), Num(m.Groups[6].Value));
-        }
+        WalkPath(decompressed, Note);
 
         return seen ? new Extent(minX, maxX, minY, maxY) : null;
+    }
+
+    /// <summary>
+    /// Walks <c>m</c>, <c>l</c>, <c>re</c>, <c>h</c> and <c>c</c> in stream order, tracking the
+    /// current point the way path construction defines it (ISO 32000-2 §8.5.2), and notes the
+    /// exact extent of what each one draws — for <c>c</c> the curve's true extrema, not its
+    /// control hull. A control-hull bound was the earlier approach here (separate <c>m</c>/<c>l</c>
+    /// and <c>c</c> passes with no current-point tracking between them), and it over-approximated
+    /// enough to matter: measured on a chart's own wedge circle, up to 1.13216 times the true
+    /// extent, comfortably wider than the tolerance a page-box property compares against.
+    /// </summary>
+    private static void WalkPath(string decompressed, Action<double, double> note)
+    {
+        double curX = 0, curY = 0, startX = 0, startY = 0;
+        var hasCurrent = false;
+
+        foreach (Match m in PathEvent().Matches(decompressed))
+        {
+            if (m.Groups["mx"].Success)
+            {
+                curX = startX = Num(m.Groups["mx"].Value);
+                curY = startY = Num(m.Groups["my"].Value);
+                hasCurrent = true;
+                note(curX, curY);
+            }
+            else if (m.Groups["lx"].Success)
+            {
+                curX = Num(m.Groups["lx"].Value);
+                curY = Num(m.Groups["ly"].Value);
+                hasCurrent = true;
+                note(curX, curY);
+            }
+            else if (m.Groups["rx"].Success)
+            {
+                // re is defined as m l l l h (ISO 32000-2, 8.5.2.1), so the current point after it
+                // is the rectangle's own (x, y) — the corner the construction starts and closes
+                // on — not one of the other three corners a plain "note both extremes" read might
+                // suggest. A c immediately after an re therefore starts from that corner.
+                var x = Num(m.Groups["rx"].Value);
+                var y = Num(m.Groups["ry"].Value);
+                var w = Num(m.Groups["rw"].Value);
+                var h = Num(m.Groups["rh"].Value);
+                note(x, y);
+                note(x + w, y + h);
+                curX = startX = x;
+                curY = startY = y;
+                hasCurrent = true;
+            }
+            else if (m.Groups["h"].Success)
+            {
+                // Returns the current point to the start of the subpath; it does not by itself
+                // establish one, so hasCurrent is left exactly as it was.
+                curX = startX;
+                curY = startY;
+            }
+            else
+            {
+                // A cubic Bézier. AppendArc documents that the caller must position the current
+                // point first and emits no m of its own; every call site in this tree (both in
+                // PieChartRenderer) positions with MoveTo before calling it, so this never fires
+                // in practice. Thrown rather than defaulting the start to (0, 0), because that
+                // default would silently drag the extent toward the origin instead of the walk
+                // failing loudly on a stream this reader cannot actually interpret.
+                if (!hasCurrent)
+                    throw new InvalidOperationException(
+                        "A curve operator (c) appeared with no current point to start from.");
+
+                var x1 = Num(m.Groups["c1x"].Value);
+                var y1 = Num(m.Groups["c1y"].Value);
+                var x2 = Num(m.Groups["c2x"].Value);
+                var y2 = Num(m.Groups["c2y"].Value);
+                var x3 = Num(m.Groups["c3x"].Value);
+                var y3 = Num(m.Groups["c3y"].Value);
+
+                note(curX, curY);
+                note(x3, y3);
+                foreach (var t in CubicExtremaT(curX, x1, x2, x3))
+                    note(CubicAt(curX, x1, x2, x3, t), CubicAt(curY, y1, y2, y3, t));
+                foreach (var t in CubicExtremaT(curY, y1, y2, y3))
+                    note(CubicAt(curX, x1, x2, x3, t), CubicAt(curY, y1, y2, y3, t));
+
+                curX = x3;
+                curY = y3;
+            }
+        }
+    }
+
+    /// <summary>Evaluates a one-dimensional cubic Bézier at parameter <paramref name="t"/>.</summary>
+    private static double CubicAt(double p0, double p1, double p2, double p3, double t)
+    {
+        var mt = 1 - t;
+        return (mt * mt * mt * p0) + (3 * mt * mt * t * p1) + (3 * mt * t * t * p2) + (t * t * t * p3);
+    }
+
+    /// <summary>
+    /// The parameter values in (0, 1) where a one-dimensional cubic Bézier's derivative is zero —
+    /// its interior extrema, found by solving the derivative's quadratic <c>A·t² + B·t + C = 0</c>.
+    /// Endpoints are the caller's job to note separately; a root at exactly 0 or 1 duplicates one.
+    /// </summary>
+    private static IEnumerable<double> CubicExtremaT(double p0, double p1, double p2, double p3)
+    {
+        var a = 3 * (-p0 + (3 * p1) - (3 * p2) + p3);
+        var b = 6 * (p0 - (2 * p1) + p2);
+        var c = 3 * (p1 - p0);
+
+        if (a == 0)
+        {
+            if (b != 0)
+            {
+                var t = -c / b;
+                if (t is > 0 and < 1) yield return t;
+            }
+            yield break;
+        }
+
+        var discriminant = (b * b) - (4 * a * c);
+        if (discriminant < 0) yield break;
+
+        var sq = Math.Sqrt(discriminant);
+        var t1 = (-b + sq) / (2 * a);
+        var t2 = (-b - sq) / (2 * a);
+        if (t1 is > 0 and < 1) yield return t1;
+        if (t2 is > 0 and < 1) yield return t2;
     }
 
     /// <summary>
@@ -165,17 +283,19 @@ internal static partial class ContentStreamReadback
     [GeneratedRegex(@"(?m)^1 0 0 1 (" + N + ") (" + N + @") Tm$")]
     private static partial Regex TextMatrix();
 
-    [GeneratedRegex(@"(?m)^(" + N + ") (" + N + ") (" + N + ") (" + N + @") re$")]
-    private static partial Regex Rect();
-
     [GeneratedRegex(@"(?m)^(" + N + ") (" + N + ") (" + N + ") (" + N + ") (" + N + ") (" + N + @") cm$")]
     private static partial Regex Matrix();
 
-    [GeneratedRegex(@"(?m)^(" + N + ") (" + N + @") [ml]$")]
-    private static partial Regex PathPoint();
-
-    [GeneratedRegex(@"(?m)^(" + N + ") (" + N + ") (" + N + ") (" + N + ") (" + N + ") (" + N + @") c$")]
-    private static partial Regex Curve();
+    // One alternation, in the same shape as TextEvent below, so m, l, re, h and c stay in stream
+    // order for the current-point walk in WalkPath: reading them via four separate passes (as
+    // PathPoint, Rect and Curve once did) loses which m or re a given c actually started from.
+    [GeneratedRegex(@"(?m)^(?:(?<mx>" + N + ") (?<my>" + N + @") m"
+        + "|(?<lx>" + N + ") (?<ly>" + N + @") l"
+        + "|(?<rx>" + N + ") (?<ry>" + N + ") (?<rw>" + N + ") (?<rh>" + N + @") re"
+        + "|(?<h>h)"
+        + "|(?<c1x>" + N + ") (?<c1y>" + N + ") (?<c2x>" + N + ") (?<c2y>" + N + ") (?<c3x>" + N
+        + ") (?<c3y>" + N + @") c)$")]
+    private static partial Regex PathEvent();
 
     // One alternation so the three event kinds stay in stream order: a font switch, a text-matrix
     // set, and a show. Reading them separately would lose which size was in force for which show.
