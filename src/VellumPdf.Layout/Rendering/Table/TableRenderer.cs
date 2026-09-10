@@ -399,10 +399,12 @@ public sealed class TableRenderer : IRenderer
     /// already disagreed. The old walk counted a line for every word it moved to a fresh line,
     /// including a trailing empty token from a cell string ending in a space that does not fit,
     /// which <see cref="WordWrapLines"/>'s own trailing <c>if (lineBuilder.Length &gt; 0)</c> never
-    /// turns into a drawn line. Measured over 4,000 random cell strings in a 40pt column at
-    /// Helvetica 12, comparing the old walk's count against the old <c>WordWrapLines</c>'s own
-    /// <c>.Count</c>: 744 disagreed, every one the old walk counting a taller row than the lines
-    /// actually drawn, never a shorter one. Known-answer case: <c>"AAAAii "</c> in the same column
+    /// turns into a drawn line. The disagreement is one-sided: across random sweeps of cell
+    /// strings in a 40pt column at Helvetica 12, comparing the old walk's count against the old
+    /// <c>WordWrapLines</c>'s own <c>.Count</c>, every case found had the walk counting a taller
+    /// row than the lines actually drawn and none a shorter one. The count itself belongs to the
+    /// sample and not to the defect, so it is not quoted: two sweeps over different alphabets gave
+    /// 152 and 744 in 4,000. The known-answer case does not move: <c>"AAAAii "</c> in the same column
     /// counted 2 lines (a 28.8pt row) while only 1 was drawn; delegating resolves the row to the
     /// 14.4pt height the single drawn line actually needs. <c>Layout</c>'s row height (built from
     /// this count) has to match what <c>Draw</c> actually emits or a cell's text overruns the row

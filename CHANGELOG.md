@@ -395,10 +395,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   drifting apart — they already disagreed. The old walk counted a line for every word pushed to a
   fresh line, including a trailing empty token from a cell string ending in a space that does not
   fit the column, and `WordWrapLines`'s own trailing `if (lineBuilder.Length > 0)` never turned
-  that into a drawn line. Measured over 4,000 random cell strings in a 40pt column at Helvetica
-  12pt: the old walk's count disagreed with the old `WordWrapLines`'s own line count on 744 of
-  them, every one the walk counting a taller row than what was actually drawn, never a shorter
-  one. Known-answer case: the cell `"AAAAii "` in the same column drew one line in a row sized for
+  that into a drawn line. The disagreement is one-sided: across a random sweep of cell strings in a
+  40pt column at Helvetica 12pt, every case found had the old walk counting a taller row than what
+  was drawn and none a shorter one. How many is a property of the sample rather than of the defect,
+  so it is not quoted here: two independent sweeps over different alphabets found 152 and 744 in
+  4,000. Known-answer case, which is not sample-dependent: the cell `"AAAAii "` in the same column drew one line in a row sized for
   two (28.8pt) before this fix, and now resolves to the 14.4pt row the single drawn line needs —
   a document whose cell text ends in a space that does not fit gets a shorter row than before,
   which is the corrected height rather than a side effect, but a geometry change all the same.
