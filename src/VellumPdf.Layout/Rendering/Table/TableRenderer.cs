@@ -318,10 +318,18 @@ public sealed class TableRenderer : IRenderer
         {
             var line = wrappedLines[lineIdx];
             var lineW = cs.FontRef.MeasureString(line, cs.FontSize);
+
+            // Floored at the cell's own left edge (#473), the same clamp #472 applied to a
+            // paragraph line for the same reason: WordWrapLines now hard-breaks a word wider than
+            // the column, so every line it emits stays within innerBox.Width except the one line
+            // consisting of a single over-wide rune that cannot be broken any further — the only
+            // way innerBox.Width - lineW goes negative here. The floor moves nothing for a line
+            // that already fits and keeps the one thing it can for that residue: the line's origin
+            // stays inside the cell instead of starting left of it.
             double txOffset = cell.Alignment switch
             {
-                HorizontalAlignment.Center => (innerBox.Width - lineW) / 2,
-                HorizontalAlignment.Right => innerBox.Width - lineW,
+                HorizontalAlignment.Center => Math.Max(0, (innerBox.Width - lineW) / 2),
+                HorizontalAlignment.Right => Math.Max(0, innerBox.Width - lineW),
                 _ => 0
             };
 
@@ -380,25 +388,28 @@ public sealed class TableRenderer : IRenderer
         return w;
     }
 
-    private static int WordWrapCount(string text, TextStyle style, double maxWidth)
-    {
-        if (string.IsNullOrEmpty(text)) return 1;
-        var words = text.Split(' ');
-        var lines = 1;
-        var lineW = 0.0;
-        var spaceW = style.FontRef.MeasureString(" ", style.FontSize);
+    /// <summary>
+    /// Delegates to <see cref="WordWrapLines"/> rather than carrying its own line-counting walk:
+    /// the two used to be separate algorithms that happened to agree, and <c>Layout</c>'s row
+    /// height (built from this count) has to match what <c>Draw</c> actually emits or a cell's
+    /// text overruns the row it was measured against. One walk removes the chance of the two
+    /// silently drifting apart, which is also what let the hard-break below (#473) reach both
+    /// call sites from a single change instead of two that have to be kept in step by hand.
+    /// </summary>
+    private static int WordWrapCount(string text, TextStyle style, double maxWidth) =>
+        WordWrapLines(text, style, maxWidth).Count;
 
-        foreach (var word in words)
-        {
-            var ww = style.FontRef.MeasureString(word, style.FontSize);
-            if (lineW == 0) { lineW = ww; }
-            else if (lineW + spaceW + ww <= maxWidth) { lineW += spaceW + ww; }
-            else { lines++; lineW = ww; }
-        }
-        return lines;
-    }
-
-    /// <summary>Word-wraps text into lines for drawing, matching the WordWrapCount algorithm.</summary>
+    /// <summary>
+    /// Word-wraps text into lines for drawing. A word wider than <paramref name="maxWidth"/> on
+    /// its own — the <c>lineW == 0</c> arms below, reached both for the text's first word and for
+    /// the word starting a fresh line after a wrap — used to be emitted whole regardless, which is
+    /// #473: the line then drew past the cell's own right edge, and past the page once the column
+    /// was narrow enough. <see cref="HardBreakWord"/> now breaks it at character granularity
+    /// instead, the same behaviour <c>ParagraphRenderer.HardBreakWord</c> already has for a
+    /// paragraph line — kept as its own copy rather than shared, since the two callers differ in
+    /// what they know about their own box and a shared version would be a third code path to
+    /// review for this pull request alone.
+    /// </summary>
     private static List<string> WordWrapLines(string text, TextStyle style, double maxWidth)
     {
         var result = new List<string>();
@@ -414,6 +425,11 @@ public sealed class TableRenderer : IRenderer
             var ww = style.FontRef.MeasureString(word, style.FontSize);
             if (lineW == 0)
             {
+                if (ww > maxWidth)
+                {
+                    HardBreakWord(word, style, maxWidth, result);
+                    continue;
+                }
                 lineBuilder.Append(word);
                 lineW = ww;
             }
@@ -427,6 +443,13 @@ public sealed class TableRenderer : IRenderer
             {
                 result.Add(lineBuilder.ToString());
                 lineBuilder.Clear();
+                lineW = 0.0;
+
+                if (ww > maxWidth)
+                {
+                    HardBreakWord(word, style, maxWidth, result);
+                    continue;
+                }
                 lineBuilder.Append(word);
                 lineW = ww;
             }
@@ -436,6 +459,29 @@ public sealed class TableRenderer : IRenderer
         if (result.Count == 0)
             result.Add(string.Empty);
         return result;
+    }
+
+    /// <summary>Hard-breaks a word wider than <paramref name="maxWidth"/> at character granularity.</summary>
+    private static void HardBreakWord(string word, TextStyle style, double maxWidth, List<string> lines)
+    {
+        var fragment = new System.Text.StringBuilder();
+        var fragmentW = 0.0;
+
+        foreach (var rune in word.EnumerateRunes())
+        {
+            var ch = rune.ToString();
+            var charW = style.FontRef.MeasureString(ch, style.FontSize);
+            if (fragment.Length > 0 && fragmentW + charW > maxWidth)
+            {
+                lines.Add(fragment.ToString());
+                fragment.Clear();
+                fragmentW = 0.0;
+            }
+            fragment.Append(ch);
+            fragmentW += charW;
+        }
+        if (fragment.Length > 0)
+            lines.Add(fragment.ToString());
     }
 
     /// <summary>

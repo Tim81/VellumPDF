@@ -317,4 +317,68 @@ public sealed partial class TableColumnAxisTests
         Assert.Equal(expectedRightEdge, rightEdge, 0.001);
         Assert.True(rightEdge <= 400.0 + 0.001, "must stay on the page");
     }
+
+    // ── (d) Cell text hard-break (#473) ───────────────────────────────────────
+
+    /// <summary>
+    /// Page 400x900, margin 50, one 300pt column (padding EdgeInsets(4, 6, 4, 6), inner width
+    /// 288), one cell holding 60 "W"s. <c>WordWrapLines</c> used to emit a word wider than the
+    /// column whole, so before the fix this was one 60-character literal at <c>Tm</c> x -83.2
+    /// under Centre and -222.4 under Right — measured here, on the unmodified method, before
+    /// pinning the fixed behaviour. <c>HardBreakWord</c> now splits it at character granularity
+    /// (30 + 30, both 283.2pt, under the 288pt inner width) the way
+    /// <c>ParagraphRenderer.HardBreakWord</c> already splits an over-wide paragraph word, so both
+    /// lines fit and neither needs the floor below to stay on the page.
+    /// </summary>
+    [Theory]
+    [InlineData(HorizontalAlignment.Center)]
+    [InlineData(HorizontalAlignment.Right)]
+    public void CellText_widerThanItsColumn_hardBreaksInsteadOfOverrunning(HorizontalAlignment alignment)
+    {
+        using var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, 400, 900),
+            Margins = new EdgeInsets(50),
+        };
+        var t = new TableElement { DefaultCellStyle = Style() };
+        t.SetColumnWidths(300);
+        t.AddRow().AddCell(new Cell(new string('W', 60)) { Alignment = alignment });
+        doc.Add(t);
+
+        var placements = ContentStreamReadback.TextPlacements(RenderAndDecompress(doc));
+
+        Assert.Equal(2, placements.Count);
+        Assert.Equal(30, placements[0].Text.Length);
+        Assert.Equal(30, placements[1].Text.Length);
+        Assert.All(placements, p => Assert.True(p.X >= 56.0 - 0.001, "no origin left of the cell"));
+    }
+
+    /// <summary>
+    /// The residue <see cref="CellText_widerThanItsColumn_hardBreaksInsteadOfOverrunning"/>'s own
+    /// comment notes as the one case a character-granularity break cannot avoid: a single rune
+    /// wider than the column. Page 200x600, margin 50, one 20pt column with zero padding, one cell
+    /// holding "W" at Helvetica 106pt (measures ~100pt). Before the fix this measured Tm x -30.064
+    /// under Right and 9.968 under Centre; floored at the cell's own left edge (#473, the same
+    /// clamp #472 made for a paragraph), both now land on it.
+    /// </summary>
+    [Theory]
+    [InlineData(HorizontalAlignment.Center)]
+    [InlineData(HorizontalAlignment.Right)]
+    public void CellText_oneRuneWiderThanTheColumn_startsAtTheCellLeftEdge(HorizontalAlignment alignment)
+    {
+        using var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, 200, 600),
+            Margins = new EdgeInsets(50),
+        };
+        var st = Style(106);
+        var t = new TableElement { DefaultCellStyle = st };
+        t.SetColumnWidths(20);
+        t.AddRow().AddCell(new Cell("W") { Alignment = alignment, Padding = EdgeInsets.Zero });
+        doc.Add(t);
+
+        var placement = Assert.Single(ContentStreamReadback.TextPlacements(RenderAndDecompress(doc)));
+
+        Assert.Equal(50.0, placement.X, 0.001);
+    }
 }
