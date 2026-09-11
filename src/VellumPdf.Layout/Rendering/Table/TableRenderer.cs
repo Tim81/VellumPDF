@@ -376,12 +376,23 @@ public sealed class TableRenderer : IRenderer
         canvas.ShowGlyphs(gids.AsSpan(0, count));
     }
 
-    /// <summary>Returns the indices of all header rows in the table, in order.</summary>
+    /// <summary>
+    /// Returns the indices of the leading contiguous run of header rows — the only reading under
+    /// which every row is drawn by exactly one of the two loops in <see cref="Draw"/>. A header row
+    /// collects every <c>IsHeader</c> row wherever it sat, so a header after a data row (index 2 in
+    /// the fixture below) put <c>dataStartRow</c> past that header while the data loop still started
+    /// there too, leaving the data row between them drawn by neither: header H0, data D1, header H2,
+    /// data D3 drew H0, H2 and D3, D1 never reached either loop. Stopping at the first non-header
+    /// row means a header after a data row draws as an ordinary row instead.
+    /// </summary>
     private static List<int> FindHeaderRowIndices(IReadOnlyList<Row> rows)
     {
         var indices = new List<int>();
         for (var i = 0; i < rows.Count; i++)
-            if (rows[i].IsHeader) indices.Add(i);
+        {
+            if (!rows[i].IsHeader) break;
+            indices.Add(i);
+        }
         return indices;
     }
 
