@@ -48,17 +48,17 @@ public sealed class PdfStructElem
     /// Merged into the same <c>/A &lt;&lt; /O /Table ... &gt;&gt;</c> attribute dictionary as
     /// <see cref="TableHeaderScope"/>, per ISO 32000-1 14.8.5.7 Table 349. A value of 1 or less is
     /// never written: Table 349 defaults an absent <c>/RowSpan</c> to 1, so an unspanned cell keeps
-    /// the exact bytes it had before this attribute existed. ISO 14289-1 clause 7.2 test 43 checks
-    /// a table's rows against this value (and <see cref="TableColSpan"/>); without it, a spanning
-    /// cell's single structure element claims a one-by-one slot and the row it covers reads one
-    /// column short.
+    /// the exact bytes it had before this attribute existed. ISO 14289-1:2014 clause 7.5 requires a
+    /// table header to be tagged according to Table 349, and a validator checks each row's column
+    /// count against these two values; without them, a spanning cell's single structure element
+    /// claims a one-by-one slot and the row it covers reads one column short.
     /// </summary>
     public int? TableRowSpan { get; set; }
 
     /// <summary>
     /// For table cell (<c>TH</c>/<c>TD</c>) elements — the number of columns the cell spans. See
     /// <see cref="TableRowSpan"/>: same attribute dictionary, same Table 349 default of 1, same
-    /// clause 7.2 test 43.
+    /// row-width check.
     /// </summary>
     public int? TableColSpan { get; set; }
 
@@ -282,10 +282,11 @@ internal sealed class PdfStructureTree
             if (!string.IsNullOrEmpty(elemLang))
                 d.Set(new PdfName("Lang"), PdfLiteralString.FromUnicode(elemLang));
 
-            // /A — the table attribute dictionary (ISO 32000-1 14.8.5.7 Table 349). /Scope is
-            // required on a TH by PDF/UA-1 clause 7.5; /RowSpan and /ColSpan are written only when
-            // greater than 1, since Table 349 defaults an absent value to 1 and clause 7.2 test 43
-            // checks a table's rows against exactly that default.
+            // /A — the table attribute dictionary (ISO 32000-1 14.8.5.7 Table 349). ISO
+            // 14289-1:2014 clause 7.5 requires a table header to be tagged according to Table 337
+            // and Table 349, which is where /Scope, /RowSpan and /ColSpan come from. The two spans
+            // are written only when greater than 1, since Table 349 defaults an absent value to 1
+            // and a validator checks each row's column count against exactly that default.
             var scope = elem.TableHeaderScope?.Trim();
             var rowSpan = elem.TableRowSpan;
             var colSpan = elem.TableColSpan;

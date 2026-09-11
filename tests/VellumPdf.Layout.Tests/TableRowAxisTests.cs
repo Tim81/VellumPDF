@@ -141,7 +141,7 @@ public sealed class TableRowAxisTests
     /// height of both spanned rows, then drew it again when the span map reached its last spanned
     /// row (<c>remainingRows == 1</c>) — the same cell, recomputed to the same combined height, a
     /// second time. The existing rowspan test in <see cref="LayoutFixTests"/> asserted only that
-    /// "SPAN" appeared in the stream, which passes whether it appears once or twice; this asserts
+    /// "Span2" appeared in the stream, which passes whether it appears once or twice; this asserts
     /// the count.
     /// </summary>
     [Fact]
@@ -167,20 +167,29 @@ public sealed class TableRowAxisTests
     }
 
     /// <summary>
-    /// Page 300x150, margin 20, 12 rows each holding two cells, a <c>RowSpan = 3</c> at row 5 —
-    /// crossing a page break, so the split path in <c>Layout</c> is exercised too (it never places
-    /// the break inside a rowspan group, per <see cref="TableElement"/>'s own documented guarantee,
-    /// so the span itself lands whole on one page). Of the 24 cells this loop builds, two are never
-    /// reachable through the draw loop regardless of this fix: rows 6 and 7 (the two rows the span
-    /// covers besides its origin) each still get a second cell appended for the column the span
-    /// occupies, and <c>DrawRow</c>'s <c>cellIdx</c> then reads it as if it belonged to the next
-    /// column instead, leaving that row's true second cell ("x6", "x7") unconsumed — a property of
-    /// how this fixture builds continuation rows, not a defect this pull request's scope covers.
-    /// 24 cells minus those 2 leaves 22 reachable ones. Before this fix, the duplicated span draw
-    /// added a 23rd literal on top of those 22; after it, the count is exactly 22.
+    /// Page 300x150, margin 20, 12 rows each holding two cells, a <c>RowSpan = 3</c> at row 5. This
+    /// exercises the split path in <c>Layout</c> — the table does not fit on one page and continues
+    /// onto a second — but not a break through the middle of the span: every row here is 20pt tall
+    /// and the content area is 110pt, so the natural fit already stops after 5 rows (100pt), right
+    /// before the span begins, and the whole 3-row span lands on the continuation page. Confirmed
+    /// by decoding the saved PDF's own per-page content streams: page 0 holds rows 0-4, page 1 holds
+    /// rows 5-9 (the span among them), page 2 holds rows 10-11. Renamed from a name and doc that
+    /// both claimed the span crossed the break, per
+    /// <see cref="VellumPdf.Layout.Rendering.Table.TableRenderer"/>'s own documented guarantee that
+    /// a page break is never placed inside a rowspan group — the guarantee this fixture never puts
+    /// to the test, since the natural break already falls outside the span.
+    ///
+    /// Of the 24 cells this loop builds, two are never reachable through the draw loop regardless
+    /// of this fix: rows 6 and 7 (the two rows the span covers besides its origin) each still get a
+    /// second cell appended for the column the span occupies, and <c>DrawRow</c>'s <c>cellIdx</c>
+    /// then reads it as if it belonged to the next column instead, leaving that row's true second
+    /// cell ("x6", "x7") unconsumed — a property of how this fixture builds continuation rows, not a
+    /// defect this pull request's scope covers. 24 cells minus those 2 leaves 22 reachable ones.
+    /// Before this fix, the duplicated span draw added a 23rd literal on top of those 22; after it,
+    /// the count is exactly 22.
     /// </summary>
     [Fact]
-    public void RowSpan_acrossAPageBreak_totalLiteralsMatchTheReachableCells()
+    public void RowSpan_tableSplitOntoAContinuationPage_totalLiteralsMatchTheReachableCells()
     {
         using var doc = new Document
         {
@@ -201,8 +210,12 @@ public sealed class TableRowAxisTests
 
         var placements = ContentStreamReadback.TextPlacements(RenderAndDecompress(doc));
 
-        Assert.Equal(1, placements.Count(p => p.Text == "SPAN"));
+        // The total is asserted first: xUnit stops at the first failing Assert, and the doc above
+        // is about this 22-versus-23 boundary specifically, not about "SPAN" alone. With the
+        // narrower assertion first, a mutant that reintroduces the duplicate draw would be caught
+        // there instead, and the boundary this test documents would never be the one that failed.
         Assert.Equal(22, placements.Count);
+        Assert.Equal(1, placements.Count(p => p.Text == "SPAN"));
     }
 
     // ── (d) A row entirely covered by a span emits no struct elem ──────────────

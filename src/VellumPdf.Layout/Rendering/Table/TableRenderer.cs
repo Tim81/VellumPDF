@@ -155,12 +155,29 @@ public sealed class TableRenderer : IRenderer
 
         var rowY = area.Y;
 
+        // Which rows this page draws, resolved before any of them is drawn. A RowSpan is measured
+        // against this set rather than taken from the cell: on a continuation page the repeated
+        // header run is followed by the split row, not by the row the header's span was declared
+        // over, so a span declared there covers nothing that this page puts below it. See
+        // EffectiveRowSpan. The data half repeats the stop test the loop below uses, so the two
+        // agree by construction.
+        var drawnRows = new HashSet<int>(headerRowIndices);
+        var probeY = rowY + headerRowIndices.Sum(i => _rowHeights[i]);
+        for (var r = dataStartRow; r < rows.Count; r++)
+        {
+            if (probeY >= _occupied.Bottom - 0.001) break;
+            drawnRows.Add(r);
+            probeY += _rowHeights[r];
+        }
+
         // Draw the leading contiguous run of header rows; every later row, header-flagged or not,
-        // is drawn by the data loop below.
+        // is drawn by the data loop below. The TR is added to the tree only once DrawRow has
+        // populated it: a row entirely covered by a span from an earlier row draws no cell of its
+        // own, and a TR with no /K and no /Pg is a struct elem describing nothing.
         foreach (var hi in headerRowIndices)
         {
             var trElem = tableElem is not null ? new PdfStructElem("TR") : null;
-            DrawRow(ctx, rows[hi], hi, rowY, area.X, style, spanMap, trElem);
+            DrawRow(ctx, rows[hi], hi, rowY, area.X, style, spanMap, trElem, drawnRows);
             if (trElem is not null && trElem.Children.Count > 0) tableElem!.AddChild(trElem);
             rowY += _rowHeights[hi];
         }
@@ -170,7 +187,7 @@ public sealed class TableRenderer : IRenderer
         {
             if (rowY >= _occupied.Bottom - 0.001) break;
             var trElem = tableElem is not null ? new PdfStructElem("TR") : null;
-            DrawRow(ctx, rows[r], r, rowY, area.X, style, spanMap, trElem);
+            DrawRow(ctx, rows[r], r, rowY, area.X, style, spanMap, trElem, drawnRows);
             if (trElem is not null && trElem.Children.Count > 0) tableElem!.AddChild(trElem);
             rowY += _rowHeights[r];
         }
@@ -183,7 +200,7 @@ public sealed class TableRenderer : IRenderer
     private void DrawRow(DrawContext ctx, Row row, int rowIdx, double rowY, double startX,
         TextStyle style,
         Dictionary<(int row, int col), (Cell cell, Row originRow, double startY, int remainingRows)> spanMap,
-        PdfStructElem? trElem)
+        PdfStructElem? trElem, HashSet<int> drawnRows)
     {
         var x = startX;
         var col = 0;
@@ -231,38 +248,71 @@ public sealed class TableRenderer : IRenderer
             var cell = cells[cellIdx++];
             if (col >= _colWidths.Length) break;
 
-            var colW = ColSpanWidth(col, cell.ColSpan);
+            // The rows this cell actually spans, which is what both the paint and the structure
+            // attribute are taken from. A declared RowSpan is a request: the combined-height loop
+            // below already stopped at the rows that exist, while the attribute was written from the
+            // declared number, so a cell could claim rows the page does not have.
+            //
+            // ColSpan needs no equivalent. TableGridResolver sets the column count to the widest
+            // row's own span sum (#485), so a row's spans can never total more columns than the
+            // grid has, and col is the running total of the spans before this cell in the same row.
+            // A clamp here would assert the opposite of that.
+            var rowSpan = EffectiveRowSpan(cell.RowSpan, rowIdx, drawnRows);
+            var colSpan = cell.ColSpan;
+            var colW = ColSpanWidth(col, colSpan);
             var h = _rowHeights[rowIdx];
 
-            if (cell.RowSpan <= 1)
+            if (rowSpan <= 1)
             {
                 // Normal single-row cell — draw immediately
-                DrawCell(ctx, cell, row, col, colXPositions[col], rowY, colW, h, style, trElem);
+                DrawCell(ctx, cell, row, col, colXPositions[col], rowY, colW, h, style, trElem,
+                    rowSpan, colSpan);
             }
             else
             {
-                // Multi-row span: don't draw yet — register in spanMap for the origin row,
-                // draw when the last spanned row is reached (or draw here spanning combined height).
-                // Strategy: draw immediately spanning the combined height of all spanned rows.
+                // Multi-row span: drawn once here, spanning the combined height of the rows it
+                // covers, with the rows below marked occupied so they skip this column range.
                 var totalSpanH = 0.0;
-                for (var sr = rowIdx; sr < rowIdx + cell.RowSpan && sr < _rowHeights.Length; sr++)
+                for (var sr = rowIdx; sr < rowIdx + rowSpan; sr++)
                     totalSpanH += _rowHeights[sr];
 
-                DrawCell(ctx, cell, row, col, colXPositions[col], rowY, colW, totalSpanH, style, trElem);
+                DrawCell(ctx, cell, row, col, colXPositions[col], rowY, colW, totalSpanH, style,
+                    trElem, rowSpan, colSpan);
 
-                // Mark subsequent rows as occupied so they skip this column range
-                for (var sr = rowIdx + 1; sr < rowIdx + cell.RowSpan && sr < _rowHeights.Length; sr++)
-                    for (var sc = col; sc < col + cell.ColSpan && sc < _colWidths.Length; sc++)
-                        spanMap[(sr, sc)] = (cell, row, rowY, cell.RowSpan - (sr - rowIdx));
+                for (var sr = rowIdx + 1; sr < rowIdx + rowSpan; sr++)
+                    for (var sc = col; sc < col + colSpan; sc++)
+                        spanMap[(sr, sc)] = (cell, row, rowY, rowSpan - (sr - rowIdx));
             }
 
-            col += cell.ColSpan;
+            col += colSpan;
         }
+    }
+
+    /// <summary>
+    /// How many rows a cell at <paramref name="rowIdx"/> declaring <paramref name="declared"/> rows
+    /// actually covers on this page: the longest run of consecutive rows from its own, all of which
+    /// this page draws, capped by the declared count.
+    ///
+    /// A data-row span is never clipped by this, because <c>Layout</c> walks a page break back out
+    /// of a rowspan group, so the whole group lands on one page. The repeated header run is the case
+    /// this exists for. <c>Draw</c> draws that run again at the top of every continuation page, but
+    /// the row below it there is the split row rather than row 1, so a header cell declaring
+    /// <c>RowSpan = 2</c> covers nothing the page puts under it. Painting it two rows tall overlaps
+    /// the first data row's own rectangle, and tagging it as two rows made the header declare one
+    /// column fewer than the row below it, which fails ISO 14289-1:2014 clause 7.5 through the
+    /// column-count check veraPDF applies to each row of a table.
+    /// </summary>
+    private static int EffectiveRowSpan(int declared, int rowIdx, HashSet<int> drawnRows)
+    {
+        var span = 1;
+        while (span < declared && drawnRows.Contains(rowIdx + span))
+            span++;
+        return span;
     }
 
     private void DrawCell(DrawContext ctx, Cell cell, Row row, int colIdx,
         double cellX, double cellY, double colW, double h,
-        TextStyle style, PdfStructElem? trElem)
+        TextStyle style, PdfStructElem? trElem, int rowSpan, int colSpan)
     {
         var cs = cell.Style ?? style;
 
@@ -365,10 +415,10 @@ public sealed class TableRenderer : IRenderer
                 cellElem.Language = cell.Language;
             if (row.IsHeader)
                 cellElem.TableHeaderScope = "Column";
-            if (cell.RowSpan > 1)
-                cellElem.TableRowSpan = cell.RowSpan;
-            if (cell.ColSpan > 1)
-                cellElem.TableColSpan = cell.ColSpan;
+            if (rowSpan > 1)
+                cellElem.TableRowSpan = rowSpan;
+            if (colSpan > 1)
+                cellElem.TableColSpan = colSpan;
             var pElem = new PdfStructElem("P") { Mcid = mcid };
             ctx.StampStructElemPage(pElem);
             cellElem.AddChild(pElem);

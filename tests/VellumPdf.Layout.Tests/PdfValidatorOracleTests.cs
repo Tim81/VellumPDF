@@ -951,10 +951,12 @@ public sealed class PdfValidatorOracleTests : IDisposable
     /// this test, including <see cref="PdfUA1_veraPdf_reportsCompliant"/>'s own table, had one
     /// header row, one data row, two columns and no span. <c>DrawCell</c> now writes <c>/RowSpan</c>
     /// on a spanning cell's structure element (<see cref="VellumPdf.Document.PdfStructElem"/>), so
-    /// ISO 14289-1 clause 7.2 test 43 ("Table rows shall have the same number of columns, taking
-    /// into account column spans") sees the row it covers as the right width instead of one column
-    /// short. Without it this fixture fails that test — measured directly against this exact
-    /// generator before the attribute existed.
+    /// veraPDF's row-width check ("Table rows shall have the same number of columns, taking into
+    /// account column spans") sees the row it covers as the right width instead of one column
+    /// short. Without it this fixture fails that check — measured directly against this exact
+    /// generator before the attribute existed. The check reaches ISO 14289-1:2014 through clause
+    /// 7.5, which requires a table header to be tagged according to ISO 32000-1:2008 Table 349; the
+    /// clause number veraPDF prints on the rule is its own rule identifier, not that clause.
     /// </summary>
     [Fact]
     public void PdfUA1_TaggedTableRowSpan2_veraPdf_reportsCompliant()
@@ -970,7 +972,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
     /// <summary>
     /// Same fixture as <see cref="PdfUA1_TaggedTableRowSpan2_veraPdf_reportsCompliant"/> at
     /// <c>RowSpan = 3</c>. Measured directly against this exact generator: this case already failed
-    /// clause 7.2 test 43 before the attribute existed, same as <c>RowSpan = 2</c> above — no test
+    /// the same row-width check before the attribute existed, as <c>RowSpan = 2</c> did — no test
     /// before this one rendered a tagged, spanning table through <c>TableRenderer</c> at all.
     /// </summary>
     [Fact]
@@ -982,6 +984,110 @@ public sealed class PdfValidatorOracleTests : IDisposable
         var pdfPath = Path.Combine(_tempDir, "pdfua1_tagged_rowspan3_verapdf.pdf");
         GeneratePdfUA1TaggedRowSpanDoc(pdfPath, fontPath, rowSpan: 3);
         AssertVeraPdfCompliant(pdfPath, "ua1");
+    }
+
+    /// <summary>
+    /// The case that took the attribute commit out of #486: a header row carrying
+    /// <c>RowSpan = 2</c> on a table that paginates, so <c>Draw</c> repeats the header run at the
+    /// top of each continuation page. The header's span is real on the first page and covers
+    /// nothing on the others, where the row below it is the split row rather than the row the span
+    /// was declared over. Writing the declared 2 on every repeat made the header claim one column
+    /// fewer than the row below it, and veraPDF 1.30.2 reported two failed checks on a document
+    /// that was compliant before the attribute existed.
+    ///
+    /// The exact emitted numbers are pinned separately in <c>TableSpanAttributeTests</c>. This case
+    /// is the oracle's own verdict on the shape.
+    /// </summary>
+    [Fact]
+    public void PdfUA1_TaggedTableRepeatedHeaderCarryingARowSpan_veraPdf_reportsCompliant()
+    {
+        var fontPath = FindPlatformFont();
+        if (fontPath is null) { OracleGate.Unavailable("platform font for PDF/UA oracle"); }
+
+        var pdfPath = Path.Combine(_tempDir, "pdfua1_tagged_repeated_header_rowspan_verapdf.pdf");
+        GeneratePdfUA1TaggedPaginatingHeaderSpanDoc(pdfPath, fontPath);
+        AssertVeraPdfCompliant(pdfPath, "ua1");
+    }
+
+    /// <summary>
+    /// A span declaring far more rows than the table holds. The renderer paints only the rows that
+    /// exist, so the attribute must claim only those too. Measured before the clamp, on a two-row
+    /// table: a declared 5 and a declared 50 each failed veraPDF's row-width check, and a declared
+    /// <c>int.MaxValue</c> produced no verdict at all — veraPDF tried to allocate a row array of
+    /// that size and aborted the job with "Requested array size exceeds VM limit" and exit code 3,
+    /// which <see cref="VeraPdfExitCode"/> had no case for.
+    /// </summary>
+    [Theory]
+    [InlineData(5)]
+    [InlineData(50)]
+    [InlineData(int.MaxValue)]
+    public void PdfUA1_TaggedTableRowSpanPastTheLastRow_veraPdf_reportsCompliant(int declared)
+    {
+        var fontPath = FindPlatformFont();
+        if (fontPath is null) { OracleGate.Unavailable("platform font for PDF/UA oracle"); }
+
+        var pdfPath = Path.Combine(
+            _tempDir,
+            "pdfua1_tagged_rowspan_past_end_" + declared.ToString(CultureInfo.InvariantCulture) + "_verapdf.pdf");
+        GeneratePdfUA1TaggedOverlongSpanDoc(pdfPath, fontPath, declared);
+        AssertVeraPdfCompliant(pdfPath, "ua1");
+    }
+
+    /// <summary>
+    /// A tagged PDF/UA-1 table small enough in page height that its twelve data rows paginate,
+    /// with the header row's first cell carrying <c>RowSpan = 2</c>.
+    /// </summary>
+    private static void GeneratePdfUA1TaggedPaginatingHeaderSpanDoc(string path, string fontPath)
+    {
+        using var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, 300, 170),
+            Margins = new EdgeInsets(20),
+        };
+        doc.Conformance = PdfConformance.PdfUA1;
+        doc.Tagged = true;
+        doc.Language = "en-US";
+        doc.Info.Title = "VellumPdf veraPDF Oracle — Repeated Header Carrying a RowSpan";
+        doc.Info.Producer = "VellumPdf";
+
+        var style = EmbeddedStyle(doc, fontPath);
+        var table = new TableElement { DefaultCellStyle = style };
+        var header = table.AddHeaderRow();
+        header.AddCell(new Cell("H0") { RowSpan = 2 }).AddCell("H1");
+        for (var r = 0; r < 12; r++)
+        {
+            var row = table.AddRow();
+            row.AddCell("a" + r.ToString(CultureInfo.InvariantCulture));
+            row.AddCell("b" + r.ToString(CultureInfo.InvariantCulture));
+        }
+        doc.Add(table);
+
+        doc.Save(path);
+    }
+
+    /// <summary>
+    /// A tagged PDF/UA-1 two-row table whose header cell declares <paramref name="declared"/> rows,
+    /// which is more rows than the table has.
+    /// </summary>
+    private static void GeneratePdfUA1TaggedOverlongSpanDoc(string path, string fontPath, int declared)
+    {
+        using var doc = new Document();
+        doc.Conformance = PdfConformance.PdfUA1;
+        doc.Tagged = true;
+        doc.Language = "en-US";
+        doc.Info.Title = "VellumPdf veraPDF Oracle — RowSpan Past the Last Row";
+        doc.Info.Producer = "VellumPdf";
+
+        var style = EmbeddedStyle(doc, fontPath);
+        var table = new TableElement { DefaultCellStyle = style };
+        table.SetColumnWidths(200, 200);
+        var header = table.AddHeaderRow();
+        header.AddCell(new Cell("H0") { RowSpan = declared }).AddCell("H1");
+        var data = table.AddRow();
+        data.AddCell("a1").AddCell("b1");
+        doc.Add(table);
+
+        doc.Save(path);
     }
 
     /// <summary>
