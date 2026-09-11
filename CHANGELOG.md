@@ -462,6 +462,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   checks. A cell now spans the run of rows the page it is drawn on actually draws, capped by the
   declared count, and the paint and the attribute come from that one number.
 
+  `/ColSpan` is bounded the same way, for a narrower reason. A span wider than the widths the caller
+  supplied is not an overrun, because the grid widens to the widest row's own span sum (#485). But a
+  cell does not always start where its own row's earlier cells left it: a span from an earlier row
+  advances the column by that cell's width instead. A row of one `ColSpan = 2` cell sitting under a
+  row that sums to three columns and spans its first two downward starts at column 2 of 3 and gets
+  one column, and used to claim two. This changes no drawn byte, only the attribute, because the
+  painted width was already bounded by the columns that exist.
+
   A row every column of which is covered by a span from an earlier row contributes no cell, and now
   gets no row element either. A row element with no children and no page reference describes
   nothing.
