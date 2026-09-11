@@ -109,8 +109,9 @@ public sealed class PropertyTests
             // rather than passing quietly.
             var placements = ContentStreamReadback.TextPlacements(stream);
             Assert.Single(placements, p => p.Text == LayoutGen.ParagraphText(spec));
+            // Two generated rows, each holding spec.ColumnCount cells of the cell word.
             Assert.Equal(
-                spec.ItemCount + spec.ColumnCount,
+                spec.ItemCount + (2 * spec.ColumnCount),
                 placements.Count(p => p.Text == spec.Word));
 
             foreach (var t in placements)
@@ -330,7 +331,8 @@ public sealed class PropertyTests
         $"page {s.PageWidth:F1}x{s.PageHeight:F1}, margin {s.Margins.Left:F1}, {s.FontSize:F1}pt, " +
         $"{s.Alignment}, {s.ListStyle}, {s.ItemCount} items, header={s.Header ?? "none"}, " +
         $"footer={s.Footer ?? "none"}, image w={s.ImageWidth:F1} h={s.ImageHeight:F1}, " +
-        $"chart raw diameter={s.ChartDiameterRaw:F1}";
+        $"chart raw diameter={s.ChartDiameterRaw:F1}, table margin={s.TableMargin:F1}, " +
+        $"row0Header={s.Row0IsHeader}, row1Header={s.Row1IsHeader}";
 
     private static class FuzzBudget
     {

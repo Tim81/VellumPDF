@@ -61,6 +61,42 @@ internal static class LayoutGen
     /// </summary>
     private static Gen<double> SafeImageHeight => Gen.Double[1.0, 50.0];
 
+    /// <summary>
+    /// A table's own margin. Before this field existed the generator never set
+    /// <see cref="TableElement.Margins"/> at all, so the property sweep this drives could not reach
+    /// a table margin applied twice (#480): every sample had nothing there to double.
+    ///
+    /// Bounded to 5pt rather than to the row height, because the binding constraint here is column
+    /// width, not row height: <see cref="CellWord"/> hard-breaks once its column shrinks enough,
+    /// which would make a table margin fail this file's own placement-count invariant for a reason
+    /// unrelated to what this field is for. Measured by sweeping this generator's most adverse
+    /// corner — page width 400 (its minimum), page margin 60 (its maximum), font size 24 (its
+    /// maximum, so the fewest columns share the least remaining width against the widest word) — in
+    /// 0.5pt steps: "Wgggg" draws whole through a table margin of 7.5pt and hard-breaks from 8pt.
+    /// 5pt keeps every generated sample clear of that boundary.
+    /// </summary>
+    private static Gen<double> TableMargin => Gen.Double[0.0, 5.0];
+
+    /// <summary>
+    /// Which of the generated table's two rows, if any, are headers: neither, the first only (the
+    /// ordinary repeating-header shape), or the second only (a header after a data row, the #480
+    /// shape this field exists to reach). Deliberately excludes both — a table with no data rows at
+    /// all reports <see cref="LayoutResult.Outcome.Nothing"/> unconditionally from
+    /// <c>TableRenderer.Layout</c> regardless of how much page is actually free, which
+    /// <c>DocumentRenderer.CountPlaceRenderer</c> then reads as "this element can never render" and
+    /// throws <c>ElementTooTall</c> even on an empty page with room to spare. Measured directly:
+    /// widening this generator to include it broke both
+    /// <c>PropertyTests.ValidDocument_rendersWithoutThrowing</c> and
+    /// <c>ValidDocument_placesNothingOutsideThePage</c> on the very first run, on documents whose
+    /// content area had hundreds of points to spare. That is a real defect, filed as #488, and
+    /// outside this pull request's scope; excluding the shape that reaches it keeps the property sweep testing what
+    /// #480 fixed rather than failing on something else it happens to have found.
+    /// </summary>
+    private static Gen<(bool Row0IsHeader, bool Row1IsHeader)> RowHeaderShape => Gen.OneOfConst(
+        (false, false),
+        (true, false),
+        (false, true));
+
     // ── Composites ───────────────────────────────────────────────────────────
 
     internal static Gen<EdgeInsets> Insets =>
@@ -149,7 +185,10 @@ internal static class LayoutGen
         string Word,
         double ImageWidth,
         double ImageHeight,
-        double ChartDiameterRaw);
+        double ChartDiameterRaw,
+        double TableMargin,
+        bool Row0IsHeader,
+        bool Row1IsHeader);
 
     /// <summary>A band template, or no band at all.</summary>
     private static Gen<string?> OptionalBand =>
@@ -164,9 +203,11 @@ internal static class LayoutGen
     /// <see cref="Bands"/> is grouped: <see cref="ValidDoc"/> already uses eight generators, the
     /// most <c>Gen.Select</c> takes in one call.
     /// </summary>
-    private static Gen<(string? Header, string? Footer, double ImageWidth, double ImageHeight, double ChartDiameterRaw)> BandsAndMedia =>
-        Gen.Select(Bands, WideExtent, SafeImageHeight, WideExtent,
-            (bands, iw, ih, cd) => (bands.Header, bands.Footer, iw, ih, cd));
+    private static Gen<(string? Header, string? Footer, double ImageWidth, double ImageHeight,
+        double ChartDiameterRaw, double TableMargin, bool Row0IsHeader, bool Row1IsHeader)> BandsAndMedia =>
+        Gen.Select(Bands, WideExtent, SafeImageHeight, WideExtent, TableMargin, RowHeaderShape,
+            (bands, iw, ih, cd, tm, shape) =>
+                (bands.Header, bands.Footer, iw, ih, cd, tm, shape.Row0IsHeader, shape.Row1IsHeader));
 
     /// <summary>
     /// The upper bound was <c>Gen.Int[0, 6]</c>, which never reached the roman-numeral-length
@@ -196,7 +237,8 @@ internal static class LayoutGen
             (w, h, margin, size, align, colour, media, items) =>
                 new DocSpec(w, h, new EdgeInsets(margin), size, align, colour,
                     media.Header, media.Footer, items.Style, items.Count, 3, CellWord,
-                    media.ImageWidth, media.ImageHeight, media.ChartDiameterRaw));
+                    media.ImageWidth, media.ImageHeight, media.ChartDiameterRaw,
+                    media.TableMargin, media.Row0IsHeader, media.Row1IsHeader));
 
     /// <summary>
     /// The word every generated table cell holds, and also — via <c>DocSpec.Word</c>, which this
@@ -277,10 +319,13 @@ internal static class LayoutGen
             doc.Add(list);
         }
 
-        var table = new TableElement { DefaultCellStyle = style };
-        var row = table.AddRow();
+        var table = new TableElement { DefaultCellStyle = style, Margins = new EdgeInsets(spec.TableMargin) };
+        var row0 = table.AddRow(isHeader: spec.Row0IsHeader);
         for (var c = 0; c < spec.ColumnCount; c++)
-            row.AddCell(spec.Word);
+            row0.AddCell(spec.Word);
+        var row1 = table.AddRow(isHeader: spec.Row1IsHeader);
+        for (var c = 0; c < spec.ColumnCount; c++)
+            row1.AddCell(spec.Word);
         doc.Add(table);
 
         // An explicit Height, never null: with the 2×2 fixture image null Height takes the
