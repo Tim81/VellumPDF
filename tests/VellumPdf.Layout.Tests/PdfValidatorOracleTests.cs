@@ -1,6 +1,7 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.RegularExpressions;
@@ -943,6 +944,75 @@ public sealed class PdfValidatorOracleTests : IDisposable
         var pdfPath = Path.Combine(_tempDir, "pdfua1_text_verapdf.pdf");
         GeneratePdfATaggedTextDoc(pdfPath, fontPath, PdfConformance.PdfUA1);
         AssertVeraPdfCompliant(pdfPath, "ua1");
+    }
+
+    /// <summary>
+    /// The gap #480 left uncovered: every tagged table this suite validated against veraPDF before
+    /// this test, including <see cref="PdfUA1_veraPdf_reportsCompliant"/>'s own table, had one
+    /// header row, one data row, two columns and no span. <c>DrawCell</c> now writes <c>/RowSpan</c>
+    /// on a spanning cell's structure element (<see cref="VellumPdf.Document.PdfStructElem"/>), so
+    /// ISO 14289-1 clause 7.2 test 43 ("Table rows shall have the same number of columns, taking
+    /// into account column spans") sees the row it covers as the right width instead of one column
+    /// short. Without it this fixture fails that test — measured directly against this exact
+    /// generator before the attribute existed.
+    /// </summary>
+    [Fact]
+    public void PdfUA1_TaggedTableRowSpan2_veraPdf_reportsCompliant()
+    {
+        var fontPath = FindPlatformFont();
+        if (fontPath is null) { OracleGate.Unavailable("platform font for PDF/UA oracle"); }
+
+        var pdfPath = Path.Combine(_tempDir, "pdfua1_tagged_rowspan2_verapdf.pdf");
+        GeneratePdfUA1TaggedRowSpanDoc(pdfPath, fontPath, rowSpan: 2);
+        AssertVeraPdfCompliant(pdfPath, "ua1");
+    }
+
+    /// <summary>
+    /// Same fixture as <see cref="PdfUA1_TaggedTableRowSpan2_veraPdf_reportsCompliant"/> at
+    /// <c>RowSpan = 3</c>. Measured directly against this exact generator: this case already failed
+    /// clause 7.2 test 43 before the attribute existed, same as <c>RowSpan = 2</c> above — no test
+    /// before this one rendered a tagged, spanning table through <c>TableRenderer</c> at all.
+    /// </summary>
+    [Fact]
+    public void PdfUA1_TaggedTableRowSpan3_veraPdf_reportsCompliant()
+    {
+        var fontPath = FindPlatformFont();
+        if (fontPath is null) { OracleGate.Unavailable("platform font for PDF/UA oracle"); }
+
+        var pdfPath = Path.Combine(_tempDir, "pdfua1_tagged_rowspan3_verapdf.pdf");
+        GeneratePdfUA1TaggedRowSpanDoc(pdfPath, fontPath, rowSpan: 3);
+        AssertVeraPdfCompliant(pdfPath, "ua1");
+    }
+
+    /// <summary>
+    /// A tagged PDF/UA-1 table with a header row, a <c>RowSpan</c>-cell row and a trailing ordinary
+    /// row, otherwise identical in shape to <see cref="GeneratePdfATaggedDoc"/>'s table so the only
+    /// variable this isolates is the span itself.
+    /// </summary>
+    private static void GeneratePdfUA1TaggedRowSpanDoc(string path, string fontPath, int rowSpan)
+    {
+        using var doc = new Document();
+        doc.Conformance = PdfConformance.PdfUA1;
+        doc.Tagged = true;
+        doc.Language = "en-US";
+        doc.Info.Title = "VellumPdf veraPDF Oracle — Tagged RowSpan " + rowSpan.ToString(CultureInfo.InvariantCulture);
+        doc.Info.Producer = "VellumPdf";
+
+        var style = EmbeddedStyle(doc, fontPath);
+        doc.Add(new Heading("Tagged Span Table", new TextStyle { FontRef = style.FontRef, FontSize = 18 }));
+        doc.Add(new Paragraph("A tagged table with a spanning cell.", style));
+
+        var table = new TableElement { DefaultCellStyle = style };
+        table.SetColumnWidths(200, 200);
+        table.AddHeaderRow().AddCell("H1").AddCell("H2");
+        var origin = table.AddRow();
+        origin.AddCell(new Cell("Span") { RowSpan = rowSpan }).AddCell("x0");
+        for (var i = 1; i < rowSpan; i++)
+            table.AddRow().AddCell("x" + i.ToString(CultureInfo.InvariantCulture));
+        table.AddRow().AddCell("y0").AddCell("y1");
+        doc.Add(table);
+
+        doc.Save(path);
     }
 
     /// <summary>

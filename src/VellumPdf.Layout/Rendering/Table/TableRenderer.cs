@@ -365,6 +365,10 @@ public sealed class TableRenderer : IRenderer
                 cellElem.Language = cell.Language;
             if (row.IsHeader)
                 cellElem.TableHeaderScope = "Column";
+            if (cell.RowSpan > 1)
+                cellElem.TableRowSpan = cell.RowSpan;
+            if (cell.ColSpan > 1)
+                cellElem.TableColSpan = cell.ColSpan;
             var pElem = new PdfStructElem("P") { Mcid = mcid };
             ctx.StampStructElemPage(pElem);
             cellElem.AddChild(pElem);

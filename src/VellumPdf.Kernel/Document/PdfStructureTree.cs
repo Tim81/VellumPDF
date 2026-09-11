@@ -43,6 +43,25 @@ public sealed class PdfStructElem
     /// </summary>
     public string? TableHeaderScope { get; set; }
 
+    /// <summary>
+    /// For table cell (<c>TH</c>/<c>TD</c>) elements — the number of rows the cell spans.
+    /// Merged into the same <c>/A &lt;&lt; /O /Table ... &gt;&gt;</c> attribute dictionary as
+    /// <see cref="TableHeaderScope"/>, per ISO 32000-1 14.8.5.7 Table 349. A value of 1 or less is
+    /// never written: Table 349 defaults an absent <c>/RowSpan</c> to 1, so an unspanned cell keeps
+    /// the exact bytes it had before this attribute existed. ISO 14289-1 clause 7.2 test 43 checks
+    /// a table's rows against this value (and <see cref="TableColSpan"/>); without it, a spanning
+    /// cell's single structure element claims a one-by-one slot and the row it covers reads one
+    /// column short.
+    /// </summary>
+    public int? TableRowSpan { get; set; }
+
+    /// <summary>
+    /// For table cell (<c>TH</c>/<c>TD</c>) elements — the number of columns the cell spans. See
+    /// <see cref="TableRowSpan"/>: same attribute dictionary, same Table 349 default of 1, same
+    /// clause 7.2 test 43.
+    /// </summary>
+    public int? TableColSpan { get; set; }
+
     private readonly List<PdfStructElem> _children = [];
 
     /// <summary>Child structure elements (for grouping elements such as Table, TR, L, LI).</summary>
@@ -263,13 +282,24 @@ internal sealed class PdfStructureTree
             if (!string.IsNullOrEmpty(elemLang))
                 d.Set(new PdfName("Lang"), PdfLiteralString.FromUnicode(elemLang));
 
-            // /A — attribute dictionary for TH elements (PDF/UA-1 clause 7.5).
-            // Scope identifies whether this header applies to a Column or Row.
+            // /A — the table attribute dictionary (ISO 32000-1 14.8.5.7 Table 349). /Scope is
+            // required on a TH by PDF/UA-1 clause 7.5; /RowSpan and /ColSpan are written only when
+            // greater than 1, since Table 349 defaults an absent value to 1 and clause 7.2 test 43
+            // checks a table's rows against exactly that default.
             var scope = elem.TableHeaderScope?.Trim();
-            if (!string.IsNullOrEmpty(scope))
-                d.Set(new PdfName("A"), new PdfDictionary()
-                    .Set(new PdfName("O"), new PdfName("Table"))
-                    .Set(new PdfName("Scope"), new PdfName(scope)));
+            var rowSpan = elem.TableRowSpan;
+            var colSpan = elem.TableColSpan;
+            if (!string.IsNullOrEmpty(scope) || rowSpan > 1 || colSpan > 1)
+            {
+                var attrs = new PdfDictionary().Set(new PdfName("O"), new PdfName("Table"));
+                if (!string.IsNullOrEmpty(scope))
+                    attrs.Set(new PdfName("Scope"), new PdfName(scope));
+                if (rowSpan > 1)
+                    attrs.Set(new PdfName("RowSpan"), new PdfInteger(rowSpan.Value));
+                if (colSpan > 1)
+                    attrs.Set(new PdfName("ColSpan"), new PdfInteger(colSpan.Value));
+                d.Set(new PdfName("A"), attrs);
+            }
 
             // /StructParents is NOT set on individual struct elems; it belongs on the page.
             registry.SetValue(ref_, d);
