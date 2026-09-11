@@ -431,8 +431,9 @@ public sealed class TableRenderer : IRenderer
     ///
     /// "Start of a fresh line" is tested on <c>lineBuilder.Length == 0</c>, not on <c>lineW == 0</c>
     /// as an earlier version of this method did: <c>lineW</c> is a measured advance, not an
-    /// emptiness flag, and a character whose advance is zero — 38 code points in every Standard-14
-    /// face, per the running-band metrics gap this shares with #470 — leaves the buffer holding a
+    /// emptiness flag, and a character whose advance is zero — 38 of the first 256 codes in the
+    /// Helvetica and Times faces, 32 in Courier, and every one of the 256 in Symbol and
+    /// ZapfDingbats, which is the metrics gap #470 is about — leaves the buffer holding a
     /// pending, un-flushed line while <c>lineW</c> still reads 0. Testing <c>lineW</c> there made
     /// the next over-wide word believe it was starting fresh too, so it pushed its own hard-break
     /// fragments into <paramref name="maxWidth"/> ahead of the pending line, which was flushed only

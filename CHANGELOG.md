@@ -386,9 +386,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the source. Measured, a 60pt column at Helvetica 20pt holding U+007F, a space, and eight "A"s:
   before this fix the stream drew "AAAA", "AAAA", then U+007F last; guarding on
   `lineBuilder.Length == 0` instead — the same test `ParagraphRenderer` already uses — restores
-  source order. Only a zero-advance character can reach this path, so nothing visible moves, but
-  the cell's stream order no longer disagrees with its source and the row gained a line of height
-  it should not have had.
+  source order. Only a zero-advance character can reach the path, but calling the consequence
+  invisible was wrong in two ways, and both are measured. The space between such a character and
+  the next word came back, so following glyphs shift by a space's advance. And the line count can
+  go up rather than down: a cell holding U+0001, U+0002, U+0003 and then "AAAA" in that 60pt column
+  drew one line in a 24pt row before and draws two in a 48pt row now. Across a sweep of 9,607 cell
+  strings built from the zero-advance codes, 479 gained a line and none lost one, and the drawn
+  glyph sequence disagreed with the source in 399 cases before and none after.
 
   `TableRenderer.WordWrapCount` no longer carries its own line-counting walk; it delegates to
   `WordWrapLines(...).Count`, the same list `Draw` paints from. The two were not merely at risk of

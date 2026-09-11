@@ -202,9 +202,12 @@ internal static class LayoutGen
     /// The word every generated table cell holds, and also — via <c>DocSpec.Word</c>, which this
     /// field fills directly in <see cref="ValidDoc"/> above rather than being drawn from its own
     /// generator — the word <see cref="ParagraphText"/> repeats three times. Every generated list
-    /// item holds it too, but a list item never wraps or hard-breaks it: measured at forty items
-    /// across all four <see cref="ListStyle"/> values, the word draws whole regardless of length,
-    /// so only the cell and the paragraph are coupled to this constant, not three elements.
+    /// item holds it too, and all three are coupled to this constant, at different lengths.
+    /// Measured at forty items across all four <see cref="ListStyle"/> values, at the generator's
+    /// narrowest content box of 280pt: a cell stops drawing its word whole at six characters, a
+    /// list item at nineteen, and the paragraph's own line at twenty-one. The cell is the binding
+    /// one, which is why the constant sits at five, and the earlier claim that a list item never
+    /// breaks it was measured only over the lengths near that binding constraint.
     ///
     /// #468 is why it was ever a two-character constant rather than a generated string: before
     /// that fix, `TableGridResolver.AutoWidth` floored a column at its minimum content width and

@@ -186,10 +186,28 @@ internal sealed class TableGridResolver
         // `ScaleToFit` call below — already needed as the last-resort net for the floors-alone
         // case — scales the whole array, explicit and auto together, by the one ratio
         // `available / (explicitSum + autoFloorSum)`. That keeps every column's share of the
-        // shortfall proportional to what it asked for, so neither set can reach zero while the
-        // other still holds its floor. If `available` itself is zero or negative, `ScaleToFit`
-        // leaves the array unscaled — there is no ratio that fits a non-positive budget, so this
-        // last resort is not reachable for every input.
+        // shortfall proportional to what it asked for and neither set reaches zero.
+        //
+        // Be precise about the scope of that, because the two regimes meet at a cliff rather than
+        // blending. The preference above holds while explicitBudget is positive, and it holds all
+        // the way down: at a budget of one part in a million million the explicit columns are
+        // scaled to it and the stream writes their width as 0 while the auto columns keep their
+        // whole floor. Measured on a 200pt explicit entry against an auto floor of 956pt, an
+        // available width of 956 gives 165.22 and 789.78, and 956.000000000001 gives 0 and 956.
+        // That is the preference working as designed rather than a lapse in it, but "neither set
+        // reaches zero" is true of the non-positive-budget regime and not of the method.
+        //
+        // The proportional regime has a cost in the other direction. An explicit entry far larger
+        // than the table takes proportionally more of it, which can leave an auto column below
+        // what its own content needs: measured on a 380pt available width against the same 956pt
+        // floor, an explicit 5,000 resolves to 319.01 and 60.99 and renders, while 10,000 resolves
+        // to 346.84 and 33.16 and the auto column's hard-broken content then makes the row taller
+        // than the page, so the render refuses where the unscaled behaviour drew it.
+        //
+        // If available itself is zero or negative, ScaleToFit does scale, and to a non-positive
+        // ratio: measured by calling the resolver directly, an available width of 0 gives every
+        // column 0 and -50 gives negative widths. No document reaches it, because
+        // TableRenderer.Layout returns Nothing for a non-positive area width and is the only caller.
         var explicitBudget = available - autoFloorSum;
         if (explicitBudget > 0 && explicitSum > explicitBudget)
         {

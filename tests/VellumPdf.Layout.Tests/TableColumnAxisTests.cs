@@ -157,7 +157,37 @@ public sealed partial class TableColumnAxisTests
         Assert.Equal(152.0, rects[1].W, 0.001);
         Assert.Equal(152.0, rects[2].W, 0.001);
         Assert.Equal(228.0, rects[3].W, 0.001);
-        Assert.True(rects.Take(2).Sum(r => r.W) <= 380.0 + 0.001);
+        // The span cell's own right edge is the containment claim, not the first row's sum,
+        // which is two of the three columns and cannot exceed the box while the widths above
+        // hold. Row 1's span starts where its first column ends.
+        Assert.Equal(380.0, rects[2].W + rects[3].W, 0.001);
+    }
+
+    /// <summary>
+    /// The column count accumulates spans, so a caller can overflow the sum. It used to be a
+    /// checked LINQ <c>Sum</c> and became a bare accumulation, which in this project's build is
+    /// unchecked: the sum wrapped and a row silently lost a cell instead of the render refusing.
+    /// The accumulation is checked again, and this pins that the refusal is loud.
+    ///
+    /// Two cells of <c>int.MaxValue</c> are used rather than one, because one does not overflow the
+    /// sum and instead reaches the array allocation, which raises its own out-of-memory refusal for
+    /// the array's dimension. Both are loud; only the wrap is this guard's business.
+    /// </summary>
+    [Fact]
+    public void ColumnCount_spanSumOverflowing_refusesInsteadOfDroppingACell()
+    {
+        using var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, 400, 300),
+            Margins = new EdgeInsets(10),
+        };
+        var t = new TableElement { DefaultCellStyle = Style() };
+        var row = t.AddRow();
+        row.AddCell(new Cell("a") { ColSpan = int.MaxValue });
+        row.AddCell(new Cell("b") { ColSpan = int.MaxValue });
+        doc.Add(t);
+
+        Assert.Throws<OverflowException>(() => doc.Save(new MemoryStream()));
     }
 
     // ── (b) Explicit widths array ───────────────────────────────────────────────
