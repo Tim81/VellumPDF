@@ -93,7 +93,10 @@ public sealed class TableSpanAttributeTests
 
         var pdf = SaveAndFlatten(doc);
 
-        Assert.Equal(1, Occurrences(pdf, "/RowSpan 2"));
+        // The trailing space is load-bearing: "/RowSpan 2" is a prefix of "/RowSpan 2147483647",
+        // so without a delimiter this case passed on a mutant that emitted the declared value.
+        // Found by reverting the clamp, not by reading the test.
+        Assert.Equal(1, Occurrences(pdf, "/RowSpan 2 "));
         Assert.Equal(1, Occurrences(pdf, "/RowSpan"));
     }
 
@@ -128,7 +131,7 @@ public sealed class TableSpanAttributeTests
 
         var pdf = SaveAndFlatten(doc);
 
-        Assert.Equal(1, Occurrences(pdf, "/ColSpan 3"));
+        Assert.Equal(1, Occurrences(pdf, "/ColSpan 3 "));
         Assert.Equal(1, Occurrences(pdf, "/ColSpan"));
     }
 
@@ -170,7 +173,7 @@ public sealed class TableSpanAttributeTests
 
         // Two header cells per page across three pages; exactly one of the six claims two rows.
         Assert.Equal(6, Occurrences(pdf, "/Scope /Column"));
-        Assert.Equal(1, Occurrences(pdf, "/RowSpan 2"));
+        Assert.Equal(1, Occurrences(pdf, "/RowSpan 2 "));
         Assert.Equal(1, Occurrences(pdf, "/RowSpan"));
     }
 
@@ -199,7 +202,7 @@ public sealed class TableSpanAttributeTests
 
         var pdf = SaveAndFlatten(doc);
 
-        Assert.Equal(1, Occurrences(pdf, "/O /Table /Scope /Column /RowSpan 2"));
+        Assert.Equal(1, Occurrences(pdf, "/O /Table /Scope /Column /RowSpan 2 "));
     }
 
     /// <summary>
@@ -233,7 +236,7 @@ public sealed class TableSpanAttributeTests
 
         var pdf = SaveAndFlatten(doc);
 
-        Assert.Equal(1, Occurrences(pdf, "/RowSpan 2"));
+        Assert.Equal(1, Occurrences(pdf, "/RowSpan 2 "));
         Assert.Equal(1, Occurrences(pdf, "/S /TR"));
     }
 }

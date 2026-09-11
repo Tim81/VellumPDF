@@ -160,9 +160,14 @@ public sealed class TableRenderer : IRenderer
         // header run is followed by the split row, not by the row the header's span was declared
         // over, so a span declared there covers nothing that this page puts below it. See
         // EffectiveRowSpan. The data half repeats the stop test the loop below uses, so the two
-        // agree by construction.
+        // agree by construction — including the accumulation itself, which adds one row height at a
+        // time rather than summing them, because a sum starting from zero and a running total
+        // starting from the area's own Y can differ in the last bits and so disagree about a row
+        // sitting exactly on the boundary.
         var drawnRows = new HashSet<int>(headerRowIndices);
-        var probeY = rowY + headerRowIndices.Sum(i => _rowHeights[i]);
+        var probeY = rowY;
+        foreach (var hi in headerRowIndices)
+            probeY += _rowHeights[hi];
         for (var r = dataStartRow; r < rows.Count; r++)
         {
             if (probeY >= _occupied.Bottom - 0.001) break;

@@ -218,19 +218,24 @@ public sealed class TableRowAxisTests
         Assert.Equal(1, placements.Count(p => p.Text == "SPAN"));
     }
 
-    // ── (d) A row entirely covered by a span emits no struct elem ──────────────
+    // ── (d) A covered row that the draw loop never reaches ────────────────────
 
     /// <summary>
     /// Page 400x300, margin 10, tagged; one column, row 0 holding a <c>RowSpan = 2</c> cell, row 1
-    /// contributing no cell of its own — its only column is covered by the span from row 0.
-    /// <c>Draw</c> used to create a <c>TR</c> struct elem for every row before <c>DrawRow</c> ran,
-    /// so a row that draws no cell of its own left a struct elem with no <c>/K</c> and no
-    /// <c>/Pg</c> in the tree — measured directly as <c>&lt;&lt; /Type /StructElem /S /TR
-    /// /P 8 0 R &gt;&gt;</c> and nothing else. A <c>TR</c> is now added to the tree only once
-    /// <c>DrawRow</c> has actually populated it, so this table's tree holds exactly one.
+    /// declaring no cell at all, so its only column is covered by the span from row 0.
+    ///
+    /// This case does **not** prove the fix that stopped <c>Draw</c> adding a <c>TR</c> before
+    /// <c>DrawRow</c> populated it. Reverting that fix in a detached worktree leaves this test
+    /// passing, and the reason is worth keeping: a row declaring no cell measures a height of 0, so
+    /// <c>_occupied.Bottom</c> lands exactly on this row's own top edge and the data loop's stop
+    /// test breaks before reaching it. The row is never drawn on either side of that fix, so no
+    /// <c>TR</c> is created either way. What this pins is that behaviour.
+    ///
+    /// <c>TableSpanAttributeTests</c> carries the case that does discriminate the fix: a covered
+    /// row that declares a cell, and so has a height to be reached at.
     /// </summary>
     [Fact]
-    public void RowSpan_rowFullyCoveredBySpan_emitsNoEmptyTR()
+    public void CoveredRow_declaringNoCell_isNeverReachedByTheDrawLoop()
     {
         using var doc = new Document
         {
