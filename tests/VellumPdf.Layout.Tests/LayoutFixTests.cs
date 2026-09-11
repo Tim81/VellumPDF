@@ -77,6 +77,12 @@ public sealed class LayoutFixTests
 
     // ── Group E: RowSpan ─────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Asserts an occurrence count rather than mere presence — <c>Assert.Contains</c> against the
+    /// decompressed stream passed whether <c>DrawRow</c> drew "Span2" once or twice, which is
+    /// exactly how the duplicated span draw survived review undetected (see the row-axis pull
+    /// request that fixed it).
+    /// </summary>
     [Fact]
     public void Table_rowSpan2_producesPdf()
     {
@@ -99,9 +105,9 @@ public sealed class LayoutFixTests
         doc.Save(ms);
         Assert.True(ms.Length > 100);
 
-        // Content streams are FlateDecode-compressed; decompress to find cell text
         var decompressed = PdfTestUtil.DecompressAllFlatStreams(ms.ToArray());
-        Assert.Contains("Span2", decompressed);
+        var placements = ContentStreamReadback.TextPlacements(decompressed);
+        Assert.Equal(1, placements.Count(p => p.Text == "Span2"));
     }
 
     // ── Group E: Header row repetition ───────────────────────────────────────

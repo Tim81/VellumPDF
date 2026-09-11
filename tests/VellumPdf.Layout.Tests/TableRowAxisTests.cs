@@ -1,6 +1,7 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Globalization;
 using VellumPdf.Document;
 using VellumPdf.Fonts;
 using VellumPdf.Layout.Core;
@@ -9,14 +10,18 @@ using VellumPdf.Layout.Elements.Table;
 namespace VellumPdf.Layout.Tests;
 
 /// <summary>
-/// The table pull request's row axis: a header row that sits after a data row, and the table's own
-/// margins applied to <c>Draw</c> a second time on top of the deflate <c>Layout</c> already did.
-/// The first is content loss. The second is an offset on both axes while the margin stays below the
-/// row's own height, and becomes loss on the vertical axis once it reaches that height, which is why
-/// section (b) pins both the corrected origin and the row's survival at the boundary.
+/// The table pull request's row axis: a header row that sits after a data row, the table's own
+/// margins applied to <c>Draw</c> a second time on top of the deflate <c>Layout</c> already did,
+/// and a <c>RowSpan</c> cell drawn once at its origin row and a second time when the span map runs
+/// down. The first and third are content loss and duplication. The second is an offset on both axes
+/// while the margin stays below the row's own height, and becomes loss on the vertical axis once it
+/// reaches that height, which is why section (b) pins both the corrected origin and the row's
+/// survival at the boundary. Section (c) asserts an occurrence count rather than presence: the
+/// existing rowspan test in <see cref="LayoutFixTests"/> passed whether the spanning cell drew once
+/// or twice, which is exactly how that defect survived review undetected.
 ///
 /// Sectioned like <see cref="TableColumnAxisTests"/>: (a) the header row window, (b) the doubly
-/// applied table margin.
+/// applied table margin, (c) the duplicated rowspan draw.
 /// </summary>
 public sealed class TableRowAxisTests
 {
@@ -126,5 +131,77 @@ public sealed class TableRowAxisTests
         var placements = ContentStreamReadback.TextPlacements(RenderAndDecompress(doc));
 
         Assert.Equal(1, placements.Count(p => p.Text == "Wg"));
+    }
+
+    // ── (c) The duplicated rowspan draw ───────────────────────────────────────
+
+    /// <summary>
+    /// Page 400x300, margin 10; two rows, the first cell of row 0 carrying <c>RowSpan = 2</c>.
+    /// <c>DrawRow</c> drew the spanning cell immediately at its origin row across the full combined
+    /// height of both spanned rows, then drew it again when the span map reached its last spanned
+    /// row (<c>remainingRows == 1</c>) — the same cell, recomputed to the same combined height, a
+    /// second time. The existing rowspan test in <see cref="LayoutFixTests"/> asserted only that
+    /// "SPAN" appeared in the stream, which passes whether it appears once or twice; this asserts
+    /// the count.
+    /// </summary>
+    [Fact]
+    public void RowSpan_spanningCellText_drawnExactlyOnce()
+    {
+        using var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, 400, 300),
+            Margins = new EdgeInsets(10),
+        };
+        var t = new TableElement { DefaultCellStyle = Style() };
+        var r0 = t.AddRow();
+        r0.AddCell(new Cell("SPAN") { RowSpan = 2 });
+        r0.AddCell("x0");
+        t.AddRow().AddCell("x1");
+        doc.Add(t);
+
+        var placements = ContentStreamReadback.TextPlacements(RenderAndDecompress(doc));
+
+        Assert.Equal(1, placements.Count(p => p.Text == "SPAN"));
+        Assert.Equal(1, placements.Count(p => p.Text == "x0"));
+        Assert.Equal(1, placements.Count(p => p.Text == "x1"));
+    }
+
+    /// <summary>
+    /// Page 300x150, margin 20, 12 rows each holding two cells, a <c>RowSpan = 3</c> at row 5 —
+    /// crossing a page break, so the split path in <c>Layout</c> is exercised too (it never places
+    /// the break inside a rowspan group, per <see cref="TableElement"/>'s own documented guarantee,
+    /// so the span itself lands whole on one page). Of the 24 cells this loop builds, two are never
+    /// reachable through the draw loop regardless of this fix: rows 6 and 7 (the two rows the span
+    /// covers besides its origin) each still get a second cell appended for the column the span
+    /// occupies, and <c>DrawRow</c>'s <c>cellIdx</c> then reads it as if it belonged to the next
+    /// column instead, leaving that row's true second cell ("x6", "x7") unconsumed — a property of
+    /// how this fixture builds continuation rows, not a defect this pull request's scope covers.
+    /// 24 cells minus those 2 leaves 22 reachable ones. Before this fix, the duplicated span draw
+    /// added a 23rd literal on top of those 22; after it, the count is exactly 22.
+    /// </summary>
+    [Fact]
+    public void RowSpan_acrossAPageBreak_totalLiteralsMatchTheReachableCells()
+    {
+        using var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, 300, 150),
+            Margins = new EdgeInsets(20),
+        };
+        var t = new TableElement { DefaultCellStyle = Style() };
+        for (var r = 0; r < 12; r++)
+        {
+            var row = t.AddRow();
+            if (r == 5)
+                row.AddCell(new Cell("SPAN") { RowSpan = 3 });
+            else
+                row.AddCell("r" + r.ToString(CultureInfo.InvariantCulture));
+            row.AddCell("x" + r.ToString(CultureInfo.InvariantCulture));
+        }
+        doc.Add(t);
+
+        var placements = ContentStreamReadback.TextPlacements(RenderAndDecompress(doc));
+
+        Assert.Equal(1, placements.Count(p => p.Text == "SPAN"));
+        Assert.Equal(22, placements.Count);
     }
 }

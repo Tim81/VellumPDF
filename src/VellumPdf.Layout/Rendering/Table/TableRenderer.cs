@@ -204,16 +204,13 @@ public sealed class TableRenderer : IRenderer
             // Check if this column is occupied by a span from a prior row
             if (spanMap.TryGetValue((rowIdx, col), out var span))
             {
-                // It's the last row of a multi-row span — draw the cell spanning full combined height
+                // Last row of a multi-row span. The cell was already drawn once, at the origin
+                // row, spanning the full combined height (see the RowSpan > 1 branch below) — this
+                // only clears the slots it occupied in this row so the column can resume ordinary
+                // cells on the next row.
                 if (span.remainingRows == 1)
                 {
-                    var spanCell = span.cell;
-                    var spanColW = ColSpanWidth(col, spanCell.ColSpan);
-                    var spanTotalH = rowY + _rowHeights[rowIdx] - span.startY;
-                    DrawCell(ctx, spanCell, span.originRow, col, colXPositions[col], span.startY,
-                             spanColW, spanTotalH, style, trElem);
-                    // Remove all slots this cell occupied in this row
-                    for (var sc = col; sc < col + spanCell.ColSpan; sc++)
+                    for (var sc = col; sc < col + span.cell.ColSpan; sc++)
                         spanMap.Remove((rowIdx, sc));
                 }
                 else
