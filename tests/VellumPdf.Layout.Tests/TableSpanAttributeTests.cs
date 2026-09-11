@@ -101,14 +101,15 @@ public sealed class TableSpanAttributeTests
     }
 
     /// <summary>
-    /// <c>/ColSpan</c> needs no equivalent clamp, and this pins the reason rather than the clamp.
+    /// A declared <c>ColSpan</c> wider than the widths the caller supplied is not an overrun.
     /// <c>TableGridResolver</c> sets the column count to the widest row's own span sum (#485), so
-    /// declaring a span wider than the widths the caller supplied widens the grid instead of
-    /// overrunning it: two supplied widths and a header cell declaring three columns resolve to a
-    /// three-column grid, and the attribute is the declared 3 because the renderer covered 3.
+    /// the grid widens to it: two supplied widths and a header cell declaring three columns resolve
+    /// to a three-column grid, and the attribute is the declared 3 because the renderer covered 3.
     ///
     /// This case started life asserting a clamped 2, on the assumption that the grid stayed at the
-    /// two supplied widths. It does not, and the clamp the assumption justified was removed.
+    /// two supplied widths. See
+    /// <see cref="ColSpan_startingWhereASpanFromAnEarlierRowLeftOff_emitsTheColumnsItGot"/> for the
+    /// shape that does overrun, which is not this one.
     /// </summary>
     [Fact]
     public void ColSpan_widerThanTheSuppliedWidths_widensTheGridAndIsEmittedAsDeclared()
@@ -132,6 +133,43 @@ public sealed class TableSpanAttributeTests
         var pdf = SaveAndFlatten(doc);
 
         Assert.Equal(1, Occurrences(pdf, "/ColSpan 3 "));
+        Assert.Equal(1, Occurrences(pdf, "/ColSpan"));
+    }
+
+    /// <summary>
+    /// The shape where a <c>ColSpan</c> does overrun the grid, which the column count alone does not
+    /// prevent. <c>col</c> is not always the running total of this row's own cells: a span from an
+    /// earlier row advances it by that cell's width instead. Row 0 here sums to three columns and
+    /// spans its first two down into row 1, so row 1's single cell starts at column 2 of 3 and asks
+    /// for two. <c>ColSpanWidth</c> has always given it one, and the attribute used to claim two.
+    ///
+    /// Measured before the clamp: two <c>/ColSpan 2</c> attributes, one of them on a cell painted
+    /// one column wide. After it, one — row 0's, which really does cover two columns.
+    ///
+    /// The undrawn second cell this fixture's row 1 would need to fill the grid is #487 and is not
+    /// what this case is about.
+    /// </summary>
+    [Fact]
+    public void ColSpan_startingWhereASpanFromAnEarlierRowLeftOff_emitsTheColumnsItGot()
+    {
+        using var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, 400, 300),
+            Margins = new EdgeInsets(10),
+            Tagged = true,
+            Language = "en-US",
+        };
+        var t = new TableElement { DefaultCellStyle = Style() };
+        var r0 = t.AddRow();
+        r0.AddCell(new Cell("A") { ColSpan = 2, RowSpan = 2 });
+        r0.AddCell("B");
+        var r1 = t.AddRow();
+        r1.AddCell(new Cell("C") { ColSpan = 2 });
+        doc.Add(t);
+
+        var pdf = SaveAndFlatten(doc);
+
+        Assert.Equal(1, Occurrences(pdf, "/ColSpan 2 "));
         Assert.Equal(1, Occurrences(pdf, "/ColSpan"));
     }
 

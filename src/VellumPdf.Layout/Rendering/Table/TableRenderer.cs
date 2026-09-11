@@ -253,17 +253,19 @@ public sealed class TableRenderer : IRenderer
             var cell = cells[cellIdx++];
             if (col >= _colWidths.Length) break;
 
-            // The rows this cell actually spans, which is what both the paint and the structure
-            // attribute are taken from. A declared RowSpan is a request: the combined-height loop
-            // below already stopped at the rows that exist, while the attribute was written from the
-            // declared number, so a cell could claim rows the page does not have.
+            // The rows and columns this cell actually covers, which is what both the paint and the
+            // structure attribute are taken from. A declared span is a request: ColSpanWidth and the
+            // combined-height loop already stopped at what exists, while the attribute was written
+            // from the declared number, so a cell could claim rows and columns that are not there.
             //
-            // ColSpan needs no equivalent. TableGridResolver sets the column count to the widest
-            // row's own span sum (#485), so a row's spans can never total more columns than the
-            // grid has, and col is the running total of the spans before this cell in the same row.
-            // A clamp here would assert the opposite of that.
+            // The column bound is not simply the grid's width. TableGridResolver sets the column
+            // count to the widest row's own span sum (#485), so a row whose cells are all its own
+            // can never overrun it. But col is not always the running total of this row's cells: a
+            // span from an earlier row advances it by that cell's ColSpan instead. A row of one
+            // ColSpan-2 cell, sitting under a row that sums to three columns and spans its first
+            // two down into this one, starts at column 2 of 3 and asks for two. It gets one.
             var rowSpan = EffectiveRowSpan(cell.RowSpan, rowIdx, drawnRows);
-            var colSpan = cell.ColSpan;
+            var colSpan = Math.Min(cell.ColSpan, _colWidths.Length - col);
             var colW = ColSpanWidth(col, colSpan);
             var h = _rowHeights[rowIdx];
 
