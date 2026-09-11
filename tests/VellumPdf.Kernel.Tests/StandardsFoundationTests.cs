@@ -952,6 +952,76 @@ public sealed class StandardsFoundationTests
         Assert.Contains("/Scope /Column", content);
     }
 
+    /// <summary>
+    /// <see cref="PdfStructElem.TableRowSpan"/> and <see cref="PdfStructElem.TableColSpan"/> are
+    /// written only when greater than 1. ISO 32000-1:2008 Table 349 says a conforming reader shall
+    /// assume 1 when the entry is absent, so writing 1 explicitly would add bytes to a cell that
+    /// does not span while saying nothing new.
+    ///
+    /// Both properties are public, so a caller can set any value directly. The only in-tree caller,
+    /// <c>TableRenderer.DrawCell</c>, never passes 1 or less, which is why this test exists here
+    /// rather than in the layout suite: changing the writer's guard from "greater than 1" to
+    /// "1 or more" left all 1,810 layout and kernel cases green.
+    /// </summary>
+    [Theory]
+    [InlineData(1)]
+    [InlineData(0)]
+    [InlineData(-3)]
+    public void Tagged_tableCellSpanOfOneOrLess_writesNoSpanAttribute(int span)
+    {
+        using var doc = new PdfDocument();
+        doc.Tagged = true;
+        var page = doc.AddPage();
+        var canvas = new PdfCanvas(page);
+        var mcid = canvas.BeginMarkedContent("P");
+        canvas.EndMarkedContent();
+        canvas.Finish();
+
+        var pElem = new PdfStructElem("P") { Page = page, Mcid = mcid };
+        var tdElem = new PdfStructElem("TD") { Page = page, TableRowSpan = span, TableColSpan = span };
+        tdElem.AddChild(pElem);
+        doc.RegisterStructElem(tdElem);
+
+        var content = SaveToString(doc);
+
+        Assert.DoesNotContain("/RowSpan", content, StringComparison.Ordinal);
+        Assert.DoesNotContain("/ColSpan", content, StringComparison.Ordinal);
+        // No span means no reason to open an attribute dictionary at all on a cell with no scope.
+        Assert.DoesNotContain("/O /Table", content, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The other side of <see cref="Tagged_tableCellSpanOfOneOrLess_writesNoSpanAttribute"/>: a span
+    /// greater than 1 is written, into one attribute dictionary owned by <c>/Table</c>, alongside
+    /// <c>/Scope</c> when the cell carries one. Per ISO 32000-1:2008 Table 349.
+    /// </summary>
+    [Fact]
+    public void Tagged_tableCellSpans_writeIntoTheTableAttributeDictionary()
+    {
+        using var doc = new PdfDocument();
+        doc.Tagged = true;
+        var page = doc.AddPage();
+        var canvas = new PdfCanvas(page);
+        var mcid = canvas.BeginMarkedContent("P");
+        canvas.EndMarkedContent();
+        canvas.Finish();
+
+        var pElem = new PdfStructElem("P") { Page = page, Mcid = mcid };
+        var thElem = new PdfStructElem("TH")
+        {
+            Page = page,
+            TableHeaderScope = "Column",
+            TableRowSpan = 2,
+            TableColSpan = 3,
+        };
+        thElem.AddChild(pElem);
+        doc.RegisterStructElem(thElem);
+
+        var flat = System.Text.RegularExpressions.Regex.Replace(SaveToString(doc), @"\s+", " ");
+
+        Assert.Contains("/O /Table /Scope /Column /RowSpan 2 /ColSpan 3 ", flat, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Tagged_structTree_parentTreePresentWithMultipleElems()
     {
