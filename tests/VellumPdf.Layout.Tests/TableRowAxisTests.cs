@@ -204,4 +204,38 @@ public sealed class TableRowAxisTests
         Assert.Equal(1, placements.Count(p => p.Text == "SPAN"));
         Assert.Equal(22, placements.Count);
     }
+
+    // ── (d) A row entirely covered by a span emits no struct elem ──────────────
+
+    /// <summary>
+    /// Page 400x300, margin 10, tagged; one column, row 0 holding a <c>RowSpan = 2</c> cell, row 1
+    /// contributing no cell of its own — its only column is covered by the span from row 0.
+    /// <c>Draw</c> used to create a <c>TR</c> struct elem for every row before <c>DrawRow</c> ran,
+    /// so a row that draws no cell of its own left a struct elem with no <c>/K</c> and no
+    /// <c>/Pg</c> in the tree — measured directly as <c>&lt;&lt; /Type /StructElem /S /TR
+    /// /P 8 0 R &gt;&gt;</c> and nothing else. A <c>TR</c> is now added to the tree only once
+    /// <c>DrawRow</c> has actually populated it, so this table's tree holds exactly one.
+    /// </summary>
+    [Fact]
+    public void RowSpan_rowFullyCoveredBySpan_emitsNoEmptyTR()
+    {
+        using var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, 400, 300),
+            Margins = new EdgeInsets(10),
+            Tagged = true,
+            Language = "en-US",
+        };
+        var t = new TableElement { DefaultCellStyle = Style() };
+        t.AddRow().AddCell(new Cell("Span") { RowSpan = 2 });
+        t.AddRow(); // No cell of its own: its one column is covered by the span above.
+        doc.Add(t);
+
+        var ms = new MemoryStream();
+        doc.Save(ms);
+        var text = System.Text.Encoding.Latin1.GetString(ms.ToArray());
+
+        var trCount = System.Text.RegularExpressions.Regex.Matches(text, @"/S\s*/TR\b").Count;
+        Assert.Equal(1, trCount);
+    }
 }

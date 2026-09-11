@@ -160,8 +160,8 @@ public sealed class TableRenderer : IRenderer
         foreach (var hi in headerRowIndices)
         {
             var trElem = tableElem is not null ? new PdfStructElem("TR") : null;
-            if (trElem is not null) tableElem!.AddChild(trElem);
             DrawRow(ctx, rows[hi], hi, rowY, area.X, style, spanMap, trElem);
+            if (trElem is not null && trElem.Children.Count > 0) tableElem!.AddChild(trElem);
             rowY += _rowHeights[hi];
         }
 
@@ -170,8 +170,8 @@ public sealed class TableRenderer : IRenderer
         {
             if (rowY >= _occupied.Bottom - 0.001) break;
             var trElem = tableElem is not null ? new PdfStructElem("TR") : null;
-            if (trElem is not null) tableElem!.AddChild(trElem);
             DrawRow(ctx, rows[r], r, rowY, area.X, style, spanMap, trElem);
+            if (trElem is not null && trElem.Children.Count > 0) tableElem!.AddChild(trElem);
             rowY += _rowHeights[r];
         }
 
