@@ -129,7 +129,13 @@ public sealed class TableRenderer : IRenderer
     /// <summary>Draws cell backgrounds, borders and text (repeating header rows) and builds the tagged Table struct tree when tagging is enabled.</summary>
     public void Draw(DrawContext ctx)
     {
-        var area = _occupied.Deflate(_table.Margins.Left, _table.Margins.Top, _table.Margins.Right, 0);
+        // Layout already deflated context.Area by _table.Margins and stored the result in
+        // _occupied; deflating again here took the table's own margin out of the box twice. The
+        // vertical half was the one that lost content rather than merely shifting it: _occupied's
+        // height is exactly the rows that fit, with no margin allowance baked in, so a second top
+        // deflate ate into that height directly and past a margin equal to the row's own height
+        // left nothing to draw.
+        var area = _occupied;
         var style = _table.DefaultCellStyle ?? TextStyle.Default;
         var rows = _table.Rows;
 
