@@ -584,9 +584,25 @@ public sealed class ImageFormatTests
             }
         }
 
+        // Literal codes only: no pattern is ever reused, so every pixel is emitted as its own
+        // root code. That is legal LZW output, but the code width still has to grow, because the
+        // DECODER adds a table entry for every code after the first whatever the encoder does with
+        // its own table. GIF89a Appendix F, clause 4: the code length increases whenever a code
+        // value would exceed it.
+        //
+        // This helper used to emit every code at the initial width and never grow. That made its
+        // output non-conformant, and it went unnoticed because the decoder carried a matching
+        // off-by-one: both widened one code too late, so they agreed with each other and with
+        // nothing else. Fixing the decoder against the specification is what exposed this.
         EmitCode(clearCode);
-        foreach (var p in pixels)
-            EmitCode(p);
+        var nextCode = eoiCode + 1;
+        for (var i = 0; i < pixels.Length; i++)
+        {
+            EmitCode(pixels[i]);
+            if (i < 1) continue;
+            nextCode++;
+            if (nextCode >= (1 << codeSize) && codeSize < 12) codeSize++;
+        }
         EmitCode(eoiCode);
 
         if (bitsIn > 0)

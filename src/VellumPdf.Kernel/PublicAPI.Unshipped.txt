@@ -3,3 +3,5 @@ VellumPdf.Document.PdfStructElem.TableColSpan.get -> int?
 VellumPdf.Document.PdfStructElem.TableColSpan.set -> void
 VellumPdf.Document.PdfStructElem.TableRowSpan.get -> int?
 VellumPdf.Document.PdfStructElem.TableRowSpan.set -> void
+VellumPdf.Images.GifEncoder
+static VellumPdf.Images.GifEncoder.Encode(byte[]! rgb, int width, int height, bool interlaced = false) -> byte[]!

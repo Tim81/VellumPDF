@@ -35,6 +35,34 @@ under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
 CONDITIONS OF ANY KIND, either express or implied.
 
 ────────────────────────────────────────────────────────────────────────────────
+Format acknowledgements required by the specifications implemented
+────────────────────────────────────────────────────────────────────────────────
+
+Graphics Interchange Format (GIF)
+  Implemented : src/VellumPdf.Kernel/Images/GifImageLoader.cs (decoder)
+                src/VellumPdf.Kernel/Images/GifEncoder.cs (encoder)
+  Source      : Graphics Interchange Format, Version 89a, CompuServe
+                Incorporated, 31 July 1990.
+                https://www.w3.org/Graphics/GIF/spec-gif89a.txt
+  Why this
+  section    : Unlike the entries below, nothing of CompuServe's is bundled
+                here. The specification's own licence grant requires this
+                acknowledgement from any software that uses the format, so it
+                is an obligation of implementing GIF rather than of shipping
+                someone else's data.
+
+  The Graphics Interchange Format(c) is the Copyright property of CompuServe
+  Incorporated. GIF(sm) is a Service Mark property of CompuServe Incorporated.
+
+  The grant, reproduced from clause 3 of that specification:
+
+    CompuServe Incorporated hereby grants a limited, non-exclusive,
+    royalty-free license for the use of the Graphics Interchange Format(sm)
+    in computer software; computer software utilizing GIF(sm) must acknowledge
+    ownership of the Graphics Interchange Format and its Service Mark by
+    CompuServe Incorporated, in User and Technical Documentation.
+
+────────────────────────────────────────────────────────────────────────────────
 Third-party data bundled in this product
 ────────────────────────────────────────────────────────────────────────────────
 

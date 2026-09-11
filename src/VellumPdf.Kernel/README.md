@@ -121,3 +121,9 @@ as these milestones land. `VellumPdf.Conformance` graduated to Stable in 2.0.
 ## License
 
 Apache-2.0. Source and issues: <https://github.com/Tim81/VellumPDF>
+
+The Graphics Interchange Format(c) is the Copyright property of CompuServe
+Incorporated. GIF(sm) is a Service Mark property of CompuServe Incorporated.
+This package reads and writes GIF under the royalty-free licence granted in the
+GIF89a specification, which requires that acknowledgement. See
+[NOTICE](https://github.com/Tim81/VellumPDF/blob/main/NOTICE).

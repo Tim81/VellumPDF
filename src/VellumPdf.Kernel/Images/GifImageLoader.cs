@@ -107,6 +107,9 @@ public static class GifImageLoader
 
         var hasLocalColorTable = (packed & 0x80) != 0;
         var localColorTableSize = 2 << (packed & 0x07);
+        // Image Descriptor packed field, bit 6 (GIF89a §20.c.vii): set when the rows are stored
+        // in the four-pass order of Appendix E rather than top to bottom.
+        var interlaced = (packed & 0x40) != 0;
 
         byte[] palette;
         if (hasLocalColorTable)
@@ -131,6 +134,12 @@ public static class GifImageLoader
 
         // LZW decode
         var indices = LzwDecode(lzwStream, lzwMinCodeSize, width * height);
+
+        // The LZW stream carries rows in storage order. For an interlaced image that is not
+        // display order, so the rows are put back before anything reads a pixel — the colour
+        // expansion and the transparency mask below both index this array positionally.
+        if (interlaced)
+            indices = Deinterlace(indices, width, height);
 
         // Expand indices to RGB
         var rgb = new byte[width * height * 3];
@@ -262,12 +271,24 @@ public static class GifImageLoader
                 cur = tablePrefix[cur];
             }
 
-            // If code == nextCode (KwKwK case), the new entry's first byte equals
-            // the first byte of prevCode's sequence, which is already at the bottom of the stack.
+            // The code that is not yet in the table, conventionally written KwKwK. Its string is
+            // the previous string followed by that string's own first byte, so the extra byte
+            // belongs at the END of the emitted run.
+            //
+            // The chain walk above pushes tail-first, and the pop loop below reads from the top
+            // down, so the first byte of the string sits at stack[stackTop - 1] and the last byte
+            // at stack[0]. Appending at the top therefore emitted the extra byte FIRST rather than
+            // last, turning "Kw" + "K" into "K" + "Kw". It goes to the bottom instead.
+            //
+            // The visible cost was a single wrong pixel wherever this case arose: on a 48x48 image
+            // of three-pixel vertical bars, 120 of 2304 pixels, each one sitting exactly on a bar
+            // boundary where the pattern repeats.
             if (code == nextCode)
             {
                 var firstByte = stack[stackTop - 1];
-                stack[stackTop++] = firstByte;
+                Array.Copy(stack, 0, stack, 1, stackTop);
+                stack[0] = firstByte;
+                stackTop++;
             }
 
             // Pop stack into output
@@ -285,8 +306,16 @@ public static class GifImageLoader
                 tableSuffix[nextCode] = firstByte;
                 nextCode++;
 
-                // Grow code size when table fills the current range
-                if (nextCode > codeMask + 1 && codeSize < 12)
+                // GIF89a Appendix F, clause 4: "Whenever the LZW code value would exceed the
+                // current code length, the code length is increased by one." A code length of n
+                // expresses values 0..2^n-1, so the value 2^n is the first that exceeds it, and
+                // the width has to grow when the next code to be assigned reaches 2^n — which is
+                // codeMask + 1. This read `nextCode > codeMask + 1`, growing one code later, so
+                // the decoder went on reading 9-bit codes where the encoder had already moved to
+                // 10. Every file whose dictionary passed 2^n then desynchronised and was refused
+                // as corrupt. The sibling TIFF decoder's own header states the GIF rule correctly
+                // while describing TIFF's early change as "one entry earlier than GIF's rule".
+                if (nextCode >= codeMask + 1 && codeSize < 12)
                 {
                     codeSize++;
                     codeMask = (1 << codeSize) - 1;
@@ -297,6 +326,35 @@ public static class GifImageLoader
         }
 
         return output;
+    }
+
+    /// <summary>
+    /// Puts the rows of an interlaced image back into display order, per GIF89a Appendix E:
+    /// "Group 1 : Every 8th. row, starting with row 0", then every 8th from row 4, then every
+    /// 4th from row 2, then every 2nd from row 1.
+    ///
+    /// Nothing here consulted the interlace flag before, so an interlaced image decoded with its
+    /// rows in storage order: scrambled, silently, with no error raised. A flat colour survives
+    /// that unchanged, which is why the defect could sit behind tests that only asked whether a
+    /// file loaded.
+    /// </summary>
+    private static byte[] Deinterlace(byte[] storageOrder, int width, int height)
+    {
+        var display = new byte[storageOrder.Length];
+        ReadOnlySpan<int> starts = [0, 4, 2, 1];
+        ReadOnlySpan<int> steps = [8, 8, 4, 2];
+
+        var src = 0;
+        for (var pass = 0; pass < 4; pass++)
+        {
+            for (var row = starts[pass]; row < height; row += steps[pass])
+            {
+                storageOrder.AsSpan(src * width, width).CopyTo(display.AsSpan(row * width, width));
+                src++;
+            }
+        }
+
+        return display;
     }
 
     // ── Sub-block helpers ────────────────────────────────────────────────────
