@@ -1034,6 +1034,48 @@ public sealed class PdfValidatorOracleTests : IDisposable
     }
 
     /// <summary>
+    /// The column half of the same rule, which had no oracle case while the row half had six. A
+    /// cell does not always start where its own row's earlier cells left it: a span from an earlier
+    /// row advances the column by that cell's width instead, so a cell can ask for more columns than
+    /// remain. Measured on this fixture with the bound removed: veraPDF reports one failed check on
+    /// its row-width rule, so the shape is a real refusal rather than a tidiness argument.
+    /// </summary>
+    [Fact]
+    public void PdfUA1_TaggedTableColSpanPastTheLastColumn_veraPdf_reportsCompliant()
+    {
+        var fontPath = FindPlatformFont();
+        if (fontPath is null) { OracleGate.Unavailable("platform font for PDF/UA oracle"); }
+
+        var pdfPath = Path.Combine(_tempDir, "pdfua1_tagged_colspan_past_end_verapdf.pdf");
+        GeneratePdfUA1TaggedOverlongColSpanDoc(pdfPath, fontPath);
+        AssertVeraPdfCompliant(pdfPath, "ua1");
+    }
+
+    /// <summary>
+    /// Row 0 sums to three columns, so the grid is three wide, and its first cell spans two columns
+    /// and two rows. Row 1 therefore starts at column 2 with one column left while declaring two.
+    /// </summary>
+    private static void GeneratePdfUA1TaggedOverlongColSpanDoc(string path, string fontPath)
+    {
+        using var doc = new Document();
+        doc.Conformance = PdfConformance.PdfUA1;
+        doc.Tagged = true;
+        doc.Language = "en-US";
+        doc.Info.Title = "VellumPdf veraPDF Oracle — ColSpan Past the Last Column";
+        doc.Info.Producer = "VellumPdf";
+
+        var style = EmbeddedStyle(doc, fontPath);
+        var table = new TableElement { DefaultCellStyle = style };
+        var r0 = table.AddRow();
+        r0.AddCell(new Cell("A") { ColSpan = 2, RowSpan = 2 }).AddCell("B");
+        var r1 = table.AddRow();
+        r1.AddCell(new Cell("C") { ColSpan = 2 });
+        doc.Add(table);
+
+        doc.Save(path);
+    }
+
+    /// <summary>
     /// A tagged PDF/UA-1 table small enough in page height that its twelve data rows paginate,
     /// with the header row's first cell carrying <c>RowSpan = 2</c>.
     /// </summary>

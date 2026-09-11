@@ -300,9 +300,12 @@ public sealed class TableRenderer : IRenderer
     /// actually covers on this page: the longest run of consecutive rows from its own, all of which
     /// this page draws, capped by the declared count.
     ///
-    /// A data-row span is never clipped by this, because <c>Layout</c> walks a page break back out
-    /// of a rowspan group, so the whole group lands on one page. The repeated header run is the case
-    /// this exists for. <c>Draw</c> draws that run again at the top of every continuation page, but
+    /// A page break never clips a span, because <c>Layout</c> walks the break back out of a rowspan
+    /// group; a group that cannot fit a page at all raises <c>ElementTooTall</c> instead of
+    /// splitting. What this does clip, on a data row as readily as a header row, is a span reaching
+    /// past the last row of the table. Measured on a 300x170pt page at 20pt margins with a repeated
+    /// header, where the box holds five 20pt rows under it: groups of two to five keep their
+    /// declared span, six and up raise. The repeated header run is the case this exists for. <c>Draw</c> draws that run again at the top of every continuation page, but
     /// the row below it there is the split row rather than row 1, so a header cell declaring
     /// <c>RowSpan = 2</c> covers nothing the page puts under it. Painting it two rows tall overlaps
     /// the first data row's own rectangle, and tagging it as two rows made the header declare one

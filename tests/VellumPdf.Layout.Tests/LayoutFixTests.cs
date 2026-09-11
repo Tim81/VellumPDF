@@ -80,8 +80,7 @@ public sealed class LayoutFixTests
     /// <summary>
     /// Asserts an occurrence count rather than mere presence — <c>Assert.Contains</c> against the
     /// decompressed stream passed whether <c>DrawRow</c> drew "Span2" once or twice, which is
-    /// exactly how the duplicated span draw survived review undetected (see the row-axis pull
-    /// request that fixed it).
+    /// exactly how the duplicated span draw survived review undetected (#480).
     /// </summary>
     [Fact]
     public void Table_rowSpan2_producesPdf()

@@ -181,9 +181,11 @@ public sealed class TableSpanAttributeTests
     /// row on every repeat.
     ///
     /// This is the case that took the attribute commit out of #486. Measured with veraPDF 1.30.2 on
-    /// this same shape: compliant before the attribute existed, `failedChecks="2"` with the
-    /// attribute written from the declared value, compliant again once it is written from the span
-    /// the page applied.
+    /// this same shape, naming each commit because "before the attribute existed" is ambiguous
+    /// across four of them: compliant on <c>adf6acf</c>; already failing the row-width check on
+    /// <c>b6e9c18</c>, once the duplicate draw that had been supplying the missing grid slot was
+    /// deleted; two failed checks on <c>abc8bc4</c>, with the attribute written from the declared
+    /// value; compliant again on <c>00b7da8</c>, with it written from the span the page applied.
     /// </summary>
     [Fact]
     public void RowSpan_onARepeatedHeader_claimsTheCoveredRowOnlyOnThePageThatHasIt()
@@ -241,6 +243,39 @@ public sealed class TableSpanAttributeTests
         var pdf = SaveAndFlatten(doc);
 
         Assert.Equal(1, Occurrences(pdf, "/O /Table /Scope /Column /RowSpan 2 "));
+    }
+
+    /// <summary>
+    /// A spanning cell that is not a header gets an attribute dictionary it did not have before,
+    /// since <c>/Scope</c> was previously the only thing that opened one. The owner entry has to be
+    /// there: without <c>/O /Table</c> the spans are not table attributes at all.
+    ///
+    /// This exists because dropping that entry from the span-only path passed every local case and
+    /// was caught by veraPDF alone, which skips on a bare <c>dotnet test</c>. A green local board on
+    /// a change that breaks PDF/UA is the asymmetry this file was written to prevent.
+    /// </summary>
+    [Fact]
+    public void RowSpan_onADataCell_opensAnAttributeDictionaryOwnedByTable()
+    {
+        using var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, 400, 300),
+            Margins = new EdgeInsets(10),
+            Tagged = true,
+            Language = "en-US",
+        };
+        var t = new TableElement { DefaultCellStyle = Style() };
+        var r0 = t.AddRow();
+        r0.AddCell(new Cell("S") { RowSpan = 2 });
+        r0.AddCell("x0");
+        var r1 = t.AddRow();
+        r1.AddCell("b1");
+        doc.Add(t);
+
+        var pdf = SaveAndFlatten(doc);
+
+        Assert.Equal(1, Occurrences(pdf, "/O /Table /RowSpan 2 "));
+        Assert.Equal(0, Occurrences(pdf, "/Scope"));
     }
 
     /// <summary>

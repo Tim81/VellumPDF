@@ -21,7 +21,8 @@ namespace VellumPdf.Layout.Tests;
 /// or twice, which is exactly how that defect survived review undetected.
 ///
 /// Sectioned like <see cref="TableColumnAxisTests"/>: (a) the header row window, (b) the doubly
-/// applied table margin, (c) the duplicated rowspan draw.
+/// applied table margin, (c) the duplicated rowspan draw, (d) a covered row the draw loop never
+/// reaches.
 /// </summary>
 public sealed class TableRowAxisTests
 {
