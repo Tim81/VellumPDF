@@ -199,20 +199,43 @@ internal static class LayoutGen
                     media.ImageWidth, media.ImageHeight, media.ChartDiameterRaw));
 
     /// <summary>
-    /// The word every generated table cell holds, and the reason it is a constant rather than a
-    /// generated string: #468. `TableGridResolver.AutoWidth` floors a column at its minimum content
-    /// width and never caps the sum, so a long enough word pushes the table off the page. Measured
-    /// on this generator's own worst corner — a 400pt page, 60pt margins, three auto-width columns
-    /// at 24pt, so a content box ending at x = 340 — and on the word family "W" followed by g's,
-    /// the rightmost cell rectangle sits at 340.00 at two and five characters, 364.13 at six, and
-    /// 404.16 at seven, where the page itself is breached. The boundary belongs to that family:
-    /// alternating W and g breaches the content box at five characters and the page at seven.
+    /// The word every generated table cell holds, and also — via <c>DocSpec.Word</c>, which this
+    /// field fills directly in <see cref="ValidDoc"/> above rather than being drawn from its own
+    /// generator — the word <see cref="ParagraphText"/> repeats three times. Every generated list
+    /// item holds it too, and all three are coupled to this constant, at different lengths.
+    /// Measured at forty items across all four <see cref="ListStyle"/> values, at the generator's
+    /// narrowest content box of 280pt: a cell stops drawing its word whole at six characters, a
+    /// list item at nineteen, and the paragraph's own line at twenty-one. The cell is the binding
+    /// one, which is why the constant sits at five, and the earlier claim that a list item never
+    /// breaks it was measured only over the lengths near that binding constraint.
     ///
-    /// Two characters is below that boundary, so the page-box invariant holds. Generating the word
-    /// would turn #468 into a failing property, which is where it belongs: in the pull request that
-    /// fixes it, failing before and passing after.
+    /// #468 is why it was ever a two-character constant rather than a generated string: before
+    /// that fix, `TableGridResolver.AutoWidth` floored a column at its minimum content width and
+    /// never capped the sum, so a long enough word pushed the table off the page. At this
+    /// generator's narrowest content box — a 400pt page, 60pt margins, size 24, so 280pt — on the
+    /// word family "W" followed by g's, the cell's content floor and its capped, final width
+    /// coincide at 81.33pt (a 93.33pt equal share minus the default padding) and diverge above it,
+    /// since the capped width stays at 93.33pt while the floor keeps growing. The paragraph's own
+    /// three-repetition line wraps, rather than hard-breaking, past a different threshold, 88.89pt
+    /// — first true in this word family at "Wggggg" (six characters, 89.376pt), which also happens
+    /// to be the first length past the cell's 81.33pt line. The two thresholds differ; they cross
+    /// in the same character step here only because this word family's words are 13.34pt apart at
+    /// this size, not because the two elements share a geometry.
+    ///
+    /// Widening the constant past that shared step does not make the paragraph hard-break: it only
+    /// wraps, and a single word first exceeds the 280pt box outright — the paragraph's own
+    /// hard-break trigger — at twenty-one characters. What actually fails first is
+    /// <c>PropertyTests.ValidDocument_placesNothingOutsideThePage</c>'s per-element placement
+    /// counts, which pin the paragraph as one literal and each cell as the cell word once: the
+    /// cell's hard-break at six characters already produces two literals where that property
+    /// expects one, well before the paragraph's own count would move. "Wgggg" (five characters)
+    /// stays under both the cell's 81.33pt line and the paragraph's 88.89pt one, so it widens the
+    /// constant without crossing either; #468 itself is covered where a property has to be —
+    /// failing before the fix and passing after — by
+    /// <c>TableColumnAxisTests.AutoWidth_columnFloorsExceedingTheSum_capsToTheContentBox</c>, a
+    /// fixed fixture built for exactly this corner rather than a shared, randomly-visited one.
     /// </summary>
-    private const string CellWord = "Wg";
+    private const string CellWord = "Wgggg";
 
     /// <summary>
     /// The fixture image every generated document places, the same 2×2 opaque PNG

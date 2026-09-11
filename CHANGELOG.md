@@ -303,6 +303,127 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **A table's column count came from its first row and ignored a column span on a later one, an
+  explicit widths array was applied literally, auto widths were never capped, and a cell wider
+  than its column drew off the page (#480, #477, #468, #473).** `TableGridResolver` and
+  `TableRenderer`'s cell text path, fixed together because the plan's own analysis found that any
+  one alone reintroduced another.
+
+  `Resolve` took the column count from `table.Rows.FirstOrDefault()` alone, so a row after the
+  first with more cells than it lost every one of them past that count: `DrawRow`'s own
+  `while (col < _colWidths.Length)` loop had no column to put them in. The count is now the widest
+  row, not the first — widest by a row's own `ColSpan` total as well as by its cell count, since a
+  wider `ColSpan` on a later row was capped by an earlier row's cell count exactly the same way.
+  Measured, page 400x300 at 10pt margins, row 0 with two ordinary cells and row 1 with a plain
+  cell plus a `ColSpan = 2` cell: before this fix the grid resolved two columns at 190pt each and
+  the spanning cell drew at 190pt, one column's width; it now resolves three columns at 152, 152
+  and 76pt, and the spanning cell draws at 152 + 76 = 228pt. Both shapes keep every literal inside
+  the content box, so this half of the fix is not recovering content the extra-cell case lost — it
+  is honouring a span width the caller set and the old count silently discarded, and any existing
+  document with this shape resolves to different column widths after this fix. Reading a row's
+  `ColSpan` total now runs inside a `checked` block: the `LINQ Sum` this loop replaced already
+  threw `OverflowException` on a per-row total past `int.MaxValue`, and an unchecked `+=` would
+  have turned that loud failure into a silently wrapped column count and a quietly wrong document.
+
+  An explicit `SetColumnWidths` array was copied into `ColWidths` verbatim. An array shorter than
+  the resolved column count silently dropped the trailing columns at the array boundary, and a
+  zero entry rendered at zero width even though `TableElement.ColWidths` and `SetColumnWidths`
+  both document zero as meaning auto and neither implemented it. Both are now reconciled against
+  the column count: a missing or zero entry means auto, and the auto columns take the width left
+  over after the explicit ones, weighted by content and floored at their own minimum content
+  width. A negative entry advanced `x` backwards for every following column; refusing it would
+  turn a document that renders today into a thrown exception, which a patch release should not do,
+  so it is clamped to the same auto meaning as zero instead — a maintainer decision, since the plan
+  left it open. A non-finite entry (`NaN`, positive or negative infinity) cannot be honoured
+  either, and its old behaviour did not merely misplace a column: measured on a 400x300pt page at
+  10pt margins, an explicit `NaN` width put the literal token `NaN` in that column's own width
+  operand and in the `x` operand of every following column, positive infinity put `Infinity` and
+  negative infinity `-Infinity` in the same places. The file itself stayed well formed — the
+  content stream is what stopped conforming, and no validator was run against it to call it
+  anything stronger — but a non-finite width is now classified as auto along with the other three,
+  so four inputs mean auto, not two.
+
+  When the explicit columns are scaled down to what the auto columns' content floors leave them,
+  and those floors alone already exceed the available width, the explicit columns are no longer
+  scaled to a budget of zero: doing so zeroed every explicit column while the auto columns kept
+  their own unreduced floor, moving the same collapse the auto-width cap below exists to prevent
+  from the auto side onto the explicit one. Measured, page 400x300 at 10pt margins, an explicit
+  200pt column next to an auto one holding a single 100-character run of "W" with no spaces (a
+  floor far wider than the whole available width on its own): the explicit column now resolves to
+  65.74pt and the auto column to 314.26pt, both above zero, rather than 0pt and 380pt.
+
+  `AutoWidth` floored each column at its minimum content width and never capped the sum, so once
+  every column's floor alone was wider than its proportional share, the total exceeded the
+  available width with nothing pulling it back. Measured on a 400pt page, 60pt margins, three
+  auto-width columns at Helvetica 24pt — a content box ending at x 340 — on the word family "W"
+  followed by g's: the rightmost cell's right edge sat at 340 through five characters, 364.128 at
+  six (past the content box), and 404.16 at seven (past the page). Every column is now scaled down
+  proportionally when the floors overrun the available width, whether the sum came from
+  `AutoWidth` or from an oversized explicit array; either way an auto column's own floor is kept
+  out of that scale-down as long as the explicit columns can absorb the correction on their own,
+  so a floor is not pushed below what its own content needs.
+
+  `WordWrapLines` emitted a word wider than the column whole. Measured on a 400x900pt page at 50pt
+  margins, a 300pt column (288pt inner width), a cell holding 60 "W"s at 10pt: before the fix that
+  drew as one 60-character literal at `Tm` x -83.2 under Centre and -222.4 under Right, both off
+  the page. It now hard-breaks at character granularity, the same behaviour
+  `ParagraphRenderer.HardBreakWord` already has for a paragraph line (#472) — kept as a separate
+  copy, since the two callers differ in what they know about their own box. The centre and right
+  offsets are floored at the cell's own left edge for the one case a break cannot avoid, a single
+  over-wide rune: measured on a 200x600pt page at 50pt margins, a 20pt column with zero padding,
+  one "W" at 106pt, `Tm` x -30.064 under Right and 9.968 under Centre before the fix, both now
+  land on the column's own left edge. That floor keeps the line's *origin* inside the cell, not
+  necessarily the glyph: measured on a 120pt-wide page at 50pt margins, the same 20pt zero-padding
+  column and 106pt "W", the origin still floors to 50 and the glyph's own right edge, 150.064,
+  still leaves this narrow a page — an accepted limit, not a claim this fix does not make.
+
+  `WordWrapLines` also decided whether a word started a fresh line by testing `lineW == 0`, a
+  measured advance rather than an emptiness flag, so a word whose advance is genuinely zero —
+  Helvetica's DEL (U+007F) among the 38 code points that do (#470) — left the line buffer holding
+  a pending, un-flushed line while `lineW` still read 0. The next over-wide word then believed it
+  was starting fresh too, pushed its own hard-break fragments ahead of the pending one, and the
+  pending line was flushed only at the very end of the method, after content that followed it in
+  the source. Measured, a 60pt column at Helvetica 20pt holding U+007F, a space, and eight "A"s:
+  before this fix the stream drew "AAAA", "AAAA", then U+007F last; guarding on
+  `lineBuilder.Length == 0` instead — the same test `ParagraphRenderer` already uses — restores
+  source order. Only a zero-advance character can reach the path, but calling the consequence
+  invisible was wrong in two ways, and both are measured. The space between such a character and
+  the next word came back, so following glyphs shift by a space's advance. And the line count can
+  go up rather than down: a cell holding U+0001, U+0002, U+0003 and then "AAAA" in that 60pt column
+  drew one line in a 24pt row before and draws two in a 48pt row now. Across a sweep of 9,607 cell
+  strings built from the zero-advance codes, 479 gained a line and none lost one, and the drawn
+  glyph sequence disagreed with the source in 399 cases before and none after.
+
+  `TableRenderer.WordWrapCount` no longer carries its own line-counting walk; it delegates to
+  `WordWrapLines(...).Count`, the same list `Draw` paints from. The two were not merely at risk of
+  drifting apart — they already disagreed. The old walk counted a line for every word pushed to a
+  fresh line, including a trailing empty token from a cell string ending in a space that does not
+  fit the column, and `WordWrapLines`'s own trailing `if (lineBuilder.Length > 0)` never turned
+  that into a drawn line. The disagreement is one-sided: across a random sweep of cell strings in a
+  40pt column at Helvetica 12pt, every case found had the old walk counting a taller row than what
+  was drawn and none a shorter one. How many is a property of the sample rather than of the defect,
+  so it is not quoted here: two independent sweeps over different alphabets found 152 and 744 in
+  4,000. Known-answer case, which is not sample-dependent: the cell `"AAAAii "` in the same column drew one line in a row sized for
+  two (28.8pt) before this fix, and now resolves to the 14.4pt row the single drawn line needs —
+  a document whose cell text ends in a space that does not fit gets a shorter row than before,
+  which is the corrected height rather than a side effect, but a geometry change all the same.
+
+  **One consequence of measuring the cell correctly is a new way to fail rather than a new way to
+  draw.** Hard-breaking an over-wide cell word (above) can make a row taller than the page has
+  room for, where the base drew the overrun off the page instead of refusing it. Measured, a
+  100pt column with zero padding on a 400x200pt page, a cell holding 300 "W"s at the default
+  10pt: the base drew one line past the page edge; this pull request hard-breaks it into enough
+  lines that the row no longer fits a 200pt page height, and `Document.Save` now raises "An
+  element is too tall to fit on a single page and cannot be rendered." where it previously
+  produced a document. This is not a new exception type and not new validation — `DocumentRenderer`
+  already raises it for any other element whose measured height exceeds the page — and the
+  alternatives were drawing off the page, as the base did, or silently discarding the overflow. A
+  document that depended on the base's off-page overrun to avoid this exception will now raise it.
+
+  The row axis, the spans, and the list defects this same plan identified are a separate pull
+  request; three corpus fixtures pin that a header row's own position, a table whose margin
+  exceeds its row height, and a two-row rowspan are all unmoved by this one.
+
 - **A running band wider than the content box was drawn off the page (#365).** `DrawBandText`
   measured the whole resolved template, positioned it by an alignment formula that had never been
   given a bound, and emitted every glyph. Measured on a 200pt page with zero margins and a footer
