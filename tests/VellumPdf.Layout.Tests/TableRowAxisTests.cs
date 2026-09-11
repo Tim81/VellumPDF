@@ -9,11 +9,11 @@ using VellumPdf.Layout.Elements.Table;
 namespace VellumPdf.Layout.Tests;
 
 /// <summary>
-/// The table pull request's row axis: a header row that sits after a data row, the table's own
-/// margins applied to <c>Draw</c> a second time on top of the deflate <c>Layout</c> already did,
-/// and a <c>RowSpan</c> cell drawn once at its origin row and a second time when the span map
-/// runs down. All three are content loss or duplication rather than a cosmetic offset, which is
-/// why every case here asserts an occurrence count instead of presence.
+/// The table pull request's row axis: a header row that sits after a data row, and the table's own
+/// margins applied to <c>Draw</c> a second time on top of the deflate <c>Layout</c> already did.
+/// The first is content loss. The second is an offset on both axes while the margin stays below the
+/// row's own height, and becomes loss on the vertical axis once it reaches that height, which is why
+/// section (b) pins both the corrected origin and the row's survival at the boundary.
 ///
 /// Sectioned like <see cref="TableColumnAxisTests"/>: (a) the header row window, (b) the doubly
 /// applied table margin.

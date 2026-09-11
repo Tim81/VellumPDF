@@ -75,7 +75,8 @@ public sealed class TableRenderer : IRenderer
             _rowHeights[r] = maxH;
         }
 
-        // Find header row indices (may not be contiguous at top; use actual IsHeader rows)
+        // The repeatable header is the leading contiguous run of IsHeader rows — see
+        // FindHeaderRowIndices for why a header row elsewhere in the table is not part of it.
         var headerRowIndices = FindHeaderRowIndices(rows);
         var headerHeight = headerRowIndices.Sum(i => _rowHeights[i]);
         var lastHeaderRow = headerRowIndices.Count > 0 ? headerRowIndices[^1] + 1 : 0;
@@ -154,7 +155,8 @@ public sealed class TableRenderer : IRenderer
 
         var rowY = area.Y;
 
-        // Draw actual header rows (wherever they appear)
+        // Draw the leading contiguous run of header rows; every later row, header-flagged or not,
+        // is drawn by the data loop below.
         foreach (var hi in headerRowIndices)
         {
             var trElem = tableElem is not null ? new PdfStructElem("TR") : null;
@@ -383,13 +385,17 @@ public sealed class TableRenderer : IRenderer
     }
 
     /// <summary>
-    /// Returns the indices of the leading contiguous run of header rows — the only reading under
-    /// which every row is drawn by exactly one of the two loops in <see cref="Draw"/>. A header row
-    /// collects every <c>IsHeader</c> row wherever it sat, so a header after a data row (index 2 in
-    /// the fixture below) put <c>dataStartRow</c> past that header while the data loop still started
-    /// there too, leaving the data row between them drawn by neither: header H0, data D1, header H2,
-    /// data D3 drew H0, H2 and D3, D1 never reached either loop. Stopping at the first non-header
-    /// row means a header after a data row draws as an ordinary row instead.
+    /// Returns the indices of the leading contiguous run of header rows. The two loops in
+    /// <see cref="Draw"/> partition the rows whenever this list is a prefix of them, and the
+    /// leading contiguous run is the longest prefix that holds header rows alone; a header row
+    /// elsewhere in the table draws as an ordinary row instead of extending it.
+    ///
+    /// This method used to collect every <c>IsHeader</c> row wherever it sat in the table, so
+    /// <c>dataStartRow</c> — set from this list's last index — started past the *last* header while
+    /// the header loop still only drew the rows the list held. A header after a data row (index 2 in
+    /// the fixture below) then left the row between them reached by neither loop: header H0, data
+    /// D1, header H2, data D3 drew H0, H2 and D3, and D1 never reached either loop. Stopping at the
+    /// first non-header row closes that gap.
     /// </summary>
     private static List<int> FindHeaderRowIndices(IReadOnlyList<Row> rows)
     {
