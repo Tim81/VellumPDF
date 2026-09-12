@@ -55,11 +55,16 @@ public sealed class TableRenderer : IRenderer
                 LayoutValidation.ValidateCell(cells[c], r, c);
         }
 
+        LayoutValidation.ValidateLineWidth(_table.BorderWidth, "A table");
+
         var grid = new TableGridResolver();
         grid.Resolve(_table, area.Width);
         _colWidths = grid.ColWidths;
 
-        if (_colWidths.Length == 0) return LayoutResult.Nothing();
+        // #481's third refusal, and the one route to it that no span check covers: a table with no
+        // rows, or rows holding no cells, resolves to no columns without any bad ColSpan, and
+        // reporting Nothing here made DocumentRenderer blame the page size.
+        LayoutValidation.ValidateColumnCount(_colWidths.Length);
 
         // Compute row heights
         var rows = _table.Rows;
@@ -71,11 +76,15 @@ public sealed class TableRenderer : IRenderer
             var row = rows[r];
             var maxH = 0.0;
             var col = 0;
+            var cellIndex = -1;
             foreach (var cell in row.Cells)
             {
+                cellIndex++;
                 if (col >= _colWidths.Length) break;
                 var cs = cell.Style ?? style;
-                LayoutValidation.ValidateStyle(cs, $"Table row {r}, cell {col}");
+                // The authoring index, not col: the two diverge as soon as an earlier cell spans
+                // more than one column, and naming the column points at a cell nobody wrote.
+                LayoutValidation.ValidateStyle(cs, $"Table row {r}, cell {cellIndex}");
                 var colW = ColSpanWidth(col, cell.ColSpan);
                 var innerW = colW - cell.Padding.Horizontal;
                 var lines = WordWrapCount(cell.Content, cs, Math.Max(1, innerW));

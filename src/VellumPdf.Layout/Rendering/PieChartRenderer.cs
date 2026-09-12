@@ -24,8 +24,12 @@ public sealed class PieChartRenderer : IRenderer
     /// <summary>Validates the slices, reserves the chart diameter plus margins, and reports the occupied region.</summary>
     public LayoutResult Layout(LayoutContext ctx)
     {
+        // Every refusal below named nameof(_chart), a private field of this renderer, so the
+        // caller's ParamName read "_chart" -- a name that appears nowhere in their code (#481).
+        // Each now names the property of PieChart that the caller actually set.
         if (_chart.Slices.Count == 0)
-            throw new ArgumentException("A pie chart must have at least one slice.", nameof(_chart));
+            throw new ArgumentException(
+                "A pie chart must have at least one slice.", nameof(PieChart.Slices));
 
         var total = 0.0;
         foreach (var slice in _chart.Slices)
@@ -34,28 +38,29 @@ public sealed class PieChartRenderer : IRenderer
                 throw new ArgumentException(
                     FormattableString.Invariant(
                 $"Pie slice values must be finite and non-negative (was {slice.Value})."),
-                    nameof(_chart));
+                    nameof(PieChart.Slices));
             total += slice.Value;
         }
 
         if (total <= 0)
-            throw new ArgumentException("The sum of pie slice values must be positive.", nameof(_chart));
+            throw new ArgumentException(
+                "The sum of pie slice values must be positive.", nameof(PieChart.Slices));
 
         if (!double.IsFinite(_chart.Diameter) || _chart.Diameter <= 0)
             throw new ArgumentException(
                 FormattableString.Invariant(
                 $"Pie chart diameter must be a positive finite number (was {_chart.Diameter})."),
-                nameof(_chart));
+                nameof(PieChart.Diameter));
         if (!double.IsFinite(_chart.StartAngle))
             throw new ArgumentException(
                 FormattableString.Invariant(
                 $"Pie chart start angle must be a finite number (was {_chart.StartAngle})."),
-                nameof(_chart));
+                nameof(PieChart.StartAngle));
         if (!double.IsFinite(_chart.StrokeWidth) || _chart.StrokeWidth < 0)
             throw new ArgumentException(
                 FormattableString.Invariant(
                 $"Pie chart stroke width must be a non-negative finite number (was {_chart.StrokeWidth})."),
-                nameof(_chart));
+                nameof(PieChart.StrokeWidth));
 
         // Clamp against the area Layout was handed, not against the width left after deflating
         // the chart's own margins. PieChart.Margins defaults to EdgeInsets(6), and a Diameter 300

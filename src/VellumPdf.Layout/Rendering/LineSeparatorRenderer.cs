@@ -18,6 +18,12 @@ public sealed class LineSeparatorRenderer : IRenderer
     /// <summary>Reserves the separator's line width plus margins and reports the occupied region.</summary>
     public LayoutResult Layout(LayoutContext ctx)
     {
+        // A non-finite width reaches the stream as "NaN w", and carries into the line's own
+        // coordinates as "10 NaN m" and "290 NaN l". Zero is fine: "0 w" asks for the thinnest
+        // line the device renders.
+        LayoutValidation.ValidateLineWidth(_sep.LineWidth, "A line separator");
+        LayoutValidation.ValidateInsets(_sep.Margins, "A line separator");
+
         var totalHeight = _sep.Margins.Top + _sep.LineWidth + _sep.Margins.Bottom;
         if (ctx.Area.Height < totalHeight) return LayoutResult.Nothing();
         _occupied = ctx.Area.WithHeight(totalHeight);
