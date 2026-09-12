@@ -1014,16 +1014,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **The image loaders say what they refuse, and JPEG says how it differs.** Six of the eight
   loaders carried no `<exception>` tag at all, and every one of them takes a byte array a caller
-  is likely to have received from somewhere untrusted. Each public `Load` now documents
-  `InvalidDataException` as the outcome for a wrong signature, a truncated stream, an unsupported
-  variant or a refused size, and states the two decode guards: 100,000,000 pixels, and 1,000,000
-  per edge, neither of which has a public setting.
+  is likely to have received from somewhere untrusted. Five of them — BMP, GIF, JPEG, PNG and
+  TIFF — now document what they raise and for what. CCITT is the sixth and is left for the pass
+  that covers the bilevel path, so it still has none.
 
-  Three boundaries were measured while writing them rather than assumed.
+  Four boundaries were measured while writing them rather than assumed, and every one of the four
+  contradicted what the first draft of this entry said.
 
-  A null array raises `NullReferenceException`, not `ArgumentNullException`, in five of the six
-  loaders; the JPEG 2000 one is the exception and does check. So a caller guarding the documented
-  type does not catch it, which is now said on each member.
+  A null array raises `NullReferenceException`, not `ArgumentNullException`, in those five. Three
+  of the eight loaders do guard it: the JPEG 2000 one with `ArgumentNullException`, and the CCITT
+  and JBIG2 ones with `ArgumentException` for null or empty. So a caller guarding the documented
+  type does not catch it in the five, which is now said on each member.
+
+  Only one of the two size limits applies to those five. The 100,000,000-pixel cap is enforced by
+  every loader that reaches `ValidateDimensions`. The 1,000,000-per-edge constant is read by the
+  MMR decoder alone, behind CCITT and JBIG2, and by nothing else, so a PNG, BMP or TIFF declaring
+  one edge of 1,000,001 with a total under the pixel cap loads. Documenting a guard that does not
+  run is worse than documenting none, so each member now says which of the two reaches it.
+
+  BMP and TIFF raise `NotSupportedException`, not `InvalidDataException`, for a well-formed file
+  of a variant they do not read: three sites in BMP, eighteen in TIFF, and that type does not
+  derive from the other. The first draft told callers to catch `InvalidDataException` and listed
+  BI_RLE8 among what it would catch, which would have crashed on the first run-length encoded
+  bitmap. Both loaders now document two exception types rather than one.
 
   The JPEG loader is the only one that does not validate what its header declares. Measured on a
   25-byte file whose frame header says 65535 by 65535: it returns an image of 4,294,836,225
@@ -1031,6 +1044,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Nothing allocates a raster for it, because the bytes pass through as `DCTDecode` data, but
   those dimensions reach the image dictionary and a consumer that trusts them can be made to
   allocate from them. The loader now says so and says to validate the size yourself.
+
+  That hole is reachable through the TIFF loader as well, which is the more serious half, because
+  the TIFF member is one of the two that documents the cap. A strip compressed with new-style
+  JPEG is handed straight to the JPEG loader, so a 145-byte TIFF declaring 8 by 8 returns the
+  same 4,294,836,225-pixel image. Filed as #505 rather than fixed here, since validating it
+  changes behaviour; the member says so meanwhile.
 
   A GIF that places its frame on a larger logical screen decodes at the frame's own size, losing
   the placement, and an animated GIF loads its first frame with no indication the others were

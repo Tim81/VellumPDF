@@ -252,6 +252,33 @@ otherwise. Use the IDE code-fix (`RS0016` / `RS0017`) or edit the file manually.
 Do not add symbols to `PublicAPI.Shipped.txt` — that file is updated only at
 release time.
 
+## Public XML documentation states the boundary
+
+Every public member documents where its boundary is and what a caller must not do, not only what
+it is. Write it in the same commit as the member.
+
+The shape, copied from `TextStyle.FontSize` in `src/VellumPdf.Layout/Core/TextStyle.cs`:
+
+- `<summary>` says what the member is.
+- An `<exception>` tag for every type a call can raise — **including when the throw lands in a
+  later call rather than this one**, which in the layout engine usually means `Document.Save`.
+  List each type separately; `NotSupportedException` does not derive from `InvalidDataException`,
+  and a caller who catches one and not the other has a crash waiting.
+- `<remarks>` opens with a bold sentence naming what is **refused**, which call throws it, and the
+  reason. Not just the fact.
+- A following `<para>` beginning "**Do not pass ...**" for input that is accepted today but should
+  not be relied on: what it does now, and which major version will reject it.
+
+Two rules about the writing itself, both learned the hard way:
+
+- **Measure each non-finite value separately.** `NaN`, positive infinity and negative infinity
+  take different branches, and a sentence about "a non-finite value" that was measured on one of
+  them is usually wrong about the other two. A positive-infinity image width, for instance, is
+  clamped and accepted, while `NaN` is refused.
+- **Check the member does not already have a `<remarks>` block.** Two `<remarks>` elements on one
+  member compile without a warning, and renderers show one of the two, so a contradiction between
+  them is invisible until a reader hits it.
+
 ## Branch and PR etiquette
 
 - **Target `main`.** All pull requests should be opened against the `main`

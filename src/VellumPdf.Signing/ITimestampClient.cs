@@ -26,14 +26,25 @@ public interface ITimestampClient
     /// <param name="hashAlgorithm">The algorithm used to compute <paramref name="messageDigest"/>.</param>
     /// <returns>A DER-encoded RFC 3161 <c>TimeStampToken</c>.</returns>
     /// <exception cref="InvalidOperationException">
-    /// The authority could not be reached, timed out, answered with a failing HTTP status, or
-    /// returned a response that is not a well-formed granted timestamp.
+    /// The request timed out, or the authority answered with a failing HTTP status.
+    /// </exception>
+    /// <exception cref="System.Net.Http.HttpRequestException">
+    /// The authority could not be reached at all.
+    /// </exception>
+    /// <exception cref="System.Security.Cryptography.CryptographicException">
+    /// The authority answered, but refused the request or returned a response that is not a
+    /// well-formed granted timestamp.
     /// </exception>
     /// <remarks>
-    /// <b>This reaches the network, so every call can fail for reasons outside the document.</b>
-    /// The implementation shipped here reports a timeout, a refused connection and a rejected
-    /// request all as <see cref="InvalidOperationException"/>, so the message rather than the
-    /// type is what distinguishes them.
+    /// <b>This reaches the network, and the failures arrive as three different exception
+    /// types.</b> Measured against a loopback authority: a timeout and a failing HTTP status give
+    /// <see cref="InvalidOperationException"/>; an unreachable authority gives
+    /// <see cref="System.Net.Http.HttpRequestException"/>; and a rejection, or a malformed
+    /// response body, gives
+    /// <see cref="System.Security.Cryptography.CryptographicException"/>. So the type is the
+    /// discriminator, not the message, and catching only
+    /// <see cref="InvalidOperationException"/> lets the most likely failure of the three — an
+    /// authority that cannot be reached — escape.
     /// <para><b>Do not call this where blocking is unacceptable.</b> It waits on the authority,
     /// with the implementation's own timeout as the only bound; use
     /// <see cref="GetTimestampTokenAsync"/> where that matters.</para>
