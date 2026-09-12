@@ -374,22 +374,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   file chose for nothing. Discarding every byte of a 20x20 image's data still returned a full
   400-pixel raster with no error at all. The sibling TIFF LZW decoder has always made this check.
 
-  **Three reads walked caller-supplied bytes without a bound.** The class documents
+  **Four reads walked caller-supplied bytes without a bound.** The class documents
   `InvalidDataException` for malformed input, and a 14-byte file ending on an extension separator
   raised `IndexOutOfRangeException` instead, which a caller guarding on the documented type cannot
-  catch. The other two were an extension sub-block whose declared length ran past the end, and a
-  file ending exactly where the LZW minimum code size belongs.
+  catch. Two more were an extension sub-block whose declared length ran past the end, and a file
+  ending exactly where the LZW minimum code size belongs. The fourth, in the walk over extensions
+  the decoder skips rather than parses, could not index out of range but reported such a file as
+  having no image descriptor, naming the wrong fault.
 
   The repository's own fixture helper was part of why the first three survived. It emitted literal
   codes at a fixed width and never widened them, which is not a conformant stream, and the
   decoder's matching off-by-one meant the two agreed with each other and with nothing else. The
-  helper is corrected, and a test now reads the stream it builds back as codes and checks it
-  against Appendix F, rather than only against this package's decoder. That check matters because
-  the corrected helper still derives its width rule from the decoder's bookkeeping, so the two
-  still agree by construction. Its sibling, a real encoder in the hardening tests, had the rule
-  right all along. The TIFF LZW decoder's own header gave GIF's rule only as a difference from
-  TIFF's, which is how it came to be read one entry out; both rules are now written there in
-  full.
+  helper is corrected, but correcting it is not enough on its own: its width rule is still derived
+  from the decoder's bookkeeping, so the two still change width at the same point in the stream
+  and a matched drift in both would pass every round trip. What pins the rule instead is a literal
+  known answer. For one fourteen-index input, the expected code sequence and the expected packed
+  bytes are written into the test, derived from Appendix F by hand rather than computed from either
+  side. The bytes carry the weight, because they fix the width each code went out at and not only
+  its value. Moving the width growth one code in either direction now fails, in the encoder, in
+  the fixture, and in all three at once. Its sibling, a real encoder in the hardening tests, had
+  the rule right all along. The TIFF LZW decoder's own header gave GIF's rule only as a difference
+  from TIFF's, and both rules are now written there in full so that neither has to be derived from
+  the other.
 
 - **Refusals named the page size instead of the input, and several inputs saved a document a reader
   cannot use (#478, #481).** What each input did before is not uniform, so it is stated per input
