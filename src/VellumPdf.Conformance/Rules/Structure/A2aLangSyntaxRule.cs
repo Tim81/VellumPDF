@@ -43,8 +43,25 @@ internal sealed class A2aLangSyntaxRule : IConformanceRule
 
     // BCP 47 / RFC 3066 syntax: primary subtag (letters only, 1–8 chars) optionally followed
     // by extension subtags (letters or digits, 1–8 chars) separated by hyphens.
+    // RegexOptions.NonBacktracking rather than Compiled, and no match timeout.
+    //
+    // This carried TimeSpan.FromMilliseconds(50). A match timeout is a wall-clock assertion, and
+    // it is checked against elapsed time rather than work done, so a thread descheduled mid-match
+    // exceeds it on an input that needs microseconds. That is what happened on CI, where seven
+    // test assemblies run at once: the eight-character tag "xyz!!bad" timed out, and the rule
+    // reported "Rule evaluation failed" in place of the verdict it had already all but reached.
+    // The same starvation happens on any loaded machine, so this was a defect for consumers and
+    // not only a flaky test.
+    //
+    // Raising the number would move the flake rather than remove it. The pattern does not need a
+    // guard at all: the hyphen anchors each subtag, so backtracking inside {1,8} is bounded by
+    // eight attempts per subtag, and NonBacktracking makes linear time a guarantee of the engine
+    // instead of a property of this pattern that a later edit could lose. Measured over 29 tag
+    // shapes and 12 stressors of up to 122 characters built from nine-character subtags, the two
+    // engines return the same verdict for every input, and no input takes a measurable time.
+    // NonBacktracking cannot be combined with Compiled, which is why that is gone.
     private static readonly Regex _bcp47 =
-        new(@"^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*$", RegexOptions.Compiled, TimeSpan.FromMilliseconds(50));
+        new(@"^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*$", RegexOptions.NonBacktracking);
 
     private static readonly PdfName _lang = new("Lang");
 

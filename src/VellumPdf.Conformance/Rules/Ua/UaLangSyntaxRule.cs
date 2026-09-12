@@ -39,8 +39,12 @@ internal sealed class UaLangSyntaxRule : IConformanceRule
 
     // BCP 47 syntax: one primary subtag (letters only, 1–8 chars) optionally followed by one
     // or more extension subtags (letters or digits, 1–8 chars each) separated by hyphens.
+    // The same rule, the same pattern and the same reasoning as
+    // VellumPdf.Conformance.Rules.Structure.A2aLangSyntaxRule, whose comment explains why there is
+    // no match timeout here: a wall-clock limit in library code fails on a loaded machine for an
+    // input that needs microseconds, and NonBacktracking removes the runaway it was guarding.
     private static readonly Regex _bcp47 =
-        new(@"^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*$", RegexOptions.Compiled, TimeSpan.FromMilliseconds(50));
+        new(@"^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*$", RegexOptions.NonBacktracking);
 
     private static readonly PdfName _lang = new("Lang");
 
