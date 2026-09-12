@@ -26,6 +26,13 @@ namespace VellumPdf.Conformance.Rules.Structure;
 ///         (veraPDF explicitly allows it per the predicate <c>unicodeValue == ''</c>).</item>
 /// </list>
 ///
+///
+/// Attention: this pattern and that predicate disagree on a whole family of inputs, any tag
+/// followed by a line feed. .NET's <c>$</c> matches
+/// before a single trailing newline, so a <c>/Lang</c> of <c>en</c> followed by a line feed is
+/// accepted here and rejected by the predicate, where ECMAScript's <c>$</c> asserts end of
+/// input. The divergence is a false accept and is recorded as D6 in
+/// <c>docs/conformance-divergences.md</c>. Replacing <c>$</c> with <c>\z</c> closes it (#507).
 /// <para>Cross-validated against veraPDF 1.30.2:
 /// <list type="bullet">
 ///   <item><c>/Lang (invalid!!bad)</c> on the document catalog: 6.7.4-1 fires.</item>
@@ -43,8 +50,65 @@ internal sealed class A2aLangSyntaxRule : IConformanceRule
 
     // BCP 47 / RFC 3066 syntax: primary subtag (letters only, 1–8 chars) optionally followed
     // by extension subtags (letters or digits, 1–8 chars) separated by hyphens.
+    // RegexOptions.NonBacktracking rather than Compiled, and no match timeout.
+    //
+    // This carried TimeSpan.FromMilliseconds(50). A match timeout is a wall-clock assertion, and
+    // it is checked against elapsed time rather than work done, so a thread descheduled mid-match
+    // exceeds it on an input that needs microseconds. That is what happened on CI, where seven
+    // test assemblies run at once: the eight-character tag "xyz!!bad" timed out, and the rule
+    // reported "Rule evaluation failed" in place of the verdict it had already all but reached.
+    // The same starvation happens on any loaded machine, so this was a defect for consumers and
+    // not only a flaky test.
+    //
+    // Raising the number would move the flake rather than remove it. This pattern does not need
+    // a guard at all: the hyphen is in neither subtag character class, so once {1,8} gives back a
+    // character the next one is an alnum rather than a hyphen and the alternative dies at once.
+    // Backtracking is bounded by eight attempts per subtag. Two independent differential runs,
+    // each over a million inputs -- exhaustive enumeration over small alphabets including one
+    // with a newline in it, randomised tags, and stressors of nineteen million characters --
+    // found the interpreted, compiled and non-backtracking engines agreeing on every input.
+    //
+    // NOTE on the worst case, because it is easy to reproduce the wrong shape. The nine-character
+    // subtag chains that the argument above reasons about, and that
+    // LangRule_chainedOverlongSubtags builds, are refused in microseconds at any length -- they
+    // fail immediately, which is the point. What costs anything is a *matching* tag built from
+    // single-character subtags ("en-a-a-a-..."), and even that runs at a few nanoseconds per
+    // character, so burning the 50 ms the timeout allowed takes megabytes of /Lang. Two
+    // independent measurements of that peak disagreed by a factor of four, both of them far
+    // outside any language tag, so no single figure is quoted here.
+    //
+    // So the switch is not about this pattern running away. Two other things decide it.
+    //
+    // First, NonBacktracking makes linear time the engine's guarantee rather than a property of
+    // this pattern that a later edit could lose.
+    //
+    // Second, RegexOptions.Compiled is a lie under Native AOT, which eng/aot publishes
+    // VellumPdf.Cli with. There is no Reflection.Emit, so Compiled degrades to the interpreter --
+    // provable by allocation rather than by a clock: its constructor allocates 9,232 bytes there,
+    // byte-identical to the interpreter's, against 21,872 on the JIT. Over 100,000 tags under
+    // AOT, Compiled and interpreted are indistinguishable at about 15 ms while NonBacktracking
+    // takes 8.8. On the shipped preflight binary this is therefore a speed-up.
+    //
+    // Attention: that is the opposite way round on the JIT, which is what the eight NuGet
+    // packages run on for anyone not publishing AOT. There, NonBacktracking costs about 30 ms
+    // per 100,000 matches against Compiled's 5.3, a factor of 5.6, and construction costs about
+    // 22 ms and 161 KB against 5 ms and 22 KB. Under AOT the construction time collapses to
+    // 0.3 ms but the allocation does not -- it grows slightly, to about 166 KB. The trade was
+    // taken with those figures in hand: one IsMatch runs per structure element carrying /Lang, so
+    // even 100,000 tagged elements pays about 25 ms more than before, against a document parse
+    // that costs far more than that.
+    //
+    // Compiled is dropped because it is meaningless alongside the new engine, not because it is
+    // rejected: the two options do combine, the Options property keeps both flags, and the
+    // symbolic engine runs regardless. What NonBacktracking genuinely refuses is RightToLeft and
+    // ECMAScript, neither of which is used anywhere in this repository.
+    //
+    // One real behavioural difference, inert here: a capturing group inside a loop reports only
+    // its final capture, so Groups[1].Captures.Count is 1 rather than 2 for "zh-Hans-CN". The
+    // only two uses of this field in src/ are IsMatch calls. An edit that starts reading Captures
+    // needs to know.
     private static readonly Regex _bcp47 =
-        new(@"^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*$", RegexOptions.Compiled, TimeSpan.FromMilliseconds(50));
+        new(@"^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*$", RegexOptions.NonBacktracking);
 
     private static readonly PdfName _lang = new("Lang");
 

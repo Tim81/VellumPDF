@@ -294,6 +294,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **A language-tag rule reported "Rule evaluation failed" for a tag it had already judged
+  (#500).** Both `/Lang` syntax rules, the PDF/A-2a one and the PDF/UA-1 one, matched their
+  pattern under a 50 millisecond match timeout. A match timeout is measured against elapsed time
+  rather than work done, so a thread that loses its slice part way through exceeds it on an input
+  that needs microseconds. The eight-character tag `xyz!!bad` timed out on a CI runner executing
+  seven test assemblies at once, and the rule replaced its finding with an evaluation failure. A
+  loaded machine does the same thing to a consumer, and `IsCompliant` turns on the result, so this
+  was not only a flaky test.
+
+  The pattern never needed the guard. A hyphen separates each subtag and appears in neither
+  subtag's character class, so once the one-to-eight quantifier gives back a character the next one
+  cannot match and the alternative dies at once. Two independent differential runs, each over a
+  million inputs, found the interpreted, compiled and non-backtracking engines agreeing on every
+  one. Burning 50 milliseconds takes megabytes of language tag.
+
+  So the guard is gone rather than raised, and the pattern runs on the linear-time engine, which
+  makes linear time a guarantee of the engine rather than a property of this pattern that a later
+  edit could lose. There is a second reason, which matters more in practice: under Native AOT, which
+  this repository publishes the command-line tool with, `RegexOptions.Compiled` has no run-time code
+  generation available and quietly falls back to the interpreter. Its constructor there allocates
+  the same bytes as the interpreter's, which is how you can tell. The linear-time engine is faster
+  than both on that binary. It is slower per match on the just-in-time stack, which is what the
+  packages run on otherwise, and that cost is recorded in the code beside the decision: one match
+  runs per structure element carrying a language tag, so the arithmetic stays comfortable.
+
+  What is asserted is the decision, not a duration: a test reads both patterns and fails if either
+  regains a finite timeout or drops the linear-time option. Provoking thread starvation is not
+  something a test can do reliably, and a test that tried would be the wall clock being removed.
+
+  **One thing this does not fix.** Both rules accept a language tag ending in a line feed. .NET's
+  `$` matches before one; the predicate both rules cite as a source does not, and neither does
+  RFC 3066's grammar. veraPDF 1.30.2 fails all three forms of it on both profiles, and this library
+  passes them, so it is a false accept. The pattern is untouched here, both rules now say so, and it
+  is recorded as D6 in `docs/conformance-divergences.md` and filed as #507. Fixing it is sequenced
+  behind #511, a reader defect that keeps both bytes of a CRLF where ISO 32000-2 7.3.4.2 requires
+  one line feed, because that bug is currently the only thing making the CRLF form fail.
+
 - **Refusals named the page size instead of the input, and several inputs saved a document a reader
   cannot use (#478, #481).** What each input did before is not uniform, so it is stated per input
   rather than per group.

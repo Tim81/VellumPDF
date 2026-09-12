@@ -21,9 +21,10 @@ whether it rests on a document nobody here holds.
 
 Two rows are **gated**. Correcting them makes this library disagree with veraPDF on a profile, which
 fails the aggregate oracle and the id diff as they stand today. Those corrections wait for the
-per-rule comparison in #419. The other two are not gated. D4's correction moves toward the standard
-and the tool at once, so nothing holds it back but the care it needs, which is #458. D5 is corrected
-already, and what remains of it is a check the profile does not carry.
+per-rule comparison in #419. The other three are not gated. D4's correction moves toward the
+standard and the tool at once, so nothing holds it back but the care it needs, which is #458. D5 is
+corrected already, and what remains of it is a check the profile does not carry. D6 moves toward
+both as well, and waits only on #511, which it would otherwise unmask.
 
 ---
 
@@ -130,6 +131,59 @@ severity, on the clause's own terms.
 Checkable: the profile, yes — `PDFA-2A.xml` in the veraPDF jar has one rule at 6.7.3.3 and no
 content-item rule, which is the divergence itself. The registry comment quoted above is the one this
 change replaced, so it is checkable only in the history. The clause is the viewer's.
+
+---
+
+## D6 — A language tag ending in a newline is accepted
+
+- Rules: `A2aLangSyntaxRule`, `UaLangSyntaxRule`
+- Clauses: ISO 19005-2 6.7.4, ISO 14289-1 7.2
+- Status: not gated · a false accept, pattern unchanged pending #507
+
+**What the standards require.** ISO 19005-2 6.7.4 requires a `/Lang` value to be a language
+identifier as RFC 3066 defines one, or the empty string. ISO 14289-1 7.2 carries the same
+requirement for the document's natural language. RFC 3066 builds a tag from subtags of ASCII
+letters and digits separated by hyphens; nothing in its grammar admits a control character, so a
+tag with a line feed on the end is not a tag either standard permits.
+
+**What a second reading found.** ISO 32000-2 7.3.4.2 decides how the byte gets there: "An
+end-of-line marker appearing within a literal string without a preceding REVERSE SOLIDUS shall be
+treated as a byte value of (0Ah)". So `/Lang (en\012)`, and a bare line feed typed inside the
+parentheses, both deliver `en` followed by `0Ah` to the rule. That is reachable from a file a
+conforming writer could produce, and `PdfDocument.ApplyLanguage` trims the value, so this library
+cannot write one itself.
+
+**What this library does.** Accepts it. Both rules match `^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*$`,
+and .NET's `$` matches before a single trailing newline. Measured through `PdfPreflight.Validate`
+on hand-assembled fixtures: the octal-escape and bare-line-feed forms fire neither 6.7.4-1 nor
+7.2-29.
+
+**What veraPDF does.** Fails all of them, on both profiles. veraPDF 1.30.2, the pinned version:
+
+```
+                     PDF/A-2a 6.7.4-1     PDF/UA-1 7.2-29
+lang_octal_lf.pdf    failed               failed
+lang_raw_lf.pdf      failed               failed
+lang_raw_crlf.pdf    failed               failed
+lang_good.pdf        no rule entry        no rule entry
+```
+
+The failing test it prints is the predicate both rules cite, on its `CosLang` object.
+
+**Which is right, and why this is recorded here.** The standards are, and so is veraPDF's verdict:
+the tag is invalid and this library says it is valid. That is a false accept, the worse of the two
+directions, so it is recorded rather than left as a footnote. The pattern is unchanged for now
+because #501, which touched these rules, changed only the engine they run on; `\z` in place of `$`
+closes it and that is #507.
+
+**One interaction worth knowing.** The raw CRLF row above passes today for the wrong reason. The
+reader keeps both bytes where 7.3.4.2 requires one line feed (#511), which leaves `\r` in the
+string and makes the tag invalid on other grounds. Fix #511 alone and CRLF joins the false
+accepts. The two want sequencing.
+
+Checkable: all of it. The clauses are the viewer's, the fixtures are hand-assembled and
+reproducible from the bytes described, and the veraPDF column above is a run of the pinned version
+rather than a reading of its profile.
 
 ---
 
