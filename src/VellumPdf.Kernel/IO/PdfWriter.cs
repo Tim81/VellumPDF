@@ -47,13 +47,14 @@ public sealed class PdfWriter
     /// <paramref name="initialPosition"/> is negative.
     /// </exception>
     /// <remarks>
-    /// <b>The position counter is the caller's responsibility to get right.</b> It is not read
-    /// from the stream and not checked against it: whatever is passed becomes the base for every
-    /// offset this writer reports, and those offsets go into the cross-reference table. A figure
-    /// that does not match where the stream actually is produces a file whose table points at the
-    /// wrong bytes, which a reader reports as corruption rather than as a bad offset.
-    /// <para><b>Do not pass a seekable stream positioned elsewhere</b> and expect this to notice.
-    /// Pass <c>stream.Length</c> when appending to the end of an existing file.</para>
+    /// The position counter is yours to get right. It is <b>not</b> read from the stream and
+    /// not checked against it. Whatever you pass becomes the base for every offset this writer
+    /// reports, and those offsets go into the cross-reference table.
+    /// <para>Attention: a figure that does not match where the stream actually is produces a file
+    /// whose table points at the wrong bytes. A reader reports that as a damaged file, not as a
+    /// bad offset, so it is expensive to diagnose. Do not hand this a seekable stream positioned
+    /// elsewhere and expect it to notice. When you append to an existing file, pass
+    /// <c>stream.Length</c>.</para>
     /// </remarks>
     public PdfWriter(Stream stream, long initialPosition)
     {
