@@ -65,9 +65,9 @@ public static class GifImageLoader
             {
                 // Every read below advances through caller-supplied bytes, so each one needs its
                 // own bound. A 14-byte file ending on the 0x21 separator used to index past the
-                // array and raise IndexOutOfRangeException, which this class documents it does not
-                // do: the contract is InvalidDataException, and a caller guarding on that took an
-                // unhandled exception instead.
+                // array and raise IndexOutOfRangeException. This class documents
+                // InvalidDataException for malformed input, so a caller guarding on the documented
+                // type could not catch that one.
                 if (pos >= gifBytes.Length)
                     throw new InvalidDataException("Truncated GIF extension block.");
 
@@ -210,6 +210,7 @@ public static class GifImageLoader
         int nextCode = eoiCode + 1;
         int codeMask = (1 << codeSize) - 1;
         int prevCode = -1;
+        var sawEndOfInformation = false;
 
         // Initialise root entries (palette indices 0..clearCode-1)
         for (var i = 0; i < clearCode; i++)
@@ -240,7 +241,7 @@ public static class GifImageLoader
             bitBuf >>= codeSize;
             bitsLeft -= codeSize;
 
-            if (code == eoiCode) break;
+            if (code == eoiCode) { sawEndOfInformation = true; break; }
 
             if (code == clearCode)
             {
@@ -291,7 +292,7 @@ public static class GifImageLoader
             // at stack[0]. Appending at the top therefore emitted the extra byte FIRST rather than
             // last, turning "Kw" + "K" into "K" + "Kw". It goes to the bottom instead.
             //
-            // The visible cost was a single wrong pixel wherever this case arose: on a 48x48 image
+            // The visible cost was a run of wrong pixels as long as the string wherever this case arose: on a 48x48 image
             // of three-pixel vertical bars, 120 of 2304 pixels, each one sitting exactly on a bar
             // boundary where the pattern repeats.
             if (code == nextCode)
@@ -319,8 +320,9 @@ public static class GifImageLoader
 
                 // GIF89a Appendix F, under COMPRESSION, item 4: "Whenever the LZW code value
                 // would exceed the current code length, the code length is increased by one."
-                // (Appendix F numbers its items afresh under each subheading, so the subheading
-                // is part of the citation.) A code length of n
+                // Appendix F carries two numbered lists -- four steps in its preamble under no
+                // subheading, and five items under COMPRESSION -- so a bare "clause 4" is
+                // ambiguous between them and the subheading has to be named. A code length of n
                 // expresses values 0..2^n-1, so the value 2^n is the first that exceeds it, and
                 // the width has to grow when the next code to be assigned reaches 2^n — which is
                 // codeMask + 1. This read `nextCode > codeMask + 1`, growing one code later, so
@@ -340,13 +342,28 @@ public static class GifImageLoader
 
         // What the image descriptor promises and what the data delivers are two different numbers,
         // and nothing compared them. The buffer is allocated at the promised size and left at
-        // palette entry 0 wherever the stream stopped early, so a 40x40 image truncated to its
-        // first sub-block boundary -- all 1,020 bytes of image data discarded -- still returned a
-        // full 1,600-pixel raster, every pixel invented. The sibling TIFF decoder makes exactly
-        // this check and names it "output length mismatch".
+        // palette entry 0 wherever the stream stopped early. Measured on the 20x20 fixture in
+        // GifSpecificationTests: 36 bytes of header, screen descriptor, colour table, image
+        // descriptor and minimum code size, then 38 bytes of code data. Cutting the file to those
+        // 36 bytes discards every code byte, and the decode still reported success with a full
+        // 400-pixel raster, every pixel invented.
+        //
+        // The loop above reaches here short in two ways, and they want telling apart. The bit
+        // buffer running dry means the data simply stopped. An End of Information code arriving
+        // early means the encoder said it was finished while the descriptor asked for more, which
+        // is also the shape a code-width desynchronisation takes -- the defect fixed above -- so a
+        // single message would let a decoder bug read as a bad file.
+        //
+        // The sibling TIFF decoder makes this check and names it "output length mismatch". It also
+        // refuses an overrun, which this does not: a stream carrying more pixels than the
+        // descriptor asks for is still truncated to the descriptor silently, because the
+        // independent decoders tried accept it and refusing it would reject files that render.
         if (outIdx != pixelCount)
             throw new InvalidDataException(
-                $"GIF image data ended after {outIdx} of {pixelCount} pixels.");
+                sawEndOfInformation
+                    ? $"GIF image data ended after {outIdx} of {pixelCount} pixels: the stream's "
+                      + "End of Information code arrived before the last pixel."
+                    : $"GIF image data ended after {outIdx} of {pixelCount} pixels.");
 
         return output;
     }
@@ -428,6 +445,10 @@ public static class GifImageLoader
         {
             var blockLen = data[pos++];
             if (blockLen == 0) break;
+            // Unlike SkipBlock above, nothing here indexed out of range: this loop only advances
+            // pos, so an overlong block walked past the end and the outer loop then stopped,
+            // reporting "GIF contains no image descriptor" for a file whose real fault was a
+            // malformed extension. The guard is for the message, not for an exception type.
             if (pos + blockLen > data.Length)
                 throw new InvalidDataException("GIF sub-block extends beyond end of file.");
             pos += blockLen;

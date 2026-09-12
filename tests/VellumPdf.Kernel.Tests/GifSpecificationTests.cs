@@ -16,11 +16,16 @@ namespace VellumPdf.Kernel.Tests;
 /// order, the encoder's block structure and its code stream are known answers: the expected value
 /// is written out here. The rest compare the decoder's output with the indices a fixture was built
 /// from, which is agreement between this file's encoder and the package's decoder rather than
-/// against a third party. That agreement is only worth something because the two are independent
-/// at the point that matters: <see cref="EncodeLzw"/> grows its code width one step ahead of the
-/// decoder's bookkeeping, which is exactly the distinction the original defect erased. The older
-/// fixture helper in <c>ImageFormatTests</c> shared the decoder's error and so agreed with it and
-/// with nothing else.
+/// against a third party.
+///
+/// That agreement proves less than it looks, and it is worth being exact about why.
+/// <see cref="EncodeLzw"/> keeps its table one entry ahead of the decoder's, and applies the
+/// width rule one step behind it, and those two offsets cancel: both sides change width at the
+/// same position in the stream. So a matched drift in both is expressible and would pass every
+/// round trip. The older fixture helper in <c>ImageFormatTests</c> was a matched drift of exactly
+/// that kind, which is why it agreed with the decoder and with nothing else. What actually pins
+/// the rule is <see cref="EncodeLzw_writesTheCodeSequenceAppendixFRequires"/>, whose expected
+/// codes and bytes are literals derived from the specification by hand.
 ///
 /// No independent codec runs in this suite. Cross-checks against one are run outside it, against
 /// the corpus the CHANGELOG entry for #490 reports.
@@ -121,10 +126,15 @@ public sealed class GifSpecificationTests
     /// The code that is not yet in the table, conventionally KwKwK: its string is the previous
     /// string followed by that string's own first byte.
     ///
-    /// The decoder appended that byte to the wrong end, emitting the byte before the string instead
-    /// of after it. The damage is one pixel per occurrence, so it never threw and never scrambled a
-    /// whole image; on a 48x48 image of three-pixel bars it was 120 pixels of 2304, each sitting on
-    /// a bar boundary. A repeating run is what reaches the case, which is why this fixture repeats.
+    /// The decoder appended that byte to the wrong end, emitting the byte before the string
+    /// instead of after it. Rotating a string that way moves every position from its first
+    /// differing byte on, so the cost is the string's length rather than a single pixel: on a
+    /// 48x48 image of three-pixel vertical bars over two colours, 26 occurrences cost 120 pixels
+    /// of 2304, 4.6 each, every one on a bar boundary. It stays a local fault rather than a
+    /// scrambled image only because the strings involved are short; one-pixel bars on the same
+    /// frame lose 1,104 of 2,304.
+    ///
+    /// A repeating run is what reaches the case, which is why this fixture repeats.
     /// </summary>
     [Fact]
     public void Decode_codeNotYetInTable_appendsTheRepeatedByteAtTheEnd()
@@ -142,26 +152,41 @@ public sealed class GifSpecificationTests
     }
 
     /// <summary>
-    /// What the encoder writes, this decoder reads back unchanged, over content that reaches all
-    /// three defects at once.
+    /// What the encoder writes, this decoder reads back unchanged. Two contents, because one
+    /// cannot carry everything: reaching the not-yet-in-table case needs repeated strings, and a
+    /// wide palette suppresses repetition.
     ///
-    /// The content is runs of three, not a stride. A stride of 13 over 251 colours, which is what
-    /// this fixture held first, gives consecutive pixels that always differ, so there is never a
-    /// repeated string to extend and the not-yet-in-table case is never reached — measured on the
-    /// bytes the encoder produced for it: zero occurrences. Runs of three over 200 colours reach
-    /// it 200 times in the same 37x23 frame, and still grow the code width once with the minimum
-    /// code size at 8.
+    /// <c>WidePalette</c> is runs of three over 200 colours. It holds the minimum code size at 8
+    /// and grows the code width, which a four-colour fixture cannot do.
+    ///
+    /// <c>RepeatedPairs</c> is alternating pairs over four colours. This is the one that
+    /// discriminates the not-yet-in-table defect, and the distinction is worth writing down
+    /// because the first content does not, despite reaching the case 200 times. That case stands
+    /// for the previous string followed by that string's own first byte; put the byte at the
+    /// front instead and you get the first byte followed by the string. When the string is a run
+    /// of one symbol those are the same string, so runs of three reach the case constantly and
+    /// produce identical pixels either way — measured on the encoder's own bytes: 200
+    /// occurrences, 0 pixels different. A two-symbol string is the shortest for which the two
+    /// differ, and alternating pairs give 18 occurrences and 200 differing pixels of 851
+    /// progressive, 13 and 128 interlaced.
     /// </summary>
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Encode_thenDecode_returnsTheOriginalPixels(bool interlaced)
+    [InlineData(Content.WidePalette, false)]
+    [InlineData(Content.WidePalette, true)]
+    [InlineData(Content.RepeatedPairs, false)]
+    [InlineData(Content.RepeatedPairs, true)]
+    public void Encode_thenDecode_returnsTheOriginalPixels(Content content, bool interlaced)
     {
         const int w = 37, h = 23;
         var rgb = new byte[w * h * 3];
         for (var i = 0; i < w * h; i++)
         {
-            var v = (byte)((i / 3) % 200);
+            var v = content switch
+            {
+                Content.WidePalette => (byte)((i / 3) % 200),
+                Content.RepeatedPairs => (byte)(((i / 2) % 2) * 2 + (i % 2)),
+                _ => throw new ArgumentOutOfRangeException(nameof(content)),
+            };
             rgb[i * 3] = v;
             rgb[i * 3 + 1] = (byte)(v / 2);
             rgb[i * 3 + 2] = (byte)(255 - v);
@@ -173,6 +198,16 @@ public sealed class GifSpecificationTests
         Assert.Equal(w, img.Width);
         Assert.Equal(h, img.Height);
         Assert.Equal(rgb, DecodeRgb(gif, w, h));
+    }
+
+    /// <summary>The two contents of <see cref="Encode_thenDecode_returnsTheOriginalPixels"/>.</summary>
+    public enum Content
+    {
+        /// <summary>Runs of three over 200 colours: minimum code size 8, one width growth.</summary>
+        WidePalette,
+
+        /// <summary>Alternating pairs over four colours: discriminates the not-yet-in-table end.</summary>
+        RepeatedPairs,
     }
 
     /// <summary>
@@ -215,10 +250,13 @@ public sealed class GifSpecificationTests
     /// Appendix F, under COMPRESSION, item 1: the Clear code "can appear at any point in the
     /// image data stream and therefore requires the LZW algorithm to process succeeding codes as
     /// if a new data stream was starting" -- so the table and the code width both start again from
-    /// it, not only at the beginning. Nothing in this package's own
-    /// encoder emits one mid-stream, so the decoder's reset path was reachable by no test at all
-    /// — removing the reset from the decoder left all 1,452 Kernel cases green while corrupting
-    /// three quarters of a 512x512 file written elsewhere.
+    /// it, not only at the beginning.
+    ///
+    /// This package's encoder does emit one mid-stream, when the table fills, and
+    /// <see cref="Encode_writesACodeStreamAppendixFAccepts"/> asserts that it does. What no test
+    /// reached was the decoder's own reset: removing it left the whole Kernel suite of 1,456 cases
+    /// green, while the resulting decode of a 512x512 image this encoder wrote lost 230,850 of its
+    /// 262,144 pixels.
     ///
     /// The fixture emits a Clear after a set number of data codes, past the first width growth so
     /// the reset has a width to undo, and the decode must still be the original indices.
@@ -285,14 +323,19 @@ public sealed class GifSpecificationTests
         // Walk the table the way clause 4 describes and check every code fits the width in force
         // when it was written. A code wider than that is unreadable, which is the defect this
         // whole file exists for, in the other direction.
-        var codeSize = minCodeSize + 1;
+        // What can and cannot be asserted here is worth stating, because the obvious assertion
+        // is worthless. ReadCodes masks each code to the width it is itself tracking, so
+        // "no code is wider than the current width" is true however the encoder behaves, and a
+        // matched drift in both would pass it. What does discriminate is the table bound: a code
+        // at or above the next free entry cannot be resolved by any decoder, and that fires when
+        // the encoder widens one code early. The width rule itself is pinned by a literal code
+        // sequence in EncodeLzw_writesTheCodeSequenceAppendixFRequires instead.
         var next = eoi + 1;
         var prev = -1;
         var tableFullResets = 0;
+        var codeSize = minCodeSize + 1;
         foreach (var code in codes)
         {
-            Assert.True(code < 1 << codeSize,
-                $"code {code} needs more than {codeSize} bits");
             if (code == clear)
             {
                 if (prev >= 0) tableFullResets++;
@@ -302,6 +345,7 @@ public sealed class GifSpecificationTests
                 continue;
             }
             if (code == eoi) break;
+            Assert.True(code <= next, $"code {code} is beyond the table ({next})");
             if (prev >= 0 && next < 4096)
             {
                 next++;
@@ -433,6 +477,86 @@ public sealed class GifSpecificationTests
         Assert.True(growths > 0, "the fixture never grew its code width, so it proves nothing");
     }
 
+    /// <summary>
+    /// The exact codes, and the exact bytes, that Appendix F requires for one short input.
+    ///
+    /// Every other assertion about the code width in this file re-derives the width with the same
+    /// state machine it is checking, so it cannot fail. This one does not derive anything: the
+    /// sequence below was worked out from the specification by hand and is written in literally.
+    ///
+    /// The derivation, for four palette entries, so Clear is 4, End of Information is 5 and the
+    /// first free code is 6 (COMPRESSION items 1 to 3), starting at three bits (item 4):
+    /// <code>
+    ///   Clear                                                         ->  4
+    ///   [0]      emit 0,  add [0,1]   as 6
+    ///   [1]      emit 1,  add [1,0]   as 7
+    ///   [0,1]    emit 6,  add [0,1,0] as 8; next code 9 exceeds 8, so the width becomes 4
+    ///   [0,1]    emit 6,  add [0,1,2] as 9
+    ///   [2]      emit 2,  add [2,2]   as 10
+    ///   [2,2]    emit 10, add [2,2,1] as 11
+    ///   [1,0]    emit 7,  add [1,0,1] as 12
+    ///   [1,0]    emit 7,  add [1,0,2] as 13
+    ///   [2]      emit 2
+    ///   End of Information                                            ->  5
+    /// </code>
+    /// The byte assertion is the stronger of the two, because it pins the width each code went
+    /// out at as well as its value: the first four codes occupy three bits each and the rest
+    /// four, and a rule that widened one code earlier or later would pack them differently even
+    /// where the code values happened to agree.
+    /// </summary>
+    [Fact]
+    public void EncodeLzw_writesTheCodeSequenceAppendixFRequires()
+    {
+        byte[] indices = [0, 1, 0, 1, 0, 1, 2, 2, 2, 1, 0, 1, 0, 2];
+
+        var gif = BuildGif(indices, width: 14, height: 1, paletteEntries: 4, interlaced: false);
+
+        Assert.Equal(2, MinimumCodeSizeOf(gif));
+        Assert.Equal([4, 0, 1, 6, 6, 2, 10, 7, 7, 2, 5], ReadCodes(gif));
+        Assert.Equal([0x44, 0x6C, 0xA2, 0x77, 0x52], ImageDataOf(gif));
+
+        // And it is a real GIF, not only the right bytes.
+        Assert.Equal(indices, DecodeToIndices(gif, 14, 1, paletteEntries: 4));
+    }
+
+    /// <summary>
+    /// A sub-block chain whose declared length runs past the end of the file, in each of the two
+    /// places that walk one. <c>SkipSubBlocks</c> handles an extension this decoder does not
+    /// parse, and <c>GatherSubBlocks</c> handles the image data itself; the guard in the first
+    /// was added without a test and the guard in the second had none either.
+    /// </summary>
+    [Theory]
+    [InlineData(0xFE)]   // comment extension: skipped, so SkipSubBlocks walks it
+    [InlineData(0xFF)]   // application extension: likewise
+    [InlineData(0x01)]   // plain text extension: likewise
+    public void Decode_skippedExtensionRunningPastTheEnd_throwsInvalidDataException(int label)
+    {
+        // Header, screen descriptor with no global table, then an extension whose first
+        // sub-block claims 200 bytes and supplies two.
+        byte[] gif = [.. "GIF89a"u8, 1, 0, 1, 0, 0, 0, 0, 0x21, (byte)label, 200, 0x61, 0x62];
+
+        var ex = Assert.Throws<InvalidDataException>(() => GifImageLoader.Load(gif));
+        Assert.Contains("sub-block", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The image data's own sub-block chain, whose first block claims more bytes than the file
+    /// holds. This is the read <c>Decode_extensionSubBlockRunningPastTheEnd</c> cites as its
+    /// reference, and nothing exercised it.
+    /// </summary>
+    [Fact]
+    public void Decode_imageSubBlockRunningPastTheEnd_throwsInvalidDataException()
+    {
+        var full = BuildGif([0, 1, 2, 3], width: 2, height: 2, paletteEntries: 4, interlaced: false);
+        var afterMinCodeSize = 6 + 7 + 12 + 1 + 9 + 1;
+
+        // Replace the data with a single block claiming 200 bytes and carrying three.
+        byte[] gif = [.. full[..afterMinCodeSize], 200, 0x11, 0x22, 0x33, 0x3B];
+
+        var ex = Assert.Throws<InvalidDataException>(() => GifImageLoader.Load(gif));
+        Assert.Contains("sub-block", ex.Message, StringComparison.Ordinal);
+    }
+
     // ── Malformed input ──────────────────────────────────────────────────────
     //
     // The class contract is InvalidDataException for anything malformed. Three reads walked
@@ -533,6 +657,32 @@ public sealed class GifSpecificationTests
     }
 
     // ── Fixture helpers ──────────────────────────────────────────────────────
+
+    /// <summary>The concatenated image-data sub-blocks, without their length prefixes.</summary>
+    private static byte[] ImageDataOf(byte[] gif)
+    {
+        var pos = 13;
+        if ((gif[10] & 0x80) != 0) pos += 3 * (2 << (gif[10] & 0x07));
+        while (gif[pos] != 0x2C)
+        {
+            pos += 2;
+            while (gif[pos] != 0) pos += gif[pos] + 1;
+            pos++;
+        }
+        pos++;
+        var packed = gif[pos + 8];
+        pos += 9;
+        if ((packed & 0x80) != 0) pos += 3 * (2 << (packed & 0x07));
+        pos++;   // the minimum code size byte
+
+        using var ms = new MemoryStream();
+        while (gif[pos] != 0)
+        {
+            ms.Write(gif, pos + 1, gif[pos]);
+            pos += gif[pos] + 1;
+        }
+        return ms.ToArray();
+    }
 
     /// <summary>The LZW minimum code size byte: the one the image descriptor is followed by.</summary>
     private static int MinimumCodeSizeOf(byte[] gif)
@@ -732,30 +882,35 @@ public sealed class GifSpecificationTests
             if (table.TryGetValue((prefix, k), out var found)) { prefix = found; continue; }
             Emit(prefix);
             emitted++;
-            if (clearAfter > 0 && emitted == clearAfter)
-            {
-                // Flush the pending prefix, then reset exactly as a fresh stream starts.
-                Emit(k);
-                emitted++;
-                Emit(clearCode);
-                table.Clear();
-                codeSize = minCodeSize + 1;
-                nextCode = eoiCode + 1;
-                if (i + 1 >= indices.Length) { Emit(eoiCode); goto done; }
-                prefix = indices[++i];
-                continue;
-            }
+
+            // The table entry and the width growth belong to the code just emitted, and a
+            // decoder performs both whatever comes next, so they have to happen before any
+            // Clear is written. Skipping them -- which this did -- left the decoder a code
+            // wider than the fixture, and clearAfter values 6, 7, 22, 23, 54, 55, 118 and 119
+            // produced a stream neither this decoder nor an independent one could read.
             if (nextCode < 4096)
             {
                 table[(prefix, k)] = nextCode++;
                 if (nextCode > (1 << codeSize) && codeSize < 12) codeSize++;
             }
+
+            if (clearAfter > 0 && emitted == clearAfter)
+            {
+                Emit(clearCode);
+                table.Clear();
+                codeSize = minCodeSize + 1;
+                nextCode = eoiCode + 1;
+                // k has not been emitted, so it begins the string after the reset, exactly as
+                // the first index begins the string after the leading Clear.
+                prefix = k;
+                continue;
+            }
+
             prefix = k;
         }
 
         Emit(prefix);
         Emit(eoiCode);
-    done:
         if (bitsIn > 0) outMs.WriteByte((byte)(bitBuf & 0xFF));
         return outMs.ToArray();
     }

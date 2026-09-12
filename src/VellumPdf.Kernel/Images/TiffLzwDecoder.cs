@@ -12,9 +12,9 @@ namespace VellumPdf.Images;
 ///   • "Early change": the code width increases when the next code to be ASSIGNED
 ///     equals (1 &lt;&lt; currentWidth) - 1, one entry earlier than GIF, where it
 ///     increases when that code reaches (1 &lt;&lt; currentWidth). Both rules are
-///     written out rather than one plus a difference, because reading GIF's off
-///     this line by subtraction is how the GIF decoder came to be off by one
-///     (#490); GIF89a Appendix F, under COMPRESSION, item 4 is its authority.
+///     written out rather than one plus a difference, so that neither has to be
+///     derived by arithmetic from the other. GIF's authority is GIF89a Appendix
+///     F, under COMPRESSION, item 4; TIFF's is TIFF 6.0 section 13.
 ///   • ClearCode = 256, EndOfInformation = 257. First free entry = 258.
 ///   • Maximum code width = 12 bits (table size 4096).
 /// </summary>
