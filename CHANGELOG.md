@@ -303,6 +303,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Three inputs were refused by a message describing something else, and two more saved a document
+  a reader cannot render (#478, #481).** Both halves are message-level or invalid-output fixes, so
+  no document that renders correctly today is affected.
+
+  A renderer that cannot place an element reports placing nothing, and `DocumentRenderer` reads that
+  as "this element can never fit" and raises the too-tall message. For an oversized element that is
+  right. For a font size of `NaN`, or a `ColSpan` of zero, it is not: the element is not too tall,
+  and the remedy the message suggests, reducing its content or enlarging the page, cannot help. Both
+  now name the input. The exception type and the place it is raised are unchanged, so only the
+  wording moves.
+
+  A zero image width or height saved without complaint and wrote a transformation matrix that cannot
+  be inverted, `0 0 0 0 10 390 cm`, which ISO 32000-2 leaves undefined for a painted XObject. A
+  non-finite one wrote `NaN 0 0 NaN 10 NaN cm`, where the token is not a PDF number at all. A zero
+  width also collapsed the height, because the height is derived from the width through the aspect
+  ratio and the height check passes trivially at zero. Both are now refused with the extent named.
+
+  **What is deliberately still accepted**, each measured on the emitted stream rather than assumed,
+  because rejecting any of them would turn a working document into an exception: a font size of zero
+  or less, which reaches the stream as `/F1 0 Tf`; a non-finite leading, which emits a valid text
+  matrix; a `RowSpan` below one; a negative image extent, which emits a valid matrix that mirrors
+  the image and was left that way deliberately by the off-page fix; and a positive-infinity width,
+  which that same fix clamps to the content box before anything else sees it. These are contract
+  tightenings for the next major, and a test pins that this release left them alone.
+
 - **A table's column count came from its first row and ignored a column span on a later one, an
   explicit widths array was applied literally, auto widths were never capped, and a cell wider
   than its column drew off the page (#480, #477, #468, #473).** `TableGridResolver` and

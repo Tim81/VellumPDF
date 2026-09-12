@@ -45,6 +45,16 @@ public sealed class TableRenderer : IRenderer
         var area = context.Area.Deflate(_table.Margins);
         if (area.Width <= 0) return LayoutResult.Nothing();
 
+        // Before the grid resolves: a ColSpan of zero gives a column count of zero, so Resolve
+        // returns no widths and Layout gives up below, and the caller was told the table was too
+        // tall to fit (#481). Checking here names the cell instead.
+        for (var r = 0; r < _table.Rows.Count; r++)
+        {
+            var cells = _table.Rows[r].Cells;
+            for (var c = 0; c < cells.Count; c++)
+                LayoutValidation.ValidateCell(cells[c], r, c);
+        }
+
         var grid = new TableGridResolver();
         grid.Resolve(_table, area.Width);
         _colWidths = grid.ColWidths;
@@ -65,6 +75,7 @@ public sealed class TableRenderer : IRenderer
             {
                 if (col >= _colWidths.Length) break;
                 var cs = cell.Style ?? style;
+                LayoutValidation.ValidateStyle(cs, $"Table row {r}, cell {col}");
                 var colW = ColSpanWidth(col, cell.ColSpan);
                 var innerW = colW - cell.Padding.Horizontal;
                 var lines = WordWrapCount(cell.Content, cs, Math.Max(1, innerW));

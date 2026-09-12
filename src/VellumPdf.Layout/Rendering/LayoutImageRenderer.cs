@@ -64,6 +64,12 @@ public sealed class LayoutImageRenderer : IRenderer
         // which already follows the aspect ratio -- is rescaled to match the clamp above.
         _h = _img.Height ?? (_w / imgW * imgH);
 
+        // The drawn extents, not the source pixels, which were checked above. A zero width also
+        // collapses the height through the aspect-ratio division, and the height check below
+        // passes trivially at zero, so nothing rejected either and the matrix reached the content
+        // stream non-invertible (#478).
+        LayoutValidation.ValidateImageExtent(_w, _h);
+
         if (_h > area.Height) return LayoutResult.Nothing();
 
         _occupied = ctx.Area.WithHeight(_h + _img.Margins.Vertical);
