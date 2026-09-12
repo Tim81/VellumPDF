@@ -63,8 +63,15 @@ public interface ITimestampClient
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A DER-encoded RFC 3161 <c>TimeStampToken</c>.</returns>
     /// <exception cref="InvalidOperationException">
-    /// As <see cref="GetTimestampToken"/>: the authority could not be reached, timed out,
-    /// answered with a failing HTTP status, or returned a malformed response.
+    /// As <see cref="GetTimestampToken"/>: the request timed out, or the authority answered with
+    /// a failing HTTP status.
+    /// </exception>
+    /// <exception cref="System.Net.Http.HttpRequestException">
+    /// As <see cref="GetTimestampToken"/>: the authority could not be reached at all.
+    /// </exception>
+    /// <exception cref="System.Security.Cryptography.CryptographicException">
+    /// As <see cref="GetTimestampToken"/>: the authority refused the request, or returned a
+    /// response that is not a well-formed granted timestamp.
     /// </exception>
     /// <remarks>
     /// The default implementation forwards to <see cref="GetTimestampToken"/>, so existing

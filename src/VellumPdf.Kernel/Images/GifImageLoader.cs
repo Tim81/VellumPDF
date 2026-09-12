@@ -33,10 +33,12 @@ public static class GifImageLoader
     /// later major version will check it.</para>
     /// <para>One size limit applies here, not two. A declared pixel count above 100,000,000 is
     /// refused, so that a few bytes of header cannot drive a multi-gigabyte allocation.</para>
-    /// <para>Attention: a second constant bounds each edge at 1,000,000, and it is <b>not</b>
-    /// applied here. Only the MMR decoder behind CCITT and JBIG2 reads it. An image declaring one
-    /// edge of 1,000,001 with a total under the pixel cap loads. Both constants are internal and
-    /// there is no public setting for either.</para>
+    /// <para>Attention: a second constant bounds each edge at 1,000,000 and is applied by
+    /// <b>nothing</b> a default call reaches. Only the MMR decoder reads it, only the JBIG2
+    /// loader reaches that decoder, and only when asked for a decoded raster, which is not the
+    /// default mode. So an image declaring one edge of 1,000,001 with a total under the pixel cap
+    /// loads here and everywhere else. Both constants are internal and neither has a public
+    /// setting.</para>
     /// <para>Only the first frame is read. The rest are dropped silently: an animated GIF
     /// loads as its first image descriptor, with no warning that anything else was there. If you
     /// need to know, scan for further image descriptors yourself.</para>

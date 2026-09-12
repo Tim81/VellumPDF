@@ -1027,10 +1027,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   type does not catch it in the five, which is now said on each member.
 
   Only one of the two size limits applies to those five. The 100,000,000-pixel cap is enforced by
-  every loader that reaches `ValidateDimensions`. The 1,000,000-per-edge constant is read by the
-  MMR decoder alone, behind CCITT and JBIG2, and by nothing else, so a PNG, BMP or TIFF declaring
-  one edge of 1,000,001 with a total under the pixel cap loads. Documenting a guard that does not
-  run is worse than documenting none, so each member now says which of the two reaches it.
+  every loader that reaches `ValidateDimensions`. The 1,000,000-per-edge constant is enforced on no
+  default path at all: only the MMR decoder reads it, only the JBIG2 loader reaches that decoder,
+  and only when asked for a decoded raster rather than the passthrough its options default to. So
+  an image declaring one edge of 1,000,001 with a total under the pixel cap loads in every loader.
+  Documenting a guard that does not run is worse than documenting none, so each member now says
+  which of the two reaches it. An earlier attempt at this correction named CCITT as one of the two
+  paths behind it; the CCITT loader reaches that decoder in no mode, and its own comment already
+  said so.
 
   BMP and TIFF raise `NotSupportedException`, not `InvalidDataException`, for a well-formed file
   of a variant they do not read: three sites in BMP, eighteen in TIFF, and that type does not
