@@ -349,3 +349,9 @@ independent implementation written from open published specifications and,
 for patented barcode symbologies, the original patents; no third-party source
 is copied. See [NOTICE](NOTICE) and [docs/architecture.md](docs/architecture.md)
 for the full provenance statement.
+
+The Graphics Interchange Format(c) is the Copyright property of CompuServe
+Incorporated. GIF(sm) is a Service Mark property of CompuServe Incorporated.
+The GIF89a specification grants a royalty-free licence to use the format in
+software on condition that this is acknowledged in documentation, so it appears
+here and in [NOTICE](NOTICE) rather than only in the source.

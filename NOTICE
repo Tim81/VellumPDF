@@ -35,6 +35,64 @@ under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
 CONDITIONS OF ANY KIND, either express or implied.
 
 ────────────────────────────────────────────────────────────────────────────────
+Format acknowledgement required by a specification implemented
+────────────────────────────────────────────────────────────────────────────────
+
+Graphics Interchange Format (GIF)
+  Implemented : src/VellumPdf.Kernel/Images/GifImageLoader.cs (decoder)
+                src/VellumPdf.Kernel/Images/GifEncoder.cs (encoder)
+  Source      : Graphics Interchange Format, Version 89a, CompuServe
+                Incorporated, 31 July 1990.
+                https://www.w3.org/Graphics/GIF/spec-gif89a.txt
+  Why this
+  section     : Unlike the entries below, nothing of CompuServe's is bundled
+                here. The specification's own licence grant requires this
+                acknowledgement from any software that uses the format, so it
+                is an obligation of implementing GIF rather than of shipping
+                someone else's data.
+
+  This is the acknowledgement, in the words clause 3 of that specification
+  offers for it:
+
+    The Graphics Interchange Format(c) is the Copyright property of CompuServe
+    Incorporated. GIF(sm) is a Service Mark property of CompuServe Incorporated.
+
+  Clause 3 opens by reserving who may change the format, which matters to an
+  implementation that writes GIF as well as reads it:
+
+    The Graphics Interchange Format(c) is the copyright property of CompuServe
+    Incorporated. Only CompuServe Incorporated is authorized to define,
+    redefine, enhance, alter, modify or change in any way the definition of the
+    format.
+
+  This project defines nothing: the decoder and the encoder both read the format
+  as that clause defines it. The next paragraph is the grant that asks for the
+  acknowledgement above, quoted whole:
+
+    CompuServe Incorporated hereby grants a limited, non-exclusive,
+    royalty-free license for the use of the Graphics Interchange Format(sm) in
+    computer software; computer software utilizing GIF(sm) must acknowledge
+    ownership of the Graphics Interchange Format and its Service Mark by
+    CompuServe Incorporated, in User and Technical Documentation. Computer
+    software utilizing GIF, which is distributed or may be distributed without
+    User or Technical Documentation must display to the screen or printer a
+    message acknowledging ownership of the Graphics Interchange Format and the
+    Service Mark by CompuServe Incorporated; in this case, the acknowledgement
+    may be displayed in an opening screen or leading banner, or a closing
+    screen or trailing banner. A message such as the following may be used:
+
+          "The Graphics Interchange Format(c) is the Copyright property of
+          CompuServe Incorporated. GIF(sm) is a Service Mark property of
+          CompuServe Incorporated."
+
+  The second route, the screen or printer banner, is the one for software
+  shipped without documentation. These are libraries with no screen of their
+  own, and this file, the repository README and each package README are the
+  documentation they ship, so the first route is the one taken. The rest of
+  clause 3 is a 1990 postal address and a mailing-list offer, neither of which
+  bears on the obligation.
+
+────────────────────────────────────────────────────────────────────────────────
 Third-party data bundled in this product
 ────────────────────────────────────────────────────────────────────────────────
 
@@ -84,6 +142,23 @@ ZapfDingbats glyph list
              (of the committed file, normalised to LF line endings)
   Use      : Unicode mapping for a ZapfDingbats-flagged simple font's glyph names
   License  : BSD 3-Clause, same copyright and terms as the Adobe Glyph List above.
+
+Liberation fonts
+  Location : src/VellumPdf.Fonts.Standard14/Fonts/*.ttf, twelve faces across the
+             Sans, Serif and Mono families. They are embedded resources, so they
+             travel inside VellumPdf.Fonts.Standard14.dll rather than as files.
+  Source   : https://github.com/liberationfonts
+  Use      : Metric-compatible, embeddable substitutes for the standard 14
+             fonts, so a conformant fully-embedded PDF/A document can be
+             produced without a caller-supplied font program.
+  License  : SIL Open Font License 1.1. The full text travels in the same
+             package, at fonts/LICENSE.txt, which is where the licence's own
+             condition that a copy accompany the font software is met; the
+             package's licence expression is Apache-2.0 AND OFL-1.1.
+
+  Digitized data copyright (c) 2010 Google Corporation with Reserved Font
+  Arimo, Tinos and Cousine.
+  Copyright (c) 2012 Red Hat, Inc. with Reserved Font Name Liberation.
 
 Adobe Core 14 AFM font metrics
   Location : src/VellumPdf.Reader/Fonts/SymbolFontMetrics.cs
@@ -157,7 +232,8 @@ PDF Association specification datasets
                Association's.
   Not shipped: The datasets are downloaded at generation time and are not in
                this tree. Neither they nor the generated document are included
-               in any VellumPdf NuGet package, which ship only their README.
+               in any VellumPdf NuGet package, which ship their README and this
+               file.
   Licence    : Both upstream NOTICE files dual-license their contents: Apache
                License 2.0 for software, and the Creative Commons Attribution
                4.0 International License for other documentation. These are
