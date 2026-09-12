@@ -311,13 +311,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   seven test assemblies at once, and the rule replaced its finding with an evaluation failure. A
   loaded consumer machine does the same thing, so this was not only a flaky test.
 
-  Raising the number would have moved the flake rather than removed it. The guard is gone instead,
-  and the pattern now runs on the linear-time engine, which makes a runaway impossible by
-  construction rather than by a property of this particular pattern. The pattern itself was never
-  the problem: the hyphen anchors each subtag, so backtracking inside the one-to-eight quantifier
-  is bounded by eight attempts per subtag. Measured over 29 tag shapes and 12 stressors built from
-  nine-character subtags, up to 122 characters, both engines return the same verdict for every
-  input and none takes a measurable time.
+  Raising the number would have moved the flake rather than removed it, so the guard is gone. The
+  pattern itself was never the problem: the hyphen is in neither subtag character class, so once
+  the one-to-eight quantifier gives back a character the next one is an alnum rather than a hyphen
+  and the alternative dies at once. Measured over 1.37 million inputs, including exhaustive
+  enumeration over small alphabets and stressors up to nineteen million characters, both engines
+  agree on every one, and the old one peaked at 35 milliseconds for ten million characters. It
+  would take roughly 15 MB of language tag to burn the 50 milliseconds this used to allow.
+
+  Two things make the switch to the linear-time engine right anyway. It makes linear time the
+  engine's guarantee rather than a property of this pattern that a later edit could lose. And
+  under Native AOT, which this repository publishes the command-line tool with,
+  `RegexOptions.Compiled` has no run-time code generation available and silently falls back to the
+  interpreter, so on the shipped preflight binary the old code was running interpreted: measured
+  over 100,000 tags, 8.5 milliseconds against 11.8. The change is a speed-up there, not a cost.
+
+  `Compiled` is dropped because it is meaningless alongside the new engine, not because it is
+  rejected. The two options combine, both flags stay on the `Options` property, and the symbolic
+  engine runs regardless. An earlier draft of this entry said they could not be combined, which is
+  false and now corrected in the code comment too.
 
   What is asserted is the decision, not a duration: a test reads both patterns and fails if either
   carries a finite timeout or drops the linear-time option. Provoking thread starvation is not

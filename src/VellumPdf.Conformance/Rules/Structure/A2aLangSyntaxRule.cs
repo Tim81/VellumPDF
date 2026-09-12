@@ -53,13 +53,35 @@ internal sealed class A2aLangSyntaxRule : IConformanceRule
     // The same starvation happens on any loaded machine, so this was a defect for consumers and
     // not only a flaky test.
     //
-    // Raising the number would move the flake rather than remove it. The pattern does not need a
-    // guard at all: the hyphen anchors each subtag, so backtracking inside {1,8} is bounded by
-    // eight attempts per subtag, and NonBacktracking makes linear time a guarantee of the engine
-    // instead of a property of this pattern that a later edit could lose. Measured over 29 tag
-    // shapes and 12 stressors of up to 122 characters built from nine-character subtags, the two
-    // engines return the same verdict for every input, and no input takes a measurable time.
-    // NonBacktracking cannot be combined with Compiled, which is why that is gone.
+    // Raising the number would move the flake rather than remove it. This pattern does not need a
+    // guard at all: the hyphen is in neither subtag character class, so once {1,8} gives back a
+    // character the next one is an alnum rather than a hyphen and the alternative dies at once.
+    // Backtracking is bounded by eight attempts per subtag. Measured over 1.37 million inputs,
+    // including exhaustive enumeration over small alphabets and 19-million-character stressors
+    // built from nine-character subtags: the engines agree on every one, and the old one peaked
+    // at 35 ms for ten million characters, so roughly 15 MB of /Lang would be needed to burn the
+    // 50 ms this used to allow.
+    //
+    // So the switch is not about this pattern running away. Two other things make it right.
+    // NonBacktracking makes linear time the engine's guarantee rather than a property of this
+    // pattern that a later edit could lose. And under Native AOT, which eng/aot publishes for
+    // VellumPdf.Cli, RegexOptions.Compiled has no Reflection.Emit to use and silently degrades to
+    // the interpreter: measured on an AOT-published probe over 100,000 tags, Compiled and
+    // interpreted are indistinguishable in both time and allocation, while NonBacktracking runs
+    // 100,000 tags in 8.5 ms against their 11.8 -- so on the shipped preflight binary this is a
+    // speed-up rather than a cost.
+    //
+    // Compiled is dropped because it is meaningless here, not because it is rejected: the two
+    // options do combine, the Options property keeps both flags, and the symbolic engine runs
+    // regardless. Keeping it would only mislead. What NonBacktracking genuinely refuses is
+    // RightToLeft and ECMAScript, neither of which is used.
+    //
+    // One real behavioural difference, inert here: a capturing group inside a loop reports only
+    // its final capture, so Groups[1].Captures.Count is 1 rather than 2 for "zh-Hans-CN". Both
+    // rules call only IsMatch. An edit that starts reading Captures needs to know this.
+    //
+    // Costs, for the record: construction is about 23 ms and 161 KB against Compiled's 4.8 ms and
+    // 24 KB, once per rule on the JIT stack and near-free under AOT.
     private static readonly Regex _bcp47 =
         new(@"^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*$", RegexOptions.NonBacktracking);
 

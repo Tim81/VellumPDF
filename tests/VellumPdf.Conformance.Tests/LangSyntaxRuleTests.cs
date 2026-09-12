@@ -33,7 +33,11 @@ public sealed class LangSyntaxRuleTests
         var field = ruleType.GetField("_bcp47", BindingFlags.NonPublic | BindingFlags.Static);
         Assert.NotNull(field);
 
-        var regex = Assert.IsType<Regex>(field!.GetValue(null));
+        // IsAssignableFrom, not IsType: the latter is an exact-type assertion in xunit.v3, so
+        // it fails against a [GeneratedRegex] field -- whose value is a generated subclass of
+        // Regex -- with a message about the exact type rather than about the timeout. This
+        // repository already uses [GeneratedRegex] in eight places, so that refactor is likely.
+        var regex = Assert.IsAssignableFrom<Regex>(field!.GetValue(null));
 
         Assert.Equal(Regex.InfiniteMatchTimeout, regex.MatchTimeout);
         Assert.True(regex.Options.HasFlag(RegexOptions.NonBacktracking),
@@ -74,6 +78,7 @@ public sealed class LangSyntaxRuleTests
         foreach (var ruleType in new[] { typeof(A2aLangSyntaxRule), typeof(UaLangSyntaxRule) })
         {
             var field = ruleType.GetField("_bcp47", BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.NotNull(field);
             var regex = (Regex)field!.GetValue(null)!;
 
             if (expected) Assert.Matches(regex, tag);
@@ -89,6 +94,10 @@ public sealed class LangSyntaxRuleTests
     ///
     /// No time is asserted, deliberately. The point is the verdict; the engine's linear-time
     /// guarantee is asserted by <see cref="LangRule_carriesNoMatchTimeout"/> instead.
+    ///
+    /// Worth knowing that this is intent rather than coverage: it fires on exactly the mutations
+    /// the corpus test's nine-character cases already catch. It is here so that the shape the
+    /// argument turns on is written down as a case, not only in a comment.
     /// </summary>
     [Theory]
     [InlineData(1)]
@@ -101,6 +110,7 @@ public sealed class LangSyntaxRuleTests
 
         var field = typeof(A2aLangSyntaxRule)
             .GetField("_bcp47", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(field);
         var regex = (Regex)field!.GetValue(null)!;
 
         Assert.DoesNotMatch(regex, tag);
