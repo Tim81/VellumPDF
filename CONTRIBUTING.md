@@ -69,11 +69,13 @@ build, test, and submit changes to VellumPdf.
   out to. A gated theory in `VellumPdf.Conformance.Tests`
   (`ExternalToolResolutionTests`) checks that each tool resolves to itself
   on every run.
-- **Python with zxing-cpp** — the barcode decode oracle:
+- **Python with zxing-cpp and Pillow**, the barcode decode oracle and the GIF oracle
+  (`eng/gif-oracle.py`, `GifPillowOracleTests`) share one install:
   `python -m pip install zxing-cpp==3.1.1 pillow==12.3.0`. zxing-cpp is pinned because the EAN
   add-on text format differs between releases; the barcode oracle test asserts only the main
   digits for that reason (`EanBarcode_Ean13WithAddOn_MainDigitsExact_AddOnTolerant`), so the pin
-  exists to keep CI reproducible rather than to work around a currently-failing assertion.
+  exists to keep CI reproducible rather than to work around a currently-failing assertion. The
+  GIF oracle needs only the Pillow half of this install.
 
 ## Building and testing
 

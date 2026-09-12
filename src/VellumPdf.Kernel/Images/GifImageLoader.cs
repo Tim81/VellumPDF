@@ -11,14 +11,37 @@ namespace VellumPdf.Images;
 /// Features:
 ///   • LZW decompression (GIF variant, variable-width codes packed LSB-first).
 ///   • Global and local colour tables.
+///   • Interlaced images, deinterlaced to display order (Appendix E).
 ///   • Graphic Control Extension: transparent index → 8-bit /SMask.
 ///   • Animated GIFs: only the first image descriptor is decoded; subsequent frames are ignored.
 ///
-/// Rejected: GIF with no image descriptor, malformed LZW streams (throws InvalidDataException).
+/// Rejected: a file with no image descriptor, a malformed or truncated LZW stream, a minimum
+/// code size outside 2 to 8, a colour table or sub-block chain that runs past the end of the
+/// file, and dimensions that are invalid or exceed the decoder's safety limit. Every one of these
+/// throws <see cref="InvalidDataException"/>, never the exception type the failing read would
+/// otherwise raise.
 /// </summary>
 public static class GifImageLoader
 {
     /// <summary>Decodes the first frame of a GIF into a FlateDecode Image XObject.</summary>
+    /// <remarks>
+    /// Malformed input is refused. This method throws <see cref="InvalidDataException"/> naming
+    /// the fault for a file with no image descriptor, an LZW stream that is corrupt or ends
+    /// before every pixel the image descriptor promises is produced, a minimum code size outside
+    /// 2 to 8, a colour table or sub-block chain that runs past the end of the file, a truncated
+    /// extension, or dimensions <see cref="ImageLimits.ValidateDimensions"/> refuses. A caller
+    /// can guard on the one exception type for all of them rather than several.
+    /// <para>A stream carrying more pixels than the image descriptor promises is <b>not</b>
+    /// refused: decoding stops once the promised count is produced, so trailing codes are never
+    /// read. Do not rely on the overrun being rejected; a later major may make it one.</para>
+    /// </remarks>
+    /// <exception cref="InvalidDataException">
+    /// <paramref name="gifBytes"/> is too small to be a GIF, does not carry the GIF87a/GIF89a
+    /// signature, has no image descriptor, a colour table or sub-block chain runs past the end of
+    /// the array, an extension is truncated, the LZW minimum code size is outside 2 to 8, the LZW
+    /// stream is corrupt or ends before every promised pixel is produced, or the image dimensions
+    /// are invalid or exceed the safety limit named in the message.
+    /// </exception>
     public static PdfImageXObject Load(byte[] gifBytes)
     {
         if (gifBytes.Length < 13)
@@ -89,9 +112,13 @@ public static class GifImageLoader
                     SkipSubBlocks(gifBytes, ref pos);
 
                     // Section 12 sorts every labelled block into three ranges: 0x00-0x7F is
-                    // Graphic-Rendering (the Trailer, 0x3B, is excluded from that range, but it is
-                    // a top-level block type rather than an extension label and never reaches
-                    // here), 0x80-0xF9 is Control, and 0xFA-0xFF is Special Purpose. The same
+                    // Graphic-Rendering (the Trailer, 0x3B, is excluded from that range as a
+                    // top-level block type; the top-level loop above matches it before an
+                    // extension is ever considered, so a conformant stream never presents 0x3B as
+                    // an extension label here, but this branch does not distinguish the two, so a
+                    // non-conformant 0x21 0x3B pair would still be read as inside 0x00-0x7F (with
+                    // no pixels at risk, since no such stream is conformant), 0x80-0xF9 is Control,
+                    // and 0xFA-0xFF is Special Purpose. The same
                     // section adds that a decoder "can handle block scope by appropriately
                     // identifying block labels, even when the block itself cannot be processed."
                     // A label in the rendering range therefore closes a pending Graphic Control
@@ -105,9 +132,9 @@ public static class GifImageLoader
                     // 12 states plainly that these "are transparent to the decoding process" and
                     // do not delimit scope, so this branch leaves transparentIndex untouched for
                     // them, deliberately. The same holds for 0x80-0xF8, Control other than the
-                    // Graphic Control Extension itself: only a Graphic-Rendering block closes a
-                    // Control block's scope, so an unrecognised Control label is transparent to it
-                    // too.
+                    // Graphic Control Extension itself, on different grounds: section 23 only ever
+                    // gives a Graphic-Rendering block as what closes a pending scope, so an
+                    // unrecognised Control label simply is not one of the blocks that can close it.
                     if (label <= 0x7F)
                         transparentIndex = -1;
                 }
@@ -180,7 +207,12 @@ public static class GifImageLoader
         if (interlaced)
             indices = Deinterlace(indices, width, height);
 
-        // Expand indices to RGB
+        // Expand indices to RGB. Section 22.a requires every index to be within the active
+        // colour table's range, so one that is not makes this a malformed file, and the class
+        // contract is InvalidDataException for that. This is a deliberate departure from it: the
+        // out-of-range pixel is left black rather than the whole image refused, because a single
+        // bad index costs one pixel and a caller who only wants the rest of the frame has no way
+        // to ask for that leniency if this throws instead.
         var rgb = new byte[width * height * 3];
         for (var i = 0; i < width * height; i++)
         {
@@ -320,9 +352,9 @@ public static class GifImageLoader
             // at stack[0]. Appending at the top therefore emitted the extra byte FIRST rather than
             // last, turning "Kw" + "K" into "K" + "Kw". It goes to the bottom instead.
             //
-            // The visible cost was a run of wrong pixels as long as the string wherever this case arose: on a 48x48 image
-            // of three-pixel vertical bars, 120 of 2304 pixels, each one sitting exactly on a bar
-            // boundary where the pattern repeats.
+            // The visible cost was a run of wrong pixels as long as the string wherever this case
+            // arose: on a 48x48 image of three-pixel vertical bars, 120 of 2304 pixels, each one
+            // sitting exactly on a bar boundary where the pattern repeats.
             if (code == nextCode)
             {
                 var firstByte = stack[stackTop - 1];
@@ -386,8 +418,9 @@ public static class GifImageLoader
         //
         // The sibling TIFF decoder makes this check and names it "output length mismatch". It also
         // refuses an overrun, which this does not: a stream carrying more pixels than the
-        // descriptor asks for is still truncated to the descriptor silently, because the
-        // independent decoders tried accept it and refusing it would reject files that render.
+        // descriptor asks for is still truncated to the descriptor silently, because Pillow 12.3.0,
+        // the independent decoder this was checked against, accepts such a stream, and refusing it
+        // here would reject files that render.
         if (outIdx != pixelCount)
             throw new InvalidDataException(
                 sawEndOfInformation

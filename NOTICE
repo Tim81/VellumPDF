@@ -46,18 +46,21 @@ Graphics Interchange Format (GIF)
                 https://www.w3.org/Graphics/GIF/spec-gif89a.txt
   Why this
   section     : Unlike the entries below, nothing of CompuServe's is bundled
-                here. The specification's own licence grant requires this
-                acknowledgement from any software that uses the format, so it
-                is an obligation of implementing GIF rather than of shipping
-                someone else's data.
+                here. The specification's own licence grant requires software
+                that uses the format to acknowledge ownership of the format
+                and its service mark in User and Technical Documentation; the
+                wording below is what section 3 offers for that
+                acknowledgement, not a requirement in its own right. Either
+                way, it is an obligation of implementing GIF rather than of
+                shipping someone else's data.
 
-  This is the acknowledgement, in the words clause 3 of that specification
+  This is the acknowledgement, in the words section 3 of that specification
   offers for it:
 
     The Graphics Interchange Format(c) is the Copyright property of CompuServe
     Incorporated. GIF(sm) is a Service Mark property of CompuServe Incorporated.
 
-  Clause 3 opens by reserving who may change the format, which matters to an
+  Section 3 opens by reserving who may change the format, which matters to an
   implementation that writes GIF as well as reads it:
 
     The Graphics Interchange Format(c) is the copyright property of CompuServe
@@ -66,8 +69,8 @@ Graphics Interchange Format (GIF)
     format.
 
   This project defines nothing: the decoder reads the format and the encoder
-  writes it, both as that clause defines it. The next paragraph is the grant
-  that asks for the acknowledgement above, quoted whole:
+  writes it, both as that section defines it. The next paragraph is the grant
+  this section acts on, quoted whole:
 
     CompuServe Incorporated hereby grants a limited, non-exclusive,
     royalty-free license for the use of the Graphics Interchange Format(sm) in
@@ -85,14 +88,13 @@ Graphics Interchange Format (GIF)
           CompuServe Incorporated. GIF(sm) is a Service Mark property of
           CompuServe Incorporated."
 
-  The second route, the screen or printer banner, is the one for software
-  shipped without documentation. Seven of the eight packages are libraries with
-  no screen of their own; the eighth, VellumPdf.Cli, is an executable and the
-  only one of the eight for which that route would even apply. This file is
-  packed into all eight regardless, so the first route is taken uniformly
-  rather than singling the command-line tool out for a banner it does not
-  need. The rest of clause 3 is a 1990 postal address and a mailing-list
-  offer, neither of which bears on the obligation.
+  The second route, the screen or printer banner, applies only to software
+  distributed without User or Technical Documentation; a screen is what would
+  let a package take that route, not what triggers it. All eight packages
+  ship a README, so the route applies to none of them, and the first route,
+  the acknowledgement in that documentation, is the one this file exists to
+  satisfy for all eight uniformly. The rest of section 3 is a 1990 postal
+  address and a mailing-list offer, neither of which bears on the obligation.
 
 ────────────────────────────────────────────────────────────────────────────────
 Third-party data bundled in this product
@@ -156,7 +158,9 @@ Liberation fonts
   License  : SIL Open Font License 1.1. The full text travels in the same
              package, at fonts/LICENSE.txt, which is where the licence's own
              condition that a copy accompany the font software is met; the
-             package's licence expression is Apache-2.0 AND OFL-1.1.
+             package's licence expression is Apache-2.0 AND OFL-1.1. Listed
+             here for completeness alongside the other bundled data above,
+             not because anything about this obligation was previously unmet.
 
   Digitized data copyright (c) 2010 Google Corporation with Reserved Font
   Arimo, Tinos and Cousine.

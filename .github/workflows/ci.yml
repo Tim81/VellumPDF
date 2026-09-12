@@ -280,17 +280,19 @@ jobs:
         # launch — an identity probe (ExternalTool.CheckIdentity) and a launch that never started
         # are both excluded, so neither can pad a tool's count without the tool having actually
         # validated anything; this step concatenates those files and sums a count per tool.
-        # python3 is folded into python's count: ZxingDecodeOracleTests falls back from "python" to
-        # "python3" and logs whichever name actually launched, so the two are one oracle under two
-        # possible names, not two oracles.
+        # python3 is folded into python's count: both ZxingDecodeOracleTests and
+        # GifPillowOracleTests fall back from "python" to "python3" and log whichever name
+        # actually launched, so each pair is one oracle under two possible names, not two oracles.
         #
         # Floors are 90% of a full local run with every oracle enabled (REQUIRE_ORACLES=1, QPDF_HOME
         # / POPPLER_HOME / VERAPDF_HOME all pointed at real installs), rounded down, measured
-        # against this same commit: verapdf 304, pdftoppm 135, python 135, qpdf 40, pdftotext 8,
+        # against this same commit: verapdf 304, pdftoppm 135, python 137, qpdf 40, pdftotext 8,
         # pdfsig 2. qpdf moved from 29 with #99's third-party SaveDecrypted round-trip oracle
         # (SaveDecryptedThirdPartyQpdfOracleTests, 11 fixtures each running one `qpdf --check`).
         # verapdf moved from 298 with #138's UaEncryptionPermissionsVeraPdfTests: 4 test methods,
-        # 6 verapdf launches total (two of the four call both Validate and Report).
+        # 6 verapdf launches total (two of the four call both Validate and Report). python moved
+        # from 135 with #490's GifPillowOracleTests: 2 test methods, each launching python once
+        # for eng/gif-oracle.py; pdftoppm is untouched since that oracle never rasterizes a PDF.
         # 90% tolerates ordinary run-to-run variance (a data-driven theory whose case
         # count shifts, a retried flake) without hiding a regression the way pinning the exact
         # measured count would risk doing on its own false positives. These floors are
@@ -315,7 +317,7 @@ jobs:
           declare -A floors=(
             [verapdf]=273
             [pdftoppm]=121
-            [python]=121
+            [python]=123
             [qpdf]=36
             [pdftotext]=7
             [pdfsig]=1

@@ -180,12 +180,16 @@ public sealed class MalformedInputTests
     }
 
     /// <summary>
-    /// The overflow case above and a zero dimension take different branches in
-    /// <see cref="ImageLimits.ValidateDimensions"/>: 65535x65535 overflows <see cref="int"/> when
-    /// multiplied (raising <see cref="OverflowException"/> if the guard is removed), while a 0x0
-    /// descriptor multiplies to zero and "decodes" to an empty image with no error at all. One
-    /// fixture cannot speak for both, so each width/height pairing is measured on its own, again
-    /// asserting the exact message rather than only the exception type.
+    /// A zero dimension takes a different branch of <see cref="ImageLimits.ValidateDimensions"/>
+    /// than the overflow case above, and the two do not fail alike, so each is measured on its
+    /// own rather than assumed. Removing the guard here does not fall through to a pixel-count
+    /// overflow the way it might look like it should. Measured with the guard deleted, every
+    /// pairing this theory covers, 65535x65535 included, throws the same
+    /// <c>InvalidDataException</c>, "GIF image data ends before the LZW minimum code size.",
+    /// because <see cref="BuildGifDescriptorOnly"/> truncates the fixture right after the packed
+    /// byte, and the next read after the guard hits that truncation before any multiplication
+    /// runs. So the guard's own message is what each case below is pinning, not a downstream
+    /// overflow that this particular fixture never reaches either way.
     /// </summary>
     [Theory]
     [InlineData(0, 0)]

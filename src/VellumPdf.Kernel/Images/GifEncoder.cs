@@ -14,12 +14,6 @@ namespace VellumPdf.Images;
 ///
 /// The Graphics Interchange Format(c) is the Copyright property of CompuServe Incorporated.
 /// GIF(sm) is a Service Mark property of CompuServe Incorporated. See the repository NOTICE.
-///
-/// <para><b>Lossless only.</b> GIF carries at most 256 colours per frame, and this encoder will
-/// not choose which ones to discard. It builds the palette from the distinct colours actually
-/// present and refuses an image holding more than 256 of them, rather than quantising silently.
-/// That follows the same rule as the rest of the image path: preserve what the caller supplied,
-/// and make any quality trade-off an explicit choice rather than a default.</para>
 /// </summary>
 public static class GifEncoder
 {
@@ -31,6 +25,17 @@ public static class GifEncoder
     /// Encodes 8-bit RGB samples, three bytes per pixel in row order from the top-left, as a
     /// single-frame GIF89a.
     /// </summary>
+    /// <remarks>
+    /// An image with more than 256 distinct colours is refused. This method throws
+    /// <see cref="ArgumentException"/> naming the limit, because GIF carries at most 256 colours
+    /// per frame and this encoder will not choose which ones to discard: it builds the palette
+    /// from the colours the image actually holds, in keeping with the rest of the image path,
+    /// which never trades quality away without being asked.
+    /// <para>The order colours land in within the returned file's Global Color Table is
+    /// first-appearance order and is <b>not</b> a contract. Do not rely on a given colour landing
+    /// at a given palette index; a later version may build the table differently as long as the
+    /// image it decodes back to is unchanged.</para>
+    /// </remarks>
     /// <param name="rgb">Pixel data, <paramref name="width"/> × <paramref name="height"/> × 3 bytes.</param>
     /// <param name="width">Image width in pixels.</param>
     /// <param name="height">Image height in pixels.</param>
@@ -86,11 +91,11 @@ public static class GifEncoder
         while ((2 << sizeField) < palette.Count && sizeField < 7) sizeField++;
         var tableEntries = 2 << sizeField;
 
-        // Appendix F, under COMPRESSION, item 4: "The output codes are of variable length,
-        // starting at <code size>+1 bits per
-        // code". A code size of 1 would make the first available code 4 while the Clear code is 2,
-        // which leaves one usable width; the format's own floor is 2, so a one- or two-colour
-        // image is written with a code size of 2.
+        // Appendix F, under ESTABLISH CODE SIZE: "black & white images which have one color bit
+        // must be indicated as having a code size of 2." A code size of 1 starts the width at 2
+        // bits, which does fit Clear (2) and End of Information (3); what does not fit is the
+        // first free code, 4, which needs a third bit. So the floor is not a rounding convenience,
+        // and a one- or two-colour image is written with a code size of 2.
         var minCodeSize = Math.Max(2, sizeField + 1);
 
         using var ms = new MemoryStream();

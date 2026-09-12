@@ -14,7 +14,8 @@
 #     layout, so the caller can compare them byte for byte against a known raster.
 #
 # Exit codes: 0 on success, 3 when Pillow is not installed (the C# side treats this as
-# "tool missing": skip locally, fail on CI), 1 on any other error.
+# "tool missing": skip locally, fail on CI), 4 when `encode` finds its own Pillow round trip
+# lossy (the fixture no longer fits inside Pillow's palette capacity), 1 on any other error.
 
 import sys
 
@@ -38,10 +39,26 @@ def cmd_encode(raw_path: str, width: str, height: str, out_path: str) -> int:
 
     image = Image.frombytes("RGB", (w, h), data)
     # The fixtures this oracle is used against hold at most 256 distinct colours by
-    # construction (see GifSpecificationTests), so an adaptive palette of 256 entries
-    # assigns one entry per colour rather than merging any two.
+    # construction (see GifSpecificationTests), so an adaptive palette of 256 entries is meant
+    # to assign one entry per colour rather than merging any two. That holds only as long as the
+    # fixture really has 256 or fewer distinct colours and Pillow's quantizer keeps to its
+    # capacity; a future Pillow that merges two colours at this exact capacity would make this
+    # oracle compare VellumPdf's output against an already-lossy reference and blame the wrong
+    # side. Reading the written file back and comparing against the input catches that here,
+    # rather than downstream in a pixel diff that points at GifImageLoader.
     indexed = image.convert("P", palette=Image.Palette.ADAPTIVE, colors=256)
     indexed.save(out_path, format="GIF")
+
+    round_tripped = Image.open(out_path).convert("RGB").tobytes()
+    if round_tripped != data:
+        differing = sum(1 for a, b in zip(data, round_tripped) if a != b)
+        print(
+            f"Pillow quantized the input lossily: {differing} of {len(data)} bytes differ "
+            "after round-tripping through its own encoder, so this oracle's output is not a "
+            "faithful reference for this raster.",
+            file=sys.stderr,
+        )
+        return 4
     return 0
 
 

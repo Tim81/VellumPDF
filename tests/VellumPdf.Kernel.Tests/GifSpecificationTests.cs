@@ -9,8 +9,13 @@ namespace VellumPdf.Kernel.Tests;
 /// The GIF decoder and encoder against the Graphics Interchange Format, Version 89a, CompuServe
 /// Incorporated, 31 July 1990, which the repository now holds.
 ///
-/// Three defects motivated the file, and all three were invisible to tests that only asked
-/// whether a file loaded, because a single flat colour survives all three.
+/// Three defects motivated the file originally, and all three were invisible to tests that only
+/// asked whether a file loaded, because a single flat colour written at Pillow's own minimum code
+/// size of 8 survives all three: that width keeps the LZW dictionary under any boundary the
+/// defect below could reach, and a flat colour has nothing for the interlace or KwKwK defects to
+/// scramble either. The same colour at a narrower minimum code size reaches a width boundary in
+/// as few as 7 pixels, measured below. The file has grown past those three since: the
+/// transparency-scope leak, the input bounds guards and the short-stream refusal live here too.
 ///
 /// Two kinds of case live here, and the distinction matters when reading a failure. The interlace
 /// order, the encoder's block structure and its code stream are known answers: the expected value
@@ -18,7 +23,7 @@ namespace VellumPdf.Kernel.Tests;
 /// from, which is agreement between this file's encoder and the package's decoder rather than
 /// against a third party.
 ///
-/// That agreement proves less than it looks, and it is worth being exact about why.
+/// That agreement proves less than it looks, and the reason is exact rather than a general caveat.
 /// <see cref="EncodeLzw"/> keeps its table one entry ahead of the decoder's, and applies the
 /// width rule one step behind it, and those two offsets cancel: both sides change width at the
 /// same position in the stream. So a matched drift in both is expressible and would pass every
@@ -27,8 +32,12 @@ namespace VellumPdf.Kernel.Tests;
 /// the rule is <see cref="EncodeLzw_writesTheCodeSequenceAppendixFRequires"/>, whose expected
 /// codes and bytes are literals derived from the specification by hand.
 ///
-/// No independent codec runs in this suite. Cross-checks against one are run outside it, against
-/// the corpus the CHANGELOG entry for #490 reports.
+/// No independent codec runs in this file. <see cref="GifPillowOracleTests"/>, in the same test
+/// project, does: it shells out to Pillow via <c>eng/gif-oracle.py</c> for the table-filling case
+/// this file's own <see cref="Encode_writesACodeStreamAppendixFAccepts"/> exercises in-process. A
+/// wider cross-check against Pillow, across content kinds, sizes and palettes, was run outside the
+/// repository against the corpus the CHANGELOG entry for #490 reports; that sweep is not
+/// reproducible from a clone, unlike the oracle test above.
 /// </summary>
 public sealed class GifSpecificationTests
 {
@@ -39,7 +48,10 @@ public sealed class GifSpecificationTests
     ///
     /// The decoder grew one code later, so as soon as an image's dictionary passed that boundary it
     /// read a code too narrow, desynchronised, and threw "Invalid GIF LZW code". A flat colour
-    /// never reaches a boundary, so it decoded; past that the outcome depended on the content.
+    /// written at Pillow's minimum code size of 8 stays under any boundary a 160x120 image can
+    /// reach, so it decoded regardless of the defect; at the narrower code size this fixture uses,
+    /// a flat colour reaches one in 7 pixels (measured below), so the outcome past that point
+    /// depended on the content, not on flatness.
     ///
     /// This fixture is 300 pixels over 8 palette entries, so the minimum code size is 3 and the
     /// first boundary is at 16, not at 512. Walking the stream it produces: the table peaks at 82
@@ -160,8 +172,8 @@ public sealed class GifSpecificationTests
     /// and grows the code width, which a four-colour fixture cannot do.
     ///
     /// <c>RepeatedPairs</c> is alternating pairs over four colours. This is the one that
-    /// discriminates the not-yet-in-table defect, and the distinction is worth writing down
-    /// because the first content does not, despite reaching the case 200 times. That case stands
+    /// discriminates the not-yet-in-table defect; <c>WidePalette</c> does not, despite reaching
+    /// the case 200 times. That case stands
     /// for the previous string followed by that string's own first byte; put the byte at the
     /// front instead and you get the first byte followed by the string. When the string is a run
     /// of one symbol those are the same string, so runs of three reach the case constantly and
@@ -443,7 +455,7 @@ public sealed class GifSpecificationTests
     }
 
     /// <summary>
-    /// Section 20.c.i: an image may carry its own colour table instead of using the screen's.
+    /// Section 20.c.vi: an image may carry its own colour table instead of using the screen's.
     /// No fixture anywhere in the tree set that flag, so the branch that reads a local table was
     /// exercised by nothing. This fixture omits the global table entirely, so taking the wrong
     /// one is a refusal rather than a wrong colour.
@@ -496,7 +508,8 @@ public sealed class GifSpecificationTests
     public void Decode_graphicRenderingExtension_closesAPendingTransparentIndex()
     {
         byte[] indices = [1, 2, 1, 2, 1, 2, 1];
-        var gif = BuildGifWithGceThenPlainTextThenImage(indices, transparentFlag: 1, transparentIndex: 1, secondGce: false);
+        var gif = BuildGifWithGceThenExtensionThenImage(
+            indices, transparentFlag: 1, transparentIndex: 1, secondGce: false, middleExtensionLabel: 0x01);
 
         var img = GifImageLoader.Load(gif);
 
@@ -508,12 +521,57 @@ public sealed class GifSpecificationTests
     /// the image descriptor, if that extension's own transparency flag is clear and nothing resets
     /// the index on that path either: the stale value from the first extension keeps winning.
     /// This and the case above are the two measured failures behind the fix; both must be gone.
+    ///
+    /// No intervening extension runs here, unlike the case above: with one present, the Plain Text
+    /// Extension's own scope-closing reset already clears the index before the second Graphic
+    /// Control Extension is parsed, so a suite built that way stays green even with the second
+    /// extension's own reset deleted. Leaving the middle extension out isolates that second
+    /// mechanism, the <c>else</c> branch that clears the index when a Graphic Control Extension's
+    /// own transparency flag is clear.
     /// </summary>
     [Fact]
     public void Decode_gceWithTransparencyFlagClear_resetsAStaleIndexFromAnEarlierExtension()
     {
         byte[] indices = [1, 2, 1, 2, 1, 2, 1];
-        var gif = BuildGifWithGceThenPlainTextThenImage(indices, transparentFlag: 1, transparentIndex: 1, secondGce: true);
+        var gif = BuildGifWithGceThenExtensionThenImage(
+            indices, transparentFlag: 1, transparentIndex: 1, secondGce: true, middleExtensionLabel: null);
+
+        var img = GifImageLoader.Load(gif);
+
+        Assert.Null(img.SMask);
+    }
+
+    /// <summary>
+    /// Section 12 puts 0xFA-0xFF, Special Purpose, outside the three ranges that can close a
+    /// pending Graphic Control Extension's scope; Comment (0xFE) is one of those labels, and
+    /// nothing in the tree exercised the "does not close" side of that rule. The fixture is the
+    /// same one used for the closing cases above with a Comment Extension standing in for the
+    /// Plain Text one, so the transparent index must still reach the image.
+    /// </summary>
+    [Fact]
+    public void Decode_specialPurposeExtension_doesNotCloseAPendingTransparentIndex()
+    {
+        byte[] indices = [1, 2, 1, 2, 1, 2, 1];
+        var gif = BuildGifWithGceThenExtensionThenImage(
+            indices, transparentFlag: 1, transparentIndex: 1, secondGce: false, middleExtensionLabel: 0xFE);
+
+        var img = GifImageLoader.Load(gif);
+
+        Assert.NotNull(img.SMask);
+    }
+
+    /// <summary>
+    /// Section 12's Graphic-Rendering range is 0x00-0x7F as a whole, not the single label 0x01
+    /// this file otherwise exercises; every other value in that range closes a pending scope the
+    /// same way. 0x00 stands in for the Plain Text Extension here to pin the boundary rather than
+    /// the one label already covered.
+    /// </summary>
+    [Fact]
+    public void Decode_graphicRenderingExtensionOtherThanPlainText_closesAPendingTransparentIndex()
+    {
+        byte[] indices = [1, 2, 1, 2, 1, 2, 1];
+        var gif = BuildGifWithGceThenExtensionThenImage(
+            indices, transparentFlag: 1, transparentIndex: 1, secondGce: false, middleExtensionLabel: 0x00);
 
         var img = GifImageLoader.Load(gif);
 
@@ -997,13 +1055,24 @@ public sealed class GifSpecificationTests
     }
 
     /// <summary>
-    /// A hand-assembled fixture for the scope tests above: a Graphic Control Extension, a Plain
-    /// Text Extension after it, optionally a second Graphic Control Extension right before the
-    /// image descriptor, and then the image itself. <see cref="BuildGif"/> has no way to insert
-    /// an extension at all, so this is built directly rather than through it.
+    /// A hand-assembled fixture for the scope tests above: a Graphic Control Extension, an
+    /// optional extension of the caller's chosen label after it, optionally a second Graphic
+    /// Control Extension right before the image descriptor, and then the image itself.
+    /// <see cref="BuildGif"/> has no way to insert an extension at all, so this is built directly
+    /// rather than through it.
     /// </summary>
-    private static byte[] BuildGifWithGceThenPlainTextThenImage(
-        byte[] indices, int transparentFlag, int transparentIndex, bool secondGce)
+    /// <param name="middleExtensionLabel">
+    /// The label of the extension placed between the two Graphic Control Extensions, or null to
+    /// omit it. An empty sub-block chain is syntactically complete per section 15's own
+    /// description of a sub-block, and carries no data this decoder would read regardless of the
+    /// label, so one label stands for its whole range: 0x01 (Plain Text) for Graphic-Rendering,
+    /// 0xFE (Comment) or 0xFF (Application) for Special Purpose. Omitting it isolates the second
+    /// Graphic Control Extension's own reset from the intervening extension's scope-closing one,
+    /// which a fixture that always wrote 0x01 could not do: with both mechanisms present, either
+    /// one alone was enough to pass.
+    /// </param>
+    private static byte[] BuildGifWithGceThenExtensionThenImage(
+        byte[] indices, int transparentFlag, int transparentIndex, bool secondGce, byte? middleExtensionLabel)
     {
         const int width = 7, height = 1;
         const int paletteEntries = 4; // covers indices 0-2, rounded to the nearest power of two
@@ -1026,12 +1095,11 @@ public sealed class GifSpecificationTests
         ms.WriteByte((byte)transparentIndex);
         ms.WriteByte(0); // block terminator
 
-        // Plain Text Extension: a Graphic-Rendering block (section 12) this decoder does not
-        // parse, whose scope-closing effect on the extension above is what these tests measure.
-        // An empty sub-block chain is syntactically complete per section 15's own description of
-        // a sub-block, and carries no data this decoder would read regardless.
-        ms.WriteByte(0x21); ms.WriteByte(0x01);
-        ms.WriteByte(0);
+        if (middleExtensionLabel is byte label)
+        {
+            ms.WriteByte(0x21); ms.WriteByte(label);
+            ms.WriteByte(0);
+        }
 
         if (secondGce)
         {
