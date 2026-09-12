@@ -1012,6 +1012,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Documentation
 
+- **The image loaders say what they refuse, and JPEG says how it differs.** Six of the eight
+  loaders carried no `<exception>` tag at all, and every one of them takes a byte array a caller
+  is likely to have received from somewhere untrusted. Each public `Load` now documents
+  `InvalidDataException` as the outcome for a wrong signature, a truncated stream, an unsupported
+  variant or a refused size, and states the two decode guards: 100,000,000 pixels, and 1,000,000
+  per edge, neither of which has a public setting.
+
+  Three boundaries were measured while writing them rather than assumed.
+
+  A null array raises `NullReferenceException`, not `ArgumentNullException`, in five of the six
+  loaders; the JPEG 2000 one is the exception and does check. So a caller guarding the documented
+  type does not catch it, which is now said on each member.
+
+  The JPEG loader is the only one that does not validate what its header declares. Measured on a
+  25-byte file whose frame header says 65535 by 65535: it returns an image of 4,294,836,225
+  pixels, where the same declaration through the GIF loader is refused at the 100,000,000 cap.
+  Nothing allocates a raster for it, because the bytes pass through as `DCTDecode` data, but
+  those dimensions reach the image dictionary and a consumer that trusts them can be made to
+  allocate from them. The loader now says so and says to validate the size yourself.
+
+  A GIF that places its frame on a larger logical screen decodes at the frame's own size, losing
+  the placement, and an animated GIF loads its first frame with no indication the others were
+  there. Both are now stated on the member rather than only in the type's own summary.
+
+  Also documented: the object registry's rule that only a reference it allocated may be set, the
+  writer's position counter, which is never checked against the stream it is given, the barcode
+  matrix's bounds check, which refuses a negative coordinate through an unsigned comparison, and
+  the timestamp client, where a timeout, a refused connection and a rejected request all arrive
+  as the same exception type, and where the asynchronous default implementation blocks and never
+  consults its cancellation token.
+
 - **Where the conformance rules knowingly disagree with veraPDF is written down (#418, #419).**
   `docs/conformance-divergences.md` records each case with what the standard requires, what an
   independent second reading found, what veraPDF does, which one this library follows, and whether a

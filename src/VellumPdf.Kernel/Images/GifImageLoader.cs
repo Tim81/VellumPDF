@@ -19,6 +19,29 @@ namespace VellumPdf.Images;
 public static class GifImageLoader
 {
     /// <summary>Decodes the first frame of a GIF into a FlateDecode Image XObject.</summary>
+    /// <exception cref="InvalidDataException">
+    /// The bytes are not a GIF file, are truncated, use a variant this loader does not read, or
+    /// declare dimensions outside the safety limits below.
+    /// </exception>
+    /// <remarks>
+    /// <b>Treat the input as untrusted and catch <see cref="InvalidDataException"/>.</b> That is
+    /// the documented outcome for every malformed file: a wrong signature, a truncated stream, an
+    /// unsupported variant, or a declared size the limits refuse.
+    /// <para><b>Do not pass <see langword="null"/>.</b> It is not checked, so it raises
+    /// <see cref="NullReferenceException"/> rather than
+    /// <see cref="ArgumentNullException"/> — measured, not inferred — and a caller guarding on the
+    /// documented type will not catch it. A later major version will check it.</para>
+    /// <para><b>The size limits are a decode guard, not a policy you can raise.</b> A declared
+    /// pixel count above 100,000,000 is refused, and so is any edge above 1,000,000 pixels, so
+    /// that a few bytes of header cannot drive a multi-gigabyte allocation. Both are internal
+    /// constants with no public setting.</para>
+    /// <para><b>Only the first frame is read, and the rest are dropped silently.</b> An
+    /// animated GIF loads as its first image descriptor with no warning that anything else was
+    /// there, so a caller who needs to know should check for further descriptors itself.</para>
+    /// <para><b>The logical screen is ignored.</b> A frame that covers only part of a larger
+    /// canvas decodes at the frame's own size and its position is lost, so the image is a
+    /// different size and aspect ratio from what a viewer shows (#498).</para>
+    /// </remarks>
     public static PdfImageXObject Load(byte[] gifBytes)
     {
         if (gifBytes.Length < 13)

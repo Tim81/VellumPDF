@@ -95,9 +95,38 @@ public static class TiffImageLoader
     }
 
     /// <summary>Decodes baseline TIFF file bytes into a FlateDecode Image XObject.</summary>
+    /// <exception cref="InvalidDataException">
+    /// The bytes are not a TIFF file, are truncated, use a variant this loader does not read, or
+    /// declare dimensions outside the safety limits below.
+    /// </exception>
+    /// <remarks>
+    /// <b>Treat the input as untrusted and catch <see cref="InvalidDataException"/>.</b> That is
+    /// the documented outcome for every malformed file: a wrong signature, a truncated stream, an
+    /// unsupported variant, or a declared size the limits refuse.
+    /// <para><b>Do not pass <see langword="null"/>.</b> It is not checked, so it raises
+    /// <see cref="NullReferenceException"/> rather than
+    /// <see cref="ArgumentNullException"/> — measured, not inferred — and a caller guarding on the
+    /// documented type will not catch it. A later major version will check it.</para>
+    /// <para><b>The size limits are a decode guard, not a policy you can raise.</b> A declared
+    /// pixel count above 100,000,000 is refused, and so is any edge above 1,000,000 pixels, so
+    /// that a few bytes of header cannot drive a multi-gigabyte allocation. Both are internal
+    /// constants with no public setting.</para>
+    /// </remarks>
     public static PdfImageXObject Load(byte[] tiff) => Load(tiff, ImageLoadOptions.Default);
 
     /// <summary>Decodes baseline TIFF file bytes into a FlateDecode Image XObject with the specified load options.</summary>
+    /// <exception cref="InvalidDataException">
+    /// The bytes are not a TIFF file, are truncated, use a variant this loader does not read, or
+    /// declare dimensions outside the safety limits.
+    /// </exception>
+    /// <remarks>
+    /// The same boundaries as the single-argument overload: malformed input raises
+    /// <see cref="InvalidDataException"/>, a null array raises
+    /// <see cref="NullReferenceException"/> rather than
+    /// <see cref="ArgumentNullException"/>, and the 100,000,000-pixel and 1,000,000-per-edge
+    /// limits apply. <paramref name="options"/> selects the decode mode; it does not relax any
+    /// of those limits, which have no public setting.
+    /// </remarks>
     public static PdfImageXObject Load(byte[] tiff, ImageLoadOptions options)
     {
         if (tiff.Length < 8)

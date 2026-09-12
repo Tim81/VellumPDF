@@ -43,6 +43,17 @@ public sealed class PdfObjectRegistry
     }
 
     /// <summary>Assigns (or replaces) the value for a previously reserved reference.</summary>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="reference"/> was not allocated by this registry.
+    /// </exception>
+    /// <remarks>
+    /// <b>Only a reference this registry handed out may be set.</b> Object numbers are positions
+    /// in this registry's own list, so a reference from another registry, or one made by hand, is
+    /// refused rather than silently written into the wrong slot.
+    /// <para><b>Do not rely on this to detect an unset reference.</b> Reserving a reference and
+    /// never setting it is not an error here: it surfaces later, when the document is written, as
+    /// a missing object. Set every reference you reserve.</para>
+    /// </remarks>
     public void SetValue(PdfIndirectReference reference, PdfObject value)
     {
         var idx = reference.ObjectNumber - 1;

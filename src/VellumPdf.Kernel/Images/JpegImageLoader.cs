@@ -15,6 +15,24 @@ public static class JpegImageLoader
     /// Reads JPEG markers to extract width, height, and component count,
     /// then wraps the raw bytes as a DCTDecode Image XObject.
     /// </summary>
+    /// <exception cref="InvalidDataException">
+    /// The bytes do not begin with the SOI marker, or no frame header can be found.
+    /// </exception>
+    /// <remarks>
+    /// <b>This loader decodes nothing.</b> The bytes are embedded verbatim as DCTDecode data and
+    /// only the frame header is read, so a file this accepts is not a file a reader can
+    /// necessarily render: corruption past the header is passed straight into the document.
+    /// <para><b>This is the one loader that does not check the declared size</b>, and the
+    /// difference is large. Measured on a 25-byte file whose frame header declares
+    /// 65535 by 65535: this returns an image of 4,294,836,225 pixels, where every other loader
+    /// refuses anything above 100,000,000. Nothing allocates a raster for it here, because the
+    /// bytes pass through, but the width and height reach the image dictionary and a consumer
+    /// that trusts them can be made to allocate from them. Validate the dimensions yourself if
+    /// the input is untrusted.</para>
+    /// <para><b>Do not pass <see langword="null"/>.</b> It is not checked and raises
+    /// <see cref="NullReferenceException"/> rather than
+    /// <see cref="ArgumentNullException"/>.</para>
+    /// </remarks>
     public static PdfImageXObject Load(byte[] jpegBytes)
     {
         var (width, height, components) = ReadSof(jpegBytes);

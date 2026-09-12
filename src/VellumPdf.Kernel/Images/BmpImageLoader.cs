@@ -24,6 +24,26 @@ public static class BmpImageLoader
     private const uint BiRgb = 0;
 
     /// <summary>Decodes BMP file bytes into a FlateDecode Image XObject.</summary>
+    /// <exception cref="InvalidDataException">
+    /// The bytes are not a BMP file, are truncated, use a variant this loader does not read, or
+    /// declare dimensions outside the safety limits below.
+    /// </exception>
+    /// <remarks>
+    /// <b>Treat the input as untrusted and catch <see cref="InvalidDataException"/>.</b> That is
+    /// the documented outcome for every malformed file: a wrong signature, a truncated stream, an
+    /// unsupported variant, or a declared size the limits refuse.
+    /// <para><b>Do not pass <see langword="null"/>.</b> It is not checked, so it raises
+    /// <see cref="NullReferenceException"/> rather than
+    /// <see cref="ArgumentNullException"/> — measured, not inferred — and a caller guarding on the
+    /// documented type will not catch it. A later major version will check it.</para>
+    /// <para><b>The size limits are a decode guard, not a policy you can raise.</b> A declared
+    /// pixel count above 100,000,000 is refused, and so is any edge above 1,000,000 pixels, so
+    /// that a few bytes of header cannot drive a multi-gigabyte allocation. Both are internal
+    /// constants with no public setting.</para>
+    /// <para><b>Compressed bitmaps are refused, not decoded.</b> BI_RLE8, BI_RLE4 and
+    /// BI_BITFIELDS all raise <see cref="InvalidDataException"/>, as do OS/2 BITMAPCOREHEADER
+    /// files and any bit depth other than 8, 24 and 32. There is no fallback path.</para>
+    /// </remarks>
     public static PdfImageXObject Load(byte[] bmpBytes)
     {
         if (bmpBytes.Length < 54)
