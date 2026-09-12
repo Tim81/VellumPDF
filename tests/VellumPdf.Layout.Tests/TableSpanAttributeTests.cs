@@ -181,11 +181,19 @@ public sealed class TableSpanAttributeTests
     /// row on every repeat.
     ///
     /// This is the case that took the attribute commit out of #486. Measured with veraPDF 1.30.2 on
-    /// this same shape, naming each commit because "before the attribute existed" is ambiguous
-    /// across four of them: compliant on <c>adf6acf</c>; already failing the row-width check on
-    /// <c>b6e9c18</c>, once the duplicate draw that had been supplying the missing grid slot was
-    /// deleted; two failed checks on <c>abc8bc4</c>, with the attribute written from the declared
-    /// value; compliant again on <c>00b7da8</c>, with it written from the span the page applied.
+    /// this same shape at four points, named by the change rather than by a commit hash, because
+    /// this pull request was rebased and squash-merged so no hash of its own survives anywhere a
+    /// reader could resolve:
+    /// <list type="number">
+    ///   <item>Before any of this work: compliant, and only by luck — no span attribute was written
+    ///     at all, and the duplicate draw happened to leave the grid rectangular.</item>
+    ///   <item>With the duplicate draw deleted and no attribute yet: already failing the row-width
+    ///     check, because the grid slot the duplicate had been supplying was gone.</item>
+    ///   <item>With the attribute written from the cell's declared value: two failed checks, since
+    ///     a repeated header claimed a row the continuation page draws in full.</item>
+    ///   <item>With the attribute written from the span the page applied, which is this branch:
+    ///     compliant.</item>
+    /// </list>
     /// </summary>
     [Fact]
     public void RowSpan_onARepeatedHeader_claimsTheCoveredRowOnlyOnThePageThatHasIt()

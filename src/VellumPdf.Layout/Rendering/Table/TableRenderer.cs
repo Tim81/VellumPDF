@@ -305,7 +305,10 @@ public sealed class TableRenderer : IRenderer
     /// splitting. What this does clip, on a data row as readily as a header row, is a span reaching
     /// past the last row of the table. Measured on a 300x170pt page at 20pt margins with a repeated
     /// header, where the box holds five 20pt rows under it: groups of two to five keep their
-    /// declared span, six and up raise. The repeated header run is the case this exists for. <c>Draw</c> draws that run again at the top of every continuation page, but
+    /// declared span, six and up raise.
+    ///
+    /// The repeated header run is the case this exists for. <c>Draw</c> draws that run again at the
+    /// top of every continuation page, but
     /// the row below it there is the split row rather than row 1, so a header cell declaring
     /// <c>RowSpan = 2</c> covers nothing the page puts under it. Painting it two rows tall overlaps
     /// the first data row's own rectangle, and tagging it as two rows made the header declare one

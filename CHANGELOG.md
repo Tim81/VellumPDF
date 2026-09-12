@@ -455,9 +455,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   **The emitted value is the span the renderer applied, not the span the caller declared**, and the
   difference is not cosmetic. The first draft of this change let a cell declaring more rows than the
   table holds claim them: on a two-row table, a declared 5 and a declared 50 each failed veraPDF's
-  row-width check, and a
-  declared `int.MaxValue` produced no verdict at all, because veraPDF tried to allocate a row array
-  of that size and abandoned the job. A header row carrying a span was worse, since the header run
+  row-width check, and a declared `int.MaxValue` produced no verdict at all, because veraPDF tried
+  to allocate a row array of that size and abandoned the job. A header row carrying a span was worse, since the header run
   is repeated at the top of every continuation page while the span's occupancy is keyed to the row
   it was declared over: the row below a repeated header drew all of its own cells while the header
   claimed to cover one of them, which took a three-page document from compliant to two failed
@@ -479,7 +478,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   **What this moves for a document that renders today.** A spanning cell's text stops being drawn
   twice, which changes the bytes of any table whose span actually covers a row below it. A span
   declared on the last row, or past it, was already drawn once and is unmoved: measured on two such
-  documents, both come out byte-identical.
+  documents, both come out identical over their decompressed content streams. Whole files are not
+  comparable at this layer, because two runs of the same build differ in their XMP timestamps and
+  document identifier.
 
   A repeated header cell carrying a span is painted one row tall on a continuation page rather than
   two, where it used to overlap the first data row's own rectangle.
