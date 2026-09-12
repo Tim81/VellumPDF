@@ -587,7 +587,7 @@ public sealed class ImageFormatTests
         // Literal codes only: no pattern is ever reused, so every pixel is emitted as its own
         // root code. That is legal LZW output, but the code width still has to grow, because the
         // DECODER adds a table entry for every code after the first whatever the encoder does with
-        // its own table. GIF89a Appendix F, clause 4: the code length increases whenever a code
+        // its own table. GIF89a Appendix F, under COMPRESSION, item 4: the code length increases whenever a code
         // value would exceed it.
         //
         // This helper used to emit every code at the initial width and never grow. That made its

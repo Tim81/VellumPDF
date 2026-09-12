@@ -76,7 +76,7 @@ public static class GifEncoder
         while ((2 << sizeField) < palette.Count && sizeField < 7) sizeField++;
         var tableEntries = 2 << sizeField;
 
-        // Appendix F: "The output codes are of variable length, starting at <code size>+1 bits per
+        // Appendix F, under COMPRESSION, item 4: "The output codes are of variable length, starting at <code size>+1 bits per
         // code". A code size of 1 would make the first available code 4 while the Clear code is 2,
         // which leaves one usable width; the format's own floor is 2, so a one- or two-colour
         // image is written with a code size of 2.
@@ -218,7 +218,10 @@ public static class GifEncoder
         var table = new Dictionary<(int Prefix, byte Suffix), int>();
         var nextCode = eoiCode + 1;
 
-        // §22 and Appendix F clause 1: an encoder should output a Clear code first.
+        // Section 22 and Appendix F, under COMPRESSION, item 1: "Encoders should output a
+        // Clear code as the first code of each image data stream." A should, not a shall.
+        // Every decoder tried accepts a stream without it, so this follows the recommendation
+        // rather than guarding against a refusal.
         Emit(clearCode);
 
         if (indices.Length == 0)

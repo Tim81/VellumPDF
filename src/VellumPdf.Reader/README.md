@@ -153,4 +153,14 @@ as these milestones land. `VellumPdf.Conformance` graduated to Stable in 2.0.
 
 ## License
 
-Apache-2.0. Source and issues: <https://github.com/Tim81/VellumPDF>
+Apache-2.0 for the code. The bundled Adobe Glyph List and ZapfDingbats glyph list are
+BSD-3-Clause; their copyright notice and disclaimer are in the `NOTICE` file shipped in this
+package. Source and issues: <https://github.com/Tim81/VellumPDF>
+
+The Graphics Interchange Format(c) is the Copyright property of CompuServe
+Incorporated. GIF(sm) is a Service Mark property of CompuServe Incorporated.
+This package builds on `VellumPdf.Kernel`, which reads and writes GIF under the
+royalty-free licence granted in the GIF89a specification; that licence requires
+the acknowledgement above from software using the format. The `NOTICE` file
+shipped in this package carries it in full, alongside every other attribution
+this product owes.

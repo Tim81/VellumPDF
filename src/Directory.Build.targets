@@ -19,4 +19,21 @@
     <None Include="$(MSBuildThisFileDirectory)../README.md" Pack="true" PackagePath="\" Visible="false" />
   </ItemGroup>
 
+  <!--
+    NOTICE, in every package.
+
+    The Adobe Glyph List and the ZapfDingbats glyph list are embedded resources of the Reader and
+    Conformance packages, and BSD-3-Clause requires a redistribution in binary form to reproduce
+    the copyright notice and disclaimer "in the documentation and/or other materials provided with
+    the distribution". The GIF specification's clause 3 grant asks for its acknowledgement in User
+    and Technical Documentation from any software that uses the format, which reaches every package
+    that carries the Kernel. NOTICE is where both live, and until this it was packed into no
+    package at all: PackageLicenseExpression emits an SPDX identifier rather than a file, and the
+    README rule above packs one README, never NOTICE. It sits outside the project directory so the
+    SDK's default glob does not reach it, hence Include rather than Update.
+  -->
+  <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)../NOTICE')">
+    <None Include="$(MSBuildThisFileDirectory)../NOTICE" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
+
 </Project>

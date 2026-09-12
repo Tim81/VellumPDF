@@ -6,52 +6,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Fixed
-
-- **The GIF decoder refused most real files and silently corrupted others (#490).** It was written
-  without the specification in hand and cited none. The GIF89a specification, CompuServe
-  Incorporated, 31 July 1990, is now held and the decoder is derived from it. Three defects, each
-  confirmed against the text and pinned by a known-answer test:
-
-  Appendix F, clause 4 says the code length increases "whenever the LZW code value would exceed the
-  current code length". A width of n expresses 0 to 2^n-1, so the width must grow as the next code
-  reaches 2^n; the decoder grew one code later, read a code too narrow and threw "Invalid GIF LZW
-  code". Only images whose dictionary never reached the boundary decoded at all, which is why a flat
-  colour worked and anything with detail did not.
-
-  Appendix E defines the four-pass row order of an interlaced image. Nothing read the interlace
-  flag, so those images decoded with their rows in storage order: scrambled, with no error raised.
-
-  A code not yet in the table stands for the previous string followed by that string's own first
-  byte. The decoder put that byte at the front instead of the end, costing one pixel per occurrence:
-  on a 48x48 image of three-pixel bars, 120 pixels of 2304, each on a bar boundary.
-
-  Measured over 210 generated files spanning seven sizes, five palette sizes, interlaced and not,
-  and flat, periodic and random content: every one now decodes pixel-identically to its source,
-  checked by extracting the raster from the generated PDF with an independent tool rather than by
-  reading the decoder's own output.
-
-  The repository's own fixture helper was part of why this survived. It emitted literal codes at a
-  fixed width and never widened them, which is not a conformant stream, and the decoder's matching
-  off-by-one meant the two agreed with each other and with nothing else. The helper is corrected.
-  Its sibling, a real encoder in the hardening tests, had the rule right all along, and so did the
-  TIFF LZW decoder's own header, which describes GIF's rule while contrasting TIFF's.
-
 ### Added
 
 - **`GifEncoder` writes single-frame GIF89a (#490).** Implemented from the same specification,
   following the Appendix B grammar. It builds the palette from the colours actually present and
   refuses an image with more than 256 rather than quantising, in keeping with the rest of the image
   path, which does not trade quality away without being asked. Interlaced output is available and
-  writes the Appendix E order. Verified by round-tripping the same 210-image corpus through an
-  independent decoder, half of it interlaced.
+  writes the Appendix E order. Its code stream is asserted against Appendix F directly — a leading
+  Clear code, an End of Information code last, no code wider than the width in force when it was
+  written, and the table started again rather than allowed past 4096 entries — because a round trip
+  through this package's own decoder cannot catch a convention the two share. Cross-checked in both
+  directions against an independent codec: it reads every file that codec writes, and that codec
+  reads every file it writes.
 
-- **The acknowledgement the GIF licence requires.** The specification grants a royalty-free licence
-  to use the format in software on condition that ownership of the format and its service mark is
-  acknowledged in user and technical documentation. That now appears in `NOTICE`, in the repository
-  README and in the Kernel package README, which is the documentation that ships.
+- **The acknowledgement the GIF licence requires, in every package.** Clause 3 of the
+  specification grants a royalty-free licence to use the format in software on condition that
+  ownership of the format and its service mark is acknowledged in user and technical
+  documentation. That acknowledgement was in `NOTICE` and in two of the nine READMEs, and
+  `NOTICE` was packed into no package at all: `PackageLicenseExpression` emits an identifier
+  rather than a file, and the rule that packs a README packs one README and never `NOTICE`. Seven
+  packages therefore shipped GIF code with no acknowledgement in them. `NOTICE` now packs into all
+  eight, and each package README carries the acknowledgement itself.
 
-### Added
+  The same gap covered two bundled BSD-3-Clause data files. The Adobe Glyph List is an embedded
+  resource of the Reader and Conformance packages and the ZapfDingbats glyph list of the Reader
+  package, and that licence requires a binary redistribution to reproduce its copyright notice and
+  disclaimer "in the documentation and/or other materials provided with the distribution". Those
+  terms are in `NOTICE`, so they now ship too, and both READMEs say what they carry instead of
+  naming Apache-2.0 alone. The Liberation fonts were never affected: their licence is packed
+  beside them in the Standard 14 package already.
 
 - **`Document.BandTruncations` and `DocumentRenderer.BandTruncations` report a running band whose
   text was cut to fit (#365).** A band that did not fit used to be drawn off the page with every
@@ -347,6 +330,66 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   disclosure measuring the sweep would have gone stale as the sweep ran. (#418)
 
 ### Fixed
+
+- **The GIF decoder refused a third of the files put to it and silently corrupted others
+  (#490).** It was written without the specification in hand and cited none. The GIF89a
+  specification, CompuServe Incorporated, 31 July 1990, is now held and the decoder is derived
+  from it. Five defects, each confirmed against the text and pinned by a known-answer test.
+
+  Measured first, so the rest can be read against it. 200 GIF files were generated by an
+  independent encoder, Pillow 12.3.0, spanning five content kinds, five sizes from 1x1 to 160x120,
+  four palette sizes and interlacing where the encoder would apply it. Each was decoded and
+  compared with the same file read back by the encoder that wrote it:
+
+  | | decoded correctly | wrong pixels | refused |
+  |---|---|---|---|
+  | before | 106 | 23 | 71 |
+  | after | 200 | 0 | 0 |
+
+  Nothing that decoded correctly before decodes differently now.
+
+  **The code width grew one code late.** Appendix F, under COMPRESSION, item 4 says the code
+  length increases "whenever the LZW code value would exceed the current code length". A width of
+  n expresses 0 to 2^n-1, so the width must grow as the next code reaches 2^n; the decoder grew
+  one code later, read a code too narrow and threw "Invalid GIF LZW code". All 71 refusals above
+  came through that one throw. A flat colour never builds a dictionary large enough to reach a
+  boundary, so all 40 flat files decoded. Detail alone did not decide it: 66 of the 160 files with
+  any detail decoded correctly as well. What mattered was whether that file's dictionary happened
+  to cross a boundary, which two files of the same size and content kind can differ on.
+
+  **The interlace flag was never read.** Appendix E defines the four-pass row order of an
+  interlaced image. Those images decoded with their rows in storage order: scrambled, with no
+  error raised. 60 files in the sweep carry the flag. The decoder got 12 of them right, and all 12
+  are the flat ones, where every row is identical so row order cannot matter; of the 48 interlaced
+  files with any content, none decoded correctly and all 48 now do.
+
+  **A code not yet in the table put its byte at the wrong end.** Such a code stands for the
+  previous string followed by that string's own first byte. The decoder put the byte at the front
+  instead of the end, costing one pixel per occurrence: on a 48x48 image of three-pixel bars over
+  two colours, 120 pixels of 2304, every one on a bar boundary.
+
+  **A stream that stopped early was accepted and the missing pixels invented.** The output buffer
+  is allocated at the size the image descriptor promises and nothing compared that with what the
+  data delivered, so the pixels the stream never wrote stayed at palette entry 0 — a colour the
+  file chose for nothing. Discarding every byte of a 20x20 image's data still returned a full
+  400-pixel raster with no error at all. The sibling TIFF LZW decoder has always made this check.
+
+  **Three reads walked caller-supplied bytes without a bound.** The class documents
+  `InvalidDataException` for malformed input, and a 14-byte file ending on an extension separator
+  raised `IndexOutOfRangeException` instead, which a caller guarding on the documented type cannot
+  catch. The other two were an extension sub-block whose declared length ran past the end, and a
+  file ending exactly where the LZW minimum code size belongs.
+
+  The repository's own fixture helper was part of why the first three survived. It emitted literal
+  codes at a fixed width and never widened them, which is not a conformant stream, and the
+  decoder's matching off-by-one meant the two agreed with each other and with nothing else. The
+  helper is corrected, and a test now reads the stream it builds back as codes and checks it
+  against Appendix F, rather than only against this package's decoder. That check matters because
+  the corrected helper still derives its width rule from the decoder's bookkeeping, so the two
+  still agree by construction. Its sibling, a real encoder in the hardening tests, had the rule
+  right all along. The TIFF LZW decoder's own header gave GIF's rule only as a difference from
+  TIFF's, which is how it came to be read one entry out; both rules are now written there in
+  full.
 
 - **Refusals named the page size instead of the input, and several inputs saved a document a reader
   cannot use (#478, #481).** What each input did before is not uniform, so it is stated per input

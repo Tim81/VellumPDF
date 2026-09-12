@@ -35,7 +35,7 @@ under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
 CONDITIONS OF ANY KIND, either express or implied.
 
 ────────────────────────────────────────────────────────────────────────────────
-Format acknowledgements required by the specifications implemented
+Format acknowledgement required by a specification implemented
 ────────────────────────────────────────────────────────────────────────────────
 
 Graphics Interchange Format (GIF)
@@ -45,22 +45,40 @@ Graphics Interchange Format (GIF)
                 Incorporated, 31 July 1990.
                 https://www.w3.org/Graphics/GIF/spec-gif89a.txt
   Why this
-  section    : Unlike the entries below, nothing of CompuServe's is bundled
+  section     : Unlike the entries below, nothing of CompuServe's is bundled
                 here. The specification's own licence grant requires this
                 acknowledgement from any software that uses the format, so it
                 is an obligation of implementing GIF rather than of shipping
                 someone else's data.
 
-  The Graphics Interchange Format(c) is the Copyright property of CompuServe
-  Incorporated. GIF(sm) is a Service Mark property of CompuServe Incorporated.
+  This is the acknowledgement, in the words clause 3 of that specification
+  offers for it:
 
-  The grant, reproduced from clause 3 of that specification:
+    The Graphics Interchange Format(c) is the Copyright property of CompuServe
+    Incorporated. GIF(sm) is a Service Mark property of CompuServe Incorporated.
+
+  Clause 3 in full, the paragraph that asks for it:
 
     CompuServe Incorporated hereby grants a limited, non-exclusive,
-    royalty-free license for the use of the Graphics Interchange Format(sm)
-    in computer software; computer software utilizing GIF(sm) must acknowledge
+    royalty-free license for the use of the Graphics Interchange Format(sm) in
+    computer software; computer software utilizing GIF(sm) must acknowledge
     ownership of the Graphics Interchange Format and its Service Mark by
-    CompuServe Incorporated, in User and Technical Documentation.
+    CompuServe Incorporated, in User and Technical Documentation. Computer
+    software utilizing GIF, which is distributed or may be distributed without
+    User or Technical Documentation must display to the screen or printer a
+    message acknowledging ownership of the Graphics Interchange Format and the
+    Service Mark by CompuServe Incorporated; in this case, the acknowledgement
+    may be displayed in an opening screen or leading banner, or a closing
+    screen or trailing banner. A message such as the following may be used:
+
+          "The Graphics Interchange Format(c) is the Copyright property of
+          CompuServe Incorporated. GIF(sm) is a Service Mark property of
+          CompuServe Incorporated."
+
+  The second route, the screen or printer banner, is the one for software
+  shipped without documentation. These are libraries with no screen of their
+  own, and this file, the repository README and each package README are the
+  documentation they ship, so the first route is the one taken.
 
 ────────────────────────────────────────────────────────────────────────────────
 Third-party data bundled in this product

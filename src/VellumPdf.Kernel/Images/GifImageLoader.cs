@@ -63,6 +63,14 @@ public static class GifImageLoader
 
             if (blockType == 0x21) // Extension
             {
+                // Every read below advances through caller-supplied bytes, so each one needs its
+                // own bound. A 14-byte file ending on the 0x21 separator used to index past the
+                // array and raise IndexOutOfRangeException, which this class documents it does not
+                // do: the contract is InvalidDataException, and a caller guarding on that took an
+                // unhandled exception instead.
+                if (pos >= gifBytes.Length)
+                    throw new InvalidDataException("Truncated GIF extension block.");
+
                 var label = gifBytes[pos++];
                 if (label == 0xF9) // Graphic Control Extension
                 {
@@ -124,6 +132,9 @@ public static class GifImageLoader
         {
             palette = globalPalette ?? throw new InvalidDataException("GIF has no colour table.");
         }
+
+        if (pos >= data.Length)
+            throw new InvalidDataException("GIF image data ends before the LZW minimum code size.");
 
         var lzwMinCodeSize = data[pos++];
         if (lzwMinCodeSize < 2 || lzwMinCodeSize > 8)
@@ -306,8 +317,10 @@ public static class GifImageLoader
                 tableSuffix[nextCode] = firstByte;
                 nextCode++;
 
-                // GIF89a Appendix F, clause 4: "Whenever the LZW code value would exceed the
-                // current code length, the code length is increased by one." A code length of n
+                // GIF89a Appendix F, under COMPRESSION, item 4: "Whenever the LZW code value
+                // would exceed the current code length, the code length is increased by one."
+                // (Appendix F numbers its items afresh under each subheading, so the subheading
+                // is part of the citation.) A code length of n
                 // expresses values 0..2^n-1, so the value 2^n is the first that exceeds it, and
                 // the width has to grow when the next code to be assigned reaches 2^n — which is
                 // codeMask + 1. This read `nextCode > codeMask + 1`, growing one code later, so
@@ -324,6 +337,16 @@ public static class GifImageLoader
 
             prevCode = code;
         }
+
+        // What the image descriptor promises and what the data delivers are two different numbers,
+        // and nothing compared them. The buffer is allocated at the promised size and left at
+        // palette entry 0 wherever the stream stopped early, so a 40x40 image truncated to its
+        // first sub-block boundary -- all 1,020 bytes of image data discarded -- still returned a
+        // full 1,600-pixel raster, every pixel invented. The sibling TIFF decoder makes exactly
+        // this check and names it "output length mismatch".
+        if (outIdx != pixelCount)
+            throw new InvalidDataException(
+                $"GIF image data ended after {outIdx} of {pixelCount} pixels.");
 
         return output;
     }
@@ -388,6 +411,11 @@ public static class GifImageLoader
         {
             var blockLen = data[pos++];
             if (blockLen == 0) break;
+            // GatherSubBlocks makes this same check; this one was missing, so a graphic control
+            // extension whose declared length ran past the end raised ArgumentOutOfRangeException
+            // out of the range operator rather than the documented InvalidDataException.
+            if (pos + blockLen > data.Length)
+                throw new InvalidDataException("GIF sub-block extends beyond end of file.");
             if (firstBlockData is null)
                 firstBlockData = data[pos..(pos + blockLen)];
             pos += blockLen;
@@ -400,6 +428,8 @@ public static class GifImageLoader
         {
             var blockLen = data[pos++];
             if (blockLen == 0) break;
+            if (pos + blockLen > data.Length)
+                throw new InvalidDataException("GIF sub-block extends beyond end of file.");
             pos += blockLen;
         }
     }
