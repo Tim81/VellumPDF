@@ -424,6 +424,73 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   request; three corpus fixtures pin that a header row's own position, a table whose margin
   exceeds its row height, and a two-row rowspan are all unmoved by this one.
 
+- **A `RowSpan` cell's text was drawn twice, and a tagged spanning cell emitted no span attribute
+  at all, so a table with a span of three or more could not be PDF/UA-1 conformant (#480).** A span
+  of exactly two passed, but only because the duplicate draw happened to supply the grid slot the
+  missing attribute should have. The span half of the row-axis work, held back from the pull request
+  above after the first attempt at the attributes introduced a conformance regression of its own.
+
+  `DrawRow` drew a spanning cell at its origin row across the combined height of every row it
+  covers, then drew it again when the span map reached the last covered row: the same cell,
+  recomputed to the same height, a second time. Measured on a two-row table with a `RowSpan = 2`
+  first cell, its text occurred twice in the content stream before this fix and once after.
+  Untagged that was duplicate operators. Tagged it was also a second structure element for one
+  cell, parented to the wrong row, because the second call passed the span's origin row: a span
+  starting in a header row produced a header cell carrying `/Scope /Column` inside a row of data
+  cells. The existing regression test asserted only that the text appeared, which passed either
+  way; it now asserts the count.
+
+  Nothing in `VellumPdf.Layout` wrote `/RowSpan` or `/ColSpan`. ISO 32000-1:2008 Table 349 defaults
+  an absent value to 1, so a spanning cell's single structure element claimed a one-by-one slot and
+  the row it covered read one column short. ISO 14289-1:2014 clause 7.5 requires a table header to
+  be tagged according to that table, and veraPDF 1.30.2 refused such a document on its row-width
+  check. The duplicate draw above had been accidentally supplying the missing slot, for a span of
+  exactly two, so deleting it without the attributes would have turned a compliant document
+  non-compliant. A span of three or more was already refused before either change.
+
+  `PdfStructElem` carries the two attributes as new properties, `TableRowSpan` and `TableColSpan`,
+  merged into the same `/A << /O /Table … >>` dictionary that already held `/Scope`. Neither is
+  written when its value is 1 or less, so a cell that does not span keeps the exact bytes it had.
+
+  **The emitted value is the span the renderer applied, not the span the caller declared**, and the
+  difference is not cosmetic. The first draft of this change let a cell declaring more rows than the
+  table holds claim them: on a two-row table, a declared 5 and a declared 50 each failed veraPDF's
+  row-width check, and a declared `int.MaxValue` produced no verdict at all, because veraPDF tried
+  to allocate a row array of that size and abandoned the job. A header row carrying a span was worse, since the header run
+  is repeated at the top of every continuation page while the span's occupancy is keyed to the row
+  it was declared over: the row below a repeated header drew all of its own cells while the header
+  claimed to cover one of them, which took a three-page document from compliant to two failed
+  checks. A cell now spans the run of rows the page it is drawn on actually draws, capped by the
+  declared count, and the paint and the attribute come from that one number.
+
+  `/ColSpan` is bounded the same way, for a narrower reason. A span wider than the widths the caller
+  supplied is not an overrun, because the grid widens to the widest row's own span sum (#485). But a
+  cell does not always start where its own row's earlier cells left it: a span from an earlier row
+  advances the column by that cell's width instead. A row of one `ColSpan = 2` cell sitting under a
+  row that sums to three columns and spans its first two downward starts at column 2 of 3 and gets
+  one column, and the first draft of this change let it claim two. This moves no drawn byte, only the
+  attribute, because the painted width was already bounded by the columns that exist.
+
+  A row every column of which is covered by a span from an earlier row contributes no cell, and now
+  gets no row element either. A row element with no children and no page reference describes
+  nothing.
+
+  **What this moves for a document that renders today.** A spanning cell's text stops being drawn
+  twice, which changes the bytes of any table whose span actually covers a row below it. A span
+  declared on the last row, or past it, was already drawn once and is unmoved: measured on two such
+  documents, both come out identical over their decompressed content streams. Whole files are not
+  comparable at this layer, because two runs of the same build differ in their XMP timestamps and
+  document identifier.
+
+  A repeated header cell carrying a span is painted one row tall on a continuation page rather than
+  two, where it used to overlap the first data row's own rectangle.
+
+  A table with no span at all moves only if it holds a row that draws no cell, which loses its empty
+  row element. That is a fix rather than a side effect. Measured on a tagged three-row table with no
+  span anywhere and the middle row left empty: veraPDF 1.30.2 refuses it on the base, reporting
+  "Table rows 1 and 2 span different number of columns (2 and 0 respectively)", and accepts it
+  after.
+
 - **A data row before a later header row was drawn by neither of `TableRenderer`'s two draw loops,
   and a table's own margins were deflated a second time on top of `Layout`'s (#480).** The row
   axis this same plan identified, following on from the column fixes above.

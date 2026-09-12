@@ -1,0 +1,323 @@
+// Copyright © Timothy van der Ham (@Tim81)
+// SPDX-License-Identifier: Apache-2.0
+
+using VellumPdf.Document;
+using VellumPdf.Fonts;
+using VellumPdf.Layout.Core;
+using VellumPdf.Layout.Elements.Table;
+
+namespace VellumPdf.Layout.Tests;
+
+/// <summary>
+/// What a spanning cell's structure element claims, against what the renderer actually drew.
+/// <c>/RowSpan</c> and <c>/ColSpan</c> come from ISO 32000-1:2008 Table 349, which ISO
+/// 14289-1:2014 clause 7.5 requires a table header to be tagged according to, and an absent value
+/// there defaults to 1.
+///
+/// Every case reads the saved document rather than the renderer's own object graph, because the
+/// defect these cover was a number correct in the graph and wrong on the page: the renderer clamps
+/// what it paints to the rows and columns that exist, and the attribute used to be written from the
+/// cell's declared value instead. A cell could therefore claim rows the table does not have, or
+/// claim to cover a row that a continuation page draws in full.
+///
+/// The veraPDF verdicts on these same shapes live in <c>PdfValidatorOracleTests</c>. These assert
+/// the emitted number itself, so a change that keeps a document compliant by emitting nothing at
+/// all still fails here.
+/// </summary>
+public sealed class TableSpanAttributeTests
+{
+    private static TextStyle Style(double size = 10) => new()
+    {
+        FontRef = new FontReference(Standard14.Helvetica),
+        FontSize = size,
+    };
+
+    /// <summary>
+    /// The saved document as Latin-1 text with every run of whitespace collapsed to one space.
+    /// Structure elements are ordinary uncompressed objects in the file body, not content streams
+    /// and not object streams, so this reads the bytes directly rather than going through
+    /// <c>PdfTestUtil.DecompressAllFlatStreams</c>, which would see none of them. The collapse is
+    /// what lets a dictionary be matched as one string: the writer puts each key on its own line.
+    /// </summary>
+    private static string SaveAndFlatten(Document doc)
+    {
+        using var ms = new MemoryStream();
+        doc.Save(ms);
+        var text = System.Text.Encoding.Latin1.GetString(ms.ToArray());
+        return System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ");
+    }
+
+    private static int Occurrences(string haystack, string needle)
+    {
+        var count = 0;
+        var i = 0;
+        while ((i = haystack.IndexOf(needle, i, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            i += needle.Length;
+        }
+        return count;
+    }
+
+    /// <summary>
+    /// A two-row table whose first cell declares more rows than the table holds. The renderer's own
+    /// combined-height loop has always stopped at the last row that exists, so it paints two rows
+    /// tall whatever the declared number is; the attribute used to be written from the declared
+    /// number. Measured with veraPDF 1.30.2 before the clamp: 2 passed, 5 and 50 failed the
+    /// column-count check on the row below, and <c>int.MaxValue</c> produced no verdict at all,
+    /// because veraPDF tried to allocate a row array of that size and aborted the job with
+    /// "Requested array size exceeds VM limit" and exit code 3.
+    /// </summary>
+    [Theory]
+    [InlineData(2)]
+    [InlineData(5)]
+    [InlineData(50)]
+    [InlineData(int.MaxValue)]
+    public void RowSpan_declaredPastTheLastRow_emitsTheSpanTheRendererApplied(int declared)
+    {
+        using var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, 400, 300),
+            Margins = new EdgeInsets(10),
+            Tagged = true,
+            Language = "en-US",
+        };
+        var t = new TableElement { DefaultCellStyle = Style() };
+        var header = t.AddRow(isHeader: true);
+        header.AddCell(new Cell("H0") { RowSpan = declared });
+        header.AddCell("H1");
+        var data = t.AddRow();
+        data.AddCell("a1");
+        data.AddCell("b1");
+        doc.Add(t);
+
+        var pdf = SaveAndFlatten(doc);
+
+        // The trailing space is load-bearing: "/RowSpan 2" is a prefix of "/RowSpan 2147483647",
+        // so without a delimiter this case passed on a mutant that emitted the declared value.
+        // Found by reverting the clamp, not by reading the test.
+        Assert.Equal(1, Occurrences(pdf, "/RowSpan 2 "));
+        Assert.Equal(1, Occurrences(pdf, "/RowSpan"));
+    }
+
+    /// <summary>
+    /// A declared <c>ColSpan</c> wider than the widths the caller supplied is not an overrun.
+    /// <c>TableGridResolver</c> sets the column count to the widest row's own span sum (#485), so
+    /// the grid widens to it: two supplied widths and a header cell declaring three columns resolve
+    /// to a three-column grid, and the attribute is the declared 3 because the renderer covered 3.
+    ///
+    /// This case started life asserting a clamped 2, on the assumption that the grid stayed at the
+    /// two supplied widths. See
+    /// <see cref="ColSpan_startingWhereASpanFromAnEarlierRowLeftOff_emitsTheColumnsItGot"/> for the
+    /// shape that does overrun, which is not this one.
+    /// </summary>
+    [Fact]
+    public void ColSpan_widerThanTheSuppliedWidths_widensTheGridAndIsEmittedAsDeclared()
+    {
+        using var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, 400, 300),
+            Margins = new EdgeInsets(10),
+            Tagged = true,
+            Language = "en-US",
+        };
+        var t = new TableElement { DefaultCellStyle = Style() };
+        t.SetColumnWidths(150, 150);
+        t.AddRow(isHeader: true).AddCell(new Cell("H") { ColSpan = 3 });
+        var data = t.AddRow();
+        data.AddCell("a1");
+        data.AddCell("b1");
+        data.AddCell("c1");
+        doc.Add(t);
+
+        var pdf = SaveAndFlatten(doc);
+
+        Assert.Equal(1, Occurrences(pdf, "/ColSpan 3 "));
+        Assert.Equal(1, Occurrences(pdf, "/ColSpan"));
+    }
+
+    /// <summary>
+    /// The shape where a <c>ColSpan</c> does overrun the grid, which the column count alone does not
+    /// prevent. <c>col</c> is not always the running total of this row's own cells: a span from an
+    /// earlier row advances it by that cell's width instead. Row 0 here sums to three columns and
+    /// spans its first two down into row 1, so row 1's single cell starts at column 2 of 3 and asks
+    /// for two. <c>ColSpanWidth</c> has always given it one, and the attribute used to claim two.
+    ///
+    /// Measured before the clamp: two <c>/ColSpan 2</c> attributes, one of them on a cell painted
+    /// one column wide. After it, one — row 0's, which really does cover two columns.
+    ///
+    /// The undrawn second cell this fixture's row 1 would need to fill the grid is #487 and is not
+    /// what this case is about.
+    /// </summary>
+    [Fact]
+    public void ColSpan_startingWhereASpanFromAnEarlierRowLeftOff_emitsTheColumnsItGot()
+    {
+        using var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, 400, 300),
+            Margins = new EdgeInsets(10),
+            Tagged = true,
+            Language = "en-US",
+        };
+        var t = new TableElement { DefaultCellStyle = Style() };
+        var r0 = t.AddRow();
+        r0.AddCell(new Cell("A") { ColSpan = 2, RowSpan = 2 });
+        r0.AddCell("B");
+        var r1 = t.AddRow();
+        r1.AddCell(new Cell("C") { ColSpan = 2 });
+        doc.Add(t);
+
+        var pdf = SaveAndFlatten(doc);
+
+        Assert.Equal(1, Occurrences(pdf, "/ColSpan 2 "));
+        Assert.Equal(1, Occurrences(pdf, "/ColSpan"));
+    }
+
+    /// <summary>
+    /// A header row carrying <c>RowSpan = 2</c> on a table that paginates, so <c>Draw</c> repeats
+    /// the header run at the top of every continuation page. The span is real on the first page,
+    /// where the row below it is the row the span was declared over, and covers nothing on the
+    /// others, where the row below it is the split row: the header must claim two rows once and one
+    /// row on every repeat.
+    ///
+    /// This is the case that took the attribute commit out of #486. Measured with veraPDF 1.30.2 on
+    /// this same shape at four points, named by the change rather than by a commit hash, because
+    /// this pull request was rebased and squash-merged so no hash of its own survives anywhere a
+    /// reader could resolve:
+    /// <list type="number">
+    ///   <item>Before any of this work: compliant, and only by luck — no span attribute was written
+    ///     at all, and the duplicate draw happened to leave the grid rectangular.</item>
+    ///   <item>With the duplicate draw deleted and no attribute yet: already failing the row-width
+    ///     check, because the grid slot the duplicate had been supplying was gone.</item>
+    ///   <item>With the attribute written from the cell's declared value: two failed checks, since
+    ///     a repeated header claimed a row the continuation page draws in full.</item>
+    ///   <item>With the attribute written from the span the page applied, which is this branch:
+    ///     compliant.</item>
+    /// </list>
+    /// </summary>
+    [Fact]
+    public void RowSpan_onARepeatedHeader_claimsTheCoveredRowOnlyOnThePageThatHasIt()
+    {
+        using var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, 300, 170),
+            Margins = new EdgeInsets(20),
+            Tagged = true,
+            Language = "en-US",
+        };
+        var t = new TableElement { DefaultCellStyle = Style() };
+        var header = t.AddRow(isHeader: true);
+        header.AddCell(new Cell("H0") { RowSpan = 2 });
+        header.AddCell("H1");
+        for (var r = 0; r < 12; r++)
+        {
+            var row = t.AddRow();
+            row.AddCell("a" + r.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            row.AddCell("b" + r.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+        doc.Add(t);
+
+        var pdf = SaveAndFlatten(doc);
+
+        // Two header cells per page across three pages; exactly one of the six claims two rows.
+        Assert.Equal(6, Occurrences(pdf, "/Scope /Column"));
+        Assert.Equal(1, Occurrences(pdf, "/RowSpan 2 "));
+        Assert.Equal(1, Occurrences(pdf, "/RowSpan"));
+    }
+
+    /// <summary>
+    /// A header cell's <c>/Scope</c> and its span go into one attribute dictionary, not two, since
+    /// both are owner <c>/Table</c> attributes under ISO 32000-1:2008 Table 349.
+    /// </summary>
+    [Fact]
+    public void RowSpan_onAHeaderCell_sharesTheAttributeDictionaryWithScope()
+    {
+        using var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, 400, 300),
+            Margins = new EdgeInsets(10),
+            Tagged = true,
+            Language = "en-US",
+        };
+        var t = new TableElement { DefaultCellStyle = Style() };
+        var header = t.AddRow(isHeader: true);
+        header.AddCell(new Cell("H0") { RowSpan = 2 });
+        header.AddCell("H1");
+        var data = t.AddRow();
+        data.AddCell("a1");
+        data.AddCell("b1");
+        doc.Add(t);
+
+        var pdf = SaveAndFlatten(doc);
+
+        Assert.Equal(1, Occurrences(pdf, "/O /Table /Scope /Column /RowSpan 2 "));
+    }
+
+    /// <summary>
+    /// A spanning cell that is not a header gets an attribute dictionary it did not have before,
+    /// since <c>/Scope</c> was previously the only thing that opened one. The owner entry has to be
+    /// there: without <c>/O /Table</c> the spans are not table attributes at all.
+    ///
+    /// This exists because dropping that entry from the span-only path passed every local case and
+    /// was caught by veraPDF alone, which skips on a bare <c>dotnet test</c>. A green local board on
+    /// a change that breaks PDF/UA is the asymmetry this file was written to prevent.
+    /// </summary>
+    [Fact]
+    public void RowSpan_onADataCell_opensAnAttributeDictionaryOwnedByTable()
+    {
+        using var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, 400, 300),
+            Margins = new EdgeInsets(10),
+            Tagged = true,
+            Language = "en-US",
+        };
+        var t = new TableElement { DefaultCellStyle = Style() };
+        var r0 = t.AddRow();
+        r0.AddCell(new Cell("S") { RowSpan = 2 });
+        r0.AddCell("x0");
+        var r1 = t.AddRow();
+        r1.AddCell("b1");
+        doc.Add(t);
+
+        var pdf = SaveAndFlatten(doc);
+
+        Assert.Equal(1, Occurrences(pdf, "/O /Table /RowSpan 2 "));
+        Assert.Equal(0, Occurrences(pdf, "/Scope"));
+    }
+
+    /// <summary>
+    /// A row every column of which is covered by a span from an earlier row contributes no cell of
+    /// its own, so it gets no structure element: a <c>TR</c> with no <c>/K</c> and no <c>/Pg</c>
+    /// describes nothing.
+    ///
+    /// The fixture matters more than the assertion. The first version of this test used a covered
+    /// row that declared no cell at all, which never reaches the loop the fix changed and passes
+    /// with the fix reverted. Here row 1's single declared cell is consumed by neither column,
+    /// because row 0's cell covers both: <c>col</c> advances past the last column while
+    /// <c>cellIdx</c> stays at 0. That declared-but-undrawn cell is #487, present on the base too,
+    /// and is not what this test is about. Proven by mutation in a detached worktree: reverting the
+    /// fix makes the second assertion below fail with 2.
+    /// </summary>
+    [Fact]
+    public void CoveredRow_thatDeclaresACellItCannotDraw_emitsNoRowElement()
+    {
+        using var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, 400, 300),
+            Margins = new EdgeInsets(10),
+            Tagged = true,
+            Language = "en-US",
+        };
+        var t = new TableElement { DefaultCellStyle = Style() };
+        t.SetColumnWidths(150, 150);
+        t.AddRow().AddCell(new Cell("Span") { RowSpan = 2, ColSpan = 2 });
+        t.AddRow().AddCell("covered");
+        doc.Add(t);
+
+        var pdf = SaveAndFlatten(doc);
+
+        Assert.Equal(1, Occurrences(pdf, "/RowSpan 2 "));
+        Assert.Equal(1, Occurrences(pdf, "/S /TR"));
+    }
+}
