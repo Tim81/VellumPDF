@@ -22,6 +22,19 @@ public sealed class TableElement
     public TextStyle? DefaultCellStyle { get; init; }
 
     /// <summary>Width of the table border lines, in points.</summary>
+    /// <remarks>
+    /// A non-finite width is refused. <see cref="Document.Save(System.IO.Stream)"/> throws
+    /// <see cref="InvalidOperationException"/> and names the table.
+    /// <para>Attention: zero does <b>not</b> hide the borders. It asks the device for its
+    /// thinnest line, so the grid is still drawn, and it grows heavier as the page is scaled
+    /// down.</para>
+    /// <para>There is at present <b>no</b> way to draw a table without a grid. Every cell is
+    /// stroked unconditionally and <see cref="BorderColor"/> is not nullable. If you need a
+    /// gridless table, the nearest you can get is a border colour matching the page.</para>
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property, when the width is not finite. The message names the table.
+    /// </exception>
     public double BorderWidth { get; init; } = 0.5;
 
     /// <summary>Color of the table border lines.</summary>

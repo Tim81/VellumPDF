@@ -13,18 +13,68 @@ namespace VellumPdf.Layout.Elements;
 public sealed class RunningBand
 {
     /// <summary>Text template — may contain {page} and/or {pages}.</summary>
+    /// <remarks>
+    /// A template too wide for the content box is truncated, not refused. The cut is reported
+    /// through <c>Document.BandTruncations</c> and <c>DocumentRenderer.BandTruncations</c>, so
+    /// read one of those if you need to know it happened.
+    /// <para>NOTE: before #365 an overlong template was drawn off the page at a negative
+    /// coordinate, with every glyph still written into the content stream. The header or footer
+    /// was then invisible in every reader while you paid for its bytes.</para>
+    /// <para>The cut bounds the advance width, <b>not</b> the ink. Side bearings and italic
+    /// overhang can still paint a little past it. Nothing in this package sets a clip path.</para>
+    /// <para>Attention: truncation does nothing for a template whose glyphs measure zero. Control
+    /// characters, the five undefined WinAnsi codes and both symbolic standard-14 faces all
+    /// measure zero width, so any length of them fits and is drawn in full.</para>
+    /// <para>You get one report per band per render, naming the page that lost the most rather
+    /// than the first page cut. A <c>{page}</c> or <c>{pages}</c> token lengthens the resolved
+    /// text as the number gains digits, so the worst page is the one that tells you how much
+    /// shorter the template has to be.</para>
+    /// </remarks>
     public string Template { get; }
 
     /// <summary>The text style of the band.</summary>
     public TextStyle Style { get; }
 
     /// <summary>Horizontal alignment of the band text.</summary>
+    /// <remarks>
+    /// Attention: <see cref="HorizontalAlignment.Justify"/> is neither refused <b>nor</b>
+    /// honoured. It falls through to left alignment. A single-line band has nothing to justify
+    /// against, so there is no meaning to give it.
+    /// </remarks>
     public HorizontalAlignment Alignment { get; }
 
     /// <summary>
     /// Reserved height in points. Defaults to <c>Style.EffectiveLeading + 4</c>.
     /// Caller may override for tighter/looser bands.
     /// </summary>
+    /// <remarks>
+    /// This reserves space. It does not scale the text: the band's own
+    /// <see cref="TextStyle.FontSize"/> decides how large the glyphs are. A height smaller than
+    /// the text needs therefore lets the band overlap the content rather than shrinking it.
+    /// <para>Attention: zero and negative values are not refused, and neither is useful. The
+    /// height comes off the page's content box, so both leave the band no room while it is still
+    /// drawn, over your content. A later major version will reject them.</para>
+    /// <para>A non-finite value is refused, by two exception types across three messages. Each
+    /// was measured on its own, because the three values take different routes. Positive infinity
+    /// gives <see cref="ArgumentException"/> about the content area having no positive size, and
+    /// names the margins as the parameter. <c>NaN</c> gives
+    /// <see cref="InvalidOperationException"/> about an element being too tall to fit; that one
+    /// does report the height, as <c>NaNpt of running bands</c>. Negative infinity gives
+    /// <see cref="InvalidOperationException"/> about the page-continuation cap, which names
+    /// nothing about the band.</para>
+    /// <para>Attention: no valid document is produced in any of the three, and if you saved to a
+    /// path you have lost what was there. The string overloads of
+    /// <see cref="Document.Save(string)"/> open the file before the layout runs, so a failure
+    /// leaves a zero-byte file in place of whatever the path held (#508).</para>
+    /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// Raised from a save rather than from this property, when the height is positive infinity:
+    /// the content area is then left with no positive size.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from a save, when the height is <c>NaN</c> or negative infinity. The two give
+    /// different messages, described above.
+    /// </exception>
     public double? Height { get; init; }
 
     /// <summary>Creates a running band from a text template, with optional style and alignment (defaults to centered).</summary>

@@ -50,6 +50,18 @@ public sealed class Document : IDisposable
     public PdfDocumentInfo Info => _pdf.Info;
 
     /// <summary>The default page size used for newly created pages.</summary>
+    /// <remarks>
+    /// Validated at save, not here. A width or height that is not a positive finite number is
+    /// refused with <see cref="ArgumentOutOfRangeException"/> naming the axis and the value, and
+    /// a page narrower or shorter than <see cref="Margins"/> is refused with
+    /// <see cref="ArgumentException"/>.
+    /// <para>Attention: changing this after adding elements does not re-lay out what you already
+    /// added. The layout runs once, at the save, against whatever size is set then.</para>
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Raised from a save rather than from this property, when the width or height is zero,
+    /// negative or not finite.
+    /// </exception>
     public PdfRectangle PageSize
     {
         get => _pdf.DefaultPageSize;
@@ -102,6 +114,35 @@ public sealed class Document : IDisposable
     }
 
     /// <summary>Page margins applied to the content area. Defaults to 72 points (1 inch) on all sides.</summary>
+    /// <remarks>
+    /// Margins that meet or exceed the page are refused. Saving throws
+    /// <see cref="ArgumentException"/> and names the axis and both figures. The content box would
+    /// otherwise have no positive size, and no element could be placed in it.
+    /// <para>The header and footer count toward this. Their heights come off the same box, so
+    /// margins that fit on their own can still leave nothing once you set a running band.</para>
+    /// <para>Attention: a negative inset is not refused. The document saves and the content is
+    /// placed outside the page's boundaries, where a reader clips it. On a one-paragraph document
+    /// with every inset at -72, the file is written with no invalid token in it, so nothing
+    /// downstream reports the loss either. A later major version will reject it.</para>
+    /// <para>A non-finite inset is refused in only one of its three forms, and each form fails
+    /// differently, so you cannot catch them together. Positive infinity reaches the margin check
+    /// and throws <see cref="ArgumentException"/> naming the margin. <c>NaN</c> slips past the
+    /// check, because a comparison against it is false, and surfaces as
+    /// <see cref="InvalidOperationException"/> saying an element is too tall to fit, which is not
+    /// what happened. Negative infinity slips past for the same reason and surfaces as the
+    /// page-continuation cap. Both wrong-cause messages are the defect #481 corrected elsewhere,
+    /// still outstanding here (#502).</para>
+    /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// Raised from a save rather than from this property, when the margins on either axis meet
+    /// or exceed the page, or when they leave the content area no positive size once the header
+    /// and footer are taken off. Positive infinity reaches this check.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from a save when an inset is <c>NaN</c> or negative infinity. Neither reaches the
+    /// check above, so each surfaces as one of the unrelated messages described in the remarks.
+    /// Catching <see cref="ArgumentException"/> alone will not catch them.
+    /// </exception>
     public EdgeInsets Margins { get; set; } = new EdgeInsets(72); // 1 inch
 
     /// <summary>
@@ -308,6 +349,30 @@ public sealed class Document : IDisposable
     }
 
     /// <summary>Runs the layout pass and writes the resulting PDF to the given stream.</summary>
+    /// <remarks>
+    /// A document is single-use. The layout runs here, not when you add an element, so most of
+    /// what can go wrong goes wrong at this call rather than at the one that set the bad value.
+    /// <para>Attention: calling this twice throws. The second call reports that the document has
+    /// already been written and tells you to create a new one. Nothing is appended and nothing is
+    /// overwritten, but you cannot use one <see cref="Document"/> to write two files.</para>
+    /// <para>A document with no pages throws as well. Add at least one element before you
+    /// save.</para>
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// The document has already been written, or has no pages, or an element's input cannot be
+    /// laid out. The boundary documentation on the individual properties says which inputs those
+    /// are.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// The margins, header and footer together leave the content area no positive size.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <see cref="PageSize"/> has a width or height that is not a positive finite number.
+    /// </exception>
+    /// <exception cref="NotSupportedException">
+    /// <see cref="UseObjectStreams"/> was set and <see cref="Encrypt"/> was called. The two
+    /// cannot be combined.
+    /// </exception>
     public void Save(Stream destination)
     {
         var renderer = new DocumentRenderer(_pdf, _pdf.DefaultPageSize, Margins)
@@ -321,6 +386,14 @@ public sealed class Document : IDisposable
     }
 
     /// <summary>Runs the layout pass and writes the resulting PDF to a file at the given path.</summary>
+    /// <remarks>
+    /// Everything on <see cref="Save(System.IO.Stream)"/> applies, and one thing more.
+    /// <para>Attention: the file is opened before the layout runs, so a failure destroys whatever
+    /// the path held. Measured: a path holding a 1,535-byte document, saved again from a document
+    /// whose layout then fails, is left existing and zero bytes long. If the target matters,
+    /// write to a temporary path and move it into place yourself, or save to a stream you control
+    /// (#508).</para>
+    /// </remarks>
     public void Save(string path)
     {
         using var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
@@ -338,6 +411,30 @@ public sealed class Document : IDisposable
     /// final write, but does not abort layout or serialisation already in progress.
     /// </para>
     /// </summary>
+    /// <remarks>
+    /// A document is single-use. The layout runs here, not when you add an element, so most of
+    /// what can go wrong goes wrong at this call rather than at the one that set the bad value.
+    /// <para>Attention: calling this twice throws. The second call reports that the document has
+    /// already been written and tells you to create a new one. Nothing is appended and nothing is
+    /// overwritten, but you cannot use one <see cref="Document"/> to write two files.</para>
+    /// <para>A document with no pages throws as well. Add at least one element before you
+    /// save.</para>
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// The document has already been written, or has no pages, or an element's input cannot be
+    /// laid out. The boundary documentation on the individual properties says which inputs those
+    /// are.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// The margins, header and footer together leave the content area no positive size.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <see cref="PageSize"/> has a width or height that is not a positive finite number.
+    /// </exception>
+    /// <exception cref="NotSupportedException">
+    /// <see cref="UseObjectStreams"/> was set and <see cref="Encrypt"/> was called. The two
+    /// cannot be combined.
+    /// </exception>
     // RS0026 flags multiple overloads with optional parameters as a future-ambiguity risk;
     // Stream and string share no implicit conversion, so overload resolution can never be
     // ambiguous between these two.
@@ -357,6 +454,14 @@ public sealed class Document : IDisposable
     }
 
     /// <summary>Asynchronously runs the layout pass and writes the resulting PDF to a file at the given path.</summary>
+    /// <remarks>
+    /// Everything on <see cref="Save(System.IO.Stream)"/> applies, and one thing more.
+    /// <para>Attention: the file is opened before the layout runs, so a failure destroys whatever
+    /// the path held. Measured: a path holding a 1,535-byte document, saved again from a document
+    /// whose layout then fails, is left existing and zero bytes long. If the target matters,
+    /// write to a temporary path and move it into place yourself, or save to a stream you control
+    /// (#508).</para>
+    /// </remarks>
 #pragma warning disable RS0026
     public async Task SaveAsync(string path, CancellationToken cancellationToken = default)
 #pragma warning restore RS0026
