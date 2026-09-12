@@ -314,17 +314,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Raising the number would have moved the flake rather than removed it, so the guard is gone. The
   pattern itself was never the problem: the hyphen is in neither subtag character class, so once
   the one-to-eight quantifier gives back a character the next one is an alnum rather than a hyphen
-  and the alternative dies at once. Measured over 1.37 million inputs, including exhaustive
-  enumeration over small alphabets and stressors up to nineteen million characters, both engines
-  agree on every one, and the old one peaked at 35 milliseconds for ten million characters. It
-  would take roughly 15 MB of language tag to burn the 50 milliseconds this used to allow.
+  and the alternative dies at once. Measured over 1,340,413 inputs, including exhaustive
+  enumeration over four alphabets and stressors of nineteen million characters, the engines agree
+  on every one.
 
-  Two things make the switch to the linear-time engine right anyway. It makes linear time the
-  engine's guarantee rather than a property of this pattern that a later edit could lose. And
-  under Native AOT, which this repository publishes the command-line tool with,
-  `RegexOptions.Compiled` has no run-time code generation available and silently falls back to the
-  interpreter, so on the shipped preflight binary the old code was running interpreted: measured
-  over 100,000 tags, 8.5 milliseconds against 11.8. The change is a speed-up there, not a cost.
+  The slowest input found is not the shape that argument is about. The overlong-subtag chains are
+  refused in under two microseconds at any length, because they fail at once. What costs anything
+  is a matching tag built from single-character subtags, and ten million characters of that took 34
+  milliseconds on the just-in-time stack and 131 under Native AOT. So the headroom over the 50
+  milliseconds the timeout allowed is about 15 MB of language tag on one and about 3.8 MB on the
+  other. Neither is a threat.
+
+  Two things decide the switch to the linear-time engine. It makes linear time the engine's
+  guarantee rather than a property of this pattern that a later edit could lose. And
+  `RegexOptions.Compiled` is not what it says under Native AOT, which this repository publishes the
+  command-line tool with: there is no run-time code generation, so it degrades to the interpreter.
+  That is visible in allocation rather than only in timing, its constructor allocating the same
+  9,232 bytes as the interpreter against 21,872 on the other stack. Over 100,000 tags under Native
+  AOT the compiled and interpreted engines are indistinguishable at about 15 milliseconds, while the
+  linear-time one takes 8.8. On the shipped preflight binary this is a speed-up.
+
+  It is the opposite way round on the just-in-time stack, which is what the eight packages run on
+  for anyone not publishing ahead of time, and the first draft of this entry did not say so. There
+  the new engine costs about 30 milliseconds per 100,000 matches against 5.3, and about 22
+  milliseconds and 161 KB to construct against 5 and 22 KB. Native AOT collapses the construction
+  time to 0.3 milliseconds but not the allocation, which grows slightly. The trade was taken with
+  those figures in hand: one match runs per structure element carrying a language tag, so even
+  100,000 tagged elements pays about 25 milliseconds more than before, against a document parse
+  that costs far more.
+
+  One thing the review found that the change does not fix: both rules accept a language tag ending
+  in a newline, because .NET's `$` matches before one while the ECMAScript predicate both rules
+  cite as a source does not. That is a false accept, so a file the reference implementation fails
+  this library passes. The pattern is untouched here, the two rules now say so, and it is recorded
+  as D6 in the divergences file and filed as #507.
 
   `Compiled` is dropped because it is meaningless alongside the new engine, not because it is
   rejected. The two options combine, both flags stay on the `Options` property, and the symbolic

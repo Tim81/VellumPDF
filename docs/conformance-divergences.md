@@ -133,6 +133,35 @@ change replaced, so it is checkable only in the history. The clause is the viewe
 
 ---
 
+## D6 — A language tag ending in a newline is accepted
+
+- Rules: `A2aLangSyntaxRule`, `UaLangSyntaxRule`
+- Clauses: ISO 19005-2 6.7.4 · ISO 14289-1 7.2
+- Status: not gated · a false accept, pattern unchanged pending #507
+
+Both rules match `/Lang` against `^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*$`, and both name the veraPDF
+`CosLang` predicate as a source. The predicate carries the same pattern as a JavaScript regular
+expression. The two do not agree.
+
+.NET's `$` matches before a single trailing newline. ECMAScript's `$`, with no `m` flag, asserts
+end of input and nothing else. So a `/Lang` value of `en` followed by a line feed is accepted by
+these rules and rejected by the predicate they cite. Measured both ways: `IsMatch("en\n")` is
+`true` for the compiled, interpreted and non-backtracking engines alike, while `node` evaluating
+the quoted predicate returns `false`. Only `\z` in place of `$` refuses it.
+
+Reachable from a real file rather than only in principle. A literal string `/Lang (en\012)`, or a
+raw end-of-line inside the parentheses, which ISO 32000-2 7.3.4.2 permits, decodes to exactly that
+string, and the decoded value reaches the match with no trimming.
+
+**Direction.** A false accept: a file veraPDF would fail, this library passes. That is the worse
+direction of the two, which is why it is recorded here rather than left as a footnote.
+
+Checkable: the two patterns, yes. The predicate's own semantics are a reading of ECMAScript rather
+than a veraPDF run — veraPDF was not resolvable on the machine where this was measured, so what was
+compared is the predicate as quoted in the rules' own documentation.
+
+---
+
 ## Clauses neither implementation checks
 
 These are not disagreements and do not belong in the table above, but they are the reason the table

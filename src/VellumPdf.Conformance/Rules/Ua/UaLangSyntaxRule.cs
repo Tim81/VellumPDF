@@ -19,6 +19,12 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// against veraPDF 1.30.2 (test id 7.2-29). Clean-room: derived from the specification text,
 /// not from any third-party validation profile.
 ///
+/// Attention: this pattern and that predicate disagree on one input. .NET's <c>$</c> matches
+/// before a single trailing newline, so a <c>/Lang</c> of <c>en</c> followed by a line feed is
+/// accepted here and rejected by the predicate, where ECMAScript's <c>$</c> asserts end of input.
+/// The divergence is a false accept and is recorded as D6 in
+/// <c>docs/conformance-divergences.md</c>. Replacing <c>$</c> with <c>\z</c> closes it (#507).
+///
 /// Scope (to avoid false positives empirically confirmed against veraPDF):
 /// <list type="bullet">
 ///   <item>Only the document catalog <c>/Lang</c> is checked — veraPDF 7.2-29 does not fire for
