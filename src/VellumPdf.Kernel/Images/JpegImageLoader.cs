@@ -19,19 +19,17 @@ public static class JpegImageLoader
     /// The bytes do not begin with the SOI marker, or no frame header can be found.
     /// </exception>
     /// <remarks>
-    /// <b>This loader decodes nothing.</b> The bytes are embedded verbatim as DCTDecode data and
-    /// only the frame header is read, so a file this accepts is not a file a reader can
-    /// necessarily render: corruption past the header is passed straight into the document.
-    /// <para><b>This is the one loader that does not check the declared size</b>, and the
-    /// difference is large. Measured on a 25-byte file whose frame header declares
-    /// 65535 by 65535: this returns an image of 4,294,836,225 pixels, where every other loader
-    /// refuses anything above 100,000,000. Nothing allocates a raster for it here, because the
-    /// bytes pass through, but the width and height reach the image dictionary and a consumer
-    /// that trusts them can be made to allocate from them. Validate the dimensions yourself if
-    /// the input is untrusted.</para>
-    /// <para><b>Do not pass <see langword="null"/>.</b> It is not checked and raises
-    /// <see cref="NullReferenceException"/> rather than
-    /// <see cref="ArgumentNullException"/>.</para>
+    /// This loader decodes nothing. The bytes are embedded verbatim as DCTDecode data and only
+    /// the frame header is read. A file this accepts is therefore not necessarily a file a reader
+    /// can render: corruption past the header passes straight into the document.
+    /// <para>Attention: this is the one loader that does <b>not</b> check the declared size, and
+    /// the difference is large. A 25-byte file whose frame header declares 65535 by 65535 returns
+    /// an image of 4,294,836,225 pixels. Every other loader refuses anything above 100,000,000.
+    /// Nothing allocates a raster here, since the bytes pass through, but the width and height
+    /// reach the image dictionary and a consumer that trusts them can be made to allocate from
+    /// them. If the input is untrusted, check the dimensions yourself.</para>
+    /// <para><see langword="null"/> is not checked either. It raises
+    /// <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>.</para>
     /// </remarks>
     public static PdfImageXObject Load(byte[] jpegBytes)
     {

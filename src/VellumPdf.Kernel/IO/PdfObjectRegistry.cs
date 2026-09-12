@@ -48,19 +48,19 @@ public sealed class PdfObjectRegistry
     /// this registry has allocated.
     /// </exception>
     /// <remarks>
-    /// <b>This is a range check, not a provenance check, and the exception message overstates
-    /// it.</b> The message reads "Reference was not allocated by this registry", but all that is
-    /// compared is the object number against the count of references allocated. A reference from
-    /// a different registry, or one built with the public
-    /// <see cref="PdfIndirectReference(int)"/> constructor, is accepted whenever its number
-    /// happens to fall in range — measured, and the value lands in this registry's slot of that
-    /// number, which is exactly the wrong-slot write the check looks like it prevents.
-    /// <para><b>So do not pass a reference from anywhere but this registry's own
-    /// <c>Reserve</c>.</b> Nothing downstream can tell the difference.</para>
-    /// <para><b>Reserving a reference and never setting it is not detected here.</b> It is
-    /// detected at write time, and loudly: writing throws
-    /// <see cref="InvalidOperationException"/> naming the object number. It does not produce a
-    /// document with a missing object. Set every reference you reserve.</para>
+    /// Attention: this is a range check, <b>not</b> a provenance check, and the exception
+    /// message overstates it. The message reads "Reference was not allocated by this registry",
+    /// but all that is compared is the object number against the count of references allocated.
+    /// A reference from a different registry, or one built with the public
+    /// <see cref="PdfIndirectReference(int)"/> constructor, is accepted whenever its number falls
+    /// in range. The value then lands in this registry's slot of that number, which is the
+    /// wrong-slot write the check looks like it prevents.
+    /// <para>So pass only a reference that this registry's own <c>Reserve</c> returned. Nothing
+    /// downstream can tell the difference.</para>
+    /// <para>Reserving a reference and never setting it is not detected here. It is detected at
+    /// write time, and loudly: writing throws <see cref="InvalidOperationException"/> and names
+    /// the object number. You do not get a document with a missing object. Set every reference
+    /// you reserve.</para>
     /// </remarks>
     public void SetValue(PdfIndirectReference reference, PdfObject value)
     {

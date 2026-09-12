@@ -24,25 +24,25 @@ public static class GifImageLoader
     /// declare dimensions outside the safety limits below.
     /// </exception>
     /// <remarks>
-    /// <b>Treat the input as untrusted and catch <see cref="InvalidDataException"/>.</b> That is
-    /// the documented outcome for every malformed file: a wrong signature, a truncated stream, an
-    /// unsupported variant, or a declared size the limits refuse.
-    /// <para><b>Do not pass <see langword="null"/>.</b> It is not checked, so it raises
-    /// <see cref="NullReferenceException"/> rather than
-    /// <see cref="ArgumentNullException"/> — measured, not inferred — and a caller guarding on the
-    /// documented type will not catch it. A later major version will check it.</para>
-    /// <para><b>One size limit applies here, not two.</b> A declared pixel count above
-    /// 100,000,000 is refused, so that a few bytes of header cannot drive a multi-gigabyte
-    /// allocation. There is a second constant bounding each edge at 1,000,000, but it is read
-    /// only by the MMR decoder behind CCITT and JBIG2 and is <b>not</b> applied here: an image
-    /// declaring one edge of 1,000,001 and a total under the pixel cap loads. Both constants are
-    /// internal, with no public setting.</para>
-    /// <para><b>Only the first frame is read, and the rest are dropped silently.</b> An
-    /// animated GIF loads as its first image descriptor with no warning that anything else was
-    /// there, so a caller who needs to know should check for further descriptors itself.</para>
-    /// <para><b>The logical screen is ignored.</b> A frame that covers only part of a larger
-    /// canvas decodes at the frame's own size and its position is lost, so the image is a
-    /// different size and aspect ratio from what a viewer shows (#498).</para>
+    /// Treat the input as untrusted. A malformed file raises
+    /// <see cref="InvalidDataException"/>: a wrong signature, a truncated stream, or a declared
+    /// size the limit refuses.
+    /// <para>Attention: <see langword="null"/> is <b>not</b> checked. It raises
+    /// <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>, so a
+    /// <c>catch</c> on the documented type will not catch it. You have to reject null yourself. A
+    /// later major version will check it.</para>
+    /// <para>One size limit applies here, not two. A declared pixel count above 100,000,000 is
+    /// refused, so that a few bytes of header cannot drive a multi-gigabyte allocation.</para>
+    /// <para>Attention: a second constant bounds each edge at 1,000,000, and it is <b>not</b>
+    /// applied here. Only the MMR decoder behind CCITT and JBIG2 reads it. An image declaring one
+    /// edge of 1,000,001 with a total under the pixel cap loads. Both constants are internal and
+    /// there is no public setting for either.</para>
+    /// <para>Only the first frame is read. The rest are dropped silently: an animated GIF
+    /// loads as its first image descriptor, with no warning that anything else was there. If you
+    /// need to know, scan for further image descriptors yourself.</para>
+    /// <para>Attention: the logical screen is ignored. A frame covering only part of a larger
+    /// canvas decodes at the frame's own size and its position is lost, so you get a different
+    /// size and aspect ratio from what a viewer shows (#498).</para>
     /// </remarks>
     public static PdfImageXObject Load(byte[] gifBytes)
     {

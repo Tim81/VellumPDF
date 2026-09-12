@@ -105,30 +105,30 @@ public static class TiffImageLoader
     /// unsupported photometric interpretation, and fifteen others.
     /// </exception>
     /// <remarks>
-    /// <b>Treat the input as untrusted, and catch two types, not one.</b> A malformed file
-    /// raises <see cref="InvalidDataException"/>; a well-formed file using a feature this loader
-    /// does not read raises <see cref="NotSupportedException"/> from any of eighteen sites, and
-    /// that does <b>not</b> derive from the first. TIFF is the widest format here, so this is the
-    /// loader most likely to refuse a file that other software opens.
+    /// Treat the input as untrusted, and catch two types rather than one. A malformed file
+    /// raises <see cref="InvalidDataException"/>. A well-formed file using a feature this loader
+    /// does not read raises <see cref="NotSupportedException"/>, from any of eighteen sites, and
+    /// that type does <b>not</b> derive from the first. TIFF is the widest format here, so expect
+    /// this loader to refuse files that other software opens.
     /// <para><b>Do not pass <see langword="null"/>.</b> It is not checked, so it raises
     /// <see cref="NullReferenceException"/> rather than
     /// <see cref="ArgumentNullException"/> — measured, not inferred — and a caller guarding on the
     /// documented type will not catch it. A later major version will check it.</para>
-    /// <para><b>One size limit applies here, not two.</b> A declared pixel count above
-    /// 100,000,000 is refused, so that a few bytes of header cannot drive a multi-gigabyte
-    /// allocation. There is a second constant bounding each edge at 1,000,000, but it is read
-    /// only by the MMR decoder behind CCITT and JBIG2 and is <b>not</b> applied here: an image
-    /// declaring one edge of 1,000,001 and a total under the pixel cap loads. Both constants are
-    /// internal, with no public setting.</para>
-    /// <para><b>The pixel cap has a hole, and it is this loader that carries it.</b> A strip
+    /// <para>One size limit applies here, not two. A declared pixel count above 100,000,000 is
+    /// refused, so that a few bytes of header cannot drive a multi-gigabyte allocation.</para>
+    /// <para>Attention: a second constant bounds each edge at 1,000,000, and it is <b>not</b>
+    /// applied here. Only the MMR decoder behind CCITT and JBIG2 reads it. An image declaring one
+    /// edge of 1,000,001 with a total under the pixel cap loads. Both constants are internal and
+    /// there is no public setting for either.</para>
+    /// <para>Attention: the pixel cap has a hole, and this loader carries it. A strip
     /// compressed with new-style JPEG (Compression 7) is handed to
-    /// <see cref="JpegImageLoader.Load(byte[])"/>, which returns its own dimensions from the
-    /// JPEG frame header and validates nothing. Measured: a 145-byte TIFF declaring
-    /// ImageWidth 8 and ImageLength 8, whose single strip is a 23-byte JPEG declaring 65535 by
-    /// 65535, returns an image of 4,294,836,225 pixels. No raster is allocated, because those
-    /// bytes pass through as DCTDecode data, but the dimensions reach the image dictionary and a
-    /// consumer that trusts them can be made to allocate from them. Validate the result's
-    /// <c>Width</c> and <c>Height</c> yourself if the input is untrusted.</para>
+    /// <see cref="JpegImageLoader.Load(byte[])"/>, which takes its dimensions from the JPEG frame
+    /// header and validates nothing. A 145-byte TIFF declaring ImageWidth 8 and ImageLength 8,
+    /// whose single strip is a 23-byte JPEG declaring 65535 by 65535, returns an image of
+    /// 4,294,836,225 pixels. No raster is allocated, since those bytes pass through as DCTDecode
+    /// data. But the dimensions reach the image dictionary, and a consumer that trusts them can
+    /// be made to allocate from them. If the input is untrusted, check the result's <c>Width</c>
+    /// and <c>Height</c> yourself (#505).</para>
     /// </remarks>
     public static PdfImageXObject Load(byte[] tiff) => Load(tiff, ImageLoadOptions.Default);
 
@@ -138,12 +138,12 @@ public static class TiffImageLoader
     /// declare dimensions outside the safety limits.
     /// </exception>
     /// <remarks>
-    /// The same boundaries as the single-argument overload: malformed input raises
-    /// <see cref="InvalidDataException"/>, a null array raises
-    /// <see cref="NullReferenceException"/> rather than
-    /// <see cref="ArgumentNullException"/>, and the 100,000,000-pixel and 1,000,000-per-edge
-    /// limits apply. <paramref name="options"/> selects the decode mode; it does not relax any
-    /// of those limits, which have no public setting.
+    /// The same boundaries as the single-argument overload. Malformed input raises
+    /// <see cref="InvalidDataException"/>; a null array raises
+    /// <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>; and the
+    /// 100,000,000-pixel cap applies while the per-edge constant does not.
+    /// <para><paramref name="options"/> selects the decode mode. It does not relax the pixel cap,
+    /// which has no public setting.</para>
     /// </remarks>
     public static PdfImageXObject Load(byte[] tiff, ImageLoadOptions options)
     {

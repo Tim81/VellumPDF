@@ -36,21 +36,21 @@ public interface ITimestampClient
     /// well-formed granted timestamp.
     /// </exception>
     /// <remarks>
-    /// <b>This reaches the network, and the failures arrive as three different exception
-    /// types.</b> Measured against a loopback authority: a timeout and a failing HTTP status give
-    /// <see cref="InvalidOperationException"/>; an unreachable authority gives
-    /// <see cref="System.Net.Http.HttpRequestException"/>; and a rejection, or a malformed
-    /// response body, gives
-    /// <see cref="System.Security.Cryptography.CryptographicException"/>. So the type is the
-    /// discriminator, not the message, and catching only
-    /// <see cref="InvalidOperationException"/> lets the most likely failure of the three — an
-    /// authority that cannot be reached — escape.
-    /// <para><b>Do not call this where blocking is unacceptable.</b> It waits on the authority,
-    /// with the implementation's own timeout as the only bound; use
-    /// <see cref="GetTimestampTokenAsync"/> where that matters.</para>
-    /// <para><b>Do not treat a returned token as verified.</b> It is the authority's answer,
-    /// carried into the signature as supplied. Whether its certificate chains to anything a
-    /// verifier trusts is a separate question this call does not answer.</para>
+    /// This reaches the network, so expect it to fail for reasons outside your document. The
+    /// failures arrive as three different exception types, measured against a loopback authority.
+    /// A timeout and a failing HTTP status give <see cref="InvalidOperationException"/>. An
+    /// unreachable authority gives <see cref="System.Net.Http.HttpRequestException"/>. A
+    /// rejection, or a malformed response body, gives
+    /// <see cref="System.Security.Cryptography.CryptographicException"/>.
+    /// <para>Attention: the type is the discriminator here, not the message. If you catch only
+    /// <see cref="InvalidOperationException"/>, the likeliest failure of the three, an authority
+    /// that cannot be reached, escapes you.</para>
+    /// <para>The synchronous overload waits on the authority, with the implementation's own
+    /// timeout as the only bound. If you are on a path that must not block, use
+    /// <see cref="GetTimestampTokenAsync"/>.</para>
+    /// <para>A returned token is <b>not</b> verified. It is the authority's answer, carried into
+    /// the signature as supplied. Whether its certificate chains to anything a verifier trusts is
+    /// a separate question that this call does not answer.</para>
     /// </remarks>
     byte[] GetTimestampToken(ReadOnlySpan<byte> messageDigest, HashAlgorithmName hashAlgorithm);
 
@@ -70,9 +70,9 @@ public interface ITimestampClient
     /// The default implementation forwards to <see cref="GetTimestampToken"/>, so existing
     /// implementations of this interface keep compiling unchanged. Implementations that can
     /// perform the underlying network call asynchronously should override this member.
-    /// <para><b>Do not assume this does not block.</b> An implementation that has not overridden
-    /// it runs the synchronous call on the calling thread and returns a completed task, so the
-    /// wait happens before the task is handed back and
+    /// <para>Attention: do not assume this does not block. An implementation that has not
+    /// overridden it runs the synchronous call on the calling thread and returns an
+    /// already-completed task. The wait therefore happens before the task reaches you, and
     /// <paramref name="cancellationToken"/> is never consulted.</para>
     /// </remarks>
     Task<byte[]> GetTimestampTokenAsync(ReadOnlyMemory<byte> messageDigest, HashAlgorithmName hashAlgorithm, CancellationToken cancellationToken = default)
