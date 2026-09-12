@@ -1012,6 +1012,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Documentation
 
+- **The public members that refuse input now say so, and say what not to pass.** 2.3.2 is the
+  release that created these boundaries, and they were documented almost nowhere: Layout has 340
+  public members and, before this, one file carrying any `<exception>` tag. The refusals are
+  raised from `Save` rather than from the property the caller set, so a programmer who assigns a
+  bad value gets an exception from a call they never made while the member they did set says
+  nothing about it.
+
+  Twenty-one members now carry the pattern already used on the text style's font size: a bold
+  sentence naming what is refused, which call throws it and why, then a separate paragraph
+  beginning "Do not pass" for input that is accepted today, what it does now, and that a later
+  major will reject it. That covers the table cell's spans and padding, the table's border width,
+  the image's width and height, the separator's line width, the pie chart's slices, diameter,
+  start angle, stroke width and alignment, the heading level, the list indent and nesting depth,
+  the running band's template, height and alignment, and the document margins.
+
+  Writing them turned up three claims of mine that the code did not support, each corrected
+  against the code rather than shipped: the pie chart does not skip a zero-width stroke, it
+  strokes on the stroke colour being set and emits `0 w`; a table's grid cannot be suppressed at
+  all, since the border colour is not nullable and every cell is stroked unconditionally; and a
+  non-finite document margin is refused only when it is positive infinity. `NaN` and negative
+  infinity slip past the margin check, because a comparison against them is false, and surface as
+  a message about an element being too tall or about the page-continuation cap. That is the same
+  wrong-cause defect #481 corrected elsewhere and is filed as #502.
+
+  The rule is written into the contributor guidance rather than left to a release: a public
+  member's boundary is documented in the same commit as the member.
+
 - **Where the conformance rules knowingly disagree with veraPDF is written down (#418, #419).**
   `docs/conformance-divergences.md` records each case with what the standard requires, what an
   independent second reading found, what veraPDF does, which one this library follows, and whether a

@@ -18,6 +18,17 @@ public sealed class Heading
     public TextStyle Style { get; }
 
     /// <summary>Outline nesting level: 0 = top-level, 1 = sub-heading, etc.</summary>
+    /// <remarks>
+    /// Zero-based: level 0 is tagged <c>H1</c>, level 4 is <c>H5</c>, and every level at or
+    /// above 5 is tagged <c>H6</c>, because that is the deepest heading type PDF defines.
+    /// <para><b>Do not pass a negative level.</b> It is not refused, and it does not clamp the
+    /// way a reader would expect: the mapping's catch-all sends it to <c>H6</c>, the deepest
+    /// type, where a caller means the shallowest. The raw value also reaches the outline
+    /// builder, so the bookmark tree nests on it. A later major version will reject it.</para>
+    /// <para><b>Do not rely on a very large level for depth.</b> Everything from 5 upward is the
+    /// same <c>H6</c> tag, so assistive technology cannot tell level 5 from level 500, while the
+    /// outline still nests on the number given.</para>
+    /// </remarks>
     public int Level { get; init; }
 
     /// <summary>

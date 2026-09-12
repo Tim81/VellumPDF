@@ -36,6 +36,14 @@ public sealed class ListElement
     public IReadOnlyList<ListItem> Items => _items;
 
     /// <summary>Points of indent for each list level.</summary>
+    /// <remarks>
+    /// <b>Do not set an indent at or beyond the content width.</b> It is not refused. The marker
+    /// is drawn and the item text is discarded, so the list renders as a column of bullets with
+    /// no content, and nothing reports the loss (#476).
+    /// <para><b>Do not assume the marker fits the indent.</b> A marker wider than the indent
+    /// overprints the item text rather than pushing it along; roman numerals reach that at 38
+    /// items with the default of 20 points.</para>
+    /// </remarks>
     public double Indent { get; init; } = 20;
 
     /// <summary>Outer margins applied around the whole list block.</summary>

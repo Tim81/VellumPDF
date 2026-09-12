@@ -102,6 +102,27 @@ public sealed class Document : IDisposable
     }
 
     /// <summary>Page margins applied to the content area. Defaults to 72 points (1 inch) on all sides.</summary>
+    /// <remarks>
+    /// <b>Margins that meet or exceed the page are refused.</b> Saving throws
+    /// <see cref="ArgumentException"/> naming which axis and both figures, because the content
+    /// box would have no positive size and no element could be placed in it. The header and
+    /// footer count toward this: their heights come off the same box, so margins that fit on
+    /// their own can still leave nothing once a running band is set.
+    /// <para><b>Do not pass a negative inset.</b> It is not refused: the document saves, and the
+    /// content is placed outside the page's own boundaries where a reader clips it. Measured on a
+    /// one-paragraph document with every inset at -72, the file is written with no invalid token
+    /// in it, so nothing downstream reports the loss either. A later major version will reject
+    /// it.</para>
+    /// <para><b>Do not pass a non-finite inset.</b> None of the three is refused by a message
+    /// naming the margin, and each fails differently, so none of them can be caught the way a
+    /// caller would expect. Measured on the same document: positive infinity does reach the
+    /// margin check and throws <see cref="ArgumentException"/> naming it; <c>NaN</c> slips past
+    /// the check, because a comparison against it is false, and surfaces as an
+    /// <see cref="InvalidOperationException"/> saying an element is too tall to fit, which is
+    /// not what happened; negative infinity slips past for the same reason and surfaces as the
+    /// page-continuation cap instead. Both wrong-cause messages are the defect #481 corrected
+    /// elsewhere, still outstanding here.</para>
+    /// </remarks>
     public EdgeInsets Margins { get; set; } = new EdgeInsets(72); // 1 inch
 
     /// <summary>
