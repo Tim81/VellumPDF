@@ -27,16 +27,15 @@ public sealed class PieChart
 {
     /// <summary>The slices, drawn in order. The sum of their values must be positive.</summary>
     /// <remarks>
-    /// <b>An empty list is refused, and so is a list whose values sum to zero or less.</b>
-    /// Laying the chart out throws <see cref="ArgumentException"/> with
-    /// <c>ParamName</c> of <c>Slices</c>: there is no angle to give any slice, so there is
-    /// nothing to draw rather than something small.
-    /// <para><b>A slice value that is negative or not finite is refused</b> by the same
-    /// exception, because a negative sweep would paint over its neighbours and a non-finite one
-    /// has no angle at all.</para>
-    /// <para><b>Do not rely on a zero value being visible.</b> A zero is accepted and
-    /// contributes no angle, so the slice is absent from the chart while remaining in this list;
-    /// nothing reports that it was dropped.</para>
+    /// An empty list is refused. So is a list whose values sum to zero or less. Laying the
+    /// chart out throws <see cref="ArgumentException"/> with <c>ParamName</c> of <c>Slices</c>.
+    /// In both cases there is no angle to give any slice, so the result would be nothing rather
+    /// than something small.
+    /// <para>A negative or non-finite slice value is refused by the same exception. A negative
+    /// sweep would paint over its neighbours, and a non-finite one has no angle at all.</para>
+    /// <para>Attention: a value of zero is accepted and contributes no angle. The slice stays in
+    /// this list and is absent from the chart, and nothing reports that it was dropped. If a zero
+    /// slice should be visible in your chart, give it a small positive value.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised while the chart is laid out, which happens inside <see cref="Document.Save(System.IO.Stream)"/>,
@@ -50,11 +49,12 @@ public sealed class PieChart
     /// drawn size rather than a guaranteed one.
     /// </summary>
     /// <remarks>
-    /// <b>Zero, a negative value and a non-finite value are all refused.</b> Laying the chart
-    /// out throws <see cref="ArgumentException"/> naming <c>Diameter</c>.
-    /// <para><b>Do not size this against the page.</b> A diameter wider than the content box is
-    /// accepted and clamped to the area the layout pass was handed, so the chart drawn is
-    /// smaller than the number set here and nothing reports the difference.</para>
+    /// Zero, a negative value and a non-finite value are all refused. Laying the chart out
+    /// throws <see cref="ArgumentException"/> and names <c>Diameter</c>.
+    /// <para>Attention: a diameter wider than the content box is accepted and clamped to the area
+    /// the layout pass was handed. The chart drawn is then smaller than the number you set, and
+    /// nothing reports the difference. Do not size a chart against the page; size it against the
+    /// space you have given it.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised while the chart is laid out, which happens inside <see cref="Document.Save(System.IO.Stream)"/>,
@@ -73,13 +73,13 @@ public sealed class PieChart
 
     /// <summary>Width of the separator stroke in points. Defaults to 0.5.</summary>
     /// <remarks>
-    /// <b>A negative width and a non-finite width are both refused.</b> Laying the chart out
-    /// throws <see cref="ArgumentException"/> naming <c>StrokeWidth</c>.
-    /// <para><b>Do not use zero to remove the separators.</b> Zero is accepted, but the stroke
-    /// is skipped on <see cref="StrokeColor"/> being unset, not on this being zero, so a zero
-    /// width with a stroke colour still strokes: it emits <c>0 w</c>, which asks the device for
-    /// the thinnest line it can draw, and that grows heavier as the page is scaled down. Leave
-    /// <see cref="StrokeColor"/> unset instead.</para>
+    /// A negative width and a non-finite width are both refused. Laying the chart out throws
+    /// <see cref="ArgumentException"/> and names <c>StrokeWidth</c>.
+    /// <para>Attention: zero does <b>not</b> remove the separators. Whether a stroke happens at
+    /// all is decided by <see cref="StrokeColor"/>, not by this width. With a stroke colour set
+    /// and a width of zero, the renderer emits <c>0 w</c> and still strokes, which asks the device
+    /// for its thinnest line. If you want no separators, leave <see cref="StrokeColor"/>
+    /// unset.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised while the chart is laid out, which happens inside <see cref="Document.Save(System.IO.Stream)"/>,
@@ -89,10 +89,10 @@ public sealed class PieChart
 
     /// <summary>Horizontal placement of the chart within the content area. Defaults to centre.</summary>
     /// <remarks>
-    /// <b>Do not pass <see cref="HorizontalAlignment.Justify"/>.</b> It is not refused and it is
-    /// not honoured: it falls through to left alignment. This is worse here than elsewhere
-    /// because the default is <see cref="HorizontalAlignment.Center"/>, so asking for justify
-    /// silently loses the centring the chart had.
+    /// Attention: <see cref="HorizontalAlignment.Justify"/> is neither refused <b>nor</b>
+    /// honoured. It falls through to left alignment. That costs more here than elsewhere, because
+    /// the default is <see cref="HorizontalAlignment.Center"/>: asking for justify loses the
+    /// centring you already had, and nothing reports it.
     /// </remarks>
     public HorizontalAlignment Alignment { get; init; } = HorizontalAlignment.Center;
 
@@ -102,10 +102,11 @@ public sealed class PieChart
     /// (12 o'clock).
     /// </summary>
     /// <remarks>
-    /// <b>A non-finite angle is refused.</b> Laying the chart out throws
-    /// <see cref="ArgumentException"/> naming <c>StartAngle</c>.
-    /// <para>Radians, not degrees, and no range is imposed: a value outside 0 to 2π is accepted
-    /// and wraps, so there is no need to normalise one. The default of π/2 starts at the top.</para>
+    /// A non-finite angle is refused. Laying the chart out throws
+    /// <see cref="ArgumentException"/> and names <c>StartAngle</c>.
+    /// <para>The unit is radians, not degrees. No range is imposed: a value outside 0 to 2π is
+    /// accepted and wraps, so you do not have to normalise one yourself. The default of π/2
+    /// starts the first slice at the top.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised while the chart is laid out, which happens inside <see cref="Document.Save(System.IO.Stream)"/>,

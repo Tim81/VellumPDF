@@ -28,12 +28,15 @@ public sealed class LayoutImage
     /// <para><b>Do not pass a negative width.</b> It is not refused today and mirrors the image
     /// horizontally, which is a side effect of the transformation matrix rather than a supported
     /// way to flip an image. A later major version will reject it.</para>
-    /// <para><b>The zero check is on the written token, not the value.</b>
-    /// <c>PdfCanvas</c> formats coordinates to five decimals, so anything under 5e-6 in magnitude
-    /// is written as <c>0</c> and the matrix is singular whatever the value held. Measured at the
-    /// boundary: 5e-6 writes <c>0.00001</c>, 4.9e-6 writes <c>0</c>. At that boundary the message
-    /// names the <i>height</i>, not the width, because the height is derived from the width and
-    /// collapses first.</para>
+    /// <para>NOTE: the check is on the token written, not on the value held. <c>PdfCanvas</c>
+    /// formats coordinates to five decimals, so any magnitude below 5e-6 is written as <c>0</c>
+    /// and the matrix is singular whatever you passed. At the boundary, 5e-6 writes
+    /// <c>0.00001</c> and 4.9e-6 writes <c>0</c>.</para>
+    /// <para>The width is validated before the height, so a width under the boundary is always
+    /// what the message names, whatever the source image's aspect ratio. Above the boundary it is
+    /// the other way round: a width that is legal but small collapses the derived height of a
+    /// non-square image, and then the height is named. A width of 5e-6 on a 100 by 1 source
+    /// reports a height of 0.0000001.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property, for zero, for a magnitude under 5e-6, and for NaN or negative infinity. Positive infinity is clamped to the content box instead and does not throw.
@@ -52,10 +55,11 @@ public sealed class LayoutImage
     /// <see cref="Width"/>: the emitted transformation matrix is either singular or not made of PDF
     /// numbers. <b>Do not pass a negative height</b>; it is not refused today and flips the image
     /// vertically as a side effect.</para>
-    /// <para>Anything under 5e-6 in magnitude is refused too, for the reason given on
-    /// <see cref="Width"/>: the canvas writes it as the token <c>0</c>.</para>
-    /// <para>Setting both this and <see cref="Width"/> overrides the aspect ratio rather than
-    /// fitting inside the pair, so the image is distorted if the two disagree with it.</para>
+    /// <para>Any magnitude below 5e-6 is refused too. The canvas writes it as the token
+    /// <c>0</c>, as described on <see cref="Width"/>.</para>
+    /// <para>Attention: setting both this and <see cref="Width"/> overrides the aspect ratio. The
+    /// image is not fitted inside the pair, so it is distorted whenever the two disagree with its
+    /// own proportions. If you want it fitted, set one and leave the other null.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property, for zero, for a magnitude under 5e-6, and for any non-finite value.

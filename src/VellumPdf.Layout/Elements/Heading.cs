@@ -23,13 +23,13 @@ public sealed class Heading
     /// above 5 is tagged <c>H6</c>. That ceiling is this library's, not the format's: ISO 32000-2
     /// Table 366 defines <c>Hn</c> for any unsigned integer from 1 upward, and its NOTE 2 says
     /// outright that <c>H7</c> may be used for a seventh-level heading.
-    /// <para><b>Do not pass a negative level.</b> It is not refused, and it does not clamp the
-    /// way a reader would expect: the mapping's catch-all sends it to <c>H6</c>, the deepest
-    /// type, where a caller means the shallowest. The raw value also reaches the outline
-    /// builder, so the bookmark tree nests on it. A later major version will reject it.</para>
-    /// <para><b>Do not rely on a very large level for depth.</b> Everything from 5 upward is the
-    /// same <c>H6</c> tag, so assistive technology cannot tell level 5 from level 500, while the
-    /// outline still nests on the number given.</para>
+    /// <para>Attention: a negative level is <b>not</b> refused, and it does not clamp the way
+    /// you would expect. The mapping's catch-all sends it to <c>H6</c>, the deepest tag, where
+    /// you almost certainly meant the shallowest. The raw value also reaches the outline builder,
+    /// so your bookmark tree nests on it. A later major version will reject it.</para>
+    /// <para>Every level from 5 upward is the same <c>H6</c> tag. Assistive technology therefore
+    /// cannot tell level 5 from level 500, while the outline still nests on the number you gave.
+    /// Do not use a large level to express depth.</para>
     /// </remarks>
     public int Level { get; init; }
 

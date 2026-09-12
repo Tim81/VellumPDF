@@ -23,13 +23,14 @@ public sealed class TableElement
 
     /// <summary>Width of the table border lines, in points.</summary>
     /// <remarks>
-    /// <b>A non-finite width is refused.</b> <see cref="Document.Save(System.IO.Stream)"/>
-    /// throws <see cref="InvalidOperationException"/> naming the table.
-    /// <para><b>Do not use zero to hide the borders.</b> Zero is accepted and asks the device
-    /// for its thinnest line rather than for nothing, so the grid is still drawn and grows
-    /// heavier as the page is scaled down. There is at present no way to draw a table without a
-    /// grid: every cell is stroked unconditionally, and <see cref="BorderColor"/> is not
-    /// nullable, so the nearest available approximation is a border colour matching the page.</para>
+    /// A non-finite width is refused. <see cref="Document.Save(System.IO.Stream)"/> throws
+    /// <see cref="InvalidOperationException"/> and names the table.
+    /// <para>Attention: zero does <b>not</b> hide the borders. It asks the device for its
+    /// thinnest line, so the grid is still drawn, and it grows heavier as the page is scaled
+    /// down.</para>
+    /// <para>There is at present <b>no</b> way to draw a table without a grid. Every cell is
+    /// stroked unconditionally and <see cref="BorderColor"/> is not nullable. If you need a
+    /// gridless table, the nearest you can get is a border colour matching the page.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property, when the width is not finite. The message names the table.

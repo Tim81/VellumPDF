@@ -37,15 +37,16 @@ public sealed class ListElement
 
     /// <summary>Points of indent for each list level.</summary>
     /// <remarks>
-    /// <b>Do not set an indent at or beyond the content width.</b> It is not refused. The marker
-    /// is drawn and the item text is discarded, so the list renders as a column of bullets with
-    /// no content, and nothing reports the loss (#476).
-    /// <para>A marker wider than the indent does <b>not</b> overprint the item text: the
-    /// gutter is widened to the marker's own width, per item. With roman numerals at the default
-    /// style the first marker to exceed a 20-point indent is item 17, and from there each item's
-    /// text starts further right than its neighbours'. The one case that still overprints is the
-    /// narrow fallback, where widening the gutter would leave less room than the longest word in
-    /// the item, and the gutter reverts to the indent.</para>
+    /// Attention: an indent at or beyond the content width is <b>not</b> refused. The marker
+    /// is drawn and the item text is discarded. The list then renders as a column of bullets with
+    /// no content, and nothing reports the loss (#476). Keep the indent well below the content
+    /// width.
+    /// <para>A marker wider than the indent does not overprint the item text. The gutter is
+    /// widened to the marker's own width, per item. With roman numerals at the default style the
+    /// first marker to exceed a 20-point indent is item 17; from there each item's text starts
+    /// further right than its neighbours'. One case still overprints: where widening the gutter
+    /// would leave less room than the item's longest word, the gutter reverts to the
+    /// indent.</para>
     /// </remarks>
     public double Indent { get; init; } = 20;
 

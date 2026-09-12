@@ -32,13 +32,14 @@ public sealed class TextStyle
     /// The font size in points. Defaults to 12. Must be a finite number.
     /// </summary>
     /// <remarks>
-    /// <b>A non-finite size is refused.</b> <see cref="Document.Save(System.IO.Stream)"/> throws
-    /// <see cref="InvalidOperationException"/> naming the size, because every height derived from
-    /// it is also non-finite and nothing can be measured or placed.
-    /// <para><b>Do not pass zero or a negative size.</b> Neither is refused today: both reach the
-    /// content stream as a font operator a reader accepts, so a document is produced, but a size of
-    /// zero shows nothing and a negative size inverts the glyphs. A later major version will reject
-    /// both.</para>
+    /// A non-finite size is refused. <see cref="Document.Save(System.IO.Stream)"/> throws
+    /// <see cref="InvalidOperationException"/> and names the size. Every height in a layout is
+    /// derived from the font size, so a non-finite size leaves nothing that can be measured or
+    /// placed.
+    /// <para>Attention: a size of zero or less is <b>not</b> refused. It reaches the content
+    /// stream as a font operator that readers accept, so you still get a document. At zero the
+    /// text is invisible. Below zero the glyphs are inverted. If you do not want either, check the
+    /// value before you set it. A later major version will reject both.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from a save rather than from this property, when the size is not finite. The
@@ -50,11 +51,11 @@ public sealed class TextStyle
     /// The line leading in points; 0 (the default) means auto, which is the font size times 1.2.
     /// </summary>
     /// <remarks>
-    /// Any value at or below zero selects the automatic leading, so there is no way to ask for
-    /// lines that overlap exactly.
-    /// <para><b>Do not pass a non-finite value.</b> It is not refused today and does not reach the
-    /// content stream, so the page is emitted with the text placed as though the leading were
-    /// automatic. A later major version will reject it.</para>
+    /// Any value at or below zero selects the automatic leading. There is therefore no way to
+    /// ask for lines that overlap exactly.
+    /// <para>Attention: a non-finite value is <b>not</b> refused, and it does not reach the
+    /// content stream either. The page is emitted with the text placed as though you had asked
+    /// for automatic leading. A later major version will reject it.</para>
     /// </remarks>
     public double Leading { get; init; } = 0;  // 0 = auto (font-size * 1.2)
 
