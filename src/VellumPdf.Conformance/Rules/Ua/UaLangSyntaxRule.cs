@@ -16,10 +16,17 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// <remarks>
 /// Authored from ISO 14289-1:2014, 7.2 (CosLang predicate:
 /// <c>/^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*$/.test(unicodeValue)</c>) and empirically validated
-/// against veraPDF 1.30.2 (test id 7.2-29). Clean-room: derived from the specification text,
-/// not from any third-party validation profile.
+/// against veraPDF 1.30.2 (test id 7.2-29).
 ///
-/// Attention: this pattern and that predicate disagree on one input. .NET's <c>$</c> matches
+/// NOTE on provenance, corrected: an earlier version of this comment claimed the rule was derived
+/// from the specification text and not from any third-party validation profile. That cannot be
+/// true of a rule whose own citation above is <c>CosLang</c>, which is veraPDF's model object and
+/// not anything ISO 14289-1 names. The pattern came from that predicate. NOTICE records the same
+/// correction for the rule set as a whole, and the sweep of the other rule files carrying this
+/// sentence is #418.
+///
+/// Attention: this pattern and that predicate disagree on a whole family of inputs, any tag
+/// followed by a line feed. .NET's <c>$</c> matches
 /// before a single trailing newline, so a <c>/Lang</c> of <c>en</c> followed by a line feed is
 /// accepted here and rejected by the predicate, where ECMAScript's <c>$</c> asserts end of input.
 /// The divergence is a false accept and is recorded as D6 in

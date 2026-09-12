@@ -26,8 +26,9 @@ namespace VellumPdf.Conformance.Rules.Structure;
 ///         (veraPDF explicitly allows it per the predicate <c>unicodeValue == ''</c>).</item>
 /// </list>
 ///
-/// 
-/// Attention: this pattern and that predicate disagree on one input. .NET's <c>$</c> matches
+///
+/// Attention: this pattern and that predicate disagree on a whole family of inputs, any tag
+/// followed by a line feed. .NET's <c>$</c> matches
 /// before a single trailing newline, so a <c>/Lang</c> of <c>en</c> followed by a line feed is
 /// accepted here and rejected by the predicate, where ECMAScript's <c>$</c> asserts end of
 /// input. The divergence is a false accept and is recorded as D6 in
@@ -62,18 +63,19 @@ internal sealed class A2aLangSyntaxRule : IConformanceRule
     // Raising the number would move the flake rather than remove it. This pattern does not need
     // a guard at all: the hyphen is in neither subtag character class, so once {1,8} gives back a
     // character the next one is an alnum rather than a hyphen and the alternative dies at once.
-    // Backtracking is bounded by eight attempts per subtag. Measured over 1,340,413 inputs,
-    // including exhaustive enumeration over four alphabets and stressors of 19,000,002
-    // characters: the engines agree on every one.
+    // Backtracking is bounded by eight attempts per subtag. Two independent differential runs,
+    // each over a million inputs -- exhaustive enumeration over small alphabets including one
+    // with a newline in it, randomised tags, and stressors of nineteen million characters --
+    // found the interpreted, compiled and non-backtracking engines agreeing on every input.
     //
     // NOTE on the worst case, because it is easy to reproduce the wrong shape. The nine-character
     // subtag chains that the argument above reasons about, and that
-    // LangRule_chainedOverlongSubtags builds, are refused in under 0.002 ms at any length -- they
-    // fail immediately, which is the point. The slowest input found is a *matching* one built
-    // from single-character subtags ("en-a-a-a-..."): 33.9 ms for ten million characters on the
-    // JIT, 130.7 ms under AOT. So the headroom over the 50 ms this used to allow is about 15 MB
-    // of /Lang on the JIT and about 3.8 MB under AOT. Neither is a threat; both are far past any
-    // language tag.
+    // LangRule_chainedOverlongSubtags builds, are refused in microseconds at any length -- they
+    // fail immediately, which is the point. What costs anything is a *matching* tag built from
+    // single-character subtags ("en-a-a-a-..."), and even that runs at a few nanoseconds per
+    // character, so burning the 50 ms the timeout allowed takes megabytes of /Lang. Two
+    // independent measurements of that peak disagreed by a factor of four, both of them far
+    // outside any language tag, so no single figure is quoted here.
     //
     // So the switch is not about this pattern running away. Two other things decide it.
     //
