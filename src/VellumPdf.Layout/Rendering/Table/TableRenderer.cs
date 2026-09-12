@@ -75,7 +75,8 @@ public sealed class TableRenderer : IRenderer
             _rowHeights[r] = maxH;
         }
 
-        // Find header row indices (may not be contiguous at top; use actual IsHeader rows)
+        // The repeatable header is the leading contiguous run of IsHeader rows — see
+        // FindHeaderRowIndices for why a header row elsewhere in the table is not part of it.
         var headerRowIndices = FindHeaderRowIndices(rows);
         var headerHeight = headerRowIndices.Sum(i => _rowHeights[i]);
         var lastHeaderRow = headerRowIndices.Count > 0 ? headerRowIndices[^1] + 1 : 0;
@@ -129,7 +130,13 @@ public sealed class TableRenderer : IRenderer
     /// <summary>Draws cell backgrounds, borders and text (repeating header rows) and builds the tagged Table struct tree when tagging is enabled.</summary>
     public void Draw(DrawContext ctx)
     {
-        var area = _occupied.Deflate(_table.Margins.Left, _table.Margins.Top, _table.Margins.Right, 0);
+        // Layout already deflated context.Area by _table.Margins and stored the result in
+        // _occupied; deflating again here took the table's own margin out of the box twice. The
+        // vertical half was the one that lost content rather than merely shifting it: _occupied's
+        // height is exactly the rows that fit, with no margin allowance baked in, so a second top
+        // deflate ate into that height directly and past a margin equal to the row's own height
+        // left nothing to draw.
+        var area = _occupied;
         var style = _table.DefaultCellStyle ?? TextStyle.Default;
         var rows = _table.Rows;
 
@@ -148,7 +155,8 @@ public sealed class TableRenderer : IRenderer
 
         var rowY = area.Y;
 
-        // Draw actual header rows (wherever they appear)
+        // Draw the leading contiguous run of header rows; every later row, header-flagged or not,
+        // is drawn by the data loop below.
         foreach (var hi in headerRowIndices)
         {
             var trElem = tableElem is not null ? new PdfStructElem("TR") : null;
@@ -376,12 +384,27 @@ public sealed class TableRenderer : IRenderer
         canvas.ShowGlyphs(gids.AsSpan(0, count));
     }
 
-    /// <summary>Returns the indices of all header rows in the table, in order.</summary>
+    /// <summary>
+    /// Returns the indices of the leading contiguous run of header rows. The two loops in
+    /// <see cref="Draw"/> partition the rows whenever this list is a prefix of them, and the
+    /// leading contiguous run is the longest prefix that holds header rows alone; a header row
+    /// elsewhere in the table draws as an ordinary row instead of extending it.
+    ///
+    /// This method used to collect every <c>IsHeader</c> row wherever it sat in the table, so
+    /// <c>dataStartRow</c> — set from this list's last index — started past the *last* header while
+    /// the header loop still only drew the rows the list held. A header after a data row (index 2 in
+    /// the fixture below) then left the row between them reached by neither loop: header H0, data
+    /// D1, header H2, data D3 drew H0, H2 and D3, and D1 never reached either loop. Stopping at the
+    /// first non-header row closes that gap.
+    /// </summary>
     private static List<int> FindHeaderRowIndices(IReadOnlyList<Row> rows)
     {
         var indices = new List<int>();
         for (var i = 0; i < rows.Count; i++)
-            if (rows[i].IsHeader) indices.Add(i);
+        {
+            if (!rows[i].IsHeader) break;
+            indices.Add(i);
+        }
         return indices;
     }
 

@@ -411,8 +411,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   **One consequence of measuring the cell correctly is a new way to fail rather than a new way to
   draw.** Hard-breaking an over-wide cell word (above) can make a row taller than the page has
   room for, where the base drew the overrun off the page instead of refusing it. Measured, a
-  100pt column with zero padding on a 400x200pt page, a cell holding 300 "W"s at the default
-  10pt: the base drew one line past the page edge; this pull request hard-breaks it into enough
+  100pt column with zero padding on a 400x200pt page, a cell holding 300 "W"s at 10pt
+  (the fixture's own explicit size; `TextStyle.FontSize` defaults to 12): the base drew one line past the page edge; this pull request hard-breaks it into enough
   lines that the row no longer fits a 200pt page height, and `Document.Save` now raises "An
   element is too tall to fit on a single page and cannot be rendered." where it previously
   produced a document. This is not a new exception type and not new validation — `DocumentRenderer`
@@ -423,6 +423,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   The row axis, the spans, and the list defects this same plan identified are a separate pull
   request; three corpus fixtures pin that a header row's own position, a table whose margin
   exceeds its row height, and a two-row rowspan are all unmoved by this one.
+
+- **A data row before a later header row was drawn by neither of `TableRenderer`'s two draw loops,
+  and a table's own margins were deflated a second time on top of `Layout`'s (#480).** The row
+  axis this same plan identified, following on from the column fixes above.
+
+  `FindHeaderRowIndices` collected every `IsHeader` row wherever it sat in the table, so
+  `dataStartRow` — `headerRowIndices[^1] + 1` — always started past the *last* header while the
+  header loop only ever drew the rows that list held. Measured on page 400x300 at a 10pt document
+  margin, rows H0 (header), D1 (data), H2 (header), D3 (data): before this fix H0, H2 and D3 drew
+  and D1 reached neither loop; it now draws all four, since a header after a data row is treated as
+  an ordinary row instead of extending the repeatable run. `AddRow` and `AddHeaderRow` document
+  that narrower guarantee now: a header row repeats across continuation pages only while it belongs
+  to the table's leading contiguous run.
+
+  `Layout` deflated `context.Area` by `_table.Margins` and stored the result in `_occupied`; `Draw`
+  deflated `_occupied` by the left, top and right margins a second time. Below the row's own height
+  this shifted the table on both axes rather than losing anything: measured on the same page and
+  document margin, one row, a 10pt table margin put the cell text's origin at x 36 rather than 26,
+  which is the document margin plus the table margin twice plus the cell's own 6pt left padding.
+  At or above the row's height the row was lost outright, because `_occupied`'s height holds exactly
+  the rows that fit with no margin allowance in it, so the second top deflate ate into that height
+  directly. The threshold is exact rather than approximate. Sweeping integer table margins from 0 to
+  60 on a single-cell table, the first margin that draws no text at all is 20, 32 and 44 at font
+  sizes 10, 20 and 30, which is the emitted row height in each case (`FontSize * 1.2` plus the
+  cell's default 8pt vertical padding). After the fix every margin across that sweep draws its row.
+
+  **What this moves for a document that renders today.** Every table with a non-zero left or top
+  margin shifts by exactly that margin, because `Draw` now reads `_occupied` directly. A right or
+  bottom margin moves nothing, since neither took part in positioning. A caller who compensated for
+  the doubling by halving their own table margin will see their table move.
+
+  `Layout`'s geometric stop test is unchanged. Replacing it with an explicit end-row field was
+  proposed on the grounds that the test drops a row once the geometry drifts. Sweeping page heights
+  from 60 to 400 in quarter-point steps against table margins 0 to 19.75 in the same steps, 108,880
+  documents holding a twelve-row table: 107,320 rendered and drew all twelve rows, 1,560 raised the
+  too-tall exception because a 20pt row does not fit what a large table margin leaves of a short
+  page, and none drew a wrong number of rows. There is no known input it loses a row on.
 
 - **A running band wider than the content box was drawn off the page (#365).** `DrawBandText`
   measured the whole resolved template, positioned it by an alignment formula that had never been

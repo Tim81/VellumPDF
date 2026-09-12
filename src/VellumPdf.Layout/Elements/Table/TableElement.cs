@@ -9,7 +9,8 @@ namespace VellumPdf.Layout.Elements.Table;
 /// A grid-layout table element. Supports:
 ///   • Fixed column widths or auto-sizing (min/max pre-pass)
 ///   • Column and row spanning
-///   • Cross-page splitting with repeating header rows
+///   • Cross-page splitting, with the table's leading contiguous run of header rows repeated at
+///     the top of each continuation page
 ///   • Collapsed (shared) border rendering
 /// </summary>
 public sealed class TableElement
@@ -43,7 +44,11 @@ public sealed class TableElement
         return this;
     }
 
-    /// <summary>Appends a new row, optionally flagged as a repeating header, and returns it.</summary>
+    /// <summary>
+    /// Appends a new row, optionally flagged as a header, and returns it. A header row repeats at
+    /// the top of each continuation page only while it belongs to the table's leading contiguous
+    /// run of header rows; a header row added after a data row draws once, where it occurs.
+    /// </summary>
     public Row AddRow(bool isHeader = false)
     {
         var row = new Row { IsHeader = isHeader };
@@ -51,7 +56,10 @@ public sealed class TableElement
         return row;
     }
 
-    /// <summary>Appends a new repeating header row and returns it.</summary>
+    /// <summary>
+    /// Appends a new header row and returns it. See <see cref="AddRow"/> for when a header row
+    /// repeats across continuation pages.
+    /// </summary>
     public Row AddHeaderRow()
     {
         var row = new Row { IsHeader = true };
