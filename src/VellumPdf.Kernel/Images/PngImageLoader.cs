@@ -38,10 +38,12 @@ public static class PngImageLoader
     /// <see cref="NullReferenceException"/> rather than
     /// <see cref="ArgumentNullException"/> — measured, not inferred — and a caller guarding on the
     /// documented type will not catch it. A later major version will check it.</para>
-    /// <para><b>The size limits are a decode guard, not a policy you can raise.</b> A declared
-    /// pixel count above 100,000,000 is refused, and so is any edge above 1,000,000 pixels, so
-    /// that a few bytes of header cannot drive a multi-gigabyte allocation. Both are internal
-    /// constants with no public setting.</para>
+    /// <para><b>One size limit applies here, not two.</b> A declared pixel count above
+    /// 100,000,000 is refused, so that a few bytes of header cannot drive a multi-gigabyte
+    /// allocation. There is a second constant bounding each edge at 1,000,000, but it is read
+    /// only by the MMR decoder behind CCITT and JBIG2 and is <b>not</b> applied here: an image
+    /// declaring one edge of 1,000,001 and a total under the pixel cap loads. Both constants are
+    /// internal, with no public setting.</para>
     /// </remarks>
     public static PdfImageXObject Load(byte[] pngBytes) => Load(pngBytes, ImageLoadOptions.Default);
 

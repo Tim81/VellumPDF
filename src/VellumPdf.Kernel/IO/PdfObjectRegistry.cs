@@ -44,15 +44,23 @@ public sealed class PdfObjectRegistry
 
     /// <summary>Assigns (or replaces) the value for a previously reserved reference.</summary>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// <paramref name="reference"/> was not allocated by this registry.
+    /// <paramref name="reference"/>'s object number falls outside 1 to the number of references
+    /// this registry has allocated.
     /// </exception>
     /// <remarks>
-    /// <b>Only a reference this registry handed out may be set.</b> Object numbers are positions
-    /// in this registry's own list, so a reference from another registry, or one made by hand, is
-    /// refused rather than silently written into the wrong slot.
-    /// <para><b>Do not rely on this to detect an unset reference.</b> Reserving a reference and
-    /// never setting it is not an error here: it surfaces later, when the document is written, as
-    /// a missing object. Set every reference you reserve.</para>
+    /// <b>This is a range check, not a provenance check, and the exception message overstates
+    /// it.</b> The message reads "Reference was not allocated by this registry", but all that is
+    /// compared is the object number against the count of references allocated. A reference from
+    /// a different registry, or one built with the public
+    /// <see cref="PdfIndirectReference(int)"/> constructor, is accepted whenever its number
+    /// happens to fall in range — measured, and the value lands in this registry's slot of that
+    /// number, which is exactly the wrong-slot write the check looks like it prevents.
+    /// <para><b>So do not pass a reference from anywhere but this registry's own
+    /// <c>Reserve</c>.</b> Nothing downstream can tell the difference.</para>
+    /// <para><b>Reserving a reference and never setting it is not detected here.</b> It is
+    /// detected at write time, and loudly: writing throws
+    /// <see cref="InvalidOperationException"/> naming the object number. It does not produce a
+    /// document with a missing object. Set every reference you reserve.</para>
     /// </remarks>
     public void SetValue(PdfIndirectReference reference, PdfObject value)
     {
@@ -75,6 +83,11 @@ public sealed class PdfObjectRegistry
     /// invoked after the object is written (e.g. to restore writer state).
     /// Returning null from the delegate means no cleanup is needed.
     /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// A reference was reserved and never assigned a value. The message names the object number.
+    /// Nothing is written for that object, so the output is abandoned rather than left with a
+    /// gap.
+    /// </exception>
     public void WriteAll(PdfWriter writer, CrossReferenceBuilder xref, Func<int, Action?>? preWrite)
     {
         for (var i = 0; i < _values.Count; i++)
