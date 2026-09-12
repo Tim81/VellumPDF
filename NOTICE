@@ -65,9 +65,9 @@ Graphics Interchange Format (GIF)
     redefine, enhance, alter, modify or change in any way the definition of the
     format.
 
-  This project defines nothing: the decoder and the encoder both read the format
-  as that clause defines it. The next paragraph is the grant that asks for the
-  acknowledgement above, quoted whole:
+  This project defines nothing: the decoder reads the format and the encoder
+  writes it, both as that clause defines it. The next paragraph is the grant
+  that asks for the acknowledgement above, quoted whole:
 
     CompuServe Incorporated hereby grants a limited, non-exclusive,
     royalty-free license for the use of the Graphics Interchange Format(sm) in
@@ -86,11 +86,13 @@ Graphics Interchange Format (GIF)
           CompuServe Incorporated."
 
   The second route, the screen or printer banner, is the one for software
-  shipped without documentation. These are libraries with no screen of their
-  own, and this file, the repository README and each package README are the
-  documentation they ship, so the first route is the one taken. The rest of
-  clause 3 is a 1990 postal address and a mailing-list offer, neither of which
-  bears on the obligation.
+  shipped without documentation. Seven of the eight packages are libraries with
+  no screen of their own; the eighth, VellumPdf.Cli, is an executable and the
+  only one of the eight for which that route would even apply. This file is
+  packed into all eight regardless, so the first route is taken uniformly
+  rather than singling the command-line tool out for a banner it does not
+  need. The rest of clause 3 is a 1990 postal address and a mailing-list
+  offer, neither of which bears on the obligation.
 
 ────────────────────────────────────────────────────────────────────────────────
 Third-party data bundled in this product

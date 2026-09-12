@@ -70,7 +70,7 @@ public sealed class GifSpecificationTests
     /// No row's expected value is its own row number, deliberately. The destination buffer starts
     /// zeroed, so with values 0..7 in display order a pass that never writes row 0 still reads
     /// back 0 there and the test passes: changing the first pass's start row from 0 to 1 left it
-    /// green. Shifting every value by one removes that coincidence — row 0 expects 1, and an
+    /// green. Shifting every value by one removes that coincidence: row 0 expects 1, and an
     /// unwritten row reads 0.
     /// </summary>
     [Fact]
@@ -165,7 +165,7 @@ public sealed class GifSpecificationTests
     /// for the previous string followed by that string's own first byte; put the byte at the
     /// front instead and you get the first byte followed by the string. When the string is a run
     /// of one symbol those are the same string, so runs of three reach the case constantly and
-    /// produce identical pixels either way — measured on the encoder's own bytes: 200
+    /// produce identical pixels either way. Measured on the encoder's own bytes: 200
     /// occurrences, 0 pixels different. A two-symbol string is the shortest for which the two
     /// differ, and alternating pairs give 18 occurrences and 200 differing pixels of 851
     /// progressive, 13 and 128 interlaced.
@@ -247,9 +247,59 @@ public sealed class GifSpecificationTests
     }
 
     /// <summary>
+    /// Section 18 and section 20 both hold a dimension in two bytes, so 65536 cannot be written.
+    /// The check runs before <see cref="GifEncoder"/> builds a palette, so an oversized raster is
+    /// refused for its own size and names the dimension actually at fault rather than the
+    /// unrelated <c>rgb</c> array.
+    /// </summary>
+    [Theory]
+    [InlineData(65536, 1, "width")]
+    [InlineData(1, 65536, "height")]
+    public void Encode_dimensionExceeds65535_namesTheOffendingDimension(int width, int height, string expectedParamName)
+    {
+        var rgb = new byte[(long)width * height * 3];
+
+        var ex = Assert.Throws<ArgumentException>(() => GifEncoder.Encode(rgb, width, height));
+
+        Assert.Equal(expectedParamName, ex.ParamName);
+    }
+
+    /// <summary>
+    /// Section 18's Size of Global Color Table field holds N so the table can hold 2^(N+1)
+    /// entries, and <see cref="GifEncoder"/> grows N only as far as the palette needs: one entry
+    /// short and the last colour has no slot. A palette of 2^k+1 colours is exactly that boundary,
+    /// one past the table size a smaller N would give, and no fixture anywhere in this file used
+    /// one: the encoder's own palettes elsewhere are 2, 4, 200, 256 and the 257 that gets refused,
+    /// none of them 2^k+1. A table one bit short truncates the last colour, and this package's own
+    /// decoder then refuses the file it just wrote.
+    /// </summary>
+    [Theory]
+    [InlineData(3)]
+    [InlineData(5)]
+    [InlineData(9)]
+    [InlineData(17)]
+    [InlineData(33)]
+    [InlineData(65)]
+    [InlineData(129)]
+    public void Encode_thenDecode_paletteSizeOneMoreThanAPowerOfTwo_roundTrips(int paletteSize)
+    {
+        var rgb = new byte[paletteSize * 3];
+        for (var i = 0; i < paletteSize; i++)
+        {
+            rgb[i * 3] = (byte)i;
+            rgb[i * 3 + 1] = (byte)(i / 2);
+            rgb[i * 3 + 2] = (byte)(255 - i);
+        }
+
+        var gif = GifEncoder.Encode(rgb, paletteSize, 1);
+
+        Assert.Equal(rgb, DecodeRgb(gif, paletteSize, 1));
+    }
+
+    /// <summary>
     /// Appendix F, under COMPRESSION, item 1: the Clear code "can appear at any point in the
     /// image data stream and therefore requires the LZW algorithm to process succeeding codes as
-    /// if a new data stream was starting" -- so the table and the code width both start again from
+    /// if a new data stream was starting," so the table and the code width both start again from
     /// it, not only at the beginning.
     ///
     /// This package's encoder does emit one mid-stream, when the table fills, and
@@ -263,8 +313,8 @@ public sealed class GifSpecificationTests
     /// the reset has a width to undo, and the decode must still be the original indices.
     ///
     /// The first four values are chosen, not arbitrary. Swept over 1 to 130 on this fixture, the
-    /// helper's own earlier defect -- skipping the table entry and the width growth before the
-    /// Clear -- produces a stream that fails to decode at exactly eight values: 6, 7, 22, 23, 54,
+    /// helper's own earlier defect, skipping the table entry and the width growth before the
+    /// Clear, produces a stream that fails to decode at exactly eight values: 6, 7, 22, 23, 54,
     /// 55, 118 and 119. Every other value produces different bytes that still decode, so a test
     /// using one of those cannot fail if the defect returns. The last value, 20, is one of those
     /// and is kept deliberately, as the ordinary case where a mid-stream Clear is simply read.
@@ -296,14 +346,15 @@ public sealed class GifSpecificationTests
     /// under COMPRESSION: a Clear code first (item 1, a should), an End of Information code last
     /// (item 2, "It must be the last code output by the encoder for an image"), and a width that
     /// starts at the code size plus one and runs "up to 12 bits per code. This defines a maximum
-    /// code value of 4095" (item 4). Nothing there says what an encoder does when the table
-    /// fills; item 1 lets a Clear code appear at any point, and starting the table again is the
-    /// only way left to keep the width inside 12 bits, so that is what the assertion below reads.
+    /// code value of 4095" (item 4). The cover sheet gives an encoder two options once the table
+    /// fills: hold it at the maximum code size and keep using it as it stands, or clear it, and
+    /// item 1 lets a Clear code appear at any point. This package's encoder takes the second
+    /// option, the older and more widely understood one, and that is what the assertion below reads.
     ///
     /// A round trip proves none of this: this decoder and this encoder share the convention, so a
     /// matched change to both stays green. Dropping the table-full Clear, dropping the leading
     /// Clear, moving the width growth either way and lowering the minimum code size each left the
-    /// whole Kernel suite green while producing a file an independent decoder rejects.
+    /// whole Kernel suite green while producing a file Pillow rejects.
     /// </summary>
     [Fact]
     public void Encode_writesACodeStreamAppendixFAccepts()
@@ -326,11 +377,11 @@ public sealed class GifSpecificationTests
         var eoi = clear + 1;
         var codes = ReadCodes(gif);
 
-        Assert.Equal(clear, codes[0]);                       // clause 1
-        Assert.Equal(eoi, codes[^1]);                        // clause 2
+        Assert.Equal(clear, codes[0]);                       // COMPRESSION item 1
+        Assert.Equal(eoi, codes[^1]);                        // COMPRESSION item 2
         Assert.Equal(1, codes.Count(c => c == eoi));         // and nowhere else
 
-        // Walk the table the way clause 4 describes and check every code fits the width in force
+        // Walk the table the way COMPRESSION item 4 describes and check every code fits the width in force
         // when it was written. A code wider than that is unreadable, which is the defect this
         // whole file exists for, in the other direction.
         // What can and cannot be asserted here is worth stating, because the obvious assertion
@@ -338,7 +389,7 @@ public sealed class GifSpecificationTests
         // "no code is wider than the current width" is true however the encoder behaves, and a
         // matched drift in both would pass it. What does discriminate is the table bound: a code
         // at or above the next free entry cannot be resolved by any decoder, and it fires when
-        // GifEncoder's width rule moves in either direction -- measured, five failures each way.
+        // GifEncoder's width rule moves in either direction: measured, five failures each way.
         //
         // No literal known answer covers GifEncoder. The one in
         // EncodeLzw_writesTheCodeSequenceAppendixFRequires goes through BuildGif, so it pins the
@@ -375,13 +426,13 @@ public sealed class GifSpecificationTests
 
     /// <summary>
     /// Appendix F, under ESTABLISH CODE SIZE: "black &amp; white images which have one color bit
-    /// must be indicated as having a code size of 2." One bit would leave no room for the Clear
-    /// and End of Information codes above the two palette entries, so the floor is not a rounding
-    /// convenience.
+    /// must be indicated as having a code size of 2." A code size of 1 starts the width at 2
+    /// bits, which does fit Clear (2) and End of Information (3); what does not fit is the first
+    /// free code, 4, which needs a third bit. So the floor is not a rounding convenience.
     ///
     /// <c>Encode_writesTheBlocksTheGrammarRequires</c> reads the header, the separator and the
     /// trailer but never this byte, and lowering the floor to 1 left the whole Kernel suite green
-    /// while producing a file an independent decoder calls truncated.
+    /// while producing a file Pillow calls truncated.
     /// </summary>
     [Fact]
     public void Encode_twoColourImage_writesMinimumCodeSizeTwo()
@@ -424,6 +475,49 @@ public sealed class GifSpecificationTests
 
         Assert.Equal("GIF87a"u8.ToArray(), gif[..6]);
         Assert.Equal(pixels, DecodeToIndices(gif, 4, 4, paletteEntries: 4));
+    }
+
+    // ── Graphic Control Extension scope (section 12, section 23) ────────────
+
+    /// <summary>
+    /// Section 23: a Graphic Control Extension's scope is "the first graphic rendering block to
+    /// follow". Section 12 sorts block labels into three ranges so a decoder can tell a scope's
+    /// end even from a block it does not otherwise parse, and the Plain Text Extension, 0x01,
+    /// sits in the Graphic-Rendering range that closes it.
+    ///
+    /// Nothing reset the pending transparent index when that intervening block went by, so a
+    /// transparency meant for one image leaked onto the next. The fixture puts a transparent
+    /// index of 1 on a Graphic Control Extension, a Plain Text Extension after it, and an image
+    /// descriptor whose pixels include that index: without the fix this decodes with a soft mask
+    /// alternating 0/255, and with it there is no soft mask at all, because nothing between the
+    /// extension and this image descriptor still claims that index.
+    /// </summary>
+    [Fact]
+    public void Decode_graphicRenderingExtension_closesAPendingTransparentIndex()
+    {
+        byte[] indices = [1, 2, 1, 2, 1, 2, 1];
+        var gif = BuildGifWithGceThenPlainTextThenImage(indices, transparentFlag: 1, transparentIndex: 1, secondGce: false);
+
+        var img = GifImageLoader.Load(gif);
+
+        Assert.Null(img.SMask);
+    }
+
+    /// <summary>
+    /// The same leak survives a second, conforming Graphic Control Extension placed right before
+    /// the image descriptor, if that extension's own transparency flag is clear and nothing resets
+    /// the index on that path either: the stale value from the first extension keeps winning.
+    /// This and the case above are the two measured failures behind the fix; both must be gone.
+    /// </summary>
+    [Fact]
+    public void Decode_gceWithTransparencyFlagClear_resetsAStaleIndexFromAnEarlierExtension()
+    {
+        byte[] indices = [1, 2, 1, 2, 1, 2, 1];
+        var gif = BuildGifWithGceThenPlainTextThenImage(indices, transparentFlag: 1, transparentIndex: 1, secondGce: true);
+
+        var img = GifImageLoader.Load(gif);
+
+        Assert.Null(img.SMask);
     }
 
     /// <summary>
@@ -662,10 +756,10 @@ public sealed class GifSpecificationTests
     }
 
     /// <summary>
-    /// Appendix F gives no way to say "fewer pixels than the descriptor promised" -- the End of
-    /// Information code marks the end of the data, not a short count -- so a stream that stops
+    /// Appendix F gives no way to say "fewer pixels than the descriptor promised." The End of
+    /// Information code marks the end of the data, not a short count, so a stream that stops
     /// early is malformed. The buffer is allocated at the promised size, and the pixels
-    /// the stream never wrote stay at palette entry 0 — a colour the file chose for nothing.
+    /// the stream never wrote stay at palette entry 0, a colour the file chose for nothing.
     /// Discarding every byte of a 20x20 image's data used to return a full 400-pixel raster of
     /// entry 0 with no error at all.
     /// </summary>
@@ -701,9 +795,10 @@ public sealed class GifSpecificationTests
 
     /// <summary>
     /// Appendix F, under ESTABLISH CODE SIZE, puts the minimum code size at 2 or above; a palette
-    /// index is a byte, so 8 is the ceiling. Below 2 there is no room for the Clear and End of
-    /// Information codes above the palette entries. No test
-    /// covered either end, and the loader's own message for it appeared in no assertion.
+    /// index is a byte, so 8 is the ceiling. Below 2, the starting width still fits Clear and End
+    /// of Information; what does not fit is the first free code, one bit wider than either of
+    /// them. No test covered either end, and the loader's own message for it appeared in no
+    /// assertion.
     /// </summary>
     [Theory]
     [InlineData(0)]
@@ -902,6 +997,74 @@ public sealed class GifSpecificationTests
     }
 
     /// <summary>
+    /// A hand-assembled fixture for the scope tests above: a Graphic Control Extension, a Plain
+    /// Text Extension after it, optionally a second Graphic Control Extension right before the
+    /// image descriptor, and then the image itself. <see cref="BuildGif"/> has no way to insert
+    /// an extension at all, so this is built directly rather than through it.
+    /// </summary>
+    private static byte[] BuildGifWithGceThenPlainTextThenImage(
+        byte[] indices, int transparentFlag, int transparentIndex, bool secondGce)
+    {
+        const int width = 7, height = 1;
+        const int paletteEntries = 4; // covers indices 0-2, rounded to the nearest power of two
+        const int minCodeSize = 2;
+
+        using var ms = new MemoryStream();
+        ms.Write("GIF89a"u8);
+        ms.WriteByte((byte)(width & 0xFF)); ms.WriteByte((byte)(width >> 8));
+        ms.WriteByte((byte)(height & 0xFF)); ms.WriteByte((byte)(height >> 8));
+        ms.WriteByte((byte)(0x80 | (0x07 << 4) | 1)); // global table, 4 entries (size field 1)
+        ms.WriteByte(0);
+        ms.WriteByte(0);
+        WriteGreyRamp(ms, paletteEntries);
+
+        // Graphic Control Extension: the transparency this fixture means to test the scope of.
+        ms.WriteByte(0x21); ms.WriteByte(0xF9);
+        ms.WriteByte(4);
+        ms.WriteByte((byte)transparentFlag);
+        ms.WriteByte(0); ms.WriteByte(0); // delay time
+        ms.WriteByte((byte)transparentIndex);
+        ms.WriteByte(0); // block terminator
+
+        // Plain Text Extension: a Graphic-Rendering block (section 12) this decoder does not
+        // parse, whose scope-closing effect on the extension above is what these tests measure.
+        // An empty sub-block chain is syntactically complete per section 15's own description of
+        // a sub-block, and carries no data this decoder would read regardless.
+        ms.WriteByte(0x21); ms.WriteByte(0x01);
+        ms.WriteByte(0);
+
+        if (secondGce)
+        {
+            // A second, conforming Graphic Control Extension with the transparency flag clear,
+            // immediately before the image descriptor its own scope covers.
+            ms.WriteByte(0x21); ms.WriteByte(0xF9);
+            ms.WriteByte(4);
+            ms.WriteByte(0);
+            ms.WriteByte(0); ms.WriteByte(0);
+            ms.WriteByte(0);
+            ms.WriteByte(0);
+        }
+
+        ms.WriteByte(0x2C);
+        ms.WriteByte(0); ms.WriteByte(0); ms.WriteByte(0); ms.WriteByte(0);
+        ms.WriteByte((byte)(width & 0xFF)); ms.WriteByte((byte)(width >> 8));
+        ms.WriteByte((byte)(height & 0xFF)); ms.WriteByte((byte)(height >> 8));
+        ms.WriteByte(0);
+
+        ms.WriteByte((byte)minCodeSize);
+        var lzw = EncodeLzw(indices, minCodeSize);
+        for (var i = 0; i < lzw.Length; i += 255)
+        {
+            var take = Math.Min(255, lzw.Length - i);
+            ms.WriteByte((byte)take);
+            ms.Write(lzw, i, take);
+        }
+        ms.WriteByte(0);
+        ms.WriteByte(0x3B);
+        return ms.ToArray();
+    }
+
+    /// <summary>
     /// A conformant GIF LZW encoder. Its width rule is one step behind the decoder's on purpose:
     /// the decoder adds the entry for the previous code and so always trails by one, which is
     /// exactly the distinction the decoder defect came from.
@@ -909,7 +1072,7 @@ public sealed class GifSpecificationTests
     /// <param name="clearAfter">
     /// When positive, emit a Clear code after this many data codes and start the table again, as
     /// Appendix F, under COMPRESSION, item 1 permits at any point. The package's own encoder does
-    /// emit one when the table fills, so this is not the only way such a stream can arise -- but
+    /// emit one when the table fills, so this is not the only way such a stream can arise, but
     /// it is the only way a test can produce one at a chosen point, early enough to be read
     /// without a 4,096-entry fixture.
     /// </param>
@@ -950,9 +1113,9 @@ public sealed class GifSpecificationTests
 
             // The table entry and the width growth belong to the code just emitted, and a
             // decoder performs both whatever comes next, so they have to happen before any
-            // Clear is written. Skipping them -- which this did -- left the decoder a code
-            // wider than the fixture, and clearAfter values 6, 7, 22, 23, 54, 55, 118 and 119
-            // produced a stream neither this decoder nor an independent one could read.
+            // Clear is written. Skipping them, which this did, left the decoder reading a code
+            // wider than the width the fixture had reached, and clearAfter values 6, 7, 22, 23,
+            // 54, 55, 118 and 119 produced a stream neither this decoder nor Pillow could read.
             if (nextCode < 4096)
             {
                 table[(prefix, k)] = nextCode++;

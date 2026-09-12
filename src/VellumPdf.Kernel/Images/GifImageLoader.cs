@@ -75,18 +75,46 @@ public static class GifImageLoader
                 if (label == 0xF9) // Graphic Control Extension
                 {
                     SkipBlock(gifBytes, ref pos, out var gceData);
-                    // gceData[0] = packed, [1]+[2] = delay, [3] = transparent index
+                    // gceData[0] = packed, [1]+[2] = delay, [3] = transparent index. A clear
+                    // transparency flag resets the index rather than leaving an earlier
+                    // extension's value standing, for the same reason the scope-closing rule
+                    // below exists: a stale value must not survive past the block it belonged to.
                     if (gceData is not null && gceData.Length >= 4 && (gceData[0] & 0x01) != 0)
                         transparentIndex = gceData[3];
+                    else
+                        transparentIndex = -1;
                 }
                 else
                 {
                     SkipSubBlocks(gifBytes, ref pos);
+
+                    // Section 12 sorts every labelled block into three ranges: 0x00-0x7F is
+                    // Graphic-Rendering (the Trailer, 0x3B, is excluded from that range, but it is
+                    // a top-level block type rather than an extension label and never reaches
+                    // here), 0x80-0xF9 is Control, and 0xFA-0xFF is Special Purpose. The same
+                    // section adds that a decoder "can handle block scope by appropriately
+                    // identifying block labels, even when the block itself cannot be processed."
+                    // A label in the rendering range therefore closes a pending Graphic Control
+                    // Extension's scope whether or not this decoder acts on the block itself.
+                    // Section 23 gives that extension's scope as "the first graphic rendering
+                    // block to follow," so the Plain Text Extension (0x01), or any unrecognised
+                    // label below 0x80, ends it here. Without this, a later and unrelated image
+                    // could inherit transparency meant for a block that had already gone by.
+                    //
+                    // 0xFA-0xFF is Special Purpose: Comment (0xFE) and Application (0xFF). Section
+                    // 12 states plainly that these "are transparent to the decoding process" and
+                    // do not delimit scope, so this branch leaves transparentIndex untouched for
+                    // them, deliberately. The same holds for 0x80-0xF8, Control other than the
+                    // Graphic Control Extension itself: only a Graphic-Rendering block closes a
+                    // Control block's scope, so an unrecognised Control label is transparent to it
+                    // too.
+                    if (label <= 0x7F)
+                        transparentIndex = -1;
                 }
                 continue;
             }
 
-            // Unknown block — try to skip sub-blocks
+            // Unknown block: try to skip sub-blocks.
             SkipSubBlocks(gifBytes, ref pos);
         }
 
@@ -147,7 +175,7 @@ public static class GifImageLoader
         var indices = LzwDecode(lzwStream, lzwMinCodeSize, width * height);
 
         // The LZW stream carries rows in storage order. For an interlaced image that is not
-        // display order, so the rows are put back before anything reads a pixel — the colour
+        // display order, so the rows are put back before anything reads a pixel. The colour
         // expansion and the transparency mask below both index this array positionally.
         if (interlaced)
             indices = Deinterlace(indices, width, height);
@@ -157,7 +185,7 @@ public static class GifImageLoader
         for (var i = 0; i < width * height; i++)
         {
             var idx = indices[i] * 3;
-            if (idx + 2 >= palette.Length) continue; // out-of-range index — leave black
+            if (idx + 2 >= palette.Length) continue; // out-of-range index, leave black
             rgb[i * 3] = palette[idx];
             rgb[i * 3 + 1] = palette[idx + 1];
             rgb[i * 3 + 2] = palette[idx + 2];
@@ -320,17 +348,18 @@ public static class GifImageLoader
 
                 // GIF89a Appendix F, under COMPRESSION, item 4: "Whenever the LZW code value
                 // would exceed the current code length, the code length is increased by one."
-                // Appendix F carries two numbered lists, each of four: the steps in its
-                // preamble, under no subheading, and the items under COMPRESSION. So a bare
-                // "clause 4" is ambiguous between two different rules and the subheading has to
-                // be named. A code length of n
-                // expresses values 0..2^n-1, so the value 2^n is the first that exceeds it, and
-                // the width has to grow when the next code to be assigned reaches 2^n — which is
-                // codeMask + 1. This read `nextCode > codeMask + 1`, growing one code later, so
-                // the decoder went on reading 9-bit codes where the encoder had already moved to
-                // 10. Every file whose dictionary passed 2^n then desynchronised and was refused
-                // as corrupt. The sibling TIFF decoder's own header states the GIF rule correctly
-                // while describing TIFF's early change as "one entry earlier than GIF's rule".
+                // Appendix F carries two numbered lists, each of four: the steps in its preamble,
+                // under no subheading, and the items under COMPRESSION. So a bare "clause 4" is
+                // ambiguous between two different rules, and the subheading has to be named.
+                //
+                // A code length of n expresses values 0..2^n-1, so the value 2^n is the first
+                // that exceeds it, and the width has to grow when the next code to be assigned
+                // reaches 2^n, which is codeMask + 1. This read `nextCode > codeMask + 1`, growing
+                // one code later, so the decoder went on reading 9-bit codes where the encoder had
+                // already moved to 10. Every file whose dictionary passed 2^n then desynchronised
+                // and was refused as corrupt. The sibling TIFF decoder's own header states the GIF
+                // rule correctly, describing TIFF's own early change as "one entry earlier than
+                // GIF".
                 if (nextCode >= codeMask + 1 && codeSize < 12)
                 {
                     codeSize++;
@@ -352,7 +381,7 @@ public static class GifImageLoader
         // The loop above reaches here short in two ways, and they want telling apart. The bit
         // buffer running dry means the data simply stopped. An End of Information code arriving
         // early means the encoder said it was finished while the descriptor asked for more, which
-        // is also the shape a code-width desynchronisation takes -- the defect fixed above -- so a
+        // is also the shape a code-width desynchronisation takes, the defect fixed above, so a
         // single message would let a decoder bug read as a bad file.
         //
         // The sibling TIFF decoder makes this check and names it "output length mismatch". It also

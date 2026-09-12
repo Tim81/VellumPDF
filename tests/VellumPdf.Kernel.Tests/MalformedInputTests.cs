@@ -161,18 +161,66 @@ public sealed class MalformedInputTests
 
     // ── Images: GIF ──────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// A fixture with no colour table at all reaches "GIF has no colour table" as soon as the
+    /// dimension guard is gone, which is also an <see cref="InvalidDataException"/>, so a bare
+    /// <c>Assert.Throws&lt;InvalidDataException&gt;</c> against that fixture cannot tell the
+    /// dimension guard from the colour-table check it happens to sit in front of. This fixture
+    /// carries a real global colour table so the dimension guard is the first thing able to
+    /// refuse the file, and the assertion reads <see cref="ImageLimits"/>'s own message rather
+    /// than only the exception type, so nothing downstream can satisfy it by accident.
+    /// </summary>
     [Fact]
-    public void Gif_absurdDimensions_throwsInvalidDataException()
+    public void Gif_dimensionsExceedThePixelLimit_namesTheLimitInTheMessage()
+    {
+        var gif = BuildGifDescriptorOnly(width: 65535, height: 65535);
+
+        var ex = Assert.Throws<InvalidDataException>(() => GifImageLoader.Load(gif));
+        Assert.Equal("GIF dimensions 65535×65535 exceed the 100M pixel safety limit.", ex.Message);
+    }
+
+    /// <summary>
+    /// The overflow case above and a zero dimension take different branches in
+    /// <see cref="ImageLimits.ValidateDimensions"/>: 65535x65535 overflows <see cref="int"/> when
+    /// multiplied (raising <see cref="OverflowException"/> if the guard is removed), while a 0x0
+    /// descriptor multiplies to zero and "decodes" to an empty image with no error at all. One
+    /// fixture cannot speak for both, so each width/height pairing is measured on its own, again
+    /// asserting the exact message rather than only the exception type.
+    /// </summary>
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(0, 2)]
+    [InlineData(2, 0)]
+    public void Gif_zeroDimension_namesTheLimitInTheMessage(int width, int height)
+    {
+        var gif = BuildGifDescriptorOnly(width, height);
+
+        var ex = Assert.Throws<InvalidDataException>(() => GifImageLoader.Load(gif));
+        Assert.Equal($"GIF dimensions {width}×{height} are invalid.", ex.Message);
+    }
+
+    /// <summary>
+    /// A GIF carrying a genuine 2-entry global colour table, truncated right after the image
+    /// descriptor's packed byte. <see cref="GifImageLoader.DecodeImage"/> calls
+    /// <see cref="ImageLimits.ValidateDimensions"/> immediately after parsing that byte and
+    /// before reading anything past it, so no further bytes are needed for the dimension guard
+    /// itself to fire, and none are supplied, so a fixture that reached past the guard would
+    /// fail on truncation instead of on the dimension it is meant to test.
+    /// </summary>
+    private static byte[] BuildGifDescriptorOnly(int width, int height)
     {
         using var ms = new MemoryStream();
         ms.Write("GIF89a"u8);
-        WriteU16Le(ms, 1); WriteU16Le(ms, 1);          // logical screen size
-        ms.WriteByte(0); ms.WriteByte(0); ms.WriteByte(0); // packed (no global table), bg, aspect
-        ms.WriteByte(0x2C);                             // image separator
-        WriteU16Le(ms, 0); WriteU16Le(ms, 0);          // left, top
-        WriteU16Le(ms, 65535); WriteU16Le(ms, 65535);  // width, height (overflows Int32 when multiplied)
-        ms.WriteByte(0);                                // packed (no local table)
-        Assert.Throws<InvalidDataException>(() => GifImageLoader.Load(ms.ToArray()));
+        WriteU16Le(ms, 1); WriteU16Le(ms, 1);              // logical screen size
+        ms.WriteByte(0x80);                                 // global colour table flag, 2 entries
+        ms.WriteByte(0); ms.WriteByte(0);                   // bg, aspect
+        ms.WriteByte(0); ms.WriteByte(0); ms.WriteByte(0);  // colour table entry 0
+        ms.WriteByte(255); ms.WriteByte(255); ms.WriteByte(255); // colour table entry 1
+        ms.WriteByte(0x2C);                                 // image separator
+        WriteU16Le(ms, 0); WriteU16Le(ms, 0);              // left, top
+        WriteU16Le(ms, (ushort)width); WriteU16Le(ms, (ushort)height);
+        ms.WriteByte(0);                                    // packed (no local table)
+        return ms.ToArray();
     }
 
     // ── Images: TIFF-LZW hardening ───────────────────────────────────────────

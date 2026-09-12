@@ -43,7 +43,9 @@ public static class GifEncoder
     /// <exception cref="ArgumentOutOfRangeException">A dimension is not positive.</exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="rgb"/> is not exactly <paramref name="width"/> × <paramref name="height"/> × 3
-    /// bytes long, or the image holds more than 256 distinct colours.
+    /// bytes long; the image holds more than 256 distinct colours; or <paramref name="width"/> or
+    /// <paramref name="height"/> exceeds 65535, the largest value the Logical Screen Descriptor
+    /// (GIF89a §18) and Image Descriptor (§20) can hold.
     /// </exception>
     public static byte[] Encode(byte[] rgb, int width, int height, bool interlaced = false)
     {
@@ -59,16 +61,24 @@ public static class GifEncoder
                 nameof(rgb));
         }
 
-        var (indices, palette) = BuildExactPalette(rgb, width * height);
-
         // Logical Screen Descriptor §18 and Image Descriptor §20 both hold the size as two
-        // unsigned bytes, so neither dimension can exceed 65535.
-        if (width > ushort.MaxValue || height > ushort.MaxValue)
+        // unsigned bytes, so neither dimension can exceed 65535. Checked ahead of the palette
+        // below so that a raster too large names its own dimension rather than reporting the
+        // colour-count constraint for an image that was going to be refused either way.
+        if (width > ushort.MaxValue)
         {
             throw new ArgumentException(
-                $"GIF stores each dimension in two bytes, so {width}x{height} cannot be written.",
-                nameof(rgb));
+                $"GIF stores each dimension in two bytes, so a width of {width} cannot be written.",
+                nameof(width));
         }
+        if (height > ushort.MaxValue)
+        {
+            throw new ArgumentException(
+                $"GIF stores each dimension in two bytes, so a height of {height} cannot be written.",
+                nameof(height));
+        }
+
+        var (indices, palette) = BuildExactPalette(rgb, width * height);
 
         // §18: the Size of Global Color Table field holds N, and the table holds 2^(N+1) entries.
         // The smallest N that covers the palette is used, and the table is padded out to it.
@@ -198,7 +208,7 @@ public static class GifEncoder
         var clearCode = 1 << minCodeSize;
         var eoiCode = clearCode + 1;
 
-        var output = new MemoryStream();
+        using var output = new MemoryStream();
         var bitBuf = 0;
         var bitsLeft = 0;
         var codeSize = minCodeSize + 1;
@@ -220,11 +230,11 @@ public static class GifEncoder
         var nextCode = eoiCode + 1;
 
         // Appendix F, under COMPRESSION, item 1: "Encoders should output a Clear code as the
-        // first code of each image data stream." A should, not a shall -- section 22, which
-        // defines this block, says nothing about it, and its own Recommendations read "None".
-        // Both decoders this was checked against, the one in this package and Pillow 12.3.0,
-        // read a stream without it, so this follows the recommendation rather than guarding
-        // against a refusal.
+        // first code of each image data stream." A should, not a shall: section 22, which defines
+        // this block, says nothing about it, and its own Recommendations read "None". Both
+        // decoders this was checked against, the one in this package and Pillow 12.3.0, read a
+        // stream without it, so this follows the recommendation rather than guarding against a
+        // refusal.
         Emit(clearCode);
 
         if (indices.Length == 0)
