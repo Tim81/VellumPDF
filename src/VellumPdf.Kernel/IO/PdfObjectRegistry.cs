@@ -43,6 +43,25 @@ public sealed class PdfObjectRegistry
     }
 
     /// <summary>Assigns (or replaces) the value for a previously reserved reference.</summary>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="reference"/>'s object number falls outside 1 to the number of references
+    /// this registry has allocated.
+    /// </exception>
+    /// <remarks>
+    /// Attention: this is a range check, <b>not</b> a provenance check, and the exception
+    /// message overstates it. The message reads "Reference was not allocated by this registry",
+    /// but all that is compared is the object number against the count of references allocated.
+    /// A reference from a different registry, or one built with the public
+    /// <see cref="PdfIndirectReference(int)"/> constructor, is accepted whenever its number falls
+    /// in range. The value then lands in this registry's slot of that number, which is the
+    /// wrong-slot write the check looks like it prevents.
+    /// <para>So pass only a reference that this registry's own <c>Reserve</c> returned. Nothing
+    /// downstream can tell the difference.</para>
+    /// <para>Reserving a reference and never setting it is not detected here. It is detected at
+    /// write time, and loudly: writing throws <see cref="InvalidOperationException"/> and names
+    /// the object number. You do not get a document with a missing object. Set every reference
+    /// you reserve.</para>
+    /// </remarks>
     public void SetValue(PdfIndirectReference reference, PdfObject value)
     {
         var idx = reference.ObjectNumber - 1;
@@ -64,6 +83,11 @@ public sealed class PdfObjectRegistry
     /// invoked after the object is written (e.g. to restore writer state).
     /// Returning null from the delegate means no cleanup is needed.
     /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// A reference was reserved and never assigned a value. The message names the object number.
+    /// Nothing is written for that object, so the output is abandoned rather than left with a
+    /// gap.
+    /// </exception>
     public void WriteAll(PdfWriter writer, CrossReferenceBuilder xref, Func<int, Action?>? preWrite)
     {
         for (var i = 0; i < _values.Count; i++)

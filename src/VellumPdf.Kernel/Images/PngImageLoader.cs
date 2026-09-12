@@ -26,9 +26,42 @@ public static class PngImageLoader
     private static readonly int[] Adam7YStep = [8, 8, 8, 4, 4, 2, 2];
 
     /// <summary>Decodes PNG file bytes into a FlateDecode Image XObject (alpha becomes an /SMask).</summary>
+    /// <exception cref="InvalidDataException">
+    /// The bytes are not a PNG file, are truncated, use a variant this loader does not read, or
+    /// declare dimensions outside the safety limits below.
+    /// </exception>
+    /// <remarks>
+    /// Treat the input as untrusted. A malformed file raises
+    /// <see cref="InvalidDataException"/>: a wrong signature, a truncated stream, or a declared
+    /// size the limit refuses.
+    /// <para>Attention: <see langword="null"/> is <b>not</b> checked. It raises
+    /// <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>, so a
+    /// <c>catch</c> on the documented type will not catch it. You have to reject null yourself. A
+    /// later major version will check it.</para>
+    /// <para>One size limit applies here, not two. A declared pixel count above 100,000,000 is
+    /// refused, so that a few bytes of header cannot drive a multi-gigabyte allocation.</para>
+    /// <para>Attention: a second constant bounds each edge at 1,000,000 and is applied by
+    /// <b>nothing</b> a default call reaches. Only the MMR decoder reads it, only the JBIG2
+    /// loader reaches that decoder, and only when asked for a decoded raster, which is not the
+    /// default mode. So an image declaring one edge of 1,000,001 with a total under the pixel cap
+    /// loads here and everywhere else. Both constants are internal and neither has a public
+    /// setting.</para>
+    /// </remarks>
     public static PdfImageXObject Load(byte[] pngBytes) => Load(pngBytes, ImageLoadOptions.Default);
 
     /// <summary>Decodes PNG file bytes into a FlateDecode Image XObject with the specified load options.</summary>
+    /// <exception cref="InvalidDataException">
+    /// The bytes are not a PNG file, are truncated, use a variant this loader does not read, or
+    /// declare dimensions outside the safety limits.
+    /// </exception>
+    /// <remarks>
+    /// The same boundaries as the single-argument overload, which delegates here. Malformed input
+    /// raises <see cref="InvalidDataException"/>; a null array raises
+    /// <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>; the
+    /// 100,000,000-pixel cap applies and the per-edge constant does not.
+    /// <para><paramref name="options"/> selects the decode mode. It does not relax the pixel cap,
+    /// which has no public setting.</para>
+    /// </remarks>
     public static PdfImageXObject Load(byte[] pngBytes, ImageLoadOptions options)
     {
         ValidateSignature(pngBytes);

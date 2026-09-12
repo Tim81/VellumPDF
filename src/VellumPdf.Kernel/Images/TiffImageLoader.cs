@@ -95,9 +95,74 @@ public static class TiffImageLoader
     }
 
     /// <summary>Decodes baseline TIFF file bytes into a FlateDecode Image XObject.</summary>
+    /// <exception cref="InvalidDataException">
+    /// The bytes are not a TIFF file, are truncated, or declare dimensions outside the safety
+    /// limit below.
+    /// </exception>
+    /// <exception cref="NotSupportedException">
+    /// The file is a well-formed TIFF using one of the many baseline and extension features this
+    /// loader does not read — old-style JPEG compression, a bit depth other than 8 or 16, an
+    /// unsupported photometric interpretation, and fifteen others.
+    /// </exception>
+    /// <remarks>
+    /// Treat the input as untrusted, and catch two types rather than one. A malformed file
+    /// raises <see cref="InvalidDataException"/>. A well-formed file using a feature this loader
+    /// does not read raises <see cref="NotSupportedException"/>, from any of eighteen sites, and
+    /// that type does <b>not</b> derive from the first. TIFF is the widest format here, so expect
+    /// this loader to refuse files that other software opens.
+    /// <para>Attention: one malformed input escapes both. A <c>ColorMap</c> tag carrying a
+    /// negative offset reaches an unguarded array read and throws
+    /// <see cref="IndexOutOfRangeException"/>, where the sibling tag readers check for a negative
+    /// and refuse the file properly. That is a defect rather than a contract, filed as #512, and
+    /// until it is fixed a caller reading untrusted TIFF needs a third clause.</para>
+    /// <para><b>Do not pass <see langword="null"/>.</b> It is not checked, so it raises
+    /// <see cref="NullReferenceException"/> rather than
+    /// <see cref="ArgumentNullException"/> — measured, not inferred — and a caller guarding on the
+    /// documented type will not catch it. A later major version will check it.</para>
+    /// <para>One size limit applies here, not two. A declared pixel count above 100,000,000 is
+    /// refused, so that a few bytes of header cannot drive a multi-gigabyte allocation.</para>
+    /// <para>Attention: a second constant bounds each edge at 1,000,000 and is applied by
+    /// <b>nothing</b> a default call reaches. Only the MMR decoder reads it, only the JBIG2
+    /// loader reaches that decoder, and only when asked for a decoded raster, which is not the
+    /// default mode. So an image declaring one edge of 1,000,001 with a total under the pixel cap
+    /// loads here and everywhere else. Both constants are internal and neither has a public
+    /// setting.</para>
+    /// <para>Attention: the pixel cap has a hole, and this loader carries it. A strip
+    /// compressed with new-style JPEG (Compression 7) is handed to
+    /// <see cref="JpegImageLoader.Load(byte[])"/>, which takes its dimensions from the JPEG frame
+    /// header and validates nothing. A 145-byte TIFF declaring ImageWidth 8 and ImageLength 8,
+    /// whose single strip is a 23-byte JPEG declaring 65535 by 65535, returns an image of
+    /// 4,294,836,225 pixels. No raster is allocated, since those bytes pass through as DCTDecode
+    /// data. But the dimensions reach the image dictionary, and a consumer that trusts them can
+    /// be made to allocate from them. If the input is untrusted, check the result's <c>Width</c>
+    /// and <c>Height</c> yourself (#505).</para>
+    /// </remarks>
     public static PdfImageXObject Load(byte[] tiff) => Load(tiff, ImageLoadOptions.Default);
 
     /// <summary>Decodes baseline TIFF file bytes into a FlateDecode Image XObject with the specified load options.</summary>
+    /// <exception cref="InvalidDataException">
+    /// The bytes are not a TIFF file, are truncated, or declare dimensions outside the pixel cap.
+    /// </exception>
+    /// <exception cref="NotSupportedException">
+    /// The file is a well-formed TIFF using a feature this loader does not read.
+    /// </exception>
+    /// <exception cref="IndexOutOfRangeException">
+    /// A <c>ColorMap</c> tag whose value field is a negative offset. That read is unguarded where
+    /// its siblings check, so the array indexer throws rather than this loader refusing the file
+    /// (#512). Malformed input should raise <see cref="InvalidDataException"/>, so catching only
+    /// the documented types does not cover it.
+    /// </exception>
+    /// <remarks>
+    /// This overload carries the implementation; the single-argument one delegates here, so every
+    /// boundary documented there applies, and two types have to be caught rather than one.
+    /// Malformed input raises <see cref="InvalidDataException"/>. A well-formed file using a
+    /// feature this loader does not read raises <see cref="NotSupportedException"/> from any of
+    /// eighteen sites, and that type does <b>not</b> derive from the first. A null array raises
+    /// <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>. The
+    /// 100,000,000-pixel cap applies and the per-edge constant does not.
+    /// <para><paramref name="options"/> selects the decode mode. It does not relax the pixel cap,
+    /// which has no public setting.</para>
+    /// </remarks>
     public static PdfImageXObject Load(byte[] tiff, ImageLoadOptions options)
     {
         if (tiff.Length < 8)

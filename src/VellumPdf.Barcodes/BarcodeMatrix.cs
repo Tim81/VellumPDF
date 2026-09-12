@@ -30,6 +30,19 @@ public sealed class BarcodeMatrix
     public int Height { get; }
 
     /// <summary>Returns whether the module at <paramref name="x"/>, <paramref name="y"/> is dark.</summary>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="x"/> is outside 0 to <see cref="Width"/>-1, or <paramref name="y"/> is
+    /// outside 0 to <see cref="Height"/>-1.
+    /// </exception>
+    /// <remarks>
+    /// Both coordinates are bounds-checked, and a negative one is refused too. The check is an
+    /// unsigned comparison, so -1 is treated as a very large value and refused by the same
+    /// exception rather than reading a neighbouring row.
+    /// <para>Attention: this matrix covers the symbol only. The quiet zone that a symbology's
+    /// specification requires around it is <b>not</b> part of <see cref="Width"/> and
+    /// <see cref="Height"/>, so a renderer has to add it. Do not expect light modules outside
+    /// these bounds; there is nothing there.</para>
+    /// </remarks>
     public bool IsDark(int x, int y)
     {
         if ((uint)x >= (uint)Width) throw new ArgumentOutOfRangeException(nameof(x), x, "X is outside the matrix.");

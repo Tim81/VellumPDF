@@ -24,6 +24,35 @@ public static class BmpImageLoader
     private const uint BiRgb = 0;
 
     /// <summary>Decodes BMP file bytes into a FlateDecode Image XObject.</summary>
+    /// <exception cref="InvalidDataException">
+    /// The bytes are not a BMP file, are truncated, or declare dimensions outside the safety
+    /// limit below.
+    /// </exception>
+    /// <exception cref="NotSupportedException">
+    /// The file is a well-formed BMP of a variant this loader does not read.
+    /// </exception>
+    /// <remarks>
+    /// Treat the input as untrusted, and catch two types rather than one. A malformed file
+    /// raises <see cref="InvalidDataException"/>: a wrong signature, a truncated stream, or a
+    /// declared size the limit refuses. A well-formed file that this loader cannot read raises
+    /// <see cref="NotSupportedException"/> instead. That type does <b>not</b> derive from the
+    /// first, so catching only <see cref="InvalidDataException"/> lets it escape.
+    /// <para>Attention: <see langword="null"/> is not checked. It raises
+    /// <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>. You have to
+    /// reject null yourself. A later major version will check it.</para>
+    /// <para>One size limit applies here, not two. A declared pixel count above 100,000,000 is
+    /// refused, so that a few bytes of header cannot drive a multi-gigabyte allocation.</para>
+    /// <para>Attention: a second constant bounds each edge at 1,000,000 and is applied by
+    /// <b>nothing</b> a default call reaches. Only the MMR decoder reads it, only the JBIG2
+    /// loader reaches that decoder, and only when asked for a decoded raster, which is not the
+    /// default mode. So an image declaring one edge of 1,000,001 with a total under the pixel cap
+    /// loads here and everywhere else. Both constants are internal and neither has a public
+    /// setting.</para>
+    /// <para>Compressed bitmaps are refused, not decoded. BI_RLE8, BI_RLE4 and BI_BITFIELDS
+    /// each raise <see cref="NotSupportedException"/>, as do an OS/2 BITMAPCOREHEADER and any bit
+    /// depth other than 8, 24 and 32. Those are the three <see cref="NotSupportedException"/>
+    /// sites in this loader. There is <b>no</b> fallback path.</para>
+    /// </remarks>
     public static PdfImageXObject Load(byte[] bmpBytes)
     {
         if (bmpBytes.Length < 54)

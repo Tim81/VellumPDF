@@ -19,6 +19,33 @@ namespace VellumPdf.Images;
 public static class GifImageLoader
 {
     /// <summary>Decodes the first frame of a GIF into a FlateDecode Image XObject.</summary>
+    /// <exception cref="InvalidDataException">
+    /// The bytes are not a GIF file, are truncated, use a variant this loader does not read, or
+    /// declare dimensions outside the safety limits below.
+    /// </exception>
+    /// <remarks>
+    /// Treat the input as untrusted. A malformed file raises
+    /// <see cref="InvalidDataException"/>: a wrong signature, a truncated stream, or a declared
+    /// size the limit refuses.
+    /// <para>Attention: <see langword="null"/> is <b>not</b> checked. It raises
+    /// <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>, so a
+    /// <c>catch</c> on the documented type will not catch it. You have to reject null yourself. A
+    /// later major version will check it.</para>
+    /// <para>One size limit applies here, not two. A declared pixel count above 100,000,000 is
+    /// refused, so that a few bytes of header cannot drive a multi-gigabyte allocation.</para>
+    /// <para>Attention: a second constant bounds each edge at 1,000,000 and is applied by
+    /// <b>nothing</b> a default call reaches. Only the MMR decoder reads it, only the JBIG2
+    /// loader reaches that decoder, and only when asked for a decoded raster, which is not the
+    /// default mode. So an image declaring one edge of 1,000,001 with a total under the pixel cap
+    /// loads here and everywhere else. Both constants are internal and neither has a public
+    /// setting.</para>
+    /// <para>Only the first frame is read. The rest are dropped silently: an animated GIF
+    /// loads as its first image descriptor, with no warning that anything else was there. If you
+    /// need to know, scan for further image descriptors yourself.</para>
+    /// <para>Attention: the logical screen is ignored. A frame covering only part of a larger
+    /// canvas decodes at the frame's own size and its position is lost, so you get a different
+    /// size and aspect ratio from what a viewer shows (#498).</para>
+    /// </remarks>
     public static PdfImageXObject Load(byte[] gifBytes)
     {
         if (gifBytes.Length < 13)
