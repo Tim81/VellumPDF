@@ -356,6 +356,12 @@ public sealed class DocumentRenderer
         double bandHeight)
     {
         var style = band.Style;
+
+        // The band is the one path to a Tf operator that reaches no renderer, so it reached no
+        // validation either: a non-finite band font size saved a document containing "/F1 NaN Tf"
+        // and "1 0 0 1 NaN NaN Tm". The note further down about geometry validation asked for this.
+        LayoutValidation.ValidateStyle(style, $"The {kind.ToString().ToLowerInvariant()} band");
+
         var contentWidth = _pageSize.Width - _margins.Horizontal;
         var (drawn, textWidth) = FitToWidth(style, text, contentWidth);
 

@@ -312,19 +312,23 @@ public sealed class HardeningTests
         Assert.True(tmCount >= 2, $"Expected >=2 Tm operators for 2 lines; found {tmCount}");
     }
 
-    // ── #84: Image zero dimensions ────────────────────────────────────────────
+    // ── #84: an ordinary image is not caught by the zero-extent guard ─────────
 
+    /// <summary>
+    /// Renamed from <c>LayoutImage_zeroDimensions_throwsArgumentException</c>, which is what #478
+    /// asked for: the old name described a zero-dimension refusal that its own body then said it
+    /// could not construct, and the comment admitted it was asserting the opposite — that an
+    /// ordinary image does not throw. Nothing here ever exercised a zero dimension.
+    ///
+    /// A zero extent now genuinely is refused, with <see cref="InvalidOperationException"/> rather
+    /// than the <c>ArgumentException</c> the old name promised, and
+    /// <see cref="RefusalMessageTests"/> covers it at the value and at the boundary the canvas
+    /// rounds to zero. What is left here is the control the body was really doing, kept because a
+    /// guard that refuses ordinary images would be worse than no guard.
+    /// </summary>
     [Fact]
-    public void LayoutImage_zeroDimensions_throwsArgumentException()
+    public void LayoutImage_ordinaryDimensions_isNotRefused()
     {
-        // A 0×0 image must throw before poisoning pagination.
-        // We need a PdfImageXObject with zero source dims.
-        // Use a minimal valid 1×1 PNG and then test via the renderer directly.
-        // Since we can't easily construct a 0×0 XObject via the public API,
-        // test that a valid image with normal dims does NOT throw (sanity check)
-        // and document the guard exists via a direct renderer test.
-
-        // Positive case: 2×2 image works fine.
         var pngBytes = PdfTestUtil.CreateMinimalRgbPng();
         var image = VellumPdf.Images.PngImageLoader.Load(pngBytes);
         var li = new LayoutImage(image);

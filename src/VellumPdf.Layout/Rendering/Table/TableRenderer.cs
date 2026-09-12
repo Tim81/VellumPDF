@@ -45,11 +45,26 @@ public sealed class TableRenderer : IRenderer
         var area = context.Area.Deflate(_table.Margins);
         if (area.Width <= 0) return LayoutResult.Nothing();
 
+        // Before the grid resolves: a ColSpan of zero gives a column count of zero, so Resolve
+        // returns no widths and Layout gives up below, and the caller was told the table was too
+        // tall to fit (#481). Checking here names the cell instead.
+        for (var r = 0; r < _table.Rows.Count; r++)
+        {
+            var cells = _table.Rows[r].Cells;
+            for (var c = 0; c < cells.Count; c++)
+                LayoutValidation.ValidateCell(cells[c], r, c);
+        }
+
+        LayoutValidation.ValidateLineWidth(_table.BorderWidth, "A table");
+
         var grid = new TableGridResolver();
         grid.Resolve(_table, area.Width);
         _colWidths = grid.ColWidths;
 
-        if (_colWidths.Length == 0) return LayoutResult.Nothing();
+        // #481's third refusal, and the one route to it that no span check covers: a table with no
+        // rows, or rows holding no cells, resolves to no columns without any bad ColSpan, and
+        // reporting Nothing here made DocumentRenderer blame the page size.
+        LayoutValidation.ValidateColumnCount(_colWidths.Length);
 
         // Compute row heights
         var rows = _table.Rows;
@@ -61,10 +76,15 @@ public sealed class TableRenderer : IRenderer
             var row = rows[r];
             var maxH = 0.0;
             var col = 0;
+            var cellIndex = -1;
             foreach (var cell in row.Cells)
             {
+                cellIndex++;
                 if (col >= _colWidths.Length) break;
                 var cs = cell.Style ?? style;
+                // The authoring index, not col: the two diverge as soon as an earlier cell spans
+                // more than one column, and naming the column points at a cell nobody wrote.
+                LayoutValidation.ValidateStyle(cs, $"Table row {r}, cell {cellIndex}");
                 var colW = ColSpanWidth(col, cell.ColSpan);
                 var innerW = colW - cell.Padding.Horizontal;
                 var lines = WordWrapCount(cell.Content, cs, Math.Max(1, innerW));

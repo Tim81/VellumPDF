@@ -303,6 +303,53 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Refusals named the page size instead of the input, and several inputs saved a document a reader
+  cannot use (#478, #481).** What each input did before is not uniform, so it is stated per input
+  rather than per group.
+
+  **Already refused, with the wrong message.** A NaN or positive-infinity font size on a paragraph
+  run, and a `ColSpan` below one in the row that sets a table's column count, both raised "an element
+  is too tall to fit on a single page". The element was not too tall, and the remedy the message
+  offered — reduce the content or enlarge the page — could not help. A table with no cells at all
+  raised the same thing and now says it resolved to no columns. The exception type and the place it
+  is raised are unchanged for these.
+
+  **Rendered, but silently dropped the caller's content.** A `ColSpan` below one in a row that does
+  not set the column count left the rest of the table drawing normally while the cell itself was
+  never reached.
+
+  **Saved a document whose content stream a reader cannot use.** A zero image extent writes a
+  transformation matrix with no inverse: a zero width gives `0 0 0 0 10 390 cm`, a zero height
+  `280 0 0 0 10 390 cm`. ISO 32000-2, 8.3.4, NOTE 3 records that a matrix whose a, b, c and d
+  entries are all zero maps every user coordinate to the same device coordinate so there is no
+  unique inverse, and that painting through one "can result in unpredictable behaviour"; that note
+  is informative rather than a requirement, and its scope is painting graphics objects generally.
+  A non-finite extent writes `NaN 0 0 NaN 10 NaN cm`, where the token is not a PDF number. The same
+  went for a non-finite font size on a table cell or a running band, a non-finite cell padding, and
+  a non-finite table border or separator line width.
+
+  **The extent check is on the token, not the value.** `PdfCanvas` formats coordinates to five
+  decimals, so anything under 5e-6 in magnitude is written as `0` and the matrix is singular anyway.
+  Measured at the boundary: 5e-6 writes `0.00001`, 4.9e-6 writes `0`.
+
+  **A positive-infinity leading no longer raises the too-tall message.** It was taken by the
+  positive branch of the resolved leading while a NaN leading fell through to the font size, so it
+  was an unfixed instance of this same defect. Every non-finite leading is now treated as automatic,
+  which refuses nothing that used to render.
+
+  **Every pie chart refusal named a private field.** All six reported `_chart` as the offending
+  parameter, a name that appears nowhere in a caller's code; each now names the property that was
+  set.
+
+  **What is deliberately still accepted**, each rendered and its operator read, because refusing it
+  would turn a working document into an exception: a font size of zero or less, which reaches the
+  stream verbatim as `/F1 0 Tf` or `/F1 -12 Tf`; a `RowSpan` below one, which behaves as one; a
+  negative image extent, which writes a valid matrix that mirrors the image and which #472 left that
+  way deliberately; a positive-infinity image width, which #472's over-wide clamp resolves to the
+  content box before anything sees it; and a zero separator line width, since `0 w` asks for the
+  device's thinnest line rather than a degenerate matrix. These are contract tightenings for the
+  next major, and each is pinned by a test asserting the operator it emits.
+
 - **A table's column count came from its first row and ignored a column span on a later one, an
   explicit widths array was applied literally, auto widths were never capped, and a cell wider
   than its column drew off the page (#480, #477, #468, #473).** `TableGridResolver` and

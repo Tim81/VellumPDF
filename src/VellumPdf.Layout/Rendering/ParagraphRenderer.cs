@@ -50,7 +50,13 @@ public sealed class ParagraphRenderer : IRenderer
         _lineHeight = 0;
         foreach (var line in _lines)
             foreach (var frag in line)
+            {
+                // A non-finite size makes every height derived from it non-finite, every height
+                // comparison false, and the paragraph reports that it placed nothing -- which the
+                // document renderer reads as "too tall" (#481).
+                LayoutValidation.ValidateStyle(frag.Style, "A paragraph run");
                 _lineHeight = Math.Max(_lineHeight, frag.Style.EffectiveLeading);
+            }
         if (_lineHeight <= 0)
             _lineHeight = TextStyle.Default.EffectiveLeading;
 
