@@ -110,16 +110,23 @@ public static class TiffImageLoader
     /// does not read raises <see cref="NotSupportedException"/>, from any of eighteen sites, and
     /// that type does <b>not</b> derive from the first. TIFF is the widest format here, so expect
     /// this loader to refuse files that other software opens.
+    /// <para>Attention: one malformed input escapes both. A <c>ColorMap</c> tag carrying a
+    /// negative offset reaches an unguarded array read and throws
+    /// <see cref="IndexOutOfRangeException"/>, where the sibling tag readers check for a negative
+    /// and refuse the file properly. That is a defect rather than a contract, filed as #512, and
+    /// until it is fixed a caller reading untrusted TIFF needs a third clause.</para>
     /// <para><b>Do not pass <see langword="null"/>.</b> It is not checked, so it raises
     /// <see cref="NullReferenceException"/> rather than
     /// <see cref="ArgumentNullException"/> — measured, not inferred — and a caller guarding on the
     /// documented type will not catch it. A later major version will check it.</para>
     /// <para>One size limit applies here, not two. A declared pixel count above 100,000,000 is
     /// refused, so that a few bytes of header cannot drive a multi-gigabyte allocation.</para>
-    /// <para>Attention: a second constant bounds each edge at 1,000,000, and it is <b>not</b>
-    /// applied here. Only the MMR decoder behind CCITT and JBIG2 reads it. An image declaring one
-    /// edge of 1,000,001 with a total under the pixel cap loads. Both constants are internal and
-    /// there is no public setting for either.</para>
+    /// <para>Attention: a second constant bounds each edge at 1,000,000 and is applied by
+    /// <b>nothing</b> a default call reaches. Only the MMR decoder reads it, only the JBIG2
+    /// loader reaches that decoder, and only when asked for a decoded raster, which is not the
+    /// default mode. So an image declaring one edge of 1,000,001 with a total under the pixel cap
+    /// loads here and everywhere else. Both constants are internal and neither has a public
+    /// setting.</para>
     /// <para>Attention: the pixel cap has a hole, and this loader carries it. A strip
     /// compressed with new-style JPEG (Compression 7) is handed to
     /// <see cref="JpegImageLoader.Load(byte[])"/>, which takes its dimensions from the JPEG frame
@@ -134,14 +141,25 @@ public static class TiffImageLoader
 
     /// <summary>Decodes baseline TIFF file bytes into a FlateDecode Image XObject with the specified load options.</summary>
     /// <exception cref="InvalidDataException">
-    /// The bytes are not a TIFF file, are truncated, use a variant this loader does not read, or
-    /// declare dimensions outside the safety limits.
+    /// The bytes are not a TIFF file, are truncated, or declare dimensions outside the pixel cap.
+    /// </exception>
+    /// <exception cref="NotSupportedException">
+    /// The file is a well-formed TIFF using a feature this loader does not read.
+    /// </exception>
+    /// <exception cref="IndexOutOfRangeException">
+    /// A <c>ColorMap</c> tag whose value field is a negative offset. That read is unguarded where
+    /// its siblings check, so the array indexer throws rather than this loader refusing the file
+    /// (#512). Malformed input should raise <see cref="InvalidDataException"/>, so catching only
+    /// the documented types does not cover it.
     /// </exception>
     /// <remarks>
-    /// The same boundaries as the single-argument overload. Malformed input raises
-    /// <see cref="InvalidDataException"/>; a null array raises
-    /// <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>; and the
-    /// 100,000,000-pixel cap applies while the per-edge constant does not.
+    /// This overload carries the implementation; the single-argument one delegates here, so every
+    /// boundary documented there applies, and two types have to be caught rather than one.
+    /// Malformed input raises <see cref="InvalidDataException"/>. A well-formed file using a
+    /// feature this loader does not read raises <see cref="NotSupportedException"/> from any of
+    /// eighteen sites, and that type does <b>not</b> derive from the first. A null array raises
+    /// <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>. The
+    /// 100,000,000-pixel cap applies and the per-edge constant does not.
     /// <para><paramref name="options"/> selects the decode mode. It does not relax the pixel cap,
     /// which has no public setting.</para>
     /// </remarks>

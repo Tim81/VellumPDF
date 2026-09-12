@@ -40,10 +40,12 @@ public static class PngImageLoader
     /// later major version will check it.</para>
     /// <para>One size limit applies here, not two. A declared pixel count above 100,000,000 is
     /// refused, so that a few bytes of header cannot drive a multi-gigabyte allocation.</para>
-    /// <para>Attention: a second constant bounds each edge at 1,000,000, and it is <b>not</b>
-    /// applied here. Only the MMR decoder behind CCITT and JBIG2 reads it. An image declaring one
-    /// edge of 1,000,001 with a total under the pixel cap loads. Both constants are internal and
-    /// there is no public setting for either.</para>
+    /// <para>Attention: a second constant bounds each edge at 1,000,000 and is applied by
+    /// <b>nothing</b> a default call reaches. Only the MMR decoder reads it, only the JBIG2
+    /// loader reaches that decoder, and only when asked for a decoded raster, which is not the
+    /// default mode. So an image declaring one edge of 1,000,001 with a total under the pixel cap
+    /// loads here and everywhere else. Both constants are internal and neither has a public
+    /// setting.</para>
     /// </remarks>
     public static PdfImageXObject Load(byte[] pngBytes) => Load(pngBytes, ImageLoadOptions.Default);
 
@@ -53,10 +55,10 @@ public static class PngImageLoader
     /// declare dimensions outside the safety limits.
     /// </exception>
     /// <remarks>
-    /// The same boundaries as the single-argument overload. Malformed input raises
-    /// <see cref="InvalidDataException"/>; a null array raises
-    /// <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>; and the
-    /// 100,000,000-pixel cap applies while the per-edge constant does not.
+    /// The same boundaries as the single-argument overload, which delegates here. Malformed input
+    /// raises <see cref="InvalidDataException"/>; a null array raises
+    /// <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>; the
+    /// 100,000,000-pixel cap applies and the per-edge constant does not.
     /// <para><paramref name="options"/> selects the decode mode. It does not relax the pixel cap,
     /// which has no public setting.</para>
     /// </remarks>
