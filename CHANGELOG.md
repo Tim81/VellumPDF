@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A form field's font size was written with the host culture's decimal separator (#522).**
+  `AcroFormBuilder` formatted the `/DA` string and the widget appearance stream's `Tf` operand
+  through `CultureInfo.CurrentCulture`, so a font size of 10.5 saved on a machine set to Dutch or
+  German wrote `10,5`, which is two number tokens where the operator takes one. This was the maintainer's
+  own development-machine default (`nl-NL`). All thirteen call sites now pin
+  `CultureInfo.InvariantCulture`, unconditionally, because PDF syntax is never localised.
+
+  `FormFieldOptions.FontSize` also refuses a non-finite value now. Neither `NaN` nor either
+  infinity has a valid `Tf` operand in any culture, and the defect reached further than the
+  decimal point: every culture but invariant spells positive infinity as U+221E, which a Latin-1
+  content stream can only represent as `?`, silently turning the operand into a literal question
+  mark.
+
 ## [2.3.2] - 2026-09-12
 
 This is a patch version that carries new features as well as fixes. The decision was taken
