@@ -261,11 +261,20 @@ public sealed class GifSpecificationTests
     ///
     /// The fixture emits a Clear after a set number of data codes, past the first width growth so
     /// the reset has a width to undo, and the decode must still be the original indices.
+    ///
+    /// The first four values are chosen, not arbitrary. Swept over 1 to 130 on this fixture, the
+    /// helper's own earlier defect -- skipping the table entry and the width growth before the
+    /// Clear -- produces a stream that fails to decode at exactly eight values: 6, 7, 22, 23, 54,
+    /// 55, 118 and 119. Every other value produces different bytes that still decode, so a test
+    /// using one of those cannot fail if the defect returns. The last value, 20, is one of those
+    /// and is kept deliberately, as the ordinary case where a mid-stream Clear is simply read.
     /// </summary>
     [Theory]
+    [InlineData(7)]
+    [InlineData(23)]
+    [InlineData(55)]
+    [InlineData(119)]
     [InlineData(20)]
-    [InlineData(37)]
-    [InlineData(64)]
     public void Decode_midStreamClearCode_startsTheTableAgain(int clearAfter)
     {
         var pixels = new byte[600];
