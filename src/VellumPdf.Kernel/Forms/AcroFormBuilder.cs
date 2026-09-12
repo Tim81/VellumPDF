@@ -1,6 +1,7 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Globalization;
 using System.Text;
 using VellumPdf.Document;
 using VellumPdf.Fonts;
@@ -54,6 +55,8 @@ internal static class AcroFormBuilder
 
         foreach (var field in fields)
         {
+            ValidateFontSize(field.Options.FontSize, field.Name);
+
             switch (field)
             {
                 case PdfFormField.RadioGroupField rg:
@@ -428,9 +431,9 @@ internal static class AcroFormBuilder
         var sb = new StringBuilder();
         sb.Append("q\n");
         sb.Append("BT\n");
-        sb.AppendFormat("/ZaDb {0:0.###} Tf\n", sz);
+        sb.AppendFormat(CultureInfo.InvariantCulture, "/ZaDb {0:0.###} Tf\n", sz);
         sb.Append("0 g\n");
-        sb.AppendFormat("{0:0.###} {1:0.###} Td\n", x, baselineY);
+        sb.AppendFormat(CultureInfo.InvariantCulture, "{0:0.###} {1:0.###} Td\n", x, baselineY);
         sb.Append("(l) Tj\n");
         sb.Append("ET\n");
         sb.Append("Q\n");
@@ -450,16 +453,16 @@ internal static class AcroFormBuilder
         // Grey background
         sb.Append("q\n");
         sb.Append("0.8 0.8 0.8 rg\n");
-        sb.AppendFormat("{0:0.###} {1:0.###} {2:0.###} {3:0.###} re f\n", 0, 0, w, h);
+        sb.AppendFormat(CultureInfo.InvariantCulture, "{0:0.###} {1:0.###} {2:0.###} {3:0.###} re f\n", 0, 0, w, h);
         // Black border
         sb.Append("0 0 0 RG\n");
         sb.Append("1 w\n");
-        sb.AppendFormat("{0:0.###} {1:0.###} {2:0.###} {3:0.###} re S\n", 0.5, 0.5, w - 1, h - 1);
+        sb.AppendFormat(CultureInfo.InvariantCulture, "{0:0.###} {1:0.###} {2:0.###} {3:0.###} re S\n", 0.5, 0.5, w - 1, h - 1);
         // Caption text
         sb.Append("BT\n");
-        sb.AppendFormat("/Helv {0:0.###} Tf\n", fontSize);
+        sb.AppendFormat(CultureInfo.InvariantCulture, "/Helv {0:0.###} Tf\n", fontSize);
         sb.Append("0 g\n");
-        sb.AppendFormat("{0:0.###} {1:0.###} Td\n", 4.0, baselineY);
+        sb.AppendFormat(CultureInfo.InvariantCulture, "{0:0.###} {1:0.###} Td\n", 4.0, baselineY);
         sb.Append('(');
         sb.Append(EscapePdfString(caption));
         sb.Append(") Tj\n");
@@ -482,17 +485,17 @@ internal static class AcroFormBuilder
         // Background + border
         sb.Append("q\n");
         sb.Append("1 1 1 rg\n");                          // white fill
-        sb.AppendFormat("{0:0.###} {1:0.###} {2:0.###} {3:0.###} re f\n", 0, 0, w, h);
+        sb.AppendFormat(CultureInfo.InvariantCulture, "{0:0.###} {1:0.###} {2:0.###} {3:0.###} re f\n", 0, 0, w, h);
         sb.Append("0 0 0 RG\n");                           // black stroke
         sb.Append("0.5 w\n");
-        sb.AppendFormat("{0:0.###} {1:0.###} {2:0.###} {3:0.###} re S\n", 0, 0, w, h);
+        sb.AppendFormat(CultureInfo.InvariantCulture, "{0:0.###} {1:0.###} {2:0.###} {3:0.###} re S\n", 0, 0, w, h);
         // Text
         sb.Append("/Tx BMC\n");
         sb.Append("q\n");
         sb.Append("BT\n");
-        sb.AppendFormat("/Helv {0:0.###} Tf\n", fontSize);
+        sb.AppendFormat(CultureInfo.InvariantCulture, "/Helv {0:0.###} Tf\n", fontSize);
         sb.Append("0 g\n");
-        sb.AppendFormat("{0:0.###} {1:0.###} Td\n", 2.0, baselineY);
+        sb.AppendFormat(CultureInfo.InvariantCulture, "{0:0.###} {1:0.###} Td\n", 2.0, baselineY);
         sb.Append('(');
         sb.Append(EscapePdfString(value));
         sb.Append(") Tj\n");
@@ -516,9 +519,9 @@ internal static class AcroFormBuilder
         var sb = new StringBuilder();
         sb.Append("q\n");
         sb.Append("BT\n");
-        sb.AppendFormat("/ZaDb {0:0.###} Tf\n", fontSize);
+        sb.AppendFormat(CultureInfo.InvariantCulture, "/ZaDb {0:0.###} Tf\n", fontSize);
         sb.Append("0 g\n");
-        sb.AppendFormat("{0:0.###} {1:0.###} Td\n", x, baselineY);
+        sb.AppendFormat(CultureInfo.InvariantCulture, "{0:0.###} {1:0.###} Td\n", x, baselineY);
         sb.Append("(4) Tj\n");
         sb.Append("ET\n");
         sb.Append("Q\n");
@@ -584,6 +587,30 @@ internal static class AcroFormBuilder
 
     // ── Small helpers ────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Rejects a non-finite font size. <c>NaN</c> and the infinities have no representation as a
+    /// PDF number (ISO 32000-2, 7.3.3, a number is an optional sign, digits, and an optional
+    /// point), so none of them is a valid <c>Tf</c> operand in any culture.
+    /// </summary>
+    private static void ValidateFontSize(double fontSize, string fieldName)
+    {
+        if (double.IsFinite(fontSize)) return;
+
+        throw new InvalidOperationException(
+            $"Form field \"{fieldName}\" has a font size of {FormatNonFinite(fontSize)}, which " +
+            "cannot be written as a Tf operand. A font size must be a finite number.");
+    }
+
+    /// <summary>
+    /// Renders a non-finite value for an exception message. Called only once the caller is
+    /// already known to be non-finite, so the two infinities are the only remaining cases besides
+    /// <c>NaN</c>.
+    /// </summary>
+    private static string FormatNonFinite(double value) =>
+        double.IsNaN(value) ? "NaN"
+        : double.IsPositiveInfinity(value) ? "positive infinity"
+        : "negative infinity";
+
     private static PdfArray BBoxArray(double w, double h) =>
         new([new PdfReal(0), new PdfReal(0), new PdfReal(w), new PdfReal(h)]);
 
@@ -596,7 +623,8 @@ internal static class AcroFormBuilder
         new PdfDictionary().Set(PdfName.N, nRef);
 
     private static PdfLiteralString BuildDa(double fontSize) =>
-        new(Encoding.Latin1.GetBytes($"/Helv {fontSize:0.###} Tf 0 g"));
+        new(Encoding.Latin1.GetBytes(
+            string.Create(CultureInfo.InvariantCulture, $"/Helv {fontSize:0.###} Tf 0 g")));
 
     /// <summary>
     /// Encodes a PDF <em>text string</em> (ISO 32000-2 §7.9.2) for use in field dictionary

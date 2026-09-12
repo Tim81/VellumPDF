@@ -1,8 +1,10 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Globalization;
 using System.IO.Compression;
 using System.Text;
+using System.Text.RegularExpressions;
 using VellumPdf.Document;
 using VellumPdf.Forms;
 
@@ -409,6 +411,173 @@ public sealed class FormTests
         Assert.DoesNotContain("/Encoding", zadbObject, StringComparison.Ordinal);
     }
 
+    // ── #522: font size formatting must not follow CultureInfo.CurrentCulture ──
+
+    /// <summary>
+    /// A field's font size reaches two writers: the field dictionary's own <c>/DA</c> string
+    /// (<c>AcroFormBuilder.BuildDa</c>) and the <c>Tf</c> operator inside its widget appearance
+    /// stream (<c>AcroFormBuilder.BuildTextAppearanceContent</c>). Both must stay on the invariant
+    /// decimal point regardless of <see cref="CultureInfo.CurrentCulture"/>; the file also carries
+    /// a second, unrelated <c>/DA</c> (the hard-coded <c>/AcroForm</c>-level default), which this
+    /// test collects separately so a probe that reads only the first <c>/DA</c> cannot pass by
+    /// missing the one this issue is about.
+    /// </summary>
+    [Theory]
+    [InlineData("nl-NL")]
+    [InlineData("de-DE")]
+    public void Save_textField_fractionalFontSize_commaDecimalCulture_writesInvariantDecimalPoint(string cultureName)
+    {
+        var previousCulture = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(cultureName);
+        try
+        {
+            using var doc = new PdfDocument();
+            var page = doc.AddPage();
+            doc.AddTextField(page, "Amount", new PdfRectangle(50, 700, 250, 730),
+                "hi", new FormFieldOptions { FontSize = 10.5 });
+
+            var ms = new MemoryStream();
+            doc.Save(ms);
+            var bytes = ms.ToArray();
+
+            var daLiterals = ExtractDaLiterals(bytes);
+            Assert.Equal(["/Helv 0 Tf 0 g", "/Helv 10.5 Tf 0 g"], daLiterals);
+
+            var appearance = ExtractFirstStreamContainingTf(bytes);
+            Assert.Contains("/Helv 10.5 Tf", appearance, StringComparison.Ordinal);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = previousCulture;
+        }
+    }
+
+    /// <summary>
+    /// A hostile culture whose decimal separator is not a digit-like symbol at all (here, a bare
+    /// <c>#</c>) is the strongest case: no reader tolerates <c>10#5</c> as a leniently-parsed
+    /// number the way one might argue a comma could be. The invariant pin has to hold even here.
+    /// </summary>
+    [Fact]
+    public void Save_textField_fractionalFontSize_hostileCulture_writesInvariantDecimalPoint()
+    {
+        var hostile = (CultureInfo)CultureInfo.GetCultureInfo("en-US").Clone();
+        hostile.NumberFormat.NumberDecimalSeparator = "#";
+
+        var previousCulture = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = hostile;
+        try
+        {
+            using var doc = new PdfDocument();
+            var page = doc.AddPage();
+            doc.AddTextField(page, "Amount", new PdfRectangle(50, 700, 250, 730),
+                "hi", new FormFieldOptions { FontSize = 10.5 });
+
+            var ms = new MemoryStream();
+            doc.Save(ms);
+            var bytes = ms.ToArray();
+
+            var daLiterals = ExtractDaLiterals(bytes);
+            Assert.Equal(["/Helv 0 Tf 0 g", "/Helv 10.5 Tf 0 g"], daLiterals);
+
+            var appearance = ExtractFirstStreamContainingTf(bytes);
+            Assert.Contains("/Helv 10.5 Tf", appearance, StringComparison.Ordinal);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = previousCulture;
+        }
+    }
+
+    /// <summary>
+    /// The checkbox appearance builder is a separate <c>AppendFormat</c> call site
+    /// (<c>BuildCheckAppearanceContent</c>) from the text field's, so the culture pin needs its
+    /// own coverage rather than inheriting the text field test's.
+    /// </summary>
+    [Fact]
+    public void Save_checkBox_fractionalFontSize_commaDecimalCulture_writesInvariantDecimalPoint()
+    {
+        var previousCulture = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("nl-NL");
+        try
+        {
+            using var doc = new PdfDocument();
+            var page = doc.AddPage();
+            doc.AddCheckBox(page, "Agree", new PdfRectangle(72, 680, 90, 698),
+                checkedState: true, new FormFieldOptions { FontSize = 10.5 });
+
+            var ms = new MemoryStream();
+            doc.Save(ms);
+            var bytes = ms.ToArray();
+
+            var appearance = ExtractFirstStreamContainingTf(bytes);
+            Assert.Contains("/ZaDb 10.5 Tf", appearance, StringComparison.Ordinal);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = previousCulture;
+        }
+    }
+
+    /// <summary>
+    /// A radio button group's on-state appearance is built by
+    /// <c>BuildRadioOnAppearanceContent</c>, a third <c>AppendFormat</c> call site distinct from
+    /// the text field's and checkbox's.
+    /// </summary>
+    [Fact]
+    public void Save_radioButtonGroup_fractionalFontSize_commaDecimalCulture_writesInvariantDecimalPoint()
+    {
+        var previousCulture = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("nl-NL");
+        try
+        {
+            using var doc = new PdfDocument();
+            var page = doc.AddPage();
+            doc.AddRadioButtonGroup(
+                "Choice",
+                [new RadioOption(page, new PdfRectangle(72, 600, 90, 618), "A")],
+                selectedExportValue: "A",
+                new FormFieldOptions { FontSize = 10.5 });
+
+            var ms = new MemoryStream();
+            doc.Save(ms);
+            var bytes = ms.ToArray();
+
+            var appearance = ExtractFirstStreamContainingTf(bytes);
+            Assert.Contains("/ZaDb 10.5 Tf", appearance, StringComparison.Ordinal);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = previousCulture;
+        }
+    }
+
+    /// <summary>
+    /// A non-finite font size has no valid <c>Tf</c> operand in any culture (ISO 32000-2, 7.3.3),
+    /// so it is refused at <see cref="PdfDocument.Save(Stream)"/> rather than reaching the stream
+    /// as <c>NaN</c>, <c>Infinity</c>, or (once a real, non-invariant culture substitutes its
+    /// Unicode infinity symbol into a Latin-1 stream) a bare <c>?</c>.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(NonFiniteFontSizes))]
+    public void Save_textField_nonFiniteFontSize_isRefused(double fontSize, string expectedWord)
+    {
+        using var doc = new PdfDocument();
+        var page = doc.AddPage();
+        doc.AddTextField(page, "Amount", new PdfRectangle(50, 700, 250, 730),
+            "hi", new FormFieldOptions { FontSize = fontSize });
+
+        var ex = Assert.Throws<InvalidOperationException>(() => doc.Save(new MemoryStream()));
+        Assert.Contains("Amount", ex.Message, StringComparison.Ordinal);
+        Assert.Contains(expectedWord, ex.Message, StringComparison.Ordinal);
+    }
+
+    public static TheoryData<double, string> NonFiniteFontSizes => new()
+    {
+        { double.NaN, "NaN" },
+        { double.PositiveInfinity, "positive infinity" },
+        { double.NegativeInfinity, "negative infinity" },
+    };
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private static int CountOccurrences(string text, string pattern)
@@ -468,6 +637,55 @@ public sealed class FormTests
                 if (litEnd >= 0)
                     return decompressed[(litStart + 1)..litEnd];
             }
+
+            searchFrom = streamEnd;
+        }
+    }
+
+    /// <summary>
+    /// Returns the literal text of every <c>/DA (...)</c> entry in <paramref name="pdfBytes"/>, in
+    /// file order. The saved PDF carries two: the hard-coded <c>/AcroForm</c>-level default and
+    /// the field's own, built from the caller's font size. Collecting both, rather than the
+    /// first match, is what makes a probe that only sees the unaffected default fail loudly.
+    /// </summary>
+    private static List<string> ExtractDaLiterals(byte[] pdfBytes)
+    {
+        var content = Encoding.Latin1.GetString(pdfBytes);
+        var matches = Regex.Matches(content, @"/DA \(([^)]*)\)");
+        Assert.True(matches.Count >= 2, $"Expected at least two /DA entries, found {matches.Count}.");
+        return matches.Select(m => m.Groups[1].Value).ToList();
+    }
+
+    /// <summary>
+    /// Scans every FlateDecode stream in <paramref name="pdfBytes"/> in order and returns the
+    /// decompressed text of the first one containing a <c>Tf</c> operator (a widget appearance
+    /// stream). A raw byte search over <paramref name="pdfBytes"/> cannot see this operator at
+    /// all, because the stream is compressed.
+    /// </summary>
+    private static string ExtractFirstStreamContainingTf(byte[] pdfBytes)
+    {
+        var searchFrom = 0;
+        while (true)
+        {
+            var streamStart = FindSequence(pdfBytes, "\nstream\n"u8, searchFrom);
+            Assert.True(streamStart >= 0, "No stream containing a Tf operator found in the PDF.");
+
+            var dataStart = streamStart + 8; // length of "\nstream\n"
+            var streamEnd = FindSequence(pdfBytes, "\nendstream"u8, dataStart);
+            Assert.True(streamEnd >= 0, "No matching endstream found in the PDF.");
+
+            string? text = null;
+            try
+            {
+                text = Encoding.Latin1.GetString(Decompress(pdfBytes[dataStart..streamEnd]));
+            }
+            catch (InvalidDataException)
+            {
+                // Not a Flate stream, or empty, so skip it.
+            }
+
+            if (text is not null && text.Contains(" Tf", StringComparison.Ordinal))
+                return text;
 
             searchFrom = streamEnd;
         }
