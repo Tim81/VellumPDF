@@ -303,6 +303,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **A language-tag rule reported "Rule evaluation failed" for a tag it had already judged
+  (#500).** Both `/Lang` syntax rules, the PDF/A-2a one and the PDF/UA-1 one, matched their
+  pattern under a 50 millisecond match timeout. A match timeout is measured against elapsed time
+  rather than work done, so a thread that loses its slice part way through exceeds it on an input
+  that needs microseconds. The eight-character tag `xyz!!bad` timed out on a CI runner executing
+  seven test assemblies at once, and the rule replaced its finding with an evaluation failure. A
+  loaded consumer machine does the same thing, so this was not only a flaky test.
+
+  Raising the number would have moved the flake rather than removed it. The guard is gone instead,
+  and the pattern now runs on the linear-time engine, which makes a runaway impossible by
+  construction rather than by a property of this particular pattern. The pattern itself was never
+  the problem: the hyphen anchors each subtag, so backtracking inside the one-to-eight quantifier
+  is bounded by eight attempts per subtag. Measured over 29 tag shapes and 12 stressors built from
+  nine-character subtags, up to 122 characters, both engines return the same verdict for every
+  input and none takes a measurable time.
+
+  What is asserted is the decision, not a duration: a test reads both patterns and fails if either
+  carries a finite timeout or drops the linear-time option. Provoking thread starvation is not
+  something a test can do reliably, and a test that tried would be the very wall-clock assertion
+  being removed.
+
 - **Refusals named the page size instead of the input, and several inputs saved a document a reader
   cannot use (#478, #481).** What each input did before is not uniform, so it is stated per input
   rather than per group.
