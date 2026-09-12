@@ -11,11 +11,14 @@ namespace VellumPdf.Kernel.Tests;
 ///
 /// Three defects motivated the file originally, and all three were invisible to tests that only
 /// asked whether a file loaded, because a single flat colour written at Pillow's own minimum code
-/// size of 8 survives all three: that width keeps the LZW dictionary under any boundary the
-/// defect below could reach, and a flat colour has nothing for the interlace or KwKwK defects to
-/// scramble either. The same colour at a narrower minimum code size reaches a width boundary in
-/// as few as 7 pixels, measured below. The file has grown past those three since: the
-/// transparency-scope leak, the input bounds guards and the short-stream refusal live here too.
+/// size of 8 survives all three: that width keeps the LZW dictionary under the boundary for every
+/// raster in this file, none larger than 160x120's 19,200 pixels, well short of the 32,641 a flat
+/// raster needs at that code size (CHANGELOG.md's corpus measurement), and a flat colour has
+/// nothing for the interlace or KwKwK defects to scramble either. The same colour at a narrower
+/// minimum code size reaches a width boundary sooner, in as few as 7 pixels at minimum code size
+/// 2, again CHANGELOG.md's figure rather than one re-derived below. The file has grown past those
+/// three since: the transparency-scope leak, the input bounds guards and the short-stream refusal
+/// live here too.
 ///
 /// Two kinds of case live here, and the distinction matters when reading a failure. The interlace
 /// order, the encoder's block structure and its code stream are known answers: the expected value
@@ -49,8 +52,9 @@ public sealed class GifSpecificationTests
     /// The decoder grew one code later, so as soon as an image's dictionary passed that boundary it
     /// read a code too narrow, desynchronised, and threw "Invalid GIF LZW code". A flat colour
     /// written at Pillow's minimum code size of 8 stays under any boundary a 160x120 image can
-    /// reach, so it decoded regardless of the defect; at the narrower code size this fixture uses,
-    /// a flat colour reaches one in 7 pixels (measured below), so the outcome past that point
+    /// reach, so it decoded regardless of the defect; a flat colour at the minimum code size of 3
+    /// this fixture uses would reach the boundary at 29 pixels, sooner still at 7 for code size 2
+    /// (both CHANGELOG.md's corpus figures, not re-derived here), so the outcome past that point
     /// depended on the content, not on flatness.
     ///
     /// This fixture is 300 pixels over 8 palette entries, so the minimum code size is 3 and the
@@ -281,9 +285,11 @@ public sealed class GifSpecificationTests
     /// entries, and <see cref="GifEncoder"/> grows N only as far as the palette needs: one entry
     /// short and the last colour has no slot. A palette of 2^k+1 colours is exactly that boundary,
     /// one past the table size a smaller N would give, and no fixture anywhere in this file used
-    /// one: the encoder's own palettes elsewhere are 2, 4, 200, 256 and the 257 that gets refused,
-    /// none of them 2^k+1. A table one bit short truncates the last colour, and this package's own
-    /// decoder then refuses the file it just wrote.
+    /// one: the encoder's own palettes elsewhere are 2, 4, 200, 256 and the 257 that gets refused.
+    /// Only that last one is itself 2^k+1, and it is refused outright for exceeding the
+    /// 256-colour limit before the table-size question can arise, so it round-trips nothing
+    /// either. A table one bit short truncates the last colour, and this package's own decoder
+    /// then refuses the file it just wrote.
     /// </summary>
     [Theory]
     [InlineData(3)]
@@ -326,10 +332,11 @@ public sealed class GifSpecificationTests
     ///
     /// The first four values are chosen, not arbitrary. Swept over 1 to 130 on this fixture, the
     /// helper's own earlier defect, skipping the table entry and the width growth before the
-    /// Clear, produces a stream that fails to decode at exactly eight values: 6, 7, 22, 23, 54,
-    /// 55, 118 and 119. Every other value produces different bytes that still decode, so a test
-    /// using one of those cannot fail if the defect returns. The last value, 20, is one of those
-    /// and is kept deliberately, as the ordinary case where a mid-stream Clear is simply read.
+    /// Clear, produces a stream that fails to decode at exactly four values: 7, 23, 55 and 119.
+    /// Every other value, 6, 22, 54 and 118 included, produces different bytes that still decode,
+    /// so a test using one of those cannot fail if the defect returns. The last value, 20, is one
+    /// of those and is kept deliberately, as the ordinary case where a mid-stream Clear is simply
+    /// read.
     /// </summary>
     [Theory]
     [InlineData(7)]
@@ -473,6 +480,24 @@ public sealed class GifSpecificationTests
     }
 
     /// <summary>
+    /// Section 22.a requires every index to be within the active colour table's range; the
+    /// decoder's own comment at the palette expansion documents a deliberate departure from that
+    /// contract, leaving an out-of-range pixel black rather than refusing the whole image. Turning
+    /// that leniency into a throw is not caught by anything else in this file, so it is pinned
+    /// here: a 2-entry colour table under minimum code size 2, whose LZW root symbols still run
+    /// 0-3, lets index 3 through as a valid code with no third or fourth palette entry behind it.
+    /// </summary>
+    [Fact]
+    public void Decode_pixelIndexOutsideTheColourTable_isLeftBlackRatherThanRefused()
+    {
+        byte[] indices = [1, 3];
+
+        var gif = BuildGif(indices, width: 2, height: 1, paletteEntries: 2, interlaced: false);
+
+        Assert.Equal(new byte[] { 1, 1, 1, 0, 0, 0 }, DecodeRgb(gif, 2, 1));
+    }
+
+    /// <summary>
     /// Section 17: the signature is followed by a version, and 87a files are still GIF. The
     /// loader accepts both, and nothing asserted the older one.
     /// </summary>
@@ -542,9 +567,11 @@ public sealed class GifSpecificationTests
     }
 
     /// <summary>
-    /// Section 12 puts 0xFA-0xFF, Special Purpose, outside the three ranges that can close a
-    /// pending Graphic Control Extension's scope; Comment (0xFE) is one of those labels, and
-    /// nothing in the tree exercised the "does not close" side of that rule. The fixture is the
+    /// Section 12 sorts every label into three ranges in total: Graphic-Rendering, Control, and
+    /// Special Purpose, which is 0xFA-0xFF. Only Graphic-Rendering closes a pending Graphic
+    /// Control Extension's scope, so Special Purpose sits outside the one range that can close it,
+    /// not outside all three as such. Comment (0xFE) is a Special Purpose label, and nothing in
+    /// the tree exercised the "does not close" side of that rule. The fixture is the
     /// same one used for the closing cases above with a Comment Extension standing in for the
     /// Plain Text one, so the transparent index must still reach the image.
     /// </summary>
@@ -558,13 +585,15 @@ public sealed class GifSpecificationTests
         var img = GifImageLoader.Load(gif);
 
         Assert.NotNull(img.SMask);
+        Assert.Equal([0, 255, 0, 255, 0, 255, 0], DecodeAlpha(img.SMask));
     }
 
     /// <summary>
     /// Section 12's Graphic-Rendering range is 0x00-0x7F as a whole, not the single label 0x01
     /// this file otherwise exercises; every other value in that range closes a pending scope the
-    /// same way. 0x00 stands in for the Plain Text Extension here to pin the boundary rather than
-    /// the one label already covered.
+    /// same way. 0x00 stands in for a second label in that range here, distinct from the one
+    /// already covered; it does not test the 0x7F/0x80 boundary itself, which no case below does
+    /// either.
     /// </summary>
     [Fact]
     public void Decode_graphicRenderingExtensionOtherThanPlainText_closesAPendingTransparentIndex()
@@ -853,10 +882,12 @@ public sealed class GifSpecificationTests
 
     /// <summary>
     /// Appendix F, under ESTABLISH CODE SIZE, puts the minimum code size at 2 or above; a palette
-    /// index is a byte, so 8 is the ceiling. Below 2, the starting width still fits Clear and End
-    /// of Information; what does not fit is the first free code, one bit wider than either of
-    /// them. No test covered either end, and the loader's own message for it appeared in no
-    /// assertion.
+    /// index is a byte, so 8 is the ceiling. At 1, the starting width, 2 bits, still fits Clear
+    /// (2) and End of Information (3); what does not fit there is the first free code, 4, one bit
+    /// wider than either (<see cref="GifEncoder"/>'s own comment on this floor makes the same
+    /// point). At 0 the starting width is only 1 bit, too narrow even for End of Information, 2,
+    /// so it fails a step earlier than 1 does rather than for the same reason. No test covered
+    /// either end, and the loader's own message for it appeared in no assertion.
     /// </summary>
     [Theory]
     [InlineData(0)]
@@ -1182,8 +1213,8 @@ public sealed class GifSpecificationTests
             // The table entry and the width growth belong to the code just emitted, and a
             // decoder performs both whatever comes next, so they have to happen before any
             // Clear is written. Skipping them, which this did, left the decoder reading a code
-            // wider than the width the fixture had reached, and clearAfter values 6, 7, 22, 23,
-            // 54, 55, 118 and 119 produced a stream neither this decoder nor Pillow could read.
+            // wider than the width the fixture had reached, and clearAfter values 7, 23, 55 and
+            // 119 produced a stream neither this decoder nor Pillow could read.
             if (nextCode < 4096)
             {
                 table[(prefix, k)] = nextCode++;
@@ -1232,6 +1263,26 @@ public sealed class GifSpecificationTests
         // between the stream keywords. ImageFormatTests reads it the same way.
         using var pdfMs = new MemoryStream();
         img.BuildStream().WriteTo(new VellumPdf.IO.PdfWriter(pdfMs));
+        var raw = pdfMs.ToArray();
+        var start = IndexOf(raw, "\nstream\n"u8) + 8;
+        var end = IndexOf(raw, "\nendstream"u8);
+
+        using var input = new MemoryStream(raw[start..end]);
+        using var z = new System.IO.Compression.ZLibStream(input, System.IO.Compression.CompressionMode.Decompress);
+        using var outMs = new MemoryStream();
+        z.CopyTo(outMs);
+        return outMs.ToArray();
+    }
+
+    /// <summary>
+    /// Inflates a decoded image's soft-mask stream to its alpha bytes, the same way
+    /// <see cref="DecodeRgb"/> reads the colour stream.
+    /// </summary>
+    private static byte[] DecodeAlpha(VellumPdf.Core.PdfStream? sMask)
+    {
+        var mask = Assert.IsType<VellumPdf.Core.PdfStream>(sMask);
+        using var pdfMs = new MemoryStream();
+        mask.WriteTo(new VellumPdf.IO.PdfWriter(pdfMs));
         var raw = pdfMs.ToArray();
         var start = IndexOf(raw, "\nstream\n"u8) + 8;
         var end = IndexOf(raw, "\nendstream"u8);

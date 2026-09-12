@@ -15,8 +15,9 @@ namespace VellumPdf.Images;
 ///   • Graphic Control Extension: transparent index → 8-bit /SMask.
 ///   • Animated GIFs: only the first image descriptor is decoded; subsequent frames are ignored.
 ///
-/// Rejected: a file with no image descriptor, a malformed or truncated LZW stream, a minimum
-/// code size outside 2 to 8, a colour table or sub-block chain that runs past the end of the
+/// Rejected: a file with no image descriptor, an image descriptor truncated before its own fields
+/// end, a malformed or truncated LZW stream, a minimum code size outside 2 to 8, an image with no
+/// colour table to read from, a colour table or sub-block chain that runs past the end of the
 /// file, and dimensions that are invalid or exceed the decoder's safety limit. Every one of these
 /// throws <see cref="InvalidDataException"/>, never the exception type the failing read would
 /// otherwise raise.
@@ -26,9 +27,10 @@ public static class GifImageLoader
     /// <summary>Decodes the first frame of a GIF into a FlateDecode Image XObject.</summary>
     /// <remarks>
     /// Malformed input is refused. This method throws <see cref="InvalidDataException"/> naming
-    /// the fault for a file with no image descriptor, an LZW stream that is corrupt or ends
-    /// before every pixel the image descriptor promises is produced, a minimum code size outside
-    /// 2 to 8, a colour table or sub-block chain that runs past the end of the file, a truncated
+    /// the fault for a file with no image descriptor, an image descriptor truncated before its own
+    /// fields end, an LZW stream that is corrupt or ends before every pixel the image descriptor
+    /// promises is produced, a minimum code size outside 2 to 8, an image with no colour table to
+    /// read from, a colour table or sub-block chain that runs past the end of the file, a truncated
     /// extension, or dimensions <see cref="ImageLimits.ValidateDimensions"/> refuses. A caller
     /// can guard on the one exception type for all of them rather than several.
     /// <para>A stream carrying more pixels than the image descriptor promises is <b>not</b>
@@ -37,10 +39,11 @@ public static class GifImageLoader
     /// </remarks>
     /// <exception cref="InvalidDataException">
     /// <paramref name="gifBytes"/> is too small to be a GIF, does not carry the GIF87a/GIF89a
-    /// signature, has no image descriptor, a colour table or sub-block chain runs past the end of
-    /// the array, an extension is truncated, the LZW minimum code size is outside 2 to 8, the LZW
-    /// stream is corrupt or ends before every promised pixel is produced, or the image dimensions
-    /// are invalid or exceed the safety limit named in the message.
+    /// signature, has no image descriptor, the image descriptor itself is truncated, a colour
+    /// table or sub-block chain runs past the end of the array, the active image has no colour
+    /// table to read from, an extension is truncated, the LZW minimum code size is outside 2 to 8,
+    /// the LZW stream is corrupt or ends before every promised pixel is produced, or the image
+    /// dimensions are invalid or exceed the safety limit named in the message.
     /// </exception>
     public static PdfImageXObject Load(byte[] gifBytes)
     {
@@ -380,9 +383,10 @@ public static class GifImageLoader
 
                 // GIF89a Appendix F, under COMPRESSION, item 4: "Whenever the LZW code value
                 // would exceed the current code length, the code length is increased by one."
-                // Appendix F carries two numbered lists, each of four: the steps in its preamble,
-                // under no subheading, and the items under COMPRESSION. So a bare "clause 4" is
-                // ambiguous between two different rules, and the subheading has to be named.
+                // Appendix F carries two numbered lists, each of four items: the steps in its
+                // preamble, under no subheading, and the items under COMPRESSION. A bare item
+                // number is therefore ambiguous between the two lists, hence "COMPRESSION, item
+                // 4" throughout rather than a number alone.
                 //
                 // A code length of n expresses values 0..2^n-1, so the value 2^n is the first
                 // that exceeds it, and the width has to grow when the next code to be assigned

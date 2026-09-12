@@ -145,9 +145,12 @@ Prerequisites above.) Or use the Docker-backed `verapdf` shim described in
 A missing tool, or one that resolves to something other than what it claims,
 makes the test skip locally, so a green local run does not mean the oracles
 ran. On CI the same tests fail instead: `CI`, `GITHUB_ACTIONS`, and
-`REQUIRE_ORACLES` all fail every oracle test, while `REQUIRE_VERAPDF` and
-`REQUIRE_BARCODE_ORACLE` fail only the veraPDF and barcode-decode oracles
-respectively. Set `REQUIRE_ORACLES=1` locally to reproduce the CI behaviour
+`REQUIRE_ORACLES` all fail every oracle test, while `REQUIRE_VERAPDF` fails
+only the veraPDF oracle and `REQUIRE_BARCODE_ORACLE` fails the barcode-decode
+oracle's dependencies. `OracleGate` keys the latter on dependency name, not on
+which test asks for it, so `REQUIRE_BARCODE_ORACLE` also escalates a missing
+`python` for the unrelated GIF oracle (#490), since both gate on that same
+name. Set `REQUIRE_ORACLES=1` locally to reproduce the CI behaviour
 across the board, or one of the two scoped variables to reproduce just that
 oracle's CI behaviour.
 

@@ -16,9 +16,11 @@ namespace VellumPdf.Kernel.Tests;
 /// available for this rule: both sides share one convention, so a matched drift in both stays
 /// green (<see cref="GifSpecificationTests"/>'s remarks describe a real case of exactly that).
 /// The suite's own mutation testing measured how weak. Narrowing the decoder's code-width cap at
-/// <c>GifImageLoader.cs</c> from 12 bits to 11, or to 10, passes the whole Kernel suite; only a
-/// cap of 9 was ever caught by an in-process test. A raster large enough to fill the 4,096-entry
-/// LZW table forces a real GIF encoder to widen codes past 9 bits, and Pillow, pinned in CI at
+/// <c>GifImageLoader.cs</c> from 12 bits to 11, or to 10, passed every in-process test before this
+/// file existed; each now fails one of the two tests below instead, the only case that catches
+/// it, and before them only a cap of 9 was ever caught by an in-process test. A raster large
+/// enough to fill the 4,096-entry LZW table forces a real GIF encoder to widen codes past 9
+/// bits, and Pillow, pinned in CI at
 /// 12.3.0 for the barcode decode oracle already, is a second implementation with no stake in
 /// this package's own width bookkeeping.
 /// </para>
@@ -27,8 +29,9 @@ namespace VellumPdf.Kernel.Tests;
 /// Uses the shared <see cref="ExternalTool"/>/<see cref="OracleGate"/> pair (#198): a missing
 /// <c>python</c> or Pillow skips visibly on a local dev machine, but fails the build on CI
 /// (<c>CI</c>/<c>GITHUB_ACTIONS</c>/<c>REQUIRE_ORACLES</c>), so this oracle can never silently
-/// pass vacuously. <c>python</c> is tried first, then <c>python3</c> (Windows has no
-/// <c>python3</c> alias); a distinct exit code (3) from the script means Pillow is not installed,
+/// pass vacuously. <c>python</c> is tried first, then <c>python3</c>, since either name may be
+/// the one that resolves to a working interpreter on a given machine; a distinct exit code (3)
+/// from the script means Pillow is not installed,
 /// which gates the same way as a missing executable.
 /// </para>
 /// </summary>

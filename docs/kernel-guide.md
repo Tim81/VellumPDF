@@ -335,7 +335,7 @@ ushort gid      = handle.GetGlyphId('A');   // single code point → GID
 ## 4. Images
 
 Load image bytes and register the resulting `PdfImageXObject` with the document.
-Five formats are supported:
+Five formats can be loaded:
 
 | Format | Loader class |
 |---|---|
@@ -348,6 +348,11 @@ Five formats are supported:
 JPEG bytes are passed through as-is (`DCTDecode`); all other formats are
 re-encoded with `FlateDecode`.  PNG images with an alpha channel automatically
 produce an `/SMask` soft-mask stream.
+
+GIF is also the one format this package can write: `GifEncoder.Encode(byte[]
+rgb, int width, int height, bool interlaced = false)` takes 8-bit RGB samples
+and returns a single-frame GIF89a file, building its palette from the colours
+actually present rather than quantising.
 
 ```csharp
 using VellumPdf.Canvas;

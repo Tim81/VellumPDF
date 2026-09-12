@@ -14,9 +14,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   path, which does not trade quality away without being asked. Interlaced output is available and
   writes the Appendix E order. Its code stream is checked against Appendix F directly: a leading
   Clear code (item 1's recommendation, not a requirement, since section 22 itself asks for none), an
-  End of Information code last (item 2's requirement), no code wider than the width in force when
-  it was written, and the table restarted rather than allowed past 4096 entries, one of the two
-  choices the cover sheet leaves to the encoder once the table fills. A round trip through this
+  End of Information code last (item 2's requirement), every code within the table bound item 4
+  implies, and the table restarted rather than allowed past 4096 entries, one of the two
+  choices the cover sheet leaves to the encoder once the table fills. The table bound, not a check
+  on the code width itself, is what a test can fail on: a reader masks each code to the width it is
+  tracking, so "no code is wider than the current width" holds however the encoder behaves, and a
+  matched drift in both sides would pass it; a code at or beyond the next free table entry, though,
+  cannot be resolved by any decoder. A round trip through this
   package's own decoder cannot catch a convention the two share, which is why these are checked
   directly rather than only by decoding the file back. A new `eng/gif-oracle.py`
   and `GifPillowOracleTests` cross-check both directions against Pillow, an independent codec, on a
@@ -83,8 +87,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   whatever the declared palette holds, measured here on a 1x1 and a 160x120 file: a dictionary
   that starts at width 9 stays under the 512-entry boundary for the whole of a 160x120 image's
   19,200 pixels. A flat colour written at a narrower minimum code size crosses one quickly, at 7,
-  29 and 121 pixels at minimum code sizes 2, 3 and 4, measured against this package's own
-  encoder. Detail alone did not decide the corpus's outcome either: 66 of the 160 files with any
+  29 and 121 pixels at minimum code sizes 2, 3 and 4, measured against the test suite's own LZW
+  fixture helper, which can choose a minimum code size independent of the colours actually
+  present. `GifEncoder` itself always derives that size from the palette it builds, so a flat
+  raster it encodes is minimum code size 2 regardless, and it cannot be made to produce the size-3
+  or size-4 streams the other two figures come from. Detail alone did not decide the corpus's
+  outcome either: 66 of the 160 files with any
   detail decoded correctly as well. What mattered was whether that file's dictionary happened to
   cross a boundary, which two files of the same size and content kind can differ on.
 

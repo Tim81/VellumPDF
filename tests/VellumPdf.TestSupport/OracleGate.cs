@@ -91,6 +91,14 @@ public static class OracleGate
     // outside the barcode suite, by ExternalToolResolutionTests' generic identity theory: it is
     // the barcode decode oracle's own rasterizer dependency, named for what it is required by,
     // not for every consumer that happens to share the same binary.
+    //
+    // The scope is keyed on dependency name, not on the calling test, and that has since reached
+    // further than the barcode suite: GifPillowOracleTests (#490) also gates on the bare string
+    // "python", so REQUIRE_BARCODE_ORACLE now escalates a missing Python interpreter for the GIF
+    // oracle too, even though GIF has nothing to do with barcodes. That is a consequence of
+    // matching by name rather than a second deliberate scope, and it strengthens the gate rather
+    // than weakening it: REQUIRE_BARCODE_ORACLE=1 catches one more missing dependency than it
+    // used to, never fewer.
     private static bool IsRequired(string dependency)
         => IsTrueOrOne("CI")
         || IsTrueOrOne("GITHUB_ACTIONS")

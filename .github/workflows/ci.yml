@@ -150,16 +150,19 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           # Pinned for the same reason as the pip versions below: a deterministic interpreter
-          # for the barcode oracle rather than whatever '3.x' resolves to on a given run.
+          # for the barcode oracle and, since #490, the GIF oracle, rather than whatever '3.x'
+          # resolves to on a given run.
           python-version: '3.14'
 
-      - name: Install barcode decode oracle (zxing-cpp)
+      - name: Install barcode decode and GIF oracle dependencies (zxing-cpp, Pillow)
         # Pinned for CI reproducibility (#230), not because 3.1.1 fails the EAN add-on assertion
         # it was originally held against — that test only asserts the main digits and tolerates
         # the add-on's presentation varying by version (see CONTRIBUTING.md), and it landed in
         # the same commit as this pin, passing under 3.1.1. pillow is pinned alongside it so a
         # Pillow release can't shift fixture rendering the same way an unpinned apt font package
-        # could.
+        # could; since #490, Pillow is also the independent GIF codec GifPillowOracleTests checks
+        # this project's own encoder and decoder against, so its pin now bears on more than fixture
+        # rendering.
         run: python -m pip install "zxing-cpp==${ZXING_VERSION}" "pillow==${PILLOW_VERSION}"
 
       - name: Assert pinned oracle versions
