@@ -40,6 +40,10 @@ public sealed class TextStyle
     /// zero shows nothing and a negative size inverts the glyphs. A later major version will reject
     /// both.</para>
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from a save rather than from this property, when the size is not finite. The
+    /// message names the element the style is attached to and the size itself.
+    /// </exception>
     public double FontSize { get; init; } = 12;
 
     /// <summary>

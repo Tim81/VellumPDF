@@ -20,7 +20,9 @@ public sealed class Heading
     /// <summary>Outline nesting level: 0 = top-level, 1 = sub-heading, etc.</summary>
     /// <remarks>
     /// Zero-based: level 0 is tagged <c>H1</c>, level 4 is <c>H5</c>, and every level at or
-    /// above 5 is tagged <c>H6</c>, because that is the deepest heading type PDF defines.
+    /// above 5 is tagged <c>H6</c>. That ceiling is this library's, not the format's: ISO 32000-2
+    /// Table 366 defines <c>Hn</c> for any unsigned integer from 1 upward, and its NOTE 2 says
+    /// outright that <c>H7</c> may be used for a seventh-level heading.
     /// <para><b>Do not pass a negative level.</b> It is not refused, and it does not clamp the
     /// way a reader would expect: the mapping's catch-all sends it to <c>H6</c>, the deepest
     /// type, where a caller means the shallowest. The raw value also reaches the outline

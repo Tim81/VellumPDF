@@ -38,6 +38,10 @@ public sealed class PieChart
     /// contributes no angle, so the slice is absent from the chart while remaining in this list;
     /// nothing reports that it was dropped.</para>
     /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// Raised while the chart is laid out, which happens inside <see cref="Document.Save(System.IO.Stream)"/>,
+    /// when the list is empty, when a value is negative or not finite, or when the values sum to zero or less. <c>ParamName</c> is this property's name.
+    /// </exception>
     public IReadOnlyList<PieSlice> Slices { get; init; } = [];
 
     /// <summary>
@@ -52,6 +56,10 @@ public sealed class PieChart
     /// accepted and clamped to the area the layout pass was handed, so the chart drawn is
     /// smaller than the number set here and nothing reports the difference.</para>
     /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// Raised while the chart is laid out, which happens inside <see cref="Document.Save(System.IO.Stream)"/>,
+    /// when the diameter is zero, negative or not finite. <c>ParamName</c> is this property's name.
+    /// </exception>
     public double Diameter { get; init; } = 200;
 
     /// <summary>Margins around the chart. Defaults to 6 points on all sides.</summary>
@@ -73,6 +81,10 @@ public sealed class PieChart
     /// the thinnest line it can draw, and that grows heavier as the page is scaled down. Leave
     /// <see cref="StrokeColor"/> unset instead.</para>
     /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// Raised while the chart is laid out, which happens inside <see cref="Document.Save(System.IO.Stream)"/>,
+    /// when the width is negative or not finite. <c>ParamName</c> is this property's name.
+    /// </exception>
     public double StrokeWidth { get; init; } = 0.5;
 
     /// <summary>Horizontal placement of the chart within the content area. Defaults to centre.</summary>
@@ -95,6 +107,10 @@ public sealed class PieChart
     /// <para>Radians, not degrees, and no range is imposed: a value outside 0 to 2π is accepted
     /// and wraps, so there is no need to normalise one. The default of π/2 starts at the top.</para>
     /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// Raised while the chart is laid out, which happens inside <see cref="Document.Save(System.IO.Stream)"/>,
+    /// when the angle is not finite. <c>ParamName</c> is this property's name.
+    /// </exception>
     public double StartAngle { get; init; } = Math.PI / 2;
 
     /// <summary>

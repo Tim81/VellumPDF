@@ -123,6 +123,12 @@ public sealed class Document : IDisposable
     /// page-continuation cap instead. Both wrong-cause messages are the defect #481 corrected
     /// elsewhere, still outstanding here.</para>
     /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// Raised from a save rather than from this property, when the margins on either axis meet
+    /// or exceed the page, or when they leave the content area no positive size once the header
+    /// and footer are taken off. Positive infinity reaches this check; <c>NaN</c> and negative
+    /// infinity do not, and surface as the unrelated messages described above.
+    /// </exception>
     public EdgeInsets Margins { get; set; } = new EdgeInsets(72); // 1 inch
 
     /// <summary>

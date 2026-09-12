@@ -31,6 +31,9 @@ public sealed class TableElement
     /// grid: every cell is stroked unconditionally, and <see cref="BorderColor"/> is not
     /// nullable, so the nearest available approximation is a border colour matching the page.</para>
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property, when the width is not finite. The message names the table.
+    /// </exception>
     public double BorderWidth { get; init; } = 0.5;
 
     /// <summary>Color of the table border lines.</summary>

@@ -19,6 +19,9 @@ public sealed class LineSeparator
     /// <para><b>Do not pass a negative width.</b> It is not refused today and its effect is the
     /// renderer's, not the format's. A later major version will reject it.</para>
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property, when the width is not finite. The message names the separator.
+    /// </exception>
     public double LineWidth { get; init; } = 1;
 
     /// <summary>Stroke color of the rule.</summary>

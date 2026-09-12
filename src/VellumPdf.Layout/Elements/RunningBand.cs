@@ -49,10 +49,16 @@ public sealed class RunningBand
     /// This reserves space; it does not scale the text. The band's own
     /// <see cref="TextStyle.FontSize"/> decides how large the glyphs are, so a height smaller
     /// than the text needs lets the band overlap the content rather than shrinking it.
-    /// <para><b>Do not pass zero, a negative value or a non-finite value.</b> None is refused.
-    /// The height comes off the page's content box, so zero or a negative one gives the band no
-    /// room while still drawing it, and a non-finite one propagates into the content area
-    /// calculation. A later major version will reject all three.</para>
+    /// <para><b>Zero and a negative value are not refused</b>, and neither is useful: the
+    /// height comes off the page's content box, so both give the band no room while it is still
+    /// drawn, over the content. A later major version will reject them.</para>
+    /// <para><b>A non-finite value is refused, but by none of the messages you would expect.</b>
+    /// All three throw from <see cref="Document.Save(System.IO.Stream)"/> and none names the band
+    /// height. Measured, one value at a time: positive infinity gives
+    /// <see cref="ArgumentException"/> about the content area having no positive size; <c>NaN</c>
+    /// gives <see cref="InvalidOperationException"/> about an element being too tall to fit;
+    /// negative infinity gives the page-continuation cap. No file is written in any of the
+    /// three.</para>
     /// </remarks>
     public double? Height { get; init; }
 
