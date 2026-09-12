@@ -60,7 +60,7 @@ jobs:
       # everything a developer needs to reproduce and capture the finding.
       - name: Upload fuzz output on failure
         if: steps.fuzz.outcome == 'failure'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fuzz-failure-${{ github.run_id }}
           path: fuzz-output.log
