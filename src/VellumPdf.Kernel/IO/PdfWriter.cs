@@ -39,6 +39,22 @@ public sealed class PdfWriter
     /// pre-seeded to <paramref name="initialPosition"/>. Use this when appending to an existing PDF so
     /// that <see cref="Position"/> reports absolute file offsets for the cross-reference table.
     /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="stream"/> is null.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="stream"/> is not writable.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="initialPosition"/> is negative.
+    /// </exception>
+    /// <remarks>
+    /// <b>The position counter is the caller's responsibility to get right.</b> It is not read
+    /// from the stream and not checked against it: whatever is passed becomes the base for every
+    /// offset this writer reports, and those offsets go into the cross-reference table. A figure
+    /// that does not match where the stream actually is produces a file whose table points at the
+    /// wrong bytes, which a reader reports as corruption rather than as a bad offset.
+    /// <para><b>Do not pass a seekable stream positioned elsewhere</b> and expect this to notice.
+    /// Pass <c>stream.Length</c> when appending to the end of an existing file.</para>
+    /// </remarks>
     public PdfWriter(Stream stream, long initialPosition)
     {
         ArgumentNullException.ThrowIfNull(stream);
