@@ -254,9 +254,10 @@ public sealed class GifSpecificationTests
     ///
     /// This package's encoder does emit one mid-stream, when the table fills, and
     /// <see cref="Encode_writesACodeStreamAppendixFAccepts"/> asserts that it does. What no test
-    /// reached was the decoder's own reset: removing it left the whole Kernel suite of 1,456 cases
-    /// green, while the resulting decode of a 512x512 image this encoder wrote lost 230,850 of its
-    /// 262,144 pixels.
+    /// reached was the decoder's own reset. Measured before this file existed, on the commit that
+    /// added the encoder: removing the reset left all 1,456 Kernel cases green, while the decode
+    /// of a 512x512 image that encoder wrote lost 230,850 of its 262,144 pixels. Repeating that
+    /// experiment now fails the three cases below instead, which is the point of them.
     ///
     /// The fixture emits a Clear after a set number of data codes, past the first width growth so
     /// the reset has a width to undo, and the decode must still be the original indices.
@@ -327,9 +328,13 @@ public sealed class GifSpecificationTests
         // is worthless. ReadCodes masks each code to the width it is itself tracking, so
         // "no code is wider than the current width" is true however the encoder behaves, and a
         // matched drift in both would pass it. What does discriminate is the table bound: a code
-        // at or above the next free entry cannot be resolved by any decoder, and that fires when
-        // the encoder widens one code early. The width rule itself is pinned by a literal code
-        // sequence in EncodeLzw_writesTheCodeSequenceAppendixFRequires instead.
+        // at or above the next free entry cannot be resolved by any decoder, and it fires when
+        // GifEncoder's width rule moves in either direction -- measured, five failures each way.
+        //
+        // No literal known answer covers GifEncoder. The one in
+        // EncodeLzw_writesTheCodeSequenceAppendixFRequires goes through BuildGif, so it pins the
+        // fixture encoder in this file and is blind to the production one. The table bound below
+        // is what stands between GifEncoder and a silent width drift.
         var next = eoi + 1;
         var prev = -1;
         var tableFullResets = 0;
@@ -448,13 +453,15 @@ public sealed class GifSpecificationTests
         Assert.Equal(eoi, codes[^1]);
         Assert.Equal(1, codes.Count(c => c == eoi));
 
+        // No assertion on the code width here, for the reason given in the sibling test: the
+        // reader masks each code to the width it is tracking, so such an assertion cannot fail.
+        // The table bound can, and does.
         var codeSize = minCodeSize + 1;
         var next = eoi + 1;
         var prev = -1;
         var growths = 0;
         foreach (var code in codes)
         {
-            Assert.True(code < 1 << codeSize, $"code {code} needs more than {codeSize} bits");
             if (code == clear)
             {
                 codeSize = minCodeSize + 1;
@@ -555,6 +562,53 @@ public sealed class GifSpecificationTests
 
         var ex = Assert.Throws<InvalidDataException>(() => GifImageLoader.Load(gif));
         Assert.Contains("sub-block", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The two ways a stream can end short, told apart by the message.
+    ///
+    /// The decoder reaches its output-length guard from two exits: the bit buffer running dry,
+    /// which means the data simply stopped, and an End of Information code arriving before the
+    /// last pixel, which means the encoder said it was finished while the descriptor asked for
+    /// more. The second is also the shape a code-width desynchronisation takes, so conflating
+    /// them would let a decoder bug read as a bad file.
+    ///
+    /// Both messages carry the pixel counts, so asserting on those cannot tell them apart:
+    /// swapping the two arms of the ternary that chooses between them left the whole suite green.
+    /// This asserts the distinguishing clause.
+    /// </summary>
+    [Fact]
+    public void Decode_earlyEndOfInformation_saysSoRatherThanBlamingTheData()
+    {
+        // A 2x2 descriptor, four pixels promised, and a stream of exactly Clear, one index, EOI.
+        var full = BuildGif([0, 1, 2, 3], width: 2, height: 2, paletteEntries: 4, interlaced: false);
+        var afterMinCodeSize = 6 + 7 + 12 + 1 + 9 + 1;
+
+        // minimum code size 2, so codes are three bits: Clear = 4, index 0 = 0, EOI = 5.
+        // Packed least-significant-bit first: 100 000 101 -> 0b01000100, 0b00000001.
+        byte[] gif = [.. full[..afterMinCodeSize], 2, 0b0100_0100, 0b0000_0001, 0, 0x3B];
+
+        var ex = Assert.Throws<InvalidDataException>(() => GifImageLoader.Load(gif));
+        Assert.Contains("1 of 4 pixels", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("End of Information", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The other exit: a well-formed but short sub-block chain with no End of Information code at
+    /// all. The message must <em>not</em> mention one, or the two exits are indistinguishable.
+    /// </summary>
+    [Fact]
+    public void Decode_dataRunningOut_doesNotBlameAnEndOfInformationCode()
+    {
+        var full = BuildGif([0, 1, 2, 3], width: 2, height: 2, paletteEntries: 4, interlaced: false);
+        var afterMinCodeSize = 6 + 7 + 12 + 1 + 9 + 1;
+
+        // Clear then one index, and then nothing: 100 000 -> 0b00000100.
+        byte[] gif = [.. full[..afterMinCodeSize], 1, 0b0000_0100, 0, 0x3B];
+
+        var ex = Assert.Throws<InvalidDataException>(() => GifImageLoader.Load(gif));
+        Assert.Contains("of 4 pixels", ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("End of Information", ex.Message, StringComparison.Ordinal);
     }
 
     // ── Malformed input ──────────────────────────────────────────────────────
@@ -845,8 +899,10 @@ public sealed class GifSpecificationTests
     /// </summary>
     /// <param name="clearAfter">
     /// When positive, emit a Clear code after this many data codes and start the table again, as
-    /// Appendix F, under COMPRESSION, item 1 permits at any point. Nothing in the package's own encoder produces
-    /// one mid-stream, so the decoder's reset path has no other way to be reached.
+    /// Appendix F, under COMPRESSION, item 1 permits at any point. The package's own encoder does
+    /// emit one when the table fills, so this is not the only way such a stream can arise -- but
+    /// it is the only way a test can produce one at a chosen point, early enough to be read
+    /// without a 4,096-entry fixture.
     /// </param>
     private static byte[] EncodeLzw(byte[] indices, int minCodeSize, int clearAfter = 0)
     {

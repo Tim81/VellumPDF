@@ -320,9 +320,10 @@ public static class GifImageLoader
 
                 // GIF89a Appendix F, under COMPRESSION, item 4: "Whenever the LZW code value
                 // would exceed the current code length, the code length is increased by one."
-                // Appendix F carries two numbered lists -- four steps in its preamble under no
-                // subheading, and five items under COMPRESSION -- so a bare "clause 4" is
-                // ambiguous between them and the subheading has to be named. A code length of n
+                // Appendix F carries two numbered lists, each of four: the steps in its
+                // preamble, under no subheading, and the items under COMPRESSION. So a bare
+                // "clause 4" is ambiguous between two different rules and the subheading has to
+                // be named. A code length of n
                 // expresses values 0..2^n-1, so the value 2^n is the first that exceeds it, and
                 // the width has to grow when the next code to be assigned reaches 2^n — which is
                 // codeMask + 1. This read `nextCode > codeMask + 1`, growing one code later, so

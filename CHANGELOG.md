@@ -391,8 +391,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   known answer. For one fourteen-index input, the expected code sequence and the expected packed
   bytes are written into the test, derived from Appendix F by hand rather than computed from either
   side. The bytes carry the weight, because they fix the width each code went out at and not only
-  its value. Moving the width growth one code in either direction now fails, in the encoder, in
-  the fixture, and in all three at once. Its sibling, a real encoder in the hardening tests, had
+  its value. Moving the width growth one code in either direction now fails: in the fixture
+  encoder, caught by those literals; in the production encoder, caught by the table bound its own
+  test asserts; and with decoder, encoder and fixture all shifted together, which is the case a
+  round trip cannot see. Its sibling, a real encoder in the hardening tests, had
   the rule right all along. The TIFF LZW decoder's own header gave GIF's rule only as a difference
   from TIFF's, and both rules are now written there in full so that neither has to be derived from
   the other.
