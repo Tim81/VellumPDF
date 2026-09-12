@@ -271,7 +271,7 @@ Exit codes are `0` (conformant), `1` (non-conformant), and `2` (usage or I/O err
 ## Roadmap
 
 Planned direction, tracked as [GitHub milestones](https://github.com/Tim81/VellumPDF/milestones).
-These are scopes, not commitments — the milestones carry no due dates. 2.3.0 is the latest
+These are scopes, not commitments — the milestones carry no due dates. 2.3.2 is the latest
 published release.
 
 Scope past 2.5 runs as **two parallel tracks**, because auditing the layout engine turned up more

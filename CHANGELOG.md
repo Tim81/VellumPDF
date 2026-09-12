@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.3.2] - 2026-09-12
+
+This is a patch version that carries new features as well as fixes. The decision was taken
+deliberately: the work below was ready, and the next minor is milestone v2.4, whose own scope
+would have held it back. Nothing here removes or renames a public symbol, so the patch number
+is still honest about compatibility even though the content is wider than a patch usually is.
+
 ### Added
 
 - **`Document.BandTruncations` and `DocumentRenderer.BandTruncations` report a running band whose

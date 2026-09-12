@@ -573,3 +573,7 @@ VellumPdf.Encryption.PdfEncryptionInfo.Permissions.get -> VellumPdf.Encryption.P
 VellumPdf.Encryption.PdfEncryptionInfo.StringCipher.get -> VellumPdf.Encryption.PdfCipherAlgorithm
 VellumPdf.Encryption.PdfEncryptionInfo.R.get -> int
 VellumPdf.Encryption.PdfEncryptionInfo.V.get -> int
+VellumPdf.Document.PdfStructElem.TableColSpan.get -> int?
+VellumPdf.Document.PdfStructElem.TableColSpan.set -> void
+VellumPdf.Document.PdfStructElem.TableRowSpan.get -> int?
+VellumPdf.Document.PdfStructElem.TableRowSpan.set -> void

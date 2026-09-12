@@ -404,3 +404,27 @@ static VellumPdf.Layout.Elements.PieSlice.operator ==(VellumPdf.Layout.Elements.
 VellumPdf.Layout.Document.LoadTrueTypeFontAsync(string! path, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<VellumPdf.Fonts.EmbeddedFontHandle!>!
 VellumPdf.Layout.Document.SaveAsync(System.IO.Stream! destination, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 VellumPdf.Layout.Document.SaveAsync(string! path, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+VellumPdf.Layout.Document.BandTruncations.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Layout.Elements.BandTruncationWarning>!
+VellumPdf.Layout.Elements.BandTruncationWarning
+VellumPdf.Layout.Elements.BandTruncationWarning.Band.get -> VellumPdf.Layout.Elements.RunningBandKind
+VellumPdf.Layout.Elements.BandTruncationWarning.Band.init -> void
+VellumPdf.Layout.Elements.BandTruncationWarning.BandTruncationWarning() -> void
+VellumPdf.Layout.Elements.BandTruncationWarning.BandTruncationWarning(VellumPdf.Layout.Elements.RunningBandKind Band, int PageNumber, int DrawnCharacters, int ResolvedCharacters) -> void
+VellumPdf.Layout.Elements.BandTruncationWarning.Deconstruct(out VellumPdf.Layout.Elements.RunningBandKind Band, out int PageNumber, out int DrawnCharacters, out int ResolvedCharacters) -> void
+VellumPdf.Layout.Elements.BandTruncationWarning.DrawnCharacters.get -> int
+VellumPdf.Layout.Elements.BandTruncationWarning.DrawnCharacters.init -> void
+VellumPdf.Layout.Elements.BandTruncationWarning.DroppedCharacters.get -> int
+VellumPdf.Layout.Elements.BandTruncationWarning.Equals(VellumPdf.Layout.Elements.BandTruncationWarning other) -> bool
+VellumPdf.Layout.Elements.BandTruncationWarning.PageNumber.get -> int
+VellumPdf.Layout.Elements.BandTruncationWarning.PageNumber.init -> void
+VellumPdf.Layout.Elements.BandTruncationWarning.ResolvedCharacters.get -> int
+VellumPdf.Layout.Elements.BandTruncationWarning.ResolvedCharacters.init -> void
+VellumPdf.Layout.Elements.RunningBandKind
+VellumPdf.Layout.Elements.RunningBandKind.Footer = 1 -> VellumPdf.Layout.Elements.RunningBandKind
+VellumPdf.Layout.Elements.RunningBandKind.Header = 0 -> VellumPdf.Layout.Elements.RunningBandKind
+VellumPdf.Layout.Rendering.DocumentRenderer.BandTruncations.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Layout.Elements.BandTruncationWarning>!
+override VellumPdf.Layout.Elements.BandTruncationWarning.GetHashCode() -> int
+static VellumPdf.Layout.Elements.BandTruncationWarning.operator !=(VellumPdf.Layout.Elements.BandTruncationWarning left, VellumPdf.Layout.Elements.BandTruncationWarning right) -> bool
+static VellumPdf.Layout.Elements.BandTruncationWarning.operator ==(VellumPdf.Layout.Elements.BandTruncationWarning left, VellumPdf.Layout.Elements.BandTruncationWarning right) -> bool
+~override VellumPdf.Layout.Elements.BandTruncationWarning.Equals(object obj) -> bool
+~override VellumPdf.Layout.Elements.BandTruncationWarning.ToString() -> string

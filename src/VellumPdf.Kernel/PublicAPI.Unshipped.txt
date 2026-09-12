@@ -1,5 +1,1 @@
 #nullable enable
-VellumPdf.Document.PdfStructElem.TableColSpan.get -> int?
-VellumPdf.Document.PdfStructElem.TableColSpan.set -> void
-VellumPdf.Document.PdfStructElem.TableRowSpan.get -> int?
-VellumPdf.Document.PdfStructElem.TableRowSpan.set -> void
