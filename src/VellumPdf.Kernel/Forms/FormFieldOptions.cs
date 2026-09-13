@@ -12,7 +12,9 @@ public sealed class FormFieldOptions
 {
     /// <summary>Font size in points for the field's default appearance. Must be finite. Default is 12.</summary>
     /// <remarks>
-    /// A non-finite size is refused. <see cref="PdfDocument.Save(System.IO.Stream)"/> throws
+    /// A non-finite size is refused. <see cref="PdfDocument.Save(System.IO.Stream)"/>,
+    /// <see cref="PdfDocument.SaveAsync(System.IO.Stream, System.Threading.CancellationToken)"/>,
+    /// and <see cref="PdfDocument.PrepareForSigning(SignaturePlaceholderOptions)"/> each throw
     /// <see cref="InvalidOperationException"/> naming the field and the size, because neither
     /// <c>NaN</c> nor either infinity is a PDF number (ISO 32000-2, 7.3.3) and so none of them is
     /// a valid <c>Tf</c> operand.
@@ -21,11 +23,15 @@ public sealed class FormFieldOptions
     /// appearance substitutes a size derived from the widget rectangle whenever this value is not
     /// positive; <see cref="PdfDocument.AddTextField"/>, <see cref="PdfDocument.AddCheckBox"/>,
     /// <see cref="PdfDocument.AddChoiceField"/>, and <see cref="PdfDocument.AddPushButton"/> round
-    /// it to three decimal places rather than writing it unchanged. A positive value below
-    /// <c>0.0005</c> rounds to <c>0</c>, so <c>1e-7</c> writes the same zero-width <c>Tf</c>
-    /// operand as zero itself, and because <c>1e-7</c> is still greater than zero, the radio
-    /// group's substitution above does not fire for it either. A later major version may reject
-    /// a size at or below zero.</para>
+    /// it to three decimal places rather than writing it unchanged, so a positive value below
+    /// <c>0.0005</c> rounds to <c>0</c>. That rounded zero means two different things depending on
+    /// which of the field's two writers reads it. In the field dictionary's own <c>/DA</c> string,
+    /// ISO 32000-2, 12.7.4.3 says a zero size means the font "shall be auto-sized", computed as an
+    /// implementation-dependent function, so a consumer that regenerates the appearance from
+    /// <c>/DA</c> enlarges the text rather than hiding it. In the appearance stream's own <c>Tf</c>
+    /// operand, 9.3.1 (Table 103, the <c>Tf</c> entry) says "zero sized text shall not mark or clip
+    /// any pixels", so the appearance stream this library writes stays invisible at that value. A
+    /// later major version will reject a size at or below zero.</para>
     /// <para>A refused save leaves the document unusable. The validation runs after
     /// <see cref="PdfDocument.Save(System.IO.Stream)"/> marks the document written, so there is
     /// no fixing this value and calling <see cref="PdfDocument.Save(System.IO.Stream)"/> again;

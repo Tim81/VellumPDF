@@ -412,26 +412,30 @@ public sealed class FormTests
     }
 
     // ── #522: font size formatting must not follow CultureInfo.CurrentCulture ──
+    // The five whole-stream comparisons below pin every byte the builder writes, not only the
+    // culture-sensitive operands; the fixed fill/stroke colours and stroke widths are incidental
+    // to #522, so a change that let a widget's own /MK background colour reach these builders
+    // would fail all five with no culture defect present.
 
     /// <summary>
     /// The full appearance-stream content <c>BuildTextAppearanceContent</c> writes for a
-    /// 200-by-30 text field holding "hi" at font size 10.5. Every byte the builder writes is
-    /// pinned here, not only the <c>Tf</c> line, so a mutation to any of its four operand-bearing
-    /// lines fails this assertion.
+    /// 200.5-by-30.25 text field holding "hi" at font size 10.5. Every byte the builder writes
+    /// is pinned here, not only the <c>Tf</c> line, so a mutation to any of its four
+    /// operand-bearing lines fails this assertion.
     /// </summary>
     private const string ExpectedTextFieldAppearance =
         "q\n" +
         "1 1 1 rg\n" +
-        "0 0 200 30 re f\n" +
+        "0 0 200.5 30.25 re f\n" +
         "0 0 0 RG\n" +
         "0.5 w\n" +
-        "0 0 200 30 re S\n" +
+        "0 0 200.5 30.25 re S\n" +
         "/Tx BMC\n" +
         "q\n" +
         "BT\n" +
         "/Helv 10.5 Tf\n" +
         "0 g\n" +
-        "2 9.75 Td\n" +
+        "2 9.875 Td\n" +
         "(hi) Tj\n" +
         "ET\n" +
         "Q\n" +
@@ -464,7 +468,7 @@ public sealed class FormTests
         {
             using var doc = new PdfDocument();
             var page = doc.AddPage();
-            doc.AddTextField(page, "Amount", new PdfRectangle(50, 700, 250, 730),
+            doc.AddTextField(page, "Amount", new PdfRectangle(50, 700, 250.5, 730.25),
                 "hi", new FormFieldOptions { FontSize = 10.5 });
 
             var ms = new MemoryStream();
@@ -500,7 +504,7 @@ public sealed class FormTests
         {
             using var doc = new PdfDocument();
             var page = doc.AddPage();
-            doc.AddTextField(page, "Amount", new PdfRectangle(50, 700, 250, 730),
+            doc.AddTextField(page, "Amount", new PdfRectangle(50, 700, 250.5, 730.25),
                 "hi", new FormFieldOptions { FontSize = 10.5 });
 
             var ms = new MemoryStream();
@@ -522,9 +526,13 @@ public sealed class FormTests
     /// <summary>
     /// The push button appearance builder (<c>BuildPushButtonAppearanceContent</c>) is a fourth
     /// <c>AppendFormat</c> call site, and mutating only its <c>Tf</c> line left the whole suite
-    /// green: no other test builds a push button. Asserting the whole inflated stream, the way
-    /// the text field test above does, also covers its three coordinate operands (the grey
-    /// background, the border, and the caption position), none of which any test read before.
+    /// green: fourteen other call sites invoke <c>AddPushButton</c> (nine in
+    /// <c>RadioPushButtonTests</c>, three guard-clause tests in <c>GuardTests</c> that throw
+    /// before any appearance content is built, one in <c>HardeningV155CloseoutTests</c>, and one
+    /// in a Layout oracle test), and none of them reads the push button's inflated appearance
+    /// stream. Asserting the whole stream here, the way the text field test above does, also
+    /// covers its three coordinate operands (the grey background, the border, and the caption
+    /// position).
     /// </summary>
     [Fact]
     public void Save_pushButton_fractionalFontSize_commaDecimalCulture_writesInvariantDecimalPoint()
@@ -535,7 +543,7 @@ public sealed class FormTests
         {
             using var doc = new PdfDocument();
             var page = doc.AddPage();
-            doc.AddPushButton(page, "Submit", new PdfRectangle(72, 650, 172, 680),
+            doc.AddPushButton(page, "Submit", new PdfRectangle(72, 650, 172.5, 680.25),
                 "OK", new FormFieldOptions { FontSize = 10.5 });
 
             var ms = new MemoryStream();
@@ -546,14 +554,14 @@ public sealed class FormTests
             const string expected =
                 "q\n" +
                 "0.8 0.8 0.8 rg\n" +
-                "0 0 100 30 re f\n" +
+                "0 0 100.5 30.25 re f\n" +
                 "0 0 0 RG\n" +
                 "1 w\n" +
-                "0.5 0.5 99 29 re S\n" +
+                "0.5 0.5 99.5 29.25 re S\n" +
                 "BT\n" +
                 "/Helv 10.5 Tf\n" +
                 "0 g\n" +
-                "4 9.75 Td\n" +
+                "4 9.875 Td\n" +
                 "(OK) Tj\n" +
                 "ET\n" +
                 "Q\n";
