@@ -87,8 +87,8 @@ public sealed class PieChart
     /// <para><b>Attention</b>: zero does <b>not</b> remove the separators. Whether a stroke
     /// happens at all is decided by <see cref="StrokeColor"/>, not by this width. With a stroke
     /// colour set and a width of zero, the renderer emits <c>0 w</c> and still strokes, which
-    /// asks the device for its thinnest line. If you want no separators, leave <see
-    /// cref="StrokeColor"/> unset.</para>
+    /// asks the device for its thinnest line. If you want no separators, leave
+    /// <see cref="StrokeColor"/> unset.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised while the chart is laid out, which happens inside

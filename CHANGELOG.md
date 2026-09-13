@@ -309,10 +309,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   overloads now carry both, each naming the member that causes it. `ListElement.Indent` covered
   only magnitude, and its other three inputs each do something different. `NaN` writes a text
   matrix whose x coordinate is the literal token `NaN`, which is not a PDF number; positive
-  infinity draws the marker and drops the item text on a flat list; a negative indent falls back
-  to the marker's own width, the bullet's 4.2pt being the narrowest, so an ordered list falls back
-  less far than an unordered one. None of the three is reported. On a **flat** list none of them
-  throws either, but a list with nested children is refused once the indent reaches the content
+  infinity draws the marker and drops the item text on a flat list; a negative indent starts the
+  text one marker width right of the margin, and goes off the page only where the widening
+  override reverts the gutter or where the item is nested. None of the three is reported. On a
+  **flat** list none of them throws either, but a list with nested children is refused once the indent reaches the content
   width, positive infinity included, with an element-too-tall `InvalidOperationException` that
   names neither the property nor the list. That refusal was undocumented and now carries its own
   `<exception>` tag.

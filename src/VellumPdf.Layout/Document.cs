@@ -190,13 +190,14 @@ public sealed class Document : IDisposable
     /// <summary>Sets a header band with optional style and alignment. Returns this document for chaining.</summary>
     /// <remarks>
     /// A null <paramref name="template"/> is accepted here and refused at the save. The parameter
-    /// is non-nullable, so the compiler warns, but a warning is all it is: a bare <c>null</c>, a
-    /// nullable-typed expression and <c>null!</c> all compile and all arrive here. This method
-    /// builds a <see cref="RunningBand"/>, whose constructor does not check the template, so the
-    /// band resolves it during layout and the failure surfaces as a
-    /// <see cref="NullReferenceException"/> from a call you did not make. Pass an empty string
-    /// for a band that draws no text (#531). Assigning to <see cref="Header"/> directly reaches
-    /// the same throw.
+    /// is non-nullable, but nothing stops a null reaching it. A bare <c>null</c> and a
+    /// nullable-typed expression each draw a different warning, which this repository's own build
+    /// turns into an error and a consumer's may not; <c>null!</c> and a disabled nullable context
+    /// draw nothing at all. This method builds a <see cref="RunningBand"/>, whose constructor
+    /// does not check the template, so the band resolves it during layout and the failure
+    /// surfaces as a <see cref="NullReferenceException"/> from a call you did not make. Pass an
+    /// empty string for a band that draws no text (#531). Assigning to <see cref="Header"/>
+    /// directly reaches the same throw.
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised from a save rather than from this method, when <paramref name="template"/> is
@@ -211,13 +212,14 @@ public sealed class Document : IDisposable
     /// <summary>Sets a footer band with optional style and alignment. Returns this document for chaining.</summary>
     /// <remarks>
     /// A null <paramref name="template"/> is accepted here and refused at the save. The parameter
-    /// is non-nullable, so the compiler warns, but a warning is all it is: a bare <c>null</c>, a
-    /// nullable-typed expression and <c>null!</c> all compile and all arrive here. This method
-    /// builds a <see cref="RunningBand"/>, whose constructor does not check the template, so the
-    /// band resolves it during layout and the failure surfaces as a
-    /// <see cref="NullReferenceException"/> from a call you did not make. Pass an empty string
-    /// for a band that draws no text (#531). Assigning to <see cref="Footer"/> directly reaches
-    /// the same throw.
+    /// is non-nullable, but nothing stops a null reaching it. A bare <c>null</c> and a
+    /// nullable-typed expression each draw a different warning, which this repository's own build
+    /// turns into an error and a consumer's may not; <c>null!</c> and a disabled nullable context
+    /// draw nothing at all. This method builds a <see cref="RunningBand"/>, whose constructor
+    /// does not check the template, so the band resolves it during layout and the failure
+    /// surfaces as a <see cref="NullReferenceException"/> from a call you did not make. Pass an
+    /// empty string for a band that draws no text (#531). Assigning to <see cref="Footer"/>
+    /// directly reaches the same throw.
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised from a save rather than from this method, when <paramref name="template"/> is
@@ -569,8 +571,9 @@ public sealed class Document : IDisposable
     /// the document has already been written and tells you to create a new one. It writes nothing
     /// to the stream, appended or otherwise.</para>
     /// <para>A save that threw does not reliably leave the document usable again either. The
-    /// three routes out of a failed save leave it clean, dead, or alive and wrong. The first and
-    /// third both retry quietly, and only the first returns the right file. Build a fresh
+    /// three routes out of a failed save leave it clean, dead, or alive and wrong. A quiet retry
+    /// therefore proves nothing: the first route returns the right file and the third returns a
+    /// wrong one, and the third is quiet only when you corrected the cause first. Build a fresh
     /// <see cref="Document"/> rather than retrying a save that threw;
     /// <see cref="Save(System.IO.Stream)"/> has the detail (#530).</para>
     /// <para>A document with no pages throws as well. Add at least one element before you

@@ -37,24 +37,31 @@ public sealed class ListElement
 
     /// <summary>Points of indent for each list level.</summary>
     /// <remarks>
-    /// The gutter an item's text starts at is the larger of this value and that item's own marker
-    /// width, decided per item rather than once for the list. One case overrides it: where
-    /// widening the gutter would leave less room than the item's longest word, the gutter reverts
-    /// to this value unchanged. Those two rules decide everything below.
-    /// <para><b>Attention</b>: an indent at or beyond the page's content width is <b>not</b>
-    /// refused on a flat list. The marker is drawn and the item text is discarded, so the list
-    /// renders as a column of markers with no content and nothing reports the loss. A list with
-    /// nested children is refused at that boundary instead, as the exception records. Keep the
-    /// indent positive and well below the content width (#476).</para>
-    /// <para>Because the override passes this value through untouched, whatever you set can reach
-    /// the content stream as a coordinate. A negative indent then places text left of the margin,
-    /// off the page. <c>NaN</c> and negative infinity are worse: both are written literally into
-    /// the text matrix, and neither is a PDF number, so a reader has no coordinate to place the
-    /// item at (#532). A nested child takes this value directly and reaches the same place without
-    /// needing the override. None of that throws and none of it is reported.</para>
-    /// <para>Positive infinity is the exception to the exception: on a flat list it draws the
-    /// marker and drops the item text, with no text-showing operator after it, and on a nested
-    /// list it meets the content-width boundary above and throws.</para>
+    /// <b>Attention</b>: an indent at or beyond the page's content width is <b>not</b> refused on
+    /// a flat list. The marker is drawn and the item text is discarded, so the list renders as a
+    /// column of markers with no content and nothing reports the loss. A list with nested
+    /// children is refused at that boundary instead, as the exception records. Keep the indent
+    /// positive and well below the content width (#476).
+    /// <para>Why, because the rest follows: text starts at a gutter decided per item, not once
+    /// per list. At the top level that gutter is the larger of this value and the item's own
+    /// marker width. One level in, the marker itself starts at this value, so what must clear it
+    /// is a position rather than a width, and the gutter is the larger of twice this value and
+    /// this value plus the marker's width. One case overrides both, reverting to the unwidened
+    /// figure where the widened one would leave less room than the item's longest word.</para>
+    /// <para>So a negative indent is ordinary at the top level: the marker's width wins and the
+    /// text starts one marker width right of the margin rather than where you asked. It lands
+    /// left of the margin, off the page, in the two cases the rules leave open, when the override
+    /// fires and on any nested child.</para>
+    /// <para>The two negative non-finite values take different routes, so one is far easier to
+    /// hit. <c>NaN</c> survives the larger-of at either level and the override cannot fire against
+    /// it, so it reaches the text matrix on every geometry. Negative infinity loses the larger-of
+    /// at the top level and arrives only where the override fires, but wins it when nested.
+    /// Neither is a PDF number, so a reader has no coordinate to place the item at, and neither
+    /// throws nor is reported (#532).</para>
+    /// <para>Positive infinity is decided by neither rule. Both branches yield it, the content
+    /// width goes non-positive, and the text is dropped rather than misplaced: a flat list draws
+    /// the marker with no text-showing operator after it, and a nested one meets the
+    /// content-width boundary above and throws.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from a save rather than from this property, when a list with nested children has an

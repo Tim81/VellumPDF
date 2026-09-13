@@ -50,8 +50,8 @@ public sealed class LayoutImage
     /// non-finite width: it is clamped to the content box, and the height derived from that
     /// clamped width can still exceed the content box, which reaches this same type through the
     /// ordinary too-tall refusal. The comparison is between the source's proportions and the
-    /// content box's, so a source taller than the box is proportionally is refused however wide
-    /// it is in absolute terms.
+    /// content box's, so a source proportionally taller than the box is refused however wide it
+    /// is in absolute terms.
     /// </exception>
     public double? Width { get; init; }  // null = fit to available width
 
