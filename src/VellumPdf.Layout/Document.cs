@@ -190,8 +190,8 @@ public sealed class Document : IDisposable
     /// <summary>Sets a header band with optional style and alignment. Returns this document for chaining.</summary>
     /// <remarks>
     /// A null <paramref name="template"/> is accepted here and refused at the save. The parameter
-    /// is non-nullable, so reaching this takes <c>null!</c>, a nullable-typed expression the
-    /// compiler only warns about, or a disabled nullable context. This method
+    /// is non-nullable, so the compiler warns, but a warning is all it is: a bare <c>null</c>, a
+    /// nullable-typed expression and <c>null!</c> all compile and all arrive here. This method
     /// builds a <see cref="RunningBand"/>, whose constructor does not check the template, so the
     /// band resolves it during layout and the failure surfaces as a
     /// <see cref="NullReferenceException"/> from a call you did not make. Pass an empty string
@@ -211,8 +211,8 @@ public sealed class Document : IDisposable
     /// <summary>Sets a footer band with optional style and alignment. Returns this document for chaining.</summary>
     /// <remarks>
     /// A null <paramref name="template"/> is accepted here and refused at the save. The parameter
-    /// is non-nullable, so reaching this takes <c>null!</c>, a nullable-typed expression the
-    /// compiler only warns about, or a disabled nullable context. This method
+    /// is non-nullable, so the compiler warns, but a warning is all it is: a bare <c>null</c>, a
+    /// nullable-typed expression and <c>null!</c> all compile and all arrive here. This method
     /// builds a <see cref="RunningBand"/>, whose constructor does not check the template, so the
     /// band resolves it during layout and the failure surfaces as a
     /// <see cref="NullReferenceException"/> from a call you did not make. Pass an empty string
@@ -414,17 +414,15 @@ public sealed class Document : IDisposable
     /// correcting the geometry, a retry produced a file identical in length and page count to a
     /// fresh document's. Reaching the writer leaves it dead, and a retry on a good stream throws
     /// about the document having already been written.</para>
-    /// <para>A throw from the layout itself leaves it alive and wrong. The pages it had already
-    /// laid out stay, and a retry lays the document out again on top of them, so each further
-    /// failed attempt adds that many pages again. Correcting the geometry and retrying raises
-    /// nothing, so no exception tells you, and the file is larger than a fresh document's without
-    /// your having a fresh document to compare it against. Retrying <b>without</b> correcting the
-    /// geometry throws the same too-tall exception again and leaves another set of pages behind
-    /// (#530).</para>
-    /// <para>Two of these routes retry quietly and only one of them is safe. A geometry refused
-    /// before the layout starts leaves nothing behind, so correcting it and saving again gives
-    /// the file a fresh document would. A refusal from the layout itself does not. Silence does
-    /// <b>not</b> separate them, so build a fresh <see cref="Document"/> rather than retrying
+    /// <para>A throw from the layout itself leaves it alive and wrong. Every page the attempt
+    /// committed before it threw stays, and a retry lays the document out again on top of them,
+    /// so each further attempt adds that many again. Whether the retry itself throws depends on
+    /// whether you changed anything: correct the cause and it succeeds silently on a wrong file,
+    /// leave the cause in place and it raises the same exception once more, having committed
+    /// another set of pages first (#530).</para>
+    /// <para>So a quiet retry means nothing on its own. It is what a document refused before the
+    /// layout returns, where the file is right, and equally what one refused during the layout
+    /// returns, where it is not. Build a fresh <see cref="Document"/> rather than retrying
     /// either.</para>
     /// <para>A document with no pages throws as well. Add at least one element before you
     /// save.</para>

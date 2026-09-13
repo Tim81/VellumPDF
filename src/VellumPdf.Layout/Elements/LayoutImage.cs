@@ -47,11 +47,11 @@ public sealed class LayoutImage
     /// for zero, for a magnitude under 5e-6, and for NaN or negative infinity. It is also raised
     /// when the height derived from a width that clears the floor falls under it, and the message
     /// then names the height rather than the width. Positive infinity is not refused as a
-    /// non-finite width: it is clamped to the content box. The height derived from that clamped
-    /// width can still exceed the page, which reaches this same type through the ordinary
-    /// too-tall refusal. What decides it is the content box's proportions, not the source being
-    /// taller than it is wide: the refusal comes when the source is proportionally taller than
-    /// the content box.
+    /// non-finite width: it is clamped to the content box, and the height derived from that
+    /// clamped width can still exceed the content box, which reaches this same type through the
+    /// ordinary too-tall refusal. The comparison is between the source's proportions and the
+    /// content box's, so a source taller than the box is proportionally is refused however wide
+    /// it is in absolute terms.
     /// </exception>
     public double? Width { get; init; }  // null = fit to available width
 
