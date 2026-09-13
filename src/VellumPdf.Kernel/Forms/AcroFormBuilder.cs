@@ -597,12 +597,12 @@ internal static class AcroFormBuilder
         if (double.IsFinite(fontSize)) return;
 
         throw new InvalidOperationException(
-            $"Form field \"{fieldName}\" has a font size of {FormatNonFinite(fontSize)}, which " +
+            $"Form field '{fieldName}' has a font size of {FormatNonFinite(fontSize)}, which " +
             "cannot be written as a Tf operand. A font size must be a finite number.");
     }
 
     /// <summary>
-    /// Renders a non-finite value for an exception message. Called only once the caller is
+    /// Renders a non-finite value for an exception message. Called only once the value is
     /// already known to be non-finite, so the two infinities are the only remaining cases besides
     /// <c>NaN</c>.
     /// </summary>
