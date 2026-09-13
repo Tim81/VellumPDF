@@ -55,12 +55,19 @@ public sealed class Document : IDisposable
     /// refused with <see cref="ArgumentOutOfRangeException"/> naming the axis and the value, and
     /// a page narrower or shorter than <see cref="Margins"/> is refused with
     /// <see cref="ArgumentException"/>.
-    /// <para>Attention: changing this after adding elements does not re-lay out what you already
-    /// added. The layout runs once, at the save, against whatever size is set then.</para>
+    /// <para>Layout runs once, at the save, against whatever size is set then. Only that final
+    /// value ever reaches a page, whatever this held while elements were being added.</para>
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// Raised from a save rather than from this property, when the width or height is zero,
     /// negative or not finite.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from a save, when the margins on either axis meet or exceed this page size.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from a save, when the content area this size and <see cref="Margins"/> compute to
+    /// is positive but still too small for the document's content to fit on one page.
     /// </exception>
     public PdfRectangle PageSize
     {
@@ -124,14 +131,14 @@ public sealed class Document : IDisposable
     /// placed outside the page's boundaries, where a reader clips it. On a one-paragraph document
     /// with every inset at -72, the file is written with no invalid token in it, so nothing
     /// downstream reports the loss either. A later major version will reject it.</para>
-    /// <para>A non-finite inset is refused in only one of its three forms, and each form fails
+    /// <para>Only one of the three non-finite forms names its own cause, and each fails
     /// differently, so you cannot catch them together. Positive infinity reaches the margin check
     /// and throws <see cref="ArgumentException"/> naming the margin. <c>NaN</c> slips past the
     /// check, because a comparison against it is false, and surfaces as
     /// <see cref="InvalidOperationException"/> saying an element is too tall to fit, which is not
     /// what happened. Negative infinity slips past for the same reason and surfaces as the
-    /// page-continuation cap. Both wrong-cause messages are the defect #481 corrected elsewhere,
-    /// still outstanding here (#502).</para>
+    /// page-continuation cap. Both wrong-cause messages are defect #481, already fixed for the
+    /// ordinary case elsewhere but still open here as #502.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from a save rather than from this property, when the margins on either axis meet
@@ -353,8 +360,9 @@ public sealed class Document : IDisposable
     /// A document is single-use. The layout runs here, not when you add an element, so most of
     /// what can go wrong goes wrong at this call rather than at the one that set the bad value.
     /// <para>Attention: calling this twice throws. The second call reports that the document has
-    /// already been written and tells you to create a new one. Nothing is appended and nothing is
-    /// overwritten, but you cannot use one <see cref="Document"/> to write two files.</para>
+    /// already been written and tells you to create a new one; it writes nothing to the stream,
+    /// appended or otherwise, but you still cannot use one <see cref="Document"/> to write two
+    /// files.</para>
     /// <para>A document with no pages throws as well. Add at least one element before you
     /// save.</para>
     /// </remarks>
@@ -389,11 +397,29 @@ public sealed class Document : IDisposable
     /// <remarks>
     /// Everything on <see cref="Save(System.IO.Stream)"/> applies, and one thing more.
     /// <para>Attention: the file is opened before the layout runs, so a failure destroys whatever
-    /// the path held. Measured: a path holding a 1,535-byte document, saved again from a document
-    /// whose layout then fails, is left existing and zero bytes long. If the target matters,
-    /// write to a temporary path and move it into place yourself, or save to a stream you control
-    /// (#508).</para>
+    /// the path held. Measured: a path already holding a 1,535-byte file, given to a new
+    /// document whose layout then fails, is left existing and zero bytes long. If the target
+    /// matters, write to a temporary path and move it into place yourself, or save to a stream
+    /// you control (#508).</para>
     /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="path"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="path"/> is empty, or opening it raises one of the causes described on
+    /// <see cref="Save(System.IO.Stream)"/>. These are unrelated conditions that happen to share
+    /// a type.
+    /// </exception>
+    /// <exception cref="DirectoryNotFoundException">
+    /// The directory named in <paramref name="path"/> does not exist.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// See <see cref="Save(System.IO.Stream)"/>, which this delegates to once the file is open.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// See <see cref="Save(System.IO.Stream)"/>, which this delegates to once the file is open.
+    /// </exception>
+    /// <exception cref="NotSupportedException">
+    /// See <see cref="Save(System.IO.Stream)"/>, which this delegates to once the file is open.
+    /// </exception>
     public void Save(string path)
     {
         using var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
@@ -415,8 +441,9 @@ public sealed class Document : IDisposable
     /// A document is single-use. The layout runs here, not when you add an element, so most of
     /// what can go wrong goes wrong at this call rather than at the one that set the bad value.
     /// <para>Attention: calling this twice throws. The second call reports that the document has
-    /// already been written and tells you to create a new one. Nothing is appended and nothing is
-    /// overwritten, but you cannot use one <see cref="Document"/> to write two files.</para>
+    /// already been written and tells you to create a new one; it writes nothing to the stream,
+    /// appended or otherwise, but you still cannot use one <see cref="Document"/> to write two
+    /// files.</para>
     /// <para>A document with no pages throws as well. Add at least one element before you
     /// save.</para>
     /// </remarks>
@@ -455,13 +482,35 @@ public sealed class Document : IDisposable
 
     /// <summary>Asynchronously runs the layout pass and writes the resulting PDF to a file at the given path.</summary>
     /// <remarks>
-    /// Everything on <see cref="Save(System.IO.Stream)"/> applies, and one thing more.
+    /// Everything on <see cref="SaveAsync(System.IO.Stream, System.Threading.CancellationToken)"/>
+    /// applies, and one thing more.
     /// <para>Attention: the file is opened before the layout runs, so a failure destroys whatever
-    /// the path held. Measured: a path holding a 1,535-byte document, saved again from a document
-    /// whose layout then fails, is left existing and zero bytes long. If the target matters,
-    /// write to a temporary path and move it into place yourself, or save to a stream you control
-    /// (#508).</para>
+    /// the path held. Measured: a path already holding a 1,535-byte file, given to a new
+    /// document whose layout then fails, is left existing and zero bytes long. If the target
+    /// matters, write to a temporary path and move it into place yourself, or save to a stream
+    /// you control (#508).</para>
     /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="path"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="path"/> is empty, or opening it raises one of the causes described on
+    /// <see cref="SaveAsync(System.IO.Stream, System.Threading.CancellationToken)"/>. These are
+    /// unrelated conditions that happen to share a type.
+    /// </exception>
+    /// <exception cref="DirectoryNotFoundException">
+    /// The directory named in <paramref name="path"/> does not exist.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// See <see cref="SaveAsync(System.IO.Stream, System.Threading.CancellationToken)"/>, which
+    /// this delegates to once the file is open.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// See <see cref="SaveAsync(System.IO.Stream, System.Threading.CancellationToken)"/>, which
+    /// this delegates to once the file is open.
+    /// </exception>
+    /// <exception cref="NotSupportedException">
+    /// See <see cref="SaveAsync(System.IO.Stream, System.Threading.CancellationToken)"/>, which
+    /// this delegates to once the file is open.
+    /// </exception>
 #pragma warning disable RS0026
     public async Task SaveAsync(string path, CancellationToken cancellationToken = default)
 #pragma warning restore RS0026

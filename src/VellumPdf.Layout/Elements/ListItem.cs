@@ -31,8 +31,8 @@ public sealed class ListItem
     /// its text is simply absent from the document. The scope of that claim: the renderer reads
     /// <c>item.Children</c> and takes each child's style, marker and content, and never reads
     /// <c>child.Children</c>.
-    /// <para>Be aware that you have to handle this yourself. If you build a tree deeper than two
-    /// levels, flatten it or compose separate lists, until arbitrary nesting lands (#479).</para>
+    /// <para>You have to handle this yourself: flatten a tree deeper than two levels, or compose
+    /// separate lists, until arbitrary nesting lands (#479).</para>
     /// </remarks>
     public IReadOnlyList<ListItem>? Children => _children;
 

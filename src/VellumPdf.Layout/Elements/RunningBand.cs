@@ -63,13 +63,16 @@ public sealed class RunningBand
     /// <see cref="InvalidOperationException"/> about the page-continuation cap, which names
     /// nothing about the band.</para>
     /// <para>Attention: no valid document is produced in any of the three, and if you saved to a
-    /// path you have lost what was there. The string overloads of
-    /// <see cref="Document.Save(string)"/> open the file before the layout runs, so a failure
-    /// leaves a zero-byte file in place of whatever the path held (#508).</para>
+    /// path you have lost what was there. The string overloads,
+    /// <see cref="Document.Save(string)"/> and
+    /// <see cref="Document.SaveAsync(string, System.Threading.CancellationToken)"/>, open the
+    /// file before the layout runs, so a failure leaves a zero-byte file in place of whatever the
+    /// path held (#508).</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
-    /// Raised from a save rather than from this property, when the height is positive infinity:
-    /// the content area is then left with no positive size.
+    /// Raised from a save rather than from this property, when the height is positive infinity,
+    /// or any finite value large enough on its own that the content area is left with no
+    /// positive size.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from a save, when the height is <c>NaN</c> or negative infinity. The two give
