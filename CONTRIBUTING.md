@@ -270,9 +270,10 @@ The shape, copied from `TextStyle.FontSize` in `src/VellumPdf.Layout/Core/TextSt
   Not just the fact.
 - A following `<para>` for input that is accepted today but should not be relied on: what it does
   now, and which major version will reject it. Bold the marker word itself, `**Attention**` or
-  `**NOTE**`, and the operative negation, usually **not**, rather than the whole sentence. Reserve
-  `Attention:` for a paragraph a caller could actually fall into; a paragraph that only states a
-  mechanism gets a plain sentence instead.
+  `**NOTE**`, always. Bold the operative negation too, usually **not**, only where the paragraph
+  turns on one; a paragraph with no negation to turn on is conforming without a second bolded word.
+  Reserve `Attention:` for a paragraph a caller could actually fall into; a paragraph that only
+  states a mechanism gets a plain sentence instead.
 
 Two rules about the writing itself, both learned the hard way:
 
