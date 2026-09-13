@@ -6,6 +6,78 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Documentation
+
+- **Three reviews of the layout boundary-documentation sweep (#503) found the rule it shipped
+  describing a pattern the tree does not use, several false claims, and thirteen missing
+  `<exception>` tags.** `CONTRIBUTING.md` said `<remarks>` opens with a bold sentence and a
+  paragraph headed "Do not pass ..."; neither is true of the tree, and `TextStyle.FontSize`, the
+  rule's own example, opens with a plain sentence and bolds only `not`. The rule in
+  `CONTRIBUTING.md`, `CLAUDE.md`, and the CHANGELOG entry that shipped it now describe that
+  pattern instead. `CONTRIBUTING.md`'s derivation example moved from `NotSupportedException` and
+  `InvalidDataException`, neither of which appears together in Layout, to `Document.Save`'s
+  `ArgumentException` and `ArgumentOutOfRangeException`, where the second actually derives from
+  the first.
+
+- Corrected false statements found by probe: `Document.Margins` said a non-finite inset "is
+  refused in only one of its three forms," though all three throw, each by a different route;
+  `Document.PageSize` said changing it after adding elements "does not re-lay out what you
+  already added," though 12 paragraphs built at 600x800pt and resized to 200x120pt before save
+  produce a file byte-identical (bar the random `/ID`) to building at 200x120pt from the start;
+  `LayoutImage.Width` and `.Height` both summarized "Must be finite and non-zero," though positive
+  infinity is accepted on `Width` and both properties actually refuse anything under 5e-6 points
+  in magnitude, not merely an exact zero. The CHANGELOG entry for #503 itself is corrected to
+  match: twenty-six members gained a boundary paragraph and eighteen carry an `<exception>` tag,
+  not nineteen and thirteen; its "Covered" list now includes `Document.PageSize`, the four save
+  overloads, and the text style's font size and leading, all omitted before; its band-height claim
+  now says two exception types across three messages, since the `NaN` one does name the height;
+  and its cell-padding claim is bounded to a `Left`-heavy inset, since the same total split across
+  `Left` and `Right` lands inside the page instead of outside it.
+
+- Corrected two ISO 32000-2 citations. `Heading` claimed NOTE 2 to Table 366 "says outright that
+  `H7` may be used"; the NOTE is informative, not a requirement, and says `H7` "can" be used.
+  `LineSeparator` under-quoted 8.4.3.2: a zero width `shall` denote the thinnest line a device can
+  render, but the same clause calls that device-dependent and says such widths `should not be
+  used`. The clause also requires a non-negative line width, so a negative one is the format's
+  business, not only the renderer's, as the member wrongly said; whether to refuse it is being
+  decided in #482.
+
+- Added `<exception>` tags found by probe: `TextStyle.FontSize`'s reachable `ArgumentException`,
+  raised when a `RunningBand` style's positive-infinity font size inflates the band past the page
+  (measured: `NaN` on the same style instead reaches the generic too-tall message, so the tag's
+  "names the element and the size" claim now says which non-finite values that covers rather than
+  claiming all three); `Document.PageSize`'s `ArgumentException` (page smaller than the margins)
+  and `InvalidOperationException` (page too small for its own content); `Document.Save(string)`
+  and `SaveAsync(string, CancellationToken)`, which carried none while their stream siblings
+  carried four each; `PieChart.Diameter`'s `InvalidOperationException`, since its clamp compares
+  only against the available width, so a diameter that fits once clamped can still be taller than
+  the page has room for; and `Cell.ColSpan`'s `OverflowException` and `OutOfMemoryException`, both
+  reachable at `int.MaxValue`. `RunningBand.Height`'s `ArgumentException` condition widened from
+  "positive infinity" to any finite height large enough, on its own, to leave the content area
+  empty.
+
+- **`Cell.ColSpan`'s own remarks described the wrong mechanism.** A span reaching past the columns
+  other rows had already declared was said to be clamped to them; measured, the table's column
+  count widens to fit the widest span instead, which the paragraph directly above it already said.
+  The clamp language is gone.
+
+- Voice and cross-reference pass over the members this touched. `Attention:` cut from three
+  paragraphs that stated a mechanism rather than a trap (`PieChart.Diameter`, `Document.PageSize`,
+  `LayoutImage.Height`'s aspect-override note). Five bold clauses on `LayoutImage` and `Cell`
+  reduced to one bolded word each, and `Cell.ColSpan` and `.RowSpan` brought to matching phrasing.
+  Of the file's two misapplied `NOTE:` prefixes, one became `Attention:`, since it named a trap,
+  and one was dropped, since it stated a plain fact. `RunningBand.Height`'s cross-reference to "the
+  string overloads" named only `Document.Save(string)`; it now names
+  `SaveAsync(string, CancellationToken)` too. `SaveAsync(string, CancellationToken)`'s own remarks
+  pointed at the synchronous stream overload instead of its async sibling. Two save overloads
+  described a path already holding a file as "saved again," which reads as a second call on the
+  same `Document`, though a `Document` is single-use; reworded to a fresh `Document` given an
+  already-occupied path. `ListItem.Children`'s "Be aware that" filler is gone.
+
+  `RunningBand.Height`'s own refusal claim is left alone. It says a non-finite value is refused,
+  which is false for a footer at negative infinity; that is a code defect, filed as #520, and
+  correcting the prose now would need doing again once the fix lands.
+
 ## [2.3.2] - 2026-09-12
 
 This is a patch version that carries new features as well as fixes. The decision was taken
@@ -1063,14 +1135,16 @@ is still honest about compatibility even though the content is wider than a patc
   caller set, so a programmer who assigns a bad value gets an exception from a call they never
   made while the member they did set says nothing about it.
 
-  Nineteen members gain a boundary paragraph and thirteen now carry an `<exception>` tag, up from
-  one. The pattern is the one on the text style's font size: a bold sentence naming what is
-  refused, which call throws it and why, then a paragraph beginning "Do not pass" for input that
-  is accepted today, what it does now, and which major version will reject it. Covered: the table
+  Twenty-six members gain a boundary paragraph and eighteen now carry an `<exception>` tag,
+  seventeen of them new, up from the one that already had it. The pattern is the one on the text
+  style's font size: a plain sentence naming what is refused, which call throws it and why, then a
+  paragraph for input that is accepted today but should not be relied on, bolding only the word
+  that carries the warning and naming which major version will reject it. Covered: the table
   cell's spans and padding, the table border width, the image width and height, the separator line
   width, the pie chart's slices, diameter, start angle, stroke width and alignment, the heading
-  level, the list indent and nesting depth, the running band's template, height and alignment, and
-  the document margins.
+  level, the list indent and nesting depth, the running band's template, height and alignment, the
+  document margins and page size, all four save overloads, and the text style's font size and
+  leading.
 
   Writing them turned up eight statements of mine the code did not support. The pie chart does not
   skip a zero-width stroke: it strokes on the stroke colour being set, and emits `0 w`. A table's
@@ -1083,10 +1157,14 @@ is still honest about compatibility even though the content is wider than a patc
   indent does not overprint the item text, because the gutter is widened per item; the first roman
   marker to exceed the default indent is item 17, not 38. Padding wider than its column does not
   collapse the cell to nothing: the inner width is clamped to one point, so the text wraps to one
-  glyph per line and every line lands outside the page. A non-finite band height is refused, by
-  three different exceptions, none of which names the band height. And `H6` is this library's
-  deepest heading tag, not the format's: ISO 32000-2 Table 366 defines `Hn` for any integer from
-  one upward and its NOTE 2 names `H7` explicitly.
+  glyph per line. With a `Left`-heavy inset such as `Left` = 400 in a 260-point column on a
+  300-point page, every line then lands outside the page; split the same 400 points across `Left`
+  and `Right` instead and the lines land at x = 220, inside it, since `EdgeInsets.Horizontal` is
+  `Left` plus `Right`, not `Left` alone. A non-finite band height is refused, by two exception
+  types across three messages: the `NaN` one does name the height, as `NaNpt of running bands`,
+  but the other two name only the margins or nothing about the band at all. And `H6` is this
+  library's deepest heading tag, not the format's: ISO 32000-2 Table 366 defines `Hn` for any
+  integer from one upward and its NOTE 2 names `H7` explicitly.
 
   The rule is written into `CONTRIBUTING.md`, which ships, rather than only into the agent
   guidance, which is untracked and reaches no clone: a public member's boundary is documented in

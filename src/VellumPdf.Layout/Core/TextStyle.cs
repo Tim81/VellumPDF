@@ -42,8 +42,17 @@ public sealed class TextStyle
     /// value before you set it. A later major version will reject both.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
-    /// Raised from a save rather than from this property, when the size is not finite. The
-    /// message names the element the style is attached to and the size itself.
+    /// Raised from a save rather than from this property, when the size is not finite. On a
+    /// paragraph or heading style the message names the element the style is attached to and the
+    /// size itself. On a <see cref="VellumPdf.Layout.Elements.RunningBand"/> style it does the
+    /// same for negative infinity, but <c>NaN</c> instead surfaces as the generic too-tall
+    /// message, which names neither.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from a save when this style belongs to a
+    /// <see cref="VellumPdf.Layout.Elements.RunningBand"/> and a positive-infinity size inflates
+    /// the band's effective height until the page's content area has no positive size left. The
+    /// message names the content area, not the font size.
     /// </exception>
     public double FontSize { get; init; } = 12;
 

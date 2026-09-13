@@ -260,14 +260,18 @@ it is. Write it in the same commit as the member.
 The shape, copied from `TextStyle.FontSize` in `src/VellumPdf.Layout/Core/TextStyle.cs`:
 
 - `<summary>` says what the member is.
-- An `<exception>` tag for every type a call can raise — **including when the throw lands in a
-  later call rather than this one**, which in the layout engine usually means `Document.Save`.
-  List each type separately; `NotSupportedException` does not derive from `InvalidDataException`,
-  and a caller who catches one and not the other has a crash waiting.
-- `<remarks>` opens with a bold sentence naming what is **refused**, which call throws it, and the
-  reason. Not just the fact.
-- A following `<para>` beginning "**Do not pass ...**" for input that is accepted today but should
-  not be relied on: what it does now, and which major version will reject it.
+- An `<exception>` tag for every type a call can raise, including when the throw lands in a
+  **later** call rather than this one, which in the layout engine usually means `Document.Save`.
+  List each type separately even when one derives from another. `Document.Save` throws both
+  `ArgumentException` and `ArgumentOutOfRangeException` for `PageSize`, and the second derives
+  from the first, but a catch clause written for the base type says nothing about which one
+  actually fired.
+- `<remarks>` opens with a plain sentence naming what is refused, which call throws it, and why.
+  Not just the fact.
+- A following `<para>` for input that is accepted today but should not be relied on: what it does
+  now, and which major version will reject it. Bold the single word carrying the warning, usually
+  **not**, rather than the whole sentence. Reserve `Attention:` for a paragraph a caller could
+  actually fall into; a paragraph that only states a mechanism gets a plain sentence instead.
 
 Two rules about the writing itself, both learned the hard way:
 

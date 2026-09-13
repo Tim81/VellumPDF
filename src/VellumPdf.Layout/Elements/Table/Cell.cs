@@ -17,15 +17,27 @@ public sealed class Cell
     /// <remarks>
     /// The table's column count is the largest span sum across its rows, so widening a cell widens
     /// the grid rather than overrunning it.
-    /// <para><b>Zero or negative is refused.</b> <see cref="Document.Save(System.IO.Stream)"/>
+    /// <para>Zero or negative is <b>refused</b>. <see cref="Document.Save(System.IO.Stream)"/>
     /// throws <see cref="InvalidOperationException"/> naming the row and cell, because a span of
     /// zero can leave the grid with no columns at all and nothing to draw into.</para>
-    /// <para>A span reaching past the columns left in its row is clamped to them. The cell then
-    /// ends at the table's right edge rather than beyond it.</para>
+    /// <para>A span wider than the columns other rows have already declared is never clamped
+    /// down: the column count is fixed at the largest span sum across every row (above), so this
+    /// cell's span becomes the reason those columns exist, and every other row simply leaves them
+    /// empty.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property, when the
     /// span is below one. The message names the row and the cell.
+    /// </exception>
+    /// <exception cref="OverflowException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property,
+    /// when a row's <c>ColSpan</c> values sum past <see cref="int.MaxValue"/> while the table's
+    /// column count is resolved.
+    /// </exception>
+    /// <exception cref="OutOfMemoryException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property,
+    /// when a resolved column count near <see cref="int.MaxValue"/> asks for a per-column width
+    /// array too large to allocate.
     /// </exception>
     public int ColSpan { get; init; } = 1;
 
@@ -36,7 +48,7 @@ public sealed class Cell
     /// A spanning cell is drawn once, at its own row, across the combined height of the rows it
     /// covers, and those rows skip the columns it occupies. A page break is never placed inside a
     /// spanning group; a group too tall for one page raises rather than splitting.
-    /// <para>Attention: zero and negative values are <b>not</b> refused. Both behave as 1.
+    /// <para>Attention: zero or negative is <b>not</b> refused. Both behave as 1.
     /// That is an accident of how the draw loop tests the span, not a guarantee, so do not write
     /// code that depends on it. A later major version will reject them.</para>
     /// <para>A span reaching past the rows this page draws is reduced to the rows actually
@@ -68,7 +80,7 @@ public sealed class Cell
     /// outside the page. Measured with <c>Left</c> at 400 in a 260-point column on a 300-point
     /// page: ten glyphs on ten lines, every one at x = 420. Nothing is dropped and nothing
     /// reports it.</para>
-    /// <para>NOTE: <see cref="EdgeInsets.Horizontal"/> is <c>Left</c> plus <c>Right</c>, so an
+    /// <para><see cref="EdgeInsets.Horizontal"/> is <c>Left</c> plus <c>Right</c>, so an
     /// insets value of 400 across both sides puts the text at x = 220 rather than 420. It is
     /// <c>Left</c> alone that decides where a line starts.</para>
     /// </remarks>

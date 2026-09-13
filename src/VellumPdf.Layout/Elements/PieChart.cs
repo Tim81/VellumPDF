@@ -51,14 +51,19 @@ public sealed class PieChart
     /// <remarks>
     /// Zero, a negative value and a non-finite value are all refused. Laying the chart out
     /// throws <see cref="ArgumentException"/> and names <c>Diameter</c>.
-    /// <para>Attention: a diameter wider than the content box is accepted and clamped to the area
-    /// the layout pass was handed. The chart drawn is then smaller than the number you set, and
-    /// nothing reports the difference. Do not size a chart against the page; size it against the
-    /// space you have given it.</para>
+    /// <para>A diameter wider than the content box is clamped to it, but on width alone: the
+    /// clamp compares only against the available width, not the available height. A diameter
+    /// that fits once clamped can still be taller than the page has room for, and then the save
+    /// throws <see cref="InvalidOperationException"/> rather than drawing a smaller chart. Do not
+    /// size a chart against the page; size it against the space you have given it.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised while the chart is laid out, which happens inside <see cref="Document.Save(System.IO.Stream)"/>,
     /// when the diameter is zero, negative or not finite. <c>ParamName</c> is this property's name.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> when the diameter, after being
+    /// clamped to the available width, is still taller than the available height leaves room for.
     /// </exception>
     public double Diameter { get; init; } = 200;
 
