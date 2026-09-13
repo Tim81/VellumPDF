@@ -387,8 +387,10 @@ public sealed class Document : IDisposable
     /// Many unrelated conditions share this type, so <b>do not</b> switch on the parameter name to
     /// tell them apart. A non-writable <paramref name="destination"/> reports the internal name
     /// <c>stream</c> rather than <c>destination</c>. Document geometry reports <c>margins</c>.
-    /// Every element that validates its own input reports that property's name, and the boundary
-    /// documentation on the individual properties says which inputs those are.
+    /// An element that refuses its own input reports a name of its own choosing, which is not
+    /// always the property you set: a pie chart names the property, and an image names a private
+    /// field of its renderer (#481 fixed the chart and left the image). Read the boundary
+    /// documentation on the property instead, where each element has it.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <see cref="PageSize"/> has a width or height that is not a positive finite number.

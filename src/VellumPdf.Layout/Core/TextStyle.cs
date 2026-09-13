@@ -99,8 +99,10 @@ public sealed class TextStyle
     /// <para>Every numeric boundary here is a property of the page, not of the value. Measured on
     /// a footer, <c>Height</c> null, A4, default 72pt margins: the last leading that does not
     /// throw is 679, 680 through 693 throw <see cref="InvalidOperationException"/> while the
-    /// content area shrinks from 13.9pt to 0.9pt, and 694 upward throws
-    /// <see cref="ArgumentException"/> once the content area itself goes non-positive. On a 300 by
+    /// content area shrinks from 13.9pt to 0.9pt, and every finite value from 694 up throws
+    /// <see cref="ArgumentException"/> once the content area itself goes non-positive. Positive
+    /// infinity is the exception: being non-finite it falls through to automatic leading, as the
+    /// paragraph above says, and throws nothing. On a 300 by
     /// 300pt page with 10pt margins the first throwing leading is 262, not 694, so do not carry
     /// either figure to a different page. A fixed <c>Height</c> avoids both routes through the
     /// band, since the band's height then stops depending on the leading.</para>
