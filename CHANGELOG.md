@@ -312,11 +312,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   only magnitude, and its other three inputs each do something different. `NaN` writes a text
   matrix whose x coordinate is the literal token `NaN`, which is not a PDF number; positive
   infinity draws the marker and drops the item text on a flat list; a negative indent starts the
-  text one marker width right of the margin while the widening override stays quiet, and moves
-  content left by its own magnitude once the override fires or once the item is nested. The left
-  margin and the marker's width decide where that content crosses the margin and the page edge,
-  not how far it moves, and the crossing differs in each of the four cases the gutter rules
-  produce. None of the three is reported. On a **flat**
+  text one marker width right of the margin while the widening override stays quiet, whatever the
+  value, and lands differently in each of the other three cases the gutter rules produce: at the
+  margin plus the value once the override fires, one marker width right of its own marker when
+  nested, and at the margin plus twice the value when nested with the override firing. Only those
+  three cross the margin at all. None of the three is reported. On a **flat**
   list none of them throws either, but a list with nested children is refused once the indent
   reaches the content width, positive infinity included, with an element-too-tall
   `InvalidOperationException` that

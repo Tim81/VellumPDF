@@ -49,16 +49,16 @@ public sealed class ListElement
     /// the marker's width. One case overrides both: where the widened gutter would leave less
     /// room than the item's longest word, it reverts to the unwidened figure, which is this value
     /// at the top level and twice it when nested.</para>
-    /// <para>So a negative indent moves content left by its own magnitude, and what the left
-    /// margin and the marker width decide is where it crosses. At the top level with the override
-    /// quiet, the marker's width wins and the text starts one marker width right of the margin
-    /// rather than where you asked. Once the override fires there, the text sits at the margin
-    /// plus this value and leaves the page below minus the margin. Nested with the override
-    /// quiet, the marker sits at the margin plus this value and the text one marker width further
-    /// right, so the text crosses the margin at minus that width and the page edge at minus the
-    /// two together. Nested with the override firing, the text sits at the margin plus twice this
-    /// value and leaves the page below minus half the margin. None of it throws or is
-    /// reported.</para>
+    /// <para>A negative value therefore lands differently in each of the four cases, and a nested
+    /// marker lands the same way in both of its: it sits at the margin plus this value, which the
+    /// override never touches. At the top level with the override quiet, the marker's width wins
+    /// and the text starts one marker width right of the margin rather than where you asked,
+    /// whatever the value. At the top level with the override firing, the text sits at the margin
+    /// plus this value and reaches the page edge at minus the margin. Nested with the override
+    /// quiet, the text sits one marker width right of its marker, crossing the margin at minus
+    /// that width and the page edge at minus the two together. Nested with the override firing,
+    /// the text sits at the margin plus twice this value and reaches the page edge at minus half
+    /// the margin. None of it throws or is reported.</para>
     /// <para>The two non-finite values other than positive infinity take different routes, so one
     /// is far easier to hit. <c>NaN</c> survives the larger-of at either level and the override
     /// cannot fire against it, so it reaches the text matrix on every geometry. Negative infinity
@@ -68,7 +68,7 @@ public sealed class ListElement
     /// <para>Positive infinity is the one value the branches do not separate: both yield it, so
     /// the content width goes non-positive either way. A flat list then drops the text rather
     /// than misplacing it, drawing the marker with no text-showing operator after it. A nested
-    /// one throws at the content-width boundary above before reaching that.</para>
+    /// one throws at the content-width boundary above before the text can be dropped.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from a save rather than from this property, when a list with nested children has an
