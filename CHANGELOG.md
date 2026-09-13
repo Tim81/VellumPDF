@@ -8,18 +8,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- **A form field's font size was written with the host culture's decimal separator (#522).**
-  `AcroFormBuilder` formatted the `/DA` string and the widget appearance stream's `Tf` operand
-  through `CultureInfo.CurrentCulture`, so a font size of 10.5 saved on a machine set to Dutch or
-  German wrote `10,5`, which is two number tokens where the operator takes one. This was the maintainer's
-  own development-machine default (`nl-NL`). All thirteen call sites now pin
-  `CultureInfo.InvariantCulture`, unconditionally, because PDF syntax is never localised.
+- **A form field's font size, and the coordinates written alongside it, followed the host
+  culture's decimal separator instead of PDF number syntax (#522).** `AcroFormBuilder` formatted
+  the `/DA` string and every operand of a widget's appearance stream through
+  `CultureInfo.CurrentCulture`: five of the thirteen affected sites format the font size itself
+  (the `/DA` string and four `Tf` lines), and the other eight format a coordinate (a `Td`
+  position or an `re` rectangle) computed from it. A font size of 10.5 saved under Dutch or
+  German, the maintainer's own development-machine default (`nl-NL`), wrote `10,5` into a `Tf`
+  operand. That is one token, not two: ISO 32000-2:2020, 7.2.3 makes COMMA a regular character
+  rather than a delimiter, and 7.3.3 refuses the token as a numeric object regardless of how many
+  tokens it resembles. Because eight of the thirteen sites are coordinates rather than the font
+  size, a caller who never set a fractional font size could still save a broken content stream
+  from a fractional widget rectangle. All thirteen sites now pin `CultureInfo.InvariantCulture`,
+  unconditionally, because PDF syntax is never localised.
 
-  `FormFieldOptions.FontSize` also refuses a non-finite value now. Neither `NaN` nor either
-  infinity has a valid `Tf` operand in any culture, and the defect reached further than the
-  decimal point: every culture but invariant spells positive infinity as U+221E, which a Latin-1
-  content stream can only represent as `?`, silently turning the operand into a literal question
-  mark.
+  `FormFieldOptions.FontSize` also refuses a non-finite value now, reachable from
+  `PdfDocument.Save`, `SaveAsync`, and `PrepareForSigning` alike; before this change, each of the
+  three wrote a complete file with a broken operand instead of raising. The refusal reaches
+  further than the decimal point: measured across the 890 cultures this runtime offers, 886
+  spell positive infinity as U+221E, which a Latin-1 content stream can only represent as `?`,
+  and 93 spell not-a-number differently from the invariant `NaN`. Twenty-six of those write a word
+  that survives Latin-1 encoding intact (`fi-FI` writes `epäluku`), reaching the stream unchanged
+  and reading as data rather than as a formatting defect. Pinning the culture normalises all three
+  non-finite spellings before the new validation removes them outright.
 
 ## [2.3.2] - 2026-09-12
 

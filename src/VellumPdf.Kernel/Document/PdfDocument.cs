@@ -523,7 +523,9 @@ public sealed class PdfDocument : IDisposable
     /// <exception cref="InvalidOperationException">
     /// A PDF/A <see cref="Conformance"/> is set together with <see cref="Encrypt"/>, or
     /// <see cref="Conformance"/> is <see cref="PdfConformance.PdfUA1"/> together with
-    /// <see cref="Encrypt"/> settings that omit <see cref="PdfPermissions.Extract"/>.
+    /// <see cref="Encrypt"/> settings that omit <see cref="PdfPermissions.Extract"/>, or a
+    /// registered form field's <see cref="FormFieldOptions.FontSize"/> is not finite. That
+    /// property's boundary documentation names the value and the field.
     /// </exception>
     public void Save(Stream destination)
     {
@@ -935,7 +937,10 @@ public sealed class PdfDocument : IDisposable
     /// <exception cref="InvalidOperationException">
     /// A PDF/A <see cref="Conformance"/> is set together with <see cref="Encrypt"/>, or
     /// <see cref="Conformance"/> is <see cref="PdfConformance.PdfUA1"/> together with
-    /// <see cref="Encrypt"/> settings that omit <see cref="PdfPermissions.Extract"/>.
+    /// <see cref="Encrypt"/> settings that omit <see cref="PdfPermissions.Extract"/>, or a
+    /// registered form field's <see cref="FormFieldOptions.FontSize"/> is not finite. That
+    /// property's boundary documentation names the value and the field; serialisation runs on a
+    /// thread-pool thread, so the exception is rethrown here when the wrapping task is awaited.
     /// </exception>
     public async Task SaveAsync(Stream destination, CancellationToken cancellationToken = default)
     {
@@ -958,6 +963,10 @@ public sealed class PdfDocument : IDisposable
     /// <exception cref="ObjectDisposedException">The document has been disposed.</exception>
     /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see langword="null"/>.</exception>
     /// <exception cref="NotSupportedException"><see cref="Encrypt"/> has been called; encryption and signing cannot be combined.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// A registered form field's <see cref="FormFieldOptions.FontSize"/> is not finite. That
+    /// property's boundary documentation names the value and the field.
+    /// </exception>
     public byte[] PrepareForSigning(SignaturePlaceholderOptions options)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);

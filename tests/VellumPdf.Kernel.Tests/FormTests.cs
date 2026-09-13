@@ -414,13 +414,44 @@ public sealed class FormTests
     // ── #522: font size formatting must not follow CultureInfo.CurrentCulture ──
 
     /// <summary>
+    /// The full appearance-stream content <c>BuildTextAppearanceContent</c> writes for a
+    /// 200-by-30 text field holding "hi" at font size 10.5. Every byte the builder writes is
+    /// pinned here, not only the <c>Tf</c> line, so a mutation to any of its four operand-bearing
+    /// lines fails this assertion.
+    /// </summary>
+    private const string ExpectedTextFieldAppearance =
+        "q\n" +
+        "1 1 1 rg\n" +
+        "0 0 200 30 re f\n" +
+        "0 0 0 RG\n" +
+        "0.5 w\n" +
+        "0 0 200 30 re S\n" +
+        "/Tx BMC\n" +
+        "q\n" +
+        "BT\n" +
+        "/Helv 10.5 Tf\n" +
+        "0 g\n" +
+        "2 9.75 Td\n" +
+        "(hi) Tj\n" +
+        "ET\n" +
+        "Q\n" +
+        "EMC\n" +
+        "Q\n";
+
+    /// <summary>
     /// A field's font size reaches two writers: the field dictionary's own <c>/DA</c> string
-    /// (<c>AcroFormBuilder.BuildDa</c>) and the <c>Tf</c> operator inside its widget appearance
-    /// stream (<c>AcroFormBuilder.BuildTextAppearanceContent</c>). Both must stay on the invariant
-    /// decimal point regardless of <see cref="CultureInfo.CurrentCulture"/>; the file also carries
-    /// a second, unrelated <c>/DA</c> (the hard-coded <c>/AcroForm</c>-level default), which this
-    /// test collects separately so a probe that reads only the first <c>/DA</c> cannot pass by
-    /// missing the one this issue is about.
+    /// (<c>AcroFormBuilder.BuildDa</c>) and every operand inside its widget appearance stream
+    /// (<c>AcroFormBuilder.BuildTextAppearanceContent</c>), not only the <c>Tf</c> line. Both
+    /// writers must stay on the invariant decimal point regardless of
+    /// <see cref="CultureInfo.CurrentCulture"/>; the file also carries another, unrelated
+    /// <c>/DA</c> (the hard-coded <c>/AcroForm</c>-level default), which appears first in file
+    /// order and which this test collects separately so a probe that reads only the first
+    /// <c>/DA</c> cannot pass by missing the one this issue is about.
+    ///
+    /// <para>The appearance stream is asserted whole, not with a single <c>Contains</c> on the
+    /// <c>Tf</c> line: mutating only the coordinate operands (the background rectangle, the
+    /// border rectangle, and the caption position) left the whole suite green, because nothing
+    /// else read them.</para>
     /// </summary>
     [Theory]
     [InlineData("nl-NL")]
@@ -444,7 +475,7 @@ public sealed class FormTests
             Assert.Equal(["/Helv 0 Tf 0 g", "/Helv 10.5 Tf 0 g"], daLiterals);
 
             var appearance = ExtractFirstStreamContainingTf(bytes);
-            Assert.Contains("/Helv 10.5 Tf", appearance, StringComparison.Ordinal);
+            Assert.Equal(ExpectedTextFieldAppearance, appearance);
         }
         finally
         {
@@ -480,7 +511,53 @@ public sealed class FormTests
             Assert.Equal(["/Helv 0 Tf 0 g", "/Helv 10.5 Tf 0 g"], daLiterals);
 
             var appearance = ExtractFirstStreamContainingTf(bytes);
-            Assert.Contains("/Helv 10.5 Tf", appearance, StringComparison.Ordinal);
+            Assert.Equal(ExpectedTextFieldAppearance, appearance);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = previousCulture;
+        }
+    }
+
+    /// <summary>
+    /// The push button appearance builder (<c>BuildPushButtonAppearanceContent</c>) is a fourth
+    /// <c>AppendFormat</c> call site, and mutating only its <c>Tf</c> line left the whole suite
+    /// green: no other test builds a push button. Asserting the whole inflated stream, the way
+    /// the text field test above does, also covers its three coordinate operands (the grey
+    /// background, the border, and the caption position), none of which any test read before.
+    /// </summary>
+    [Fact]
+    public void Save_pushButton_fractionalFontSize_commaDecimalCulture_writesInvariantDecimalPoint()
+    {
+        var previousCulture = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("nl-NL");
+        try
+        {
+            using var doc = new PdfDocument();
+            var page = doc.AddPage();
+            doc.AddPushButton(page, "Submit", new PdfRectangle(72, 650, 172, 680),
+                "OK", new FormFieldOptions { FontSize = 10.5 });
+
+            var ms = new MemoryStream();
+            doc.Save(ms);
+            var bytes = ms.ToArray();
+
+            var appearance = ExtractFirstStreamContainingTf(bytes);
+            const string expected =
+                "q\n" +
+                "0.8 0.8 0.8 rg\n" +
+                "0 0 100 30 re f\n" +
+                "0 0 0 RG\n" +
+                "1 w\n" +
+                "0.5 0.5 99 29 re S\n" +
+                "BT\n" +
+                "/Helv 10.5 Tf\n" +
+                "0 g\n" +
+                "4 9.75 Td\n" +
+                "(OK) Tj\n" +
+                "ET\n" +
+                "Q\n";
+            Assert.Equal(expected, appearance);
         }
         finally
         {
@@ -491,7 +568,8 @@ public sealed class FormTests
     /// <summary>
     /// The checkbox appearance builder is a separate <c>AppendFormat</c> call site
     /// (<c>BuildCheckAppearanceContent</c>) from the text field's, so the culture pin needs its
-    /// own coverage rather than inheriting the text field test's.
+    /// own coverage rather than inheriting the text field test's. The whole stream is asserted so
+    /// the <c>Td</c> line's coordinates are covered as well as the <c>Tf</c> line.
     /// </summary>
     [Fact]
     public void Save_checkBox_fractionalFontSize_commaDecimalCulture_writesInvariantDecimalPoint()
@@ -510,7 +588,16 @@ public sealed class FormTests
             var bytes = ms.ToArray();
 
             var appearance = ExtractFirstStreamContainingTf(bytes);
-            Assert.Contains("/ZaDb 10.5 Tf", appearance, StringComparison.Ordinal);
+            const string expected =
+                "q\n" +
+                "BT\n" +
+                "/ZaDb 10.5 Tf\n" +
+                "0 g\n" +
+                "5.85 3.75 Td\n" +
+                "(4) Tj\n" +
+                "ET\n" +
+                "Q\n";
+            Assert.Equal(expected, appearance);
         }
         finally
         {
@@ -521,7 +608,8 @@ public sealed class FormTests
     /// <summary>
     /// A radio button group's on-state appearance is built by
     /// <c>BuildRadioOnAppearanceContent</c>, a third <c>AppendFormat</c> call site distinct from
-    /// the text field's and checkbox's.
+    /// the text field's and checkbox's. The whole stream is asserted so the <c>Td</c> line's
+    /// coordinates are covered as well as the <c>Tf</c> line.
     /// </summary>
     [Fact]
     public void Save_radioButtonGroup_fractionalFontSize_commaDecimalCulture_writesInvariantDecimalPoint()
@@ -543,7 +631,16 @@ public sealed class FormTests
             var bytes = ms.ToArray();
 
             var appearance = ExtractFirstStreamContainingTf(bytes);
-            Assert.Contains("/ZaDb 10.5 Tf", appearance, StringComparison.Ordinal);
+            const string expected =
+                "q\n" +
+                "BT\n" +
+                "/ZaDb 10.5 Tf\n" +
+                "0 g\n" +
+                "5.85 3.75 Td\n" +
+                "(l) Tj\n" +
+                "ET\n" +
+                "Q\n";
+            Assert.Equal(expected, appearance);
         }
         finally
         {
@@ -657,10 +754,11 @@ public sealed class FormTests
     }
 
     /// <summary>
-    /// Scans every FlateDecode stream in <paramref name="pdfBytes"/> in order and returns the
-    /// decompressed text of the first one containing a <c>Tf</c> operator (a widget appearance
-    /// stream). A raw byte search over <paramref name="pdfBytes"/> cannot see this operator at
-    /// all, because the stream is compressed.
+    /// Scans every stream in <paramref name="pdfBytes"/> in order, tries to inflate each as
+    /// FlateDecode, and returns the decompressed text of the first one that both inflates and
+    /// contains a <c>Tf</c> operator (a widget appearance stream). A raw byte search over
+    /// <paramref name="pdfBytes"/> cannot see this operator at all, because the stream is
+    /// compressed.
     /// </summary>
     private static string ExtractFirstStreamContainingTf(byte[] pdfBytes)
     {
