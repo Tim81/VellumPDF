@@ -10,7 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **A form field's font size, and the coordinates written alongside it, followed the host
   culture's decimal separator instead of PDF number syntax (#522).** `AcroFormBuilder` formatted
-  the `/DA` string and twelve call sites in a widget's appearance stream through
+  the `/DA` string and the operands of twelve call sites in a widget's appearance stream through
   `CultureInfo.CurrentCulture`: five of the thirteen affected sites format the font size itself
   (the `/DA` string and four `Tf` lines), and the other eight format a coordinate (a `Td`
   position or an `re` rectangle). A

@@ -416,7 +416,8 @@ public sealed class FormTests
     // culture-sensitive operands; the fixed fill/stroke colours and stroke widths are incidental
     // to #522, so a change that let a widget's own /MK background colour reach the text field and
     // push button builders would fail those three comparisons with no culture defect present. The
-    // check box and radio streams paint no background, so they carry none of that scenery.
+    // check box and radio streams paint no background, so they carry none of that background.
+    // They do pin the fixed text fill colour, which those three carry too.
 
     /// <summary>
     /// The full appearance-stream content <c>BuildTextAppearanceContent</c> writes for a
@@ -447,8 +448,8 @@ public sealed class FormTests
     /// A field's font size reaches two writers: the field dictionary's own <c>/DA</c> string
     /// (<c>AcroFormBuilder.BuildDa</c>) and its widget appearance stream
     /// (<c>AcroFormBuilder.BuildTextAppearanceContent</c>), where it sets the <c>Tf</c> operand and
-    /// the <c>Td</c> baseline. The rectangle operands on either side of them come from the widget
-    /// rectangle, and this assertion pins those too. Both
+    /// the <c>Td</c> baseline. The two <c>re</c> lines that precede them come from the widget
+    /// rectangle rather than from the size, and this assertion pins those too. Both
     /// writers must stay on the invariant decimal point regardless of
     /// <see cref="CultureInfo.CurrentCulture"/>; the file also carries another, unrelated
     /// <c>/DA</c> (the hard-coded <c>/AcroForm</c>-level default), which appears first in file
