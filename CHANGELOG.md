@@ -10,17 +10,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **A form field's font size, and the coordinates written alongside it, followed the host
   culture's decimal separator instead of PDF number syntax (#522).** `AcroFormBuilder` formatted
-  the `/DA` string and twelve operands of a widget's appearance stream through
+  the `/DA` string and twelve call sites in a widget's appearance stream through
   `CultureInfo.CurrentCulture`: five of the thirteen affected sites format the font size itself
   (the `/DA` string and four `Tf` lines), and the other eight format a coordinate (a `Td`
-  position or an `re` rectangle) computed from the font size or from the widget rectangle. A
+  position or an `re` rectangle). A
   font size of 10.5 saved under Dutch or German, the maintainer's own development-machine
   default (`nl-NL`), wrote `10,5` into a `Tf` operand. That is one token, not two: ISO
   32000-2:2020, 7.2.3 makes COMMA a regular character rather than a delimiter, and 7.3.3 refuses
-  the token as a numeric object regardless of how many tokens it resembles. Because four of the
-  eight coordinate sites format the widget rectangle rather than the font size, a caller who
-  never set a fractional font size could still save a broken content stream from a fractional
-  widget rectangle. All thirteen sites now pin `CultureInfo.InvariantCulture`, unconditionally,
+  the token as a numeric object regardless of how many tokens it resembles. Every one of the
+  eight coordinate sites derives from the widget rectangle, four from it alone and four from it
+  together with the font size, so a caller who never set a fractional font size could still save
+  a broken content stream from a fractional widget rectangle. All thirteen sites now pin
+  `CultureInfo.InvariantCulture`, unconditionally,
   because PDF syntax is never localised.
 
   `FormFieldOptions.FontSize` also refuses a non-finite value now, reachable from
