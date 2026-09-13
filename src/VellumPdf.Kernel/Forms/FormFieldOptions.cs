@@ -18,20 +18,22 @@ public sealed class FormFieldOptions
     /// <see cref="InvalidOperationException"/> naming the field and the size, because neither
     /// <c>NaN</c> nor either infinity is a PDF number (ISO 32000-2, 7.3.3) and so none of them is
     /// a valid <c>Tf</c> operand.
-    /// <para>Attention: a size at or below zero is <b>not</b> refused, and the field types do not
-    /// agree on what they do with it. <see cref="PdfDocument.AddRadioButtonGroup"/>'s on-state
-    /// appearance substitutes a size derived from the widget rectangle whenever this value is not
-    /// positive; <see cref="PdfDocument.AddTextField"/>, <see cref="PdfDocument.AddCheckBox"/>,
-    /// <see cref="PdfDocument.AddChoiceField"/>, and <see cref="PdfDocument.AddPushButton"/> round
-    /// it to three decimal places rather than writing it unchanged, so a positive value below
-    /// <c>0.0005</c> rounds to <c>0</c>. That rounded zero means two different things depending on
-    /// which of the field's two writers reads it. In the field dictionary's own <c>/DA</c> string,
-    /// ISO 32000-2, 12.7.4.3 says a zero size means the font "shall be auto-sized", computed as an
-    /// implementation-dependent function, so a consumer that regenerates the appearance from
-    /// <c>/DA</c> enlarges the text rather than hiding it. In the appearance stream's own <c>Tf</c>
-    /// operand, 9.3.1 (Table 103, the <c>Tf</c> entry) says "zero sized text shall not mark or clip
-    /// any pixels", so the appearance stream this library writes stays invisible at that value. A
-    /// later major version will reject a size at or below zero.</para>
+    /// <para><b>Attention</b>: a size at or below zero is <b>not</b> refused. All five field types
+    /// round the value to three decimal places, so a positive size below <c>0.0005</c> is written
+    /// as <c>0</c>. They differ only at or below zero, where
+    /// <see cref="PdfDocument.AddRadioButtonGroup"/>'s on-state appearance substitutes a size
+    /// derived from the widget rectangle and the other four write the value as given.</para>
+    /// <para>A written zero means two different things, depending on which writer reads it. In a
+    /// field's own <c>/DA</c> string, ISO 32000-2, 12.7.4.3 says a zero size means the font "shall
+    /// be auto-sized", computed as an implementation-dependent function, so a consumer that
+    /// regenerates the appearance from <c>/DA</c> enlarges the text rather than hiding it. Only
+    /// <see cref="PdfDocument.AddTextField"/> and <see cref="PdfDocument.AddChoiceField"/> write a
+    /// <c>/DA</c> from this value; a check box and a push button write none, and a radio group's
+    /// is a fixed auto-size string. In the appearance stream's own <c>Tf</c> operand, 9.3.1
+    /// (Table 103) says "zero sized text shall not mark or clip any pixels", so the text this
+    /// library draws is invisible at that size. The widget is not: a text field and a push button
+    /// still paint their background and border, which no font size reaches. A later major version
+    /// will reject a size at or below zero.</para>
     /// <para>A refused save leaves the document unusable. The validation runs after
     /// <see cref="PdfDocument.Save(System.IO.Stream)"/> marks the document written, so there is
     /// no fixing this value and calling <see cref="PdfDocument.Save(System.IO.Stream)"/> again;
