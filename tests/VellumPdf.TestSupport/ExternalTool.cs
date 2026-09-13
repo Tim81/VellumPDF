@@ -216,11 +216,53 @@ public static class ExternalTool
             // Drain both pipes concurrently BEFORE waiting: a report larger than the OS pipe
             // buffer would otherwise block the child on write while this thread blocks in
             // WaitForExit, deadlocking both sides.
-            var stdoutTask = process.StandardOutput.ReadToEndAsync();
-            var stderrTask = process.StandardError.ReadToEndAsync();
+            //
+            // Each drain gets a dedicated thread rather than ReadToEndAsync, because the bounded
+            // wait below is a blocking Task.Wait on whatever thread called this method. A
+            // redirected pipe is opened as a synchronous handle — measured, StandardOutput
+            // .BaseStream is a FileStream whose IsAsync is false — so ReadToEndAsync is async over
+            // sync: it hands the pool the whole blocking read, not a short continuation at the end
+            // of one. A caller that is itself on a pool thread then waits behind the pool's own
+            // backlog. Task.Wait tells the pool it is blocked, which forces thread injection, so
+            // the read is delayed rather than unschedulable; injection is paced by a hill-climbing
+            // timer, and nothing in this method bounds how long that takes. The failure it
+            // produced: the tool exits in milliseconds, the 5-second drain budget below expires
+            // anyway, and the caller is handed an empty stdout with timedOut set.
+            //
+            // Measured with the seven test assemblies running at once, a different qpdf oracle
+            // case failed on each run, while VellumPdf.Reader.Tests — which holds 16 of the qpdf
+            // test files, more than any other assembly — passed 1,869 of 1,869 run on its own.
+            // That establishes the failure is load-dependent, not that qpdf is slow. What
+            // points at the pool queue rather than at plain CPU oversubscription is the length of
+            // the stall: a runnable thread does not go five seconds without a timeslice at normal
+            // priority, whereas a work item queued behind a deep FIFO waits as long as the queue
+            // takes to drain.
+            //
+            // LongRunning asks for a thread outside the pool, so the read stops waiting behind
+            // that queue. It does not make the drain unconditional — a grandchild holding the
+            // pipe's write end open still runs the budget out, which is what the bound is for.
+            //
+            // Both StartNew calls sit inside the try: QueueTask creates the thread synchronously,
+            // so it can throw under thread exhaustion — on a path whose whole premise is resource
+            // pressure. Outside the try that would escape with the process unreaped, and on the
+            // ProbeIdentity path it would land in a Lazy<IdentityResult> that caches the exception
+            // for the rest of the process, which is the hazard the comment further down describes.
+            Task<string>? stdoutTask = null;
+            Task<string>? stderrTask = null;
 
             try
             {
+                stdoutTask = Task.Factory.StartNew(
+                    () => process.StandardOutput.ReadToEnd(),
+                    CancellationToken.None,
+                    TaskCreationOptions.LongRunning,
+                    TaskScheduler.Default);
+                stderrTask = Task.Factory.StartNew(
+                    () => process.StandardError.ReadToEnd(),
+                    CancellationToken.None,
+                    TaskCreationOptions.LongRunning,
+                    TaskScheduler.Default);
+
                 if (!process.WaitForExit(timeoutMs))
                 {
                     timedOut = true;
@@ -777,8 +819,10 @@ public static class ExternalTool
         return new Launcher(fallback, [], false, null);
     }
 
-    private static void ObserveAndForget(Task task)
-        => _ = task.ContinueWith(t => _ = t.Exception, TaskScheduler.Default);
+    // Null when the drain thread it belongs to was never created, which happens only if StartNew
+    // itself threw; the sibling that did start is still observed and still disposed.
+    private static void ObserveAndForget(Task? task)
+        => _ = task?.ContinueWith(t => _ = t.Exception, TaskScheduler.Default);
 
     // ── Invocation logging (#228) ────────────────────────────────────────────────────────────
 

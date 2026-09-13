@@ -174,6 +174,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and reading as data rather than as a formatting defect. Pinning the culture normalises all three
   non-finite spellings before the new validation removes them outright.
 
+- **Two qpdf oracle tests failed intermittently under the full suite, and the tool was never the
+  cause.** Test-only; nothing ships. `ExternalTool` drained a child process's stdout and stderr
+  with `ReadToEndAsync`, then blocked on the result. A redirected pipe is opened as a synchronous
+  handle: `StandardOutput.BaseStream` is a `FileStream` whose `IsAsync` is false. So that call is
+  async over sync, and hands the thread pool the entire blocking read rather than a short
+  continuation. A caller already on a pool thread waits behind the pool's own backlog. `Task.Wait`
+  does tell the pool it is blocked, which forces thread injection, so the read was delayed rather
+  than unschedulable; injection is paced by a hill-climbing timer and nothing bounded how long it
+  took. Past the shared 5-second drain budget the caller was handed an empty stdout with the
+  timed-out flag set, while qpdf itself had exited in milliseconds. Each drain now runs on its own
+  dedicated thread, which takes it out of that queue.
+
+  What separates this from ordinary CPU oversubscription across the seven test assemblies is the
+  length of the stall: a runnable thread does not go five seconds without a timeslice at normal
+  priority, whereas a work item queued behind a deep FIFO waits for as long as the queue takes.
+  Under load a different qpdf case failed on each run, while `VellumPdf.Reader.Tests`, which holds
+  16 of the qpdf test files, passed 1,869 of 1,869 on its own. Green full runs are evidence the
+  change breaks nothing, not that the starvation is gone: the failure is load-dependent, so a
+  quieter machine gives a green run either way.
+
+  Both thread creations moved inside the `try` while fixing this. `QueueTask` creates the thread
+  synchronously and can throw under thread exhaustion, which is the same resource pressure this
+  path exists to survive; outside the `try` that would have escaped with the process unreaped and
+  poisoned the cached identity probe for the rest of the process.
+
 ## [2.3.2] - 2026-09-12
 
 This is a patch version that carries new features as well as fixes. The decision was taken
