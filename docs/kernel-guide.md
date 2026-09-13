@@ -335,7 +335,7 @@ ushort gid      = handle.GetGlyphId('A');   // single code point → GID
 ## 4. Images
 
 Load image bytes and register the resulting `PdfImageXObject` with the document.
-Five formats can be loaded:
+Eight formats can be loaded:
 
 | Format | Loader class |
 |---|---|
@@ -344,6 +344,9 @@ Five formats can be loaded:
 | BMP (24-bit and 8-bit palette) | `BmpImageLoader.Load(byte[])` |
 | GIF (with transparency) | `GifImageLoader.Load(byte[])` |
 | TIFF | `TiffImageLoader.Load(byte[])` |
+| CCITT Group 3/4 | `CcittImageLoader.Load(byte[], ...)` |
+| JBIG2 | `Jbig2ImageLoader.Load(byte[])` |
+| JPEG 2000 | `JpxImageLoader.Load(byte[])` |
 
 JPEG bytes are passed through as-is (`DCTDecode`); all other formats are
 re-encoded with `FlateDecode`.  PNG images with an alpha channel automatically

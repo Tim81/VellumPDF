@@ -227,7 +227,9 @@ jobs:
       - name: Test
         # REQUIRE_VERAPDF makes the conformance oracle fail (not silently skip) if the verapdf
         # shim is unavailable, so a broken image can't let the cross-validation gate pass vacuously.
-        # REQUIRE_BARCODE_ORACLE does the same for the zxing-cpp decode oracle. ORACLE_INVOCATION_LOG
+        # REQUIRE_BARCODE_ORACLE does the same for the zxing-cpp decode oracle, and, because the
+        # gate matches on the bare dependency name rather than the calling suite, for the GIF
+        # oracle's python dependency too (OracleGate.cs). ORACLE_INVOCATION_LOG
         # makes ExternalTool.RunProcess append one line per successful, non-probe oracle launch to a
         # file suffixed with its own process id, so the step below can assert the oracles didn't
         # just resolve — they actually ran (#228).

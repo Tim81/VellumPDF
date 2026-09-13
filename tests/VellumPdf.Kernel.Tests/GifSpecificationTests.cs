@@ -12,13 +12,15 @@ namespace VellumPdf.Kernel.Tests;
 /// Three defects motivated the file originally, and all three were invisible to tests that only
 /// asked whether a file loaded, because a single flat colour written at Pillow's own minimum code
 /// size of 8 survives all three: that width keeps the LZW dictionary under the boundary for every
-/// raster in this file, none larger than 160x120's 19,200 pixels, well short of the 32,641 a flat
-/// raster needs at that code size (CHANGELOG.md's corpus measurement), and a flat colour has
-/// nothing for the interlace or KwKwK defects to scramble either. The same colour at a narrower
-/// minimum code size reaches a width boundary sooner, in as few as 7 pixels at minimum code size
-/// 2, again CHANGELOG.md's figure rather than one re-derived below. The file has grown past those
-/// three since: the transparency-scope leak, the input bounds guards and the short-stream refusal
-/// live here too.
+/// raster in this file, the largest of which is the 150x150 one
+/// <see cref="Encode_writesACodeStreamAppendixFAccepts"/> builds, 22,500 pixels, 10,141 short of
+/// the 32,641 a flat raster needs at that code size (measured against the same table and width
+/// rule <see cref="EncodeLzw"/> uses, not the corpus; 160x120 is the external corpus's own size
+/// and is not one built here), and a flat colour has nothing for the interlace or KwKwK defects
+/// to scramble either. The same colour at a narrower minimum code size reaches a width boundary
+/// sooner, in as few as 7 pixels at minimum code size 2, measured the same way and reported again
+/// in CHANGELOG.md. The file has grown past those three since: the transparency-scope leak, the
+/// input bounds guards and the short-stream refusal live here too.
 ///
 /// Two kinds of case live here, and the distinction matters when reading a failure. The interlace
 /// order, the encoder's block structure and its code stream are known answers: the expected value
@@ -54,8 +56,8 @@ public sealed class GifSpecificationTests
     /// written at Pillow's minimum code size of 8 stays under any boundary a 160x120 image can
     /// reach, so it decoded regardless of the defect; a flat colour at the minimum code size of 3
     /// this fixture uses would reach the boundary at 29 pixels, sooner still at 7 for code size 2
-    /// (both CHANGELOG.md's corpus figures, not re-derived here), so the outcome past that point
-    /// depended on the content, not on flatness.
+    /// (both measured against the suite's own LZW fixture helper, as CHANGELOG.md reports, not
+    /// re-derived here), so the outcome past that point depended on the content, not on flatness.
     ///
     /// This fixture is 300 pixels over 8 palette entries, so the minimum code size is 3 and the
     /// first boundary is at 16, not at 512. Walking the stream it produces: the table peaks at 82
@@ -286,10 +288,11 @@ public sealed class GifSpecificationTests
     /// short and the last colour has no slot. A palette of 2^k+1 colours is exactly that boundary,
     /// one past the table size a smaller N would give, and no fixture anywhere in this file used
     /// one: the encoder's own palettes elsewhere are 2, 4, 200, 256 and the 257 that gets refused.
-    /// Only that last one is itself 2^k+1, and it is refused outright for exceeding the
-    /// 256-colour limit before the table-size question can arise, so it round-trips nothing
-    /// either. A table one bit short truncates the last colour, and this package's own decoder
-    /// then refuses the file it just wrote.
+    /// Two of those, 2 and 257, are themselves 2^k+1, but only 257 sits at a boundary this test
+    /// cares about: it is refused outright for exceeding the 256-colour limit before the
+    /// table-size question can arise, so it round-trips nothing either. A table one bit short
+    /// truncates the last colour, and this package's own decoder then refuses the file it just
+    /// wrote.
     /// </summary>
     [Theory]
     [InlineData(3)]
@@ -333,10 +336,10 @@ public sealed class GifSpecificationTests
     /// The first four values are chosen, not arbitrary. Swept over 1 to 130 on this fixture, the
     /// helper's own earlier defect, skipping the table entry and the width growth before the
     /// Clear, produces a stream that fails to decode at exactly four values: 7, 23, 55 and 119.
-    /// Every other value, 6, 22, 54 and 118 included, produces different bytes that still decode,
-    /// so a test using one of those cannot fail if the defect returns. The last value, 20, is one
-    /// of those and is kept deliberately, as the ordinary case where a mid-stream Clear is simply
-    /// read.
+    /// Comparing all 130 outputs byte for byte against the corrected helper's output, the other
+    /// 126 values, 6, 22, 54 and 118 included, are byte-identical, so a test using one of those
+    /// cannot fail if the defect returns. The last value, 20, is one of those and is kept
+    /// deliberately, as the ordinary case where a mid-stream Clear is simply read.
     /// </summary>
     [Theory]
     [InlineData(7)]
@@ -407,7 +410,7 @@ public sealed class GifSpecificationTests
         // is worthless. ReadCodes masks each code to the width it is itself tracking, so
         // "no code is wider than the current width" is true however the encoder behaves, and a
         // matched drift in both would pass it. What does discriminate is the table bound: a code
-        // at or above the next free entry cannot be resolved by any decoder, and it fires when
+        // beyond the next free entry cannot be resolved by any decoder, and it fires when
         // GifEncoder's width rule moves in either direction: measured, five failures each way.
         //
         // No literal known answer covers GifEncoder. The one in

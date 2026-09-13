@@ -19,7 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   choices the cover sheet leaves to the encoder once the table fills. The table bound, not a check
   on the code width itself, is what a test can fail on: a reader masks each code to the width it is
   tracking, so "no code is wider than the current width" holds however the encoder behaves, and a
-  matched drift in both sides would pass it; a code at or beyond the next free table entry, though,
+  matched drift in both sides would pass it; a code beyond the next free table entry, though,
   cannot be resolved by any decoder. A round trip through this
   package's own decoder cannot catch a convention the two share, which is why these are checked
   directly rather than only by decoding the file back. A new `eng/gif-oracle.py`
