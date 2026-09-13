@@ -21,9 +21,10 @@ public sealed class Heading
     /// <remarks>
     /// Zero-based: level 0 is tagged <c>H1</c>, level 4 is <c>H5</c>, and every level at or
     /// above 5 is tagged <c>H6</c>. That ceiling is this library's, not the format's: ISO 32000-2
-    /// Table 366 defines <c>Hn</c> for any unsigned integer from 1 upward, and its NOTE 2 says
-    /// outright that <c>H7</c> may be used for a seventh-level heading.
-    /// <para>Attention: a negative level is <b>not</b> refused, and it does not clamp the way
+    /// Table 366 defines <c>Hn</c> for any unsigned integer from 1 upward, and its NOTE 2,
+    /// informative rather than a requirement, says <c>H7</c> can be used for a heading on the
+    /// seventh level.
+    /// <para><b>Attention</b>: a negative level is <b>not</b> refused, and it does not clamp the way
     /// you would expect. The mapping's catch-all sends it to <c>H6</c>, the deepest tag, where
     /// you almost certainly meant the shallowest. The raw value also reaches the outline builder,
     /// so your bookmark tree nests on it. A later major version will reject it.</para>

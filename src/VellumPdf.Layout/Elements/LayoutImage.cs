@@ -13,22 +13,22 @@ public sealed class LayoutImage
     public PdfImageXObject Image { get; }
 
     /// <summary>
-    /// Display width in points; when null the image fits the available width. Must be finite and
-    /// non-zero.
+    /// Display width in points; when null the image fits the available width. Must be finite
+    /// (positive infinity aside) and at least 5e-6 points in magnitude.
     /// </summary>
     /// <remarks>
     /// A value wider than the available width is clamped to it, so this is an upper bound rather
     /// than a guaranteed display size. Positive infinity is therefore accepted and simply fills the
     /// content box.
-    /// <para><b>Zero and non-finite values other than positive infinity are refused.</b>
+    /// <para>Zero and non-finite values other than positive infinity are <b>refused</b>.
     /// <see cref="Document.Save(System.IO.Stream)"/> throws <see cref="InvalidOperationException"/>
     /// naming the width. A zero width writes a transformation matrix that cannot be inverted, which
     /// ISO 32000-2 leaves undefined for a painted image, and it also collapses the height, which is
     /// derived from the width. A width of NaN writes a token that is not a PDF number.</para>
-    /// <para><b>Do not pass a negative width.</b> It is not refused today and mirrors the image
+    /// <para>Do <b>not</b> pass a negative width. It is not refused today and mirrors the image
     /// horizontally, which is a side effect of the transformation matrix rather than a supported
     /// way to flip an image. A later major version will reject it.</para>
-    /// <para>NOTE: the check is on the token written, not on the value held. <c>PdfCanvas</c>
+    /// <para>The check is on the token written, not on the value held. <c>PdfCanvas</c>
     /// formats coordinates to five decimals, so any magnitude below 5e-6 is written as <c>0</c>
     /// and the matrix is singular whatever you passed. At the boundary, 5e-6 writes
     /// <c>0.00001</c> and 4.9e-6 writes <c>0</c>.</para>
@@ -44,20 +44,20 @@ public sealed class LayoutImage
     public double? Width { get; init; }  // null = fit to available width
 
     /// <summary>
-    /// Display height in points; when null the aspect ratio is maintained. Must be finite and
-    /// non-zero.
+    /// Display height in points; when null the aspect ratio is maintained. Must be finite and at
+    /// least 5e-6 points in magnitude.
     /// </summary>
     /// <remarks>
     /// Setting this is a request for a non-proportional box: unlike a null height, it is not
     /// rescaled when the width is clamped to the content box. An image taller than the remaining
     /// space moves to the next page.
-    /// <para><b>Zero and non-finite values are refused</b>, for the same reason as
+    /// <para>Zero and non-finite values are <b>refused</b>, for the same reason as
     /// <see cref="Width"/>: the emitted transformation matrix is either singular or not made of PDF
-    /// numbers. <b>Do not pass a negative height</b>; it is not refused today and flips the image
+    /// numbers. Do <b>not</b> pass a negative height; it is not refused today and flips the image
     /// vertically as a side effect.</para>
     /// <para>Any magnitude below 5e-6 is refused too. The canvas writes it as the token
     /// <c>0</c>, as described on <see cref="Width"/>.</para>
-    /// <para>Attention: setting both this and <see cref="Width"/> overrides the aspect ratio. The
+    /// <para><b>Attention</b>: setting both this and <see cref="Width"/> overrides the aspect ratio. The
     /// image is not fitted inside the pair, so it is distorted whenever the two disagree with its
     /// own proportions. If you want it fitted, set one and leave the other null.</para>
     /// </remarks>

@@ -6,6 +6,135 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Documentation
+
+- **The public members that refuse input now say so, and say what not to pass (#503).** These
+  boundaries were created by fixes already shipped in 2.3.2 and documented almost nowhere: of
+  Layout's 298 documented public members, exactly one carried an `<exception>` tag before this
+  work. That matters because of where the refusals fire. They are raised from `Save`, not from
+  the property the caller set, so a programmer who assigns a bad value gets an exception from a
+  call they never made while the member they did set says nothing about it.
+
+  Twenty-six members now carry a boundary paragraph and twenty-one carry an `<exception>` tag. The
+  pattern, written into `CONTRIBUTING.md`: a plain sentence names what is refused, which call
+  throws it and why; a following paragraph, for input accepted today but not to be relied on,
+  bolds the marker word (`Attention` or `NOTE`) always, and bolds the operative negation too only
+  where the paragraph turns on one. Covered: the table cell's spans and padding, the table border
+  width, the image width and height, the separator line width, the pie chart's slices, diameter,
+  start angle, stroke width and alignment, the heading level, the list indent and nesting depth,
+  the running band's template, height and alignment, the document margins and page size, all four
+  save overloads, and the text style's font size and leading.
+
+  Measurement turned up several statements the code did not support. The pie chart does not skip
+  a zero-width stroke: it strokes whenever the stroke colour is set, emitting `0 w`. A table's
+  grid cannot be suppressed at all, since the border colour is not nullable and every cell is
+  stroked unconditionally. A non-finite document margin is refused only when it is positive
+  infinity; `NaN` and negative infinity slip past the check, because a comparison against either
+  is false, and surface instead as a message about an element being too tall or about the
+  page-continuation cap (tracked as #502). A positive-infinity image width is not refused but
+  clamped to the content box. A marker wider than the list indent does not overprint the item
+  text, because the gutter widens per item rather than to the widest one seen so far; the first
+  roman marker past the default indent is item 17, items 19 through 21 fall back to the plain
+  indent, and 22 onward widen again as their own numerals need it. Padding wider than its column
+  does not collapse the cell: the inner width clamps to one point and the text wraps to one glyph
+  per line, landing outside the page when the padding is lopsided (`Left` alone at 400 in a
+  260-point column) but back inside it when the same total is split evenly across `Left` and
+  `Right`. `H6` is this library's own deepest heading tag, not the format's: ISO 32000-2 Table 366
+  defines `Hn` for any integer from one upward, and its NOTE 2, informative rather than a
+  requirement, names `H7` as usable further still.
+
+- **`RunningBand.Height`, `TextStyle.FontSize` and `TextStyle.Leading` share one mechanism with
+  three entry points, and every entry point now carries the boundary that mechanism actually
+  has.** All three feed the content area left over once margins and running bands are subtracted
+  from the page, and a value large enough to shrink that area throws before `Save` finishes:
+  `InvalidOperationException` while the area is still positive but too small for the element,
+  `ArgumentException` once the area goes non-positive. The `InvalidOperationException` case needs
+  no `RunningBand` at all: a plain paragraph or heading with a large enough `FontSize` or
+  `Leading` reaches it on its own, so both properties' tags no longer scope that throw to a band
+  whose `Height` is left null. The `ArgumentException` case does still need such a band, since a
+  plain page's margins never move as the font size or leading grows. On `RunningBand.Height`
+  itself, a finite value large enough gives the same `InvalidOperationException` that `NaN`
+  gives, alongside the already-tagged `NaN`, positive infinity and, on a header only, negative
+  infinity; one exception type now covers three unrelated causes on that property, not one apiece
+  as the tag previously implied.
+
+  Every numeric boundary here is a property of the page, not of the value, so each is now stated
+  against the page it was measured on (A4, default 72pt margins, footer with `Height` left null
+  unless noted): the last `Leading` that does not throw is 679, `InvalidOperationException` covers
+  680 through 693, and `ArgumentException` starts at 694; the last `FontSize` that does not throw
+  is 566, `InvalidOperationException` covers 567 through 578, and `ArgumentException` starts at
+  579. On a 300 by 300pt page with 10pt margins the first throwing `Leading` is 262, confirming
+  the figures move with the page rather than belonging to the value. A `Leading` of positive
+  infinity does not throw at all: it is non-finite, so it falls through to automatic leading the
+  same way `NaN` and negative infinity do. An earlier version of this entry said "694 upward
+  throws `ArgumentException`" without that carve-out; the wording now excludes infinity itself.
+
+  On a footer, `Height` at negative infinity is still not refused (#520): `Save` succeeds and
+  writes a file that stays well formed while its content stream stops conforming. The footer's
+  vertical position is computed as the page height minus the margin minus the band's own height;
+  with that height at negative infinity the position becomes positive infinity, and adding it back
+  to the band height computes infinity plus negative infinity, which IEEE 754 gives as `NaN`. That
+  `NaN` is the literal token `qpdf --qdf` shows in the footer's `Tm` operator; `qpdf --check` exits
+  0 on the result, while `pdftotext` reports a syntax error and drops the footer text with it.
+
+- Two claims about save behaviour, corrected. Resizing `PageSize` at any point before `Save`,
+  however late, produces a file matching one built at the new size from the start byte for byte,
+  except the random `/ID` and the XMP `CreateDate`/`ModifyDate` timestamps, not the `/ID` alone.
+  `Save(Stream)`'s `ArgumentException` for a non-writable destination carries the internal
+  parameter name `stream`, not the public `destination` parameter it is documented against, so
+  catching by parameter name will not find it under `"destination"`.
+
+- `Cell.ColSpan`'s column-count rule has no exception: the table's column count is always the
+  largest span sum across its rows, and every cell's span contributes to its row's sum
+  unconditionally. What is conditional is the width the cell is then drawn at, documented as its
+  own paragraph: a span reaching past columns an earlier row's `RowSpan` already occupies is
+  clamped to what is left, rather than widening the grid further.
+
+- `#493`, cited on `Cell.RowSpan` and twice in an earlier version of this entry as an open tracker,
+  is a merged pull request. The references are removed; nothing in this area still needs one.
+
+- Corrected ISO 32000-2 citations. `Heading` claimed NOTE 2 to Table 366 "says outright that `H7`
+  may be used"; the note is informative, not a requirement, and says `H7` "can" be used.
+  `LineSeparator` under-quoted 8.4.3.2: a zero width `shall` denote the thinnest line a device can
+  render, but the same clause calls that device-dependent and says such widths `should not be
+  used`. The clause also requires a non-negative line width, so refusing a negative one is the
+  format's business, not only the renderer's; whether to refuse it is being decided in #482.
+
+- `Document`'s four save overloads each gained `ObjectDisposedException`, reachable on all four
+  after `Dispose()`. `Save(Stream)` and `SaveAsync(Stream, CancellationToken)` also gained
+  `ArgumentNullException` for a null destination, and the string overloads gained it for `path`.
+  None of the four carried any `<exception>` tag in 2.3.2. A non-writable stream diverges by
+  overload: `ArgumentException` from `Save(Stream)` ("Stream must be writable") but
+  `NotSupportedException` from `SaveAsync(Stream, CancellationToken)` ("Stream does not support
+  writing"), and both tags now name both causes. `Save(string)` and
+  `SaveAsync(string, CancellationToken)` also gained `UnauthorizedAccessException` and
+  `IOException`. The two async overloads gained `TaskCanceledException` for a cancelled token;
+  `Save(string)` takes no token and needs none. A path naming a DOS device is not a reliable
+  `IOException` case: `CON`,
+  `NUL` and `CON.pdf` do not throw, `PRN` and `LPT1` throw `FileNotFoundException`, and `AUX`'s
+  behaviour was not reproducible across runs, so the device clause stays dropped from both
+  `IOException` tags rather than asserting one outcome for it.
+
+- **Marker density and the bolding rule.** Five `NOTE` markers pointed at an open issue number
+  rather than a historical fact or a version boundary, which is what the rest of the package uses
+  `NOTE` for; folded into plain sentences, cutting the package's marker count from 23 to 18. Of
+  those 18, 8 bold the marker word together with an operative negation and 10 bold the marker word
+  alone, so `CONTRIBUTING.md` now says to bold the marker always and the negation only where a
+  paragraph turns on one, rather than requiring both on every paragraph.
+
+- Three low-severity corrections, measured. `LayoutImage.Width`'s summary said "must be at least
+  5e-6 points in magnitude," which admits negative infinity; it is refused like every other
+  non-finite value except positive infinity, so the summary now says "finite (positive infinity
+  aside)." `LayoutImage.Height` and `PieChart.Diameter` each keep a warning for a case that
+  silently produces wrong output with nothing reporting it: image distortion when `Width` and
+  `Height` disagree with the source proportions, and a chart drawn smaller than the requested
+  diameter. `Cell.Padding`'s figure for a 400-point inset split evenly between `Left` and `Right`
+  is x = 220, not x = 420; only a `Left`-heavy split lands outside the page.
+
+  The rule that a public member's boundary is documented in the same commit as the member is
+  written into `CONTRIBUTING.md`, which ships, rather than only into the agent guidance, which is
+  untracked and reaches no clone.
+
 ## [2.3.2] - 2026-09-12
 
 This is a patch version that carries new features as well as fixes. The decision was taken
@@ -1055,42 +1184,6 @@ is still honest about compatibility even though the content is wider than a patc
   whose markers genuinely exceed the indent.
 
 ### Documentation
-
-- **The public members that refuse input now say so, and say what not to pass.** These
-  boundaries were created by the fixes already listed above and documented almost nowhere: of
-  Layout's 298 documented public members, exactly one carried an `<exception>` tag. That matters
-  because of where the refusals fire. They are raised from `Save`, not from the property the
-  caller set, so a programmer who assigns a bad value gets an exception from a call they never
-  made while the member they did set says nothing about it.
-
-  Nineteen members gain a boundary paragraph and thirteen now carry an `<exception>` tag, up from
-  one. The pattern is the one on the text style's font size: a bold sentence naming what is
-  refused, which call throws it and why, then a paragraph beginning "Do not pass" for input that
-  is accepted today, what it does now, and which major version will reject it. Covered: the table
-  cell's spans and padding, the table border width, the image width and height, the separator line
-  width, the pie chart's slices, diameter, start angle, stroke width and alignment, the heading
-  level, the list indent and nesting depth, the running band's template, height and alignment, and
-  the document margins.
-
-  Writing them turned up eight statements of mine the code did not support. The pie chart does not
-  skip a zero-width stroke: it strokes on the stroke colour being set, and emits `0 w`. A table's
-  grid cannot be suppressed at all, since the border colour is not nullable and every cell is
-  stroked unconditionally. A non-finite document margin is refused only when it is positive
-  infinity; `NaN` and negative infinity slip past the check, because a comparison against them is
-  false, and surface as a message about an element being too tall or about the page-continuation
-  cap, which is the wrong-cause defect #481 corrected elsewhere, filed as #502. A positive-infinity
-  image width is likewise not refused but clamped to the content box. A marker wider than the list
-  indent does not overprint the item text, because the gutter is widened per item; the first roman
-  marker to exceed the default indent is item 17, not 38. Padding wider than its column does not
-  collapse the cell to nothing: the inner width is clamped to one point, so the text wraps to one
-  glyph per line and every line lands outside the page. A non-finite band height is refused, by
-  three different exceptions, none of which names the band height. And `H6` is this library's
-  deepest heading tag, not the format's: ISO 32000-2 Table 366 defines `Hn` for any integer from
-  one upward and its NOTE 2 names `H7` explicitly.
-
-  The rule is written into `CONTRIBUTING.md`, which ships, rather than only into the agent
-  guidance, which is untracked and reaches no clone: a public member's boundary is documented in
-  the same commit as the member.
 
 - **Where the conformance rules knowingly disagree with veraPDF is written down (#418, #419).**
   `docs/conformance-divergences.md` records each case with what the standard requires, what an
