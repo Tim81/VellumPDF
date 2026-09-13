@@ -281,7 +281,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   quoted in the member, because the count depends on the paragraph text as well as the geometry
   and no doc comment can pin that; what it states instead is checkable on any fixture, that the
   two files are byte-identical once `/ID` and the two XMP timestamps are normalised, with every
-  `/MediaBox` reading `0 0 200 120`. `Save(Stream)`'s `ArgumentException` for a non-writable destination carries the
+  `/MediaBox` reading `0 0 200 120`. `Save(Stream)`'s `ArgumentException` for a non-writable
+  destination carries the
   internal parameter name `stream`, not the public `destination` parameter it is documented
   against, so catching by parameter name will not find it under `"destination"`.
 
@@ -296,7 +297,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   committed, on every attempt; how many that is depends on the document, so no figure for it is
   quoted. Retrying without changing the geometry throws the too-tall exception again, and a save
   after a retry that succeeded reports the document as already written. Correcting the geometry
-  after a refusal is quiet too, and that file is correct, so silence does not separate the two. The overloads now say a document is single-use, that a save which threw does
+  after a refusal is quiet too, and that file is correct, so silence does not separate the two.
+  The overloads now say a document is single-use, that a save which threw does
   not reliably return it to a usable state, and that the answer is a fresh `Document` rather than
   a retry. The behaviour itself is unchanged here; #530 carries the defect.
 
@@ -310,10 +312,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   only magnitude, and its other three inputs each do something different. `NaN` writes a text
   matrix whose x coordinate is the literal token `NaN`, which is not a PDF number; positive
   infinity draws the marker and drops the item text on a flat list; a negative indent starts the
-  text one marker width right of the margin, and goes off the page only where the widening
-  override reverts the gutter or where the item is nested. None of the three is reported. On a
-  **flat** list none of them throws either, but a list with nested children is refused once the indent reaches the content
-  width, positive infinity included, with an element-too-tall `InvalidOperationException` that
+  text one marker width right of the margin while the widening override stays quiet, and moves
+  content left once it fires or once the item is nested, by an amount the page's left margin and
+  the marker's width decide rather than the value. None of the three is reported. On a **flat**
+  list none of them throws either, but a list with nested children is refused once the indent
+  reaches the content width, positive infinity included, with an element-too-tall
+  `InvalidOperationException` that
   names neither the property nor the list. That refusal was undocumented and now carries its own
   `<exception>` tag.
   `RunningBand.Template` and `LineSeparator.Margins` each reach a live refusal with nothing
@@ -356,7 +360,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `Attention` and two `NOTE`, leaving 17 against the 26 this work started from and none at all in
   2.3.2. The failed-save paragraph on `Save(Stream)` briefly carried a new one and lost it again,
   so that the same hazard is not marked on the synchronous overload and unmarked on the
-  asynchronous one. The two `NOTE` markers went because they pointed at an open issue number rather than a historical
+  asynchronous one. The two `NOTE` markers went because they pointed at an open issue number
+  rather than a historical
   fact or a version boundary, which is what the rest of the package uses `NOTE` for; the surviving
   one records a fact about #365. The seventh `Attention` went from `PieChart.Alignment`, whose
   opening sentence is shared word for word with `RunningBand.Alignment` and was marked on one
@@ -369,7 +374,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   definition, while `Height` thirty lines below uses "finite" to mean the ordinary thing.
   The summary now states the accepted range as the member enforces it: finite or positive
   infinity, at least 5e-6 points in magnitude, with that floor applied to the derived height as
-  well, so a width that clears it is still refused on a source much wider than it is tall. `LayoutImage.Height` and `PieChart.Diameter` each keep a warning for a
+  well, so a width that clears it is still refused on a source much wider than it is tall.
+  `LayoutImage.Height` and `PieChart.Diameter` each keep a warning for a
   case that silently produces wrong output with nothing reporting it: image distortion when
   `Width` and `Height` disagree with the source proportions, and a chart drawn smaller than the
   requested diameter. `Cell.Padding`'s figure for a 400-point inset split evenly between `Left`
@@ -858,7 +864,8 @@ is still honest about compatibility even though the content is wider than a patc
   40pt column at Helvetica 12pt, every case found had the old walk counting a taller row than what
   was drawn and none a shorter one. How many is a property of the sample rather than of the defect,
   so it is not quoted here: two independent sweeps over different alphabets found 152 and 744 in
-  4,000. Known-answer case, which is not sample-dependent: the cell `"AAAAii "` in the same column drew one line in a row sized for
+  4,000. Known-answer case, which is not sample-dependent: the cell `"AAAAii "` in the same
+  column drew one line in a row sized for
   two (28.8pt) before this fix, and now resolves to the 14.4pt row the single drawn line needs —
   a document whose cell text ends in a space that does not fit gets a shorter row than before,
   which is the corrected height rather than a side effect, but a geometry change all the same.
@@ -867,7 +874,8 @@ is still honest about compatibility even though the content is wider than a patc
   draw.** Hard-breaking an over-wide cell word (above) can make a row taller than the page has
   room for, where the base drew the overrun off the page instead of refusing it. Measured, a
   100pt column with zero padding on a 400x200pt page, a cell holding 300 "W"s at 10pt
-  (the fixture's own explicit size; `TextStyle.FontSize` defaults to 12): the base drew one line past the page edge; this pull request hard-breaks it into enough
+  (the fixture's own explicit size; `TextStyle.FontSize` defaults to 12): the base drew one line
+  past the page edge; this pull request hard-breaks it into enough
   lines that the row no longer fits a 200pt page height, and `Document.Save` now raises "An
   element is too tall to fit on a single page and cannot be rendered." where it previously
   produced a document. This is not a new exception type and not new validation — `DocumentRenderer`
@@ -911,7 +919,8 @@ is still honest about compatibility even though the content is wider than a patc
   difference is not cosmetic. The first draft of this change let a cell declaring more rows than the
   table holds claim them: on a two-row table, a declared 5 and a declared 50 each failed veraPDF's
   row-width check, and a declared `int.MaxValue` produced no verdict at all, because veraPDF tried
-  to allocate a row array of that size and abandoned the job. A header row carrying a span was worse, since the header run
+  to allocate a row array of that size and abandoned the job. A header row carrying a span was
+  worse, since the header run
   is repeated at the top of every continuation page while the span's occupancy is keyed to the row
   it was declared over: the row below a repeated header drew all of its own cells while the header
   claimed to cover one of them, which took a three-page document from compliant to two failed
@@ -1038,7 +1047,8 @@ is still honest about compatibility even though the content is wider than a patc
   honour it, and it is worse than dropped: neither of those two brackets its fill colour in
   `q`/`Q` — the image and chart renderers do bracket theirs, and the chart's own comment says it
   does so to stop exactly this — and a band is drawn after the page's content, so the band took
-  whatever colour the last paragraph or cell left set. Measured on a page whose body was red and whose footer style asked for blue, the
+  whatever colour the last paragraph or cell left set. Measured on a page whose body was red and
+  whose footer style asked for blue, the
   band's own text object held no `rg` operator at all and the footer rendered red. The colour a band
   showed was therefore a property of whatever happened to be drawn above it.
 
@@ -2004,7 +2014,8 @@ is still honest about compatibility even though the content is wider than a patc
   what this gate already carried before the migration, so the threshold and every per-assembly
   floor carry over unchanged rather than being re-baselined lower. Parity here is about the
   migration dropping nothing it used to instrument, not about the two figures staying pinned
-  together forever: both move independently as unrelated PRs add code. The coverage gate's glob still moves from a fixed
+  together forever: both move independently as unrelated PRs add code. The coverage gate's glob
+  still moves from a fixed
   `coverage.cobertura.xml` to `coverage.cobertura.*.xml`, since coverlet.MTP stamps a timestamp
   into every report's own filename rather than writing one fixed name into a per-run guid folder;
   measured across a full solution run, that timestamp resolution kept all 7 reports distinct with

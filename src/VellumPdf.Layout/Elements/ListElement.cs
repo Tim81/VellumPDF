@@ -42,26 +42,30 @@ public sealed class ListElement
     /// column of markers with no content and nothing reports the loss. A list with nested
     /// children is refused at that boundary instead, as the exception records. Keep the indent
     /// positive and well below the content width (#476).
-    /// <para>Why, because the rest follows: text starts at a gutter decided per item, not once
-    /// per list. At the top level that gutter is the larger of this value and the item's own
-    /// marker width. One level in, the marker itself starts at this value, so what must clear it
-    /// is a position rather than a width, and the gutter is the larger of twice this value and
-    /// this value plus the marker's width. One case overrides both, reverting to the unwidened
-    /// figure where the widened one would leave less room than the item's longest word.</para>
-    /// <para>So a negative indent is ordinary at the top level: the marker's width wins and the
-    /// text starts one marker width right of the margin rather than where you asked. It lands
-    /// left of the margin, off the page, in the two cases the rules leave open, when the override
-    /// fires and on any nested child.</para>
-    /// <para>The two negative non-finite values take different routes, so one is far easier to
-    /// hit. <c>NaN</c> survives the larger-of at either level and the override cannot fire against
-    /// it, so it reaches the text matrix on every geometry. Negative infinity loses the larger-of
-    /// at the top level and arrives only where the override fires, but wins it when nested.
-    /// Neither is a PDF number, so a reader has no coordinate to place the item at, and neither
-    /// throws nor is reported (#532).</para>
-    /// <para>Positive infinity is decided by neither rule. Both branches yield it, the content
-    /// width goes non-positive, and the text is dropped rather than misplaced: a flat list draws
-    /// the marker with no text-showing operator after it, and a nested one meets the
-    /// content-width boundary above and throws.</para>
+    /// <para>Text starts at a gutter decided per item, not once per list. At the top level that
+    /// gutter is the larger of this value and the item's own marker width. One level in, the
+    /// marker itself starts at this value, so what has to clear it is a position rather than a
+    /// width. The nested gutter is therefore the larger of twice this value and this value plus
+    /// the marker's width. One case overrides both, reverting to the unwidened figure, which is
+    /// this value at the top level and twice it when nested, where the widened one would leave
+    /// less room than the item's longest word.</para>
+    /// <para>So a negative indent is ordinary at the top level while the override stays quiet:
+    /// the marker's width wins and the text starts one marker width right of the margin rather
+    /// than where you asked. Once the override fires, or on any nested child, this value reaches
+    /// the gutter itself and content moves left. How far left is a property of the page and the
+    /// marker, not of the value: text leaves the page below minus the left margin, a nested
+    /// child's text below minus the margin and its marker's width together, and a nested marker
+    /// sits left of the margin at any negative value. None of it throws or is reported.</para>
+    /// <para>The two non-finite values other than positive infinity take different routes, so one
+    /// is far easier to hit. <c>NaN</c> survives the larger-of at either level and the override
+    /// cannot fire against it, so it reaches the text matrix on every geometry. Negative infinity
+    /// loses the larger-of at the top level and arrives only where the override fires, but wins
+    /// it when nested. Neither is a PDF number, so a reader has no coordinate to place the item
+    /// at, and neither throws nor is reported (#532).</para>
+    /// <para>Positive infinity is the one value the branches do not separate: both yield it, so
+    /// the content width goes non-positive either way. A flat list then drops the text rather
+    /// than misplacing it, drawing the marker with no text-showing operator after it. A nested
+    /// one throws at the content-width boundary above before reaching that.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from a save rather than from this property, when a list with nested children has an
