@@ -574,7 +574,7 @@ public sealed class Document : IDisposable
     /// three routes out of a failed save leave it clean, dead, or alive and wrong. A quiet retry
     /// therefore proves nothing. Correct the cause and the first route returns the right file
     /// while the third returns a wrong one; leave it in place and both raise again. The dead
-    /// route raises either way, which is why it is not one of the two. Build a fresh
+    /// route raises either way. Build a fresh
     /// <see cref="Document"/> rather than retrying a save that threw;
     /// <see cref="Save(System.IO.Stream)"/> has the detail (#530).</para>
     /// <para>A document with no pages throws as well. Add at least one element before you
