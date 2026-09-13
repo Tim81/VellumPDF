@@ -356,8 +356,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `Attention` and two `NOTE`, leaving 17 against the 26 this work started from and none at all in
   2.3.2. The failed-save paragraph on `Save(Stream)` briefly carried a new one and lost it again,
   so that the same hazard is not marked on the synchronous overload and unmarked on the
-  asynchronous one. The
-  two `NOTE` markers went because they pointed at an open issue number rather than a historical
+  asynchronous one. The two `NOTE` markers went because they pointed at an open issue number rather than a historical
   fact or a version boundary, which is what the rest of the package uses `NOTE` for; the surviving
   one records a fact about #365. The seventh `Attention` went from `PieChart.Alignment`, whose
   opening sentence is shared word for word with `RunningBand.Alignment` and was marked on one
@@ -367,7 +366,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Three low-severity corrections, measured. `LayoutImage.Width`'s summary said "must be at least
   5e-6 points in magnitude," which admits negative infinity, and a later pass replaced that with
   "finite (positive infinity aside)," which cancels its own word: finite excludes infinity by
-  definition, while `Height` thirty lines below uses "finite" to mean the ordinary thing. The
+  definition, while `Height` thirty lines below uses "finite" to mean the ordinary thing.
   The summary now states the accepted range as the member enforces it: finite or positive
   infinity, at least 5e-6 points in magnitude, with that floor applied to the derived height as
   well, so a width that clears it is still refused on a source much wider than it is tall. `LayoutImage.Height` and `PieChart.Diameter` each keep a warning for a

@@ -190,8 +190,8 @@ public sealed class Document : IDisposable
     /// <summary>Sets a header band with optional style and alignment. Returns this document for chaining.</summary>
     /// <remarks>
     /// A null <paramref name="template"/> is accepted here and refused at the save. The parameter
-    /// is non-nullable, so reaching this needs <c>null!</c> or a disabled nullable context. This
-    /// method
+    /// is non-nullable, so reaching this takes <c>null!</c>, a nullable-typed expression the
+    /// compiler only warns about, or a disabled nullable context. This method
     /// builds a <see cref="RunningBand"/>, whose constructor does not check the template, so the
     /// band resolves it during layout and the failure surfaces as a
     /// <see cref="NullReferenceException"/> from a call you did not make. Pass an empty string
@@ -211,8 +211,8 @@ public sealed class Document : IDisposable
     /// <summary>Sets a footer band with optional style and alignment. Returns this document for chaining.</summary>
     /// <remarks>
     /// A null <paramref name="template"/> is accepted here and refused at the save. The parameter
-    /// is non-nullable, so reaching this needs <c>null!</c> or a disabled nullable context. This
-    /// method
+    /// is non-nullable, so reaching this takes <c>null!</c>, a nullable-typed expression the
+    /// compiler only warns about, or a disabled nullable context. This method
     /// builds a <see cref="RunningBand"/>, whose constructor does not check the template, so the
     /// band resolves it during layout and the failure surfaces as a
     /// <see cref="NullReferenceException"/> from a call you did not make. Pass an empty string
@@ -415,9 +415,12 @@ public sealed class Document : IDisposable
     /// fresh document's. Reaching the writer leaves it dead, and a retry on a good stream throws
     /// about the document having already been written.</para>
     /// <para>A throw from the layout itself leaves it alive and wrong. The pages it had already
-    /// laid out stay, and a retry appends a whole second layout to them, so the file grows by
-    /// that many pages on every attempt. The retry raises nothing, so neither an exception nor a
-    /// byte count tells you (#530).</para>
+    /// laid out stay, and a retry lays the document out again on top of them, so each further
+    /// failed attempt adds that many pages again. Correcting the geometry and retrying raises
+    /// nothing, so no exception tells you, and the file is larger than a fresh document's without
+    /// your having a fresh document to compare it against. Retrying <b>without</b> correcting the
+    /// geometry throws the same too-tall exception again and leaves another set of pages behind
+    /// (#530).</para>
     /// <para>Two of these routes retry quietly and only one of them is safe. A geometry refused
     /// before the layout starts leaves nothing behind, so correcting it and saving again gives
     /// the file a fresh document would. A refusal from the layout itself does not. Silence does
@@ -568,8 +571,8 @@ public sealed class Document : IDisposable
     /// the document has already been written and tells you to create a new one. It writes nothing
     /// to the stream, appended or otherwise.</para>
     /// <para>A save that threw does not reliably leave the document usable again either. The
-    /// three routes out of a failed save leave it clean, dead, or alive and wrong, and the last
-    /// two both retry quietly while only one returns the right file. Build a fresh
+    /// three routes out of a failed save leave it clean, dead, or alive and wrong. The first and
+    /// third both retry quietly, and only the first returns the right file. Build a fresh
     /// <see cref="Document"/> rather than retrying a save that threw;
     /// <see cref="Save(System.IO.Stream)"/> has the detail (#530).</para>
     /// <para>A document with no pages throws as well. Add at least one element before you

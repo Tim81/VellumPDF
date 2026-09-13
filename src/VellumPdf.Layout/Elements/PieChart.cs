@@ -55,11 +55,10 @@ public sealed class PieChart
     /// throws <see cref="ArgumentException"/> and names <c>Diameter</c>.
     /// <para><b>Attention</b>: a diameter wider than the content box is clamped to it, and the
     /// chart drawn is then smaller than the number you set, with nothing reporting the
-    /// difference. The
-    /// clamp compares only against the available width, not the available height, so a diameter
-    /// that fits once clamped can still be taller than the page has room for; that case throws
-    /// <see cref="InvalidOperationException"/> instead of drawing a smaller chart. Do not size a
-    /// chart against the page; size it against the space you have given it.</para>
+    /// difference. The clamp compares only against the available width, not the available height,
+    /// so a diameter that fits once clamped can still be taller than the page has room for; that
+    /// case throws <see cref="InvalidOperationException"/> instead of drawing a smaller chart. Do
+    /// not size a chart against the page; size it against the space you have given it.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised while the chart is laid out, which happens inside
@@ -87,10 +86,9 @@ public sealed class PieChart
     /// <see cref="ArgumentException"/> and names <c>StrokeWidth</c>.
     /// <para><b>Attention</b>: zero does <b>not</b> remove the separators. Whether a stroke
     /// happens at all is decided by <see cref="StrokeColor"/>, not by this width. With a stroke
-    /// colour set
-    /// and a width of zero, the renderer emits <c>0 w</c> and still strokes, which asks the device
-    /// for its thinnest line. If you want no separators, leave <see cref="StrokeColor"/>
-    /// unset.</para>
+    /// colour set and a width of zero, the renderer emits <c>0 w</c> and still strokes, which
+    /// asks the device for its thinnest line. If you want no separators, leave <see
+    /// cref="StrokeColor"/> unset.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised while the chart is laid out, which happens inside

@@ -40,7 +40,7 @@ public sealed class ListElement
     /// <b>Attention</b>: an indent at or beyond the page's content width is <b>not</b> refused on
     /// a flat list. The marker is drawn and the item text is discarded, so the list renders as a
     /// column of markers with no content and nothing reports the loss. A list with nested
-    /// children is refused at that same boundary instead, with the exception below. Keep the
+    /// children is refused at that same boundary instead, as the exception tag records. Keep the
     /// indent well below the content width either way (#476).
     /// <para>A marker wider than the indent does not overprint the item text. The gutter widens
     /// to the marker's own width, per item, rather than to the widest marker in the list, so a
@@ -49,18 +49,25 @@ public sealed class ListElement
     /// 20-point indent and items 19 to 21 are back at the plain indent. One case still
     /// overprints: where widening the gutter would leave less room than the item's longest word,
     /// the gutter reverts to the indent.</para>
-    /// <para>The gutter being the larger of the indent and the marker is also what a negative
-    /// indent falls back to, so the text starts one marker width after the left margin instead of
-    /// where you asked. That width is the marker's, not the indent's: the bullet is the narrowest
-    /// at <b>4.2pt</b> and every ordered marker is wider, so an ordered list falls back less far
-    /// than an unordered one. It does not widen with the number; the roman paragraph above shows
-    /// it narrowing again.</para>
+    /// <para>A negative indent falls back to that same gutter rule, so on a flat item the text
+    /// starts one marker width after the left margin rather than where you asked. The width is
+    /// the marker's: the bullet is the narrowest at <b>4.2pt</b>, and every ordered marker is
+    /// wider, because each is a glyph plus a period and the narrowest glyph any scheme emits
+    /// gives <b>6pt</b>. So an ordered list falls back less far than an unordered one, and it
+    /// does not widen with the number; the roman paragraph above shows it narrowing again.</para>
+    /// <para>Two cases do not fall back at all, and both put content off the page. A nested child
+    /// takes the indent directly rather than through that rule, and so does a flat item whose
+    /// longest word will not fit beside the marker. The second is the overprint case above seen
+    /// from the other side: with a negative indent it moves content outside the page rather than
+    /// over the marker.</para>
     /// <para><c>NaN</c> is accepted and writes a text matrix whose x coordinate is the literal
     /// token <c>NaN</c>, which is not a PDF number, so a reader has no coordinate to place the
     /// item at. Positive infinity draws the marker and drops the item text on a flat list, with
-    /// no text-showing operator after it. Negative infinity behaves as any negative value does.
-    /// None of the three is reported, so check the value before you set it rather than expecting
-    /// the save to tell you.</para>
+    /// no text-showing operator after it. Negative infinity matches any other negative value on a
+    /// flat list, but a nested child takes it directly and writes <c><b>-Infinity</b></c> into
+    /// the same matrix, which is no more a PDF number than <c>NaN</c> is (#532). None of that is
+    /// reported on a flat list, so check the value before you set it rather than expecting the
+    /// save to tell you.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from a save rather than from this property, when a list with nested children has an
