@@ -53,10 +53,11 @@ public sealed class ListElement
     /// <c>NaN</c> is not a PDF number, so the coordinate a reader needs is not there. Positive
     /// infinity draws the marker and drops the item text, with no text-showing operator following
     /// it. A negative indent falls back to the marker's own width, because the gutter is the
-    /// larger of the two: at the default style that width is <b>4.2pt</b>, so at an indent of -50
-    /// the text starts 4.2pt after the left margin rather than 20pt after it. None of the three
-    /// throws and none is reported, so check the value before you set it rather than expecting
-    /// the save to tell you.</para>
+    /// larger of the two. At the default text style a bullet marker is <b>4.2pt</b> wide, so an
+    /// unordered list at an indent of -50 starts its text 4.2pt after the left margin rather than
+    /// 20pt after it. An ordered list falls back further, because its marker is wider and grows
+    /// with the number. None of the three throws and none is reported, so check the value before
+    /// you set it rather than expecting the save to tell you.</para>
     /// </remarks>
     public double Indent { get; init; } = 20;
 

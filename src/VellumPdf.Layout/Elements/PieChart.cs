@@ -38,8 +38,10 @@ public sealed class PieChart
     /// slice should be visible in your chart, give it a small positive value.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
-    /// Raised while the chart is laid out, which happens inside <see cref="Document.Save(System.IO.Stream)"/>,
-    /// when the list is empty, when a value is negative or not finite, or when the values sum to zero or less. <c>ParamName</c> is this property's name.
+    /// Raised while the chart is laid out, which happens inside
+    /// <see cref="Document.Save(System.IO.Stream)"/>, when the list is empty, when a value is
+    /// negative or not finite, or when the values sum to zero or less. <c>ParamName</c> is this
+    /// property's name.
     /// </exception>
     public IReadOnlyList<PieSlice> Slices { get; init; } = [];
 
@@ -59,7 +61,8 @@ public sealed class PieChart
     /// chart against the page; size it against the space you have given it.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
-    /// Raised while the chart is laid out, which happens inside <see cref="Document.Save(System.IO.Stream)"/>,
+    /// Raised while the chart is laid out, which happens inside
+    /// <see cref="Document.Save(System.IO.Stream)"/>,
     /// when the diameter is zero, negative or not finite. <c>ParamName</c> is this property's name.
     /// </exception>
     /// <exception cref="InvalidOperationException">
@@ -88,7 +91,8 @@ public sealed class PieChart
     /// unset.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
-    /// Raised while the chart is laid out, which happens inside <see cref="Document.Save(System.IO.Stream)"/>,
+    /// Raised while the chart is laid out, which happens inside
+    /// <see cref="Document.Save(System.IO.Stream)"/>,
     /// when the width is negative or not finite. <c>ParamName</c> is this property's name.
     /// </exception>
     public double StrokeWidth { get; init; } = 0.5;
@@ -115,7 +119,8 @@ public sealed class PieChart
     /// starts the first slice at the top.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
-    /// Raised while the chart is laid out, which happens inside <see cref="Document.Save(System.IO.Stream)"/>,
+    /// Raised while the chart is laid out, which happens inside
+    /// <see cref="Document.Save(System.IO.Stream)"/>,
     /// when the angle is not finite. <c>ParamName</c> is this property's name.
     /// </exception>
     public double StartAngle { get; init; } = Math.PI / 2;

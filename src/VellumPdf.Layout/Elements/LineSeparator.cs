@@ -39,7 +39,7 @@ public sealed class LineSeparator
     /// <remarks>
     /// A non-finite inset is refused. <see cref="Document.Save(System.IO.Stream)"/> throws
     /// <see cref="InvalidOperationException"/> reading <c>A line separator has a non-finite
-    /// inset. Every inset must be a finite number.</c> <c>Top</c> and <c>Bottom</c> set the
+    /// inset. Every inset must be a finite number.</c> The <c>Top</c> and <c>Bottom</c> insets set the
     /// rule's own y coordinate, so either one alone would put a token no reader can parse into
     /// the <c>m</c> and <c>l</c> operators.
     /// <para>All four edges are checked, and the message names none of them, so it tells you the

@@ -274,10 +274,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   matching one built at the new size from the start byte for byte, except the random `/ID` and the
   XMP `CreateDate`/`ModifyDate` timestamps, not the `/ID` alone. That holds on a document no save
   has been attempted on, which is where the measurement was taken and as far as it reaches. The
-  byte figure that first accompanied this is gone: it was measured on a fixture the sentence did
-  not name, and a sweep of 8,100 saves over margins, text lengths and font sizes did not reproduce
-  it. What is checkable without a fixture is the claim itself, that the two files match once the
-  `/ID` and the two timestamps are normalised, and that is what the member now states. `Save(Stream)`'s `ArgumentException` for a non-writable destination carries the
+  byte figure that first accompanied this named no margin, and at this property's default 72pt
+  insets the recipe cannot run: 144pt of vertical margin does not fit a 120pt page, so both halves
+  of the comparison are refused before they are built. The margin is now named. At 10pt insets the
+  figure reproduces exactly, and the two files are byte-identical once `/ID` and the two XMP
+  timestamps are normalised, with all four `/MediaBox` entries reading `0 0 200 120`. `Save(Stream)`'s `ArgumentException` for a non-writable destination carries the
   internal parameter name `stream`, not the public `destination` parameter it is documented
   against, so catching by parameter name will not find it under `"destination"`.
 
@@ -288,8 +289,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and page count to a fresh document's; reaching the writer leaves it dead, and a retry on a good
   stream throws about the document having already been written; a throw from the layout itself
   leaves it alive and wrong, and on #530's fixture a retry after enlarging the page gave 4 pages
-  where a fresh document with the same content gave 1. No retry measured raised an exception on
-  that third route. The overloads now say a document is single-use, that a save which threw does
+  where a fresh document with the same content gave 1. That retry is the silent one. Retrying
+  without changing the geometry throws the too-tall exception again, and saving a second time
+  after a retry that succeeded reports the document as already written, so the damaging case is
+  precisely the retry that appears to work. The overloads now say a document is single-use, that a save which threw does
   not reliably return it to a usable state, and that the answer is a fresh `Document` rather than
   a retry. The behaviour itself is unchanged here; #530 carries the defect.
 
@@ -343,7 +346,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Marker density and the bolding rule.** Nine markers were folded into plain sentences, seven
   `Attention` and two `NOTE`, and one new `Attention` marks the failed-save paragraph on
-  `Save(Stream)`, leaving 17 against the 26 this work started from and none at all in 2.3.2. The
+  `Save(Stream)`, leaving 18 against the 26 this work started from and none at all in 2.3.2. The
   two `NOTE` markers went because they pointed at an open issue number rather than a historical
   fact or a version boundary, which is what the rest of the package uses `NOTE` for; the surviving
   one records a fact about #365. The seventh `Attention` went from `PieChart.Alignment`, whose

@@ -13,8 +13,9 @@ public sealed class LayoutImage
     public PdfImageXObject Image { get; }
 
     /// <summary>
-    /// Display width in points; when null the image fits the available width. Must be at least
-    /// 5e-6 points in magnitude, and may be positive infinity, which fills the content box.
+    /// Display width in points; when null the image fits the available width. Must be finite or
+    /// positive infinity, and at least 5e-6 points in magnitude. Positive infinity fills the
+    /// content box.
     /// </summary>
     /// <remarks>
     /// A value wider than the available width is clamped to it, so this is an upper bound rather
@@ -25,9 +26,11 @@ public sealed class LayoutImage
     /// naming the width. A zero width writes a transformation matrix that cannot be inverted, which
     /// ISO 32000-2 leaves undefined for a painted image, and it also collapses the height, which is
     /// derived from the width. A width of NaN writes a token that is not a PDF number.</para>
-    /// <para>Do <b>not</b> pass a negative width. It is not refused today and mirrors the image
-    /// horizontally, which is a side effect of the transformation matrix rather than a supported
-    /// way to flip an image. A later major version will reject it.</para>
+    /// <para>Do <b>not</b> pass a negative width. It is not refused today. With
+    /// <see cref="Height"/> left null the derived height takes the sign too, so the image is
+    /// rotated by 180 degrees rather than mirrored; with an explicit height it is mirrored
+    /// horizontally. Either way it is a side effect of the transformation matrix rather than a
+    /// supported way to flip an image, and a later major version will reject it.</para>
     /// <para>The check is on the token written, not on the value held. <c>PdfCanvas</c>
     /// formats coordinates to five decimals, so any magnitude below 5e-6 is written as <c>0</c>
     /// and the matrix is singular whatever you passed. At the boundary, 5e-6 writes
@@ -64,7 +67,8 @@ public sealed class LayoutImage
     /// own proportions. If you want it fitted, set one and leave the other null.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property, for zero, for a magnitude under 5e-6, and for any non-finite value.
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this
+    /// property, for zero, for a magnitude under 5e-6, and for any non-finite value.
     /// </exception>
     public double? Height { get; init; }  // null = maintain aspect ratio
 

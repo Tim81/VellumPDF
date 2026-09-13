@@ -62,9 +62,11 @@ public sealed class Document : IDisposable
     /// before <see cref="Save(System.IO.Stream)"/> produces a file matching one built at the new
     /// size from the start, except the random <c>/ID</c> and the XMP
     /// <c>CreateDate</c>/<c>ModifyDate</c> timestamps, which carry the time each build actually
-    /// ran. Measured by resizing a document from 600 by 800 to 200 by 120 before saving and
-    /// normalising those three fields: the bytes match a build at 200 by 120 throughout, and
-    /// every <c>/MediaBox</c> carries the new size. A save that already threw during layout
+    /// ran. Measured by resizing a document from 600 by 800 to 200 by 120 at <b>10pt</b>
+    /// margins and normalising those three fields: the bytes match a build at 200 by 120
+    /// throughout, and every <c>/MediaBox</c> carries the new size. The margin is part of the
+    /// recipe, not decoration. The default 72pt insets do not fit a 120pt page, so that
+    /// combination is refused before it can be compared. A save that already threw during layout
     /// breaks this, along with the rest of the document's state; see
     /// <see cref="Save(System.IO.Stream)"/>.</para>
     /// </remarks>
@@ -387,14 +389,18 @@ public sealed class Document : IDisposable
     /// <para>A throw from the layout itself leaves it alive and wrong, and this is the route to
     /// watch, because the pages laid out before the throw stay and the retry appends a second
     /// layout to them. On the fixture in #530, retrying after enlarging the page gave
-    /// <b>4 pages</b> where a fresh document with the same content gave 1. No exception was
-    /// raised on any retry measured, so treat the file as wrong rather than expecting the save
-    /// to tell you. Build a fresh <see cref="Document"/> rather than retrying a save that threw
+    /// <b>4 pages</b> where a fresh document with the same content gave 1, and that retry threw
+    /// nothing. It is the only quiet one. Retrying without changing the geometry throws the
+    /// too-tall exception again, and saving a second time after a retry that succeeded reports
+    /// the document as already written. So the damaging case is the retry that appears to work.
+    /// Build a fresh <see cref="Document"/> rather than retrying a save that threw
     /// (#530).</para>
     /// <para>A document with no pages throws as well. Add at least one element before you
     /// save.</para>
     /// </remarks>
-    /// <exception cref="ArgumentNullException"><paramref name="destination"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="destination"/> is <see langword="null"/>.
+    /// </exception>
     /// <exception cref="ObjectDisposedException">
     /// This <see cref="Document"/> was already disposed. It derives from
     /// <see cref="InvalidOperationException"/>, so a catch written for the base type also catches
@@ -425,9 +431,10 @@ public sealed class Document : IDisposable
     /// cannot be combined.
     /// </exception>
     /// <exception cref="NullReferenceException">
-    /// A running band set through <see cref="SetHeader"/> or <see cref="SetFooter"/> has a null
-    /// <see cref="RunningBand.Template"/>. The constructor does not check it and the band resolves
-    /// its template during the save (#531).
+    /// A header or footer band has a null <see cref="RunningBand.Template"/>, whether it was set
+    /// through <see cref="SetHeader"/> and <see cref="SetFooter"/> or assigned to
+    /// <see cref="Header"/> and <see cref="Footer"/> directly. The constructor does not check it
+    /// and the band resolves its template during the save (#531).
     /// </exception>
     /// <exception cref="OverflowException">
     /// A row's <see cref="Cell.ColSpan"/> values sum past <see cref="int.MaxValue"/> while a
@@ -497,9 +504,10 @@ public sealed class Document : IDisposable
     /// <see cref="UseObjectStreams"/> was set and <see cref="Encrypt"/> was called.
     /// </exception>
     /// <exception cref="NullReferenceException">
-    /// A running band set through <see cref="SetHeader"/> or <see cref="SetFooter"/> has a null
-    /// <see cref="RunningBand.Template"/>. The constructor does not check it and the band resolves
-    /// its template during the save (#531).
+    /// A header or footer band has a null <see cref="RunningBand.Template"/>, whether it was set
+    /// through <see cref="SetHeader"/> and <see cref="SetFooter"/> or assigned to
+    /// <see cref="Header"/> and <see cref="Footer"/> directly. The constructor does not check it
+    /// and the band resolves its template during the save (#531).
     /// </exception>
     /// <exception cref="OverflowException">
     /// A row's <see cref="Cell.ColSpan"/> values sum past <see cref="int.MaxValue"/>.
@@ -532,13 +540,16 @@ public sealed class Document : IDisposable
     /// the document has already been written and tells you to create a new one. It writes nothing
     /// to the stream, appended or otherwise.</para>
     /// <para>A save that threw does not reliably leave the document usable again either. The
-    /// three routes out of a failed save leave it clean, dead, or alive and wrong, and nothing
-    /// reports the third. Build a fresh <see cref="Document"/> rather than retrying a save that
-    /// threw; <see cref="Save(System.IO.Stream)"/> has the measurements (#530).</para>
+    /// three routes out of a failed save leave it clean, dead, or alive and wrong, and the third
+    /// is quiet only on the retry that succeeds. Build a fresh <see cref="Document"/> rather than
+    /// retrying a save that threw; <see cref="Save(System.IO.Stream)"/> has the measurements
+    /// (#530).</para>
     /// <para>A document with no pages throws as well. Add at least one element before you
     /// save.</para>
     /// </remarks>
-    /// <exception cref="ArgumentNullException"><paramref name="destination"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="destination"/> is <see langword="null"/>.
+    /// </exception>
     /// <exception cref="ObjectDisposedException">
     /// This <see cref="Document"/> was already disposed. It derives from
     /// <see cref="InvalidOperationException"/>, so a catch written for the base type also catches
@@ -566,9 +577,10 @@ public sealed class Document : IDisposable
     /// which cannot be combined.
     /// </exception>
     /// <exception cref="NullReferenceException">
-    /// A running band set through <see cref="SetHeader"/> or <see cref="SetFooter"/> has a null
-    /// <see cref="RunningBand.Template"/>. The constructor does not check it and the band resolves
-    /// its template during the save (#531).
+    /// A header or footer band has a null <see cref="RunningBand.Template"/>, whether it was set
+    /// through <see cref="SetHeader"/> and <see cref="SetFooter"/> or assigned to
+    /// <see cref="Header"/> and <see cref="Footer"/> directly. The constructor does not check it
+    /// and the band resolves its template during the save (#531).
     /// </exception>
     /// <exception cref="OverflowException">
     /// A row's <see cref="Cell.ColSpan"/> values sum past <see cref="int.MaxValue"/> while a
@@ -653,9 +665,10 @@ public sealed class Document : IDisposable
     /// <see cref="UseObjectStreams"/> was set and <see cref="Encrypt"/> was called.
     /// </exception>
     /// <exception cref="NullReferenceException">
-    /// A running band set through <see cref="SetHeader"/> or <see cref="SetFooter"/> has a null
-    /// <see cref="RunningBand.Template"/>. The constructor does not check it and the band resolves
-    /// its template during the save (#531).
+    /// A header or footer band has a null <see cref="RunningBand.Template"/>, whether it was set
+    /// through <see cref="SetHeader"/> and <see cref="SetFooter"/> or assigned to
+    /// <see cref="Header"/> and <see cref="Footer"/> directly. The constructor does not check it
+    /// and the band resolves its template during the save (#531).
     /// </exception>
     /// <exception cref="OverflowException">
     /// A row's <see cref="Cell.ColSpan"/> values sum past <see cref="int.MaxValue"/>.
