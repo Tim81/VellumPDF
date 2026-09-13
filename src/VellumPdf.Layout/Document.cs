@@ -70,8 +70,10 @@ public sealed class Document : IDisposable
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from a save, when the content area this size and <see cref="Margins"/> compute to
-    /// is positive but still too small for a single element to fit on one page. A document longer
-    /// than one page is the ordinary case and never reaches this.
+    /// is positive but still too small for a single element to fit on one page. A document simply
+    /// running to several pages does not reach that one. It can reach this type by the other
+    /// route, the page-continuation cap, which fires when one element needs more than 50,000 page
+    /// continuations, and how many an element needs is itself a function of this size.
     /// </exception>
     public PdfRectangle PageSize
     {

@@ -309,10 +309,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   behaviour was not reproducible across runs, so the device clause stays dropped from both
   `IOException` tags rather than asserting one outcome for it.
 
-- **Marker density and the bolding rule.** Five `NOTE` markers pointed at an open issue number
-  rather than a historical fact or a version boundary, which is what the rest of the package uses
-  `NOTE` for; folded into plain sentences, leaving the package with 18 markers against the 26 it
-  had before this work and none at all in 2.3.2. Of
+- **Marker density and the bolding rule.** Eight markers were folded into plain sentences, six
+  `Attention` and two `NOTE`, leaving 18 against the 26 this work started from and none at all in
+  2.3.2. The two `NOTE` markers went because they pointed at an open issue number rather than a
+  historical fact or a version boundary, which is what the rest of the package uses `NOTE` for;
+  the surviving one records a fact about #365. Of
   those 18, 8 bold the marker word together with an operative negation and 10 bold the marker word
   alone, so `CONTRIBUTING.md` now says to bold the marker always and the negation only where a
   paragraph turns on one, rather than requiring both on every paragraph.

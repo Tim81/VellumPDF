@@ -15,23 +15,24 @@ public sealed class Cell
     /// Number of columns this cell spans. Must be at least 1.
     /// </summary>
     /// <remarks>
-    /// The table's column count is always the largest span sum across its rows. Widening a
-    /// cell's own span usually widens the grid to match, instead of overrunning it; the exception
-    /// is below.
+    /// The table's column count is always the largest span sum across its rows, with no
+    /// exception: every cell's span counts towards its row's total. What can differ is the width
+    /// the cell is drawn at, which the paragraph below covers.
     /// <para>Zero or negative is <b>refused</b>. <see cref="Document.Save(System.IO.Stream)"/>
     /// throws <see cref="InvalidOperationException"/> naming the row and cell, because a span of
     /// zero can leave the grid with no columns at all and nothing to draw into.</para>
-    /// <para>A span wider than the columns other rows have already declared usually widens the
-    /// grid instead of being clamped down: the column count is fixed at the largest span sum
-    /// across every row (above), so this cell's span becomes the reason those columns exist, and
-    /// every other row leaves them empty. That is not the only outcome, though. When an
+    /// <para>A span wider than the columns other rows have already declared always widens the
+    /// grid: the column count is fixed at the largest span sum across every row (above), so this
+    /// cell's span becomes the reason those columns exist, and every other row leaves them empty.
+    /// The width it is drawn at is a separate question. When an
     /// earlier row's <see cref="RowSpan"/> already occupies this row's leading columns, this
-    /// cell's own span is clamped to whatever columns are left rather than widening the grid
-    /// further: measured, a five-column span with four leading columns already spoken for by such
+    /// cell is drawn only as wide as the columns that are left, even though its span still counts
+    /// towards its row's total: measured, a five-column span with four leading columns already
+    /// spoken for by such
     /// a <see cref="RowSpan"/> drew one column wide, ending exactly at the table's right edge, and
-    /// a three-column span in the equivalent narrower table did the same. Whether a span widens
-    /// the grid or is clamped depends on what the rows above it already occupy, not on the span
-    /// alone.</para>
+    /// a three-column span in the equivalent narrower table did the same. Both happen at once:
+    /// the span still counts towards the column total, and the cell is still drawn narrow. What
+    /// the rows above decide is the drawn width, never the count.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property, when the
