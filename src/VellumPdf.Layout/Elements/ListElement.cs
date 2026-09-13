@@ -37,10 +37,11 @@ public sealed class ListElement
 
     /// <summary>Points of indent for each list level.</summary>
     /// <remarks>
-    /// Attention: an indent at or beyond the content width is <b>not</b> refused. The marker
+    /// <b>Attention</b>: an indent at or beyond the content width is <b>not</b> refused. The marker
     /// is drawn and the item text is discarded. The list then renders as a column of bullets with
-    /// no content, and nothing reports the loss (#476). Keep the indent well below the content
+    /// no content, and nothing reports the loss. Keep the indent well below the content
     /// width.
+    /// <para><b>NOTE</b>: tracked as #476.</para>
     /// <para>A marker wider than the indent does not overprint the item text. The gutter is
     /// widened to the marker's own width, per item. With roman numerals at the default style the
     /// first marker to exceed a 20-point indent is item 17; from there each item's text starts

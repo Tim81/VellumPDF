@@ -25,7 +25,7 @@ public sealed class TableElement
     /// <remarks>
     /// A non-finite width is refused. <see cref="Document.Save(System.IO.Stream)"/> throws
     /// <see cref="InvalidOperationException"/> and names the table.
-    /// <para>Attention: zero does <b>not</b> hide the borders. It asks the device for its
+    /// <para><b>Attention</b>: zero does <b>not</b> hide the borders. It asks the device for its
     /// thinnest line, so the grid is still drawn, and it grows heavier as the page is scaled
     /// down.</para>
     /// <para>There is at present <b>no</b> way to draw a table without a grid. Every cell is

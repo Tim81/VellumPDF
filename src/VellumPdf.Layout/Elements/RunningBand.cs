@@ -17,12 +17,12 @@ public sealed class RunningBand
     /// A template too wide for the content box is truncated, not refused. The cut is reported
     /// through <c>Document.BandTruncations</c> and <c>DocumentRenderer.BandTruncations</c>, so
     /// read one of those if you need to know it happened.
-    /// <para>NOTE: before #365 an overlong template was drawn off the page at a negative
+    /// <para><b>NOTE</b>: before #365 an overlong template was drawn off the page at a negative
     /// coordinate, with every glyph still written into the content stream. The header or footer
     /// was then invisible in every reader while you paid for its bytes.</para>
     /// <para>The cut bounds the advance width, <b>not</b> the ink. Side bearings and italic
     /// overhang can still paint a little past it. Nothing in this package sets a clip path.</para>
-    /// <para>Attention: truncation does nothing for a template whose glyphs measure zero. Control
+    /// <para><b>Attention</b>: truncation does nothing for a template whose glyphs measure zero. Control
     /// characters, the five undefined WinAnsi codes and both symbolic standard-14 faces all
     /// measure zero width, so any length of them fits and is drawn in full.</para>
     /// <para>You get one report per band per render, naming the page that lost the most rather
@@ -37,7 +37,7 @@ public sealed class RunningBand
 
     /// <summary>Horizontal alignment of the band text.</summary>
     /// <remarks>
-    /// Attention: <see cref="HorizontalAlignment.Justify"/> is neither refused <b>nor</b>
+    /// <see cref="HorizontalAlignment.Justify"/> is neither refused <b>nor</b>
     /// honoured. It falls through to left alignment. A single-line band has nothing to justify
     /// against, so there is no meaning to give it.
     /// </remarks>
@@ -51,7 +51,7 @@ public sealed class RunningBand
     /// This reserves space. It does not scale the text: the band's own
     /// <see cref="TextStyle.FontSize"/> decides how large the glyphs are. A height smaller than
     /// the text needs therefore lets the band overlap the content rather than shrinking it.
-    /// <para>Attention: zero and negative values are not refused, and neither is useful. The
+    /// <para><b>Attention</b>: zero and negative values are not refused, and neither is useful. The
     /// height comes off the page's content box, so both leave the band no room while it is still
     /// drawn, over your content. A later major version will reject them.</para>
     /// <para>A non-finite value is refused, by two exception types across three messages. Each
@@ -62,8 +62,10 @@ public sealed class RunningBand
     /// does report the height, as <c>NaNpt of running bands</c>. Negative infinity gives
     /// <see cref="InvalidOperationException"/> about the page-continuation cap, which names
     /// nothing about the band.</para>
-    /// <para>Attention: no valid document is produced in any of the three, and if you saved to a
-    /// path you have lost what was there. The string overloads,
+    /// <para>No valid document is produced in most of these cases, and if you saved to
+    /// a path you have lost what was there — except a footer's negative infinity, which produces
+    /// a valid file rather than refusing it; that inconsistency is its own defect (#520). The
+    /// string overloads,
     /// <see cref="Document.Save(string)"/> and
     /// <see cref="Document.SaveAsync(string, System.Threading.CancellationToken)"/>, open the
     /// file before the layout runs, so a failure leaves a zero-byte file in place of whatever the
