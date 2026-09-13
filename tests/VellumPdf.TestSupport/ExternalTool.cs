@@ -216,8 +216,27 @@ public static class ExternalTool
             // Drain both pipes concurrently BEFORE waiting: a report larger than the OS pipe
             // buffer would otherwise block the child on write while this thread blocks in
             // WaitForExit, deadlocking both sides.
-            var stdoutTask = process.StandardOutput.ReadToEndAsync();
-            var stderrTask = process.StandardError.ReadToEndAsync();
+            //
+            // Each drain gets a dedicated thread rather than ReadToEndAsync, because the bounded
+            // wait below is a blocking Task.Wait on whatever thread called this method. With
+            // ReadToEndAsync the read's completion is queued to the thread pool, so a caller that
+            // is itself on a saturated pool waits for a continuation that cannot be scheduled:
+            // the tool exits in milliseconds, the 5-second drain budget expires anyway, and the
+            // caller is handed an empty stdout with timedOut set. Measured with seven test
+            // assemblies running at once, where a different qpdf oracle case failed on each run
+            // while the same project alone passed 1,869 of 1,869 and qpdf answered --version in
+            // 285 ms. LongRunning asks for a thread outside the pool, so the read completes
+            // whatever the pool is doing.
+            var stdoutTask = Task.Factory.StartNew(
+                () => process.StandardOutput.ReadToEnd(),
+                CancellationToken.None,
+                TaskCreationOptions.LongRunning,
+                TaskScheduler.Default);
+            var stderrTask = Task.Factory.StartNew(
+                () => process.StandardError.ReadToEnd(),
+                CancellationToken.None,
+                TaskCreationOptions.LongRunning,
+                TaskScheduler.Default);
 
             try
             {
