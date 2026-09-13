@@ -422,7 +422,7 @@ public sealed class Document : IDisposable
     /// whether you changed anything: correct the cause and it succeeds silently on a wrong file,
     /// leave the cause in place and it raises the same exception once more, having committed
     /// another set of pages first (#530).</para>
-    /// <para>So a quiet retry means nothing on its own. A document refused before the layout
+    /// <para>So a quiet retry means nothing on its own. A save refused before the layout starts
     /// returns quietly and the file is right; one refused during the layout returns just as
     /// quietly and it is not. Build a fresh <see cref="Document"/> rather than retrying
     /// either.</para>
@@ -574,9 +574,8 @@ public sealed class Document : IDisposable
     /// three routes out of a failed save leave it clean, dead, or alive and wrong. A quiet retry
     /// therefore proves nothing. Correct the cause and the first route returns the right file
     /// while the third returns a wrong one; leave it in place and both raise again. The dead
-    /// route raises either way. Build a fresh
-    /// <see cref="Document"/> rather than retrying a save that threw;
-    /// <see cref="Save(System.IO.Stream)"/> has the detail (#530).</para>
+    /// route raises either way. Build a fresh <see cref="Document"/> rather than retrying a save
+    /// that threw; <see cref="Save(System.IO.Stream)"/> has the detail (#530).</para>
     /// <para>A document with no pages throws as well. Add at least one element before you
     /// save.</para>
     /// </remarks>

@@ -49,18 +49,18 @@ public sealed class ListElement
     /// the marker's width. One case overrides both: where the widened gutter would leave less
     /// room than the item's longest word, it reverts to the unwidened figure, which is this value
     /// at the top level and twice it when nested.</para>
-    /// <para>Every position below is measured from the list's own left edge, which
-    /// <see cref="Margins"/> moves along with all of them. The override rewrites a gutter and
-    /// never a marker's own inset, so no marker moves with it: a top-level marker sits at that
-    /// edge and a nested one at the edge plus this value, in both of their branches. At the top
-    /// level with the override quiet, a negative value loses the larger-of and the text starts
-    /// one marker width right of the edge rather than where you asked. At the top level with the
-    /// override firing, the text sits at the edge plus this value and reaches the page edge at
-    /// minus the margin. Nested with the override quiet, the text sits one marker width right of
-    /// its own marker, crossing the edge at minus that width and the page edge at minus the two
-    /// together. Nested with the override firing, the text sits at the edge plus twice this value
-    /// and reaches the page edge at minus half the margin. None of it throws or is
-    /// reported.</para>
+    /// <para>The override rewrites a gutter and never a marker's own inset, so no marker moves
+    /// with it: a top-level marker sits at the margin and a nested one at the margin plus this
+    /// value, in both of their branches. The margin here is the page's own plus
+    /// <see cref="Margins"/>'s left inset, and that inset shifts every figure below with it.
+    /// It does more than shift them: it also narrows the width the override measures against, so
+    /// a wide enough one flips the branch rather than only moving the result.</para>
+    /// <para>A negative value is what carries content off the page, and how far depends on the
+    /// branch. With the override firing the text reaches the page edge at minus the margin at the
+    /// top level, and at minus half of it when nested. With the override quiet a top-level item
+    /// cannot cross at all, because the larger-of never returns less than the marker's width; a
+    /// nested one crosses the margin at minus its own marker's width and the page edge at minus
+    /// that width and the margin together. None of it throws or is reported.</para>
     /// <para>The two non-finite values other than positive infinity take different routes, so one
     /// is far easier to hit. <c>NaN</c> survives the larger-of at either level and the override
     /// cannot fire against it, so it reaches the text matrix on every geometry. Negative infinity
