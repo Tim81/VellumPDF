@@ -207,7 +207,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the property the caller set, so a programmer who assigns a bad value gets an exception from a
   call they never made while the member they did set says nothing about it.
 
-  Twenty-six members now carry a boundary paragraph and twenty-one carry an `<exception>` tag. The
+  Twenty-six members now carry a boundary paragraph, twenty of them with an `<exception>` tag; the
+  twenty-first tagged member is `Document.Encrypt`, which already had one and this work did not
+  touch. The
   pattern, written into `CONTRIBUTING.md`: a plain sentence names what is refused, which call
   throws it and why; a following paragraph, for input accepted today but not to be relied on,
   bolds the marker word (`Attention` or `NOTE`) always, and bolds the operative negation too only
@@ -309,7 +311,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Marker density and the bolding rule.** Five `NOTE` markers pointed at an open issue number
   rather than a historical fact or a version boundary, which is what the rest of the package uses
-  `NOTE` for; folded into plain sentences, cutting the package's marker count from 23 to 18. Of
+  `NOTE` for; folded into plain sentences, leaving the package with 18 markers against the 26 it
+  had before this work and none at all in 2.3.2. Of
   those 18, 8 bold the marker word together with an operative negation and 10 bold the marker word
   alone, so `CONTRIBUTING.md` now says to bold the marker always and the negation only where a
   paragraph turns on one, rather than requiring both on every paragraph.

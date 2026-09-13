@@ -21,7 +21,7 @@ public sealed class Heading
     /// <remarks>
     /// Zero-based: level 0 is tagged <c>H1</c>, level 4 is <c>H5</c>, and every level at or
     /// above 5 is tagged <c>H6</c>. That ceiling is this library's, not the format's: ISO 32000-2
-    /// Table 366 defines <c>Hn</c> for any unsigned integer from 1 upward, and its NOTE 2,
+    /// Table 366 defines <c>Hn</c> for any unsigned integer from 1 upward, and NOTE 2 to that row,
     /// informative rather than a requirement, says <c>H7</c> can be used for a heading on the
     /// seventh level.
     /// <para><b>Attention</b>: a negative level is <b>not</b> refused, and it does not clamp the way

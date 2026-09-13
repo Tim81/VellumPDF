@@ -70,7 +70,8 @@ public sealed class Document : IDisposable
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from a save, when the content area this size and <see cref="Margins"/> compute to
-    /// is positive but still too small for the document's content to fit on one page.
+    /// is positive but still too small for a single element to fit on one page. A document longer
+    /// than one page is the ordinary case and never reaches this.
     /// </exception>
     public PdfRectangle PageSize
     {
@@ -151,8 +152,10 @@ public sealed class Document : IDisposable
     /// and footer are taken off. Positive infinity reaches this check.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Raised from a save when an inset is <c>NaN</c> or negative infinity. Neither reaches the
-    /// check above, so each surfaces as one of the unrelated messages described in the remarks.
+    /// Raised from a save when an inset is <c>NaN</c> or negative infinity, and also when a large
+    /// finite inset leaves the content area positive but too small for a single element. The two
+    /// non-finite forms do not reach the check above, so each surfaces as one of the unrelated
+    /// messages described in the remarks.
     /// Catching <see cref="ArgumentException"/> alone will not catch them.
     /// </exception>
     public EdgeInsets Margins { get; set; } = new EdgeInsets(72); // 1 inch
@@ -505,9 +508,11 @@ public sealed class Document : IDisposable
     /// writing, or <see cref="UseObjectStreams"/> was set and <see cref="Encrypt"/> was called,
     /// which cannot be combined.
     /// </exception>
-    /// <exception cref="TaskCanceledException">
+    /// <exception cref="OperationCanceledException">
     /// <paramref name="cancellationToken"/> was already cancelled, or was cancelled before the
-    /// layout pass started or during the final write.
+    /// layout pass started. Catch the base type: the layout pass raises the derived
+    /// <see cref="TaskCanceledException"/>, and a cancellation during the write raises whatever
+    /// the destination stream raises, which need not be the same type.
     /// </exception>
     // RS0026 flags multiple overloads with optional parameters as a future-ambiguity risk;
     // Stream and string share no implicit conversion, so overload resolution can never be
@@ -575,9 +580,11 @@ public sealed class Document : IDisposable
     /// See <see cref="SaveAsync(System.IO.Stream, System.Threading.CancellationToken)"/>, which
     /// this delegates to once the file is open.
     /// </exception>
-    /// <exception cref="TaskCanceledException">
+    /// <exception cref="OperationCanceledException">
     /// <paramref name="cancellationToken"/> was already cancelled, or was cancelled before the
-    /// layout pass started or during the final write.
+    /// layout pass started. Catch the base type: the layout pass raises the derived
+    /// <see cref="TaskCanceledException"/>, and a cancellation during the write raises whatever
+    /// the destination stream raises, which need not be the same type.
     /// </exception>
 #pragma warning disable RS0026
     public async Task SaveAsync(string path, CancellationToken cancellationToken = default)

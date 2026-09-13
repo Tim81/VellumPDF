@@ -14,12 +14,12 @@ public sealed class LineSeparator
     /// <see cref="InvalidOperationException"/> and names the width. The number would otherwise
     /// reach the content stream as a token that no reader can parse.
     /// <para><b>Attention</b>: zero is drawn, <b>not</b> skipped, though not always visible either.
-    /// ISO 32000-2, 8.4.3.2 defines it as the
-    /// thinnest line the device can render, one device pixel wide, and calls that
-    /// device-dependent. Resolution and zoom then pull in opposite directions. On a
-    /// high-resolution device, that one pixel is small enough that the same clause says the
-    /// result can be nearly invisible. Independently of resolution, displaying the page at a
-    /// smaller zoom does not shrink the rule with it: the line stays one device pixel wide while
+    /// ISO 32000-2, 8.4.3.2: a line width of zero <b>shall</b> denote the thinnest line that can
+    /// be rendered at device resolution, one device pixel wide. The same clause says such lines
+    /// are nearly invisible on high-resolution devices, that the result is device-dependent, and
+    /// that zero-width lines <b>should not be used</b>. Independently of resolution, displaying
+    /// the page at a smaller zoom does not shrink the rule with it: the line stays one device
+    /// pixel wide while
     /// everything around it shrinks, so it reads as proportionally heavier the further the page is
     /// scaled down. If you want no rule, leave the element out.</para>
     /// <para>A negative width is not refused today, though ISO 32000-2, 8.4.3.2 requires a line
