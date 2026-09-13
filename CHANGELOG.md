@@ -273,20 +273,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Two claims about save behaviour, corrected. Resizing `PageSize` before `Save` produces a file
   matching one built at the new size from the start byte for byte, except the random `/ID` and the
   XMP `CreateDate`/`ModifyDate` timestamps, not the `/ID` alone. That holds on a document no save
-  has been attempted on, which is where the 12-paragraph measurement was taken and as far as it
-  reaches. `Save(Stream)`'s `ArgumentException` for a non-writable destination carries the
+  has been attempted on, which is where the measurement was taken and as far as it reaches. The
+  byte figure that first accompanied this is gone: it was measured on a fixture the sentence did
+  not name, and a sweep of 8,100 saves over margins, text lengths and font sizes did not reproduce
+  it. What is checkable without a fixture is the claim itself, that the two files match once the
+  `/ID` and the two timestamps are normalised, and that is what the member now states. `Save(Stream)`'s `ArgumentException` for a non-writable destination carries the
   internal parameter name `stream`, not the public `destination` parameter it is documented
   against, so catching by parameter name will not find it under `"destination"`.
 
 - **A save that threw leaves the document in one of three states, and one of them is silent
   (#530).** All four save overloads said some version of "calling this twice throws", which
   describes only a save that succeeded. Measured: geometry refused before the layout starts
-  leaves the document clean, and a retry after correcting it produced a file of the same 1,645
-  bytes and 1 page as a fresh document's; reaching the writer leaves it dead, and a retry on a
-  good stream throws about the document having already been written; a throw from the layout
-  itself leaves it alive and wrong, and a retry after enlarging the page gave 4 pages and 2,487
-  bytes where a fresh document with the same content gave 1 page and 1,534 bytes. Nothing reports
-  that third case. The overloads now say a document is single-use, that a save which threw does
+  leaves the document clean, and a retry after correcting it produced a file identical in length
+  and page count to a fresh document's; reaching the writer leaves it dead, and a retry on a good
+  stream throws about the document having already been written; a throw from the layout itself
+  leaves it alive and wrong, and on #530's fixture a retry after enlarging the page gave 4 pages
+  where a fresh document with the same content gave 1. No retry measured raised an exception on
+  that third route. The overloads now say a document is single-use, that a save which threw does
   not reliably return it to a usable state, and that the answer is a fresh `Document` rather than
   a retry. The behaviour itself is unchanged here; #530 carries the defect.
 
@@ -300,8 +303,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   only magnitude, and its other three inputs each do something different and none of them throws:
   `NaN` saves a 1,546-byte file whose item line reads `1 0 0 1 NaN 757.89 Tm`, which is not a PDF
   number; positive infinity draws the marker and drops the item text with no text-showing operator
-  after it; a negative indent falls back to the marker's own width, and at -50 the text landed at
-  76.2pt.
+  after it; a negative indent falls back to the marker's own width, which is 4.2pt at the default
+  style, so at -50 the text starts 4.2pt after the left margin rather than 20pt after it.
   `RunningBand.Template` and `LineSeparator.Margins` each reach a live refusal with nothing
   written down: a null template is dereferenced during the save, and a non-finite separator inset
   is refused by name.
@@ -340,7 +343,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Marker density and the bolding rule.** Nine markers were folded into plain sentences, seven
   `Attention` and two `NOTE`, and one new `Attention` marks the failed-save paragraph on
-  `Save(Stream)`, leaving 18 against the 26 this work started from and none at all in 2.3.2. The
+  `Save(Stream)`, leaving 17 against the 26 this work started from and none at all in 2.3.2. The
   two `NOTE` markers went because they pointed at an open issue number rather than a historical
   fact or a version boundary, which is what the rest of the package uses `NOTE` for; the surviving
   one records a fact about #365. The seventh `Attention` went from `PieChart.Alignment`, whose

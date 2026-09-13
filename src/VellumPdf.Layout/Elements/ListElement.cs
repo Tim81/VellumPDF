@@ -53,7 +53,8 @@ public sealed class ListElement
     /// <c>NaN</c> is not a PDF number, so the coordinate a reader needs is not there. Positive
     /// infinity draws the marker and drops the item text, with no text-showing operator following
     /// it. A negative indent falls back to the marker's own width, because the gutter is the
-    /// larger of the two; measured at -50, the text was placed at 76.2pt. None of the three
+    /// larger of the two: at the default style that width is <b>4.2pt</b>, so at an indent of -50
+    /// the text starts 4.2pt after the left margin rather than 20pt after it. None of the three
     /// throws and none is reported, so check the value before you set it rather than expecting
     /// the save to tell you.</para>
     /// </remarks>

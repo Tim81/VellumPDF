@@ -58,8 +58,8 @@ public sealed class TextStyle
     /// naming both (and which one is <c>NaN</c>), but not the size. Negative infinity names the
     /// footer band and the size, but on a header it meets the page-continuation cap and names
     /// neither. A fixed <c>Height</c> moves the throw to the band's own draw step, naming the
-    /// band and the size, for five of these six band/value pairs; the sixth, a footer already at
-    /// negative infinity, gives the same message and type either way.</para>
+    /// band and the size, for five of these six band/value pairs. The sixth is a footer already
+    /// at negative infinity, which gives the same message and type either way.</para>
     /// <para>The finite-size boundary is a property of the page, not of the value. Measured on a
     /// footer, <c>Height</c> null, A4, default 72pt margins: the last size that does not throw is
     /// 566, and 567 through 578 throw this exception as the content area shrinks toward zero. A

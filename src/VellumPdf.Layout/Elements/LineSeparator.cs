@@ -17,9 +17,10 @@ public sealed class LineSeparator
     /// ISO 32000-2, 8.4.3.2: a line width of zero <b>shall</b> denote the thinnest line that can
     /// be rendered at device resolution, one device pixel wide. The same clause says such lines
     /// are nearly invisible on high-resolution devices, that the result is device-dependent, and
-    /// that zero-width lines <b>should not be used</b>. That is one pixel at any zoom, so the
-    /// rule grows heavier as the page is scaled down. If you want no rule, leave the element
-    /// out.</para>
+    /// that zero-width lines <b>should not be used</b>. That clause is about device resolution.
+    /// Zoom is a separate matter: the rule stays one device pixel while everything around it
+    /// shrinks, so it reads as proportionally heavier the further the page is scaled down. If you
+    /// want no rule, leave the element out.</para>
     /// <para>A negative width is not refused today, though ISO 32000-2, 8.4.3.2 requires a line
     /// width to be a non-negative number: the token this writes is one the specification forbids,
     /// so it is the format's business rather than the renderer's. Whether to refuse it is
@@ -38,8 +39,9 @@ public sealed class LineSeparator
     /// <remarks>
     /// A non-finite inset is refused. <see cref="Document.Save(System.IO.Stream)"/> throws
     /// <see cref="InvalidOperationException"/> reading <c>A line separator has a non-finite
-    /// inset</c>. <c>Top</c> and <c>Bottom</c> set the rule's own y coordinate, so either one
-    /// alone would put a token no reader can parse into the <c>m</c> and <c>l</c> operators.
+    /// inset. Every inset must be a finite number.</c> <c>Top</c> and <c>Bottom</c> set the
+    /// rule's own y coordinate, so either one alone would put a token no reader can parse into
+    /// the <c>m</c> and <c>l</c> operators.
     /// <para>All four edges are checked, and the message names none of them, so it tells you the
     /// separator is at fault rather than which edge you set. <c>Left</c> and <c>Right</c> are
     /// checked too, though the rule spans the content width and neither of them moves it.</para>

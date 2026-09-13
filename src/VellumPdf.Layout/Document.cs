@@ -62,9 +62,10 @@ public sealed class Document : IDisposable
     /// before <see cref="Save(System.IO.Stream)"/> produces a file matching one built at the new
     /// size from the start, except the random <c>/ID</c> and the XMP
     /// <c>CreateDate</c>/<c>ModifyDate</c> timestamps, which carry the time each build actually
-    /// ran. Measured on 12 paragraphs built at 600 by 800 and resized to 200 by 120: the same
-    /// <b>2,928 bytes</b> and 4 pages as building at 200 by 120 throughout. A save that already
-    /// threw during layout breaks this, along with the rest of the document's state; see
+    /// ran. Measured by resizing a document from 600 by 800 to 200 by 120 before saving and
+    /// normalising those three fields: the bytes match a build at 200 by 120 throughout, and
+    /// every <c>/MediaBox</c> carries the new size. A save that already threw during layout
+    /// breaks this, along with the rest of the document's state; see
     /// <see cref="Save(System.IO.Stream)"/>.</para>
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
@@ -380,14 +381,16 @@ public sealed class Document : IDisposable
     /// <para><b>Attention</b>: a save that threw does not reliably leave the document usable
     /// again either, and the three routes out of a failed save leave it in three different
     /// states. Geometry refused before the layout starts, such as margins exceeding the page,
-    /// leaves it clean: after correcting the geometry, a retry produced a file of the same
-    /// <b>1,645 bytes</b> and 1 page as a fresh document's. Reaching the writer leaves it dead,
-    /// and a retry on a good stream throws about the document having already been written. A
-    /// throw from the layout itself leaves it alive and wrong. Retrying after enlarging the page
-    /// gave <b>4 pages and 2,487 bytes</b> where a fresh document with the same content gave 1
-    /// page and 1,534 bytes. Nothing throws on that route, so the file you keep silently carries
-    /// several times the pages. Build a fresh <see cref="Document"/> rather than retrying a save
-    /// that threw (#530).</para>
+    /// leaves it clean: after correcting the geometry, a retry produced a file identical in
+    /// length and page count to a fresh document's. Reaching the writer leaves it dead, and a
+    /// retry on a good stream throws about the document having already been written.</para>
+    /// <para>A throw from the layout itself leaves it alive and wrong, and this is the route to
+    /// watch, because the pages laid out before the throw stay and the retry appends a second
+    /// layout to them. On the fixture in #530, retrying after enlarging the page gave
+    /// <b>4 pages</b> where a fresh document with the same content gave 1. No exception was
+    /// raised on any retry measured, so treat the file as wrong rather than expecting the save
+    /// to tell you. Build a fresh <see cref="Document"/> rather than retrying a save that threw
+    /// (#530).</para>
     /// <para>A document with no pages throws as well. Add at least one element before you
     /// save.</para>
     /// </remarks>
@@ -420,6 +423,11 @@ public sealed class Document : IDisposable
     /// <exception cref="NotSupportedException">
     /// <see cref="UseObjectStreams"/> was set and <see cref="Encrypt"/> was called. The two
     /// cannot be combined.
+    /// </exception>
+    /// <exception cref="NullReferenceException">
+    /// A running band set through <see cref="SetHeader"/> or <see cref="SetFooter"/> has a null
+    /// <see cref="RunningBand.Template"/>. The constructor does not check it and the band resolves
+    /// its template during the save (#531).
     /// </exception>
     /// <exception cref="OverflowException">
     /// A row's <see cref="Cell.ColSpan"/> values sum past <see cref="int.MaxValue"/> while a
@@ -455,7 +463,9 @@ public sealed class Document : IDisposable
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="path"/> is <see langword="null"/>.</exception>
     /// <exception cref="ObjectDisposedException">
-    /// This <see cref="Document"/> was already disposed.
+    /// This <see cref="Document"/> was already disposed. It derives from
+    /// <see cref="InvalidOperationException"/>, so a catch written for the base type also
+    /// catches it.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="path"/> is empty or otherwise not a path the file system accepts, reported
@@ -485,6 +495,11 @@ public sealed class Document : IDisposable
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// <see cref="UseObjectStreams"/> was set and <see cref="Encrypt"/> was called.
+    /// </exception>
+    /// <exception cref="NullReferenceException">
+    /// A running band set through <see cref="SetHeader"/> or <see cref="SetFooter"/> has a null
+    /// <see cref="RunningBand.Template"/>. The constructor does not check it and the band resolves
+    /// its template during the save (#531).
     /// </exception>
     /// <exception cref="OverflowException">
     /// A row's <see cref="Cell.ColSpan"/> values sum past <see cref="int.MaxValue"/>.
@@ -550,6 +565,11 @@ public sealed class Document : IDisposable
     /// writing, or <see cref="UseObjectStreams"/> was set and <see cref="Encrypt"/> was called,
     /// which cannot be combined.
     /// </exception>
+    /// <exception cref="NullReferenceException">
+    /// A running band set through <see cref="SetHeader"/> or <see cref="SetFooter"/> has a null
+    /// <see cref="RunningBand.Template"/>. The constructor does not check it and the band resolves
+    /// its template during the save (#531).
+    /// </exception>
     /// <exception cref="OverflowException">
     /// A row's <see cref="Cell.ColSpan"/> values sum past <see cref="int.MaxValue"/> while a
     /// table's column count is resolved.
@@ -598,13 +618,16 @@ public sealed class Document : IDisposable
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="path"/> is <see langword="null"/>.</exception>
     /// <exception cref="ObjectDisposedException">
-    /// This <see cref="Document"/> was already disposed.
+    /// This <see cref="Document"/> was already disposed. It derives from
+    /// <see cref="InvalidOperationException"/>, so a catch written for the base type also
+    /// catches it.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="path"/> is empty or otherwise not a path the file system accepts, reported
     /// while the file is opened. The layout causes listed on
     /// <see cref="SaveAsync(System.IO.Stream, System.Threading.CancellationToken)"/> reach here
-    /// too, once it is open. Unrelated conditions that happen to share a type.
+    /// too, once it is open. These are unrelated conditions that happen to share a type, so do
+    /// <b>not</b> tell them apart by parameter name.
     /// </exception>
     /// <exception cref="DirectoryNotFoundException">
     /// The directory named in <paramref name="path"/> does not exist.
@@ -628,6 +651,11 @@ public sealed class Document : IDisposable
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// <see cref="UseObjectStreams"/> was set and <see cref="Encrypt"/> was called.
+    /// </exception>
+    /// <exception cref="NullReferenceException">
+    /// A running band set through <see cref="SetHeader"/> or <see cref="SetFooter"/> has a null
+    /// <see cref="RunningBand.Template"/>. The constructor does not check it and the band resolves
+    /// its template during the save (#531).
     /// </exception>
     /// <exception cref="OverflowException">
     /// A row's <see cref="Cell.ColSpan"/> values sum past <see cref="int.MaxValue"/>.

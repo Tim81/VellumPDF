@@ -34,7 +34,8 @@ public sealed class RunningBand
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised from a save rather than from the constructor, when the template is
-    /// <see langword="null"/>.
+    /// <see langword="null"/>. The type is wrong for a null argument and the throw lands far from
+    /// the constructor that accepted it; both are tracked as #531.
     /// </exception>
     public string Template { get; }
 
