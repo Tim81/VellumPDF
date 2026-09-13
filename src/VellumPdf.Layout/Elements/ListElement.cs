@@ -40,14 +40,14 @@ public sealed class ListElement
     /// <b>Attention</b>: an indent at or beyond the content width is <b>not</b> refused. The marker
     /// is drawn and the item text is discarded. The list then renders as a column of bullets with
     /// no content, and nothing reports the loss. Keep the indent well below the content
-    /// width.
-    /// <para><b>NOTE</b>: tracked as #476.</para>
+    /// width. Tracked as #476.
     /// <para>A marker wider than the indent does not overprint the item text. The gutter is
-    /// widened to the marker's own width, per item. With roman numerals at the default style the
-    /// first marker to exceed a 20-point indent is item 17; from there each item's text starts
-    /// further right than its neighbours'. One case still overprints: where widening the gutter
-    /// would leave less room than the item's longest word, the gutter reverts to the
-    /// indent.</para>
+    /// widened to the marker's own width, per item, not to the widest marker seen so far: with
+    /// roman numerals at the default style the first marker to exceed a 20-point indent is item
+    /// 17, item 18 widens further still, and items 19 to 21 are back at the plain indent. Each
+    /// item's own numeral decides, and a later item widens again exactly when its own numeral
+    /// needs it. One case still overprints: where widening the gutter would leave less room than
+    /// the item's longest word, the gutter reverts to the indent.</para>
     /// </remarks>
     public double Indent { get; init; } = 20;
 

@@ -269,9 +269,10 @@ The shape, copied from `TextStyle.FontSize` in `src/VellumPdf.Layout/Core/TextSt
 - `<remarks>` opens with a plain sentence naming what is refused, which call throws it, and why.
   Not just the fact.
 - A following `<para>` for input that is accepted today but should not be relied on: what it does
-  now, and which major version will reject it. Bold the single word carrying the warning, usually
-  **not**, rather than the whole sentence. Reserve `Attention:` for a paragraph a caller could
-  actually fall into; a paragraph that only states a mechanism gets a plain sentence instead.
+  now, and which major version will reject it. Bold the marker word itself, `**Attention**` or
+  `**NOTE**`, and the operative negation, usually **not**, rather than the whole sentence. Reserve
+  `Attention:` for a paragraph a caller could actually fall into; a paragraph that only states a
+  mechanism gets a plain sentence instead.
 
 Two rules about the writing itself, both learned the hard way:
 

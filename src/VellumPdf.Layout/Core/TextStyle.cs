@@ -48,25 +48,28 @@ public sealed class TextStyle
     /// paragraph style the message names the run and the size; a <see cref="VellumPdf.Layout.Elements.Heading"/>
     /// is laid out through the same paragraph code and reports the same way, as
     /// <c>"A paragraph run"</c>, not by the heading's own name.
-    /// <para>On a <see cref="VellumPdf.Layout.Elements.RunningBand"/> style, which of three
-    /// messages fires depends on the band and on whether
+    /// <para>On a <see cref="VellumPdf.Layout.Elements.RunningBand"/> style, which message fires
+    /// depends on the band and on whether
     /// <see cref="VellumPdf.Layout.Elements.RunningBand.Height"/> is set. Measured with
-    /// <c>Height</c> left null: <c>NaN</c> surfaces as the generic too-tall message on both header
-    /// and footer, naming neither the band nor the size. Negative infinity names the footer band
-    /// and the size, but on a header it instead meets the page-continuation cap and names neither.
-    /// Setting <c>Height</c> to a fixed value changes every case, because the band's effective
-    /// height then stops depending on the font size: layout succeeds, and the throw moves to the
-    /// band's own draw step, which names the band and the size for <c>NaN</c>, positive infinity
-    /// and negative infinity alike.</para>
+    /// <c>Height</c> left null: <c>NaN</c> gives the generic too-tall message on both bands,
+    /// naming both (and which one is <c>NaN</c>), but not the size. Negative infinity names the
+    /// footer band and the size, but on a header it meets the page-continuation cap and names
+    /// neither. A fixed <c>Height</c> moves the throw to the band's own draw step, naming the
+    /// band and the size, for five of these six band/value pairs; the sixth, a footer already at
+    /// negative infinity, gives the same message and type either way. A sufficiently large but
+    /// still finite size reaches this same too-tall message before it reaches positive infinity;
+    /// measured on a footer with <c>Height</c> null, 570 to 576 all do.</para>
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from a save when this style belongs to a
     /// <see cref="VellumPdf.Layout.Elements.RunningBand"/> whose
     /// <see cref="VellumPdf.Layout.Elements.RunningBand.Height"/> is left null, and a
-    /// positive-infinity size inflates the band's effective height until the page's content area
-    /// has no positive size left. The message names the content area, not the font size. A fixed
-    /// <c>Height</c> routes positive infinity to <see cref="InvalidOperationException"/> instead,
-    /// described above, because the height no longer depends on the font size.
+    /// sufficiently large size (positive infinity is simply the extreme of the same range; 580
+    /// upward were measured on a footer) inflates the band's effective height until the
+    /// page's content area has no positive size left. The message names the content area, not the
+    /// font size. A fixed <c>Height</c> routes positive infinity to
+    /// <see cref="InvalidOperationException"/> instead, described above, because the height no
+    /// longer depends on the font size.
     /// </exception>
     public double FontSize { get; init; } = 12;
 
@@ -79,7 +82,28 @@ public sealed class TextStyle
     /// <para>A non-finite value is <b>not</b> refused, and it does not reach the content stream
     /// either. The page is emitted with the text placed as though you had asked for automatic
     /// leading. A later major version will reject it.</para>
+    /// <para>A large finite value reaches two more throws from <c>Save</c>, on a
+    /// <see cref="VellumPdf.Layout.Elements.RunningBand"/> style whose
+    /// <see cref="VellumPdf.Layout.Elements.RunningBand.Height"/> is left null: this feeds
+    /// <see cref="EffectiveLeading"/> into the band's own height, and a large enough value
+    /// inflates that past the page. Header and footer take the same route at the same value: the
+    /// magnitude decides, not which band the style is attached to. Measured: 670 does not throw,
+    /// 680 throws <see cref="InvalidOperationException"/> for too little content area, and 694
+    /// throws <see cref="ArgumentException"/> once the content area itself goes non-positive. A
+    /// fixed <c>Height</c> avoids both, since the band's height then stops depending on the
+    /// leading.</para>
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from a save rather than from this property, when this style belongs to a
+    /// <see cref="VellumPdf.Layout.Elements.RunningBand"/> whose
+    /// <see cref="VellumPdf.Layout.Elements.RunningBand.Height"/> is left null, and the leading
+    /// inflates the band past the page while the content area is still positive.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from a save under the same condition, once the leading is large enough that the
+    /// content area has no positive size left. The message names the content area, not the
+    /// leading.
+    /// </exception>
     public double Leading { get; init; } = 0;  // 0 = auto (font-size * 1.2)
 
     /// <summary>The text colour. Defaults to <see cref="ColorRgb.Black"/>.</summary>

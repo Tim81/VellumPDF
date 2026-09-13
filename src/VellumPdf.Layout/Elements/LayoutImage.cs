@@ -13,8 +13,8 @@ public sealed class LayoutImage
     public PdfImageXObject Image { get; }
 
     /// <summary>
-    /// Display width in points; when null the image fits the available width. Must be at least
-    /// 5e-6 points in magnitude.
+    /// Display width in points; when null the image fits the available width. Must be finite
+    /// (positive infinity aside) and at least 5e-6 points in magnitude.
     /// </summary>
     /// <remarks>
     /// A value wider than the available width is clamped to it, so this is an upper bound rather
