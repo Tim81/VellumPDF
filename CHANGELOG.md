@@ -85,10 +85,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   catching by parameter name will not find it under `"destination"`.
 
 - `Cell.ColSpan`'s column-count rule has no exception: the table's column count is always the
-  largest span sum across its rows. What is conditional is only whether a given cell's own span
-  contributes to that sum, documented as its own paragraph: a span reaching past columns an
-  earlier row's `RowSpan` already occupies is clamped to what is left, rather than widening the
-  grid further.
+  largest span sum across its rows, and every cell's span contributes to its row's sum
+  unconditionally. What is conditional is the width the cell is then drawn at, documented as its
+  own paragraph: a span reaching past columns an earlier row's `RowSpan` already occupies is
+  clamped to what is left, rather than widening the grid further.
 
 - `#493`, cited on `Cell.RowSpan` and twice in an earlier version of this entry as an open tracker,
   is a merged pull request. The references are removed; nothing in this area still needs one.
@@ -102,13 +102,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - `Document`'s four save overloads each gained `ObjectDisposedException`, reachable on all four
   after `Dispose()`. `Save(Stream)` and `SaveAsync(Stream, CancellationToken)` also gained
-  `ArgumentNullException` for a null destination; the string overloads already had it for `path`.
-  A non-writable stream diverges by overload: `ArgumentException` from `Save(Stream)` ("Stream
-  must be writable") but `NotSupportedException` from `SaveAsync(Stream, CancellationToken)`
-  ("Stream does not support writing"), and both tags now name both causes. `Save(string)` and
+  `ArgumentNullException` for a null destination, and the string overloads gained it for `path`.
+  None of the four carried any `<exception>` tag in 2.3.2. A non-writable stream diverges by
+  overload: `ArgumentException` from `Save(Stream)` ("Stream must be writable") but
+  `NotSupportedException` from `SaveAsync(Stream, CancellationToken)` ("Stream does not support
+  writing"), and both tags now name both causes. `Save(string)` and
   `SaveAsync(string, CancellationToken)` also gained `UnauthorizedAccessException` and
-  `IOException`, and, along with `SaveAsync(Stream, CancellationToken)`, `TaskCanceledException`
-  for a cancelled token. A path naming a DOS device is not a reliable `IOException` case: `CON`,
+  `IOException`. The two async overloads gained `TaskCanceledException` for a cancelled token;
+  `Save(string)` takes no token and needs none. A path naming a DOS device is not a reliable
+  `IOException` case: `CON`,
   `NUL` and `CON.pdf` do not throw, `PRN` and `LPT1` throw `FileNotFoundException`, and `AUX`'s
   behaviour was not reproducible across runs, so the device clause stays dropped from both
   `IOException` tags rather than asserting one outcome for it.

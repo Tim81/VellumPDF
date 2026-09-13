@@ -55,7 +55,7 @@ public sealed class TextStyle
     /// <para>On a <see cref="VellumPdf.Layout.Elements.RunningBand"/> style, which message fires
     /// depends on the band and on whether
     /// <see cref="VellumPdf.Layout.Elements.RunningBand.Height"/> is set. Measured with
-    /// <c>Height</c> left null: <c>NaN</c> gives the generic too-tall message on both bands,
+    /// <c>Height</c> left null: <c>NaN</c> gives the band-detailed too-tall message on both bands,
     /// naming both (and which one is <c>NaN</c>), but not the size. Negative infinity names the
     /// footer band and the size, but on a header it meets the page-continuation cap and names
     /// neither. A fixed <c>Height</c> moves the throw to the band's own draw step, naming the
@@ -89,12 +89,13 @@ public sealed class TextStyle
     /// either. The page is emitted with the text placed as though you had asked for automatic
     /// leading. A later major version will reject it.</para>
     /// <para>A large finite value reaches this same too-tall throw on its own, with no band
-    /// involved: a plain paragraph or heading shrinks the page's own content area as the leading
-    /// grows. On a <see cref="VellumPdf.Layout.Elements.RunningBand"/> style whose
-    /// <see cref="VellumPdf.Layout.Elements.RunningBand.Height"/> is left null there are two more
-    /// routes to the same shrinking, since <see cref="EffectiveLeading"/> also feeds the band's
-    /// own height. Header and footer take the same route at the same value: the magnitude
-    /// decides, not which band the style is attached to.</para>
+    /// involved: the content area stays the size the page and margins make it, and the element
+    /// outgrows it. On a <see cref="VellumPdf.Layout.Elements.RunningBand"/> style whose
+    /// <see cref="VellumPdf.Layout.Elements.RunningBand.Height"/> is left null the content area
+    /// does shrink as well, since <see cref="EffectiveLeading"/> also feeds the band's own height,
+    /// so a band reaches the throw from both directions at once. Header and footer take the same
+    /// route at the same value: the magnitude decides, not which band the style is attached
+    /// to.</para>
     /// <para>Every numeric boundary here is a property of the page, not of the value. Measured on
     /// a footer, <c>Height</c> null, A4, default 72pt margins: the last leading that does not
     /// throw is 679, 680 through 693 throw <see cref="InvalidOperationException"/> while the

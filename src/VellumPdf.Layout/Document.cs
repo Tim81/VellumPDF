@@ -384,11 +384,11 @@ public sealed class Document : IDisposable
     /// are.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// Two unrelated conditions share this type. When <paramref name="destination"/> is not
-    /// writable the exception carries the internal parameter name <c>stream</c>, not
-    /// <c>destination</c>, so do not switch on the parameter name to detect this cause. The other
-    /// cause is the margins, header and footer together leaving the content area no positive
-    /// size, reported under the parameter name <c>margins</c>.
+    /// Many unrelated conditions share this type, so <b>do not</b> switch on the parameter name to
+    /// tell them apart. A non-writable <paramref name="destination"/> reports the internal name
+    /// <c>stream</c> rather than <c>destination</c>. Document geometry reports <c>margins</c>.
+    /// Every element that validates its own input reports that property's name, and the boundary
+    /// documentation on the individual properties says which inputs those are.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <see cref="PageSize"/> has a width or height that is not a positive finite number.
@@ -491,7 +491,9 @@ public sealed class Document : IDisposable
     /// are.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// The margins, header and footer together leave the content area no positive size.
+    /// The margins, header and footer leave the content area no positive size, or an element
+    /// refuses its own input while being laid out. The boundary documentation on the individual
+    /// properties says which inputs those are.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <see cref="PageSize"/> has a width or height that is not a positive finite number.
