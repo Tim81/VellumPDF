@@ -14,9 +14,9 @@ public sealed class LayoutImage
 
     /// <summary>
     /// Display width in points; when null the image fits the available width. Must be finite or
-    /// positive infinity. Positive infinity fills the content box. The 5e-6 floor described below
-    /// applies to the drawn extents rather than to this value, so a legal width can still be
-    /// refused when the height derived from it falls under the floor.
+    /// positive infinity, and at least 5e-6 points in magnitude. That floor is also applied to
+    /// the height derived from it, so a width that clears it can still be refused on a source
+    /// much wider than it is tall.
     /// </summary>
     /// <remarks>
     /// A value wider than the available width is clamped to it, so this is an upper bound rather
@@ -44,8 +44,12 @@ public sealed class LayoutImage
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property,
-    /// for zero, for a magnitude under 5e-6, and for NaN or negative infinity. Positive infinity
-    /// is clamped to the content box instead and does not throw.
+    /// for zero, for a magnitude under 5e-6, and for NaN or negative infinity. It is also raised
+    /// when the height derived from a width that clears the floor falls under it, and the message
+    /// then names the height rather than the width. Positive infinity is not refused as a
+    /// non-finite width: it is clamped to the content box. On a source taller than it is wide the
+    /// clamped width still drives the derived height past the page, which reaches this same type
+    /// through the ordinary too-tall refusal.
     /// </exception>
     public double? Width { get; init; }  // null = fit to available width
 

@@ -291,12 +291,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   leaves the document clean, and a retry after correcting it produced a file identical in length
   and page count to a fresh document's; reaching the writer leaves it dead, and a retry on a good
   stream throws about the document having already been written; a throw from the layout itself
-  leaves it alive and wrong, and on #530's fixture a retry after enlarging the page gave 4 pages
-  where a fresh document with the same content gave 1, and each further failed attempt adds two
-  more pages: two failures before the retry gave 6, three gave 8. Retrying without changing the
-  geometry throws the too-tall exception again, and a save after a retry that succeeded reports
-  the document as already written. Correcting the geometry after a refusal is quiet too, and that
-  file is correct, so silence does not separate the two. The overloads now say a document is single-use, that a save which threw does
+  leaves it alive and wrong, because the pages it had already laid out stay and a retry appends a
+  whole second layout to them. The page count therefore grows by whatever the failed attempt had
+  committed, on every attempt; how many that is depends on the document, so no figure for it is
+  quoted. Retrying without changing the geometry throws the too-tall exception again, and a save
+  after a retry that succeeded reports the document as already written. Correcting the geometry
+  after a refusal is quiet too, and that file is correct, so silence does not separate the two. The overloads now say a document is single-use, that a save which threw does
   not reliably return it to a usable state, and that the answer is a fresh `Document` rather than
   a retry. The behaviour itself is unchanged here; #530 carries the defect.
 
@@ -307,11 +307,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   documented `OverflowException` and `OutOfMemoryException` against `Document.Save` while `Save`
   itself listed neither, which is where a caller writing catch clauses looks first; all four
   overloads now carry both, each naming the member that causes it. `ListElement.Indent` covered
-  only magnitude, and its other three inputs each do something different and none of them throws:
-  `NaN` saves a 1,546-byte file whose item line reads `1 0 0 1 NaN 757.89 Tm`, which is not a PDF
-  number; positive infinity draws the marker and drops the item text with no text-showing operator
-  after it; a negative indent falls back to the marker's own width, which is 4.2pt at the default
-  style, so at -50 the text starts 4.2pt after the left margin rather than 20pt after it.
+  only magnitude, and its other three inputs each do something different. `NaN` writes a text
+  matrix whose x coordinate is the literal token `NaN`, which is not a PDF number; positive
+  infinity draws the marker and drops the item text on a flat list; a negative indent falls back
+  to the marker's own width, the bullet's 4.2pt being the narrowest, so an ordered list falls back
+  less far than an unordered one. None of the three is reported. On a **flat** list none of them
+  throws either, but a list with nested children is refused once the indent reaches the content
+  width, positive infinity included, with an element-too-tall `InvalidOperationException` that
+  names neither the property nor the list. That refusal was undocumented and now carries its own
+  `<exception>` tag.
   `RunningBand.Template` and `LineSeparator.Margins` each reach a live refusal with nothing
   written down: a null template is dereferenced during the save, and a non-finite separator inset
   is refused by name.
@@ -349,8 +353,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `IOException` tags rather than asserting one outcome for it.
 
 - **Marker density and the bolding rule.** Nine markers were folded into plain sentences, seven
-  `Attention` and two `NOTE`, and one new `Attention` marks the failed-save paragraph on
-  `Save(Stream)`, leaving 18 against the 26 this work started from and none at all in 2.3.2. The
+  `Attention` and two `NOTE`, leaving 17 against the 26 this work started from and none at all in
+  2.3.2. The failed-save paragraph on `Save(Stream)` briefly carried a new one and lost it again,
+  so that the same hazard is not marked on the synchronous overload and unmarked on the
+  asynchronous one. The
   two `NOTE` markers went because they pointed at an open issue number rather than a historical
   fact or a version boundary, which is what the rest of the package uses `NOTE` for; the surviving
   one records a fact about #365. The seventh `Attention` went from `PieChart.Alignment`, whose
@@ -362,8 +368,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   5e-6 points in magnitude," which admits negative infinity, and a later pass replaced that with
   "finite (positive infinity aside)," which cancels its own word: finite excludes infinity by
   definition, while `Height` thirty lines below uses "finite" to mean the ordinary thing. The
-  summary now says what is accepted instead, any real number of at least 5e-6 points in magnitude
-  plus positive infinity. `LayoutImage.Height` and `PieChart.Diameter` each keep a warning for a
+  The summary now states the accepted range as the member enforces it: finite or positive
+  infinity, at least 5e-6 points in magnitude, with that floor applied to the derived height as
+  well, so a width that clears it is still refused on a source much wider than it is tall. `LayoutImage.Height` and `PieChart.Diameter` each keep a warning for a
   case that silently produces wrong output with nothing reporting it: image distortion when
   `Width` and `Height` disagree with the source proportions, and a chart drawn smaller than the
   requested diameter. `Cell.Padding`'s figure for a 400-point inset split evenly between `Left`

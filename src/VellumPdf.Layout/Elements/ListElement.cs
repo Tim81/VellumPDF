@@ -37,46 +37,36 @@ public sealed class ListElement
 
     /// <summary>Points of indent for each list level.</summary>
     /// <remarks>
-    /// <b>Attention</b>: on a flat list, an indent at or beyond the content width is <b>not</b>
-    /// refused. The marker is drawn and the item text is discarded. The list then renders as a
-    /// column of bullets with no content, and nothing reports the loss. Keep the indent well
-    /// below the content width (#476).
-    /// <para>A list with nested children is refused at that same boundary instead.
-    /// <see cref="Document.Save(System.IO.Stream)"/> throws
-    /// <see cref="InvalidOperationException"/> about an element too tall to fit, which names
-    /// neither this property nor the list. Measured on three geometries, the boundary is exactly
-    /// the content width: on a 300 by 300pt page at 10pt margins an indent of 279.99 saves and
-    /// <b>280</b> throws; at 50pt margins the pair is 199.99 and <b>200</b>. Positive infinity
-    /// throws the same way. So the same value that silently empties a flat list stops a nested
-    /// one from rendering at all.</para>
-    /// <para>A marker wider than the indent does not overprint the item text. The gutter is
-    /// widened to the marker's own width, per item, not to the widest marker seen so far. With
-    /// roman numerals at the default style the first marker to exceed a 20-point indent is item
-    /// <b>17</b>, item 18 widens further still, and items 19 to 21 are back at the plain indent.
-    /// Each item's own numeral decides, and a later item widens again exactly when its own
-    /// numeral needs it. One case still overprints: where widening the gutter would leave less
-    /// room than the item's longest word, the gutter reverts to the indent.</para>
-    /// <para>Three further inputs are accepted, and each does something different. <c>NaN</c>
-    /// saves a 1,546-byte file whose item line reads <c>1 0 0 1 <b>NaN</b> 757.89 Tm</c>, and
-    /// <c>NaN</c> is not a PDF number, so the coordinate a reader needs is not there. Positive
-    /// infinity draws the marker and drops the item text, with no text-showing operator following
-    /// it. A negative indent falls back to the marker's own width, because the gutter is the
-    /// larger of the two. At the default text style a bullet marker is <b>4.2pt</b> wide, so an
-    /// unordered list at an indent of -50 starts its text 4.2pt after the left margin rather than
-    /// 20pt after it. An ordered list falls back less far, because every ordered marker is wider
-    /// than the bullet: <c>1.</c> measures <b>10pt</b> and <c>i.</c> <b>6pt</b> at the same
-    /// style. Do not read that as growth with the number. Decimal markers hold one width from
-    /// <c>1.</c> to <c>9.</c>, and alphabetic and roman ones both narrow again at some items, as
-    /// the paragraph above describes for roman.</para>
-    /// <para>On a flat list none of those three throws and none is reported, so check the value
-    /// before you set it rather than expecting the save to tell you. On a nested list, positive
-    /// infinity throws, as above.</para>
+    /// <b>Attention</b>: an indent at or beyond the page's content width is <b>not</b> refused on
+    /// a flat list. The marker is drawn and the item text is discarded, so the list renders as a
+    /// column of markers with no content and nothing reports the loss. A list with nested
+    /// children is refused at that same boundary instead, with the exception below. Keep the
+    /// indent well below the content width either way (#476).
+    /// <para>A marker wider than the indent does not overprint the item text. The gutter widens
+    /// to the marker's own width, per item, rather than to the widest marker in the list, so a
+    /// later item widens again exactly when its own numeral needs it and earlier ones do not.
+    /// With roman numerals at the default style, item <b>17</b> is the first to exceed a
+    /// 20-point indent and items 19 to 21 are back at the plain indent. One case still
+    /// overprints: where widening the gutter would leave less room than the item's longest word,
+    /// the gutter reverts to the indent.</para>
+    /// <para>The gutter being the larger of the indent and the marker is also what a negative
+    /// indent falls back to, so the text starts one marker width after the left margin instead of
+    /// where you asked. That width is the marker's, not the indent's: the bullet is the narrowest
+    /// at <b>4.2pt</b> and every ordered marker is wider, so an ordered list falls back less far
+    /// than an unordered one. It does not widen with the number; the roman paragraph above shows
+    /// it narrowing again.</para>
+    /// <para><c>NaN</c> is accepted and writes a text matrix whose x coordinate is the literal
+    /// token <c>NaN</c>, which is not a PDF number, so a reader has no coordinate to place the
+    /// item at. Positive infinity draws the marker and drops the item text on a flat list, with
+    /// no text-showing operator after it. Negative infinity behaves as any negative value does.
+    /// None of the three is reported, so check the value before you set it rather than expecting
+    /// the save to tell you.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
-    /// Raised from a save rather than from this property, when a list with nested children has
-    /// an indent at or beyond the page's content width, positive infinity included. A flat list
-    /// is not refused at any indent. The message reports an element too tall to fit and names
-    /// neither this property nor the list.
+    /// Raised from a save rather than from this property, when a list with nested children has an
+    /// indent at or beyond the page's content width. Positive infinity is included; <c>NaN</c>
+    /// and negative infinity are not, and neither is a flat list at any indent. The message
+    /// reports an element too tall to fit and names neither this property nor the list.
     /// </exception>
     public double Indent { get; init; } = 20;
 
