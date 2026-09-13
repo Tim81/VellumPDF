@@ -15,8 +15,9 @@ public sealed class Cell
     /// Number of columns this cell spans. Must be at least 1.
     /// </summary>
     /// <remarks>
-    /// The table's column count is normally the largest span sum across its rows, so widening a
-    /// cell usually widens the grid instead of overrunning it; the exception is below.
+    /// The table's column count is always the largest span sum across its rows. Widening a
+    /// cell's own span usually widens the grid to match, instead of overrunning it; the exception
+    /// is below.
     /// <para>Zero or negative is <b>refused</b>. <see cref="Document.Save(System.IO.Stream)"/>
     /// throws <see cref="InvalidOperationException"/> naming the row and cell, because a span of
     /// zero can leave the grid with no columns at all and nothing to draw into.</para>
@@ -61,7 +62,7 @@ public sealed class Cell
     /// <para>A span reaching past the rows this page draws is reduced to the rows actually
     /// drawn. The <c>/RowSpan</c> attribute written into the tagged structure follows the reduced
     /// figure, not the one you set, so a reader is never told about rows that are not on the
-    /// page. Tracked as #493.</para>
+    /// page.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from a save rather than from this property, when a spanning group is taller than
@@ -97,9 +98,9 @@ public sealed class Cell
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property.
-    /// A non-finite inset names the row and the cell. A finite inset large enough to grow the row
-    /// past the page (as described above for <c>Top</c> and <c>Bottom</c> set to 400) raises the
-    /// generic too-tall message instead, naming neither.
+    /// A non-finite inset gives a message naming the row and the cell. A finite inset large
+    /// enough to grow the row past the page (as described above for <c>Top</c> and <c>Bottom</c>
+    /// set to 400) throws the generic too-tall exception instead, whose message names neither.
     /// </exception>
     public EdgeInsets Padding { get; init; } = new EdgeInsets(4, 6, 4, 6);
 

@@ -57,8 +57,9 @@ public sealed class Document : IDisposable
     /// <see cref="ArgumentException"/>.
     /// <para>One consequence follows from this being laid out, not merely validated, only at
     /// save: resizing it at any point before <see cref="Save(System.IO.Stream)"/>, however late,
-    /// produces a file byte-identical (bar the random <c>/ID</c>) to building the document at
-    /// the new size from the start.</para>
+    /// produces a file matching one built at the new size from the start byte for byte, except
+    /// the random <c>/ID</c> and the XMP <c>CreateDate</c>/<c>ModifyDate</c> timestamps, which
+    /// carry the time each build actually ran.</para>
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// Raised from a save rather than from this property, when the width or height is zero,
@@ -137,7 +138,7 @@ public sealed class Document : IDisposable
     /// differently: positive infinity reaches the margin check and throws
     /// <see cref="ArgumentException"/> naming the margin, while <c>NaN</c> and negative infinity
     /// both slip past that check, because a comparison against either is false, and surface as
-    /// <see cref="InvalidOperationException"/> instead — one type for one cause, another for two
+    /// <see cref="InvalidOperationException"/> instead, one type for one cause and another for two
     /// unrelated ones, so you cannot catch all three together.</para>
     /// <para><c>NaN</c> surfaces as an element being too tall to fit, and negative
     /// infinity as the page-continuation cap; neither message is what actually happened. Both
@@ -383,8 +384,11 @@ public sealed class Document : IDisposable
     /// are.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// Two unrelated conditions share this type: <paramref name="destination"/> is not writable,
-    /// or the margins, header and footer together leave the content area no positive size.
+    /// Two unrelated conditions share this type. When <paramref name="destination"/> is not
+    /// writable the exception carries the internal parameter name <c>stream</c>, not
+    /// <c>destination</c>, so do not switch on the parameter name to detect this cause. The other
+    /// cause is the margins, header and footer together leaving the content area no positive
+    /// size, reported under the parameter name <c>margins</c>.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <see cref="PageSize"/> has a width or height that is not a positive finite number.
@@ -435,7 +439,7 @@ public sealed class Document : IDisposable
     /// </exception>
     /// <exception cref="IOException">
     /// A file at <paramref name="path"/> is already open elsewhere with no sharing allowed, or
-    /// <paramref name="path"/> is otherwise invalid for the file system — over-long, or a syntax
+    /// <paramref name="path"/> is otherwise invalid for the file system, being over-long or a syntax
     /// the file system refuses.
     /// </exception>
     /// <exception cref="InvalidOperationException">
@@ -552,7 +556,7 @@ public sealed class Document : IDisposable
     /// </exception>
     /// <exception cref="IOException">
     /// A file at <paramref name="path"/> is already open elsewhere with no sharing allowed, or
-    /// <paramref name="path"/> is otherwise invalid for the file system — over-long, or a syntax
+    /// <paramref name="path"/> is otherwise invalid for the file system, being over-long or a syntax
     /// the file system refuses.
     /// </exception>
     /// <exception cref="InvalidOperationException">
