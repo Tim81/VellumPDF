@@ -198,6 +198,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   synchronously and can throw under thread exhaustion, which is the same resource pressure this
   path exists to survive; outside the `try` that would have escaped with the process unreaped and
   poisoned the cached identity probe for the rest of the process.
+
 ### Documentation
 
 - **The public members that refuse input now say so, and say what not to pass (#503).** These
@@ -276,9 +277,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   has been attempted on, which is where the measurement was taken and as far as it reaches. The
   byte figure that first accompanied this named no margin, and at this property's default 72pt
   insets the recipe cannot run: 144pt of vertical margin does not fit a 120pt page, so both halves
-  of the comparison are refused before they are built. The margin is now named. At 10pt insets the
-  figure reproduces exactly, and the two files are byte-identical once `/ID` and the two XMP
-  timestamps are normalised, with all four `/MediaBox` entries reading `0 0 200 120`. `Save(Stream)`'s `ArgumentException` for a non-writable destination carries the
+  of the comparison are refused before they are built. The margin is now named. No byte count is
+  quoted in the member, because the count depends on the paragraph text as well as the geometry
+  and no doc comment can pin that; what it states instead is checkable on any fixture, that the
+  two files are byte-identical once `/ID` and the two XMP timestamps are normalised, with every
+  `/MediaBox` reading `0 0 200 120`. `Save(Stream)`'s `ArgumentException` for a non-writable destination carries the
   internal parameter name `stream`, not the public `destination` parameter it is documented
   against, so catching by parameter name will not find it under `"destination"`.
 
@@ -289,10 +292,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and page count to a fresh document's; reaching the writer leaves it dead, and a retry on a good
   stream throws about the document having already been written; a throw from the layout itself
   leaves it alive and wrong, and on #530's fixture a retry after enlarging the page gave 4 pages
-  where a fresh document with the same content gave 1. That retry is the silent one. Retrying
-  without changing the geometry throws the too-tall exception again, and saving a second time
-  after a retry that succeeded reports the document as already written, so the damaging case is
-  precisely the retry that appears to work. The overloads now say a document is single-use, that a save which threw does
+  where a fresh document with the same content gave 1, and each further failed attempt adds two
+  more pages: two failures before the retry gave 6, three gave 8. Retrying without changing the
+  geometry throws the too-tall exception again, and a save after a retry that succeeded reports
+  the document as already written. Correcting the geometry after a refusal is quiet too, and that
+  file is correct, so silence does not separate the two. The overloads now say a document is single-use, that a save which threw does
   not reliably return it to a usable state, and that the answer is a fresh `Document` rather than
   a retry. The behaviour itself is unchanged here; #530 carries the defect.
 

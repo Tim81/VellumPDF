@@ -37,10 +37,18 @@ public sealed class ListElement
 
     /// <summary>Points of indent for each list level.</summary>
     /// <remarks>
-    /// <b>Attention</b>: an indent at or beyond the content width is <b>not</b> refused. The marker
-    /// is drawn and the item text is discarded. The list then renders as a column of bullets with
-    /// no content, and nothing reports the loss. Keep the indent well below the content width
-    /// (#476).
+    /// <b>Attention</b>: on a flat list, an indent at or beyond the content width is <b>not</b>
+    /// refused. The marker is drawn and the item text is discarded. The list then renders as a
+    /// column of bullets with no content, and nothing reports the loss. Keep the indent well
+    /// below the content width (#476).
+    /// <para>A list with nested children is refused at that same boundary instead.
+    /// <see cref="Document.Save(System.IO.Stream)"/> throws
+    /// <see cref="InvalidOperationException"/> about an element too tall to fit, which names
+    /// neither this property nor the list. Measured on three geometries, the boundary is exactly
+    /// the content width: on a 300 by 300pt page at 10pt margins an indent of 279.99 saves and
+    /// <b>280</b> throws; at 50pt margins the pair is 199.99 and <b>200</b>. Positive infinity
+    /// throws the same way. So the same value that silently empties a flat list stops a nested
+    /// one from rendering at all.</para>
     /// <para>A marker wider than the indent does not overprint the item text. The gutter is
     /// widened to the marker's own width, per item, not to the widest marker seen so far. With
     /// roman numerals at the default style the first marker to exceed a 20-point indent is item
@@ -55,10 +63,21 @@ public sealed class ListElement
     /// it. A negative indent falls back to the marker's own width, because the gutter is the
     /// larger of the two. At the default text style a bullet marker is <b>4.2pt</b> wide, so an
     /// unordered list at an indent of -50 starts its text 4.2pt after the left margin rather than
-    /// 20pt after it. An ordered list falls back further, because its marker is wider and grows
-    /// with the number. None of the three throws and none is reported, so check the value before
-    /// you set it rather than expecting the save to tell you.</para>
+    /// 20pt after it. An ordered list falls back less far, because every ordered marker is wider
+    /// than the bullet: <c>1.</c> measures <b>10pt</b> and <c>i.</c> <b>6pt</b> at the same
+    /// style. Do not read that as growth with the number. Decimal markers hold one width from
+    /// <c>1.</c> to <c>9.</c>, and alphabetic and roman ones both narrow again at some items, as
+    /// the paragraph above describes for roman.</para>
+    /// <para>On a flat list none of those three throws and none is reported, so check the value
+    /// before you set it rather than expecting the save to tell you. On a nested list, positive
+    /// infinity throws, as above.</para>
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from a save rather than from this property, when a list with nested children has
+    /// an indent at or beyond the page's content width, positive infinity included. A flat list
+    /// is not refused at any indent. The message reports an element too tall to fit and names
+    /// neither this property nor the list.
+    /// </exception>
     public double Indent { get; init; } = 20;
 
     /// <summary>Outer margins applied around the whole list block.</summary>

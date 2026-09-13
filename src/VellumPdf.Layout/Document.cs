@@ -64,9 +64,9 @@ public sealed class Document : IDisposable
     /// <c>CreateDate</c>/<c>ModifyDate</c> timestamps, which carry the time each build actually
     /// ran. Measured by resizing a document from 600 by 800 to 200 by 120 at <b>10pt</b>
     /// margins and normalising those three fields: the bytes match a build at 200 by 120
-    /// throughout, and every <c>/MediaBox</c> carries the new size. The margin is part of the
-    /// recipe, not decoration. The default 72pt insets do not fit a 120pt page, so that
-    /// combination is refused before it can be compared. A save that already threw during layout
+    /// throughout, and every <c>/MediaBox</c> carries the new size. The margin belongs in the
+    /// recipe: this property's default 72pt insets do not fit a 120pt page, so that combination
+    /// is refused before either file is built. A save that already threw during layout
     /// breaks this, along with the rest of the document's state; see
     /// <see cref="Save(System.IO.Stream)"/>.</para>
     /// </remarks>
@@ -188,6 +188,18 @@ public sealed class Document : IDisposable
     public Document SetDefaultFont(TextStyle style) { _defaultStyle = style; return this; }
 
     /// <summary>Sets a header band with optional style and alignment. Returns this document for chaining.</summary>
+    /// <remarks>
+    /// A null <paramref name="template"/> is accepted here and refused at the save. This method
+    /// builds a <see cref="RunningBand"/>, whose constructor does not check the template, so the
+    /// band resolves it during layout and the failure surfaces as a
+    /// <see cref="NullReferenceException"/> from a call you did not make. Pass an empty string
+    /// for a band that draws no text (#531). Assigning to <see cref="Header"/> directly reaches
+    /// the same throw.
+    /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised from a save rather than from this method, when <paramref name="template"/> is
+    /// <see langword="null"/> (#531).
+    /// </exception>
     public Document SetHeader(string template, TextStyle? style = null, HorizontalAlignment alignment = HorizontalAlignment.Center)
     {
         Header = new RunningBand(template, style, alignment);
@@ -195,6 +207,18 @@ public sealed class Document : IDisposable
     }
 
     /// <summary>Sets a footer band with optional style and alignment. Returns this document for chaining.</summary>
+    /// <remarks>
+    /// A null <paramref name="template"/> is accepted here and refused at the save. This method
+    /// builds a <see cref="RunningBand"/>, whose constructor does not check the template, so the
+    /// band resolves it during layout and the failure surfaces as a
+    /// <see cref="NullReferenceException"/> from a call you did not make. Pass an empty string
+    /// for a band that draws no text (#531). Assigning to <see cref="Footer"/> directly reaches
+    /// the same throw.
+    /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised from a save rather than from this method, when <paramref name="template"/> is
+    /// <see langword="null"/> (#531).
+    /// </exception>
     public Document SetFooter(string template, TextStyle? style = null, HorizontalAlignment alignment = HorizontalAlignment.Center)
     {
         Footer = new RunningBand(template, style, alignment);
@@ -386,15 +410,16 @@ public sealed class Document : IDisposable
     /// leaves it clean: after correcting the geometry, a retry produced a file identical in
     /// length and page count to a fresh document's. Reaching the writer leaves it dead, and a
     /// retry on a good stream throws about the document having already been written.</para>
-    /// <para>A throw from the layout itself leaves it alive and wrong, and this is the route to
-    /// watch, because the pages laid out before the throw stay and the retry appends a second
-    /// layout to them. On the fixture in #530, retrying after enlarging the page gave
-    /// <b>4 pages</b> where a fresh document with the same content gave 1, and that retry threw
-    /// nothing. It is the only quiet one. Retrying without changing the geometry throws the
-    /// too-tall exception again, and saving a second time after a retry that succeeded reports
-    /// the document as already written. So the damaging case is the retry that appears to work.
-    /// Build a fresh <see cref="Document"/> rather than retrying a save that threw
-    /// (#530).</para>
+    /// <para>A throw from the layout itself leaves it alive and wrong: the pages laid out before
+    /// the throw stay, and a retry appends a second layout to them. On the fixture in #530,
+    /// retrying after enlarging the page threw nothing and gave <b>4 pages</b> where a fresh
+    /// document with the same content gave 1. Each further failed attempt adds two more: two
+    /// failures before the retry gave 6 pages, three gave 8. Retrying without changing the
+    /// geometry throws the too-tall exception again, and a save after a retry that succeeded
+    /// reports the document as already written. The retry that works is therefore the one to
+    /// distrust: correcting the geometry after a refusal is also quiet, and that one is correct,
+    /// so silence does not tell the two apart. Build a fresh
+    /// <see cref="Document"/> rather than retrying a save that threw (#530).</para>
     /// <para>A document with no pages throws as well. Add at least one element before you
     /// save.</para>
     /// </remarks>
@@ -432,8 +457,8 @@ public sealed class Document : IDisposable
     /// </exception>
     /// <exception cref="NullReferenceException">
     /// A header or footer band has a null <see cref="RunningBand.Template"/>, whether it was set
-    /// through <see cref="SetHeader"/> and <see cref="SetFooter"/> or assigned to
-    /// <see cref="Header"/> and <see cref="Footer"/> directly. The constructor does not check it
+    /// through <see cref="SetHeader"/> or <see cref="SetFooter"/>, or assigned to
+    /// <see cref="Header"/> or <see cref="Footer"/> directly. The constructor does not check it
     /// and the band resolves its template during the save (#531).
     /// </exception>
     /// <exception cref="OverflowException">
@@ -505,8 +530,8 @@ public sealed class Document : IDisposable
     /// </exception>
     /// <exception cref="NullReferenceException">
     /// A header or footer band has a null <see cref="RunningBand.Template"/>, whether it was set
-    /// through <see cref="SetHeader"/> and <see cref="SetFooter"/> or assigned to
-    /// <see cref="Header"/> and <see cref="Footer"/> directly. The constructor does not check it
+    /// through <see cref="SetHeader"/> or <see cref="SetFooter"/>, or assigned to
+    /// <see cref="Header"/> or <see cref="Footer"/> directly. The constructor does not check it
     /// and the band resolves its template during the save (#531).
     /// </exception>
     /// <exception cref="OverflowException">
@@ -541,9 +566,9 @@ public sealed class Document : IDisposable
     /// to the stream, appended or otherwise.</para>
     /// <para>A save that threw does not reliably leave the document usable again either. The
     /// three routes out of a failed save leave it clean, dead, or alive and wrong, and the third
-    /// is quiet only on the retry that succeeds. Build a fresh <see cref="Document"/> rather than
-    /// retrying a save that threw; <see cref="Save(System.IO.Stream)"/> has the measurements
-    /// (#530).</para>
+    /// is quiet on the retry that succeeds, which is the one that returns a wrong file. Build a
+    /// fresh <see cref="Document"/> rather than retrying a save that threw;
+    /// <see cref="Save(System.IO.Stream)"/> has the measurements (#530).</para>
     /// <para>A document with no pages throws as well. Add at least one element before you
     /// save.</para>
     /// </remarks>
@@ -578,8 +603,8 @@ public sealed class Document : IDisposable
     /// </exception>
     /// <exception cref="NullReferenceException">
     /// A header or footer band has a null <see cref="RunningBand.Template"/>, whether it was set
-    /// through <see cref="SetHeader"/> and <see cref="SetFooter"/> or assigned to
-    /// <see cref="Header"/> and <see cref="Footer"/> directly. The constructor does not check it
+    /// through <see cref="SetHeader"/> or <see cref="SetFooter"/>, or assigned to
+    /// <see cref="Header"/> or <see cref="Footer"/> directly. The constructor does not check it
     /// and the band resolves its template during the save (#531).
     /// </exception>
     /// <exception cref="OverflowException">
@@ -666,8 +691,8 @@ public sealed class Document : IDisposable
     /// </exception>
     /// <exception cref="NullReferenceException">
     /// A header or footer band has a null <see cref="RunningBand.Template"/>, whether it was set
-    /// through <see cref="SetHeader"/> and <see cref="SetFooter"/> or assigned to
-    /// <see cref="Header"/> and <see cref="Footer"/> directly. The constructor does not check it
+    /// through <see cref="SetHeader"/> or <see cref="SetFooter"/>, or assigned to
+    /// <see cref="Header"/> or <see cref="Footer"/> directly. The constructor does not check it
     /// and the band resolves its template during the save (#531).
     /// </exception>
     /// <exception cref="OverflowException">

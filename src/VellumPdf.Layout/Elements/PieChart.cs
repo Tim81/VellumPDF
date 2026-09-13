@@ -33,7 +33,8 @@ public sealed class PieChart
     /// than something small.
     /// <para>A negative or non-finite slice value is refused by the same exception. A negative
     /// sweep would paint over its neighbours, and a non-finite one has no angle at all.</para>
-    /// <para><b>Attention</b>: a value of zero is accepted and contributes no angle. The slice stays in
+    /// <para><b>Attention</b>: a value of zero is accepted and contributes no angle. The slice
+    /// stays in
     /// this list and is absent from the chart, and nothing reports that it was dropped. If a zero
     /// slice should be visible in your chart, give it a small positive value.</para>
     /// </remarks>
@@ -53,7 +54,8 @@ public sealed class PieChart
     /// <remarks>
     /// Zero, a negative value and a non-finite value are all refused. Laying the chart out
     /// throws <see cref="ArgumentException"/> and names <c>Diameter</c>.
-    /// <para><b>Attention</b>: a diameter wider than the content box is clamped to it, and the chart
+    /// <para><b>Attention</b>: a diameter wider than the content box is clamped to it, and the
+    /// chart
     /// drawn is then smaller than the number you set, with nothing reporting the difference. The
     /// clamp compares only against the available width, not the available height, so a diameter
     /// that fits once clamped can still be taller than the page has room for; that case throws
@@ -62,8 +64,8 @@ public sealed class PieChart
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised while the chart is laid out, which happens inside
-    /// <see cref="Document.Save(System.IO.Stream)"/>,
-    /// when the diameter is zero, negative or not finite. <c>ParamName</c> is this property's name.
+    /// <see cref="Document.Save(System.IO.Stream)"/>, when the diameter is zero, negative or
+    /// not finite. <c>ParamName</c> is this property's name.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> when the diameter, after being
@@ -84,7 +86,8 @@ public sealed class PieChart
     /// <remarks>
     /// A negative width and a non-finite width are both refused. Laying the chart out throws
     /// <see cref="ArgumentException"/> and names <c>StrokeWidth</c>.
-    /// <para><b>Attention</b>: zero does <b>not</b> remove the separators. Whether a stroke happens at
+    /// <para><b>Attention</b>: zero does <b>not</b> remove the separators. Whether a stroke
+    /// happens at
     /// all is decided by <see cref="StrokeColor"/>, not by this width. With a stroke colour set
     /// and a width of zero, the renderer emits <c>0 w</c> and still strokes, which asks the device
     /// for its thinnest line. If you want no separators, leave <see cref="StrokeColor"/>
@@ -92,12 +95,13 @@ public sealed class PieChart
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised while the chart is laid out, which happens inside
-    /// <see cref="Document.Save(System.IO.Stream)"/>,
-    /// when the width is negative or not finite. <c>ParamName</c> is this property's name.
+    /// <see cref="Document.Save(System.IO.Stream)"/>, when the width is negative or not finite.
+    /// <c>ParamName</c> is this property's name.
     /// </exception>
     public double StrokeWidth { get; init; } = 0.5;
 
-    /// <summary>Horizontal placement of the chart within the content area. Defaults to centre.</summary>
+    /// <summary>Horizontal placement of the chart within the content area. Defaults to
+    /// centre.</summary>
     /// <remarks>
     /// <see cref="HorizontalAlignment.Justify"/> is neither refused <b>nor</b> honoured. It falls
     /// through to left alignment. That costs more here than elsewhere, because the default is
@@ -120,8 +124,8 @@ public sealed class PieChart
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised while the chart is laid out, which happens inside
-    /// <see cref="Document.Save(System.IO.Stream)"/>,
-    /// when the angle is not finite. <c>ParamName</c> is this property's name.
+    /// <see cref="Document.Save(System.IO.Stream)"/>, when the angle is not finite.
+    /// <c>ParamName</c> is this property's name.
     /// </exception>
     public double StartAngle { get; init; } = Math.PI / 2;
 

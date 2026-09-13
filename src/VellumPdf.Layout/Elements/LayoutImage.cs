@@ -14,8 +14,9 @@ public sealed class LayoutImage
 
     /// <summary>
     /// Display width in points; when null the image fits the available width. Must be finite or
-    /// positive infinity, and at least 5e-6 points in magnitude. Positive infinity fills the
-    /// content box.
+    /// positive infinity. Positive infinity fills the content box. The 5e-6 floor described below
+    /// applies to the drawn extents rather than to this value, so a legal width can still be
+    /// refused when the height derived from it falls under the floor.
     /// </summary>
     /// <remarks>
     /// A value wider than the available width is clamped to it, so this is an upper bound rather

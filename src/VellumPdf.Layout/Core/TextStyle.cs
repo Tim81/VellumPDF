@@ -63,7 +63,7 @@ public sealed class TextStyle
     /// <para>The finite-size boundary is a property of the page, not of the value. Measured on a
     /// footer, <c>Height</c> null, A4, default 72pt margins: the last size that does not throw is
     /// 566, and 567 through 578 throw this exception as the content area shrinks toward zero. A
-    /// different page moves both figures, so do not carry them to one.</para>
+    /// different page moves both figures, so do not carry either to a different page.</para>
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from a save when this style belongs to a
