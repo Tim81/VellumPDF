@@ -13,17 +13,18 @@ public sealed class LineSeparator
     /// A non-finite width is refused. <see cref="Document.Save(System.IO.Stream)"/> throws
     /// <see cref="InvalidOperationException"/> and names the width. The number would otherwise
     /// reach the content stream as a token that no reader can parse.
-    /// <para>Attention: zero does <b>not</b> hide the rule. ISO 32000-2, 8.4.3.2 says a width of
-    /// zero shall denote the thinnest line that can be rendered at device resolution, one device
-    /// pixel wide. The same clause calls that device-dependent and says such widths should not be
-    /// used, because some devices cannot reproduce a one-pixel line and on a high-resolution
-    /// device it is nearly invisible. One device pixel is one pixel at any zoom regardless, so the
-    /// rule grows heavier as the page is scaled down. If you want no rule, leave the element
-    /// out.</para>
+    /// <para><b>Attention</b>: zero does <b>not</b> hide the rule. ISO 32000-2, 8.4.3.2 defines it as the
+    /// thinnest line the device can render, one device pixel wide, and calls that
+    /// device-dependent. Resolution and zoom then pull in opposite directions. On a
+    /// high-resolution device, that one pixel is small enough that the same clause says the
+    /// result can be nearly invisible. Independently of resolution, displaying the page at a
+    /// smaller zoom does not shrink the rule with it: the line stays one device pixel wide while
+    /// everything around it shrinks, so it reads as proportionally heavier the further the page is
+    /// scaled down. If you want no rule, leave the element out.</para>
     /// <para>A negative width is not refused today, though ISO 32000-2, 8.4.3.2 requires a line
     /// width to be a non-negative number: the token this writes is one the specification forbids,
-    /// so it is the format's business rather than the renderer's. Whether to refuse it is being
-    /// decided in #482.</para>
+    /// so it is the format's business rather than the renderer's.</para>
+    /// <para><b>NOTE</b>: whether to refuse a negative width is being decided in #482.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property, when the width is not finite. The message names the separator.
