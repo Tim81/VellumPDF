@@ -111,4 +111,6 @@ as these milestones land. `VellumPdf.Conformance` graduated to Stable in 2.0.
 
 ## License
 
-Apache-2.0. Source and issues: <https://github.com/Tim81/VellumPDF>
+Apache-2.0 for the code. The bundled Adobe Glyph List is BSD-3-Clause; its copyright notice
+and disclaimer are in the `NOTICE` file shipped in this package. Source and issues:
+<https://github.com/Tim81/VellumPDF>

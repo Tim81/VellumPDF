@@ -11,14 +11,40 @@ namespace VellumPdf.Images;
 /// Features:
 ///   • LZW decompression (GIF variant, variable-width codes packed LSB-first).
 ///   • Global and local colour tables.
+///   • Interlaced images, deinterlaced to display order (Appendix E).
 ///   • Graphic Control Extension: transparent index → 8-bit /SMask.
 ///   • Animated GIFs: only the first image descriptor is decoded; subsequent frames are ignored.
 ///
-/// Rejected: GIF with no image descriptor, malformed LZW streams (throws InvalidDataException).
+/// Rejected: a file with no image descriptor, an image descriptor truncated before its own fields
+/// end, a malformed or truncated LZW stream, a minimum code size outside 2 to 8, an image with no
+/// colour table to read from, a colour table or sub-block chain that runs past the end of the
+/// file, and dimensions that are invalid or exceed the decoder's safety limit. Every one of these
+/// throws <see cref="InvalidDataException"/>, never the exception type the failing read would
+/// otherwise raise.
 /// </summary>
 public static class GifImageLoader
 {
     /// <summary>Decodes the first frame of a GIF into a FlateDecode Image XObject.</summary>
+    /// <remarks>
+    /// Malformed input is refused. This method throws <see cref="InvalidDataException"/> naming
+    /// the fault for a file with no image descriptor, an image descriptor truncated before its own
+    /// fields end, an LZW stream that is corrupt or ends before every pixel the image descriptor
+    /// promises is produced, a minimum code size outside 2 to 8, an image with no colour table to
+    /// read from, a colour table or sub-block chain that runs past the end of the file, a truncated
+    /// extension, or dimensions <see cref="ImageLimits.ValidateDimensions"/> refuses. A caller
+    /// can guard on the one exception type for all of them rather than several.
+    /// <para>A stream carrying more pixels than the image descriptor promises is <b>not</b>
+    /// refused: decoding stops once the promised count is produced, so trailing codes are never
+    /// read. Do not rely on the overrun being rejected; a later major may make it one.</para>
+    /// </remarks>
+    /// <exception cref="InvalidDataException">
+    /// <paramref name="gifBytes"/> is too small to be a GIF, does not carry the GIF87a/GIF89a
+    /// signature, has no image descriptor, the image descriptor itself is truncated, a colour
+    /// table or sub-block chain runs past the end of the array, the active image has no colour
+    /// table to read from, an extension is truncated, the LZW minimum code size is outside 2 to 8,
+    /// the LZW stream is corrupt or ends before every promised pixel is produced, or the image
+    /// dimensions are invalid or exceed the safety limit named in the message.
+    /// </exception>
     public static PdfImageXObject Load(byte[] gifBytes)
     {
         if (gifBytes.Length < 13)
@@ -63,22 +89,62 @@ public static class GifImageLoader
 
             if (blockType == 0x21) // Extension
             {
+                // Every read below advances through caller-supplied bytes, so each one needs its
+                // own bound. A 14-byte file ending on the 0x21 separator used to index past the
+                // array and raise IndexOutOfRangeException. This class documents
+                // InvalidDataException for malformed input, so a caller guarding on the documented
+                // type could not catch that one.
+                if (pos >= gifBytes.Length)
+                    throw new InvalidDataException("Truncated GIF extension block.");
+
                 var label = gifBytes[pos++];
                 if (label == 0xF9) // Graphic Control Extension
                 {
                     SkipBlock(gifBytes, ref pos, out var gceData);
-                    // gceData[0] = packed, [1]+[2] = delay, [3] = transparent index
+                    // gceData[0] = packed, [1]+[2] = delay, [3] = transparent index. A clear
+                    // transparency flag resets the index rather than leaving an earlier
+                    // extension's value standing, for the same reason the scope-closing rule
+                    // below exists: a stale value must not survive past the block it belonged to.
                     if (gceData is not null && gceData.Length >= 4 && (gceData[0] & 0x01) != 0)
                         transparentIndex = gceData[3];
+                    else
+                        transparentIndex = -1;
                 }
                 else
                 {
                     SkipSubBlocks(gifBytes, ref pos);
+
+                    // Section 12 sorts every labelled block into three ranges: 0x00-0x7F is
+                    // Graphic-Rendering (the Trailer, 0x3B, is excluded from that range as a
+                    // top-level block type; the top-level loop above matches it before an
+                    // extension is ever considered, so a conformant stream never presents 0x3B as
+                    // an extension label here, but this branch does not distinguish the two, so a
+                    // non-conformant 0x21 0x3B pair would still be read as inside 0x00-0x7F (with
+                    // no pixels at risk, since no such stream is conformant), 0x80-0xF9 is Control,
+                    // and 0xFA-0xFF is Special Purpose. The same
+                    // section adds that a decoder "can handle block scope by appropriately
+                    // identifying block labels, even when the block itself cannot be processed."
+                    // A label in the rendering range therefore closes a pending Graphic Control
+                    // Extension's scope whether or not this decoder acts on the block itself.
+                    // Section 23 gives that extension's scope as "the first graphic rendering
+                    // block to follow," so the Plain Text Extension (0x01), or any unrecognised
+                    // label below 0x80, ends it here. Without this, a later and unrelated image
+                    // could inherit transparency meant for a block that had already gone by.
+                    //
+                    // 0xFA-0xFF is Special Purpose: Comment (0xFE) and Application (0xFF). Section
+                    // 12 states plainly that these "are transparent to the decoding process" and
+                    // do not delimit scope, so this branch leaves transparentIndex untouched for
+                    // them, deliberately. The same holds for 0x80-0xF8, Control other than the
+                    // Graphic Control Extension itself, on different grounds: section 23 only ever
+                    // gives a Graphic-Rendering block as what closes a pending scope, so an
+                    // unrecognised Control label simply is not one of the blocks that can close it.
+                    if (label <= 0x7F)
+                        transparentIndex = -1;
                 }
                 continue;
             }
 
-            // Unknown block — try to skip sub-blocks
+            // Unknown block: try to skip sub-blocks.
             SkipSubBlocks(gifBytes, ref pos);
         }
 
@@ -107,6 +173,9 @@ public static class GifImageLoader
 
         var hasLocalColorTable = (packed & 0x80) != 0;
         var localColorTableSize = 2 << (packed & 0x07);
+        // Image Descriptor packed field, bit 6 (GIF89a §20.c.vii): set when the rows are stored
+        // in the four-pass order of Appendix E rather than top to bottom.
+        var interlaced = (packed & 0x40) != 0;
 
         byte[] palette;
         if (hasLocalColorTable)
@@ -122,6 +191,9 @@ public static class GifImageLoader
             palette = globalPalette ?? throw new InvalidDataException("GIF has no colour table.");
         }
 
+        if (pos >= data.Length)
+            throw new InvalidDataException("GIF image data ends before the LZW minimum code size.");
+
         var lzwMinCodeSize = data[pos++];
         if (lzwMinCodeSize < 2 || lzwMinCodeSize > 8)
             throw new InvalidDataException($"Invalid LZW minimum code size: {lzwMinCodeSize}.");
@@ -132,12 +204,23 @@ public static class GifImageLoader
         // LZW decode
         var indices = LzwDecode(lzwStream, lzwMinCodeSize, width * height);
 
-        // Expand indices to RGB
+        // The LZW stream carries rows in storage order. For an interlaced image that is not
+        // display order, so the rows are put back before anything reads a pixel. The colour
+        // expansion and the transparency mask below both index this array positionally.
+        if (interlaced)
+            indices = Deinterlace(indices, width, height);
+
+        // Expand indices to RGB. Section 22.a requires every index to be within the active
+        // colour table's range, so one that is not makes this a malformed file, and the class
+        // contract is InvalidDataException for that. This is a deliberate departure from it: the
+        // out-of-range pixel is left black rather than the whole image refused, because a single
+        // bad index costs one pixel and a caller who only wants the rest of the frame has no way
+        // to ask for that leniency if this throws instead.
         var rgb = new byte[width * height * 3];
         for (var i = 0; i < width * height; i++)
         {
             var idx = indices[i] * 3;
-            if (idx + 2 >= palette.Length) continue; // out-of-range index — leave black
+            if (idx + 2 >= palette.Length) continue; // out-of-range index, leave black
             rgb[i * 3] = palette[idx];
             rgb[i * 3 + 1] = palette[idx + 1];
             rgb[i * 3 + 2] = palette[idx + 2];
@@ -190,6 +273,7 @@ public static class GifImageLoader
         int nextCode = eoiCode + 1;
         int codeMask = (1 << codeSize) - 1;
         int prevCode = -1;
+        var sawEndOfInformation = false;
 
         // Initialise root entries (palette indices 0..clearCode-1)
         for (var i = 0; i < clearCode; i++)
@@ -220,7 +304,7 @@ public static class GifImageLoader
             bitBuf >>= codeSize;
             bitsLeft -= codeSize;
 
-            if (code == eoiCode) break;
+            if (code == eoiCode) { sawEndOfInformation = true; break; }
 
             if (code == clearCode)
             {
@@ -262,12 +346,24 @@ public static class GifImageLoader
                 cur = tablePrefix[cur];
             }
 
-            // If code == nextCode (KwKwK case), the new entry's first byte equals
-            // the first byte of prevCode's sequence, which is already at the bottom of the stack.
+            // The code that is not yet in the table, conventionally written KwKwK. Its string is
+            // the previous string followed by that string's own first byte, so the extra byte
+            // belongs at the END of the emitted run.
+            //
+            // The chain walk above pushes tail-first, and the pop loop below reads from the top
+            // down, so the first byte of the string sits at stack[stackTop - 1] and the last byte
+            // at stack[0]. Appending at the top therefore emitted the extra byte FIRST rather than
+            // last, turning "Kw" + "K" into "K" + "Kw". It goes to the bottom instead.
+            //
+            // The visible cost was a run of wrong pixels as long as the string wherever this case
+            // arose: on a 48x48 image of three-pixel vertical bars, 120 of 2304 pixels, each one
+            // sitting exactly on a bar boundary where the pattern repeats.
             if (code == nextCode)
             {
                 var firstByte = stack[stackTop - 1];
-                stack[stackTop++] = firstByte;
+                Array.Copy(stack, 0, stack, 1, stackTop);
+                stack[0] = firstByte;
+                stackTop++;
             }
 
             // Pop stack into output
@@ -285,8 +381,22 @@ public static class GifImageLoader
                 tableSuffix[nextCode] = firstByte;
                 nextCode++;
 
-                // Grow code size when table fills the current range
-                if (nextCode > codeMask + 1 && codeSize < 12)
+                // GIF89a Appendix F, under COMPRESSION, item 4: "Whenever the LZW code value
+                // would exceed the current code length, the code length is increased by one."
+                // Appendix F carries two numbered lists, each of four items: the steps in its
+                // preamble, under no subheading, and the items under COMPRESSION. A bare item
+                // number is therefore ambiguous between the two lists, hence "COMPRESSION, item
+                // 4" throughout rather than a number alone.
+                //
+                // A code length of n expresses values 0..2^n-1, so the value 2^n is the first
+                // that exceeds it, and the width has to grow when the next code to be assigned
+                // reaches 2^n, which is codeMask + 1. This read `nextCode > codeMask + 1`, growing
+                // one code later, so the decoder went on reading 9-bit codes where the encoder had
+                // already moved to 10. Every file whose dictionary passed 2^n then desynchronised
+                // and was refused as corrupt. The sibling TIFF decoder's own header states the GIF
+                // rule correctly, describing TIFF's own early change as "one entry earlier than
+                // GIF".
+                if (nextCode >= codeMask + 1 && codeSize < 12)
                 {
                     codeSize++;
                     codeMask = (1 << codeSize) - 1;
@@ -296,7 +406,62 @@ public static class GifImageLoader
             prevCode = code;
         }
 
+        // What the image descriptor promises and what the data delivers are two different numbers,
+        // and nothing compared them. The buffer is allocated at the promised size and left at
+        // palette entry 0 wherever the stream stopped early. Measured on the 20x20 fixture in
+        // GifSpecificationTests: 36 bytes of header, screen descriptor, colour table, image
+        // descriptor and minimum code size, then 38 bytes of code data. Cutting the file to those
+        // 36 bytes discards every code byte, and the decode still reported success with a full
+        // 400-pixel raster, every pixel invented.
+        //
+        // The loop above reaches here short in two ways, and they want telling apart. The bit
+        // buffer running dry means the data simply stopped. An End of Information code arriving
+        // early means the encoder said it was finished while the descriptor asked for more, which
+        // is also the shape a code-width desynchronisation takes, the defect fixed above, so a
+        // single message would let a decoder bug read as a bad file.
+        //
+        // The sibling TIFF decoder makes this check and names it "output length mismatch". It also
+        // refuses an overrun, which this does not: a stream carrying more pixels than the
+        // descriptor asks for is still truncated to the descriptor silently, because Pillow 12.3.0,
+        // the independent decoder this was checked against, accepts such a stream, and refusing it
+        // here would reject files that render.
+        if (outIdx != pixelCount)
+            throw new InvalidDataException(
+                sawEndOfInformation
+                    ? $"GIF image data ended after {outIdx} of {pixelCount} pixels: the stream's "
+                      + "End of Information code arrived before the last pixel."
+                    : $"GIF image data ended after {outIdx} of {pixelCount} pixels.");
+
         return output;
+    }
+
+    /// <summary>
+    /// Puts the rows of an interlaced image back into display order, per GIF89a Appendix E:
+    /// "Group 1 : Every 8th. row, starting with row 0", then every 8th from row 4, then every
+    /// 4th from row 2, then every 2nd from row 1.
+    ///
+    /// Nothing here consulted the interlace flag before, so an interlaced image decoded with its
+    /// rows in storage order: scrambled, silently, with no error raised. A flat colour survives
+    /// that unchanged, which is why the defect could sit behind tests that only asked whether a
+    /// file loaded.
+    /// </summary>
+    private static byte[] Deinterlace(byte[] storageOrder, int width, int height)
+    {
+        var display = new byte[storageOrder.Length];
+        ReadOnlySpan<int> starts = [0, 4, 2, 1];
+        ReadOnlySpan<int> steps = [8, 8, 4, 2];
+
+        var src = 0;
+        for (var pass = 0; pass < 4; pass++)
+        {
+            for (var row = starts[pass]; row < height; row += steps[pass])
+            {
+                storageOrder.AsSpan(src * width, width).CopyTo(display.AsSpan(row * width, width));
+                src++;
+            }
+        }
+
+        return display;
     }
 
     // ── Sub-block helpers ────────────────────────────────────────────────────
@@ -330,6 +495,11 @@ public static class GifImageLoader
         {
             var blockLen = data[pos++];
             if (blockLen == 0) break;
+            // GatherSubBlocks makes this same check; this one was missing, so a graphic control
+            // extension whose declared length ran past the end raised ArgumentOutOfRangeException
+            // out of the range operator rather than the documented InvalidDataException.
+            if (pos + blockLen > data.Length)
+                throw new InvalidDataException("GIF sub-block extends beyond end of file.");
             if (firstBlockData is null)
                 firstBlockData = data[pos..(pos + blockLen)];
             pos += blockLen;
@@ -342,6 +512,12 @@ public static class GifImageLoader
         {
             var blockLen = data[pos++];
             if (blockLen == 0) break;
+            // Unlike SkipBlock above, nothing here indexed out of range: this loop only advances
+            // pos, so an overlong block walked past the end and the outer loop then stopped,
+            // reporting "GIF contains no image descriptor" for a file whose real fault was a
+            // malformed extension. The guard is for the message, not for an exception type.
+            if (pos + blockLen > data.Length)
+                throw new InvalidDataException("GIF sub-block extends beyond end of file.");
             pos += blockLen;
         }
     }

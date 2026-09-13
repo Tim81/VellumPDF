@@ -197,8 +197,11 @@ to retrofit:
   `Assert.Skip` when `CI`, `GITHUB_ACTIONS`, or `REQUIRE_ORACLES` is set — the one exception
   is `ConformanceCatalogTests.Catalog_MatchesVeraPdfProfile`, which calls `Assert.Skip`
   directly and does not consult the gate. `REQUIRE_VERAPDF` and `REQUIRE_BARCODE_ORACLE` do
-  the same as the three global switches, scoped to the veraPDF and barcode-decode oracles
-  respectively. Locally the same tests skip, so a contributor without Docker or poppler
+  the same as the three global switches, scoped respectively to the veraPDF oracle and to the
+  barcode-decode oracle's dependencies. The gate keys the latter scope on dependency name
+  rather than on which test calls it, so `REQUIRE_BARCODE_ORACLE` also escalates a missing
+  `python` for the GIF oracle (#490), which shares that dependency name but is not a barcode
+  test. Locally the same tests skip, so a contributor without Docker or poppler
   installed still gets a green run. A tool that resolves to something other than what it
   claims — a bare `pdftotext` answering as Xpdf instead of poppler, say — is gated the same
   way, through `ExternalTool`'s own identity check. A single slow identity probe skips rather

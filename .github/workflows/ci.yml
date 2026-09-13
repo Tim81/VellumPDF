@@ -150,16 +150,19 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           # Pinned for the same reason as the pip versions below: a deterministic interpreter
-          # for the barcode oracle rather than whatever '3.x' resolves to on a given run.
+          # for the barcode oracle and, since #490, the GIF oracle, rather than whatever '3.x'
+          # resolves to on a given run.
           python-version: '3.14'
 
-      - name: Install barcode decode oracle (zxing-cpp)
+      - name: Install barcode decode and GIF oracle dependencies (zxing-cpp, Pillow)
         # Pinned for CI reproducibility (#230), not because 3.1.1 fails the EAN add-on assertion
         # it was originally held against — that test only asserts the main digits and tolerates
         # the add-on's presentation varying by version (see CONTRIBUTING.md), and it landed in
         # the same commit as this pin, passing under 3.1.1. pillow is pinned alongside it so a
         # Pillow release can't shift fixture rendering the same way an unpinned apt font package
-        # could.
+        # could; since #490, Pillow is also the independent GIF codec GifPillowOracleTests checks
+        # this project's own encoder and decoder against, so its pin now bears on more than fixture
+        # rendering.
         run: python -m pip install "zxing-cpp==${ZXING_VERSION}" "pillow==${PILLOW_VERSION}"
 
       - name: Assert pinned oracle versions
@@ -224,7 +227,9 @@ jobs:
       - name: Test
         # REQUIRE_VERAPDF makes the conformance oracle fail (not silently skip) if the verapdf
         # shim is unavailable, so a broken image can't let the cross-validation gate pass vacuously.
-        # REQUIRE_BARCODE_ORACLE does the same for the zxing-cpp decode oracle. ORACLE_INVOCATION_LOG
+        # REQUIRE_BARCODE_ORACLE does the same for the zxing-cpp decode oracle, and, because the
+        # gate matches on the bare dependency name rather than the calling suite, for the GIF
+        # oracle's python dependency too (OracleGate.cs). ORACLE_INVOCATION_LOG
         # makes ExternalTool.RunProcess append one line per successful, non-probe oracle launch to a
         # file suffixed with its own process id, so the step below can assert the oracles didn't
         # just resolve — they actually ran (#228).
@@ -280,17 +285,19 @@ jobs:
         # launch — an identity probe (ExternalTool.CheckIdentity) and a launch that never started
         # are both excluded, so neither can pad a tool's count without the tool having actually
         # validated anything; this step concatenates those files and sums a count per tool.
-        # python3 is folded into python's count: ZxingDecodeOracleTests falls back from "python" to
-        # "python3" and logs whichever name actually launched, so the two are one oracle under two
-        # possible names, not two oracles.
+        # python3 is folded into python's count: both ZxingDecodeOracleTests and
+        # GifPillowOracleTests fall back from "python" to "python3" and log whichever name
+        # actually launched, so each pair is one oracle under two possible names, not two oracles.
         #
         # Floors are 90% of a full local run with every oracle enabled (REQUIRE_ORACLES=1, QPDF_HOME
         # / POPPLER_HOME / VERAPDF_HOME all pointed at real installs), rounded down, measured
-        # against this same commit: verapdf 304, pdftoppm 135, python 135, qpdf 40, pdftotext 8,
+        # against this same commit: verapdf 304, pdftoppm 135, python 137, qpdf 40, pdftotext 8,
         # pdfsig 2. qpdf moved from 29 with #99's third-party SaveDecrypted round-trip oracle
         # (SaveDecryptedThirdPartyQpdfOracleTests, 11 fixtures each running one `qpdf --check`).
         # verapdf moved from 298 with #138's UaEncryptionPermissionsVeraPdfTests: 4 test methods,
-        # 6 verapdf launches total (two of the four call both Validate and Report).
+        # 6 verapdf launches total (two of the four call both Validate and Report). python moved
+        # from 135 with #490's GifPillowOracleTests: 2 test methods, each launching python once
+        # for eng/gif-oracle.py; pdftoppm is untouched since that oracle never rasterizes a PDF.
         # 90% tolerates ordinary run-to-run variance (a data-driven theory whose case
         # count shifts, a retried flake) without hiding a regression the way pinning the exact
         # measured count would risk doing on its own false positives. These floors are
@@ -315,7 +322,7 @@ jobs:
           declare -A floors=(
             [verapdf]=273
             [pdftoppm]=121
-            [python]=121
+            [python]=123
             [qpdf]=36
             [pdftotext]=7
             [pdfsig]=1
