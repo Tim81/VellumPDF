@@ -286,14 +286,14 @@ public sealed class GifSpecificationTests
     /// Section 18's Size of Global Color Table field holds N so the table can hold 2^(N+1)
     /// entries, and <see cref="GifEncoder"/> grows N only as far as the palette needs: one entry
     /// short and the last colour has no slot. A palette of 2^k+1 colours is that boundary for any
-    /// k of 1 or more, one past the table size a smaller N would give, and no fixture elsewhere in
-    /// this file sits on it: the encoder's own palettes elsewhere are 2, 4, 200, 256 and the 257
-    /// that gets refused. Two of those, 2 and 257, are themselves 2^k+1, but 2 is k of 0, which
-    /// fits N of 0 exactly with no smaller N to be one past. Only 257 sits at a boundary this test
-    /// cares about: it is refused outright for exceeding the 256-colour limit before the
-    /// table-size question can arise, so it round-trips nothing either. A table one bit short
-    /// truncates the last colour, and this package's own decoder then refuses the file it just
-    /// wrote.
+    /// k of 1 or more, one past the table size a smaller N would give. No fixture elsewhere in
+    /// this file reaches the table-size decision while sitting on it: the encoder's own palettes
+    /// elsewhere are 2, 4, 200, 256 and the 257 that gets refused. Two of those are 2^k+1. 2 is
+    /// k of 0, which fits N of 0 exactly with no smaller N to be one past, so it is not on the
+    /// boundary at all. 257 is on it, at k of 8, but is refused for exceeding the 256-colour limit
+    /// before the table is sized, so it round-trips nothing and cannot exercise this boundary
+    /// either. A table one bit short truncates the last colour, and this package's own decoder
+    /// then refuses the file it just wrote.
     /// </summary>
     [Theory]
     [InlineData(3)]

@@ -337,22 +337,29 @@ ushort gid      = handle.GetGlyphId('A');   // single code point → GID
 Load image bytes and register the resulting `PdfImageXObject` with the document.
 Eight formats can be loaded:
 
-| Format | Loader class |
-|---|---|
-| PNG (RGB, RGBA, indexed, 1/2/4/8-bit) | `PngImageLoader.Load(byte[])` |
-| JPEG | `JpegImageLoader.Load(byte[])` |
-| BMP (24-bit and 8-bit palette) | `BmpImageLoader.Load(byte[])` |
-| GIF (with transparency) | `GifImageLoader.Load(byte[])` |
-| TIFF | `TiffImageLoader.Load(byte[])` |
-| CCITT Group 3/4 | `CcittImageLoader.Load(byte[], ...)` |
-| JBIG2 | `Jbig2ImageLoader.Load(byte[])` |
-| JPEG 2000 | `JpxImageLoader.Load(byte[])` |
+| Format | Loader class | Filter written by default |
+|---|---|---|
+| PNG (RGB, RGBA, indexed, 1/2/4/8-bit) | `PngImageLoader.Load(byte[])` | `FlateDecode` |
+| JPEG | `JpegImageLoader.Load(byte[])` | `DCTDecode`, the source bytes |
+| BMP (24-bit and 8-bit palette) | `BmpImageLoader.Load(byte[])` | `FlateDecode` |
+| GIF (with transparency) | `GifImageLoader.Load(byte[])` | `FlateDecode` |
+| TIFF | `TiffImageLoader.Load(byte[])` | depends on the TIFF's own compression: `CCITTFaxDecode` for Group 3 and 4, `DCTDecode` for JPEG strips, `FlateDecode` otherwise |
+| CCITT Group 3/4 | `CcittImageLoader.Load(byte[], ...)` | `CCITTFaxDecode`, the source bytes |
+| JBIG2 | `Jbig2ImageLoader.Load(byte[])` | `JBIG2Decode` |
+| JPEG 2000 | `JpxImageLoader.Load(byte[])` | `JPXDecode` |
 
-A source that PDF can carry natively is embedded verbatim under its own filter:
-JPEG as `DCTDecode`, CCITT as `CCITTFaxDecode`, JBIG2 as `JBIG2Decode`, JPEG 2000
-as `JPXDecode`.  The rest are decoded to a raster and re-encoded with
-`FlateDecode`.  PNG images with an alpha channel automatically produce an
-`/SMask` soft-mask stream.
+The filter column is the default. `ImageLoadOptions.DecodeMode` set to
+`DecodeToRaster` decodes CCITT, JBIG2 and JPEG 2000 to a raster and re-encodes
+with `FlateDecode` instead; TIFF honours it for Group 3 but not for Group 4 or
+for JPEG strips, which pass through either way.
+
+`JBIG2Decode` and `JPXDecode` are passthrough but not byte-for-byte: a JBIG2
+source is split into a page stream and a `/JBIG2Globals` stream with its
+end-of-file segments dropped, and a bare JPEG 2000 codestream is wrapped in a
+minimal JP2 container around the unchanged codestream.
+
+PNG images with an alpha channel automatically produce an `/SMask` soft-mask
+stream.
 
 GIF is also the one format this package can write: `GifEncoder.Encode(byte[]
 rgb, int width, int height, bool interlaced = false)` takes 8-bit RGB samples
