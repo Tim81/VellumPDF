@@ -12,7 +12,7 @@ namespace VellumPdf.Kernel.Tests;
 /// Three defects motivated the file originally, and all three were invisible to tests that only
 /// asked whether a file loaded, because a single flat colour written at Pillow's own minimum code
 /// size of 8 survives all three: that width keeps the LZW dictionary under the boundary for every
-/// raster in this file, the largest of which is the 150x150 one
+/// raster in this file that reaches LZW at all, the largest being the 150x150 one
 /// <see cref="Encode_writesACodeStreamAppendixFAccepts"/> builds, 22,500 pixels, 10,141 short of
 /// the 32,641 a flat raster needs at that code size (measured against the same table and width
 /// rule <see cref="EncodeLzw"/> uses, not the corpus; 160x120 is the external corpus's own size
@@ -285,10 +285,11 @@ public sealed class GifSpecificationTests
     /// <summary>
     /// Section 18's Size of Global Color Table field holds N so the table can hold 2^(N+1)
     /// entries, and <see cref="GifEncoder"/> grows N only as far as the palette needs: one entry
-    /// short and the last colour has no slot. A palette of 2^k+1 colours is exactly that boundary,
-    /// one past the table size a smaller N would give, and no fixture anywhere in this file used
-    /// one: the encoder's own palettes elsewhere are 2, 4, 200, 256 and the 257 that gets refused.
-    /// Two of those, 2 and 257, are themselves 2^k+1, but only 257 sits at a boundary this test
+    /// short and the last colour has no slot. A palette of 2^k+1 colours is that boundary for any
+    /// k of 1 or more, one past the table size a smaller N would give, and no fixture elsewhere in
+    /// this file sits on it: the encoder's own palettes elsewhere are 2, 4, 200, 256 and the 257
+    /// that gets refused. Two of those, 2 and 257, are themselves 2^k+1, but 2 is k of 0, which
+    /// fits N of 0 exactly with no smaller N to be one past. Only 257 sits at a boundary this test
     /// cares about: it is refused outright for exceeding the 256-colour limit before the
     /// table-size question can arise, so it round-trips nothing either. A table one bit short
     /// truncates the last colour, and this package's own decoder then refuses the file it just

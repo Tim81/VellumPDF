@@ -348,9 +348,11 @@ Eight formats can be loaded:
 | JBIG2 | `Jbig2ImageLoader.Load(byte[])` |
 | JPEG 2000 | `JpxImageLoader.Load(byte[])` |
 
-JPEG bytes are passed through as-is (`DCTDecode`); all other formats are
-re-encoded with `FlateDecode`.  PNG images with an alpha channel automatically
-produce an `/SMask` soft-mask stream.
+A source that PDF can carry natively is embedded verbatim under its own filter:
+JPEG as `DCTDecode`, CCITT as `CCITTFaxDecode`, JBIG2 as `JBIG2Decode`, JPEG 2000
+as `JPXDecode`.  The rest are decoded to a raster and re-encoded with
+`FlateDecode`.  PNG images with an alpha channel automatically produce an
+`/SMask` soft-mask stream.
 
 GIF is also the one format this package can write: `GifEncoder.Encode(byte[]
 rgb, int width, int height, bool interlaced = false)` takes 8-bit RGB samples
