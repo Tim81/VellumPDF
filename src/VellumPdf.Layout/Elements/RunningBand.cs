@@ -63,10 +63,10 @@ public sealed class RunningBand
     /// header, where it gives that same <see cref="InvalidOperationException"/> for a different
     /// reason, the page-continuation cap, and names nothing about the band. A finite height large
     /// enough shares the type again: measured on a footer, 684 already throws it while the
-    /// content area is still a positive 13.9pt, and the range runs up to 697.5 before crossing
-    /// into <see cref="ArgumentException"/> at 697.9, where the content area first goes
-    /// non-positive; a header takes the same route at the same values. So one exception type
-    /// covers three unrelated causes here, not one apiece.</para>
+    /// content area is still a positive 13.9pt, and every height below 697.89 throws that way.
+    /// At 697.89 and above it crosses into <see cref="ArgumentException"/>, where the content area
+    /// first goes non-positive; a header takes the same route at the same values. So one exception
+    /// type covers three unrelated causes here, not one apiece.</para>
     /// <para>On a footer, negative infinity is not refused at all (#520). <c>Save</c> succeeds
     /// and writes a file that stays well formed, though its content stream stops conforming. The
     /// footer's vertical position is computed as the page height minus the margin minus the
