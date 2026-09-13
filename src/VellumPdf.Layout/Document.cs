@@ -55,10 +55,10 @@ public sealed class Document : IDisposable
     /// refused with <see cref="ArgumentOutOfRangeException"/> naming the axis and the value, and
     /// a page narrower or shorter than <see cref="Margins"/> is refused with
     /// <see cref="ArgumentException"/>.
-    /// <para>One consequence follows from validating this only at save: resizing it at any point
-    /// before <see cref="Save(System.IO.Stream)"/>, however late, produces the exact same file as
-    /// building the document at the new size from the start, because nothing is laid out
-    /// until then.</para>
+    /// <para>One consequence follows from this being laid out, not merely validated, only at
+    /// save: resizing it at any point before <see cref="Save(System.IO.Stream)"/>, however late,
+    /// produces a file byte-identical (bar the random <c>/ID</c>) to building the document at
+    /// the new size from the start.</para>
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// Raised from a save rather than from this property, when the width or height is zero,
@@ -139,7 +139,7 @@ public sealed class Document : IDisposable
     /// both slip past that check, because a comparison against either is false, and surface as
     /// <see cref="InvalidOperationException"/> instead — one type for one cause, another for two
     /// unrelated ones, so you cannot catch all three together.</para>
-    /// <para><b>NOTE</b>: <c>NaN</c> surfaces as an element being too tall to fit, and negative
+    /// <para><c>NaN</c> surfaces as an element being too tall to fit, and negative
     /// infinity as the page-continuation cap; neither message is what actually happened. Both
     /// wrong-cause messages are defect #481, already fixed for the ordinary case elsewhere but
     /// still open here as #502.</para>
@@ -370,13 +370,21 @@ public sealed class Document : IDisposable
     /// <para>A document with no pages throws as well. Add at least one element before you
     /// save.</para>
     /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="destination"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ObjectDisposedException">
+    /// This <see cref="Document"/> was already disposed. It derives from
+    /// <see cref="InvalidOperationException"/>, so a catch written for the base type also catches
+    /// it; <see cref="Document"/> implements <see cref="IDisposable"/>, so this is ordinary misuse
+    /// rather than a case this API adds.
+    /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The document has already been written, or has no pages, or an element's input cannot be
     /// laid out. The boundary documentation on the individual properties says which inputs those
     /// are.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// The margins, header and footer together leave the content area no positive size.
+    /// Two unrelated conditions share this type: <paramref name="destination"/> is not writable,
+    /// or the margins, header and footer together leave the content area no positive size.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <see cref="PageSize"/> has a width or height that is not a positive finite number.
@@ -402,11 +410,17 @@ public sealed class Document : IDisposable
     /// Everything on <see cref="Save(System.IO.Stream)"/> applies, and one thing more.
     /// <para><b>Attention</b>: the file is opened before the layout runs, so a failure destroys whatever
     /// the path held. Measured: a path already holding a 1,535-byte file, given to a new
-    /// document whose layout then fails, is left existing and zero bytes long. If the target
-    /// matters, write to a temporary path and move it into place yourself, or save to a stream
-    /// you control (#508).</para>
+    /// document whose layout then fails, is left existing and zero bytes long. The same happens
+    /// on a second call to the same path, since opening it already truncates whatever was there
+    /// before the "document already written" check runs, so
+    /// <see cref="Save(System.IO.Stream)"/>'s "writes nothing to the stream" guarantee does not
+    /// carry over here. If the target matters, write to a temporary path and move it into place
+    /// yourself, or save to a stream you control (#508).</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="path"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ObjectDisposedException">
+    /// See <see cref="Save(System.IO.Stream)"/>, which this delegates to once the file is open.
+    /// </exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="path"/> is empty, or opening it raises one of the causes described on
     /// <see cref="Save(System.IO.Stream)"/>. These are unrelated conditions that happen to share
@@ -421,8 +435,8 @@ public sealed class Document : IDisposable
     /// </exception>
     /// <exception cref="IOException">
     /// A file at <paramref name="path"/> is already open elsewhere with no sharing allowed, or
-    /// <paramref name="path"/> is otherwise invalid for the file system — over-long, or naming a
-    /// device or a syntax the file system refuses.
+    /// <paramref name="path"/> is otherwise invalid for the file system — over-long, or a syntax
+    /// the file system refuses.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// See <see cref="Save(System.IO.Stream)"/>, which this delegates to once the file is open.
@@ -460,6 +474,13 @@ public sealed class Document : IDisposable
     /// <para>A document with no pages throws as well. Add at least one element before you
     /// save.</para>
     /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="destination"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ObjectDisposedException">
+    /// This <see cref="Document"/> was already disposed. It derives from
+    /// <see cref="InvalidOperationException"/>, so a catch written for the base type also catches
+    /// it; <see cref="Document"/> implements <see cref="IDisposable"/>, so this is ordinary misuse
+    /// rather than a case this API adds.
+    /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The document has already been written, or has no pages, or an element's input cannot be
     /// laid out. The boundary documentation on the individual properties says which inputs those
@@ -472,8 +493,9 @@ public sealed class Document : IDisposable
     /// <see cref="PageSize"/> has a width or height that is not a positive finite number.
     /// </exception>
     /// <exception cref="NotSupportedException">
-    /// <see cref="UseObjectStreams"/> was set and <see cref="Encrypt"/> was called. The two
-    /// cannot be combined.
+    /// Two unrelated conditions share this type: <paramref name="destination"/> does not support
+    /// writing, or <see cref="UseObjectStreams"/> was set and <see cref="Encrypt"/> was called,
+    /// which cannot be combined.
     /// </exception>
     /// <exception cref="TaskCanceledException">
     /// <paramref name="cancellationToken"/> was already cancelled, or was cancelled before the
@@ -503,11 +525,19 @@ public sealed class Document : IDisposable
     /// applies, and one thing more.
     /// <para><b>Attention</b>: the file is opened before the layout runs, so a failure destroys whatever
     /// the path held. Measured: a path already holding a 1,535-byte file, given to a new
-    /// document whose layout then fails, is left existing and zero bytes long. If the target
-    /// matters, write to a temporary path and move it into place yourself, or save to a stream
-    /// you control (#508).</para>
+    /// document whose layout then fails, is left existing and zero bytes long. The same happens
+    /// on a second call to the same path, since opening it already truncates whatever was there
+    /// before the "document already written" check runs, so
+    /// <see cref="SaveAsync(System.IO.Stream, System.Threading.CancellationToken)"/>'s "writes
+    /// nothing to the stream" guarantee does not carry over here. If the target matters, write to
+    /// a temporary path and move it into place yourself, or save to a stream you control
+    /// (#508).</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="path"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ObjectDisposedException">
+    /// See <see cref="SaveAsync(System.IO.Stream, System.Threading.CancellationToken)"/>, which
+    /// this delegates to once the file is open.
+    /// </exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="path"/> is empty, or opening it raises one of the causes described on
     /// <see cref="SaveAsync(System.IO.Stream, System.Threading.CancellationToken)"/>. These are
@@ -522,8 +552,8 @@ public sealed class Document : IDisposable
     /// </exception>
     /// <exception cref="IOException">
     /// A file at <paramref name="path"/> is already open elsewhere with no sharing allowed, or
-    /// <paramref name="path"/> is otherwise invalid for the file system — over-long, or naming a
-    /// device or a syntax the file system refuses.
+    /// <paramref name="path"/> is otherwise invalid for the file system — over-long, or a syntax
+    /// the file system refuses.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// See <see cref="SaveAsync(System.IO.Stream, System.Threading.CancellationToken)"/>, which

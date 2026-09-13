@@ -32,8 +32,7 @@ public sealed class ListItem
     /// <c>item.Children</c> and takes each child's style, marker and content, and never reads
     /// <c>child.Children</c>.
     /// <para>You have to handle this yourself: flatten a tree deeper than two levels, or compose
-    /// separate lists, until arbitrary nesting lands.</para>
-    /// <para><b>NOTE</b>: tracked as #479.</para>
+    /// separate lists, until arbitrary nesting lands. Tracked as #479.</para>
     /// </remarks>
     public IReadOnlyList<ListItem>? Children => _children;
 

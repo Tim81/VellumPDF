@@ -15,8 +15,8 @@ public sealed class Cell
     /// Number of columns this cell spans. Must be at least 1.
     /// </summary>
     /// <remarks>
-    /// The table's column count is the largest span sum across its rows, so widening a cell widens
-    /// the grid rather than overrunning it.
+    /// The table's column count is normally the largest span sum across its rows, so widening a
+    /// cell usually widens the grid instead of overrunning it; the exception is below.
     /// <para>Zero or negative is <b>refused</b>. <see cref="Document.Save(System.IO.Stream)"/>
     /// throws <see cref="InvalidOperationException"/> naming the row and cell, because a span of
     /// zero can leave the grid with no columns at all and nothing to draw into.</para>
@@ -61,8 +61,7 @@ public sealed class Cell
     /// <para>A span reaching past the rows this page draws is reduced to the rows actually
     /// drawn. The <c>/RowSpan</c> attribute written into the tagged structure follows the reduced
     /// figure, not the one you set, so a reader is never told about rows that are not on the
-    /// page.</para>
-    /// <para><b>NOTE</b>: tracked as #493.</para>
+    /// page. Tracked as #493.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from a save rather than from this property, when a spanning group is taller than
@@ -97,7 +96,10 @@ public sealed class Cell
     /// and saving refuses the result as too tall to fit, with no text drawn at all.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property, when any inset is not finite. The message names the row and the cell.
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property.
+    /// A non-finite inset names the row and the cell. A finite inset large enough to grow the row
+    /// past the page (as described above for <c>Top</c> and <c>Bottom</c> set to 400) raises the
+    /// generic too-tall message instead, naming neither.
     /// </exception>
     public EdgeInsets Padding { get; init; } = new EdgeInsets(4, 6, 4, 6);
 
