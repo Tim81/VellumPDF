@@ -13,14 +13,14 @@ public sealed class LayoutImage
     public PdfImageXObject Image { get; }
 
     /// <summary>
-    /// Display width in points; when null the image fits the available width. Must be finite
-    /// (positive infinity aside) and at least 5e-6 points in magnitude.
+    /// Display width in points; when null the image fits the available width. Accepts any real
+    /// number of at least 5e-6 points in magnitude, and positive infinity.
     /// </summary>
     /// <remarks>
     /// A value wider than the available width is clamped to it, so this is an upper bound rather
-    /// than a guaranteed display size. Positive infinity is therefore accepted and simply fills the
+    /// than a guaranteed display size. Positive infinity is therefore accepted, and fills the
     /// content box.
-    /// <para>Zero and non-finite values other than positive infinity are <b>refused</b>.
+    /// <para>Zero and non-finite values <b>other than positive infinity</b> are refused.
     /// <see cref="Document.Save(System.IO.Stream)"/> throws <see cref="InvalidOperationException"/>
     /// naming the width. A zero width writes a transformation matrix that cannot be inverted, which
     /// ISO 32000-2 leaves undefined for a painted image, and it also collapses the height, which is
@@ -39,7 +39,9 @@ public sealed class LayoutImage
     /// reports a height of 0.0000001.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property, for zero, for a magnitude under 5e-6, and for NaN or negative infinity. Positive infinity is clamped to the content box instead and does not throw.
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property,
+    /// for zero, for a magnitude under 5e-6, and for NaN or negative infinity. Positive infinity
+    /// is clamped to the content box instead and does not throw.
     /// </exception>
     public double? Width { get; init; }  // null = fit to available width
 

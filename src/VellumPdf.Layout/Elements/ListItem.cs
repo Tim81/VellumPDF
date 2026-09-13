@@ -28,11 +28,11 @@ public sealed class ListItem
     /// <remarks>
     /// One level of nesting is supported, and only one. A child's own <see cref="Children"/>
     /// is read by <b>nothing</b>. A grandchild is not measured, not drawn and not reported, and
-    /// its text is simply absent from the document. The scope of that claim: the renderer reads
+    /// its text is absent from the document. The scope of that claim: the renderer reads
     /// <c>item.Children</c> and takes each child's style, marker and content, and never reads
     /// <c>child.Children</c>.
-    /// <para>You have to handle this yourself: flatten a tree deeper than two levels, or compose
-    /// separate lists, until arbitrary nesting lands. Tracked as #479.</para>
+    /// <para>Be aware that you have to handle this yourself: flatten a tree deeper than two
+    /// levels, or compose separate lists, until arbitrary nesting lands (#479).</para>
     /// </remarks>
     public IReadOnlyList<ListItem>? Children => _children;
 

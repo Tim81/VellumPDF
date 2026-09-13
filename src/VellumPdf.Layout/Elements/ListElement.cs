@@ -39,15 +39,23 @@ public sealed class ListElement
     /// <remarks>
     /// <b>Attention</b>: an indent at or beyond the content width is <b>not</b> refused. The marker
     /// is drawn and the item text is discarded. The list then renders as a column of bullets with
-    /// no content, and nothing reports the loss. Keep the indent well below the content
-    /// width. Tracked as #476.
+    /// no content, and nothing reports the loss. Keep the indent well below the content width
+    /// (#476).
     /// <para>A marker wider than the indent does not overprint the item text. The gutter is
-    /// widened to the marker's own width, per item, not to the widest marker seen so far: with
+    /// widened to the marker's own width, per item, not to the widest marker seen so far. With
     /// roman numerals at the default style the first marker to exceed a 20-point indent is item
-    /// 17, item 18 widens further still, and items 19 to 21 are back at the plain indent. Each
-    /// item's own numeral decides, and a later item widens again exactly when its own numeral
-    /// needs it. One case still overprints: where widening the gutter would leave less room than
-    /// the item's longest word, the gutter reverts to the indent.</para>
+    /// <b>17</b>, item 18 widens further still, and items 19 to 21 are back at the plain indent.
+    /// Each item's own numeral decides, and a later item widens again exactly when its own
+    /// numeral needs it. One case still overprints: where widening the gutter would leave less
+    /// room than the item's longest word, the gutter reverts to the indent.</para>
+    /// <para>Three further inputs are accepted, and each does something different. <c>NaN</c>
+    /// saves a 1,546-byte file whose item line reads <c>1 0 0 1 <b>NaN</b> 757.89 Tm</c>, and
+    /// <c>NaN</c> is not a PDF number, so the coordinate a reader needs is not there. Positive
+    /// infinity draws the marker and drops the item text, with no text-showing operator following
+    /// it. A negative indent falls back to the marker's own width, because the gutter is the
+    /// larger of the two; measured at -50, the text was placed at 76.2pt. None of the three
+    /// throws and none is reported, so check the value before you set it rather than expecting
+    /// the save to tell you.</para>
     /// </remarks>
     public double Indent { get; init; } = 20;
 

@@ -15,28 +15,21 @@ public sealed class Cell
     /// Number of columns this cell spans. Must be at least 1.
     /// </summary>
     /// <remarks>
-    /// The table's column count is always the largest span sum across its rows, with no
-    /// exception: every cell's span counts towards its row's total. What can differ is the width
-    /// the cell is drawn at, which the paragraph below covers.
+    /// The table's column count is the largest span sum across its rows, and every cell's span
+    /// counts towards its own row's sum. A span wider than the columns other rows have declared
+    /// therefore widens the grid, and those rows leave the new columns empty.
     /// <para>Zero or negative is <b>refused</b>. <see cref="Document.Save(System.IO.Stream)"/>
     /// throws <see cref="InvalidOperationException"/> naming the row and cell, because a span of
     /// zero can leave the grid with no columns at all and nothing to draw into.</para>
-    /// <para>A span wider than the columns other rows have already declared always widens the
-    /// grid: the column count is fixed at the largest span sum across every row (above), so this
-    /// cell's span becomes the reason those columns exist, and every other row leaves them empty.
-    /// The width it is drawn at is a separate question. When an
-    /// earlier row's <see cref="RowSpan"/> already occupies this row's leading columns, this
-    /// cell is drawn only as wide as the columns that are left, even though its span still counts
-    /// towards its row's total: measured, a five-column span with four leading columns already
-    /// spoken for by such
-    /// a <see cref="RowSpan"/> drew one column wide, ending exactly at the table's right edge, and
-    /// a three-column span in the equivalent narrower table did the same. Both happen at once:
-    /// the span still counts towards the column total, and the cell is still drawn narrow. What
-    /// the rows above decide is the drawn width, never the count.</para>
+    /// <para>The width the cell is drawn at is a separate question from that count. Where an
+    /// earlier row's <see cref="RowSpan"/> already occupies this row's leading columns, the cell
+    /// is drawn only as wide as the columns left over. Measured: a five-column span with four
+    /// leading columns spoken for drew <b>one column</b> wide, ending exactly at the table's
+    /// right edge. A three-column span in the equivalent narrower table did the same.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property, when the
-    /// span is below one. The message names the row and the cell.
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property,
+    /// when the span is below one. The message names the row and the cell.
     /// </exception>
     /// <exception cref="OverflowException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property,
@@ -92,9 +85,9 @@ public sealed class Cell
     /// <para><see cref="EdgeInsets.Horizontal"/> is <c>Left</c> plus <c>Right</c>, but the drawn
     /// position follows <c>Left</c> alone, not how the total is split. Measured on the same
     /// 260-point column: splitting 400 points evenly, <c>Left</c> = 200 and <c>Right</c> = 200,
-    /// lands the text at x = 220, back inside the 300-point page; giving <c>Left</c> the same 400
+    /// lands the text at x = 220, back inside the 300-point page. Giving <c>Left</c> the same 400
     /// on its own, whatever <c>Right</c> holds, still lands it at x = 420. Setting all four edges
-    /// to 400 does not sit between those two: <c>Top</c> and <c>Bottom</c> grow the row as well,
+    /// to 400 does not sit between those two. <c>Top</c> and <c>Bottom</c> grow the row as well,
     /// and saving refuses the result as too tall to fit, with no text drawn at all.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">

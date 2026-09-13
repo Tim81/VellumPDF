@@ -207,17 +207,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the property the caller set, so a programmer who assigns a bad value gets an exception from a
   call they never made while the member they did set says nothing about it.
 
-  Twenty-six members now carry a boundary paragraph, twenty of them with an `<exception>` tag; the
-  twenty-first tagged member is `Document.Encrypt`, which already had one and this work did not
-  touch. The
-  pattern, written into `CONTRIBUTING.md`: a plain sentence names what is refused, which call
-  throws it and why; a following paragraph, for input accepted today but not to be relied on,
-  bolds the marker word (`Attention` or `NOTE`) always, and bolds the operative negation too only
-  where the paragraph turns on one. Covered: the table cell's spans and padding, the table border
-  width, the image width and height, the separator line width, the pie chart's slices, diameter,
-  start angle, stroke width and alignment, the heading level, the list indent and nesting depth,
-  the running band's template, height and alignment, the document margins and page size, all four
-  save overloads, and the text style's font size and leading.
+  Twenty-seven members now carry a boundary paragraph, twenty-two of them with an `<exception>`
+  tag; the twenty-third tagged member is `Document.Encrypt`, which already had one and this work
+  did not touch. The pattern, written into `CONTRIBUTING.md`: a plain sentence names what is
+  refused, which call throws it and why; a following paragraph, for input accepted today but not
+  to be relied on, bolds the marker word (`Attention` or `NOTE`) always, and bolds the operative
+  negation too only where the paragraph turns on one. Covered: the table cell's spans and padding,
+  the table border width, the image width and height, the separator's line width and margins, the
+  pie chart's slices, diameter, start angle, stroke width and alignment, the heading level, the
+  list indent and nesting depth, the running band's template, height and alignment, the document
+  margins and page size, all four save overloads, and the text style's font size and leading.
 
   Measurement turned up several statements the code did not support. The pie chart does not skip
   a zero-width stroke: it strokes whenever the stroke colour is set, emitting `0 w`. A table's
@@ -271,18 +270,49 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `NaN` is the literal token `qpdf --qdf` shows in the footer's `Tm` operator; `qpdf --check` exits
   0 on the result, while `pdftotext` reports a syntax error and drops the footer text with it.
 
-- Two claims about save behaviour, corrected. Resizing `PageSize` at any point before `Save`,
-  however late, produces a file matching one built at the new size from the start byte for byte,
-  except the random `/ID` and the XMP `CreateDate`/`ModifyDate` timestamps, not the `/ID` alone.
-  `Save(Stream)`'s `ArgumentException` for a non-writable destination carries the internal
-  parameter name `stream`, not the public `destination` parameter it is documented against, so
-  catching by parameter name will not find it under `"destination"`.
+- Two claims about save behaviour, corrected. Resizing `PageSize` before `Save` produces a file
+  matching one built at the new size from the start byte for byte, except the random `/ID` and the
+  XMP `CreateDate`/`ModifyDate` timestamps, not the `/ID` alone. That holds on a document no save
+  has been attempted on, which is where the 12-paragraph measurement was taken and as far as it
+  reaches. `Save(Stream)`'s `ArgumentException` for a non-writable destination carries the
+  internal parameter name `stream`, not the public `destination` parameter it is documented
+  against, so catching by parameter name will not find it under `"destination"`.
 
-- `Cell.ColSpan`'s column-count rule has no exception: the table's column count is always the
-  largest span sum across its rows, and every cell's span contributes to its row's sum
-  unconditionally. What is conditional is the width the cell is then drawn at, documented as its
-  own paragraph: a span reaching past columns an earlier row's `RowSpan` already occupies is
-  clamped to what is left, rather than widening the grid further.
+- **A save that threw leaves the document in one of three states, and one of them is silent
+  (#530).** All four save overloads said some version of "calling this twice throws", which
+  describes only a save that succeeded. Measured: geometry refused before the layout starts
+  leaves the document clean, and a retry after correcting it produced a file of the same 1,645
+  bytes and 1 page as a fresh document's; reaching the writer leaves it dead, and a retry on a
+  good stream throws about the document having already been written; a throw from the layout
+  itself leaves it alive and wrong, and a retry after enlarging the page gave 4 pages and 2,487
+  bytes where a fresh document with the same content gave 1 page and 1,534 bytes. Nothing reports
+  that third case. The overloads now say a document is single-use, that a save which threw does
+  not reliably return it to a usable state, and that the answer is a fresh `Document` rather than
+  a retry. The behaviour itself is unchanged here; #530 carries the defect.
+
+- Four boundaries the earlier passes missed. The save overloads' `InvalidOperationException` list
+  read as complete and was not: `Conformance` set to a PDF/A level together with `Encrypt` throws
+  from `Save`, since ISO 19005-2 §6.1.3 prohibits encryption, and neither `Document.Conformance`
+  nor `Document.Encrypt` documents that pairing, so the save overloads now do. `Cell.ColSpan`
+  documented `OverflowException` and `OutOfMemoryException` against `Document.Save` while `Save`
+  itself listed neither, which is where a caller writing catch clauses looks first; all four
+  overloads now carry both, each naming the member that causes it. `ListElement.Indent` covered
+  only magnitude, and its other three inputs each do something different and none of them throws:
+  `NaN` saves a 1,546-byte file whose item line reads `1 0 0 1 NaN 757.89 Tm`, which is not a PDF
+  number; positive infinity draws the marker and drops the item text with no text-showing operator
+  after it; a negative indent falls back to the marker's own width, and at -50 the text landed at
+  76.2pt.
+  `RunningBand.Template` and `LineSeparator.Margins` each reach a live refusal with nothing
+  written down: a null template is dereferenced during the save, and a non-finite separator inset
+  is refused by name.
+
+- `Cell.ColSpan`'s column-count rule has no exception: the table's column count is the largest
+  span sum across its rows, and every cell's span contributes to its row's sum unconditionally,
+  so a span past what other rows declare widens the grid. What is conditional is the width the
+  cell is then drawn at, documented as its own paragraph: where an earlier row's `RowSpan`
+  already occupies this row's leading columns, the cell is drawn only as wide as the columns left
+  over. The block is also cut to one statement of each rule, having accumulated four passes at
+  the same fact across two earlier rounds.
 
 - `#493`, cited on `Cell.RowSpan` and twice in an earlier version of this entry as an open tracker,
   is a merged pull request. The references are removed; nothing in this area still needs one.
@@ -300,32 +330,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   None of the four carried any `<exception>` tag in 2.3.2. A non-writable stream diverges by
   overload: `ArgumentException` from `Save(Stream)` ("Stream must be writable") but
   `NotSupportedException` from `SaveAsync(Stream, CancellationToken)` ("Stream does not support
-  writing"), and both tags now name both causes. `Save(string)` and
-  `SaveAsync(string, CancellationToken)` also gained `UnauthorizedAccessException` and
-  `IOException`. The two async overloads gained `TaskCanceledException` for a cancelled token;
-  `Save(string)` takes no token and needs none. A path naming a DOS device is not a reliable
-  `IOException` case: `CON`,
-  `NUL` and `CON.pdf` do not throw, `PRN` and `LPT1` throw `FileNotFoundException`, and `AUX`'s
+  writing"), and both tags now name both causes. `Save(string)` and `SaveAsync(string,
+  CancellationToken)` also gained `UnauthorizedAccessException` and `IOException`. The two async
+  overloads gained `TaskCanceledException` for a cancelled token; `Save(string)` takes no token
+  and needs none. A path naming a DOS device is not a reliable `IOException` case: `CON`, `NUL`
+  and `CON.pdf` do not throw, `PRN` and `LPT1` throw `FileNotFoundException`, and `AUX`'s
   behaviour was not reproducible across runs, so the device clause stays dropped from both
   `IOException` tags rather than asserting one outcome for it.
 
-- **Marker density and the bolding rule.** Eight markers were folded into plain sentences, six
-  `Attention` and two `NOTE`, leaving 18 against the 26 this work started from and none at all in
-  2.3.2. The two `NOTE` markers went because they pointed at an open issue number rather than a
-  historical fact or a version boundary, which is what the rest of the package uses `NOTE` for;
-  the surviving one records a fact about #365. Of
-  those 18, 8 bold the marker word together with an operative negation and 10 bold the marker word
-  alone, so `CONTRIBUTING.md` now says to bold the marker always and the negation only where a
-  paragraph turns on one, rather than requiring both on every paragraph.
+- **Marker density and the bolding rule.** Nine markers were folded into plain sentences, seven
+  `Attention` and two `NOTE`, and one new `Attention` marks the failed-save paragraph on
+  `Save(Stream)`, leaving 18 against the 26 this work started from and none at all in 2.3.2. The
+  two `NOTE` markers went because they pointed at an open issue number rather than a historical
+  fact or a version boundary, which is what the rest of the package uses `NOTE` for; the surviving
+  one records a fact about #365. The seventh `Attention` went from `PieChart.Alignment`, whose
+  opening sentence is shared word for word with `RunningBand.Alignment` and was marked on one
+  member and not the other. `CONTRIBUTING.md` says to bold the marker always and an operative
+  negation only where a paragraph turns on one, rather than requiring both on every paragraph.
 
 - Three low-severity corrections, measured. `LayoutImage.Width`'s summary said "must be at least
-  5e-6 points in magnitude," which admits negative infinity; it is refused like every other
-  non-finite value except positive infinity, so the summary now says "finite (positive infinity
-  aside)." `LayoutImage.Height` and `PieChart.Diameter` each keep a warning for a case that
-  silently produces wrong output with nothing reporting it: image distortion when `Width` and
-  `Height` disagree with the source proportions, and a chart drawn smaller than the requested
-  diameter. `Cell.Padding`'s figure for a 400-point inset split evenly between `Left` and `Right`
-  is x = 220, not x = 420; only a `Left`-heavy split lands outside the page.
+  5e-6 points in magnitude," which admits negative infinity, and a later pass replaced that with
+  "finite (positive infinity aside)," which cancels its own word: finite excludes infinity by
+  definition, while `Height` thirty lines below uses "finite" to mean the ordinary thing. The
+  summary now says what is accepted instead, any real number of at least 5e-6 points in magnitude
+  plus positive infinity. `LayoutImage.Height` and `PieChart.Diameter` each keep a warning for a
+  case that silently produces wrong output with nothing reporting it: image distortion when
+  `Width` and `Height` disagree with the source proportions, and a chart drawn smaller than the
+  requested diameter. `Cell.Padding`'s figure for a 400-point inset split evenly between `Left`
+  and `Right` is x = 220, not x = 420; only a `Left`-heavy split lands outside the page.
 
   The rule that a public member's boundary is documented in the same commit as the member is
   written into `CONTRIBUTING.md`, which ships, rather than only into the agent guidance, which is

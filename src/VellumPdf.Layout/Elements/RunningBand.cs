@@ -16,7 +16,9 @@ public sealed class RunningBand
     /// <remarks>
     /// A template too wide for the content box is truncated, not refused. The cut is reported
     /// through <c>Document.BandTruncations</c> and <c>DocumentRenderer.BandTruncations</c>, so
-    /// read one of those if you need to know it happened.
+    /// read one of those if you need to know it happened. A <see langword="null"/> template is a
+    /// different matter: the constructor does not check it and <see cref="Resolve"/> dereferences
+    /// it during the save, so pass an empty string for a band that draws no text.
     /// <para><b>NOTE</b>: before #365 an overlong template was drawn off the page at a negative
     /// coordinate, with every glyph still written into the content stream. The header or footer
     /// was then invisible in every reader while you paid for its bytes.</para>
@@ -30,6 +32,10 @@ public sealed class RunningBand
     /// text as the number gains digits, so the worst page is the one that tells you how much
     /// shorter the template has to be.</para>
     /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised from a save rather than from the constructor, when the template is
+    /// <see langword="null"/>.
+    /// </exception>
     public string Template { get; }
 
     /// <summary>The text style of the band.</summary>
@@ -65,14 +71,13 @@ public sealed class RunningBand
     /// enough shares the type again: measured on a footer, 684 already throws it while the
     /// content area is still a positive 13.9pt, and so does every height from there to 697.88.
     /// At 697.89 the content area reaches exactly zero and it crosses into
-    /// <see cref="ArgumentException"/>; a header takes the same route at the same values. So one
-    /// exception type covers three unrelated causes here, not one apiece.</para>
+    /// <see cref="ArgumentException"/>; a header takes the same route at the same values.</para>
     /// <para>On a footer, negative infinity is not refused at all (#520). <c>Save</c> succeeds
     /// and writes a file that stays well formed, though its content stream stops conforming. The
-    /// footer's vertical position is computed as the page height minus the margin minus the
-    /// band's own height; with that height at negative infinity the position becomes positive
-    /// infinity, and adding it back to the band height computes infinity plus negative infinity,
-    /// which IEEE 754 gives as <c>NaN</c>. That is the literal token that lands in the footer's
+    /// footer's vertical position is the page height minus the margin minus the band's own
+    /// height. With that height at negative infinity the position becomes positive infinity.
+    /// Adding it back to the band height then computes infinity plus negative infinity, which
+    /// IEEE 754 gives as <c>NaN</c>. That is the literal token that lands in the footer's
     /// <c>Tm</c> operator where a coordinate belongs: <c>qpdf --check</c> exits 0 on the result,
     /// while <c>pdftotext</c> reports a syntax error and drops the footer text with it.</para>
     /// <para>Every case above that does throw does so before <c>Save</c> finishes writing. For

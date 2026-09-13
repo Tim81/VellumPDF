@@ -47,11 +47,10 @@ public sealed class TextStyle
     /// Raised from a save rather than from this property, when the size is not finite, or when a
     /// finite size is large enough on its own that the page's content area is left positive but
     /// too small for the element. Neither case needs a
-    /// <see cref="VellumPdf.Layout.Elements.RunningBand"/>: a plain paragraph or heading reaches
-    /// the finite-size version on its own. On a paragraph style the message names the run and the
-    /// size; a <see cref="VellumPdf.Layout.Elements.Heading"/> is laid out through the same
-    /// paragraph code and reports the same way, as <c>"A paragraph run"</c>, not by the heading's
-    /// own name.
+    /// <see cref="VellumPdf.Layout.Elements.RunningBand"/>. On a paragraph style the message
+    /// names the run and the size; a <see cref="VellumPdf.Layout.Elements.Heading"/> is laid out
+    /// through the same paragraph code and reports the same way, as <c>"A paragraph run"</c>, not
+    /// by the heading's own name.
     /// <para>On a <see cref="VellumPdf.Layout.Elements.RunningBand"/> style, which message fires
     /// depends on the band and on whether
     /// <see cref="VellumPdf.Layout.Elements.RunningBand.Height"/> is set. Measured with
@@ -70,9 +69,9 @@ public sealed class TextStyle
     /// Raised from a save when this style belongs to a
     /// <see cref="VellumPdf.Layout.Elements.RunningBand"/> whose
     /// <see cref="VellumPdf.Layout.Elements.RunningBand.Height"/> is left null, and a
-    /// sufficiently large size (positive infinity is simply the extreme of the same range;
-    /// measured on a footer, 579 upward) inflates the band's effective height until the
-    /// page's content area has no positive size left. The message names the content area, not the
+    /// sufficiently large size inflates the band's effective height until the page's content area
+    /// has no positive size left. Measured on a footer, that is <b>579</b> upward, and positive
+    /// infinity is the far end of the same range. The message names the content area, not the
     /// font size. A fixed <c>Height</c> routes positive infinity to
     /// <see cref="InvalidOperationException"/> instead, described above, because the height no
     /// longer depends on the font size.
@@ -88,9 +87,10 @@ public sealed class TextStyle
     /// <para>A non-finite value is <b>not</b> refused, and it does not reach the content stream
     /// either. The page is emitted with the text placed as though you had asked for automatic
     /// leading. A later major version will reject it.</para>
-    /// <para>A large finite value reaches this same too-tall throw on its own, with no band
-    /// involved: the content area stays the size the page and margins make it, and the element
-    /// outgrows it. On a <see cref="VellumPdf.Layout.Elements.RunningBand"/> style whose
+    /// <para>A large finite value reaches the too-tall
+    /// <see cref="InvalidOperationException"/> on its own, with no band involved: the content
+    /// area stays the size the page and margins make it, and the element outgrows it. On a
+    /// <see cref="VellumPdf.Layout.Elements.RunningBand"/> style whose
     /// <see cref="VellumPdf.Layout.Elements.RunningBand.Height"/> is left null the content area
     /// does shrink as well, since <see cref="EffectiveLeading"/> also feeds the band's own height,
     /// so a band reaches the throw from both directions at once. Header and footer take the same
@@ -98,21 +98,22 @@ public sealed class TextStyle
     /// to.</para>
     /// <para>Every numeric boundary here is a property of the page, not of the value. Measured on
     /// a footer, <c>Height</c> null, A4, default 72pt margins: the last leading that does not
-    /// throw is 679, 680 through 693 throw <see cref="InvalidOperationException"/> while the
-    /// content area shrinks from 13.9pt to 0.9pt, and every finite value from 694 up throws
-    /// <see cref="ArgumentException"/> once the content area itself goes non-positive. Positive
-    /// infinity is the exception: being non-finite it falls through to automatic leading, as the
-    /// paragraph above says, and throws nothing. On a 300 by
-    /// 300pt page with 10pt margins the first throwing leading is 262, not 694, so do not carry
-    /// either figure to a different page. A fixed <c>Height</c> avoids both routes through the
-    /// band, since the band's height then stops depending on the leading.</para>
+    /// throw is <b>679</b>. From 680 through 693 the leading throws
+    /// <see cref="InvalidOperationException"/> while the content area shrinks from 13.9pt to
+    /// 0.9pt, and every finite value from 694 up throws <see cref="ArgumentException"/> once the
+    /// content area itself goes non-positive. Positive infinity is the exception: being
+    /// non-finite it falls through to automatic leading, as the paragraph above says, and throws
+    /// nothing. On a 300 by 300pt page with 10pt margins the first throwing leading is <b>262</b>,
+    /// not 694, so do not carry either figure to a different page. A fixed <c>Height</c> avoids
+    /// both routes through the band, since the band's height then stops depending on the
+    /// leading.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from a save rather than from this property, when the leading is large enough on its
-    /// own that the page's content area is left positive but too small for the element, or, on a
+    /// own that the page's content area is left positive but too small for the element. A
     /// <see cref="VellumPdf.Layout.Elements.RunningBand"/> style whose
-    /// <see cref="VellumPdf.Layout.Elements.RunningBand.Height"/> is left null, large enough to
-    /// shrink the content area the same way through the band's height instead.
+    /// <see cref="VellumPdf.Layout.Elements.RunningBand.Height"/> is left null reaches the same
+    /// exception the other way round, by shrinking that area through the band's height.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from a save when this style belongs to a

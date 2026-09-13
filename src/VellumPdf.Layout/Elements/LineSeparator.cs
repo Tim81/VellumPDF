@@ -17,18 +17,17 @@ public sealed class LineSeparator
     /// ISO 32000-2, 8.4.3.2: a line width of zero <b>shall</b> denote the thinnest line that can
     /// be rendered at device resolution, one device pixel wide. The same clause says such lines
     /// are nearly invisible on high-resolution devices, that the result is device-dependent, and
-    /// that zero-width lines <b>should not be used</b>. Independently of resolution, displaying
-    /// the page at a smaller zoom does not shrink the rule with it: the line stays one device
-    /// pixel wide while
-    /// everything around it shrinks, so it reads as proportionally heavier the further the page is
-    /// scaled down. If you want no rule, leave the element out.</para>
+    /// that zero-width lines <b>should not be used</b>. That is one pixel at any zoom, so the
+    /// rule grows heavier as the page is scaled down. If you want no rule, leave the element
+    /// out.</para>
     /// <para>A negative width is not refused today, though ISO 32000-2, 8.4.3.2 requires a line
     /// width to be a non-negative number: the token this writes is one the specification forbids,
-    /// so it is the format's business rather than the renderer's. Whether to refuse it is being
-    /// decided in #482.</para>
+    /// so it is the format's business rather than the renderer's. Whether to refuse it is
+    /// undecided (#482).</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property, when the width is not finite. The message names the separator.
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property,
+    /// when the width is not finite. The message names the separator.
     /// </exception>
     public double LineWidth { get; init; } = 1;
 
@@ -36,5 +35,18 @@ public sealed class LineSeparator
     public ColorRgb Color { get; init; } = ColorRgb.Black;
 
     /// <summary>Margins around the rule.</summary>
+    /// <remarks>
+    /// A non-finite inset is refused. <see cref="Document.Save(System.IO.Stream)"/> throws
+    /// <see cref="InvalidOperationException"/> reading <c>A line separator has a non-finite
+    /// inset</c>. <c>Top</c> and <c>Bottom</c> set the rule's own y coordinate, so either one
+    /// alone would put a token no reader can parse into the <c>m</c> and <c>l</c> operators.
+    /// <para>All four edges are checked, and the message names none of them, so it tells you the
+    /// separator is at fault rather than which edge you set. <c>Left</c> and <c>Right</c> are
+    /// checked too, though the rule spans the content width and neither of them moves it.</para>
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property,
+    /// when any of the four insets is not finite.
+    /// </exception>
     public EdgeInsets Margins { get; init; } = new EdgeInsets(6, 0, 6, 0);
 }
