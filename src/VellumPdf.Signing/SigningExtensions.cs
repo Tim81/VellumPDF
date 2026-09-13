@@ -4,6 +4,7 @@
 using System.Security.Cryptography.Pkcs;
 using System.Security.Cryptography.X509Certificates;
 using VellumPdf.Document;
+using VellumPdf.Forms;
 
 namespace VellumPdf.Signing;
 
@@ -51,6 +52,10 @@ public static class SigningExtensions
     /// Thrown when encryption has already been configured on the document, or when
     /// <see cref="PdfSignatureSettings.ExternalSigner"/> is set (it requires <c>SignAsync</c>).
     /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// A registered form field's <see cref="FormFieldOptions.FontSize"/> is not finite. That
+    /// property's boundary documentation names the value and the field.
+    /// </exception>
     public static void Sign(this PdfDocument doc, Stream output, PdfSignatureSettings settings)
     {
         ArgumentNullException.ThrowIfNull(doc);
@@ -89,6 +94,10 @@ public static class SigningExtensions
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// Thrown when encryption has already been configured on the document.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// A registered form field's <see cref="FormFieldOptions.FontSize"/> is not finite. That
+    /// property's boundary documentation names the value and the field.
     /// </exception>
     // RS0026 flags multiple overloads with optional parameters as a future-ambiguity risk;
     // PdfDocument and Layout.Document share no implicit conversion, so overload resolution
