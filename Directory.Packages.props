@@ -16,7 +16,7 @@
       library, so the one third-party runtime dependency this repository ships — and it ships on the
       signing package — was a servicing-stale .NET 9 build.
     -->
-    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.11" />
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.12" />
     <PackageVersion Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="5.6.0" />
     <!-- xunit.v3 4.0.0 ships xunit.v3.core.mtp-v2 / xunit.v3.mtp-v2, which pull in
          Microsoft.Testing.Platform; the .NET 10 SDK refuses the VSTest target these tests used to
