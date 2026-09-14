@@ -317,11 +317,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   which itself sits at the margin plus the value, and the margin plus twice the value when nested
   with the override firing. At a font size of zero or more only those three can cross the margin,
   and the nested override-quiet route does so only once the value passes minus its own marker's
-  width; a negative `TextStyle.FontSize` measures a negative marker, and then the fourth crosses
-  too. Two of the four can land
-  on the same x, because the two markers can differ in width: the default bullet and the nested
-  open bullet already do at one style, and a per-item style widens the gap further. None of the
-  three is reported. On a **flat** list none of them throws either, but a list with nested
+  width. A negative `TextStyle.FontSize` changes which routes exist rather than adding a fourth:
+  every word then measures zero or less, so the override never fires and the two override-quiet
+  routes are all that remain. Both of those cross. Two of the four can land on the same x,
+  because the two markers can differ in width: the default bullet and the nested open bullet
+  already do at one style, and a per-item style widens the gap further. None of the three is
+  reported. On a **flat** list none of them throws either, but a list with nested
   children is refused once the indent reaches the content width, positive infinity included, with
   an element-too-tall `InvalidOperationException` that names neither the property nor the list.
   That refusal was undocumented and now carries its own `<exception>` tag. `RunningBand.Template`
