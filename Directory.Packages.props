@@ -26,9 +26,9 @@
     <!-- VellumPdf.TestSupport needs only Assert (Assert.Skip/Assert.Fail), not the full v3
          runner the "xunit.v3" meta-package pulls in — that package requires an executable
          test host (OutputType=Exe), which a shared helper library is not. -->
-    <PackageVersion Include="xunit.v3.assert" Version="4.0.0" />
-    <PackageVersion Include="Verify.XunitV3" Version="32.0.0" />
-    <PackageVersion Include="CsCheck" Version="4.8.0" />
+    <PackageVersion Include="xunit.v3.assert" Version="4.0.1" />
+    <PackageVersion Include="Verify.XunitV3" Version="32.0.1" />
+    <PackageVersion Include="CsCheck" Version="4.9.0" />
     <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
     <!-- coverlet's native Microsoft.Testing.Platform extension, replacing the VSTest-only
          coverlet.collector (#200). Chosen over Microsoft.Testing.Extensions.CodeCoverage on
