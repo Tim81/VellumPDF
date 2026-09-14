@@ -4,7 +4,8 @@
 namespace VellumPdf.Barcodes;
 
 /// <summary>
-/// A rectangular grid of dark/light modules produced by a 2D symbology (QR, Micro QR, PDF417).
+/// A rectangular grid of dark/light modules produced by a 2D symbology: QR, Micro QR, PDF417,
+/// Aztec or Data Matrix.
 /// Bit-packed for compactness; row-major, <c>(0, 0)</c> is the top-left module.
 /// </summary>
 public sealed class BarcodeMatrix
@@ -30,6 +31,18 @@ public sealed class BarcodeMatrix
     public int Height { get; }
 
     /// <summary>Returns whether the module at <paramref name="x"/>, <paramref name="y"/> is dark.</summary>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="x"/> is outside 0 to <see cref="Width"/>-1, or <paramref name="y"/> is
+    /// outside 0 to <see cref="Height"/>-1.
+    /// </exception>
+    /// <remarks>
+    /// Both coordinates are bounds-checked, and a negative one is refused too. The check is an
+    /// unsigned comparison, so -1 is treated as a very large value and refused by the same
+    /// exception rather than reading a neighbouring row.
+    /// <para>This matrix covers the symbol only. Where a symbology asks for a quiet zone, it is
+    /// not part of <see cref="Width"/> and <see cref="Height"/>, and a renderer adds it
+    /// separately; how many modules wide it is varies by symbology, and Aztec asks for none.</para>
+    /// </remarks>
     public bool IsDark(int x, int y)
     {
         if ((uint)x >= (uint)Width) throw new ArgumentOutOfRangeException(nameof(x), x, "X is outside the matrix.");

@@ -43,6 +43,32 @@ public sealed class PdfObjectRegistry
     }
 
     /// <summary>Assigns (or replaces) the value for a previously reserved reference.</summary>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="reference"/>'s object number falls outside 1 to the number of references
+    /// this registry has allocated.
+    /// </exception>
+    /// <remarks>
+    /// Attention: this is a range check, <b>not</b> a provenance check, and the exception
+    /// message overstates it. The message reads "Reference was not allocated by this registry",
+    /// but all that is compared is the object number against the count of references allocated.
+    /// A reference from a different registry, or one built with the public
+    /// <see cref="PdfIndirectReference(int)"/> constructor, is accepted whenever its number falls
+    /// in range. The value then lands in this registry's slot of that number, which is the
+    /// wrong-slot write the check looks like it prevents.
+    /// <para>So pass only a reference that this registry's own <c>Reserve</c> returned. Nothing
+    /// later in the write catches a foreign one.</para>
+    /// <para>Reserving a reference and never setting it is not detected here. It is detected at
+    /// write time, and loudly: writing throws <see cref="InvalidOperationException"/> and names
+    /// the object number. You do not get a document with a missing object; you get a partial
+    /// stream and an exception. Set every reference you reserve.</para>
+    /// <para>Setting one to <see langword="null"/> counts as not setting it. The null is stored
+    /// as it stands and nothing here distinguishes it from a reserved slot, so the write raises
+    /// that same exception and reports the object as never assigned, which is not what you did.
+    /// <see cref="Add"/> behaves the same way. A <see langword="null"/>
+    /// <paramref name="reference"/> is a different matter again: it is dereferenced rather than
+    /// checked, so it gives <see cref="NullReferenceException"/> and <b>not</b>
+    /// <see cref="ArgumentNullException"/>.</para>
+    /// </remarks>
     public void SetValue(PdfIndirectReference reference, PdfObject value)
     {
         var idx = reference.ObjectNumber - 1;
@@ -55,6 +81,14 @@ public sealed class PdfObjectRegistry
     /// Writes all registered indirect objects to <paramref name="writer"/> in object-number order,
     /// recording each byte offset into <paramref name="xref"/>.
     /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// As the three-argument overload this forwards to: a reference was reserved and never
+    /// assigned a value, or was assigned <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="NullReferenceException">
+    /// As that overload: <paramref name="writer"/> or <paramref name="xref"/> is
+    /// <see langword="null"/> and an assigned object is written.
+    /// </exception>
     public void WriteAll(PdfWriter writer, CrossReferenceBuilder xref)
         => WriteAll(writer, xref, preWrite: null);
 
@@ -64,6 +98,22 @@ public sealed class PdfObjectRegistry
     /// invoked after the object is written (e.g. to restore writer state).
     /// Returning null from the delegate means no cleanup is needed.
     /// </summary>
+    /// <remarks>
+    /// Whatever the caller's stream raises during the write surfaces from here unwrapped. Nothing
+    /// catches it or translates it, so a disposed or failing destination arrives as its own
+    /// exception type rather than as anything this type documents.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// A reference was reserved and never assigned a value, or was assigned
+    /// <see langword="null"/>. The message names the object number. No document is produced. The
+    /// objects written before the failing one are already in your stream and stay there; nothing
+    /// rewinds the stream for you.
+    /// </exception>
+    /// <exception cref="NullReferenceException">
+    /// <paramref name="writer"/> or <paramref name="xref"/> is <see langword="null"/> and an
+    /// assigned object is written. Neither argument is checked, so the throw carries no
+    /// parameter name. An empty registry returns without touching either.
+    /// </exception>
     public void WriteAll(PdfWriter writer, CrossReferenceBuilder xref, Func<int, Action?>? preWrite)
     {
         for (var i = 0; i < _values.Count; i++)

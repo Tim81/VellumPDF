@@ -51,7 +51,39 @@ public static class CcittImageLoader
     /// <see cref="NotSupportedException"/> immediately. K greater than zero (Group 3 mixed)
     /// decodes each row's 1-D tag bit and its run lengths, and throws the same way only when a
     /// row's tag bit selects a 2-D (Modified READ) row.
+    /// <para>Attention: <paramref name="columns"/> and <paramref name="rows"/> are yours to get
+    /// right. The default mode decodes <b>nothing</b>, so neither value is read back from the
+    /// data and nothing cross-checks the pair against it. A wrong value is not refused; it
+    /// produces a file that opens and shows a corrupt image. Embedding the bytes says nothing
+    /// about whether a viewer can render them.</para>
+    /// <para>One size limit applies: a declared pixel count above 100,000,000 raises
+    /// <see cref="InvalidDataException"/>. The limit is on the geometry you declare, not on
+    /// anything this call allocates, because in the default mode it allocates no raster at all.
+    /// No per-edge limit applies, so 2,000,000 by 1 is accepted. Non-positive
+    /// <paramref name="columns"/> or <paramref name="rows"/> raise
+    /// <see cref="ArgumentOutOfRangeException"/> before that limit.</para>
+    /// <para>A <see langword="null"/> <paramref name="ccittData"/> is checked rather than
+    /// dereferenced, so it gives <see cref="ArgumentException"/>. Both <paramref name="ccitt"/>
+    /// and <paramref name="options"/> accept <see langword="null"/> and take their
+    /// defaults.</para>
     /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="ccittData"/> is <see langword="null"/> or empty.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="columns"/> or <paramref name="rows"/> is zero or negative. Both are
+    /// checked before the safety limit, so a non-positive value is named as itself rather
+    /// than reported as a bad size.
+    /// </exception>
+    /// <exception cref="InvalidDataException">
+    /// The declared pixel count is above 100,000,000. Also raised in
+    /// <see cref="ImageDecodeMode.DecodeToRaster"/> mode when the stream does not decode.
+    /// </exception>
+    /// <exception cref="NotSupportedException">
+    /// A raster was requested for a stream this loader does not decode, which means Group 4
+    /// (<see cref="CcittOptions.K"/> below zero) or a 2-D row inside a mixed-mode stream. There
+    /// is no fallback to passthrough for either; ask for passthrough yourself.
+    /// </exception>
     /// <param name="ccittData">The raw CCITT-compressed bytes. Must be non-empty.</param>
     /// <param name="columns">Image width in pixels. Must be positive.</param>
     /// <param name="rows">Image height in pixels. Must be positive.</param>

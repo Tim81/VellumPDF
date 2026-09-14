@@ -10,8 +10,8 @@ namespace VellumPdf.Images;
 ///
 /// Supported variants:
 ///   • BITMAPINFOHEADER (40-byte header), BI_RGB uncompressed only.
-///   • 24-bit RGB: the 4th byte of each 32-bit quad is exposed as an /SMask alpha channel.
-///   • 32-bit RGBA: blue–green–red–alpha order; alpha plane is emitted as /SMask.
+///   • 24-bit RGB: blue–green–red order, three bytes per pixel and no alpha.
+///   • 32-bit BI_RGB: four bytes per pixel in BGR order. The format leaves the fourth unused.
 ///   • 8-bit palette-indexed: colour map is expanded to DeviceRGB.
 ///   • Both bottom-up (positive height) and top-down (negative height) row orders.
 ///
@@ -24,6 +24,50 @@ public static class BmpImageLoader
     private const uint BiRgb = 0;
 
     /// <summary>Decodes BMP file bytes into a FlateDecode Image XObject.</summary>
+    /// <exception cref="InvalidDataException">
+    /// The bytes are not a BMP file, are truncated, or declare dimensions outside the safety
+    /// limit below.
+    /// </exception>
+    /// <exception cref="NotSupportedException">
+    /// The file is a well-formed BMP of a variant this loader does not read.
+    /// </exception>
+    /// <remarks>
+    /// Treat the input as untrusted, and catch two types rather than one. A malformed file
+    /// raises <see cref="InvalidDataException"/>: a wrong signature, a truncated stream, or a
+    /// declared size the limit refuses. A well-formed file that this loader cannot read raises
+    /// <see cref="NotSupportedException"/> instead. That type does <b>not</b> derive from the
+    /// first, so catching only <see cref="InvalidDataException"/> lets it escape.
+    /// <para><see langword="null"/> is not checked. It raises
+    /// <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>, so a caller
+    /// guarding on the documented type will not catch it. You have to reject null yourself. A
+    /// later major version will check it.</para>
+    /// <para>One size limit applies: a declared pixel count above <b>100,000,000</b> is refused.
+    /// Neither edge is limited on its own, so 2,000,000 by 1 is accepted and 10,001 by 10,001 is
+    /// not. The limit is internal and has no public setting. It bounds the damage a header can do
+    /// rather than preventing it: the raster is sized from the declared dimensions before the
+    /// pixel data is checked, so a 1,079-byte file declaring 10,000 by 10,000 still allocates
+    /// 300 MB before it refuses (#536).</para>
+    /// <para>This loader reads one variant: an uncompressed 40-byte BITMAPINFOHEADER bitmap at
+    /// 8, 24 or 32 bits per pixel. Every other well-formed BMP raises
+    /// <see cref="NotSupportedException"/>, compressed ones included, and there is no fallback
+    /// path. Size is checked first, so a file shorter than 54 bytes is reported as truncated
+    /// whatever variant it would have been.</para>
+    /// <para>Attention: one conforming 8-bit variant is refused. A bitmap may declare
+    /// <c>biClrUsed</c> and ship a palette shorter than 256 entries; this loader never reads that
+    /// field and tests the whole file against <b>1,078</b> bytes, so a short-palette file smaller
+    /// than that is reported as truncated. A larger one loads and decodes correctly, so the
+    /// refusal tracks the file's size and not its palette. If you hit it, pad the palette to 256
+    /// entries and move <c>bfOffBits</c> with it. Leaving the offset unmoved still reads pixel
+    /// data from the start of the palette (#533).</para>
+    /// <para>A BITMAPINFOHEADER field this loader does not read is neither honoured nor
+    /// refused.</para>
+    /// <para>Attention: a 32-bit bitmap loses its image entirely. The fourth byte of each pixel is
+    /// emitted as a soft mask, but in the only 32-bit variant this loader accepts, <c>BI_RGB</c>
+    /// with a 40-byte header, that byte is not alpha and the format says it is unused. Writers
+    /// commonly leave it at zero, which this loader reads as fully transparent, so the page shows
+    /// nothing and no exception is raised. Convert such a file to 24-bit before loading it
+    /// (#535).</para>
+    /// </remarks>
     public static PdfImageXObject Load(byte[] bmpBytes)
     {
         if (bmpBytes.Length < 54)

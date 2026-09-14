@@ -400,6 +400,60 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   written into `CONTRIBUTING.md`, which ships, rather than only into the agent guidance, which is
   untracked and reaches no clone.
 
+- **The image loaders now document what they refuse, and JPEG documents that it validates nothing
+  (#505, #512).** BMP, CCITT, JPEG, PNG and TIFF carried no `<exception>` tag. They take a byte
+  array a caller is likely to have received from somewhere untrusted, and they now say what they
+  raise. GIF is not in this set.
+
+  A null array raises `NullReferenceException`, not `ArgumentNullException`, in BMP, JPEG, PNG
+  and TIFF. CCITT checks and raises `ArgumentException`. Guarding `ArgumentNullException`
+  catches none of them.
+
+  BMP, CCITT, PNG and TIFF refuse a declared pixel count above 100,000,000, and neither edge is
+  limited on its own. JPEG does not apply that limit. A frame header saying 65535 by 65535
+  returns an image of 4,294,836,225 pixels. The same declaration through PNG is refused. Nothing
+  allocates a raster, because the bytes pass through as `DCTDecode` data, but those dimensions
+  reach the image dictionary. Validate the size yourself before you trust it.
+
+  TIFF carries that hole through a JPEG-compressed strip. A TIFF declaring 8 by 8 whose strip is
+  that JPEG returns the same 4,294,836,225-pixel image. The TIFF member documents the product
+  limit on its own directory, so the result reads as though the limit held. Filed as #505 rather
+  than fixed here.
+
+  BMP and TIFF raise `NotSupportedException`, not `InvalidDataException`, for a well-formed file
+  of a variant they do not read, and neither type derives from the other. A caller who catches
+  only `InvalidDataException` therefore crashes on the first run-length encoded bitmap. A TIFF
+  `ColorMap` tag whose offset is negative, or whose count is zero, throws
+  `IndexOutOfRangeException` from an unguarded read (#512, #534).
+
+  CCITT differs on the rest. A null argument is refused with `ArgumentException`. A non-positive
+  `columns` or `rows` gives `ArgumentOutOfRangeException`, named as itself, because both are
+  checked before the safety limit. Asking for a raster from a Group 4 stream, or from a 2-D row
+  inside a mixed-mode one, gives `NotSupportedException` with no fallback to passthrough. The
+  default mode decodes nothing, so the two geometry arguments are taken on trust: a wrong pair
+  produces a file that opens and shows a corrupt image.
+
+  The two CCITT entry points disagree, and the disagreement is now documented. `TiffImageLoader`
+  reads `ImageLoadOptions.DecodeMode` on one path only, a Group 3 strip. Ask it to decode a
+  Group 4 strip to a raster and the request is ignored and you get the passthrough, where
+  `CcittImageLoader.Load` given the same request raises `NotSupportedException`.
+
+  Also documented, each boundary measured:
+
+  - The object registry's rule that only a reference it allocated may be set, which is a range
+    check rather than the provenance check its message claims. Setting a reserved reference to
+    `null` counts as not setting it, and the write then reports the object as never assigned. A
+    failed write leaves the objects already written in the caller's stream.
+  - The writer's position counter, which the writer never checks against the stream it was
+    constructed over.
+  - The barcode matrix's bounds check, which refuses a negative coordinate rather than reading a
+    neighbouring row.
+  - The timestamp client. A timeout or a failing HTTP status is `InvalidOperationException`. An
+    unreachable authority is `HttpRequestException`. A rejection, a malformed body, and an
+    unknown `hashAlgorithm` are `CryptographicException`; the last of those never contacts the
+    authority. The asynchronous default implementation blocks and never consults its
+    cancellation token.
+
 ## [2.3.2] - 2026-09-12
 
 This is a patch version that carries new features as well as fixes. The decision was taken
