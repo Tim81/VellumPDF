@@ -315,8 +315,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   value, and takes a different route in each of the other three the gutter rules produce: the
   margin plus the value once the override fires, one marker width right of the nested marker,
   which itself sits at the margin plus the value, and the margin plus twice the value when nested
-  with the override firing. Only those three can cross the margin, and the nested override-quiet
-  route does so only once the value passes minus its own marker's width. Two of the four can land
+  with the override firing. At a font size of zero or more only those three can cross the margin,
+  and the nested override-quiet route does so only once the value passes minus its own marker's
+  width; a negative `TextStyle.FontSize` measures a negative marker, and then the fourth crosses
+  too. Two of the four can land
   on the same x, because the two markers can differ in width: the default bullet and the nested
   open bullet already do at one style, and a per-item style widens the gap further. None of the
   three is reported. On a **flat** list none of them throws either, but a list with nested

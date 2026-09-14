@@ -42,29 +42,28 @@ public sealed class ListElement
     /// column of markers with no content and nothing reports the loss. A list with nested
     /// children is refused at that boundary instead, as the exception records. Keep the indent
     /// positive and well below the content width (#476).
-    /// <para>Text starts at a gutter decided per item, not once per list, measured from the same
-    /// margin the marker sits at. At the top level that
-    /// gutter is the larger of this value and the item's own marker width. One level in, the
-    /// marker itself starts at this value, so what has to clear it is a position rather than a
-    /// width. The nested gutter is therefore the larger of twice this value and this value plus
-    /// the marker's width. One case overrides both: where the widened gutter would leave less
-    /// room than the item's longest word, it reverts to the unwidened figure, which is this value
-    /// at the top level and twice it when nested.</para>
+    /// <para>Text starts at a gutter decided per item, not once per list, measured from the
+    /// list's own left edge. At the top level that gutter is the larger of this value and the
+    /// item's own marker width. One level in, the marker itself starts at this value, so what has
+    /// to clear it is a position rather than a width. The nested gutter is therefore the larger
+    /// of twice this value and this value plus the marker's width. One case overrides both: where
+    /// the widened gutter would leave less room than the item's longest word, it reverts to the
+    /// unwidened figure, which is this value at the top level and twice it when nested.</para>
     /// <para>The override rewrites a gutter and never a marker's own inset, so no marker moves
     /// with it: a top-level marker sits at the margin and a nested one at the margin plus this
-    /// value, in both of their branches. The margin here is the page's own plus
-    /// <see cref="Margins"/>'s left inset, so that inset moves the margin and the three figures
-    /// below that are expressed in terms of it; the fourth is fixed at a marker's width and does
-    /// not move. Either horizontal inset does more than that, because both narrow the width the
-    /// override measures against, so a wide enough one flips the branch rather than only shifting
-    /// the result.</para>
-    /// <para>Only a negative value carries content left of the margin, and only in three of the
-    /// four branches. With the override firing, a top-level item reaches the page edge at minus the
-    /// margin; a nested one reaches it at minus half the margin. With the override quiet, a
-    /// top-level item never crosses the margin at all, because the larger-of never returns less
-    /// than the marker's width; a nested one crosses the margin at minus its own marker's width
-    /// and the page edge at minus that width and the margin together. None of it throws or is
-    /// reported.</para>
+    /// value, in both of their branches. That margin is the page's own plus <see
+    /// cref="Margins"/>'s left inset, so the left inset moves it, and any figure below given
+    /// relative to the margin moves with it; the one given as a marker's width does not. The left
+    /// inset also narrows the width the override measures against, and the right inset narrows it
+    /// without moving anything, so a wide enough inset on either side flips the branch.</para>
+    /// <para>Only a negative value carries content left of the margin. With the override firing,
+    /// a top-level item reaches the page edge at minus the margin; a nested one reaches it at
+    /// minus half the margin. With the override quiet, a nested one crosses the margin at minus
+    /// its own marker's width and the page edge at minus that width and the margin together,
+    /// while a top-level item stays on or right of the margin, because the larger-of cannot
+    /// return less than the marker's width. That last holds only while the marker's width is
+    /// itself non-negative: a negative <see cref="TextStyle.FontSize"/> measures a negative
+    /// marker, and then a top-level item crosses too. None of it throws or is reported.</para>
     /// <para>The two non-finite values other than positive infinity take different routes, so one
     /// is far easier to hit. <c>NaN</c> survives the larger-of at either level and the override
     /// cannot fire against it, so it reaches the text matrix on every geometry. Negative infinity

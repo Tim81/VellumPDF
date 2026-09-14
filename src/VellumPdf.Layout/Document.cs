@@ -422,9 +422,9 @@ public sealed class Document : IDisposable
     /// whether you changed anything: correct the cause and it succeeds silently on a wrong file,
     /// leave the cause in place and it raises the same exception once more, having committed
     /// another set of pages first (#530).</para>
-    /// <para>So a quiet retry means nothing on its own. A retry after a refusal before the layout starts
-    /// returns quietly and the file is right; a retry after one during the layout returns just as
-    /// quietly and it is not. Build a fresh <see cref="Document"/> rather than retrying
+    /// <para>So a quiet retry means nothing on its own. A retry after a pre-layout refusal
+    /// returns quietly and the file is right; a retry after one from the layout itself returns
+    /// just as quietly and it is not. Build a fresh <see cref="Document"/> rather than retrying
     /// either.</para>
     /// <para>A document with no pages throws as well. Add at least one element before you
     /// save.</para>
