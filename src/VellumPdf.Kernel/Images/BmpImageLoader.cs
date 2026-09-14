@@ -40,18 +40,15 @@ public static class BmpImageLoader
     /// <para>Attention: <see langword="null"/> is not checked. It raises
     /// <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>. You have to
     /// reject null yourself. A later major version will check it.</para>
-    /// <para>One size limit applies here, not two. A declared pixel count above 100,000,000 is
-    /// refused, so that a few bytes of header cannot drive a multi-gigabyte allocation.</para>
-    /// <para>Attention: a second constant bounds each edge at 1,000,000 and is applied by
-    /// <b>nothing</b> a default call reaches. Only the MMR decoder reads it, only the JBIG2
-    /// loader reaches that decoder, and only when asked for a decoded raster, which is not the
-    /// default mode. So an image declaring one edge of 1,000,001 with a total under the pixel cap
-    /// loads here and everywhere else. Both constants are internal and neither has a public
-    /// setting.</para>
+    /// <para>One size limit applies: a declared pixel count above 100,000,000 is refused, so that
+    /// a few bytes of header cannot drive a multi-gigabyte allocation. There is <b>no</b> per-edge
+    /// limit, so one edge of 1,000,001 under that total loads. The limit is internal and has no
+    /// public setting.</para>
     /// <para>Compressed bitmaps are refused, not decoded. BI_RLE8, BI_RLE4 and BI_BITFIELDS
-    /// each raise <see cref="NotSupportedException"/>, as do an OS/2 BITMAPCOREHEADER and any bit
-    /// depth other than 8, 24 and 32. Those are the three <see cref="NotSupportedException"/>
-    /// sites in this loader. There is <b>no</b> fallback path.</para>
+    /// each raise <see cref="NotSupportedException"/>, as do a DIB header that is not the 40-byte
+    /// BITMAPINFOHEADER and any bit depth other than 8, 24 and 32. There is <b>no</b> fallback
+    /// path. Size is checked first, so a file shorter than 54 bytes is reported as truncated
+    /// whatever variant it would have been.</para>
     /// </remarks>
     public static PdfImageXObject Load(byte[] bmpBytes)
     {

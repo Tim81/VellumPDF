@@ -16,18 +16,23 @@ public static class JpegImageLoader
     /// then wraps the raw bytes as a DCTDecode Image XObject.
     /// </summary>
     /// <exception cref="InvalidDataException">
-    /// The bytes do not begin with the SOI marker, or no frame header can be found.
+    /// The bytes do not begin with the SOI marker, or no usable frame header can be read from
+    /// them: absent, truncated, or behind a segment whose declared length does not fit.
     /// </exception>
     /// <remarks>
     /// This loader decodes nothing. The bytes are embedded verbatim as DCTDecode data and only
     /// the frame header is read. A file this accepts is therefore not necessarily a file a reader
     /// can render: corruption past the header passes straight into the document.
-    /// <para>Attention: this is the one loader that does <b>not</b> check the declared size, and
-    /// the difference is large. A 25-byte file whose frame header declares 65535 by 65535 returns
-    /// an image of 4,294,836,225 pixels. Every other loader refuses anything above 100,000,000.
-    /// Nothing allocates a raster here, since the bytes pass through, but the width and height
+    /// <para>Attention: this loader does <b>not</b> check the declared size, and the difference is
+    /// large. A file carrying nothing but a frame header declaring 65535 by 65535 returns an image
+    /// of 4,294,836,225 pixels, where every loader that validates the dimensions it reads from its
+    /// own header refuses anything above 100,000,000. That qualification is not idle:
+    /// <see cref="TiffImageLoader"/> validates its own directory and then hands a JPEG-compressed
+    /// strip here, and the image it returns carries these dimensions rather than the ones it
+    /// checked.
+    /// Nothing allocates a raster, since the bytes pass through, but the width and height
     /// reach the image dictionary and a consumer that trusts them can be made to allocate from
-    /// them. If the input is untrusted, check the dimensions yourself.</para>
+    /// them. If the input is untrusted, check the dimensions yourself (#505).</para>
     /// <para><see langword="null"/> is not checked either. It raises
     /// <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>.</para>
     /// </remarks>

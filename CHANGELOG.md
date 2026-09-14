@@ -400,59 +400,67 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   written into `CONTRIBUTING.md`, which ships, rather than only into the agent guidance, which is
   untracked and reaches no clone.
 
-- **The image loaders say what they refuse, and JPEG says how it differs.** Six of the eight
-  loaders carried no `<exception>` tag at all, and every one of them takes a byte array a caller
-  is likely to have received from somewhere untrusted. Five of them — BMP, GIF, JPEG, PNG and
-  TIFF — now document what they raise and for what. CCITT is the sixth and is left for the pass
-  that covers the bilevel path, so it still has none.
+- **The image loaders say what they refuse, and JPEG says how it differs.** Five of the eight
+  loaders carried no `<exception>` tag at all, and every one of them takes a byte array a caller is
+  likely to have received from somewhere untrusted. BMP, CCITT, JPEG, PNG and TIFF now document
+  what they raise and for what.
 
-  Four boundaries were measured while writing them rather than assumed, and every one of the four
-  contradicted what the first draft of this entry said.
+  Four boundaries were measured while writing them rather than assumed.
 
-  A null array raises `NullReferenceException`, not `ArgumentNullException`, in those five. Three
-  of the eight loaders do guard it: the JPEG 2000 one with `ArgumentNullException`, and the CCITT
-  and JBIG2 ones with `ArgumentException` for null or empty. So a caller guarding the documented
-  type does not catch it in the five, which is now said on each member.
+  A null array raises `NullReferenceException`, not `ArgumentNullException`, in BMP, JPEG, PNG and
+  TIFF. Three of the eight loaders do guard it, and not alike: the JPEG 2000 one with
+  `ArgumentNullException`, the CCITT and JBIG2 ones with `ArgumentException` for null or empty. So
+  a caller guarding the documented type does not catch it in the four, which is now said on each
+  member.
 
-  Only one of the two size limits applies to those five. The 100,000,000-pixel cap is enforced by
+  Only one of the two size limits applies to any of them. The 100,000,000-pixel cap is enforced by
   every loader that reaches `ValidateDimensions`. The 1,000,000-per-edge constant is enforced on no
   default path at all: only the MMR decoder reads it, only the JBIG2 loader reaches that decoder,
   and only when asked for a decoded raster rather than the passthrough its options default to. So
   an image declaring one edge of 1,000,001 with a total under the pixel cap loads in every loader.
-  Documenting a guard that does not run is worse than documenting none, so each member now says
-  which of the two reaches it. An earlier attempt at this correction named CCITT as one of the two
-  paths behind it; the CCITT loader reaches that decoder in no mode, and its own comment already
-  said so.
+  Documenting a guard that does not run is worse than documenting none, so each member now states
+  the cap that applies to it and says there is no per-edge limit.
 
-  BMP and TIFF raise `NotSupportedException`, not `InvalidDataException`, for a well-formed file
-  of a variant they do not read: three sites in BMP, eighteen in TIFF, and that type does not
-  derive from the other. The first draft told callers to catch `InvalidDataException` and listed
-  BI_RLE8 among what it would catch, which would have crashed on the first run-length encoded
-  bitmap. Both loaders now document two exception types rather than one.
+  BMP and TIFF raise `NotSupportedException`, not `InvalidDataException`, for a well-formed file of
+  a variant they do not read, and that type does not derive from the other. A caller who catches
+  only `InvalidDataException` therefore crashes on the first run-length encoded bitmap. Both
+  loaders now document both types, and TIFF documents a third: a `ColorMap` tag carrying a negative
+  offset reaches an unguarded array read and escapes both (#512).
 
-  The JPEG loader is the only one that does not validate what its header declares. Measured on a
-  25-byte file whose frame header says 65535 by 65535: it returns an image of 4,294,836,225
-  pixels, where the same declaration through the GIF loader is refused at the 100,000,000 cap.
-  Nothing allocates a raster for it, because the bytes pass through as `DCTDecode` data, but
-  those dimensions reach the image dictionary and a consumer that trusts them can be made to
-  allocate from them. The loader now says so and says to validate the size yourself.
+  The JPEG loader is the only one that does not validate what its header declares. A file carrying
+  nothing but a frame header saying 65535 by 65535 returns an image of 4,294,836,225 pixels, where
+  the same declaration through the GIF loader is refused at the 100,000,000 cap. Nothing allocates
+  a raster for it, because the bytes pass through as `DCTDecode` data, but those dimensions reach
+  the image dictionary and a consumer that trusts them can be made to allocate from them. The
+  loader now says so and says to validate the size yourself.
 
-  That hole is reachable through the TIFF loader as well, which is the more serious half, because
-  the TIFF member is one of the two that documents the cap. A strip compressed with new-style
-  JPEG is handed straight to the JPEG loader, so a 145-byte TIFF declaring 8 by 8 returns the
-  same 4,294,836,225-pixel image. Filed as #505 rather than fixed here, since validating it
-  changes behaviour; the member says so meanwhile.
+  The TIFF loader carries the same hole, and there it is worse, because the TIFF member is one that
+  documents the cap and so reads as though the cap held. A strip compressed with new-style JPEG is
+  handed straight to the JPEG loader, so a TIFF declaring 8 by 8 returns that same
+  4,294,836,225-pixel image. Filed as #505 rather than fixed here, since validating it changes
+  behaviour; the member says so meanwhile.
 
-  A GIF that places its frame on a larger logical screen decodes at the frame's own size, losing
-  the placement, and an animated GIF loads its first frame with no indication the others were
-  there. Both are now stated on the member rather than only in the type's own summary.
+  CCITT is the fifth, and its shape is its own. A null argument is refused with `ArgumentException`
+  rather than dereferenced. A non-positive `columns` or `rows` gives `ArgumentOutOfRangeException`,
+  named as itself, because both are checked before the pixel cap. Asking for a raster from a Group
+  4 stream, or from a 2-D row inside a mixed-mode one, gives `NotSupportedException` with no
+  fallback to passthrough. And the default mode decodes nothing, so the two geometry arguments are
+  taken on trust: nothing reads them back from the data, and a wrong pair produces a file that
+  opens and shows a corrupt image.
 
-  Also documented: the object registry's rule that only a reference it allocated may be set, the
-  writer's position counter, which is never checked against the stream it is given, the barcode
-  matrix's bounds check, which refuses a negative coordinate through an unsigned comparison, and
-  the timestamp client, where a timeout, a refused connection and a rejected request all arrive
-  as the same exception type, and where the asynchronous default implementation blocks and never
-  consults its cancellation token.
+  Also documented, each with the boundary measured rather than read off the code:
+
+  - The object registry's rule that only a reference it allocated may be set, which is a range
+    check rather than the provenance check its message claims. Setting a reserved reference to
+    `null` counts as not setting it, and the write then reports the object as never assigned.
+  - The writer's position counter, which is never checked against the stream it is given.
+  - The barcode matrix's bounds check, which refuses a negative coordinate through an unsigned
+    comparison rather than by testing the sign.
+  - The timestamp client, where a timeout, an unreachable authority and a rejected request each
+    arrive as a *different* exception type, so the type is what a caller has to switch on. Its
+    asynchronous default implementation blocks and never consults its cancellation token, and an
+    implementation that does honour the token adds a fourth type the synchronous member cannot
+    raise.
 
 ## [2.3.2] - 2026-09-12
 

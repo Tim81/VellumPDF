@@ -56,11 +56,18 @@ public sealed class PdfObjectRegistry
     /// in range. The value then lands in this registry's slot of that number, which is the
     /// wrong-slot write the check looks like it prevents.
     /// <para>So pass only a reference that this registry's own <c>Reserve</c> returned. Nothing
-    /// downstream can tell the difference.</para>
+    /// later in the write catches a foreign one.</para>
     /// <para>Reserving a reference and never setting it is not detected here. It is detected at
     /// write time, and loudly: writing throws <see cref="InvalidOperationException"/> and names
     /// the object number. You do not get a document with a missing object. Set every reference
     /// you reserve.</para>
+    /// <para>Setting one to <see langword="null"/> counts as not setting it. The null is stored
+    /// as it stands and nothing here distinguishes it from a reserved slot, so the write raises
+    /// that same exception and reports the object as never assigned, which is not what you did.
+    /// <see cref="Add"/> behaves the same way. A <see langword="null"/>
+    /// <paramref name="reference"/> is a different matter again: it is dereferenced rather than
+    /// checked, so it gives <see cref="NullReferenceException"/> and <b>not</b>
+    /// <see cref="ArgumentNullException"/>.</para>
     /// </remarks>
     public void SetValue(PdfIndirectReference reference, PdfObject value)
     {
@@ -74,6 +81,10 @@ public sealed class PdfObjectRegistry
     /// Writes all registered indirect objects to <paramref name="writer"/> in object-number order,
     /// recording each byte offset into <paramref name="xref"/>.
     /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// As the three-argument overload this forwards to: a reference was reserved and never
+    /// assigned a value, or was assigned <see langword="null"/>.
+    /// </exception>
     public void WriteAll(PdfWriter writer, CrossReferenceBuilder xref)
         => WriteAll(writer, xref, preWrite: null);
 
@@ -84,9 +95,10 @@ public sealed class PdfObjectRegistry
     /// Returning null from the delegate means no cleanup is needed.
     /// </summary>
     /// <exception cref="InvalidOperationException">
-    /// A reference was reserved and never assigned a value. The message names the object number.
-    /// Nothing is written for that object, so the output is abandoned rather than left with a
-    /// gap.
+    /// A reference was reserved and never assigned a value, or was assigned
+    /// <see langword="null"/>. The message names the object number. No document is produced, but
+    /// the objects written before it are already in your stream and stay there; nothing rewinds
+    /// it for you.
     /// </exception>
     public void WriteAll(PdfWriter writer, CrossReferenceBuilder xref, Func<int, Action?>? preWrite)
     {

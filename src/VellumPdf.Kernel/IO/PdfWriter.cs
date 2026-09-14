@@ -32,6 +32,9 @@ public sealed class PdfWriter
     public long Position => _position;
 
     /// <summary>Creates a writer over the given writable <paramref name="stream"/>.</summary>
+    /// <exception cref="ArgumentNullException"><paramref name="stream"/> is
+    /// <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="stream"/> is not writable.</exception>
     public PdfWriter(Stream stream) : this(stream, 0) { }
 
     /// <summary>

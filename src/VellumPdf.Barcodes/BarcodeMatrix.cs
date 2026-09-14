@@ -38,10 +38,10 @@ public sealed class BarcodeMatrix
     /// Both coordinates are bounds-checked, and a negative one is refused too. The check is an
     /// unsigned comparison, so -1 is treated as a very large value and refused by the same
     /// exception rather than reading a neighbouring row.
-    /// <para>Attention: this matrix covers the symbol only. The quiet zone that a symbology's
-    /// specification requires around it is <b>not</b> part of <see cref="Width"/> and
-    /// <see cref="Height"/>, so a renderer has to add it. Do not expect light modules outside
-    /// these bounds; there is nothing there.</para>
+    /// <para>Attention: this matrix covers the symbol only. Where a symbology asks for a quiet
+    /// zone, it is <b>not</b> part of <see cref="Width"/> and <see cref="Height"/>, and a renderer
+    /// adds it separately; how many modules wide it is varies by symbology, and Aztec asks for
+    /// none. Do not read outside these bounds looking for it. The call throws instead.</para>
     /// </remarks>
     public bool IsDark(int x, int y)
     {

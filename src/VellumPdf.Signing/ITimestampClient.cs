@@ -42,11 +42,11 @@ public interface ITimestampClient
     /// unreachable authority gives <see cref="System.Net.Http.HttpRequestException"/>. A
     /// rejection, or a malformed response body, gives
     /// <see cref="System.Security.Cryptography.CryptographicException"/>.
-    /// <para>Attention: the type is the discriminator here, not the message. If you catch only
-    /// <see cref="InvalidOperationException"/>, the likeliest failure of the three, an authority
-    /// that cannot be reached, escapes you.</para>
-    /// <para>The synchronous overload waits on the authority, with the implementation's own
-    /// timeout as the only bound. If you are on a path that must not block, use
+    /// <para>Attention: the type is the discriminator here, not the message. Catch only
+    /// <see cref="InvalidOperationException"/> and an unreachable authority escapes it, because
+    /// that arrives as <see cref="System.Net.Http.HttpRequestException"/> instead.</para>
+    /// <para>This call waits on the authority, with the implementation's own timeout as the only
+    /// bound. If you are on a path that must not block, use
     /// <see cref="GetTimestampTokenAsync"/>.</para>
     /// <para>A returned token is <b>not</b> verified. It is the authority's answer, carried into
     /// the signature as supplied. Whether its certificate chains to anything a verifier trusts is
@@ -73,14 +73,20 @@ public interface ITimestampClient
     /// As <see cref="GetTimestampToken"/>: the authority refused the request, or returned a
     /// response that is not a well-formed granted timestamp.
     /// </exception>
+    /// <exception cref="OperationCanceledException">
+    /// <paramref name="cancellationToken"/> was signalled and the implementation honours it. The
+    /// shipped client raises <see cref="TaskCanceledException"/>, which derives from this type, so
+    /// catching either works. This is a fourth type the synchronous member cannot produce, and the
+    /// default implementation below never produces it.
+    /// </exception>
     /// <remarks>
     /// The default implementation forwards to <see cref="GetTimestampToken"/>, so existing
     /// implementations of this interface keep compiling unchanged. Implementations that can
     /// perform the underlying network call asynchronously should override this member.
-    /// <para>Attention: do not assume this does not block. An implementation that has not
-    /// overridden it runs the synchronous call on the calling thread and returns an
-    /// already-completed task. The wait therefore happens before the task reaches you, and
-    /// <paramref name="cancellationToken"/> is never consulted.</para>
+    /// <para>Attention: the default implementation blocks. It runs the synchronous call on the
+    /// calling thread and returns an already-completed task, so the wait happens before the task
+    /// reaches you and <paramref name="cancellationToken"/> is never consulted. An implementation
+    /// that overrides this member decides both of those for itself.</para>
     /// </remarks>
     Task<byte[]> GetTimestampTokenAsync(ReadOnlyMemory<byte> messageDigest, HashAlgorithmName hashAlgorithm, CancellationToken cancellationToken = default)
         => Task.FromResult(GetTimestampToken(messageDigest.Span, hashAlgorithm));
