@@ -1,8 +1,8 @@
 {
   "sdk": {
-    "version": "10.0.400",
+    "version": "10.0.401",
     // Required for CI to pick up 10.0.4xx patch releases; removing it pins CI to
-    // exactly 10.0.400 and drops patch servicing.
+    // exactly 10.0.401 and drops patch servicing.
     "rollForward": "latestPatch"
   },
   // xunit.v3 4.0.0 pulls in Microsoft.Testing.Platform, which the .NET 10 SDK no longer lets
