@@ -15,17 +15,31 @@ public sealed class Cell
     /// Number of columns this cell spans. Must be at least 1.
     /// </summary>
     /// <remarks>
-    /// The table's column count is the largest span sum across its rows, so widening a cell widens
-    /// the grid rather than overrunning it.
-    /// <para><b>Zero or negative is refused.</b> <see cref="Document.Save(System.IO.Stream)"/>
+    /// The table's column count is the largest span sum across its rows, and every cell's span
+    /// counts towards its own row's sum. A span wider than the column count the other rows
+    /// produce therefore widens the grid, and those rows leave the new columns empty.
+    /// <para>Zero or negative is <b>refused</b>. <see cref="Document.Save(System.IO.Stream)"/>
     /// throws <see cref="InvalidOperationException"/> naming the row and cell, because a span of
     /// zero can leave the grid with no columns at all and nothing to draw into.</para>
-    /// <para>A span reaching past the columns left in its row is clamped to them. The cell then
-    /// ends at the table's right edge rather than beyond it.</para>
+    /// <para>The width the cell is drawn at is a separate question from that count. Where an
+    /// earlier row's <see cref="RowSpan"/> already occupies this row's leading columns, the cell
+    /// is drawn only as wide as the columns left over. Measured: a five-column span with four
+    /// leading columns spoken for drew <b>one column</b> wide, ending exactly at the table's
+    /// right edge. A three-column span in the equivalent narrower table did the same.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property, when the
-    /// span is below one. The message names the row and the cell.
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property,
+    /// when the span is below one. The message names the row and the cell.
+    /// </exception>
+    /// <exception cref="OverflowException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property,
+    /// when a row's <c>ColSpan</c> values sum past <see cref="int.MaxValue"/> while the table's
+    /// column count is resolved.
+    /// </exception>
+    /// <exception cref="OutOfMemoryException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property,
+    /// when a resolved column count near <see cref="int.MaxValue"/> asks for a per-column width
+    /// array too large to allocate.
     /// </exception>
     public int ColSpan { get; init; } = 1;
 
@@ -36,13 +50,13 @@ public sealed class Cell
     /// A spanning cell is drawn once, at its own row, across the combined height of the rows it
     /// covers, and those rows skip the columns it occupies. A page break is never placed inside a
     /// spanning group; a group too tall for one page raises rather than splitting.
-    /// <para>Attention: zero and negative values are <b>not</b> refused. Both behave as 1.
-    /// That is an accident of how the draw loop tests the span, not a guarantee, so do not write
-    /// code that depends on it. A later major version will reject them.</para>
+    /// <para><b>Attention</b>: zero and negative are <b>not</b> refused, and both behave as 1. That is
+    /// an accident of how the draw loop tests the span, not a guarantee, so do not write code
+    /// that depends on it. A later major version will reject both.</para>
     /// <para>A span reaching past the rows this page draws is reduced to the rows actually
     /// drawn. The <c>/RowSpan</c> attribute written into the tagged structure follows the reduced
-    /// figure, not the one you set, so a reader is never told about rows that are not on the page
-    /// (#493).</para>
+    /// figure, not the one you set, so a reader is never told about rows that are not on the
+    /// page.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from a save rather than from this property, when a spanning group is taller than
@@ -59,7 +73,7 @@ public sealed class Cell
     /// A non-finite inset is refused. <see cref="Document.Save(System.IO.Stream)"/> throws
     /// <see cref="InvalidOperationException"/> and names the row and the cell. The number would
     /// otherwise reach the content stream as a token that no reader can parse.
-    /// <para>Attention: a negative inset is not refused, and nothing clips the result. The cell's
+    /// <para><b>Attention</b>: a negative inset is not refused, and nothing clips the result. The cell's
     /// text is placed outside the cell, over its neighbour or past the table's edge. You have to
     /// keep the insets positive yourself. A later major version will reject them.</para>
     /// <para>Padding wider than the column is not refused either, and the result is worse than a
@@ -68,12 +82,19 @@ public sealed class Cell
     /// outside the page. Measured with <c>Left</c> at 400 in a 260-point column on a 300-point
     /// page: ten glyphs on ten lines, every one at x = 420. Nothing is dropped and nothing
     /// reports it.</para>
-    /// <para>NOTE: <see cref="EdgeInsets.Horizontal"/> is <c>Left</c> plus <c>Right</c>, so an
-    /// insets value of 400 across both sides puts the text at x = 220 rather than 420. It is
-    /// <c>Left</c> alone that decides where a line starts.</para>
+    /// <para><see cref="EdgeInsets.Horizontal"/> is <c>Left</c> plus <c>Right</c>, but the drawn
+    /// position follows <c>Left</c> alone, not how the total is split. Measured on the same
+    /// 260-point column: splitting 400 points evenly, <c>Left</c> = 200 and <c>Right</c> = 200,
+    /// lands the text at x = 220, back inside the 300-point page. Giving <c>Left</c> the same 400
+    /// lands the text at x = 420 whatever <c>Right</c> holds. The vertical edges are a separate
+    /// limit: at 400 on all four the row outgrows the page, and the save refuses it as too tall,
+    /// with no text drawn at all.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property, when any inset is not finite. The message names the row and the cell.
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property.
+    /// A non-finite inset gives a message naming the row and the cell. A finite inset large
+    /// enough to grow the row past the page (above, with all four edges at 400) throws the
+    /// generic too-tall exception instead, whose message names neither.
     /// </exception>
     public EdgeInsets Padding { get; init; } = new EdgeInsets(4, 6, 4, 6);
 
