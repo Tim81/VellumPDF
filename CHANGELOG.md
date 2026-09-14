@@ -90,11 +90,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   29 and 121 pixels at minimum code sizes 2, 3 and 4, measured against the test suite's own LZW
   fixture helper, which can choose a minimum code size independent of the colours actually
   present. `GifEncoder` itself always derives that size from the palette it builds, so a flat
-  raster it encodes is minimum code size 2 regardless, and it cannot be made to produce the size-3
-  or size-4 streams the other two figures come from. Detail alone did not decide the corpus's
-  outcome either: 66 of the 160 files with any
-  detail decoded correctly as well. What mattered was whether that file's dictionary happened to
-  cross a boundary, which two files of the same size and content kind can differ on.
+  raster it encodes is minimum code size 2 regardless, and it cannot be made to produce the
+  size-3 or size-4 streams the other two figures come from. Detail alone did not decide the
+  corpus's outcome either: 66 of the 160 files with any detail decoded correctly as well. What
+  mattered was whether that file's dictionary happened to cross a boundary, which two files of
+  the same size and content kind can differ on.
 
   **The interlace flag was never read.** Appendix E defines the four-pass row order of an
   interlaced image. Those images decoded with their rows in storage order: scrambled, with no
@@ -153,16 +153,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the `/DA` string and the operands of twelve call sites in a widget's appearance stream through
   `CultureInfo.CurrentCulture`: five of the thirteen affected sites format the font size itself
   (the `/DA` string and four `Tf` lines), and the other eight format a coordinate (a `Td`
-  position or an `re` rectangle). A
-  font size of 10.5 saved under Dutch or German, the maintainer's own development-machine
-  default (`nl-NL`), wrote `10,5` into a `Tf` operand. That is one token, not two: ISO
-  32000-2:2020, 7.2.3 makes COMMA a regular character rather than a delimiter, and 7.3.3 refuses
-  the token as a numeric object regardless of how many tokens it resembles. Every one of the
-  eight coordinate sites derives from the widget rectangle, four from it alone and four from it
-  together with the font size, so a caller who never set a fractional font size could still save
-  a broken content stream from a fractional widget rectangle. All thirteen sites now pin
-  `CultureInfo.InvariantCulture`, unconditionally,
-  because PDF syntax is never localised.
+  position or an `re` rectangle). A font size of 10.5 saved under Dutch or German, the
+  maintainer's own development-machine default (`nl-NL`), wrote `10,5` into a `Tf` operand. That
+  is one token, not two: ISO 32000-2:2020, 7.2.3 makes COMMA a regular character rather than a
+  delimiter, and 7.3.3 refuses the token as a numeric object regardless of how many tokens it
+  resembles. Every one of the eight coordinate sites derives from the widget rectangle, four from
+  it alone and four from it together with the font size, so a caller who never set a fractional
+  font size could still save a broken content stream from a fractional widget rectangle. All
+  thirteen sites now pin `CultureInfo.InvariantCulture`, unconditionally, because PDF syntax is
+  never localised.
 
   `FormFieldOptions.FontSize` also refuses a non-finite value now, reachable from
   `PdfDocument.Save`, `SaveAsync`, and `PrepareForSigning` alike; before this change, each of the
@@ -272,19 +271,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   0 on the result, while `pdftotext` reports a syntax error and drops the footer text with it.
 
 - Two claims about save behaviour, corrected. Resizing `PageSize` before `Save` produces a file
-  matching one built at the new size from the start byte for byte, except the random `/ID` and the
-  XMP `CreateDate`/`ModifyDate` timestamps, not the `/ID` alone. That holds on a document no save
-  has been attempted on, which is where the measurement was taken and as far as it reaches. The
-  byte figure that first accompanied this named no margin, and at this property's default 72pt
-  insets the recipe cannot run: 144pt of vertical margin does not fit a 120pt page, so both halves
-  of the comparison are refused before they are built. The margin is now named. No byte count is
-  quoted in the member, because the count depends on the paragraph text as well as the geometry
-  and no doc comment can pin that; what it states instead is checkable on any fixture, that the
-  two files are byte-identical once `/ID` and the two XMP timestamps are normalised, with every
-  `/MediaBox` reading `0 0 200 120`. `Save(Stream)`'s `ArgumentException` for a non-writable
-  destination carries the
-  internal parameter name `stream`, not the public `destination` parameter it is documented
-  against, so catching by parameter name will not find it under `"destination"`.
+  matching one built at the new size from the start byte for byte, except the random `/ID` and
+  the XMP `CreateDate`/`ModifyDate` timestamps, not the `/ID` alone. That holds on a document no
+  save has been attempted on, which is where the measurement was taken and as far as it reaches.
+  The byte figure that first accompanied this named no margin, and at this property's default
+  72pt insets the recipe cannot run: 144pt of vertical margin does not fit a 120pt page, so both
+  halves of the comparison are refused before they are built. The margin is now named. No byte
+  count is quoted in the member, because the count depends on the paragraph text as well as the
+  geometry and no doc comment can pin that; what it states instead is checkable on any fixture,
+  that the two files are byte-identical once `/ID` and the two XMP timestamps are normalised,
+  with every `/MediaBox` reading `0 0 200 120`. `Save(Stream)`'s `ArgumentException` for a
+  non-writable destination carries the internal parameter name `stream`, not the public
+  `destination` parameter it is documented against, so catching by parameter name will not find
+  it under `"destination"`.
 
 - **A save that threw leaves the document in one of three states, and one of them is silent
   (#530).** All four save overloads said some version of "calling this twice throws", which
@@ -317,19 +316,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   margin plus the value once the override fires, one marker width right of the nested marker,
   which itself sits at the margin plus the value, and the margin plus twice the value when nested
   with the override firing. Only those three can cross the margin, and the nested override-quiet
-  route does so only once the
-  value passes minus its own marker's width. Two of the four can land on the same x, because
-  the two markers can differ in width: the default bullet and the nested open bullet already do at
-  one style, and a per-item style widens the gap further. None of the three is
-  reported. On a **flat**
-  list none of them throws either, but a list with nested children is refused once the indent
-  reaches the content width, positive infinity included, with an element-too-tall
-  `InvalidOperationException` that
-  names neither the property nor the list. That refusal was undocumented and now carries its own
-  `<exception>` tag.
-  `RunningBand.Template` and `LineSeparator.Margins` each reach a live refusal with nothing
-  written down: a null template is dereferenced during the save, and a non-finite separator inset
-  is refused by name.
+  route does so only once the value passes minus its own marker's width. Two of the four can land
+  on the same x, because the two markers can differ in width: the default bullet and the nested
+  open bullet already do at one style, and a per-item style widens the gap further. None of the
+  three is reported. On a **flat** list none of them throws either, but a list with nested
+  children is refused once the indent reaches the content width, positive infinity included, with
+  an element-too-tall `InvalidOperationException` that names neither the property nor the list.
+  That refusal was undocumented and now carries its own `<exception>` tag. `RunningBand.Template`
+  and `LineSeparator.Margins` each reach a live refusal with nothing written down: a null
+  template is dereferenced during the save, and a non-finite separator inset is refused by name.
 
 - `Cell.ColSpan`'s column-count rule has no exception: the table's column count is the largest
   span sum across its rows, and every cell's span contributes to its row's sum unconditionally,
@@ -368,12 +363,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   2.3.2. The failed-save paragraph on `Save(Stream)` briefly carried a new one and lost it again,
   so that the same hazard is not marked on the synchronous overload and unmarked on the
   asynchronous one. The two `NOTE` markers went because they pointed at an open issue number
-  rather than a historical
-  fact or a version boundary, which is what the rest of the package uses `NOTE` for; the surviving
-  one records a fact about #365. The seventh `Attention` went from `PieChart.Alignment`, whose
-  opening sentence is shared word for word with `RunningBand.Alignment` and was marked on one
-  member and not the other. `CONTRIBUTING.md` says to bold the marker always and an operative
-  negation only where a paragraph turns on one, rather than requiring both on every paragraph.
+  rather than a historical fact or a version boundary, which is what the rest of the package uses
+  `NOTE` for; the surviving one records a fact about #365. The seventh `Attention` went from
+  `PieChart.Alignment`, whose opening sentence is shared word for word with
+  `RunningBand.Alignment` and was marked on one member and not the other. `CONTRIBUTING.md` says
+  to bold the marker always and an operative negation only where a paragraph turns on one, rather
+  than requiring both on every paragraph.
 
 - Three low-severity corrections, measured. `LayoutImage.Width`'s summary said "must be at least
   5e-6 points in magnitude," which admits negative infinity, and a later pass replaced that with
