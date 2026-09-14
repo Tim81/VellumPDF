@@ -37,11 +37,18 @@ public sealed class ListElement
 
     /// <summary>Points of indent for each list level.</summary>
     /// <remarks>
-    /// <b>Attention</b>: an indent at or beyond the page's content width is <b>not</b> refused on
+    /// <b>Attention</b>: an indent that reaches the list's own area width is <b>not</b> refused on
     /// a flat list. The marker is drawn and the item text is discarded, so the list renders as a
-    /// column of markers with no content and nothing reports the loss. A list with nested
-    /// children is refused at that boundary instead, as the exception records. Keep the indent
-    /// positive and well below the content width (#476).
+    /// column of markers with no content and nothing reports the loss. That area is the page's
+    /// content width narrowed by <see cref="Margins"/>, not the content width itself, so an inset
+    /// on either side brings every boundary here in by its own size.
+    /// <para>Nesting does not buy you out of that. It only moves it. A nested list is refused at
+    /// the area width, as the exception records, but it loses its child text silently from
+    /// <b>half</b> of it. The nested content gutter is twice this value, by the rule below, so the
+    /// child's own width reaches zero at half the area while the child marker, inset by this value
+    /// alone, still fits and is still drawn. Between those two points a nested list fails as
+    /// quietly as a flat one. Keep the indent positive and well below half the area width
+    /// (#476).</para>
     /// <para>Text starts at a gutter decided per item, not once per list, measured from the
     /// list's own left edge. At the top level that gutter is the larger of this value and the
     /// item's own marker width. One level in, the marker itself starts at this value, so what has
@@ -63,11 +70,11 @@ public sealed class ListElement
     /// its own marker's width and the page edge at minus that width and the margin together,
     /// while a top-level item stays on or right of the margin, because the larger-of cannot
     /// return less than the marker's width. None of it throws or is reported.</para>
-    /// <para>At a size of zero or less they do not apply at all. Every word and every marker
-    /// then measures zero or less, so the override can never fire, and both gutters are the
-    /// larger-of alone. Apply the two rules above to find where an item lands; a marker of zero
-    /// or negative width is the only input to them that has changed. Do not read a negative
-    /// size as a way to outdent a list.</para>
+    /// <para>At a <see cref="TextStyle.FontSize"/> of zero or less those four figures do not
+    /// apply. Every word and every marker then measures zero or less, so nothing the override can
+    /// do changes a gutter, and both are the larger-of alone. Apply the two larger-of rules above to
+    /// find where an item lands; a marker of zero or negative width is the only input to them
+    /// that has changed. Do not read a negative font size as a way to outdent a list.</para>
     /// <para>The two non-finite values other than positive infinity take different routes, so one
     /// is far easier to hit. <c>NaN</c> survives the larger-of at either level and the override
     /// cannot fire against it, so it reaches the text matrix on every geometry. Negative infinity
@@ -81,7 +88,8 @@ public sealed class ListElement
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from a save rather than from this property, when a list with nested children has an
-    /// indent at or beyond the page's content width. Positive infinity is included; <c>NaN</c>
+    /// indent that reaches the list's own area width, which is the page's content width narrowed
+    /// by <see cref="Margins"/>. Positive infinity is included; <c>NaN</c>
     /// and negative infinity are not, and neither is a flat list at any indent. The message
     /// reports an element too tall to fit and names neither this property nor the list.
     /// </exception>
@@ -108,7 +116,10 @@ public sealed class ListElement
     public ListElement Add(string text, TextStyle? style = null)
         => Add(new ListItem(text, style));
 
-    /// <summary>Formats the marker for a top-level item at 1-based <paramref name="index"/>.</summary>
+    /// <summary>
+    /// Formats the marker at 1-based <paramref name="index"/>. The renderer uses this for nested
+    /// ordered children as well, restarting the sequence at 1 under each parent.
+    /// </summary>
     public string FormatMarker(int index) => Style switch
     {
         ListStyle.Unordered => "•",          // •

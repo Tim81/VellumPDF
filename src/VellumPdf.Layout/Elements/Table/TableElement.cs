@@ -26,8 +26,9 @@ public sealed class TableElement
     /// A non-finite width is refused. <see cref="Document.Save(System.IO.Stream)"/> throws
     /// <see cref="InvalidOperationException"/> and names the table.
     /// <para><b>Attention</b>: zero does <b>not</b> hide the borders. It asks the device for its
-    /// thinnest line, so the grid is still drawn, and it grows heavier as the page is scaled
-    /// down.</para>
+    /// thinnest line, so the grid is still drawn. The rule stays one device pixel while
+    /// everything around it shrinks, so it reads as proportionally heavier the further the page
+    /// is scaled down.</para>
     /// <para>There is at present <b>no</b> way to draw a table without a grid. Every cell is
     /// stroked unconditionally and <see cref="BorderColor"/> is not nullable. If you need a
     /// gridless table, the nearest you can get is a border colour matching the page.</para>

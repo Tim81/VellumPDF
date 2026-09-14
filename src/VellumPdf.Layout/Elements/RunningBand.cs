@@ -71,7 +71,7 @@ public sealed class RunningBand
     /// reason, the page-continuation cap, and names nothing about the band. A finite height large
     /// enough shares the type again: measured on a footer, 684 already throws it while the
     /// content area is still a positive 13.9pt, and so does every height from there to 697.88.
-    /// At 697.89 the content area reaches exactly zero and it crosses into
+    /// At 697.89 the content area reaches exactly zero and the throw becomes
     /// <see cref="ArgumentException"/>; a header takes the same route at the same values.</para>
     /// <para>On a footer, negative infinity is not refused at all (#520). <c>Save</c> succeeds
     /// and writes a file that stays well formed, though its content stream stops conforming. The

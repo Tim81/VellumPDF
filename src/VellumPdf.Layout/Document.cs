@@ -65,9 +65,9 @@ public sealed class Document : IDisposable
     /// ran. Measured by resizing a document from 600 by 800 to 200 by 120 at <b>10pt</b>
     /// margins and normalising those three fields: the bytes match a build at 200 by 120
     /// throughout, and every <c>/MediaBox</c> carries the new size. The margin belongs in the
-    /// recipe: this property's default 72pt insets do not fit a 120pt page, so that combination
-    /// is refused before either file is built. A save that already threw during layout
-    /// breaks this, along with the rest of the document's state; see
+    /// recipe: the default 72pt insets on <see cref="Margins"/> do not fit a 120pt page, so that
+    /// combination is refused before either file is built. A save that already threw during
+    /// layout breaks that equivalence, along with the rest of the document's state; see
     /// <see cref="Save(System.IO.Stream)"/>.</para>
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
@@ -196,8 +196,7 @@ public sealed class Document : IDisposable
     /// context draw nothing at all. This method builds a <see cref="RunningBand"/>, whose
     /// constructor does not check the template, so the band resolves it during layout and the
     /// failure surfaces as a <see cref="NullReferenceException"/> from a call you did not make.
-    /// Pass an empty string for a band that draws no text (#531). Assigning to <see
-    /// cref="Header"/> directly reaches the same throw.
+    /// Pass an empty string for a band that draws no text (#531). Assigning to <see cref="Header"/> directly reaches the same throw.
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised from a save rather than from this method, when <paramref name="template"/> is
@@ -218,8 +217,7 @@ public sealed class Document : IDisposable
     /// context draw nothing at all. This method builds a <see cref="RunningBand"/>, whose
     /// constructor does not check the template, so the band resolves it during layout and the
     /// failure surfaces as a <see cref="NullReferenceException"/> from a call you did not make.
-    /// Pass an empty string for a band that draws no text (#531). Assigning to <see
-    /// cref="Footer"/> directly reaches the same throw.
+    /// Pass an empty string for a band that draws no text (#531). Assigning to <see cref="Footer"/> directly reaches the same throw.
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised from a save rather than from this method, when <paramref name="template"/> is

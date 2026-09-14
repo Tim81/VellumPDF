@@ -207,9 +207,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the property the caller set, so a programmer who assigns a bad value gets an exception from a
   call they never made while the member they did set says nothing about it.
 
-  Twenty-seven members now carry a boundary paragraph, twenty-two of them with an `<exception>`
-  tag; the twenty-third tagged member is `Document.Encrypt`, which already had one and this work
-  did not touch. The pattern, written into `CONTRIBUTING.md`: a plain sentence names what is
+  Thirty public members now carry a boundary block and twenty-six carry an `<exception>` tag. The
+  two sets overlap in twenty-five: five of the thirty refuse nothing, so they have nothing to tag,
+  and `Document.Encrypt` had a tag already and no boundary block, which this work did not change. The pattern, written into `CONTRIBUTING.md`: a plain sentence names what is
   refused, which call throws it and why; a following paragraph, for input accepted today but not
   to be relied on, bolds the marker word (`Attention` or `NOTE`) always, and bolds the operative
   negation too only where the paragraph turns on one. Covered: the table cell's spans and padding,
@@ -259,8 +259,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   579. On a 300 by 300pt page with 10pt margins the first throwing `Leading` is 262, confirming
   the figures move with the page rather than belonging to the value. A `Leading` of positive
   infinity does not throw at all: it is non-finite, so it falls through to automatic leading the
-  same way `NaN` and negative infinity do. An earlier version of this entry said "694 upward
-  throws `ArgumentException`" without that carve-out; the wording now excludes infinity itself.
+  same way `NaN` and negative infinity do.
 
   On a footer, `Height` at negative infinity is still not refused (#520): `Save` succeeds and
   writes a file that stays well formed while its content stream stops conforming. The footer's
@@ -274,12 +273,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   matching one built at the new size from the start byte for byte, except the random `/ID` and
   the XMP `CreateDate`/`ModifyDate` timestamps, not the `/ID` alone. That holds on a document no
   save has been attempted on, which is where the measurement was taken and as far as it reaches.
-  The byte figure that first accompanied this named no margin, and at this property's default
-  72pt insets the recipe cannot run: 144pt of vertical margin does not fit a 120pt page, so both
-  halves of the comparison are refused before they are built. The margin is now named. No byte
-  count is quoted in the member, because the count depends on the paragraph text as well as the
-  geometry and no doc comment can pin that; what it states instead is checkable on any fixture,
-  that the two files are byte-identical once `/ID` and the two XMP timestamps are normalised,
+  The margin belongs in the recipe: at the default 72pt insets on `Document.Margins`, 144pt of
+  vertical margin does not fit a 120pt page, so both halves of the comparison are refused before
+  they are built. No byte count is quoted in the member, because the count depends on the
+  paragraph text as well as the geometry and no doc comment can pin that; what it states instead
+  is checkable on any fixture, that the two files are byte-identical once `/ID` and the two XMP
+  timestamps are normalised,
   with every `/MediaBox` reading `0 0 200 120`. `Save(Stream)`'s `ArgumentException` for a
   non-writable destination carries the internal parameter name `stream`, not the public
   `destination` parameter it is documented against, so catching by parameter name will not find
@@ -301,7 +300,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   not reliably return it to a usable state, and that the answer is a fresh `Document` rather than
   a retry. The behaviour itself is unchanged here; #530 carries the defect.
 
-- Four boundaries the earlier passes missed. The save overloads' `InvalidOperationException` list
+- Four further boundaries. The save overloads' `InvalidOperationException` list
   read as complete and was not: `Conformance` set to a PDF/A level together with `Encrypt` throws
   from `Save`, since ISO 19005-2 §6.1.3 prohibits encryption, and neither `Document.Conformance`
   nor `Document.Encrypt` documents that pairing, so the save overloads now do. `Cell.ColSpan`
@@ -309,23 +308,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   itself listed neither, which is where a caller writing catch clauses looks first; all four
   overloads now carry both, each naming the member that causes it. `ListElement.Indent` covered
   only magnitude, and its other three inputs each do something different. `NaN` writes a text
-  matrix whose x coordinate is the literal token `NaN`, which is not a PDF number; positive
-  infinity draws the marker and drops the item text on a flat list; a negative indent starts the
-  text one marker width right of the margin while the widening override stays quiet, whatever the
-  value, and takes a different route in each of the other three the gutter rules produce: the
-  margin plus the value once the override fires, one marker width right of the nested marker,
-  which itself sits at the margin plus the value, and the margin plus twice the value when nested
-  with the override firing. At a font size of zero or more only those three can cross the margin,
-  and the nested override-quiet route does so only once the value passes minus its own marker's
-  width. A negative `TextStyle.FontSize` changes which routes exist rather than adding a fourth:
-  every word then measures zero or less, so the override never fires and the two override-quiet
-  routes are all that remain. Both of those cross. Two of the four can land on the same x,
-  because the two markers can differ in width: the default bullet and the nested open bullet
-  already do at one style, and a per-item style widens the gap further. None of the three is
-  reported. On a **flat** list none of them throws either, but a list with nested
-  children is refused once the indent reaches the content width, positive infinity included, with
-  an element-too-tall `InvalidOperationException` that names neither the property nor the list.
-  That refusal was undocumented and now carries its own `<exception>` tag. `RunningBand.Template`
+  matrix whose x coordinate is the literal token `NaN`, which is not a PDF number. Positive
+  infinity draws the marker and drops the item text on a flat list.
+
+  A negative value needed a rule rather than a list of outcomes. Where it puts the text depends
+  on the nesting level, on which branch of the widening override is taken and on the font size,
+  so any list of the cases is incomplete. The member states the two gutter rules that generate
+  all of them, and gives the four page-edge and margin-crossing figures under the font size at
+  which they hold. Nothing here is reported, and on a **flat** list nothing throws either.
+
+  The indent that loses content was documented against the wrong width. It is the list's own area,
+  which is the page's content width narrowed by `ListElement.Margins`, so a 56pt inset on either
+  side moves every boundary in by 56pt. Measured on a 400 by 400 page at 72pt document margins: a flat
+  list discards its item text at 256 with no inset and at 200 with one, and a nested list is
+  refused at the same figure with an element-too-tall `InvalidOperationException` naming neither
+  the property nor the list. That refusal was undocumented and now carries its own `<exception>`
+  tag, against the area width rather than the page's.
+
+  Nesting also has a quieter boundary at half of that, which nothing recorded. The nested content
+  gutter is twice the indent, so a child's own width reaches zero at half the area, 128 and 100 for
+  those two cases, while the child marker, inset by the indent alone, still fits and is still
+  drawn. Between half the area width and the whole of it a nested list drops its child text as
+  silently as a flat one, and only past the full width does it throw. `RunningBand.Template`
   and `LineSeparator.Margins` each reach a live refusal with nothing written down: a null
   template is dereferenced during the save, and a non-finite separator inset is refused by name.
 
@@ -334,11 +338,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   so a span past what other rows declare widens the grid. What is conditional is the width the
   cell is then drawn at, documented as its own paragraph: where an earlier row's `RowSpan`
   already occupies this row's leading columns, the cell is drawn only as wide as the columns left
-  over. The block is also cut to one statement of each rule, having accumulated four passes at
-  the same fact across two earlier rounds.
+  over. The block states each rule once.
 
-- `#493`, cited on `Cell.RowSpan` and twice in an earlier version of this entry as an open tracker,
-  is a merged pull request. The references are removed; nothing in this area still needs one.
+- `#493`, cited on `Cell.RowSpan` as an open tracker, is a merged pull request. The references are removed; nothing in this area still needs one.
 
 - Corrected ISO 32000-2 citations. `Heading` claimed NOTE 2 to Table 366 "says outright that `H7`
   may be used"; the note is informative, not a requirement, and says `H7` "can" be used.
@@ -361,22 +363,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   behaviour was not reproducible across runs, so the device clause stays dropped from both
   `IOException` tags rather than asserting one outcome for it.
 
-- **Marker density and the bolding rule.** Nine markers were folded into plain sentences, seven
-  `Attention` and two `NOTE`, leaving 17 against the 26 this work started from and none at all in
-  2.3.2. The failed-save paragraph on `Save(Stream)` briefly carried a new one and lost it again,
-  so that the same hazard is not marked on the synchronous overload and unmarked on the
-  asynchronous one. The two `NOTE` markers went because they pointed at an open issue number
-  rather than a historical fact or a version boundary, which is what the rest of the package uses
-  `NOTE` for; the surviving one records a fact about #365. The seventh `Attention` went from
-  `PieChart.Alignment`, whose opening sentence is shared word for word with
-  `RunningBand.Alignment` and was marked on one member and not the other. `CONTRIBUTING.md` says
-  to bold the marker always and an operative negation only where a paragraph turns on one, rather
-  than requiring both on every paragraph.
-
 - Three low-severity corrections, measured. `LayoutImage.Width`'s summary said "must be at least
-  5e-6 points in magnitude," which admits negative infinity, and a later pass replaced that with
-  "finite (positive infinity aside)," which cancels its own word: finite excludes infinity by
-  definition, while `Height` thirty lines below uses "finite" to mean the ordinary thing.
+  5e-6 points in magnitude," which admits negative infinity.
   The summary now states the accepted range as the member enforces it: finite or positive
   infinity, at least 5e-6 points in magnitude, with that floor applied to the derived height as
   well, so a width that clears it is still refused on a source much wider than it is tall.

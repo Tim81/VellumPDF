@@ -13,11 +13,11 @@ public sealed class LineSeparator
     /// A non-finite width is refused. <see cref="Document.Save(System.IO.Stream)"/> throws
     /// <see cref="InvalidOperationException"/> and names the width. The number would otherwise
     /// reach the content stream as a token that no reader can parse.
-    /// <para><b>Attention</b>: zero is drawn, <b>not</b> skipped, though not always visible either.
-    /// ISO 32000-2, 8.4.3.2: a line width of zero <b>shall</b> denote the thinnest line that can
-    /// be rendered at device resolution, one device pixel wide. The same clause says such lines
-    /// are nearly invisible on high-resolution devices, that the result is device-dependent, and
-    /// that zero-width lines <b>should not be used</b>. That clause is about device resolution.
+    /// <para><b>Attention</b>: zero is drawn, <b>not</b> skipped. ISO 32000-2, 8.4.3.2: a line
+    /// width of zero shall denote the thinnest line that can be rendered at device resolution,
+    /// one device pixel wide. The same clause says such lines are nearly invisible on
+    /// high-resolution devices, that the result is device-dependent, and that zero-width lines
+    /// should not be used. That clause is about device resolution.
     /// Zoom is a separate matter: the rule stays one device pixel while everything around it
     /// shrinks, so it reads as proportionally heavier the further the page is scaled down. If you
     /// want no rule, leave the element out.</para>
