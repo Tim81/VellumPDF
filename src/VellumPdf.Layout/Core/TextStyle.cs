@@ -53,13 +53,14 @@ public sealed class TextStyle
     /// by the heading's own name.
     /// <para>On a <see cref="VellumPdf.Layout.Elements.RunningBand"/> style, which message fires
     /// depends on the band and on whether
-    /// <see cref="VellumPdf.Layout.Elements.RunningBand.Height"/> is set. Measured with
-    /// <c>Height</c> left null: <c>NaN</c> gives the band-detailed too-tall message on both bands,
-    /// naming both (and which one is <c>NaN</c>), but not the size. Negative infinity names the
-    /// footer band and the size, but on a header it meets the page-continuation cap and names
-    /// neither. A fixed <c>Height</c> moves the throw to the band's own draw step, naming the
-    /// band and the size, for five of these six band/value pairs. The sixth is a footer already
-    /// at negative infinity, which gives the same message and type either way.</para>
+    /// <see cref="VellumPdf.Layout.Elements.RunningBand.Height"/> is set. Three non-finite sizes
+    /// across two bands make six pairs. Measured with <c>Height</c> left null: <c>NaN</c> gives
+    /// the band-detailed too-tall message on both bands, naming both and showing which band's
+    /// height reads <c>NaN</c>, but never the font size. Negative infinity names the footer band
+    /// and the size, but on a header it meets the page-continuation cap and names neither. A fixed
+    /// <c>Height</c> moves the throw to the band's own draw step, naming the band and the size,
+    /// for five of the six pairs. The sixth is a footer already at negative infinity, which gives
+    /// the same message and type either way.</para>
     /// <para>The finite-size boundary is a property of the page, not of the value. Measured on a
     /// footer, <c>Height</c> null, A4, default 72pt margins: the last size that does not throw is
     /// 566, and 567 through 578 throw this exception as the content area shrinks toward zero. A

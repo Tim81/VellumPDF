@@ -86,9 +86,9 @@ public sealed class Cell
     /// position follows <c>Left</c> alone, not how the total is split. Measured on the same
     /// 260-point column: splitting 400 points evenly, <c>Left</c> = 200 and <c>Right</c> = 200,
     /// lands the text at x = 220, back inside the 300-point page. Giving <c>Left</c> the same 400
-    /// on its own, whatever <c>Right</c> holds, still lands it at x = 420. Setting all four edges
-    /// to 400 does not sit between those two. <c>Top</c> and <c>Bottom</c> grow the row as well,
-    /// and saving refuses the result as too tall to fit, with no text drawn at all.</para>
+    /// lands it at x = 420 whatever <c>Right</c> holds, so long as <c>Top</c> and <c>Bottom</c>
+    /// stay small enough for the row to fit: at 400 on all four edges the row outgrows the page,
+    /// and saving refuses it as too tall to fit, with no text drawn at all.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property.

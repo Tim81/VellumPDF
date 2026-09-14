@@ -18,7 +18,7 @@ public sealed class LineSeparator
     /// one device pixel wide. The same clause says such lines are nearly invisible on
     /// high-resolution devices, that the result is device-dependent, and that zero-width lines
     /// should not be used. That clause is about device resolution.
-    /// Zoom is a separate matter: the rule stays one device pixel while everything around it
+    /// Zoom is a separate matter: the line stays one device pixel while everything around it
     /// shrinks, so it reads as proportionally heavier the further the page is scaled down. If you
     /// want no rule, leave the element out.</para>
     /// <para>A negative width is not refused today, though ISO 32000-2, 8.4.3.2 requires a line

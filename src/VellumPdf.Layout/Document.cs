@@ -189,14 +189,15 @@ public sealed class Document : IDisposable
 
     /// <summary>Sets a header band with optional style and alignment. Returns this document for chaining.</summary>
     /// <remarks>
-    /// A null <paramref name="template"/> is accepted here and refused at the save. The parameter
+    /// A null <paramref name="template"/> is accepted here and crashes the save. The parameter
     /// is non-nullable, but nothing stops a null reaching it. A bare <c>null</c> and a
     /// nullable-typed expression each draw a different warning, which a build with
     /// warnings-as-errors stops on and one without does not; <c>null!</c> and a disabled nullable
     /// context draw nothing at all. This method builds a <see cref="RunningBand"/>, whose
     /// constructor does not check the template, so the band resolves it during layout and the
     /// failure surfaces as a <see cref="NullReferenceException"/> from a call you did not make.
-    /// Pass an empty string for a band that draws no text (#531). Assigning to <see cref="Header"/> directly reaches the same throw.
+    /// Pass an empty string for a band that draws no text (#531). Assigning to <see cref="Header"/>
+    /// directly reaches the same throw.
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised from a save rather than from this method, when <paramref name="template"/> is
@@ -210,14 +211,15 @@ public sealed class Document : IDisposable
 
     /// <summary>Sets a footer band with optional style and alignment. Returns this document for chaining.</summary>
     /// <remarks>
-    /// A null <paramref name="template"/> is accepted here and refused at the save. The parameter
+    /// A null <paramref name="template"/> is accepted here and crashes the save. The parameter
     /// is non-nullable, but nothing stops a null reaching it. A bare <c>null</c> and a
     /// nullable-typed expression each draw a different warning, which a build with
     /// warnings-as-errors stops on and one without does not; <c>null!</c> and a disabled nullable
     /// context draw nothing at all. This method builds a <see cref="RunningBand"/>, whose
     /// constructor does not check the template, so the band resolves it during layout and the
     /// failure surfaces as a <see cref="NullReferenceException"/> from a call you did not make.
-    /// Pass an empty string for a band that draws no text (#531). Assigning to <see cref="Footer"/> directly reaches the same throw.
+    /// Pass an empty string for a band that draws no text (#531). Assigning to <see cref="Footer"/>
+    /// directly reaches the same throw.
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised from a save rather than from this method, when <paramref name="template"/> is

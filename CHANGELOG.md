@@ -209,7 +209,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
   Thirty public members now carry a boundary block and twenty-six carry an `<exception>` tag. The
   two sets overlap in twenty-five: five of the thirty refuse nothing, so they have nothing to tag,
-  and `Document.Encrypt` had a tag already and no boundary block, which this work did not change. The pattern, written into `CONTRIBUTING.md`: a plain sentence names what is
+  and `Document.Encrypt` had a tag already and no boundary block, which this work did not change.
+  The pattern, written into `CONTRIBUTING.md`: a plain sentence names what is
   refused, which call throws it and why; a following paragraph, for input accepted today but not
   to be relied on, bolds the marker word (`Attention` or `NOTE`) always, and bolds the operative
   negation too only where the paragraph turns on one. Covered: the table cell's spans and padding,
@@ -218,7 +219,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   list indent and nesting depth, the running band's template, height and alignment, the document
   margins and page size, all four save overloads, and the text style's font size and leading.
 
-  Measurement turned up several statements the code did not support. The pie chart does not skip
+  The 2.3.2 documentation stated several things the code does not do. The pie chart does not skip
   a zero-width stroke: it strokes whenever the stroke colour is set, emitting `0 w`. A table's
   grid cannot be suppressed at all, since the border colour is not nullable and every cell is
   stroked unconditionally. A non-finite document margin is refused only when it is positive
@@ -226,9 +227,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   is false, and surface instead as a message about an element being too tall or about the
   page-continuation cap (tracked as #502). A positive-infinity image width is not refused but
   clamped to the content box. A marker wider than the list indent does not overprint the item
-  text, because the gutter widens per item rather than to the widest one seen so far; the first
-  roman marker past the default indent is item 17, items 19 through 21 fall back to the plain
-  indent, and 22 onward widen again as their own numerals need it. Padding wider than its column
+  text, because the gutter widens per item rather than to the widest one seen so far, and reverts
+  to the plain indent whenever the widened gutter would leave less room than that item's longest
+  word. With roman numerals at the default 20-point indent the two rules alternate from item 17
+  onward. Padding wider than its column
   does not collapse the cell: the inner width clamps to one point and the text wraps to one glyph
   per line, landing outside the page when the padding is lopsided (`Left` alone at 400 in a
   260-point column) but back inside it when the same total is split evenly across `Left` and
@@ -270,16 +272,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   0 on the result, while `pdftotext` reports a syntax error and drops the footer text with it.
 
 - Two claims about save behaviour, corrected. Resizing `PageSize` before `Save` produces a file
-  matching one built at the new size from the start byte for byte, except the random `/ID` and
-  the XMP `CreateDate`/`ModifyDate` timestamps, not the `/ID` alone. That holds on a document no
+  that matches, byte for byte, one built at the new size from the start, except for the random
+  `/ID` and the XMP `CreateDate`/`ModifyDate` timestamps, not the `/ID` alone. That holds on a document no
   save has been attempted on, which is where the measurement was taken and as far as it reaches.
   The margin belongs in the recipe: at the default 72pt insets on `Document.Margins`, 144pt of
   vertical margin does not fit a 120pt page, so both halves of the comparison are refused before
-  they are built. No byte count is quoted in the member, because the count depends on the
-  paragraph text as well as the geometry and no doc comment can pin that; what it states instead
-  is checkable on any fixture, that the two files are byte-identical once `/ID` and the two XMP
-  timestamps are normalised,
-  with every `/MediaBox` reading `0 0 200 120`. `Save(Stream)`'s `ArgumentException` for a
+  they are built. The two files are byte-identical once `/ID` and the two XMP timestamps are
+  normalised, with every `/MediaBox` reading `0 0 200 120`. `Save(Stream)`'s `ArgumentException` for a
   non-writable destination carries the internal parameter name `stream`, not the public
   `destination` parameter it is documented against, so catching by parameter name will not find
   it under `"destination"`.
@@ -313,9 +312,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
   A negative value needed a rule rather than a list of outcomes. Where it puts the text depends
   on the nesting level, on which branch of the widening override is taken and on the font size,
-  so any list of the cases is incomplete. The member states the two gutter rules that generate
-  all of them, and gives the four page-edge and margin-crossing figures under the font size at
-  which they hold. Nothing here is reported, and on a **flat** list nothing throws either.
+  so any list of the cases is incomplete. The member states the two gutter rules that generate all
+  of them and says a negative value is not to be relied on; the measured figures are on #476,
+  where a fixture can be named. Nothing here is reported, and on a **flat** list nothing throws either.
 
   The indent that loses content was documented against the wrong width. It is the list's own area,
   which is the page's content width narrowed by `ListElement.Margins`, so a 56pt inset on either
@@ -340,7 +339,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   already occupies this row's leading columns, the cell is drawn only as wide as the columns left
   over. The block states each rule once.
 
-- `#493`, cited on `Cell.RowSpan` as an open tracker, is a merged pull request. The references are removed; nothing in this area still needs one.
+- `#493`, cited on `Cell.RowSpan` as an open tracker, is a merged pull request. The references are
+  removed; nothing in this area still needs one.
 
 - Corrected ISO 32000-2 citations. `Heading` claimed NOTE 2 to Table 366 "says outright that `H7`
   may be used"; the note is informative, not a requirement, and says `H7` "can" be used.
@@ -363,7 +363,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   behaviour was not reproducible across runs, so the device clause stays dropped from both
   `IOException` tags rather than asserting one outcome for it.
 
-- Three low-severity corrections, measured. `LayoutImage.Width`'s summary said "must be at least
+- Three smaller corrections, measured. `LayoutImage.Width`'s summary said "must be at least
   5e-6 points in magnitude," which admits negative infinity.
   The summary now states the accepted range as the member enforces it: finite or positive
   infinity, at least 5e-6 points in magnitude, with that floor applied to the derived height as
