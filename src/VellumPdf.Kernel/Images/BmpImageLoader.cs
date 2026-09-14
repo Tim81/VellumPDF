@@ -11,8 +11,7 @@ namespace VellumPdf.Images;
 /// Supported variants:
 ///   • BITMAPINFOHEADER (40-byte header), BI_RGB uncompressed only.
 ///   • 24-bit RGB: blue–green–red order, three bytes per pixel and no alpha.
-///   • 32-bit RGBA: blue–green–red–alpha order; the alpha plane is emitted as an /SMask only
-///     when some pixel is not fully opaque.
+///   • 32-bit BI_RGB: four bytes per pixel in BGR order. The format leaves the fourth unused.
 ///   • 8-bit palette-indexed: colour map is expanded to DeviceRGB.
 ///   • Both bottom-up (positive height) and top-down (negative height) row orders.
 ///
@@ -58,8 +57,10 @@ public static class BmpImageLoader
     /// field and tests the whole file against <b>1,078</b> bytes, so a short-palette file smaller
     /// than that is reported as truncated. A larger one loads and decodes correctly, so the
     /// refusal tracks the file's size and not its palette. If you hit it, pad the palette to 256
-    /// entries and move <c>bfOffBits</c> with it; padding alone leaves the offset pointing
-    /// into the palette and the image decodes black, with no exception (#533).</para>
+    /// entries and move <c>bfOffBits</c> with it. Leaving the offset unmoved still reads pixel
+    /// data from the start of the palette (#533).</para>
+    /// <para>A BITMAPINFOHEADER field this loader does not read is neither honoured nor
+    /// refused.</para>
     /// <para>Attention: a 32-bit bitmap loses its image entirely. The fourth byte of each pixel is
     /// emitted as a soft mask, but in the only 32-bit variant this loader accepts, <c>BI_RGB</c>
     /// with a 40-byte header, that byte is not alpha and the format says it is unused. Writers

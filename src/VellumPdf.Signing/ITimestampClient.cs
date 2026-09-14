@@ -40,19 +40,12 @@ public interface ITimestampClient
     /// gives <c>Unknown algorithm ''</c> without the authority ever being contacted.
     /// </exception>
     /// <remarks>
-    /// This reaches the network, so expect it to fail for reasons outside your document. The
-    /// failures arrive as three different exception types.
+    /// This reaches the network, so expect it to fail for reasons outside your document.
     /// A timeout and a failing HTTP status give <see cref="InvalidOperationException"/>. An
     /// unreachable authority gives <see cref="System.Net.Http.HttpRequestException"/>. A
     /// rejection, or a malformed response body, gives
-    /// <see cref="System.Security.Cryptography.CryptographicException"/>.
-    /// <para>Attention: the type is the discriminator for the three network failures, and it does
-    /// not separate the fourth. If you catch only <see cref="InvalidOperationException"/>, an
-    /// unreachable authority escapes, because it arrives as
-    /// <see cref="System.Net.Http.HttpRequestException"/> instead. A rejection and an unknown
-    /// <paramref name="hashAlgorithm"/> share
-    /// <see cref="System.Security.Cryptography.CryptographicException"/>, and only the message
-    /// tells you which.</para>
+    /// <see cref="System.Security.Cryptography.CryptographicException"/>. An unknown
+    /// <paramref name="hashAlgorithm"/> shares that last type and never reaches the authority.
     /// <para>This call waits on the authority. What bounds the wait is the implementation's
     /// business: the shipped client applies its own timeout, and a caller-supplied
     /// <c>HttpClient</c> carries a second one that applies independently.

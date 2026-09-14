@@ -401,61 +401,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   untracked and reaches no clone.
 
 - **The image loaders now document what they refuse, and JPEG documents that it validates nothing
-  (#505, #512).** Five of the eight loaders carried no `<exception>` tag at all, and every one of
-  them takes a byte array a caller is likely to have received from somewhere untrusted. BMP, CCITT,
-  JPEG, PNG and TIFF now document what they raise and for what.
+  (#505, #512).** BMP, CCITT, JPEG, PNG and TIFF carried no `<exception>` tag. They take a byte
+  array a caller is likely to have received from somewhere untrusted, and they now say what they
+  raise. GIF is not in this set.
 
-  A different five. A null array raises `NullReferenceException`, not `ArgumentNullException`,
-  in BMP, GIF, JPEG,
-  PNG and TIFF. The other three guard it, and not alike: JPEG 2000 with `ArgumentNullException`,
-  CCITT and JBIG2 with `ArgumentException` for null or empty. A caller guarding
-  `ArgumentNullException` therefore catches nothing in the first group. Four of those five say so
-  on the member; GIF is the one this release leaves undocumented.
+  A null array raises `NullReferenceException`, not `ArgumentNullException`, in BMP, JPEG, PNG
+  and TIFF. CCITT checks and raises `ArgumentException`. Guarding `ArgumentNullException`
+  catches none of them.
 
-  Of the two size limits, at most one applies to any default call, and on JPEG neither does. The
-  100,000,000 safety limit is enforced by every loader that reaches `ValidateDimensions`, which is
-  all of them but JPEG. The
-  1,000,000-per-edge constant is enforced on no default path: only the MMR decoder reads it, only
-  the JBIG2 loader reaches that decoder, and only when asked for a decoded raster rather than the
-  passthrough its options default to. Ask JBIG2 for a raster and the per-edge limit is real; on
-  every other path an image can be as long and thin as the safety limit allows. Documenting a guard
-  that does not run is worse than documenting none, so each member states the safety limit that
-  applies to it and says the limit is on the product alone.
+  BMP, CCITT, PNG and TIFF refuse a declared pixel count above 100,000,000, and neither edge is
+  limited on its own. JPEG does not apply that limit. A frame header saying 65535 by 65535
+  returns an image of 4,294,836,225 pixels. The same declaration through PNG is refused. Nothing
+  allocates a raster, because the bytes pass through as `DCTDecode` data, but those dimensions
+  reach the image dictionary. Validate the size yourself before you trust it.
 
-  BMP and TIFF raise `NotSupportedException`, not `InvalidDataException`, for a well-formed file of
-  a variant they do not read, and neither type derives from the other. A caller who catches
-  only `InvalidDataException` therefore crashes on the first run-length encoded bitmap. Both
-  loaders now document both types, and TIFF documents a third: a `ColorMap` tag carrying a negative
-  offset reaches an unguarded array read and escapes both (#512), and so does a `ColorMap` count
-  of zero with a valid offset, at a different site and with no negative value in the file (#534).
+  TIFF carries that hole through a JPEG-compressed strip. A TIFF declaring 8 by 8 whose strip is
+  that JPEG returns the same 4,294,836,225-pixel image. The TIFF member documents the product
+  limit on its own directory, so the result reads as though the limit held. Filed as #505 rather
+  than fixed here.
 
-  The JPEG loader is the only one that does not validate what its header declares. A file carrying
-  nothing but a frame header saying 65535 by 65535 returns an image of 4,294,836,225 pixels, where
-  the same declaration through the PNG loader is refused at the 100,000,000 safety limit. Nothing allocates
-  a raster for it, because the bytes pass through as `DCTDecode` data, but those dimensions reach
-  the image dictionary and a reader that trusts them can be made to allocate from them. Validate
-  the size yourself before you trust it.
+  BMP and TIFF raise `NotSupportedException`, not `InvalidDataException`, for a well-formed file
+  of a variant they do not read, and neither type derives from the other. A caller who catches
+  only `InvalidDataException` therefore crashes on the first run-length encoded bitmap. A TIFF
+  `ColorMap` tag whose offset is negative, or whose count is zero, throws
+  `IndexOutOfRangeException` from an unguarded read (#512, #534).
 
-  The TIFF loader carries the same hole, and it is worse there: the TIFF member documents the
-  limit, so it reads as though the limit held. A strip compressed with new-style JPEG is
-  handed straight to the JPEG loader, so a TIFF declaring 8 by 8 returns that same
-  4,294,836,225-pixel image. Filed as #505 rather than fixed here, since validating it changes
-  behaviour.
-
-  CCITT shares the safety limit and differs on everything else. A null argument is refused with
-  `ArgumentException` rather than dereferenced. A non-positive `columns` or `rows` gives
-  `ArgumentOutOfRangeException`, named as
-  itself, because both are checked before the safety limit. Asking for a raster from a Group 4 stream,
-  or from a 2-D row inside a mixed-mode one, gives `NotSupportedException` with no fallback to
-  passthrough. And the default mode decodes nothing, so the two geometry arguments are taken on
-  trust: nothing reads them back from the data, and a wrong pair produces a file that opens and
-  shows a corrupt image.
+  CCITT differs on the rest. A null argument is refused with `ArgumentException`. A non-positive
+  `columns` or `rows` gives `ArgumentOutOfRangeException`, named as itself, because both are
+  checked before the safety limit. Asking for a raster from a Group 4 stream, or from a 2-D row
+  inside a mixed-mode one, gives `NotSupportedException` with no fallback to passthrough. The
+  default mode decodes nothing, so the two geometry arguments are taken on trust: a wrong pair
+  produces a file that opens and shows a corrupt image.
 
   The two CCITT entry points disagree, and the disagreement is now documented. `TiffImageLoader`
-  reads
-  `ImageLoadOptions.DecodeMode` on one path only, a Group 3 strip. Ask it to decode a Group 4 strip
-  to a raster and the request is ignored and you get the passthrough, where `CcittImageLoader.Load`
-  given the same request raises `NotSupportedException`.
+  reads `ImageLoadOptions.DecodeMode` on one path only, a Group 3 strip. Ask it to decode a
+  Group 4 strip to a raster and the request is ignored and you get the passthrough, where
+  `CcittImageLoader.Load` given the same request raises `NotSupportedException`.
 
   Also documented, each boundary measured:
 
@@ -467,12 +448,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     constructed over.
   - The barcode matrix's bounds check, which refuses a negative coordinate rather than reading a
     neighbouring row.
-  - The timestamp client, where a timeout, an unreachable authority and a rejected request each
-    arrive as a **different** exception type, so the type is what a caller has to switch on. A
-    fourth case shares the rejection's type without involving the authority at all: an unknown
-    `hashAlgorithm` fails while the request is built. The asynchronous default implementation
-    blocks and never consults its cancellation token, so it is not the way off a blocking path
-    unless the implementation overrides it.
+  - The timestamp client. A timeout or a failing HTTP status is `InvalidOperationException`. An
+    unreachable authority is `HttpRequestException`. A rejection, a malformed body, and an
+    unknown `hashAlgorithm` are `CryptographicException`; the last of those never contacts the
+    authority. The asynchronous default implementation blocks and never consults its
+    cancellation token.
 
 ## [2.3.2] - 2026-09-12
 

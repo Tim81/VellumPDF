@@ -44,6 +44,8 @@ public static class PngImageLoader
     /// and has no public setting. This loader sizes its raster from the decompressed image data
     /// rather than from the header, so a header alone costs nothing; <see cref="BmpImageLoader"/>
     /// and <see cref="TiffImageLoader"/> do not (#536).</para>
+    /// <para>A chunk this loader does not handle is skipped, not refused. The IHDR compression
+    /// and filter methods are not checked; a zlib IDAT still loads.</para>
     /// </remarks>
     public static PdfImageXObject Load(byte[] pngBytes) => Load(pngBytes, ImageLoadOptions.Default);
 
@@ -56,7 +58,9 @@ public static class PngImageLoader
     /// The same boundaries as the single-argument overload, which delegates here. Malformed input
     /// raises <see cref="InvalidDataException"/>; a null array raises
     /// <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>; the
-    /// 100,000,000 safety limit applies and neither edge is limited on its own.
+    /// 100,000,000 safety limit applies and neither edge is limited on its own. A chunk this
+    /// loader does not handle is skipped, not refused. The IHDR compression and filter methods
+    /// are not checked.
     /// <para>What <paramref name="options"/> selects here is bit depth, and nothing else. This
     /// loader reads <see cref="ImageLoadOptions.BitDepth"/> and never reads
     /// <see cref="ImageLoadOptions.DecodeMode"/>, so asking for a decode mode changes nothing;

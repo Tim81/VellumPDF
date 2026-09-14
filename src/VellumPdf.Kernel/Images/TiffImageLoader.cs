@@ -106,30 +106,27 @@ public static class TiffImageLoader
     /// unsupported photometric interpretation.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
-    /// A <c>ColorMap</c> tag whose value field is a negative offset, as on the two-argument
-    /// overload this delegates to (#512).
+    /// A <c>ColorMap</c> tag whose value field is a negative offset, or whose count is zero
+    /// (#512, #534).
     /// </exception>
     /// <remarks>
-    /// Treat the input as untrusted, and catch two types rather than one. A malformed file
-    /// raises <see cref="InvalidDataException"/>. A well-formed file whose compression, bit depth
+    /// Treat the input as untrusted. A malformed file raises
+    /// <see cref="InvalidDataException"/>. A well-formed file whose compression, bit depth
     /// or photometric interpretation this loader does not read raises
-    /// <see cref="NotSupportedException"/>, and neither type derives from the other. TIFF admits
+    /// <see cref="NotSupportedException"/>. Neither type derives from the other. TIFF admits
     /// far more variants than this loader reads, so expect it to refuse files other software
     /// opens.
-    /// <para>Attention: refusal is not the only outcome, and the quiet one is worse. This loader
-    /// reads fifteen tags. A tag it does not read is neither honoured nor refused, so the file
-    /// loads and what comes back is a different image, with nothing reported. <c>Orientation</c>
-    /// is ignored, so a rotated or flipped source arrives in storage order. Only the first IFD is
-    /// read, so the other pages of a multi-page file are absent. <c>ExtraSamples</c> is read and
-    /// then discarded, so pre-multiplied alpha is emitted as a plain soft mask with no
-    /// <c>/Matte</c> and composites wrong (#534). Read the directory yourself if you did not
-    /// produce the file; do not treat those three as the whole list.</para>
-    /// <para>The <c>ColorMap</c> tag escapes both types. A negative offset reaches an
-    /// unguarded array read and throws <see cref="IndexOutOfRangeException"/> (#512), where the
-    /// sibling tag readers check the sign and refuse the file; a count of zero with a valid offset
-    /// reaches a different unguarded read and throws the same type (#534). Both are defects rather
-    /// than contracts, so do not read the pair as the whole set. A caller reading untrusted TIFF
-    /// needs a third clause.</para>
+    /// <para>Attention: refusal is not the only outcome, and the quiet one is worse. A tag
+    /// this loader does not read is neither honoured nor refused, so the file loads and what
+    /// comes back is a different image, with nothing reported. <c>Orientation</c> is ignored,
+    /// so a rotated or flipped source arrives in storage order. Only the first IFD is walked,
+    /// so later pages are absent. <c>ExtraSamples</c> is read and then discarded, so
+    /// pre-multiplied alpha is emitted as a plain soft mask with no <c>/Matte</c> and
+    /// composites wrong (#534). Read the directory yourself if you did not produce the
+    /// file.</para>
+    /// <para>A <c>ColorMap</c> tag whose offset is negative, or whose count is zero, throws
+    /// <see cref="IndexOutOfRangeException"/> from an unguarded read (#512, #534). That type
+    /// is not a refusal this loader chose.</para>
     /// <para><see langword="null"/> is not checked. It raises
     /// <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>, so a caller
     /// guarding on the documented type will not catch it. You have to reject null yourself. A
@@ -138,8 +135,8 @@ public static class TiffImageLoader
     /// Neither edge is limited on its own, so 2,000,000 by 1 is accepted and 10,001 by 10,001 is
     /// not. The limit is internal and has no public setting. It bounds the damage a header can do
     /// rather than preventing it: this loader sizes its buffer from the declared dimensions before
-    /// checking the strips are there, so a 126-byte file declaring 10,000 by 10,000 at 16 bits
-    /// still allocates 800 MB before it refuses (#536).</para>
+    /// checking the strips are there. A 16-bit greyscale 10,000 by 10,000 header sizes a 200 MB
+    /// buffer before it refuses; four samples of the same size size 800 MB (#536).</para>
     /// <para>Attention: the safety limit has a hole, and this loader carries it. A strip
     /// compressed with new-style JPEG (Compression 7) is handed to
     /// <see cref="JpegImageLoader.Load(byte[])"/>, which takes its dimensions from the JPEG frame
@@ -162,19 +159,20 @@ public static class TiffImageLoader
     /// The file is a well-formed TIFF using a feature this loader does not read.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
-    /// A <c>ColorMap</c> tag whose value field is a negative offset. That read is unguarded where
-    /// its siblings check, so the array indexer throws rather than this loader refusing the file
-    /// (#512). Malformed input should raise <see cref="InvalidDataException"/>, so catching only
-    /// the documented types does not cover it.
+    /// A <c>ColorMap</c> tag whose value field is a negative offset, or whose count is zero.
+    /// That read is unguarded where its siblings check, so the array indexer throws rather than
+    /// this loader refusing the file (#512, #534).
     /// </exception>
     /// <remarks>
-    /// This overload carries the implementation; the single-argument one delegates here, so every
-    /// boundary documented there applies. Three types have to be caught, not two: malformed input
-    /// raises <see cref="InvalidDataException"/>, a well-formed file using a feature this loader
-    /// does not read raises <see cref="NotSupportedException"/>, and the <c>ColorMap</c> defect
-    /// above escapes both. None of the three derives from another. A null array raises
-    /// <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>. The
-    /// 100,000,000 safety limit applies and neither edge is limited on its own.
+    /// This overload carries the implementation. The single-argument overload delegates here.
+    /// A malformed file raises <see cref="InvalidDataException"/>. A well-formed file this
+    /// loader does not read raises <see cref="NotSupportedException"/>. A <c>ColorMap</c>
+    /// tag whose offset is negative, or whose count is zero, throws
+    /// <see cref="IndexOutOfRangeException"/>. None of those types derives from another. A
+    /// null array raises <see cref="NullReferenceException"/>, not
+    /// <see cref="ArgumentNullException"/>.
+    /// <para>The JPEG-strip hole on the other overload is this overload's. Compression 7 is
+    /// handed to <see cref="JpegImageLoader.Load(byte[])"/>, which validates nothing.</para>
     /// <para><paramref name="options"/> reaches
     /// <see cref="ImageLoadOptions.DecodeMode"/> on one path only, a Group 3 CCITT strip
     /// (Compression 2 or 3), which you can ask to be decoded to a raster instead of passed
@@ -183,7 +181,7 @@ public static class TiffImageLoader
     /// ignored rather than refused, and you get the passthrough, where
     /// <see cref="CcittImageLoader.Load"/> given the same request raises
     /// <see cref="NotSupportedException"/>. On every other path the only member read is
-    /// <see cref="ImageLoadOptions.BitDepth"/>. Neither relaxes the safety limit.</para>
+    /// <see cref="ImageLoadOptions.BitDepth"/>.</para>
     /// </remarks>
     public static PdfImageXObject Load(byte[] tiff, ImageLoadOptions options)
     {

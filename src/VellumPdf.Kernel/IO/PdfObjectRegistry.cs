@@ -87,7 +87,7 @@ public sealed class PdfObjectRegistry
     /// </exception>
     /// <exception cref="NullReferenceException">
     /// As that overload: <paramref name="writer"/> or <paramref name="xref"/> is
-    /// <see langword="null"/> and the first slot reached is assigned.
+    /// <see langword="null"/> and an assigned object is written.
     /// </exception>
     public void WriteAll(PdfWriter writer, CrossReferenceBuilder xref)
         => WriteAll(writer, xref, preWrite: null);
@@ -110,9 +110,9 @@ public sealed class PdfObjectRegistry
     /// rewinds the stream for you.
     /// </exception>
     /// <exception cref="NullReferenceException">
-    /// <paramref name="writer"/> or <paramref name="xref"/> is <see langword="null"/> and the first slot
-    /// reached is assigned. Neither argument is checked, so the throw carries no parameter
-    /// name. On an empty registry the same call returns without touching either.
+    /// <paramref name="writer"/> or <paramref name="xref"/> is <see langword="null"/> and an
+    /// assigned object is written. Neither argument is checked, so the throw carries no
+    /// parameter name. An empty registry returns without touching either.
     /// </exception>
     public void WriteAll(PdfWriter writer, CrossReferenceBuilder xref, Func<int, Action?>? preWrite)
     {
