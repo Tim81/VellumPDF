@@ -43,12 +43,12 @@ public sealed class ListElement
     /// cleared is a position rather than a width, and the gutter is the larger of twice this value
     /// and this value plus the child's marker width. One case overrides both: where the widened
     /// gutter would leave less room than the item's longest word, the gutter reverts to the
-    /// unwidened figure: this value at the top level, twice this value when nested. The override rewrites
-    /// a gutter and never a marker's own inset, so no marker moves with it.
+    /// unwidened figure. That is this value at the top level and twice it when nested. The
+    /// override rewrites a gutter and never a marker's own inset, so no marker moves with it.
     /// <para>Every boundary below is measured against the list's own area width, which is the
     /// page's content width narrowed by the left and right edges of <see cref="Margins"/>. The top
-    /// and bottom edges do not enter into it. A left or right inset therefore moves each boundary
-    /// by its own size, or by half of it for the one that sits at half the area width.</para>
+    /// and bottom edges do not enter into it. A left or right inset narrows that area, so every
+    /// boundary below moves in with it, each in proportion to where it sits.</para>
     /// <para>An indent reaching that area width is <b>not</b> refused on a flat list. The marker is
     /// drawn, the item text is discarded, and nothing reports the loss, so the list renders as a
     /// column of markers with no content. A nested list throws at the area width, as the exception
@@ -69,7 +69,7 @@ public sealed class ListElement
     /// <exception cref="InvalidOperationException">
     /// Raised from a save rather than from this property, when a list with nested children has an
     /// indent that reaches the list's own area width, which is the page's content width narrowed
-    /// by <see cref="Margins"/>. Positive infinity is included; <c>NaN</c>
+    /// by the left and right edges of <see cref="Margins"/>. Positive infinity is included; <c>NaN</c>
     /// and negative infinity are not, and neither is a flat list at any indent. The message
     /// reports an element too tall to fit and names neither this property nor the list.
     /// </exception>
