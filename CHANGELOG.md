@@ -952,8 +952,7 @@ is still honest about compatibility even though the content is wider than a patc
   40pt column at Helvetica 12pt, every case found had the old walk counting a taller row than what
   was drawn and none a shorter one. How many is a property of the sample rather than of the defect,
   so it is not quoted here: two independent sweeps over different alphabets found 152 and 744 in
-  4,000. Known-answer case, which is not sample-dependent: the cell `"AAAAii "` in the same column
-  drew one line in a row sized for
+  4,000. Known-answer case, which is not sample-dependent: the cell `"AAAAii "` in the same column drew one line in a row sized for
   two (28.8pt) before this fix, and now resolves to the 14.4pt row the single drawn line needs —
   a document whose cell text ends in a space that does not fit gets a shorter row than before,
   which is the corrected height rather than a side effect, but a geometry change all the same.
@@ -962,8 +961,7 @@ is still honest about compatibility even though the content is wider than a patc
   draw.** Hard-breaking an over-wide cell word (above) can make a row taller than the page has
   room for, where the base drew the overrun off the page instead of refusing it. Measured, a
   100pt column with zero padding on a 400x200pt page, a cell holding 300 "W"s at 10pt
-  (the fixture's own explicit size; `TextStyle.FontSize` defaults to 12): the base drew one line
-  past the page edge; this pull request hard-breaks it into enough
+  (the fixture's own explicit size; `TextStyle.FontSize` defaults to 12): the base drew one line past the page edge; this pull request hard-breaks it into enough
   lines that the row no longer fits a 200pt page height, and `Document.Save` now raises "An
   element is too tall to fit on a single page and cannot be rendered." where it previously
   produced a document. This is not a new exception type and not new validation — `DocumentRenderer`
@@ -1007,8 +1005,7 @@ is still honest about compatibility even though the content is wider than a patc
   difference is not cosmetic. The first draft of this change let a cell declaring more rows than the
   table holds claim them: on a two-row table, a declared 5 and a declared 50 each failed veraPDF's
   row-width check, and a declared `int.MaxValue` produced no verdict at all, because veraPDF tried
-  to allocate a row array of that size and abandoned the job. A header row carrying a span was
-  worse, since the header run
+  to allocate a row array of that size and abandoned the job. A header row carrying a span was worse, since the header run
   is repeated at the top of every continuation page while the span's occupancy is keyed to the row
   it was declared over: the row below a repeated header drew all of its own cells while the header
   claimed to cover one of them, which took a three-page document from compliant to two failed
@@ -1135,8 +1132,7 @@ is still honest about compatibility even though the content is wider than a patc
   honour it, and it is worse than dropped: neither of those two brackets its fill colour in
   `q`/`Q` — the image and chart renderers do bracket theirs, and the chart's own comment says it
   does so to stop exactly this — and a band is drawn after the page's content, so the band took
-  whatever colour the last paragraph or cell left set. Measured on a page whose body was red and
-  whose footer style asked for blue, the
+  whatever colour the last paragraph or cell left set. Measured on a page whose body was red and whose footer style asked for blue, the
   band's own text object held no `rg` operator at all and the footer rendered red. The colour a band
   showed was therefore a property of whatever happened to be drawn above it.
 
@@ -1315,8 +1311,7 @@ is still honest about compatibility even though the content is wider than a patc
   | `PdfObjectParser.ParseReal`'s out-of-range-real throw | `InvalidDataException` |
   | `PdfObjectParser.ParseLong`'s malformed-integer throw | `InvalidDataException` |
   | `XrefParser.ReadInt`'s malformed-subsection-header-integer throw | `InvalidDataException` |
-  | `EncryptionSetup.Authenticate`'s unsupported-security-handler `/Filter` throw |
-  `UnsupportedPdfFeatureException` |
+  | `EncryptionSetup.Authenticate`'s unsupported-security-handler `/Filter` throw | `UnsupportedPdfFeatureException` |
   | `EncryptionSetup.Authenticate`'s unimplemented-`/CFM` `/StrF` throw | `UnsupportedPdfFeatureException` |
   | `XrefReconstructor`'s refused-security-handler throw | `UnsupportedPdfFeatureException` |
 
@@ -2139,8 +2134,7 @@ is still honest about compatibility even though the content is wider than a patc
   what this gate already carried before the migration, so the threshold and every per-assembly
   floor carry over unchanged rather than being re-baselined lower. Parity here is about the
   migration dropping nothing it used to instrument, not about the two figures staying pinned
-  together forever: both move independently as unrelated PRs add code. The coverage gate's glob
-  still moves from a fixed
+  together forever: both move independently as unrelated PRs add code. The coverage gate's glob still moves from a fixed
   `coverage.cobertura.xml` to `coverage.cobertura.*.xml`, since coverlet.MTP stamps a timestamp
   into every report's own filename rather than writing one fixed name into a per-run guid folder;
   measured across a full solution run, that timestamp resolution kept all 7 reports distinct with
