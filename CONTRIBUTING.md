@@ -267,18 +267,27 @@ The shape, copied from `TextStyle.FontSize` in `src/VellumPdf.Layout/Core/TextSt
 - `<summary>` says what the member is.
 - An `<exception>` tag for every type a call can raise, including when the throw lands in a
   **later** call rather than this one, which in the layout engine usually means `Document.Save`.
-  List each type separately even when one derives from another. `Document.Save` throws both
-  `ArgumentException` and `ArgumentOutOfRangeException` for `PageSize`, and the second derives
-  from the first, but a catch clause written for the base type says nothing about which one
-  actually fired.
+  List each type separately even when one derives from another. `Document.Save` throws
+  `ArgumentOutOfRangeException` for a `PageSize` that is not positive and finite, and
+  `ArgumentException` when the margins meet or exceed it. The second type is the first one's base,
+  so a catch clause written for the base says nothing about which of the two actually fired.
 - `<remarks>` opens with a plain sentence naming what is refused, which call throws it, and why.
   Not just the fact.
 - A following `<para>` for input that is accepted today but should not be relied on: what it does
   now, and which major version will reject it. Bold the marker word itself, `**Attention**` or
   `**NOTE**`, always. Bold the operative negation too, usually **not**, only where the paragraph
   turns on one; a paragraph with no negation to turn on is conforming without a second bolded word.
-  Reserve `Attention:` for a paragraph a caller could actually fall into; a paragraph that only
+  Reserve **Attention** for a paragraph a caller could actually fall into; a paragraph that only
   states a mechanism gets a plain sentence instead.
+
+- A `<para>` for what the member **silently ignores**. A public member has three sets, not two:
+  what it accepts, what it refuses, and what it neither reads nor refuses. The third is the one
+  that hurts, because the call succeeds and returns something different from what the caller
+  asked for. `TiffImageLoader` documented its refusals completely and still ignored `Orientation`,
+  ignored `ExtraSamples` and read only the first page, so a conforming file came back as a
+  different image with nothing reported. Answer it mechanically: take the format's or type's own
+  field list and grep the implementation for each name. A field that appears nowhere is a sentence
+  you owe the caller.
 
 Two rules about the writing itself, both learned the hard way:
 

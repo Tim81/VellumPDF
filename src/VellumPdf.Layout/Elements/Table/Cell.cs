@@ -93,8 +93,8 @@ public sealed class Cell
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property.
     /// A non-finite inset gives a message naming the row and the cell. A finite inset large
-    /// enough to grow the row past the page (as described above for <c>Top</c> and <c>Bottom</c>
-    /// set to 400) throws the generic too-tall exception instead, whose message names neither.
+    /// enough to grow the row past the page (above, with all four edges at 400) throws the
+    /// generic too-tall exception instead, whose message names neither.
     /// </exception>
     public EdgeInsets Padding { get; init; } = new EdgeInsets(4, 6, 4, 6);
 

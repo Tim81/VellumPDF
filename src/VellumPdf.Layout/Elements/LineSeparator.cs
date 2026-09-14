@@ -23,8 +23,8 @@ public sealed class LineSeparator
     /// want no rule, leave the element out.</para>
     /// <para>A negative width is not refused today, though ISO 32000-2, 8.4.3.2 requires a line
     /// width to be a non-negative number: the token this writes is one the specification forbids,
-    /// so it is the format's business rather than the renderer's. Whether to refuse it is
-    /// undecided (#482).</para>
+    /// so refusing a negative width is the format's business, not only the renderer's. Whether to
+    /// refuse it is undecided (#482).</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property,

@@ -45,10 +45,10 @@ public sealed class ListElement
     /// gutter would leave less room than the item's longest word, the gutter reverts to the
     /// unwidened figure: this value at the top level, twice this value when nested. The override rewrites
     /// a gutter and never a marker's own inset, so no marker moves with it.
-    /// <para><b>Attention</b>: every boundary below is measured against the list's own area width,
-    /// which is the page's content width narrowed by the left and right edges of
-    /// <see cref="Margins"/>. Either of those brings both boundaries in by its own size; the top
-    /// and bottom edges move neither.</para>
+    /// <para>Every boundary below is measured against the list's own area width, which is the
+    /// page's content width narrowed by the left and right edges of <see cref="Margins"/>. The top
+    /// and bottom edges do not enter into it. A left or right inset therefore moves each boundary
+    /// by its own size, or by half of it for the one that sits at half the area width.</para>
     /// <para>An indent reaching that area width is <b>not</b> refused on a flat list. The marker is
     /// drawn, the item text is discarded, and nothing reports the loss, so the list renders as a
     /// column of markers with no content. A nested list throws at the area width, as the exception

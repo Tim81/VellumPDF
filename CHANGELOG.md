@@ -236,8 +236,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   clamped to the content box. A marker wider than the list indent does not overprint the item
   text, because the gutter widens per item rather than to the widest one seen so far, and reverts
   to the plain indent whenever the widened gutter would leave less room than that item's longest
-  word. With roman numerals at the default 20-point indent the two rules alternate from item 17
-  onward. Padding wider than its column
+  word. With roman numerals at the default 20-point indent, the first marker to exceed the indent
+  is item 17. On an ordinary page the revert never fires at all: it needs the widened gutter to
+  leave less room than the item's longest word, which a normal content width does not reach.
+  Padding wider than its column
   does not collapse the cell: the inner width clamps to one point and the text wraps to one glyph
   per line, landing outside the page when the padding is lopsided (`Left` alone at 400 in a
   260-point column) but back inside it when the same total is split evenly across `Left` and
@@ -255,10 +257,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `Leading` reaches it on its own, so both properties' tags no longer scope that throw to a band
   whose `Height` is left null. The `ArgumentException` case does still need such a band, since a
   plain page's margins never move as the font size or leading grows. On `RunningBand.Height`
-  itself, a finite value large enough gives the same `InvalidOperationException` that `NaN`
-  gives, alongside the already-tagged `NaN`, positive infinity and, on a header only, negative
-  infinity; one exception type now covers three unrelated causes on that property, not one apiece
-  as the tag previously implied.
+  itself, a finite value large enough gives the same `InvalidOperationException` that `NaN` gives,
+  and so does negative infinity on a header. Three unrelated causes under one type, where the tag
+  implied one apiece. Positive infinity stays where it was, under `ArgumentException`.
 
   Every numeric boundary here is a property of the page, not of the value, so each is now stated
   against the page it was measured on: A4, default 72pt margins, footer with `Height` left null
@@ -286,10 +287,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   that matches, byte for byte, one built at the new size from the start, except for the random
   `/ID` and the XMP `CreateDate`/`ModifyDate` timestamps, not the `/ID` alone. That holds on a document no
   save has been attempted on, which is where the measurement was taken and as far as it reaches.
-  The margin belongs in the recipe: at the default 72pt insets on `Document.Margins`, 144pt of
-  vertical margin does not fit a 120pt page, so both halves of the comparison are refused before
-  they are built. The two files are byte-identical once `/ID` and the two XMP timestamps are
-  normalised, with every `/MediaBox` reading `0 0 200 120`. `Save(Stream)`'s `ArgumentException` for a
+  Every `/MediaBox` reads `0 0 200 120`. The margin is part of the measurement, not an aside: at
+  the default 72pt insets on `Document.Margins`, 144pt of vertical margin does not fit a 120pt
+  page, so both halves of the comparison are refused before they are built. `Save(Stream)`'s
+  `ArgumentException` for a
   non-writable destination carries the internal parameter name `stream`, not the public
   `destination` parameter it is documented against, so catching by parameter name will not find
   it under `"destination"`.
@@ -305,9 +306,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   already laid out stay, and a retry appends a whole second layout to them. The page count
   therefore grows by whatever the failed attempt had
   committed, on every attempt; how many that is depends on the document, so no figure for it is
-  quoted. Retrying without changing the geometry throws the too-tall exception again, and a save
-  after a retry that succeeded reports the document as already written. Correcting the geometry
-  after a refusal is quiet too, and that file is correct, so silence does not separate the two.
+  quoted. Correct the cause after a layout throw and the retry returns quietly, on a file carrying
+  both layouts. Leave the cause in place and the same exception fires again, another set of pages
+  committed first. A retry after a pre-layout refusal is just as quiet and its file is right, so
+  silence does not separate the two.
   The overloads now say a document is single-use, that a save which threw does
   not reliably return it to a usable state, and that the answer is a fresh `Document` rather than
   a retry. The behaviour itself is unchanged here; #530 carries the defect.
@@ -319,9 +321,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   documented `OverflowException` and `OutOfMemoryException` against `Document.Save` while `Save`
   itself listed neither, which is where a caller writing catch clauses looks first; all four
   overloads now carry both, each naming the member that causes it. `ListElement.Indent` covered
-  only magnitude, and its other three inputs each do something different. `NaN` writes a text
-  matrix whose x coordinate is the literal token `NaN`, which is not a PDF number. Positive
-  infinity draws the marker and drops the item text on a flat list.
+  only magnitude. Its other inputs each do something different: `NaN` and negative infinity each
+  write a text-matrix coordinate that is not a PDF number, and positive infinity draws the marker
+  and drops the item text on a flat list.
 
   A negative value needed a rule rather than a list of outcomes. Where it puts the text depends
   on the nesting level, on which branch of the widening override is taken and on the font size,
@@ -332,22 +334,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   nothing throws either.
 
   The indent that loses content was documented against the wrong width. It is the list's own area,
-  which is the page's content width narrowed by `ListElement.Margins`, so a 56pt inset on either
-  side moves every boundary in by 56pt. Measured on a 400 by 400 page at 72pt document margins: a flat
-  list discards its item text at 256 with no inset and at 200 with one, and a nested list is
-  refused at the same figure with an element-too-tall `InvalidOperationException` naming neither
-  the property nor the list. That refusal was undocumented and now carries its own `<exception>`
+  which is the page's content width narrowed by the left and right edges of
+  `ListElement.Margins`, so a 56pt inset on one side moves each boundary in by its own size, or by
+  half of that for the one sitting at half the area width. Measured on a 400 by 400 page at 72pt
+  document margins: a flat list discards its item text at 256 with no inset and at 200 with one,
+  and a nested list is refused at those same two figures with the generic too-tall exception,
+  naming neither the property nor the list. That refusal was undocumented and now carries its own
+  `<exception>`
   tag, against the area width rather than the page's.
 
   Nesting also has a quieter boundary at half of that, which nothing recorded. The nested content
   gutter is twice the indent, so a child's own width reaches zero at half the area, 128 and 100 for
-  those two cases, while the child marker, inset by the indent alone, still fits and is still
+  those two cases, while the child marker, inset by the indent alone, is not refused and is still
   drawn. Between half the area width and the whole of it a nested list drops its child text as
   silently as a flat one, and only past the full width does it throw. `RunningBand.Template`
   and `LineSeparator.Margins` each reach a live refusal with nothing written down: a null
   template is dereferenced during the save, and a non-finite separator inset is refused by name.
 
-- `Cell.ColSpan`'s column-count rule has no exception: the table's column count is the largest
+- `Cell.ColSpan`'s column-count rule has no special cases: the table's column count is the largest
   span sum across its rows, and every cell's span contributes to its row's sum unconditionally,
   so a span past what other rows declare widens the grid. What is conditional is the width the
   cell is then drawn at, documented as its own paragraph: where an earlier row's `RowSpan`
@@ -370,19 +374,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   None of the four carried any `<exception>` tag in 2.3.2. A non-writable stream diverges by
   overload: `ArgumentException` from `Save(Stream)` ("Stream must be writable") but
   `NotSupportedException` from `SaveAsync(Stream, CancellationToken)` ("Stream does not support
-  writing"), and both tags now name both causes. `Save(string)` and `SaveAsync(string,
+  writing"), and each overload's tag now names the type that overload actually raises.
+  `Save(string)` and `SaveAsync(string,
   CancellationToken)` also gained `UnauthorizedAccessException` and `IOException`. The two async
-  overloads gained `TaskCanceledException` for a cancelled token; `Save(string)` takes no token
+  overloads gained `OperationCanceledException` for a cancelled token, which is what the tags
+  name; the layout raises the derived `TaskCanceledException`. `Save(string)` takes no token
   and needs none. A path naming a DOS device is not a reliable `IOException` case: `CON`, `NUL`
   and `CON.pdf` do not throw, `PRN` and `LPT1` throw `FileNotFoundException`, and `AUX`'s
   behaviour was not reproducible across runs, so the device clause stays dropped from both
   `IOException` tags rather than asserting one outcome for it.
 
-- Smaller corrections, measured. `LayoutImage.Width`'s summary said "must be at least
-  5e-6 points in magnitude," which admits negative infinity.
-  The summary states the accepted range as the member enforces it: finite or positive
-  infinity, at least 5e-6 points in magnitude, with that floor applied to the derived height as
-  well, so a width that clears it is still refused on a source much wider than it is tall.
+- Smaller corrections, measured. `LayoutImage.Width`'s summary said only "Must be finite and
+  non-zero", two constraints short: positive infinity is accepted, and any magnitude under 5e-6 is
+  refused because the canvas writes it as `0`. The summary now states the range the member
+  enforces: finite or positive infinity, at least 5e-6 points in magnitude, with that floor applied
+  to the derived height as well, so a width that clears it is still refused on a source much wider
+  than it is tall.
   `LayoutImage.Height` and `PieChart.Diameter` each keep a warning for a
   case that silently produces wrong output with nothing reporting it: image distortion when
   `Width` and `Height` disagree with the source proportions, and a chart drawn smaller than the
