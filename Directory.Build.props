@@ -26,6 +26,16 @@
       Bump this only for 3.0.
     -->
     <AssemblyVersion>2.0.0.0</AssemblyVersion>
+
+    <!--
+      Verify 33+ fails the build (SC021) unless one SponsorCheck property is set. The official
+      NuGet binaries after 2026-09-01 carry an Open Source Maintenance Fee for revenue-generating
+      organisations; the source stays Apache-2.0. This repository is an open-source project that
+      does not generate revenue, so the OpenSource exemption applies. It is time-bounded: renew
+      the month before it lapses, at most 12 months from the build date.
+    -->
+    <Verify_SponsorshipExemption>OpenSource</Verify_SponsorshipExemption>
+    <Verify_SponsorshipExemptionUntil>2027-08</Verify_SponsorshipExemptionUntil>
   </PropertyGroup>
 
 </Project>
