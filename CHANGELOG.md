@@ -405,7 +405,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   them takes a byte array a caller is likely to have received from somewhere untrusted. BMP, CCITT,
   JPEG, PNG and TIFF now document what they raise and for what.
 
-  A null array raises `NullReferenceException`, not `ArgumentNullException`, in BMP, GIF, JPEG,
+  A different five. A null array raises `NullReferenceException`, not `ArgumentNullException`,
+  in BMP, GIF, JPEG,
   PNG and TIFF. The other three guard it, and not alike: JPEG 2000 with `ArgumentNullException`,
   CCITT and JBIG2 with `ArgumentException` for null or empty. A caller guarding
   `ArgumentNullException` therefore catches nothing in the first group. Four of those five say so
@@ -417,9 +418,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   1,000,000-per-edge constant is enforced on no default path: only the MMR decoder reads it, only
   the JBIG2 loader reaches that decoder, and only when asked for a decoded raster rather than the
   passthrough its options default to. Ask JBIG2 for a raster and the per-edge limit is real; on
-  every other path an image can be as long and thin as the product cap allows. Documenting a guard
-  that does not run is worse than documenting none, so each member states the cap that applies to
-  it and says the cap is on the product alone.
+  every other path an image can be as long and thin as the safety limit allows. Documenting a guard
+  that does not run is worse than documenting none, so each member states the safety limit that
+  applies to it and says the limit is on the product alone.
 
   BMP and TIFF raise `NotSupportedException`, not `InvalidDataException`, for a well-formed file of
   a variant they do not read, and neither type derives from the other. A caller who catches
@@ -430,7 +431,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
   The JPEG loader is the only one that does not validate what its header declares. A file carrying
   nothing but a frame header saying 65535 by 65535 returns an image of 4,294,836,225 pixels, where
-  the same declaration through the PNG loader is refused at the 100,000,000 cap. Nothing allocates
+  the same declaration through the PNG loader is refused at the 100,000,000 safety limit. Nothing allocates
   a raster for it, because the bytes pass through as `DCTDecode` data, but those dimensions reach
   the image dictionary and a reader that trusts them can be made to allocate from them. Validate
   the size yourself before you trust it.
@@ -444,7 +445,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   CCITT shares the safety limit and differs on everything else. A null argument is refused with
   `ArgumentException` rather than dereferenced. A non-positive `columns` or `rows` gives
   `ArgumentOutOfRangeException`, named as
-  itself, because both are checked before the pixel cap. Asking for a raster from a Group 4 stream,
+  itself, because both are checked before the safety limit. Asking for a raster from a Group 4 stream,
   or from a 2-D row inside a mixed-mode one, gives `NotSupportedException` with no fallback to
   passthrough. And the default mode decodes nothing, so the two geometry arguments are taken on
   trust: nothing reads them back from the data, and a wrong pair produces a file that opens and

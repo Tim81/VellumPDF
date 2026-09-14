@@ -116,13 +116,14 @@ public static class TiffImageLoader
     /// <see cref="NotSupportedException"/>, and neither type derives from the other. TIFF admits
     /// far more variants than this loader reads, so expect it to refuse files other software
     /// opens.
-    /// <para>Attention: refusal is not the only outcome, and the quiet one is worse. Tags outside
-    /// that set are neither read nor refused, so what comes back is simply a different image.
-    /// <c>Orientation</c> is ignored, so a rotated or flipped source arrives in storage order.
-    /// <c>FillOrder</c> 2 is ignored outside the CCITT branches, so a bit-reversed source arrives
-    /// with every byte wrong. Only the first IFD is read, so the other pages of a multi-page file
-    /// are absent. Nothing reports any of it. Check those tags yourself if you did not produce
-    /// the file.</para>
+    /// <para>Attention: refusal is not the only outcome, and the quiet one is worse. This loader
+    /// reads fifteen tags. A tag it does not read is neither honoured nor refused, so the file
+    /// loads and what comes back is a different image, with nothing reported. <c>Orientation</c>
+    /// is ignored, so a rotated or flipped source arrives in storage order. Only the first IFD is
+    /// read, so the other pages of a multi-page file are absent. <c>ExtraSamples</c> is read and
+    /// then discarded, so pre-multiplied alpha is emitted as a plain soft mask with no
+    /// <c>/Matte</c> and composites wrong (#534). Read the directory yourself if you did not
+    /// produce the file; do not treat those three as the whole list.</para>
     /// <para>The <c>ColorMap</c> tag escapes both types. A negative offset reaches an
     /// unguarded array read and throws <see cref="IndexOutOfRangeException"/> (#512), where the
     /// sibling tag readers check the sign and refuse the file; a count of zero with a valid offset
@@ -133,10 +134,12 @@ public static class TiffImageLoader
     /// <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>, so a caller
     /// guarding on the documented type will not catch it. You have to reject null yourself. A
     /// later major version will check it.</para>
-    /// <para>One size limit applies: a declared pixel count above <b>100,000,000</b> is refused,
-    /// so that a few bytes of header cannot drive a large allocation. Neither edge is limited on
-    /// its own, so an image far wider than it is tall is accepted whenever the product clears the
-    /// safety limit. The limit is internal and has no public setting.</para>
+    /// <para>One size limit applies: a declared pixel count above <b>100,000,000</b> is refused.
+    /// Neither edge is limited on its own, so 2,000,000 by 1 is accepted and 10,001 by 10,001 is
+    /// not. The limit is internal and has no public setting. It bounds the damage a header can do
+    /// rather than preventing it: this loader sizes its buffer from the declared dimensions before
+    /// checking the strips are there, so a 126-byte file declaring 10,000 by 10,000 at 16 bits
+    /// still allocates 800 MB before it refuses (#536).</para>
     /// <para>Attention: the safety limit has a hole, and this loader carries it. A strip
     /// compressed with new-style JPEG (Compression 7) is handed to
     /// <see cref="JpegImageLoader.Load(byte[])"/>, which takes its dimensions from the JPEG frame

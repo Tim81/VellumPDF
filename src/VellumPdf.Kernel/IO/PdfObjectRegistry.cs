@@ -87,7 +87,7 @@ public sealed class PdfObjectRegistry
     /// </exception>
     /// <exception cref="NullReferenceException">
     /// As that overload: <paramref name="writer"/> or <paramref name="xref"/> is
-    /// <see langword="null"/> and there is an assigned object to write.
+    /// <see langword="null"/> and the first slot reached is assigned.
     /// </exception>
     public void WriteAll(PdfWriter writer, CrossReferenceBuilder xref)
         => WriteAll(writer, xref, preWrite: null);
@@ -105,13 +105,13 @@ public sealed class PdfObjectRegistry
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// A reference was reserved and never assigned a value, or was assigned
-    /// <see langword="null"/>. The message names the object number. No document is produced, but
-    /// the objects written before it are already in your stream and stay there; nothing rewinds
-    /// it for you.
+    /// <see langword="null"/>. The message names the object number. No document is produced. The
+    /// objects written before the failing one are already in your stream and stay there; nothing
+    /// rewinds the stream for you.
     /// </exception>
     /// <exception cref="NullReferenceException">
-    /// <paramref name="writer"/> or <paramref name="xref"/> is <see langword="null"/> and there is
-    /// an assigned object to write. Neither argument is checked, so the throw carries no parameter
+    /// <paramref name="writer"/> or <paramref name="xref"/> is <see langword="null"/> and the first slot
+    /// reached is assigned. Neither argument is checked, so the throw carries no parameter
     /// name. On an empty registry the same call returns without touching either.
     /// </exception>
     public void WriteAll(PdfWriter writer, CrossReferenceBuilder xref, Func<int, Action?>? preWrite)

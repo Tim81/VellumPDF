@@ -24,9 +24,10 @@ public static class JpegImageLoader
     /// the frame header is read. A file this accepts is therefore not necessarily a file a reader
     /// can render: corruption past the header passes straight into the document.
     /// <para>Attention: this loader does not check the declared size. A file carrying nothing but
-    /// a frame header saying 65535 by 65535 returns an image of <b>4,294,836,225</b> pixels; a
-    /// loader that reads its dimensions from its own header refuses anything above 100,000,000.
-    /// That distinction is not idle. <see cref="TiffImageLoader"/> validates its own directory and
+    /// a frame header saying 65535 by 65535 returns an image of <b>4,294,836,225</b> pixels. The
+    /// same declaration through <see cref="PngImageLoader"/> is refused at the 100,000,000 safety
+    /// limit. That difference is not idle. <see cref="TiffImageLoader"/> validates its own directory
+    /// and
     /// then hands a JPEG-compressed strip here, and the image TIFF returns carries the JPEG's
     /// dimensions rather than the ones TIFF checked. Nothing allocates a raster, since the bytes
     /// pass through, but the width and height reach the image dictionary and a reader that trusts

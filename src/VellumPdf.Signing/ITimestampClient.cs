@@ -46,9 +46,13 @@ public interface ITimestampClient
     /// unreachable authority gives <see cref="System.Net.Http.HttpRequestException"/>. A
     /// rejection, or a malformed response body, gives
     /// <see cref="System.Security.Cryptography.CryptographicException"/>.
-    /// <para>Attention: the type is the discriminator here, not the message. If you catch only
-    /// <see cref="InvalidOperationException"/>, an unreachable authority escapes, because it
-    /// arrives as <see cref="System.Net.Http.HttpRequestException"/> instead.</para>
+    /// <para>Attention: the type is the discriminator for the three network failures, and it does
+    /// not separate the fourth. If you catch only <see cref="InvalidOperationException"/>, an
+    /// unreachable authority escapes, because it arrives as
+    /// <see cref="System.Net.Http.HttpRequestException"/> instead. A rejection and an unknown
+    /// <paramref name="hashAlgorithm"/> share
+    /// <see cref="System.Security.Cryptography.CryptographicException"/>, and only the message
+    /// tells you which.</para>
     /// <para>This call waits on the authority. What bounds the wait is the implementation's
     /// business: the shipped client applies its own timeout, and a caller-supplied
     /// <c>HttpClient</c> carries a second one that applies independently.
@@ -77,8 +81,11 @@ public interface ITimestampClient
     /// As <see cref="GetTimestampToken"/>: the authority could not be reached at all.
     /// </exception>
     /// <exception cref="System.Security.Cryptography.CryptographicException">
-    /// As <see cref="GetTimestampToken"/>: the authority refused the request, or returned a
-    /// response that is not a well-formed granted timestamp.
+    /// As <see cref="GetTimestampToken"/>, both of its causes: the authority refused the request or
+    /// returned a malformed response, or <paramref name="hashAlgorithm"/> names no algorithm the
+    /// platform knows. The second is raised while the request is built, so the default
+    /// implementation below raises it before a task exists rather than returning a faulted
+    /// one.
     /// </exception>
     /// <exception cref="OperationCanceledException">
     /// <paramref name="cancellationToken"/> was signalled and the implementation honours it. The

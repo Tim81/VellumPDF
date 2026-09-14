@@ -42,20 +42,30 @@ public static class BmpImageLoader
     /// <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>, so a caller
     /// guarding on the documented type will not catch it. You have to reject null yourself. A
     /// later major version will check it.</para>
-    /// <para>One size limit applies: a declared pixel count above <b>100,000,000</b> is refused,
-    /// so that a few bytes of header cannot drive a large allocation. Neither edge is limited on
-    /// its own, so an image far wider than it is tall is accepted whenever the product clears the
-    /// safety limit. The limit is internal and has no public setting.</para>
+    /// <para>One size limit applies: a declared pixel count above <b>100,000,000</b> is refused.
+    /// Neither edge is limited on its own, so 2,000,000 by 1 is accepted and 10,001 by 10,001 is
+    /// not. The limit is internal and has no public setting. It bounds the damage a header can do
+    /// rather than preventing it: the raster is sized from the declared dimensions before the
+    /// pixel data is checked, so a 1,079-byte file declaring 10,000 by 10,000 still allocates
+    /// 300 MB before it refuses (#536).</para>
     /// <para>This loader reads one variant: an uncompressed 40-byte BITMAPINFOHEADER bitmap at
     /// 8, 24 or 32 bits per pixel. Every other well-formed BMP raises
     /// <see cref="NotSupportedException"/>, compressed ones included, and there is no fallback
     /// path. Size is checked first, so a file shorter than 54 bytes is reported as truncated
     /// whatever variant it would have been.</para>
-    /// <para>Attention: the accepted set is narrower than that sentence, in one way worth knowing
-    /// before you trust it. An 8-bit bitmap may declare <c>biClrUsed</c> and ship a palette
-    /// shorter than 256 entries; this loader never reads that field and requires the full
-    /// 1,024-byte palette, so a conforming short-palette file is refused as truncated, which it is
-    /// not. Until that is fixed, pad such a palette to 256 entries before loading (#533).</para>
+    /// <para>Attention: one conforming 8-bit variant is refused. A bitmap may declare
+    /// <c>biClrUsed</c> and ship a palette shorter than 256 entries; this loader never reads that
+    /// field and tests the whole file against <b>1,078</b> bytes, so a short-palette file smaller
+    /// than that is reported as truncated. A larger one loads and decodes correctly, so the
+    /// refusal tracks the file's size and not its palette. If you hit it, pad the palette to 256
+    /// entries and move <c>bfOffBits</c> with it; padding alone leaves the offset pointing
+    /// into the palette and the image decodes black, with no exception (#533).</para>
+    /// <para>Attention: a 32-bit bitmap loses its image entirely. The fourth byte of each pixel is
+    /// emitted as a soft mask, but in the only 32-bit variant this loader accepts, <c>BI_RGB</c>
+    /// with a 40-byte header, that byte is not alpha and the format says it is unused. Writers
+    /// commonly leave it at zero, which this loader reads as fully transparent, so the page shows
+    /// nothing and no exception is raised. Convert such a file to 24-bit before loading it
+    /// (#535).</para>
     /// </remarks>
     public static PdfImageXObject Load(byte[] bmpBytes)
     {

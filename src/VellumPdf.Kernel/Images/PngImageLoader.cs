@@ -40,8 +40,10 @@ public static class PngImageLoader
     /// later major version will check it.</para>
     /// <para>One size limit applies: a declared pixel count above <b>100,000,000</b> is refused,
     /// so that a few bytes of header cannot drive a large allocation. Neither edge is limited on
-    /// its own, so an image far wider than it is tall is accepted whenever the product clears the
-    /// safety limit. The limit is internal and has no public setting.</para>
+    /// its own, so 2,000,000 by 1 is accepted and 10,001 by 10,001 is not. The limit is internal
+    /// and has no public setting. This loader sizes its raster from the decompressed image data
+    /// rather than from the header, so a header alone costs nothing; <see cref="BmpImageLoader"/>
+    /// and <see cref="TiffImageLoader"/> do not (#536).</para>
     /// </remarks>
     public static PdfImageXObject Load(byte[] pngBytes) => Load(pngBytes, ImageLoadOptions.Default);
 
@@ -58,7 +60,7 @@ public static class PngImageLoader
     /// <para>What <paramref name="options"/> selects here is bit depth, and nothing else. This
     /// loader reads <see cref="ImageLoadOptions.BitDepth"/> and never reads
     /// <see cref="ImageLoadOptions.DecodeMode"/>, so asking for a decode mode changes nothing;
-    /// PNG is always decoded to a raster. It does not relax the safety limit either.</para>
+    /// PNG is always decoded to a raster. Neither member relaxes the safety limit.</para>
     /// </remarks>
     public static PdfImageXObject Load(byte[] pngBytes, ImageLoadOptions options)
     {
