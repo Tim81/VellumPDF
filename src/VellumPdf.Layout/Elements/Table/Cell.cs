@@ -16,8 +16,8 @@ public sealed class Cell
     /// </summary>
     /// <remarks>
     /// The table's column count is the largest span sum across its rows, and every cell's span
-    /// counts towards its own row's sum. A span wider than the columns other rows have declared
-    /// therefore widens the grid, and those rows leave the new columns empty.
+    /// counts towards its own row's sum. A span wider than the column count the other rows
+    /// produce therefore widens the grid, and those rows leave the new columns empty.
     /// <para>Zero or negative is <b>refused</b>. <see cref="Document.Save(System.IO.Stream)"/>
     /// throws <see cref="InvalidOperationException"/> naming the row and cell, because a span of
     /// zero can leave the grid with no columns at all and nothing to draw into.</para>
@@ -86,9 +86,9 @@ public sealed class Cell
     /// position follows <c>Left</c> alone, not how the total is split. Measured on the same
     /// 260-point column: splitting 400 points evenly, <c>Left</c> = 200 and <c>Right</c> = 200,
     /// lands the text at x = 220, back inside the 300-point page. Giving <c>Left</c> the same 400
-    /// lands it at x = 420 whatever <c>Right</c> holds, so long as <c>Top</c> and <c>Bottom</c>
-    /// stay small enough for the row to fit: at 400 on all four edges the row outgrows the page,
-    /// and saving refuses it as too tall to fit, with no text drawn at all.</para>
+    /// lands the text at x = 420 whatever <c>Right</c> holds. The vertical edges are a separate
+    /// limit: at 400 on all four the row outgrows the page, and the save refuses it as too tall,
+    /// with no text drawn at all.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property.

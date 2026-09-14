@@ -42,24 +42,24 @@ public sealed class ListElement
     /// marker width. One level in, the marker itself starts at this value, so what has to be
     /// cleared is a position rather than a width, and the gutter is the larger of twice this value
     /// and this value plus the child's marker width. One case overrides both: where the widened
-    /// gutter would leave less room than the item's longest word, it reverts to the unwidened
-    /// figure, which is this value at the top level and twice it when nested. The override rewrites
+    /// gutter would leave less room than the item's longest word, the gutter reverts to the
+    /// unwidened figure: this value at the top level, twice this value when nested. The override rewrites
     /// a gutter and never a marker's own inset, so no marker moves with it.
     /// <para><b>Attention</b>: every boundary below is measured against the list's own area width,
-    /// which is the page's content width narrowed by <see cref="Margins"/>. An inset on one side
-    /// brings them all in by its own size.</para>
+    /// which is the page's content width narrowed by the left and right edges of
+    /// <see cref="Margins"/>. Either of those brings both boundaries in by its own size; the top
+    /// and bottom edges move neither.</para>
     /// <para>An indent reaching that area width is <b>not</b> refused on a flat list. The marker is
     /// drawn, the item text is discarded, and nothing reports the loss, so the list renders as a
-    /// column of markers with no content. Nesting does not buy you out of it. A nested list throws
-    /// at the area width, as the exception records, but from <b>half</b> that width its child text
-    /// is already being discarded the same silent way, because the nested gutter reaches the area
-    /// width at half the indent a top-level gutter needs. The child marker, inset by this value
-    /// alone, still fits and is still drawn. Keep this value positive and well below half the area
-    /// width (#476).</para>
+    /// column of markers with no content. A nested list throws at the area width, as the exception
+    /// records, but from <b>half</b> that width its child text is already being discarded the same
+    /// silent way, because the nested gutter reaches the area width at half the indent a top-level
+    /// gutter needs. The child marker, inset by this value alone, is not refused and is still
+    /// drawn. Keep this value well below half the area width (#476).</para>
     /// <para>Do <b>not</b> pass a negative value. It can carry content left of the margin and off
     /// the page, and nothing throws or reports it when it does. Where an item lands follows from
-    /// the two gutter rules above; #476 carries the measured figures rather than this comment,
-    /// because they depend on the level, on which branch the override takes and on
+    /// the rules above, the override included; the measured figures are on #476, not here, because
+    /// they depend on the level, on which branch the override takes and on
     /// <see cref="TextStyle.FontSize"/>. A later major version will reject a negative value.</para>
     /// <para>Of the non-finite values only positive infinity is refused, and only with nested
     /// children. <c>NaN</c> and negative infinity are accepted, and each can reach the text matrix

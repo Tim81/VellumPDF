@@ -299,7 +299,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   not reliably return it to a usable state, and that the answer is a fresh `Document` rather than
   a retry. The behaviour itself is unchanged here; #530 carries the defect.
 
-- Four further boundaries. The save overloads' `InvalidOperationException` list
+- Further boundaries the save overloads did not carry. The save overloads' `InvalidOperationException` list
   read as complete and was not: `Conformance` set to a PDF/A level together with `Encrypt` throws
   from `Save`, since ISO 19005-2 §6.1.3 prohibits encryption, and neither `Document.Conformance`
   nor `Document.Encrypt` documents that pairing, so the save overloads now do. `Cell.ColSpan`
@@ -312,9 +312,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
   A negative value needed a rule rather than a list of outcomes. Where it puts the text depends
   on the nesting level, on which branch of the widening override is taken and on the font size,
-  so any list of the cases is incomplete. The member states the two gutter rules that generate all
-  of them and says a negative value is not to be relied on; the measured figures are on #476,
-  where a fixture can be named. Nothing here is reported, and on a **flat** list nothing throws either.
+  so any list of the cases is incomplete. The member states the gutter rules that generate all of
+  them, the override included, and says a negative value is not to be relied on; the measured figures are on
+  #476, where they can
+  name the page size, margins and font they were taken at. Nothing here is reported, and on a **flat** list
+  nothing throws either.
 
   The indent that loses content was documented against the wrong width. It is the list's own area,
   which is the page's content width narrowed by `ListElement.Margins`, so a 56pt inset on either
@@ -337,7 +339,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   so a span past what other rows declare widens the grid. What is conditional is the width the
   cell is then drawn at, documented as its own paragraph: where an earlier row's `RowSpan`
   already occupies this row's leading columns, the cell is drawn only as wide as the columns left
-  over. The block states each rule once.
+  over.
 
 - `#493`, cited on `Cell.RowSpan` as an open tracker, is a merged pull request. The references are
   removed; nothing in this area still needs one.
@@ -363,9 +365,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   behaviour was not reproducible across runs, so the device clause stays dropped from both
   `IOException` tags rather than asserting one outcome for it.
 
-- Three smaller corrections, measured. `LayoutImage.Width`'s summary said "must be at least
+- Smaller corrections, measured. `LayoutImage.Width`'s summary said "must be at least
   5e-6 points in magnitude," which admits negative infinity.
-  The summary now states the accepted range as the member enforces it: finite or positive
+  The summary states the accepted range as the member enforces it: finite or positive
   infinity, at least 5e-6 points in magnitude, with that floor applied to the derived height as
   well, so a width that clears it is still refused on a source much wider than it is tall.
   `LayoutImage.Height` and `PieChart.Diameter` each keep a warning for a
@@ -374,7 +376,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   requested diameter. `Cell.Padding`'s figure for a 400-point inset split evenly between `Left`
   and `Right` is x = 220, not x = 420; only a `Left`-heavy split lands outside the page.
 
-  The rule that a public member's boundary is documented in the same commit as the member is
+- The rule that a public member's boundary is documented in the same commit as the member is
   written into `CONTRIBUTING.md`, which ships, rather than only into the agent guidance, which is
   untracked and reaches no clone.
 
@@ -1220,7 +1222,8 @@ is still honest about compatibility even though the content is wider than a patc
   | `PdfObjectParser.ParseReal`'s out-of-range-real throw | `InvalidDataException` |
   | `PdfObjectParser.ParseLong`'s malformed-integer throw | `InvalidDataException` |
   | `XrefParser.ReadInt`'s malformed-subsection-header-integer throw | `InvalidDataException` |
-  | `EncryptionSetup.Authenticate`'s unsupported-security-handler `/Filter` throw | `UnsupportedPdfFeatureException` |
+  | `EncryptionSetup.Authenticate`'s unsupported-security-handler `/Filter` throw |
+  `UnsupportedPdfFeatureException` |
   | `EncryptionSetup.Authenticate`'s unimplemented-`/CFM` `/StrF` throw | `UnsupportedPdfFeatureException` |
   | `XrefReconstructor`'s refused-security-handler throw | `UnsupportedPdfFeatureException` |
 
@@ -2804,8 +2807,10 @@ identity by hand** — a `PackageReference` needs no change, but a binding redir
 | `TextEncodingWarning` character | `char` | `System.Text.Rune` (#177) |
 | `CcittImageLoader.Load` | two overloads, four positional knobs | one overload taking `CcittOptions` (#177) |
 | `PdfPreflight.Validate(PdfDocumentReader, PdfConformance)` | public | internal (#176) |
-| `HttpRevocationClient(HttpClient, TimeSpan)` | both arguments required | both optional, matching `HttpTimestampClient` (#177) |
-| `PdfSignatureSettings.SubFilter` | any string accepted | only `ETSI.CAdES.detached` and `adbe.pkcs7.detached` (#176) |
+| `HttpRevocationClient(HttpClient, TimeSpan)` | both arguments required | both optional, matching
+`HttpTimestampClient` (#177) |
+| `PdfSignatureSettings.SubFilter` | any string accepted | only `ETSI.CAdES.detached` and
+`adbe.pkcs7.detached` (#176) |
 | `SignaturePlaceholderOptions.SubFilter` | any string accepted | the same two values |
 
 Each is explained under Added, Changed, or Fixed below.
@@ -3527,54 +3532,103 @@ few small additions. No public API was removed.
 
 ### Added
 
-- **JBIG2 images.** `Jbig2ImageLoader` reads JBIG2 bilevel images and embeds them as 1-bit `/JBIG2Decode`. A standalone JBIG2 file is parsed and split into its page segments and a `/JBIG2Globals` side-stream (symbol and pattern dictionaries and tables), as the PDF embedded organisation requires; a file with no global segments stays self-contained.
-- **JPEG 2000 images.** `JpxImageLoader` reads JP2 box files and raw codestreams (`.j2k`/`.j2c`), takes width, height, component count, and bit depth from the `ihdr`/`SIZ` header and colour space from the `colr` box, and embeds the codestream as `/JPXDecode`.
-- **CCITT Group 3 TIFF.** The TIFF loader now reads Compression 2 (Modified Huffman) and 3 (Group 3 / T.4) in addition to Group 4, mapping the `T4Options` tag to the `/CCITTFaxDecode` `/DecodeParms` (`K`, `EncodedByteAlign`, `EndOfLine`). `CcittImageLoader.Load` gained an `endOfLine` parameter for the Group 3 end-of-line convention.
-- **Opt-in raster decode.** A new `ImageLoadOptions.DecodeMode` (`Passthrough` by default, or `DecodeToRaster`) decodes a codestream to pixels and re-encodes it losslessly with FlateDecode for viewers without the native codec. Raster decode covers CCITT Group 3 one-dimensional data and JBIG2 MMR generic regions; the other variants (CCITT two-dimensional and Group 4, JBIG2 arithmetic, symbol, text, and halftone segments, and all JPEG 2000) report `NotSupportedException` when raster decode is requested and continue to pass through unchanged. Passthrough stays the default and is always lossless.
+- **JBIG2 images.** `Jbig2ImageLoader` reads JBIG2 bilevel images and embeds them as 1-bit `/JBIG2Decode`. A
+standalone JBIG2 file is parsed and split into its page segments and a `/JBIG2Globals` side-stream (symbol and
+pattern dictionaries and tables), as the PDF embedded organisation requires; a file with no global segments
+stays self-contained.
+- **JPEG 2000 images.** `JpxImageLoader` reads JP2 box files and raw codestreams (`.j2k`/`.j2c`), takes width,
+height, component count, and bit depth from the `ihdr`/`SIZ` header and colour space from the `colr` box, and
+embeds the codestream as `/JPXDecode`.
+- **CCITT Group 3 TIFF.** The TIFF loader now reads Compression 2 (Modified Huffman) and 3 (Group 3 / T.4) in
+addition to Group 4, mapping the `T4Options` tag to the `/CCITTFaxDecode` `/DecodeParms` (`K`,
+`EncodedByteAlign`, `EndOfLine`). `CcittImageLoader.Load` gained an `endOfLine` parameter for the Group 3 end-
+of-line convention.
+- **Opt-in raster decode.** A new `ImageLoadOptions.DecodeMode` (`Passthrough` by default, or
+`DecodeToRaster`) decodes a codestream to pixels and re-encodes it losslessly with FlateDecode for viewers
+without the native codec. Raster decode covers CCITT Group 3 one-dimensional data and JBIG2 MMR generic
+regions; the other variants (CCITT two-dimensional and Group 4, JBIG2 arithmetic, symbol, text, and halftone
+segments, and all JPEG 2000) report `NotSupportedException` when raster decode is requested and continue to
+pass through unchanged. Passthrough stays the default and is always lossless.
 
 ### Security
 
-- **Image-codec hardening.** The JBIG2 segment parser, the JPEG 2000 box and marker walker, and the CCITT decoder bound every offset and length against the input, cap segment counts and decoded-output size, and reject truncated, malformed, or oversized data with `InvalidDataException`/`NotSupportedException` rather than over-reading, looping, or exhausting memory. Valid images are unaffected.
+- **Image-codec hardening.** The JBIG2 segment parser, the JPEG 2000 box and marker walker, and the CCITT
+decoder bound every offset and length against the input, cap segment counts and decoded-output size, and
+reject truncated, malformed, or oversized data with `InvalidDataException`/`NotSupportedException` rather than
+over-reading, looping, or exhausting memory. Valid images are unaffected.
 
 ## [1.3.0] - 2026-06-11
 
 ### Added
 
-- **Interlaced (Adam7) PNG.** Interlaced PNGs now load; the loader de-interlaces the seven Adam7 passes instead of rejecting the file.
-- **16-bit image fidelity.** 16-bit-per-channel PNG and TIFF images keep their full bit depth by default (`BitsPerComponent 16`) rather than being reduced to 8 bits. Pass `new ImageLoadOptions { BitDepth = ImageBitDepth.ReduceToEight }` to the new `PngImageLoader.Load` / `TiffImageLoader.Load` overloads to opt into 8-bit downsampling for smaller output. Images that must be transcoded are always re-encoded losslessly with FlateDecode; JPEG and CCITT data is embedded verbatim with no re-encoding.
-- **More TIFF compressions.** The TIFF loader now reads LZW (including the horizontal-differencing predictor), new-style JPEG (single strip, any photometric including YCbCr, embedded as DCTDecode), Group-4 fax (embedded as CCITTFaxDecode), and planar (`PlanarConfiguration 2`) images, in addition to the existing uncompressed and PackBits. `FillOrder 2` data is normalised to MSB-first.
-- **CCITT Group 3/4 passthrough.** `CcittImageLoader` wraps raw CCITT-compressed bytes as a 1-bit `/CCITTFaxDecode` image with the matching `/DecodeParms` (K, Columns, Rows, BlackIs1) without decoding; the viewer decodes at render time. Single-strip Group-4 TIFFs are routed through it, with polarity taken from the TIFF photometric. The new image paths are checked on CI with veraPDF under PDF/A-2b.
+- **Interlaced (Adam7) PNG.** Interlaced PNGs now load; the loader de-interlaces the seven Adam7 passes
+instead of rejecting the file.
+- **16-bit image fidelity.** 16-bit-per-channel PNG and TIFF images keep their full bit depth by default
+(`BitsPerComponent 16`) rather than being reduced to 8 bits. Pass `new ImageLoadOptions { BitDepth =
+ImageBitDepth.ReduceToEight }` to the new `PngImageLoader.Load` / `TiffImageLoader.Load` overloads to opt into
+8-bit downsampling for smaller output. Images that must be transcoded are always re-encoded losslessly with
+FlateDecode; JPEG and CCITT data is embedded verbatim with no re-encoding.
+- **More TIFF compressions.** The TIFF loader now reads LZW (including the horizontal-differencing predictor),
+new-style JPEG (single strip, any photometric including YCbCr, embedded as DCTDecode), Group-4 fax (embedded
+as CCITTFaxDecode), and planar (`PlanarConfiguration 2`) images, in addition to the existing uncompressed and
+PackBits. `FillOrder 2` data is normalised to MSB-first.
+- **CCITT Group 3/4 passthrough.** `CcittImageLoader` wraps raw CCITT-compressed bytes as a 1-bit
+`/CCITTFaxDecode` image with the matching `/DecodeParms` (K, Columns, Rows, BlackIs1) without decoding; the
+viewer decodes at render time. Single-strip Group-4 TIFFs are routed through it, with polarity taken from the
+TIFF photometric. The new image paths are checked on CI with veraPDF under PDF/A-2b.
 
 ### Security
 
-- **Image-codec hardening.** The TIFF-LZW decoder and the interlaced-PNG and TIFF strip readers bound their reads and reject corrupt, truncated, or oversized input — invalid LZW codes, output-length mismatches, decompression bombs, out-of-range strip offsets, and hostile dimensions — with `InvalidDataException`/`NotSupportedException` rather than over-reading, looping, or exhausting memory. Valid images are unaffected.
+- **Image-codec hardening.** The TIFF-LZW decoder and the interlaced-PNG and TIFF strip readers bound their
+reads and reject corrupt, truncated, or oversized input — invalid LZW codes, output-length mismatches,
+decompression bombs, out-of-range strip offsets, and hostile dimensions — with
+`InvalidDataException`/`NotSupportedException` rather than over-reading, looping, or exhausting memory. Valid
+images are unaffected.
 
 ## [1.2.0] - 2026-06-11
 
 ### Added
 
-- **OpenType-CFF font subsetting.** CFF (`.otf`) fonts are now subsetted rather than embedded whole. Used charstrings are kept verbatim; unused glyphs and unreachable global and local subroutines are dropped, which cuts a typical small-glyph subset by roughly 70%. CID-keyed or unparseable CFF falls back to whole-font embedding.
-- **DeviceCMYK and ICC-based colour.** `PdfDocument.SetPdfAOutputIntent` and `UseCmykOutputIntent` set the PDF/A output intent (the default stays sRGB). `RegisterIccBasedColorSpace` registers an ICCBased colour space, painted with the new `PdfCanvas.SetFillColorSpace`/`SetStrokeColorSpace` and `SetFillColor`/`SetStrokeColor` operators. `IccProfiles.Srgb` and `IccProfiles.GenericCmyk` supply built-in profiles for callers without their own. DeviceCMYK content validates as PDF/A once a CMYK output intent is set; both paths are checked on CI with veraPDF.
+- **OpenType-CFF font subsetting.** CFF (`.otf`) fonts are now subsetted rather than embedded whole. Used
+charstrings are kept verbatim; unused glyphs and unreachable global and local subroutines are dropped, which
+cuts a typical small-glyph subset by roughly 70%. CID-keyed or unparseable CFF falls back to whole-font
+embedding.
+- **DeviceCMYK and ICC-based colour.** `PdfDocument.SetPdfAOutputIntent` and `UseCmykOutputIntent` set the
+PDF/A output intent (the default stays sRGB). `RegisterIccBasedColorSpace` registers an ICCBased colour space,
+painted with the new `PdfCanvas.SetFillColorSpace`/`SetStrokeColorSpace` and `SetFillColor`/`SetStrokeColor`
+operators. `IccProfiles.Srgb` and `IccProfiles.GenericCmyk` supply built-in profiles for callers without their
+own. DeviceCMYK content validates as PDF/A once a CMYK output intent is set; both paths are checked on CI with
+veraPDF.
 - **`ColorCmyk`** colour type in the layout API, with `FromRgb` and `ToRgbApproximate` conversions.
-- **cmap subtable formats 0 and 6.** Fonts whose character map uses these formats, in addition to format 4, now embed and extract text correctly.
+- **cmap subtable formats 0 and 6.** Fonts whose character map uses these formats, in addition to format 4,
+now embed and extract text correctly.
 
 ### Security
 
-- **Font-parser hardening.** The CFF subsetter and cmap parser bound operand-stack depth and subroutine nesting, use overflow-safe offset checks, and reject negative or zero INDEX offsets and out-of-range cmap ranges. A malformed font falls back to whole-font embedding or fails with a clear error instead of throwing an unhandled exception or exhausting the stack. Valid fonts are unaffected.
+- **Font-parser hardening.** The CFF subsetter and cmap parser bound operand-stack depth and subroutine
+nesting, use overflow-safe offset checks, and reject negative or zero INDEX offsets and out-of-range cmap
+ranges. A malformed font falls back to whole-font embedding or fails with a clear error instead of throwing an
+unhandled exception or exhausting the stack. Valid fonts are unaffected.
 
 ## [1.1.0] - 2026-06-10
 
 ### Added
 
 - **PDF/A-2a (level A) conformance**, validated on every CI run with strict veraPDF.
-- **PDF/UA-1 (ISO 14289-1) conformance** via `PdfConformance.PdfUA1`, validated on CI with strict veraPDF — emits the `pdfuaid` XMP schema, `/ViewerPreferences << /DisplayDocTitle true >>`, and marks decorative content (table borders/fills, separators, running header/footer bands) as `/Artifact`.
-- **Document and per-element language.** A `Language` property on the layout `Document`, `Paragraph`, `Heading`, `ListItem`, and table `Cell` (and on kernel `PdfDocument` / `PdfStructElem`) emits catalog `/Lang` and XMP `dc:language`.
+- **PDF/UA-1 (ISO 14289-1) conformance** via `PdfConformance.PdfUA1`, validated on CI with strict veraPDF —
+emits the `pdfuaid` XMP schema, `/ViewerPreferences << /DisplayDocTitle true >>`, and marks decorative content
+(table borders/fills, separators, running header/footer bands) as `/Artifact`.
+- **Document and per-element language.** A `Language` property on the layout `Document`, `Paragraph`,
+`Heading`, `ListItem`, and table `Cell` (and on kernel `PdfDocument` / `PdfStructElem`) emits catalog `/Lang`
+and XMP `dc:language`.
 - **`PdfCanvas.BeginArtifactMarkedContent`** — marks decorative content as a PDF `/Artifact` (no MCID).
-- **Accessible tables.** `PdfStructElem.TableHeaderScope` emits `/A << /O /Table /Scope … >>` on header cells so assistive tech can resolve column headers.
+- **Accessible tables.** `PdfStructElem.TableHeaderScope` emits `/A << /O /Table /Scope … >>` on header cells
+so assistive tech can resolve column headers.
 
 ### Changed
 
-- The tagged-PDF structure tree now writes an MCID-validated `/ParentTree` and no longer emits a self-referential `/RoleMap` (a circular role mapping, which PDF/UA-1 forbids).
+- The tagged-PDF structure tree now writes an MCID-validated `/ParentTree` and no longer emits a self-
+referential `/RoleMap` (a circular role mapping, which PDF/UA-1 forbids).
 
 ## [1.0.0] - 2026-06-09
 

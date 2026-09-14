@@ -53,10 +53,10 @@ public sealed class TextStyle
     /// by the heading's own name.
     /// <para>On a <see cref="VellumPdf.Layout.Elements.RunningBand"/> style, which message fires
     /// depends on the band and on whether
-    /// <see cref="VellumPdf.Layout.Elements.RunningBand.Height"/> is set. Three non-finite sizes
-    /// across two bands make six pairs. Measured with <c>Height</c> left null: <c>NaN</c> gives
-    /// the band-detailed too-tall message on both bands, naming both and showing which band's
-    /// height reads <c>NaN</c>, but never the font size. Negative infinity names the footer band
+    /// <see cref="VellumPdf.Layout.Elements.RunningBand.Height"/> is set. Measured with
+    /// <c>Height</c> left null: <c>NaN</c> gives the band-detailed too-tall message on both bands,
+    /// naming both bands and showing which one's height reads <c>NaN</c>, but never the font
+    /// size. Negative infinity names the footer band
     /// and the size, but on a header it meets the page-continuation cap and names neither. A fixed
     /// <c>Height</c> moves the throw to the band's own draw step, naming the band and the size,
     /// for five of the six pairs. The sixth is a footer already at negative infinity, which gives
@@ -121,8 +121,8 @@ public sealed class TextStyle
     /// <see cref="VellumPdf.Layout.Elements.RunningBand"/> whose
     /// <see cref="VellumPdf.Layout.Elements.RunningBand.Height"/> is left null, once the leading
     /// is large enough that the content area has no positive size left. Not reachable without a
-    /// band: a page's margins do not move when a plain paragraph's leading grows, so its content
-    /// area cannot follow the leading to zero the way a band's height does. The message names the
+    /// band: a page's margins do not move when a plain paragraph's leading grows, so the page's
+    /// content area cannot follow the leading to zero the way a band's height does. The message names the
     /// content area, not the leading.
     /// </exception>
     public double Leading { get; init; } = 0;  // 0 = auto (font-size * 1.2)

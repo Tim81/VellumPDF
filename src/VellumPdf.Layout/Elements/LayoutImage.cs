@@ -14,9 +14,9 @@ public sealed class LayoutImage
 
     /// <summary>
     /// Display width in points; when null the image fits the available width. Must be finite or
-    /// positive infinity, and at least 5e-6 points in magnitude. That floor is also applied to
-    /// the height derived from it, so a width that clears it can still be refused on a source
-    /// much wider than it is tall.
+    /// positive infinity, and at least 5e-6 points in magnitude. The height derived from the width
+    /// must clear the same floor, so a width above it is still refused when the source is wide
+    /// enough that its proportional height falls below it.
     /// </summary>
     /// <remarks>
     /// A value wider than the available width is clamped to it, so this is an upper bound rather
@@ -48,8 +48,9 @@ public sealed class LayoutImage
     /// when the height derived from a width that clears the floor falls under it, and the message
     /// then names the height rather than the width. Positive infinity is not refused as a
     /// non-finite width: it is clamped to the content box's width, and the height derived from
-    /// that clamped width can still exceed the box's height, which reaches this same type through the
-    /// ordinary too-tall refusal. The comparison is between the source's proportions and the
+    /// that clamped width can still exceed the box's height, and that overflow throws this same
+    /// type through the generic too-tall exception. The comparison is between the source's proportions and
+    /// the
     /// content box's, so a source proportionally taller than the box is refused however wide it
     /// is in absolute terms.
     /// </exception>

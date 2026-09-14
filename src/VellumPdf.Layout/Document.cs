@@ -55,7 +55,7 @@ public sealed class Document : IDisposable
     /// refused with <see cref="ArgumentOutOfRangeException"/> naming the axis and the value, and
     /// a page narrower or shorter than <see cref="Margins"/> is refused with
     /// <see cref="ArgumentException"/>.
-    /// <para>Setting this after <see cref="Add(Paragraph)"/> applies to what you have already
+    /// <para>Setting this after adding elements applies to what you have already
     /// added. The layout runs at save, so the size in force then is the size the whole document
     /// is laid out at, not only the part added after you set it.</para>
     /// <para>On a document no save has been attempted on, that holds byte for byte. Resizing
@@ -64,8 +64,9 @@ public sealed class Document : IDisposable
     /// <c>CreateDate</c>/<c>ModifyDate</c> timestamps, which carry the time each build actually
     /// ran. Measured by resizing a document from 600 by 800 to 200 by 120 at <b>10pt</b>
     /// margins and normalising those three fields: the bytes match a build at 200 by 120
-    /// throughout, and every <c>/MediaBox</c> carries the new size. The margin belongs in the
-    /// recipe: the default 72pt insets on <see cref="Margins"/> do not fit a 120pt page, so that
+    /// throughout, and every <c>/MediaBox</c> carries the new size. The margin is part of the
+    /// measurement, not an aside: the default 72pt insets on <see cref="Margins"/> do not fit a
+    /// 120pt page, so that
     /// combination is refused before either file is built. A save that already threw during
     /// layout breaks that equivalence, along with the rest of the document's state; see
     /// <see cref="Save(System.IO.Stream)"/>.</para>
@@ -153,8 +154,8 @@ public sealed class Document : IDisposable
     /// <see cref="InvalidOperationException"/> instead. One type for one cause and another for
     /// two, so you cannot catch all three together.</para>
     /// <para><c>NaN</c> surfaces as an element being too tall to fit, and negative infinity as
-    /// the page-continuation cap. Neither message is what actually happened. Both were fixed for
-    /// the ordinary case elsewhere and are still open here (#481, #502).</para>
+    /// the page-continuation cap. Neither message is what actually happened. The same wrong-cause
+    /// messages were corrected elsewhere (#481); here they are still open (#502).</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from a save rather than from this property, when the margins on either axis meet
@@ -189,11 +190,10 @@ public sealed class Document : IDisposable
 
     /// <summary>Sets a header band with optional style and alignment. Returns this document for chaining.</summary>
     /// <remarks>
-    /// A null <paramref name="template"/> is accepted here and crashes the save. The parameter
-    /// is non-nullable, but nothing stops a null reaching it. A bare <c>null</c> and a
-    /// nullable-typed expression each draw a different warning, which a build with
-    /// warnings-as-errors stops on and one without does not; <c>null!</c> and a disabled nullable
-    /// context draw nothing at all. This method builds a <see cref="RunningBand"/>, whose
+    /// A null <paramref name="template"/> is accepted here and throws during the save. The parameter
+    /// is non-nullable, but that is a compiler diagnostic rather than a check: how loudly your
+    /// build complains depends on your own nullable settings, and <c>null!</c> silences it
+    /// entirely. This method builds a <see cref="RunningBand"/>, whose
     /// constructor does not check the template, so the band resolves it during layout and the
     /// failure surfaces as a <see cref="NullReferenceException"/> from a call you did not make.
     /// Pass an empty string for a band that draws no text (#531). Assigning to <see cref="Header"/>
@@ -211,11 +211,10 @@ public sealed class Document : IDisposable
 
     /// <summary>Sets a footer band with optional style and alignment. Returns this document for chaining.</summary>
     /// <remarks>
-    /// A null <paramref name="template"/> is accepted here and crashes the save. The parameter
-    /// is non-nullable, but nothing stops a null reaching it. A bare <c>null</c> and a
-    /// nullable-typed expression each draw a different warning, which a build with
-    /// warnings-as-errors stops on and one without does not; <c>null!</c> and a disabled nullable
-    /// context draw nothing at all. This method builds a <see cref="RunningBand"/>, whose
+    /// A null <paramref name="template"/> is accepted here and throws during the save. The parameter
+    /// is non-nullable, but that is a compiler diagnostic rather than a check: how loudly your
+    /// build complains depends on your own nullable settings, and <c>null!</c> silences it
+    /// entirely. This method builds a <see cref="RunningBand"/>, whose
     /// constructor does not check the template, so the band resolves it during layout and the
     /// failure surfaces as a <see cref="NullReferenceException"/> from a call you did not make.
     /// Pass an empty string for a band that draws no text (#531). Assigning to <see cref="Footer"/>
@@ -407,7 +406,7 @@ public sealed class Document : IDisposable
     /// <remarks>
     /// A document is single-use. The layout runs here, not when you add an element, so most of
     /// what can go wrong goes wrong at this call rather than at the one that set the bad value.
-    /// <para>Calling this twice after a save that succeeded throws. The second call reports that
+    /// <para>A second call after a save that succeeded throws. It reports that
     /// the document has already been written and tells you to create a new one. It writes nothing
     /// to the stream, appended or otherwise.</para>
     /// <para>A save that threw does not reliably leave the document usable again either, and the
@@ -567,7 +566,7 @@ public sealed class Document : IDisposable
     /// <remarks>
     /// A document is single-use. The layout runs here, not when you add an element, so most of
     /// what can go wrong goes wrong at this call rather than at the one that set the bad value.
-    /// <para>Calling this twice after a save that succeeded throws. The second call reports that
+    /// <para>A second call after a save that succeeded throws. It reports that
     /// the document has already been written and tells you to create a new one. It writes nothing
     /// to the stream, appended or otherwise.</para>
     /// <para>A save that threw does not reliably leave the document usable again either. The
