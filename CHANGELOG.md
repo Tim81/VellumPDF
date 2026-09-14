@@ -213,11 +213,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   The pattern, written into `CONTRIBUTING.md`: a plain sentence names what is
   refused, which call throws it and why; a following paragraph, for input accepted today but not
   to be relied on, bolds the marker word (`Attention` or `NOTE`) always, and bolds the operative
-  negation too only where the paragraph turns on one. Covered: the table cell's spans and padding,
-  the table border width, the image width and height, the separator's line width and margins, the
-  pie chart's slices, diameter, start angle, stroke width and alignment, the heading level, the
-  list indent and nesting depth, the running band's template, height and alignment, the document
-  margins and page size, all four save overloads, and the text style's font size and leading.
+  negation too only where the paragraph turns on one.
+
+  Covered:
+
+  - `Cell.ColSpan`, `Cell.RowSpan`, `Cell.Padding`, `TableElement.BorderWidth`
+  - `LayoutImage.Width`, `LayoutImage.Height`
+  - `LineSeparator.LineWidth`, `LineSeparator.Margins`
+  - `PieChart.Slices`, `.Diameter`, `.StartAngle`, `.StrokeWidth`, `.Alignment`
+  - `Heading.Level`, `ListElement.Indent`, `ListItem.Children`
+  - `RunningBand.Template`, `.Height`, `.Alignment`
+  - `Document.Margins`, `Document.PageSize`, and all four save overloads
+  - `TextStyle.FontSize`, `TextStyle.Leading`
 
   The 2.3.2 documentation stated several things the code does not do. The pie chart does not skip
   a zero-width stroke: it strokes whenever the stroke colour is set, emitting `0 w`. A table's
@@ -254,12 +261,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   as the tag previously implied.
 
   Every numeric boundary here is a property of the page, not of the value, so each is now stated
-  against the page it was measured on (A4, default 72pt margins, footer with `Height` left null
-  unless noted): the last `Leading` that does not throw is 679, `InvalidOperationException` covers
-  680 through 693, and `ArgumentException` starts at 694; the last `FontSize` that does not throw
-  is 566, `InvalidOperationException` covers 567 through 578, and `ArgumentException` starts at
-  579. On a 300 by 300pt page with 10pt margins the first throwing `Leading` is 262, confirming
-  the figures move with the page rather than belonging to the value. A `Leading` of positive
+  against the page it was measured on: A4, default 72pt margins, footer with `Height` left null
+  unless noted.
+
+  | value | last that does not throw | `InvalidOperationException` | `ArgumentException` from |
+  |---|---|---|---|
+  | `Leading` | 679 | 680–693 | 694 |
+  | `FontSize` | 566 | 567–578 | 579 |
+
+  Shrink the page and they move. On 300 by 300pt at 10pt margins the first throwing `Leading` is
+  262, so the figures belong to the page and not to the value. A `Leading` of positive
   infinity does not throw at all: it is non-finite, so it falls through to automatic leading the
   same way `NaN` and negative infinity do.
 
@@ -285,12 +296,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **A save that threw leaves the document in one of three states, and one of them is silent
   (#530).** All four save overloads said some version of "calling this twice throws", which
-  describes only a save that succeeded. Measured: geometry refused before the layout starts
-  leaves the document clean, and a retry after correcting it produced a file identical in length
-  and page count to a fresh document's; reaching the writer leaves it dead, and a retry on a good
-  stream throws about the document having already been written; a throw from the layout itself
-  leaves it alive and wrong, because the pages it had already laid out stay and a retry appends a
-  whole second layout to them. The page count therefore grows by whatever the failed attempt had
+  describes only a save that succeeded. Measured, the three states are these.
+
+  Geometry refused before the layout starts leaves the document clean: a retry after correcting it
+  produced a file identical in length and page count to a fresh document's. Reaching the writer
+  leaves it dead, and a retry on a good stream throws about the document having already been
+  written. A throw from the layout itself leaves it alive and wrong, because the pages it had
+  already laid out stay, and a retry appends a whole second layout to them. The page count
+  therefore grows by whatever the failed attempt had
   committed, on every attempt; how many that is depends on the document, so no figure for it is
   quoted. Retrying without changing the geometry throws the too-tall exception again, and a save
   after a retry that succeeded reports the document as already written. Correcting the geometry
