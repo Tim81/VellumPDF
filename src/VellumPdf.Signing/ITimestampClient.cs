@@ -32,22 +32,30 @@ public interface ITimestampClient
     /// The authority could not be reached at all.
     /// </exception>
     /// <exception cref="System.Security.Cryptography.CryptographicException">
-    /// The authority answered, but refused the request or returned a response that is not a
-    /// well-formed granted timestamp.
+    /// Two unrelated causes share this type. Either the authority answered and refused the
+    /// request, or returned a response that is not a well-formed granted timestamp; or
+    /// <paramref name="hashAlgorithm"/> names no algorithm the platform knows, which is raised
+    /// while the request is built and before anything is sent. Reading a rejection into the second
+    /// case is the mistake to avoid: <c>default(HashAlgorithmName)</c> is the value a struct field
+    /// starts at, and it gives <c>Unknown algorithm ''</c> without the authority ever being
+    /// contacted.
     /// </exception>
     /// <remarks>
     /// This reaches the network, so expect it to fail for reasons outside your document. The
-    /// failures arrive as three different exception types, measured against a loopback authority.
+    /// failures arrive as three different exception types.
     /// A timeout and a failing HTTP status give <see cref="InvalidOperationException"/>. An
     /// unreachable authority gives <see cref="System.Net.Http.HttpRequestException"/>. A
     /// rejection, or a malformed response body, gives
     /// <see cref="System.Security.Cryptography.CryptographicException"/>.
-    /// <para>Attention: the type is the discriminator here, not the message. Catch only
-    /// <see cref="InvalidOperationException"/> and an unreachable authority escapes it, because
-    /// that arrives as <see cref="System.Net.Http.HttpRequestException"/> instead.</para>
-    /// <para>This call waits on the authority, with the implementation's own timeout as the only
-    /// bound. If you are on a path that must not block, use
-    /// <see cref="GetTimestampTokenAsync"/>.</para>
+    /// <para>Attention: the type is the discriminator here, not the message. If you catch only
+    /// <see cref="InvalidOperationException"/>, an unreachable authority escapes, because it
+    /// arrives as <see cref="System.Net.Http.HttpRequestException"/> instead.</para>
+    /// <para>This call waits on the authority. What bounds the wait is the implementation's
+    /// business: the shipped client applies its own timeout, and a caller-supplied
+    /// <c>HttpClient</c> carries a second one that applies independently.
+    /// <see cref="GetTimestampTokenAsync"/> avoids the wait only on an implementation that
+    /// overrides it. The default below does not; it forwards here and blocks exactly as this call
+    /// does.</para>
     /// <para>A returned token is <b>not</b> verified. It is the authority's answer, carried into
     /// the signature as supplied. Whether its certificate chains to anything a verifier trusts is
     /// a separate question that this call does not answer.</para>
@@ -76,8 +84,8 @@ public interface ITimestampClient
     /// <exception cref="OperationCanceledException">
     /// <paramref name="cancellationToken"/> was signalled and the implementation honours it. The
     /// shipped client raises <see cref="TaskCanceledException"/>, which derives from this type, so
-    /// catching either works. This is a fourth type the synchronous member cannot produce, and the
-    /// default implementation below never produces it.
+    /// catching either works. The default implementation below ignores the token and so never
+    /// raises it. Neither statement binds an implementation you write yourself.
     /// </exception>
     /// <remarks>
     /// The default implementation forwards to <see cref="GetTimestampToken"/>, so existing

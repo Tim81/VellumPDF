@@ -59,8 +59,8 @@ public sealed class PdfObjectRegistry
     /// later in the write catches a foreign one.</para>
     /// <para>Reserving a reference and never setting it is not detected here. It is detected at
     /// write time, and loudly: writing throws <see cref="InvalidOperationException"/> and names
-    /// the object number. You do not get a document with a missing object. Set every reference
-    /// you reserve.</para>
+    /// the object number. You do not get a document with a missing object; you get a partial
+    /// stream and an exception. Set every reference you reserve.</para>
     /// <para>Setting one to <see langword="null"/> counts as not setting it. The null is stored
     /// as it stands and nothing here distinguishes it from a reserved slot, so the write raises
     /// that same exception and reports the object as never assigned, which is not what you did.
@@ -99,6 +99,11 @@ public sealed class PdfObjectRegistry
     /// <see langword="null"/>. The message names the object number. No document is produced, but
     /// the objects written before it are already in your stream and stay there; nothing rewinds
     /// it for you.
+    /// </exception>
+    /// <exception cref="NullReferenceException">
+    /// <paramref name="writer"/> or <paramref name="xref"/> is <see langword="null"/>. Neither is
+    /// checked, so the throw carries no parameter name. Whatever the caller's stream raises during
+    /// the write surfaces from here too, unwrapped.
     /// </exception>
     public void WriteAll(PdfWriter writer, CrossReferenceBuilder xref, Func<int, Action?>? preWrite)
     {

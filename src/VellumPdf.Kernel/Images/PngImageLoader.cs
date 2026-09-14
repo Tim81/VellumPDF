@@ -34,14 +34,14 @@ public static class PngImageLoader
     /// Treat the input as untrusted. A malformed file raises
     /// <see cref="InvalidDataException"/>: a wrong signature, a truncated stream, or a declared
     /// size the limit refuses.
-    /// <para>Attention: <see langword="null"/> is <b>not</b> checked. It raises
-    /// <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>, so a
-    /// <c>catch</c> on the documented type will not catch it. You have to reject null yourself. A
+    /// <para><see langword="null"/> is not checked. It raises
+    /// <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>, so a caller
+    /// guarding on the documented type will not catch it. You have to reject null yourself. A
     /// later major version will check it.</para>
-    /// <para>One size limit applies: a declared pixel count above 100,000,000 is refused, so that
-    /// a few bytes of header cannot drive a multi-gigabyte allocation. There is <b>no</b> per-edge
-    /// limit, so one edge of 1,000,001 under that total loads. The limit is internal and has no
-    /// public setting.</para>
+    /// <para>One size limit applies: a declared pixel count above <b>100,000,000</b> is refused,
+    /// so that a few bytes of header cannot drive a multi-gigabyte allocation. The cap is on the
+    /// product alone, with no per-edge limit, so a very long thin image passes on a total no
+    /// square one would. The limit is internal and has no public setting.</para>
     /// </remarks>
     public static PdfImageXObject Load(byte[] pngBytes) => Load(pngBytes, ImageLoadOptions.Default);
 

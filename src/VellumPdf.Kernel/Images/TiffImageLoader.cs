@@ -120,20 +120,20 @@ public static class TiffImageLoader
     /// <see cref="IndexOutOfRangeException"/>, where the sibling tag readers check for a negative
     /// and refuse the file properly. That is a defect rather than a contract, filed as #512, and
     /// until it is fixed a caller reading untrusted TIFF needs a third clause.</para>
-    /// <para>Attention: <see langword="null"/> is <b>not</b> checked. It raises
+    /// <para><see langword="null"/> is not checked. It raises
     /// <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>, so a caller
     /// guarding on the documented type will not catch it. You have to reject null yourself. A
     /// later major version will check it.</para>
-    /// <para>One size limit applies: a declared pixel count above 100,000,000 is refused, so that
-    /// a few bytes of header cannot drive a multi-gigabyte allocation. There is <b>no</b> per-edge
-    /// limit, so one edge of 1,000,001 under that total loads. The limit is internal and has no
-    /// public setting.</para>
+    /// <para>One size limit applies: a declared pixel count above <b>100,000,000</b> is refused,
+    /// so that a few bytes of header cannot drive a multi-gigabyte allocation. The cap is on the
+    /// product alone, with no per-edge limit, so a very long thin image passes on a total no
+    /// square one would. The limit is internal and has no public setting.</para>
     /// <para>Attention: the pixel cap has a hole, and this loader carries it. A strip
     /// compressed with new-style JPEG (Compression 7) is handed to
     /// <see cref="JpegImageLoader.Load(byte[])"/>, which takes its dimensions from the JPEG frame
     /// header and validates nothing. A TIFF declaring ImageWidth 8 and ImageLength 8, whose single
     /// strip is a JPEG declaring 65535 by 65535, returns an image of 4,294,836,225 pixels. No raster is allocated, since those bytes pass through as DCTDecode
-    /// data. But the dimensions reach the image dictionary, and a consumer that trusts them can
+    /// data. But the dimensions reach the image dictionary, and a reader that trusts them can
     /// be made to allocate from them. If the input is untrusted, check the result's <c>Width</c>
     /// and <c>Height</c> yourself (#505).</para>
     /// </remarks>
@@ -141,7 +141,9 @@ public static class TiffImageLoader
 
     /// <summary>Decodes baseline TIFF file bytes into a FlateDecode Image XObject with the specified load options.</summary>
     /// <exception cref="InvalidDataException">
-    /// The bytes are not a TIFF file, are truncated, or declare dimensions outside the pixel cap.
+    /// The bytes are not a TIFF file, or the directory they carry does not describe an image this
+    /// loader can locate: truncated, a pixel count above the limit, a required tag missing, or
+    /// tags that disagree with each other.
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// The file is a well-formed TIFF using a feature this loader does not read.
@@ -161,10 +163,13 @@ public static class TiffImageLoader
     /// <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>. The
     /// 100,000,000-pixel cap applies and there is no per-edge limit.
     /// <para><paramref name="options"/> reaches
-    /// <see cref="ImageLoadOptions.DecodeMode"/> on one path only, a CCITT-compressed strip, which
-    /// it can ask to be decoded to a raster instead of passed through. On every other path the
-    /// only member read is <see cref="ImageLoadOptions.BitDepth"/>. Neither relaxes the pixel
-    /// cap.</para>
+    /// <see cref="ImageLoadOptions.DecodeMode"/> on one path only, a Group 3 CCITT strip
+    /// (Compression 2 or 3), which it can ask to be decoded to a raster instead of passed through.
+    /// A Group 4 strip is CCITT too and does <b>not</b> read it: asking that one for a raster is
+    /// ignored rather than refused, and you get the passthrough, where
+    /// <see cref="CcittImageLoader.Load"/> given the same request raises
+    /// <see cref="NotSupportedException"/>. On every other path the only member read is
+    /// <see cref="ImageLoadOptions.BitDepth"/>. Neither relaxes the pixel cap.</para>
     /// </remarks>
     public static PdfImageXObject Load(byte[] tiff, ImageLoadOptions options)
     {

@@ -60,12 +60,11 @@ public static class CcittImageLoader
     /// limit is on the geometry you declare, not on anything this call allocates, because in the
     /// default mode it allocates no raster at all. No per-edge limit applies, so 2,000,000 by 1
     /// is accepted.</para>
-    /// <para>A <see langword="null"/> <paramref name="ccittData"/> is refused here rather than
-    /// dereferenced, so it gives <see cref="ArgumentException"/> and <b>not</b> the
-    /// <see cref="NullReferenceException"/> that <see cref="BmpImageLoader"/>,
-    /// <see cref="PngImageLoader"/>, <see cref="TiffImageLoader"/> and
-    /// <see cref="JpegImageLoader"/> give. Both <paramref name="ccitt"/> and
-    /// <paramref name="options"/> accept <see langword="null"/> and take their defaults.</para>
+    /// <para>A <see langword="null"/> <paramref name="ccittData"/> is checked rather than
+    /// dereferenced, so it gives <see cref="ArgumentException"/>. Most of the raster loaders do
+    /// not check, so do not carry that expectation across to them. Both <paramref name="ccitt"/>
+    /// and <paramref name="options"/> accept <see langword="null"/> and take their
+    /// defaults.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// <paramref name="ccittData"/> is <see langword="null"/> or empty.

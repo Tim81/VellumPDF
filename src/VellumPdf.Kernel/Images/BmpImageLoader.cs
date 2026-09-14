@@ -37,16 +37,17 @@ public static class BmpImageLoader
     /// declared size the limit refuses. A well-formed file that this loader cannot read raises
     /// <see cref="NotSupportedException"/> instead. That type does <b>not</b> derive from the
     /// first, so catching only <see cref="InvalidDataException"/> lets it escape.
-    /// <para>Attention: <see langword="null"/> is not checked. It raises
-    /// <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>. You have to
-    /// reject null yourself. A later major version will check it.</para>
-    /// <para>One size limit applies: a declared pixel count above 100,000,000 is refused, so that
-    /// a few bytes of header cannot drive a multi-gigabyte allocation. There is <b>no</b> per-edge
-    /// limit, so one edge of 1,000,001 under that total loads. The limit is internal and has no
-    /// public setting.</para>
-    /// <para>Compressed bitmaps are refused, not decoded. BI_RLE8, BI_RLE4 and BI_BITFIELDS
-    /// each raise <see cref="NotSupportedException"/>, as do a DIB header that is not the 40-byte
-    /// BITMAPINFOHEADER and any bit depth other than 8, 24 and 32. There is <b>no</b> fallback
+    /// <para><see langword="null"/> is not checked. It raises
+    /// <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>, so a caller
+    /// guarding on the documented type will not catch it. You have to reject null yourself. A
+    /// later major version will check it.</para>
+    /// <para>One size limit applies: a declared pixel count above <b>100,000,000</b> is refused,
+    /// so that a few bytes of header cannot drive a multi-gigabyte allocation. The cap is on the
+    /// product alone, with no per-edge limit, so a very long thin image passes on a total no
+    /// square one would. The limit is internal and has no public setting.</para>
+    /// <para>This loader reads one variant: an uncompressed 40-byte BITMAPINFOHEADER bitmap at
+    /// 8, 24 or 32 bits per pixel. Every other well-formed BMP raises
+    /// <see cref="NotSupportedException"/>, compressed ones included, and there is no fallback
     /// path. Size is checked first, so a file shorter than 54 bytes is reported as truncated
     /// whatever variant it would have been.</para>
     /// </remarks>

@@ -400,67 +400,75 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   written into `CONTRIBUTING.md`, which ships, rather than only into the agent guidance, which is
   untracked and reaches no clone.
 
-- **The image loaders say what they refuse, and JPEG says how it differs.** Five of the eight
-  loaders carried no `<exception>` tag at all, and every one of them takes a byte array a caller is
-  likely to have received from somewhere untrusted. BMP, CCITT, JPEG, PNG and TIFF now document
-  what they raise and for what.
+- **The image loaders now document what they refuse, and JPEG documents that it validates nothing
+  (#505, #512).** Five of the eight loaders carried no `<exception>` tag at all, and every one of
+  them takes a byte array a caller is likely to have received from somewhere untrusted. BMP, CCITT,
+  JPEG, PNG and TIFF now document what they raise and for what.
 
-  Four boundaries were measured while writing them rather than assumed.
+  A null array raises `NullReferenceException`, not `ArgumentNullException`, in five loaders: BMP,
+  GIF, JPEG, PNG and TIFF. The other three guard it, and not alike: JPEG 2000 with
+  `ArgumentNullException`, CCITT and JBIG2 with `ArgumentException` for null or empty. So a caller
+  guarding `ArgumentNullException` catches nothing in the five, which is now said on each member
+  this release documents.
 
-  A null array raises `NullReferenceException`, not `ArgumentNullException`, in BMP, JPEG, PNG and
-  TIFF. Three of the eight loaders do guard it, and not alike: the JPEG 2000 one with
-  `ArgumentNullException`, the CCITT and JBIG2 ones with `ArgumentException` for null or empty. So
-  a caller guarding the documented type does not catch it in the four, which is now said on each
-  member.
-
-  Only one of the two size limits applies to any of them. The 100,000,000-pixel cap is enforced by
-  every loader that reaches `ValidateDimensions`. The 1,000,000-per-edge constant is enforced on no
-  default path at all: only the MMR decoder reads it, only the JBIG2 loader reaches that decoder,
-  and only when asked for a decoded raster rather than the passthrough its options default to. So
-  an image declaring one edge of 1,000,001 with a total under the pixel cap loads in every loader.
-  Documenting a guard that does not run is worse than documenting none, so each member now states
-  the cap that applies to it and says there is no per-edge limit.
+  Only one of the two size limits applies to a default call. The 100,000,000-pixel cap is enforced
+  by every loader that reaches `ValidateDimensions`, which is all of them but JPEG. The
+  1,000,000-per-edge constant is enforced on no default path: only the MMR decoder reads it, only
+  the JBIG2 loader reaches that decoder, and only when asked for a decoded raster rather than the
+  passthrough its options default to. Ask JBIG2 for a raster and the per-edge limit is real; on
+  every other path an image can be as long and thin as the product cap allows. Documenting a guard
+  that does not run is worse than documenting none, so each member states the cap that applies to
+  it and says the cap is on the product alone.
 
   BMP and TIFF raise `NotSupportedException`, not `InvalidDataException`, for a well-formed file of
   a variant they do not read, and that type does not derive from the other. A caller who catches
   only `InvalidDataException` therefore crashes on the first run-length encoded bitmap. Both
   loaders now document both types, and TIFF documents a third: a `ColorMap` tag carrying a negative
-  offset reaches an unguarded array read and escapes both (#512).
+  offset reaches an unguarded array read and escapes both (#512). A mutation run over 400,000
+  malformed TIFFs found no second escape.
 
   The JPEG loader is the only one that does not validate what its header declares. A file carrying
   nothing but a frame header saying 65535 by 65535 returns an image of 4,294,836,225 pixels, where
-  the same declaration through the GIF loader is refused at the 100,000,000 cap. Nothing allocates
+  the same declaration through the PNG loader is refused at the 100,000,000 cap. Nothing allocates
   a raster for it, because the bytes pass through as `DCTDecode` data, but those dimensions reach
-  the image dictionary and a consumer that trusts them can be made to allocate from them. The
-  loader now says so and says to validate the size yourself.
+  the image dictionary and a reader that trusts them can be made to allocate from them. Validate
+  the size yourself before you trust it.
 
   The TIFF loader carries the same hole, and there it is worse, because the TIFF member is one that
   documents the cap and so reads as though the cap held. A strip compressed with new-style JPEG is
   handed straight to the JPEG loader, so a TIFF declaring 8 by 8 returns that same
   4,294,836,225-pixel image. Filed as #505 rather than fixed here, since validating it changes
-  behaviour; the member says so meanwhile.
+  behaviour.
 
-  CCITT is the fifth, and its shape is its own. A null argument is refused with `ArgumentException`
-  rather than dereferenced. A non-positive `columns` or `rows` gives `ArgumentOutOfRangeException`,
-  named as itself, because both are checked before the pixel cap. Asking for a raster from a Group
-  4 stream, or from a 2-D row inside a mixed-mode one, gives `NotSupportedException` with no
-  fallback to passthrough. And the default mode decodes nothing, so the two geometry arguments are
-  taken on trust: nothing reads them back from the data, and a wrong pair produces a file that
-  opens and shows a corrupt image.
+  CCITT differs on every boundary. A null argument is refused with `ArgumentException` rather than
+  dereferenced. A non-positive `columns` or `rows` gives `ArgumentOutOfRangeException`, named as
+  itself, because both are checked before the pixel cap. Asking for a raster from a Group 4 stream,
+  or from a 2-D row inside a mixed-mode one, gives `NotSupportedException` with no fallback to
+  passthrough. And the default mode decodes nothing, so the two geometry arguments are taken on
+  trust: nothing reads them back from the data, and a wrong pair produces a file that opens and
+  shows a corrupt image.
 
-  Also documented, each with the boundary measured rather than read off the code:
+  One asymmetry between the two CCITT entry points is now written down. `TiffImageLoader` reads
+  `ImageLoadOptions.DecodeMode` on one path only, a Group 3 strip. Ask it to decode a Group 4 strip
+  to a raster and the request is ignored and you get the passthrough, where `CcittImageLoader.Load`
+  given the same request raises `NotSupportedException`.
+
+  Also documented, each boundary measured rather than read off the code:
 
   - The object registry's rule that only a reference it allocated may be set, which is a range
     check rather than the provenance check its message claims. Setting a reserved reference to
-    `null` counts as not setting it, and the write then reports the object as never assigned.
-  - The writer's position counter, which is never checked against the stream it is given.
+    `null` counts as not setting it, and the write then reports the object as never assigned. A
+    failed write leaves the objects already written in the caller's stream.
+  - The writer's position counter, which the writer never checks against the stream it was
+    constructed over.
   - The barcode matrix's bounds check, which refuses a negative coordinate through an unsigned
     comparison rather than by testing the sign.
   - The timestamp client, where a timeout, an unreachable authority and a rejected request each
-    arrive as a *different* exception type, so the type is what a caller has to switch on. Its
-    asynchronous default implementation blocks and never consults its cancellation token, and an
-    implementation that does honour the token adds a fourth type the synchronous member cannot
-    raise.
+    arrive as a **different** exception type, so the type is what a caller has to switch on. A
+    fourth case shares the rejection's type without involving the authority at all: an unknown
+    `hashAlgorithm` fails while the request is built. The asynchronous default implementation
+    blocks and never consults its cancellation token, so it is not the way off a blocking path
+    unless the implementation overrides it.
 
 ## [2.3.2] - 2026-09-12
 

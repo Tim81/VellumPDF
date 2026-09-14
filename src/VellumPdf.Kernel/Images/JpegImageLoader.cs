@@ -23,16 +23,15 @@ public static class JpegImageLoader
     /// This loader decodes nothing. The bytes are embedded verbatim as DCTDecode data and only
     /// the frame header is read. A file this accepts is therefore not necessarily a file a reader
     /// can render: corruption past the header passes straight into the document.
-    /// <para>Attention: this loader does <b>not</b> check the declared size, and the difference is
-    /// large. A file carrying nothing but a frame header declaring 65535 by 65535 returns an image
-    /// of 4,294,836,225 pixels, where every loader that validates the dimensions it reads from its
-    /// own header refuses anything above 100,000,000. That qualification is not idle:
-    /// <see cref="TiffImageLoader"/> validates its own directory and then hands a JPEG-compressed
-    /// strip here, and the image it returns carries these dimensions rather than the ones it
-    /// checked.
-    /// Nothing allocates a raster, since the bytes pass through, but the width and height
-    /// reach the image dictionary and a consumer that trusts them can be made to allocate from
-    /// them. If the input is untrusted, check the dimensions yourself (#505).</para>
+    /// <para>Attention: this loader does not check the declared size. A file carrying nothing but
+    /// a frame header saying 65535 by 65535 returns an image of <b>4,294,836,225</b> pixels; a
+    /// loader that reads its dimensions from its own header refuses anything above 100,000,000.
+    /// That distinction is not idle. <see cref="TiffImageLoader"/> validates its own directory and
+    /// then hands a JPEG-compressed strip here, and the image TIFF returns carries the JPEG's
+    /// dimensions rather than the ones TIFF checked. Nothing allocates a raster, since the bytes
+    /// pass through, but the width and height reach the image dictionary and a reader that trusts
+    /// them can be made to allocate from them. If the input is untrusted, check the dimensions
+    /// yourself (#505).</para>
     /// <para><see langword="null"/> is not checked either. It raises
     /// <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>.</para>
     /// </remarks>

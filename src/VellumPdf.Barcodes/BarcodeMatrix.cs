@@ -4,7 +4,8 @@
 namespace VellumPdf.Barcodes;
 
 /// <summary>
-/// A rectangular grid of dark/light modules produced by a 2D symbology (QR, Micro QR, PDF417).
+/// A rectangular grid of dark/light modules produced by a 2D symbology: QR, Micro QR, PDF417,
+/// Aztec or Data Matrix.
 /// Bit-packed for compactness; row-major, <c>(0, 0)</c> is the top-left module.
 /// </summary>
 public sealed class BarcodeMatrix
@@ -38,10 +39,9 @@ public sealed class BarcodeMatrix
     /// Both coordinates are bounds-checked, and a negative one is refused too. The check is an
     /// unsigned comparison, so -1 is treated as a very large value and refused by the same
     /// exception rather than reading a neighbouring row.
-    /// <para>Attention: this matrix covers the symbol only. Where a symbology asks for a quiet
-    /// zone, it is <b>not</b> part of <see cref="Width"/> and <see cref="Height"/>, and a renderer
-    /// adds it separately; how many modules wide it is varies by symbology, and Aztec asks for
-    /// none. Do not read outside these bounds looking for it. The call throws instead.</para>
+    /// <para>This matrix covers the symbol only. Where a symbology asks for a quiet zone, it is
+    /// not part of <see cref="Width"/> and <see cref="Height"/>, and a renderer adds it
+    /// separately; how many modules wide it is varies by symbology, and Aztec asks for none.</para>
     /// </remarks>
     public bool IsDark(int x, int y)
     {
