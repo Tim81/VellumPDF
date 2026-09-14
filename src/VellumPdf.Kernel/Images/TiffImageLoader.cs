@@ -97,7 +97,7 @@ public static class TiffImageLoader
     /// <summary>Decodes baseline TIFF file bytes into a FlateDecode Image XObject.</summary>
     /// <exception cref="InvalidDataException">
     /// The bytes are not a TIFF file, or the directory they carry does not describe an image this
-    /// loader can locate: truncated, a pixel count above the limit below, a required tag missing,
+    /// loader will read: truncated, a pixel count above the safety limit, a required tag missing,
     /// or tags that disagree with each other.
     /// </exception>
     /// <exception cref="NotSupportedException">
@@ -111,28 +111,38 @@ public static class TiffImageLoader
     /// </exception>
     /// <remarks>
     /// Treat the input as untrusted, and catch two types rather than one. A malformed file
-    /// raises <see cref="InvalidDataException"/>. A well-formed file using a feature this loader
-    /// does not read raises <see cref="NotSupportedException"/>, and that type
-    /// does <b>not</b> derive from the first. TIFF is the widest format here, so expect
-    /// this loader to refuse files that other software opens.
-    /// <para>Attention: one malformed input escapes both. A <c>ColorMap</c> tag carrying a
-    /// negative offset reaches an unguarded array read and throws
-    /// <see cref="IndexOutOfRangeException"/>, where the sibling tag readers check for a negative
-    /// and refuse the file properly. That is a defect rather than a contract, filed as #512, and
-    /// until it is fixed a caller reading untrusted TIFF needs a third clause.</para>
+    /// raises <see cref="InvalidDataException"/>. A well-formed file whose compression, bit depth
+    /// or photometric interpretation this loader does not read raises
+    /// <see cref="NotSupportedException"/>, and neither type derives from the other. TIFF admits
+    /// far more variants than this loader reads, so expect it to refuse files other software
+    /// opens.
+    /// <para>Attention: refusal is not the only outcome, and the quiet one is worse. Tags outside
+    /// that set are neither read nor refused, so what comes back is simply a different image.
+    /// <c>Orientation</c> is ignored, so a rotated or flipped source arrives in storage order.
+    /// <c>FillOrder</c> 2 is ignored outside the CCITT branches, so a bit-reversed source arrives
+    /// with every byte wrong. Only the first IFD is read, so the other pages of a multi-page file
+    /// are absent. Nothing reports any of it. Check those tags yourself if you did not produce
+    /// the file.</para>
+    /// <para>The <c>ColorMap</c> tag escapes both types. A negative offset reaches an
+    /// unguarded array read and throws <see cref="IndexOutOfRangeException"/> (#512), where the
+    /// sibling tag readers check the sign and refuse the file; a count of zero with a valid offset
+    /// reaches a different unguarded read and throws the same type (#534). Both are defects rather
+    /// than contracts, so do not read the pair as the whole set. A caller reading untrusted TIFF
+    /// needs a third clause.</para>
     /// <para><see langword="null"/> is not checked. It raises
     /// <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>, so a caller
     /// guarding on the documented type will not catch it. You have to reject null yourself. A
     /// later major version will check it.</para>
     /// <para>One size limit applies: a declared pixel count above <b>100,000,000</b> is refused,
-    /// so that a few bytes of header cannot drive a multi-gigabyte allocation. The cap is on the
-    /// product alone, with no per-edge limit, so a very long thin image passes on a total no
-    /// square one would. The limit is internal and has no public setting.</para>
-    /// <para>Attention: the pixel cap has a hole, and this loader carries it. A strip
+    /// so that a few bytes of header cannot drive a large allocation. Neither edge is limited on
+    /// its own, so an image far wider than it is tall is accepted whenever the product clears the
+    /// safety limit. The limit is internal and has no public setting.</para>
+    /// <para>Attention: the safety limit has a hole, and this loader carries it. A strip
     /// compressed with new-style JPEG (Compression 7) is handed to
     /// <see cref="JpegImageLoader.Load(byte[])"/>, which takes its dimensions from the JPEG frame
     /// header and validates nothing. A TIFF declaring ImageWidth 8 and ImageLength 8, whose single
-    /// strip is a JPEG declaring 65535 by 65535, returns an image of 4,294,836,225 pixels. No raster is allocated, since those bytes pass through as DCTDecode
+    /// strip is a JPEG declaring 65535 by 65535, returns an image of 4,294,836,225 pixels. No
+    /// raster is allocated, since those bytes pass through as DCTDecode
     /// data. But the dimensions reach the image dictionary, and a reader that trusts them can
     /// be made to allocate from them. If the input is untrusted, check the result's <c>Width</c>
     /// and <c>Height</c> yourself (#505).</para>
@@ -142,7 +152,7 @@ public static class TiffImageLoader
     /// <summary>Decodes baseline TIFF file bytes into a FlateDecode Image XObject with the specified load options.</summary>
     /// <exception cref="InvalidDataException">
     /// The bytes are not a TIFF file, or the directory they carry does not describe an image this
-    /// loader can locate: truncated, a pixel count above the limit, a required tag missing, or
+    /// loader will read: truncated, a pixel count above the safety limit, a required tag missing, or
     /// tags that disagree with each other.
     /// </exception>
     /// <exception cref="NotSupportedException">
@@ -161,15 +171,16 @@ public static class TiffImageLoader
     /// does not read raises <see cref="NotSupportedException"/>, and the <c>ColorMap</c> defect
     /// above escapes both. None of the three derives from another. A null array raises
     /// <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>. The
-    /// 100,000,000-pixel cap applies and there is no per-edge limit.
+    /// 100,000,000 safety limit applies and neither edge is limited on its own.
     /// <para><paramref name="options"/> reaches
     /// <see cref="ImageLoadOptions.DecodeMode"/> on one path only, a Group 3 CCITT strip
-    /// (Compression 2 or 3), which it can ask to be decoded to a raster instead of passed through.
+    /// (Compression 2 or 3), which you can ask to be decoded to a raster instead of passed
+    /// through.
     /// A Group 4 strip is CCITT too and does <b>not</b> read it: asking that one for a raster is
     /// ignored rather than refused, and you get the passthrough, where
     /// <see cref="CcittImageLoader.Load"/> given the same request raises
     /// <see cref="NotSupportedException"/>. On every other path the only member read is
-    /// <see cref="ImageLoadOptions.BitDepth"/>. Neither relaxes the pixel cap.</para>
+    /// <see cref="ImageLoadOptions.BitDepth"/>. Neither relaxes the safety limit.</para>
     /// </remarks>
     public static PdfImageXObject Load(byte[] tiff, ImageLoadOptions options)
     {

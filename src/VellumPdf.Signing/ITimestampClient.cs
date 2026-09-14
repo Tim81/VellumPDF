@@ -32,13 +32,12 @@ public interface ITimestampClient
     /// The authority could not be reached at all.
     /// </exception>
     /// <exception cref="System.Security.Cryptography.CryptographicException">
-    /// Two unrelated causes share this type. Either the authority answered and refused the
-    /// request, or returned a response that is not a well-formed granted timestamp; or
-    /// <paramref name="hashAlgorithm"/> names no algorithm the platform knows, which is raised
-    /// while the request is built and before anything is sent. Reading a rejection into the second
-    /// case is the mistake to avoid: <c>default(HashAlgorithmName)</c> is the value a struct field
-    /// starts at, and it gives <c>Unknown algorithm ''</c> without the authority ever being
-    /// contacted.
+    /// Two unrelated causes share this type. The first is the authority: it answered and refused
+    /// the request, or returned a response that is not a well-formed granted timestamp. The second
+    /// never reaches the authority: <paramref name="hashAlgorithm"/> names no algorithm the
+    /// platform knows, and the request fails while it is being built. Do not read the second as a
+    /// rejection. <c>default(HashAlgorithmName)</c> is the value a struct field starts at, and it
+    /// gives <c>Unknown algorithm ''</c> without the authority ever being contacted.
     /// </exception>
     /// <remarks>
     /// This reaches the network, so expect it to fail for reasons outside your document. The

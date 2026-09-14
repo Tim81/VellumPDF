@@ -405,14 +405,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   them takes a byte array a caller is likely to have received from somewhere untrusted. BMP, CCITT,
   JPEG, PNG and TIFF now document what they raise and for what.
 
-  A null array raises `NullReferenceException`, not `ArgumentNullException`, in five loaders: BMP,
-  GIF, JPEG, PNG and TIFF. The other three guard it, and not alike: JPEG 2000 with
-  `ArgumentNullException`, CCITT and JBIG2 with `ArgumentException` for null or empty. So a caller
-  guarding `ArgumentNullException` catches nothing in the five, which is now said on each member
-  this release documents.
+  A null array raises `NullReferenceException`, not `ArgumentNullException`, in BMP, GIF, JPEG,
+  PNG and TIFF. The other three guard it, and not alike: JPEG 2000 with `ArgumentNullException`,
+  CCITT and JBIG2 with `ArgumentException` for null or empty. A caller guarding
+  `ArgumentNullException` therefore catches nothing in the first group. Four of those five say so
+  on the member; GIF is the one this release leaves undocumented.
 
-  Only one of the two size limits applies to a default call. The 100,000,000-pixel cap is enforced
-  by every loader that reaches `ValidateDimensions`, which is all of them but JPEG. The
+  Of the two size limits, at most one applies to any default call, and on JPEG neither does. The
+  100,000,000 safety limit is enforced by every loader that reaches `ValidateDimensions`, which is
+  all of them but JPEG. The
   1,000,000-per-edge constant is enforced on no default path: only the MMR decoder reads it, only
   the JBIG2 loader reaches that decoder, and only when asked for a decoded raster rather than the
   passthrough its options default to. Ask JBIG2 for a raster and the per-edge limit is real; on
@@ -421,11 +422,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   it and says the cap is on the product alone.
 
   BMP and TIFF raise `NotSupportedException`, not `InvalidDataException`, for a well-formed file of
-  a variant they do not read, and that type does not derive from the other. A caller who catches
+  a variant they do not read, and neither type derives from the other. A caller who catches
   only `InvalidDataException` therefore crashes on the first run-length encoded bitmap. Both
   loaders now document both types, and TIFF documents a third: a `ColorMap` tag carrying a negative
-  offset reaches an unguarded array read and escapes both (#512). A mutation run over 400,000
-  malformed TIFFs found no second escape.
+  offset reaches an unguarded array read and escapes both (#512), and so does a `ColorMap` count
+  of zero with a valid offset, at a different site and with no negative value in the file (#534).
 
   The JPEG loader is the only one that does not validate what its header declares. A file carrying
   nothing but a frame header saying 65535 by 65535 returns an image of 4,294,836,225 pixels, where
@@ -434,26 +435,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the image dictionary and a reader that trusts them can be made to allocate from them. Validate
   the size yourself before you trust it.
 
-  The TIFF loader carries the same hole, and there it is worse, because the TIFF member is one that
-  documents the cap and so reads as though the cap held. A strip compressed with new-style JPEG is
+  The TIFF loader carries the same hole, and it is worse there: the TIFF member documents the
+  limit, so it reads as though the limit held. A strip compressed with new-style JPEG is
   handed straight to the JPEG loader, so a TIFF declaring 8 by 8 returns that same
   4,294,836,225-pixel image. Filed as #505 rather than fixed here, since validating it changes
   behaviour.
 
-  CCITT differs on every boundary. A null argument is refused with `ArgumentException` rather than
-  dereferenced. A non-positive `columns` or `rows` gives `ArgumentOutOfRangeException`, named as
+  CCITT shares the safety limit and differs on everything else. A null argument is refused with
+  `ArgumentException` rather than dereferenced. A non-positive `columns` or `rows` gives
+  `ArgumentOutOfRangeException`, named as
   itself, because both are checked before the pixel cap. Asking for a raster from a Group 4 stream,
   or from a 2-D row inside a mixed-mode one, gives `NotSupportedException` with no fallback to
   passthrough. And the default mode decodes nothing, so the two geometry arguments are taken on
   trust: nothing reads them back from the data, and a wrong pair produces a file that opens and
   shows a corrupt image.
 
-  One asymmetry between the two CCITT entry points is now written down. `TiffImageLoader` reads
+  The two CCITT entry points disagree, and the disagreement is now documented. `TiffImageLoader`
+  reads
   `ImageLoadOptions.DecodeMode` on one path only, a Group 3 strip. Ask it to decode a Group 4 strip
   to a raster and the request is ignored and you get the passthrough, where `CcittImageLoader.Load`
   given the same request raises `NotSupportedException`.
 
-  Also documented, each boundary measured rather than read off the code:
+  Also documented, each boundary measured:
 
   - The object registry's rule that only a reference it allocated may be set, which is a range
     check rather than the provenance check its message claims. Setting a reserved reference to
@@ -461,8 +464,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     failed write leaves the objects already written in the caller's stream.
   - The writer's position counter, which the writer never checks against the stream it was
     constructed over.
-  - The barcode matrix's bounds check, which refuses a negative coordinate through an unsigned
-    comparison rather than by testing the sign.
+  - The barcode matrix's bounds check, which refuses a negative coordinate rather than reading a
+    neighbouring row.
   - The timestamp client, where a timeout, an unreachable authority and a rejected request each
     arrive as a **different** exception type, so the type is what a caller has to switch on. A
     fourth case shares the rejection's type without involving the authority at all: an unknown
@@ -949,7 +952,8 @@ is still honest about compatibility even though the content is wider than a patc
   40pt column at Helvetica 12pt, every case found had the old walk counting a taller row than what
   was drawn and none a shorter one. How many is a property of the sample rather than of the defect,
   so it is not quoted here: two independent sweeps over different alphabets found 152 and 744 in
-  4,000. Known-answer case, which is not sample-dependent: the cell `"AAAAii "` in the same column drew one line in a row sized for
+  4,000. Known-answer case, which is not sample-dependent: the cell `"AAAAii "` in the same column
+  drew one line in a row sized for
   two (28.8pt) before this fix, and now resolves to the 14.4pt row the single drawn line needs —
   a document whose cell text ends in a space that does not fit gets a shorter row than before,
   which is the corrected height rather than a side effect, but a geometry change all the same.
@@ -958,7 +962,8 @@ is still honest about compatibility even though the content is wider than a patc
   draw.** Hard-breaking an over-wide cell word (above) can make a row taller than the page has
   room for, where the base drew the overrun off the page instead of refusing it. Measured, a
   100pt column with zero padding on a 400x200pt page, a cell holding 300 "W"s at 10pt
-  (the fixture's own explicit size; `TextStyle.FontSize` defaults to 12): the base drew one line past the page edge; this pull request hard-breaks it into enough
+  (the fixture's own explicit size; `TextStyle.FontSize` defaults to 12): the base drew one line
+  past the page edge; this pull request hard-breaks it into enough
   lines that the row no longer fits a 200pt page height, and `Document.Save` now raises "An
   element is too tall to fit on a single page and cannot be rendered." where it previously
   produced a document. This is not a new exception type and not new validation — `DocumentRenderer`
@@ -1002,7 +1007,8 @@ is still honest about compatibility even though the content is wider than a patc
   difference is not cosmetic. The first draft of this change let a cell declaring more rows than the
   table holds claim them: on a two-row table, a declared 5 and a declared 50 each failed veraPDF's
   row-width check, and a declared `int.MaxValue` produced no verdict at all, because veraPDF tried
-  to allocate a row array of that size and abandoned the job. A header row carrying a span was worse, since the header run
+  to allocate a row array of that size and abandoned the job. A header row carrying a span was
+  worse, since the header run
   is repeated at the top of every continuation page while the span's occupancy is keyed to the row
   it was declared over: the row below a repeated header drew all of its own cells while the header
   claimed to cover one of them, which took a three-page document from compliant to two failed
@@ -1129,7 +1135,8 @@ is still honest about compatibility even though the content is wider than a patc
   honour it, and it is worse than dropped: neither of those two brackets its fill colour in
   `q`/`Q` — the image and chart renderers do bracket theirs, and the chart's own comment says it
   does so to stop exactly this — and a band is drawn after the page's content, so the band took
-  whatever colour the last paragraph or cell left set. Measured on a page whose body was red and whose footer style asked for blue, the
+  whatever colour the last paragraph or cell left set. Measured on a page whose body was red and
+  whose footer style asked for blue, the
   band's own text object held no `rg` operator at all and the footer rendered red. The colour a band
   showed was therefore a property of whatever happened to be drawn above it.
 
@@ -1308,7 +1315,8 @@ is still honest about compatibility even though the content is wider than a patc
   | `PdfObjectParser.ParseReal`'s out-of-range-real throw | `InvalidDataException` |
   | `PdfObjectParser.ParseLong`'s malformed-integer throw | `InvalidDataException` |
   | `XrefParser.ReadInt`'s malformed-subsection-header-integer throw | `InvalidDataException` |
-  | `EncryptionSetup.Authenticate`'s unsupported-security-handler `/Filter` throw | `UnsupportedPdfFeatureException` |
+  | `EncryptionSetup.Authenticate`'s unsupported-security-handler `/Filter` throw |
+  `UnsupportedPdfFeatureException` |
   | `EncryptionSetup.Authenticate`'s unimplemented-`/CFM` `/StrF` throw | `UnsupportedPdfFeatureException` |
   | `XrefReconstructor`'s refused-security-handler throw | `UnsupportedPdfFeatureException` |
 
@@ -2131,7 +2139,8 @@ is still honest about compatibility even though the content is wider than a patc
   what this gate already carried before the migration, so the threshold and every per-assembly
   floor carry over unchanged rather than being re-baselined lower. Parity here is about the
   migration dropping nothing it used to instrument, not about the two figures staying pinned
-  together forever: both move independently as unrelated PRs add code. The coverage gate's glob still moves from a fixed
+  together forever: both move independently as unrelated PRs add code. The coverage gate's glob
+  still moves from a fixed
   `coverage.cobertura.xml` to `coverage.cobertura.*.xml`, since coverlet.MTP stamps a timestamp
   into every report's own filename rather than writing one fixed name into a per-run guid folder;
   measured across a full solution run, that timestamp resolution kept all 7 reports distinct with

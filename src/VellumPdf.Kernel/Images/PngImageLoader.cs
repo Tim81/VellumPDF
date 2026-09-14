@@ -28,7 +28,7 @@ public static class PngImageLoader
     /// <summary>Decodes PNG file bytes into a FlateDecode Image XObject (alpha becomes an /SMask).</summary>
     /// <exception cref="InvalidDataException">
     /// The bytes are not a PNG file, are truncated, use a variant this loader does not read, or
-    /// declare a pixel count above the limit below.
+    /// declare a pixel count above the safety limit.
     /// </exception>
     /// <remarks>
     /// Treat the input as untrusted. A malformed file raises
@@ -39,9 +39,9 @@ public static class PngImageLoader
     /// guarding on the documented type will not catch it. You have to reject null yourself. A
     /// later major version will check it.</para>
     /// <para>One size limit applies: a declared pixel count above <b>100,000,000</b> is refused,
-    /// so that a few bytes of header cannot drive a multi-gigabyte allocation. The cap is on the
-    /// product alone, with no per-edge limit, so a very long thin image passes on a total no
-    /// square one would. The limit is internal and has no public setting.</para>
+    /// so that a few bytes of header cannot drive a large allocation. Neither edge is limited on
+    /// its own, so an image far wider than it is tall is accepted whenever the product clears the
+    /// safety limit. The limit is internal and has no public setting.</para>
     /// </remarks>
     public static PdfImageXObject Load(byte[] pngBytes) => Load(pngBytes, ImageLoadOptions.Default);
 
@@ -54,11 +54,11 @@ public static class PngImageLoader
     /// The same boundaries as the single-argument overload, which delegates here. Malformed input
     /// raises <see cref="InvalidDataException"/>; a null array raises
     /// <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>; the
-    /// 100,000,000-pixel cap applies and there is no per-edge limit.
+    /// 100,000,000 safety limit applies and neither edge is limited on its own.
     /// <para>What <paramref name="options"/> selects here is bit depth, and nothing else. This
     /// loader reads <see cref="ImageLoadOptions.BitDepth"/> and never reads
     /// <see cref="ImageLoadOptions.DecodeMode"/>, so asking for a decode mode changes nothing;
-    /// PNG is always decoded to a raster. It does not relax the pixel cap either.</para>
+    /// PNG is always decoded to a raster. It does not relax the safety limit either.</para>
     /// </remarks>
     public static PdfImageXObject Load(byte[] pngBytes, ImageLoadOptions options)
     {

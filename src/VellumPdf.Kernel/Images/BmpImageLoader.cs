@@ -10,8 +10,9 @@ namespace VellumPdf.Images;
 ///
 /// Supported variants:
 ///   • BITMAPINFOHEADER (40-byte header), BI_RGB uncompressed only.
-///   • 24-bit RGB: the 4th byte of each 32-bit quad is exposed as an /SMask alpha channel.
-///   • 32-bit RGBA: blue–green–red–alpha order; alpha plane is emitted as /SMask.
+///   • 24-bit RGB: blue–green–red order, three bytes per pixel and no alpha.
+///   • 32-bit RGBA: blue–green–red–alpha order; the alpha plane is emitted as an /SMask only
+///     when some pixel is not fully opaque.
 ///   • 8-bit palette-indexed: colour map is expanded to DeviceRGB.
 ///   • Both bottom-up (positive height) and top-down (negative height) row orders.
 ///
@@ -42,14 +43,19 @@ public static class BmpImageLoader
     /// guarding on the documented type will not catch it. You have to reject null yourself. A
     /// later major version will check it.</para>
     /// <para>One size limit applies: a declared pixel count above <b>100,000,000</b> is refused,
-    /// so that a few bytes of header cannot drive a multi-gigabyte allocation. The cap is on the
-    /// product alone, with no per-edge limit, so a very long thin image passes on a total no
-    /// square one would. The limit is internal and has no public setting.</para>
+    /// so that a few bytes of header cannot drive a large allocation. Neither edge is limited on
+    /// its own, so an image far wider than it is tall is accepted whenever the product clears the
+    /// safety limit. The limit is internal and has no public setting.</para>
     /// <para>This loader reads one variant: an uncompressed 40-byte BITMAPINFOHEADER bitmap at
     /// 8, 24 or 32 bits per pixel. Every other well-formed BMP raises
     /// <see cref="NotSupportedException"/>, compressed ones included, and there is no fallback
     /// path. Size is checked first, so a file shorter than 54 bytes is reported as truncated
     /// whatever variant it would have been.</para>
+    /// <para>Attention: the accepted set is narrower than that sentence, in one way worth knowing
+    /// before you trust it. An 8-bit bitmap may declare <c>biClrUsed</c> and ship a palette
+    /// shorter than 256 entries; this loader never reads that field and requires the full
+    /// 1,024-byte palette, so a conforming short-palette file is refused as truncated, which it is
+    /// not. Until that is fixed, pad such a palette to 256 entries before loading (#533).</para>
     /// </remarks>
     public static PdfImageXObject Load(byte[] bmpBytes)
     {

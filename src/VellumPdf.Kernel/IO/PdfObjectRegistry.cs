@@ -85,6 +85,10 @@ public sealed class PdfObjectRegistry
     /// As the three-argument overload this forwards to: a reference was reserved and never
     /// assigned a value, or was assigned <see langword="null"/>.
     /// </exception>
+    /// <exception cref="NullReferenceException">
+    /// As that overload: <paramref name="writer"/> or <paramref name="xref"/> is
+    /// <see langword="null"/> and there is an assigned object to write.
+    /// </exception>
     public void WriteAll(PdfWriter writer, CrossReferenceBuilder xref)
         => WriteAll(writer, xref, preWrite: null);
 
@@ -94,6 +98,11 @@ public sealed class PdfObjectRegistry
     /// invoked after the object is written (e.g. to restore writer state).
     /// Returning null from the delegate means no cleanup is needed.
     /// </summary>
+    /// <remarks>
+    /// Whatever the caller's stream raises during the write surfaces from here unwrapped. Nothing
+    /// catches it or translates it, so a disposed or failing destination arrives as its own
+    /// exception type rather than as anything this type documents.
+    /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// A reference was reserved and never assigned a value, or was assigned
     /// <see langword="null"/>. The message names the object number. No document is produced, but
@@ -101,9 +110,9 @@ public sealed class PdfObjectRegistry
     /// it for you.
     /// </exception>
     /// <exception cref="NullReferenceException">
-    /// <paramref name="writer"/> or <paramref name="xref"/> is <see langword="null"/>. Neither is
-    /// checked, so the throw carries no parameter name. Whatever the caller's stream raises during
-    /// the write surfaces from here too, unwrapped.
+    /// <paramref name="writer"/> or <paramref name="xref"/> is <see langword="null"/> and there is
+    /// an assigned object to write. Neither argument is checked, so the throw carries no parameter
+    /// name. On an empty registry the same call returns without touching either.
     /// </exception>
     public void WriteAll(PdfWriter writer, CrossReferenceBuilder xref, Func<int, Action?>? preWrite)
     {

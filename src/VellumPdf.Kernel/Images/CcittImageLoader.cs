@@ -61,8 +61,8 @@ public static class CcittImageLoader
     /// default mode it allocates no raster at all. No per-edge limit applies, so 2,000,000 by 1
     /// is accepted.</para>
     /// <para>A <see langword="null"/> <paramref name="ccittData"/> is checked rather than
-    /// dereferenced, so it gives <see cref="ArgumentException"/>. Most of the raster loaders do
-    /// not check, so do not carry that expectation across to them. Both <paramref name="ccitt"/>
+    /// dereferenced, so it gives <see cref="ArgumentException"/>. Five of the eight image loaders
+    /// do not check, so do not carry that expectation across to them. Both <paramref name="ccitt"/>
     /// and <paramref name="options"/> accept <see langword="null"/> and take their
     /// defaults.</para>
     /// </remarks>
@@ -71,7 +71,7 @@ public static class CcittImageLoader
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <paramref name="columns"/> or <paramref name="rows"/> is zero or negative. Both are
-    /// checked before the pixel-count limit, so a non-positive value is named as itself rather
+    /// checked before the safety limit, so a non-positive value is named as itself rather
     /// than reported as a bad size.
     /// </exception>
     /// <exception cref="InvalidDataException">
