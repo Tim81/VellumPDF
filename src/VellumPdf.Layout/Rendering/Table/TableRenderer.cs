@@ -23,6 +23,10 @@ namespace VellumPdf.Layout.Rendering.Table;
 ///   • Draws cell text, word-wrapped to the cell inner width.
 ///   • Draws collapsed borders (single shared line between cells).
 /// </summary>
+/// <remarks>
+/// A table that resolves to no columns is refused from Layout. An all-header table hits
+/// the too-tall path (#488).
+/// </remarks>
 public sealed class TableRenderer : IRenderer
 {
     private readonly TableElement _table;
@@ -33,6 +37,10 @@ public sealed class TableRenderer : IRenderer
     private LayoutBox _occupied;
 
     /// <summary>Creates a renderer for the table, optionally starting at data row <paramref name="startRow"/> for pagination.</summary>
+    /// <remarks>
+    /// A null <paramref name="table"/> is stored. Layout then throws. A negative start is
+    /// not checked here.
+    /// </remarks>
     public TableRenderer(TableElement table, int startRow = 0)
     {
         _table = table;
@@ -40,6 +48,11 @@ public sealed class TableRenderer : IRenderer
     }
 
     /// <summary>Resolves column widths and row heights, fitting as many rows as possible and splitting at row boundaries on overflow.</summary>
+    /// <remarks>
+    /// A table that resolves to no columns throws <see cref="InvalidOperationException"/>
+    /// from this call (via save). An all-header table that cannot leave the header run
+    /// throws the too-tall path (#488). Overflow splits at a row boundary.
+    /// </remarks>
     public LayoutResult Layout(LayoutContext context)
     {
         var area = context.Area.Deflate(_table.Margins);
@@ -148,6 +161,7 @@ public sealed class TableRenderer : IRenderer
     }
 
     /// <summary>Draws cell backgrounds, borders and text (repeating header rows) and builds the tagged Table struct tree when tagging is enabled.</summary>
+    /// <remarks>See <see cref="IRenderer.Draw"/>.</remarks>
     public void Draw(DrawContext ctx)
     {
         // Layout already deflated context.Area by _table.Margins and stored the result in

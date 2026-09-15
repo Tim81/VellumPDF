@@ -12,6 +12,9 @@ namespace VellumPdf.Layout.Rendering;
 /// The marker is drawn in the gutter (left of the indent); the content is indented.
 /// Nested items get an additional indent level.
 /// </summary>
+/// <remarks>
+/// A negative start is documented on the constructor. Nested grandchildren are ignored.
+/// </remarks>
 public sealed class ListRenderer : IRenderer
 {
     private readonly ListElement _list;
@@ -30,6 +33,17 @@ public sealed class ListRenderer : IRenderer
     private LayoutBox _occupied;
 
     /// <summary>Creates a renderer for the list, optionally starting at <paramref name="startItem"/> for pagination.</summary>
+    /// <remarks>
+    /// A negative start throws <see cref="ArgumentOutOfRangeException"/> from
+    /// <see cref="Layout"/> only when the area is not empty and the list has items.
+    /// An empty area returns <see cref="LayoutResult.Nothing"/> first. A start past the
+    /// last item, or a negative start on an empty list, returns
+    /// <see cref="LayoutResult.Full"/> occupying no height.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Raised from <see cref="Layout"/>, when <paramref name="startItem"/> is negative, the
+    /// list has items, and the area is not empty.
+    /// </exception>
     public ListRenderer(ListElement list, int startItem = 0)
     {
         _list = list;
@@ -46,6 +60,10 @@ public sealed class ListRenderer : IRenderer
     // ── Phase 1: Layout ───────────────────────────────────────────────────────
 
     /// <summary>Paginates the list item-by-item, splitting at item boundaries on overflow; handles mid-item splits by chaining content overflow renderers.</summary>
+    /// <remarks>
+    /// See the constructor for a negative or past-end start. Overflow splits at an item, or
+    /// mid-item when a paragraph does.
+    /// </remarks>
     public LayoutResult Layout(LayoutContext context)
     {
         var area = context.Area.Deflate(_list.Margins);
@@ -137,6 +155,7 @@ public sealed class ListRenderer : IRenderer
     // ── Phase 2: Draw ─────────────────────────────────────────────────────────
 
     /// <summary>Draws each item's marker and content, building the tagged L → LI → Lbl/LBody hierarchy when tagging is enabled.</summary>
+    /// <remarks>See <see cref="IRenderer.Draw"/>.</remarks>
     public void Draw(DrawContext ctx)
     {
         if (_items is null) return;

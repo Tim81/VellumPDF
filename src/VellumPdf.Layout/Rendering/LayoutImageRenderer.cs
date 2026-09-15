@@ -7,6 +7,7 @@ using VellumPdf.Layout.Elements;
 namespace VellumPdf.Layout.Rendering;
 
 /// <summary>Renders a <see cref="LayoutImage"/> as a placed XObject, honouring sizing, margins and alignment.</summary>
+/// <remarks>Does not split. Too-tall images throw from save. Justify is treated as left.</remarks>
 public sealed class LayoutImageRenderer : IRenderer
 {
     private readonly LayoutImage _img;
@@ -15,12 +16,19 @@ public sealed class LayoutImageRenderer : IRenderer
     private LayoutBox _occupied;
 
     /// <summary>Creates a renderer for the given layout image.</summary>
+    /// <remarks>A null <paramref name="img"/> is stored. Layout then throws.</remarks>
     public LayoutImageRenderer(LayoutImage img)
     {
         _img = img;
     }
 
     /// <summary>Resolves the image size within the available area and reports the occupied region.</summary>
+    /// <remarks>
+    /// This renderer does not split. An image taller than the content area throws from
+    /// <see cref="Document.Save(System.IO.Stream)"/> as too tall, rather than hitting the
+    /// 50,000-continuation cap. That cap still applies to any custom overflow you return
+    /// from your own <see cref="IRenderer.Layout"/>.
+    /// </remarks>
     public LayoutResult Layout(LayoutContext ctx)
     {
         var area = ctx.Area.Deflate(_img.Margins);
@@ -77,6 +85,7 @@ public sealed class LayoutImageRenderer : IRenderer
     }
 
     /// <summary>Draws the image XObject, emitting a tagged Figure struct element when tagging is enabled.</summary>
+    /// <remarks>See <see cref="IRenderer.Draw"/>.</remarks>
     public void Draw(DrawContext ctx)
     {
         var area = _occupied.Deflate(_img.Margins);

@@ -8,23 +8,66 @@ namespace VellumPdf.Layout.Elements;
 /// <summary>
 /// A single wedge of a <see cref="PieChart"/>.
 /// </summary>
-/// <param name="Value">
-/// The slice's magnitude. The wedge angle is this value as a fraction of the sum
-/// of all slice values. Must be finite and non-negative.
-/// </param>
-/// <param name="Color">The fill colour of the wedge.</param>
-/// <param name="Label">
-/// Optional label carried with the slice (e.g. for an external legend). Currently
-/// stored as data only — it is not rendered as on-chart text.
-/// </param>
-public readonly record struct PieSlice(double Value, ColorRgb Color, string? Label = null);
+/// <remarks>
+/// <see cref="Value"/> must be finite and non-negative when the chart is laid out; zero
+/// contributes no angle. See <see cref="PieChart.Slices"/>.
+/// </remarks>
+public readonly record struct PieSlice
+{
+    /// <summary>
+    /// The slice's magnitude. The wedge angle is this value as a fraction of the sum
+    /// of all slice values.
+    /// </summary>
+    /// <remarks>
+    /// Must be finite and non-negative at layout. Zero is accepted and contributes no angle.
+    /// See <see cref="PieChart.Slices"/>.
+    /// </remarks>
+    public double Value { get; init; }
+
+    /// <summary>The fill colour of the wedge.</summary>
+    /// <remarks>Not clamped. See <see cref="ColorRgb"/>.</remarks>
+    public ColorRgb Color { get; init; }
+
+    /// <summary>
+    /// Optional label carried with the slice (e.g. for an external legend). Currently
+    /// stored as data only, not rendered as on-chart text.
+    /// </summary>
+    /// <remarks>Null and empty are stored. Nothing draws this string on the chart.</remarks>
+    public string? Label { get; init; }
+
+    /// <summary>Copies the magnitude, colour, and label into the given variables.</summary>
+    /// <remarks>The values are as stored. No validation.</remarks>
+    public void Deconstruct(out double Value, out ColorRgb Color, out string? Label)
+    {
+        Value = this.Value;
+        Color = this.Color;
+        Label = this.Label;
+    }
+
+    /// <summary>Creates a slice from a magnitude, fill colour, and optional label.</summary>
+    /// <remarks>Arguments are stored as given. Refusals fire from <see cref="PieChart.Slices"/>.</remarks>
+    public PieSlice(double Value, ColorRgb Color, string? Label = null)
+    {
+        this.Value = Value;
+        this.Color = Color;
+        this.Label = Label;
+    }
+}
 
 /// <summary>
 /// A pie chart drawn as a sequence of filled Bézier-approximated wedges.
 /// Atomic: the whole chart is placed on one page or moved to the next; it never splits.
 /// </summary>
+/// <remarks>
+/// Empty slices, a non-positive sum, and a negative or non-finite slice value are refused
+/// from layout. Justify is treated as left. The chart does not split.
+/// </remarks>
 public sealed class PieChart
 {
+    /// <summary>Creates a chart with no slices, 200pt diameter, and default styling.</summary>
+    /// <remarks>Save throws until <see cref="Slices"/> has a positive sum. See that member.</remarks>
+    public PieChart() { }
+
     /// <summary>The slices, drawn in order. The sum of their values must be positive.</summary>
     /// <remarks>
     /// An empty list is refused. So is a list whose values sum to zero or less. Laying the
@@ -72,12 +115,28 @@ public sealed class PieChart
     public double Diameter { get; init; } = 200;
 
     /// <summary>Margins around the chart. Defaults to 6 points on all sides.</summary>
+    /// <remarks>
+    /// <b>Attention</b>: this inset is <b>not</b> validated. <see cref="LineSeparator.Margins"/>
+    /// and <see cref="Table.Cell.Padding"/> are the only insets this package checks; every other
+    /// one, including this, reaches the geometry as given.
+    /// <para>So a non-finite inset is not refused on your behalf. What happens instead depends on
+    /// where the arithmetic lands, not on which member you set, and none of the outcomes is a
+    /// refusal naming this property: the value can reach the content stream as a token no reader
+    /// can parse, or trip a later geometry check that blames something else. Nothing reports it
+    /// either way.</para>
+    /// <para>Do <b>not</b> pass a negative inset either, and do not read one as a way to position
+    /// or resize. It is arithmetic on the available area rather than a placement instruction, so
+    /// what a renderer then does with that area is what you get: some carry the content off the
+    /// page, others absorb the value and draw exactly as they would at zero. Nothing is refused
+    /// and nothing is reported. A later major version will reject both.</para>
+    /// </remarks>
     public EdgeInsets Margins { get; init; } = new EdgeInsets(6);
 
     /// <summary>
     /// Optional colour of the separator stroke drawn around each wedge.
     /// When <c>null</c> (the default) no stroke is drawn.
     /// </summary>
+    /// <remarks>Null means no stroke. A colour is stored as given; see <see cref="ColorRgb"/>.</remarks>
     public ColorRgb? StrokeColor { get; init; }
 
     /// <summary>Width of the separator stroke in points. Defaults to 0.5.</summary>
@@ -131,6 +190,7 @@ public sealed class PieChart
     /// matching the conventional pie-chart direction. When <c>false</c> they sweep
     /// counter-clockwise.
     /// </summary>
+    /// <remarks>Both values are honoured. There is no refusal.</remarks>
     public bool Clockwise { get; init; } = true;
 
     /// <summary>
@@ -140,6 +200,7 @@ public sealed class PieChart
     /// if no slice has a label, the generic fallback "Pie chart" is used.
     /// Ignored when <see cref="Decorative"/> is <c>true</c>.
     /// </summary>
+    /// <remarks>Null is the fallback. Empty is an empty <c>/Alt</c>. Ignored when decorative.</remarks>
     public string? AltText { get; init; }
 
     /// <summary>
@@ -149,5 +210,6 @@ public sealed class PieChart
     /// table), to avoid announcing the same values twice. When <c>false</c> (the default) the
     /// chart is a <c>/Figure</c> carrying <see cref="AltText"/>. No effect on untagged output.
     /// </summary>
+    /// <remarks>No effect on untagged output. True omits the figure from the structure tree.</remarks>
     public bool Decorative { get; init; }
 }

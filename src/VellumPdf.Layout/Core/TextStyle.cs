@@ -6,15 +6,31 @@ using VellumPdf.Fonts;
 namespace VellumPdf.Layout.Core;
 
 /// <summary>Typography properties applied to a run of text.</summary>
+/// <remarks>
+/// Refusals on size and leading fire from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/>,
+/// not from the property setter. See those members.
+/// </remarks>
 public sealed class TextStyle
 {
+    /// <summary>Creates a style with Helvetica, 12 pt, auto leading, and black.</summary>
+    /// <remarks>
+    /// Same values as <see cref="Default"/>, as a new instance. Mutating this does not
+    /// change <see cref="Default"/>.
+    /// </remarks>
+    public TextStyle() { }
+
     /// <summary>A style with default values (Helvetica, 12 pt, auto leading, black).</summary>
+    /// <remarks>Helvetica, 12 pt, auto leading, black. A shared instance; do not mutate it.</remarks>
     public static readonly TextStyle Default = new();
 
     /// <summary>
     /// The font to use. Accepts a <see cref="Standard14"/> value (implicit conversion)
     /// or an <see cref="EmbeddedFontHandle"/> returned by <c>Document.UseTrueTypeFont</c>.
     /// </summary>
+    /// <remarks>
+    /// Stored as given. Invalid reads of <see cref="Font"/> / <see cref="FontReference"/>
+    /// are documented there, not refused here.
+    /// </remarks>
     public FontReference FontRef { get; init; } = Standard14.Helvetica;
 
     /// <summary>
@@ -22,6 +38,12 @@ public sealed class TextStyle
     /// Valid only when <see cref="FontRef"/> is not an embedded font.
     /// Preserved for backward compatibility with existing code.
     /// </summary>
+    /// <remarks>
+    /// An invalid read is not refused. On an embedded <see cref="FontRef"/> the getter
+    /// returns <see cref="Standard14.Helvetica"/>, because that is what
+    /// <see cref="FontReference.Standard14"/> returns on an embedded reference. Check
+    /// <see cref="FontReference.IsEmbedded"/> first.
+    /// </remarks>
     public Standard14 Font
     {
         get => FontRef.Standard14;
@@ -129,6 +151,9 @@ public sealed class TextStyle
     public double Leading { get; init; } = 0;  // 0 = auto (font-size * 1.2)
 
     /// <summary>The text colour. Defaults to <see cref="ColorRgb.Black"/>.</summary>
+    /// <remarks>
+    /// Stored as given. Channels are not clamped; see <see cref="ColorRgb"/>.
+    /// </remarks>
     public ColorRgb Color { get; init; } = ColorRgb.Black;
 
     /// <summary>
@@ -149,8 +174,22 @@ public sealed class TextStyle
     /// When non-null, text rendered with this style will be wrapped in a /Link
     /// annotation pointing to this URI. Use a full URI string (e.g. "https://example.com").
     /// </summary>
+    /// <remarks>
+    /// <b>Attention</b>: the string is not validated. Empty, <c>not a uri</c>, and
+    /// <c>javascript:alert(1)</c> are all written into a <c>/URI</c> action as given.
+    /// Table cells and running bands silently drop the link (#475). A later major version
+    /// will refuse a value that is not an absolute URI.
+    /// </remarks>
     public string? LinkUri { get; init; }
 
     /// <summary>Measures a string using whichever font this style references.</summary>
+    /// <remarks>
+    /// A null string throws <see cref="NullReferenceException"/> from the font metrics, not
+    /// <see cref="ArgumentNullException"/>. A non-finite <see cref="FontSize"/> is multiplied
+    /// through; this call does not refuse it.
+    /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// <paramref name="text"/> is <see langword="null"/>.
+    /// </exception>
     public double MeasureString(string text) => FontRef.MeasureString(text, FontSize);
 }

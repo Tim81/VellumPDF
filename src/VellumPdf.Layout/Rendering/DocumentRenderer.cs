@@ -15,6 +15,10 @@ namespace VellumPdf.Layout.Rendering;
 /// is performed: pass 1 counts pages (layout only, no PDF objects created);
 /// pass 2 draws all pages including the running bands with {page}/{pages} resolved.
 /// </summary>
+/// <remarks>
+/// Geometry is checked in the constructor. A custom overflow that never advances hits
+/// 50,000 continuations in <see cref="Render"/>.
+/// </remarks>
 public sealed class DocumentRenderer
 {
     // Bounds the per-element continuation loop in both pagination passes (#459). It exists because
@@ -134,6 +138,10 @@ public sealed class DocumentRenderer
     /// <c>RunningBandFitTests.Band_truncation_isReadableFromTheRendererItself</c>, which is what
     /// keeps this member from being public with nothing exercising it.
     /// </summary>
+    /// <remarks>
+    /// Empty until <see cref="Render"/> or <c>RunLayout</c> has run. Truncation is reported,
+    /// not refused.
+    /// </remarks>
     public IReadOnlyList<BandTruncationWarning> BandTruncations
     {
         get
@@ -146,15 +154,32 @@ public sealed class DocumentRenderer
     }
 
     /// <summary>Header band drawn at the top of every page. Optional.</summary>
+    /// <remarks>
+    /// Same null-template throw as <see cref="Document.Header"/> (#531).
+    /// </remarks>
     public RunningBand? Header { get; set; }
 
     /// <summary>Footer band drawn at the bottom of every page. Optional.</summary>
+    /// <remarks>
+    /// Same null-template throw as <see cref="Document.Footer"/> (#531).
+    /// </remarks>
     public RunningBand? Footer { get; set; }
 
     // Pending bookmarks: queued by Document.AddBookmark, drained on next Draw.
     internal readonly List<BookmarkEntry> PendingBookmarks = [];
 
     /// <summary>Creates a renderer that paginates content onto <paramref name="pdf"/> using the given page size and margins.</summary>
+    /// <remarks>
+    /// Geometry is checked here. A page with no positive size, or margins that leave no
+    /// content area, throws <see cref="ArgumentOutOfRangeException"/> or
+    /// <see cref="ArgumentException"/> from this constructor, not from <see cref="Render"/>.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// The page width or height is not a positive finite number.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// The margins meet or exceed the page on either axis.
+    /// </exception>
     public DocumentRenderer(PdfDocument pdf, PdfRectangle? pageSize = null, EdgeInsets? margins = null)
     {
         _pdf = pdf;
@@ -165,9 +190,23 @@ public sealed class DocumentRenderer
     }
 
     /// <summary>Appends a renderer to the document flow and returns this instance for chaining.</summary>
+    /// <remarks>
+    /// Same 50,000-continuation cap as <see cref="Document.Add(IRenderer)"/>. A custom
+    /// overflow that never advances throws <see cref="InvalidOperationException"/> from
+    /// <see cref="Render"/>.
+    /// </remarks>
     public DocumentRenderer Add(IRenderer renderer) { _renderers.Add(renderer); return this; }
 
     /// <summary>Lays out all added renderers and saves the resulting PDF to <paramref name="destination"/>.</summary>
+    /// <remarks>
+    /// A single element that needs more than <b>50,000</b> page continuations throws
+    /// <see cref="InvalidOperationException"/>. That is a hard ceiling, not the old stack
+    /// overflow: a custom <see cref="IRenderer"/> whose overflow never advances used to crash,
+    /// and now throws here.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// An element needs more than 50,000 page continuations, or is too tall for one page.
+    /// </exception>
     public void Render(Stream destination)
     {
         RunLayout();

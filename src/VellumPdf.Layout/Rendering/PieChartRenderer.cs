@@ -7,6 +7,7 @@ using VellumPdf.Layout.Elements;
 namespace VellumPdf.Layout.Rendering;
 
 /// <summary>Renders a <see cref="PieChart"/> as a set of filled Bézier-approximated wedges.</summary>
+/// <remarks>Does not split. Slice refusals fire from Layout. See <see cref="PieChart.Slices"/>.</remarks>
 public sealed class PieChartRenderer : IRenderer
 {
     private readonly PieChart _chart;
@@ -19,9 +20,15 @@ public sealed class PieChartRenderer : IRenderer
     private double _placementDiameter;
 
     /// <summary>Creates a renderer for the given pie chart.</summary>
+    /// <remarks>A null <paramref name="chart"/> is stored. Layout then throws.</remarks>
     public PieChartRenderer(PieChart chart) => _chart = chart;
 
     /// <summary>Validates the slices, reserves the chart diameter plus margins, and reports the occupied region.</summary>
+    /// <remarks>
+    /// This renderer does not split. A chart taller than the content area throws from
+    /// <see cref="Document.Save(System.IO.Stream)"/> as too tall. The 50,000-continuation
+    /// cap on <see cref="IRenderer.Layout"/> is for custom overflow, not for this type.
+    /// </remarks>
     public LayoutResult Layout(LayoutContext ctx)
     {
         // Every refusal below named nameof(_chart), a private field of this renderer, so the
@@ -95,6 +102,7 @@ public sealed class PieChartRenderer : IRenderer
     }
 
     /// <summary>Fills each wedge, optionally stroking separators, wrapped as an artifact when tagging is enabled.</summary>
+    /// <remarks>See <see cref="IRenderer.Draw"/>.</remarks>
     public void Draw(DrawContext ctx)
     {
         var area = _occupied.Deflate(_chart.Margins);

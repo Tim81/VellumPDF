@@ -200,6 +200,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Documentation
 
+- **Layout's remaining public members with a measured boundary now name it (#510).** The
+  ignore set is in: unread insets, `Justify` treated as left on an unbreakable box, invalid
+  font-reference reads, unvalidated language and URI strings. A table that resolves to no
+  columns is refused at save. A custom `IRenderer` whose overflow never advances hits a cap
+  of 50,000 page continuations. Font-path and object-stream-plus-encrypt throws are named
+  on the members that raise them.
+
 - **The public members that refuse input now say so, and say what not to pass (#503).** These
   boundaries were created by fixes already shipped in 2.3.2 and documented almost nowhere: of
   Layout's 298 documented public members, exactly one carried an `<exception>` tag before this

@@ -10,6 +10,10 @@ namespace VellumPdf.Layout.Elements;
 /// Text supports <c>{page}</c> (current page number) and <c>{pages}</c> (total page count)
 /// tokens, which are substituted at render time.
 /// </summary>
+/// <remarks>
+/// A null template throws from <see cref="Resolve"/> / save (#531). Overlong text is
+/// truncated, not refused; see <see cref="Template"/>.
+/// </remarks>
 public sealed class RunningBand
 {
     /// <summary>Text template — may contain {page} and/or {pages}.</summary>
@@ -40,6 +44,7 @@ public sealed class RunningBand
     public string Template { get; }
 
     /// <summary>The text style of the band.</summary>
+    /// <remarks>Stored as given. Size and leading refusals are on <see cref="TextStyle"/>.</remarks>
     public TextStyle Style { get; }
 
     /// <summary>Horizontal alignment of the band text.</summary>
@@ -101,6 +106,10 @@ public sealed class RunningBand
     public double? Height { get; init; }
 
     /// <summary>Creates a running band from a text template, with optional style and alignment (defaults to centered).</summary>
+    /// <remarks>
+    /// A null template is stored and throws from <see cref="Resolve"/> / save (#531). A null
+    /// style becomes <see cref="TextStyle.Default"/>.
+    /// </remarks>
     public RunningBand(string template, TextStyle? style = null, HorizontalAlignment alignment = HorizontalAlignment.Center)
     {
         Template = template;
@@ -109,9 +118,20 @@ public sealed class RunningBand
     }
 
     /// <summary>Returns the effective band height (leading + small padding).</summary>
+    /// <remarks>
+    /// <see cref="Height"/> when set, otherwise leading plus 4. A set non-finite or negative
+    /// <see cref="Height"/> is returned as given.
+    /// </remarks>
     public double EffectiveHeight => Height ?? (Style.EffectiveLeading + 4);
 
-    /// <summary>Substitutes {page} and {pages} tokens.</summary>
+    /// <summary>Substitutes <c>{page}</c> and <c>{pages}</c> in <see cref="Template"/>.</summary>
+    /// <remarks>
+    /// Any other brace text is left as given. A null template throws
+    /// <see cref="NullReferenceException"/> from this call (#531).
+    /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// <see cref="Template"/> is <see langword="null"/>.
+    /// </exception>
     public string Resolve(int pageNumber, int totalPages) =>
         Template
             .Replace("{page}", pageNumber.ToString(System.Globalization.CultureInfo.InvariantCulture),

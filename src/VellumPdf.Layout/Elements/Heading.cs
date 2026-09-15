@@ -9,12 +9,20 @@ namespace VellumPdf.Layout.Elements;
 /// A paragraph that also registers a document bookmark (outline entry) at the
 /// position where it is drawn. The bookmark title defaults to the heading text.
 /// </summary>
+/// <remarks>
+/// <see cref="Level"/> is the member with a trap. Alignment honours Justify as a paragraph does.
+/// </remarks>
 public sealed class Heading
 {
     /// <summary>Heading text (also used as the bookmark title unless <see cref="BookmarkTitle"/> is set).</summary>
+    /// <remarks>
+    /// Stored as given, including null (the constructor does not check). Empty is a heading
+    /// that draws nothing.
+    /// </remarks>
     public string Text { get; }
 
     /// <summary>The heading's text style.</summary>
+    /// <remarks>Stored as given. Refusals on size and leading are on <see cref="TextStyle"/>.</remarks>
     public TextStyle Style { get; }
 
     /// <summary>Outline nesting level: 0 = top-level, 1 = sub-heading, etc.</summary>
@@ -37,21 +45,48 @@ public sealed class Heading
     /// <summary>
     /// Override the bookmark title. When null the heading text is used.
     /// </summary>
+    /// <remarks>Null means use <see cref="Text"/>. Empty is an empty bookmark title.</remarks>
     public string? BookmarkTitle { get; init; }
 
     /// <summary>Margins around the heading.</summary>
+    /// <remarks>
+    /// <b>Attention</b>: this inset is <b>not</b> validated. <see cref="LineSeparator.Margins"/>
+    /// and <see cref="Table.Cell.Padding"/> are the only insets this package checks; every other
+    /// one, including this, reaches the geometry as given.
+    /// <para>So a non-finite inset is not refused on your behalf. What happens instead depends on
+    /// where the arithmetic lands, not on which member you set, and none of the outcomes is a
+    /// refusal naming this property: the value can reach the content stream as a token no reader
+    /// can parse, or trip a later geometry check that blames something else. Nothing reports it
+    /// either way.</para>
+    /// <para>Do <b>not</b> pass a negative inset either, and do not read one as a way to position
+    /// or resize. It is arithmetic on the available area rather than a placement instruction, so
+    /// what a renderer then does with that area is what you get: some carry the content off the
+    /// page, others absorb the value and draw exactly as they would at zero. Nothing is refused
+    /// and nothing is reported. A later major version will reject both.</para>
+    /// </remarks>
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 
     /// <summary>Horizontal alignment of the heading text.</summary>
+    /// <remarks>
+    /// Headings are laid out as paragraphs, so <see cref="HorizontalAlignment.Justify"/> is
+    /// honoured the same way: wrapped lines justify, the last line stays left.
+    /// </remarks>
     public HorizontalAlignment Alignment { get; init; } = HorizontalAlignment.Left;
 
     /// <summary>
     /// Optional per-element language override (BCP 47 / RFC 5646, e.g. <c>"en-US"</c>).
     /// When set and the document is tagged, written as <c>/Lang</c> on the struct element.
     /// </summary>
+    /// <remarks>
+    /// The string is not validated. Same as <see cref="Document.Language"/>.
+    /// </remarks>
     public string? Language { get; init; }
 
     /// <summary>Creates a heading with the given text and optional style (defaults to 14pt).</summary>
+    /// <remarks>
+    /// A null <paramref name="text"/> is stored. A null <paramref name="style"/> becomes 14pt
+    /// Helvetica.
+    /// </remarks>
     public Heading(string text, TextStyle? style = null)
     {
         Text = text;

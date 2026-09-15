@@ -6,9 +6,14 @@ using VellumPdf.Layout.Core;
 namespace VellumPdf.Layout.Elements.Table;
 
 /// <summary>A single table cell, optionally spanning multiple columns or rows.</summary>
+/// <remarks>
+/// <see cref="ColSpan"/> of zero is refused. <see cref="RowSpan"/> of zero is not.
+/// Justify is treated as left. A null <see cref="Content"/> is stored.
+/// </remarks>
 public sealed class Cell
 {
     /// <summary>The text content rendered in the cell.</summary>
+    /// <remarks>Stored as given, including null. Empty is a cell that draws no text.</remarks>
     public string Content { get; }
 
     /// <summary>
@@ -66,6 +71,10 @@ public sealed class Cell
     public int RowSpan { get; init; } = 1;
 
     /// <summary>Text style for the cell content; falls back to the table default when null.</summary>
+    /// <remarks>
+    /// Null means <see cref="TableElement.DefaultCellStyle"/>, then
+    /// <see cref="TextStyle.Default"/>.
+    /// </remarks>
     public TextStyle? Style { get; init; }
 
     /// <summary>Inner padding between the cell border and its content.</summary>
@@ -99,17 +108,25 @@ public sealed class Cell
     public EdgeInsets Padding { get; init; } = new EdgeInsets(4, 6, 4, 6);
 
     /// <summary>Optional background fill color for the cell.</summary>
+    /// <remarks>Null means no fill. A colour is stored as given; see <see cref="ColorRgb"/>.</remarks>
     public ColorRgb? Background { get; init; }
 
     /// <summary>Horizontal alignment of the cell content.</summary>
+    /// <remarks>
+    /// <b>Attention</b>: <see cref="HorizontalAlignment.Justify"/> is neither refused nor
+    /// honoured. It falls through to left alignment. Paragraph text outside a cell does honour
+    /// it; this box does not.
+    /// </remarks>
     public HorizontalAlignment Alignment { get; init; } = HorizontalAlignment.Left;
 
     /// <summary>
     /// Optional per-element language override (BCP 47 / RFC 5646, e.g. <c>"en-US"</c>).
     /// When set and the document is tagged, written as <c>/Lang</c> on the struct element.
     /// </summary>
+    /// <remarks>Not validated. Same as <see cref="Document.Language"/>.</remarks>
     public string? Language { get; init; }
 
     /// <summary>Creates a cell with the given text content.</summary>
+    /// <remarks>A null <paramref name="content"/> is stored.</remarks>
     public Cell(string content) => Content = content;
 }

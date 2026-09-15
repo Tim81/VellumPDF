@@ -23,8 +23,19 @@ namespace VellumPdf.Layout;
 /// doc.Save("output.pdf");
 /// </code>
 /// </summary>
+/// <remarks>
+/// Most refusals fire from <see cref="Save(System.IO.Stream)"/>, not from the property you
+/// set. A document with no pages throws at save. Dispose, then save, throws
+/// <see cref="ObjectDisposedException"/>.
+/// </remarks>
 public sealed class Document : IDisposable
 {
+    /// <summary>Creates an empty document with A4 pages and 72pt margins.</summary>
+    /// <remarks>
+    /// Save throws if no element has been added. See the type remarks.
+    /// </remarks>
+    public Document() { }
+
     private readonly PdfDocument _pdf = new();
     private readonly List<IRenderer> _content = [];
     private TextStyle _defaultStyle = TextStyle.Default;
@@ -37,6 +48,10 @@ public sealed class Document : IDisposable
     /// represent (each was substituted with '?' in the saved PDF). Populated by <see cref="Save(Stream)"/>
     /// and the signing-prep path; empty when every character rendered is in WinAnsi.
     /// </summary>
+    /// <remarks>
+    /// Empty until a save (or signing prep) has run. A successful save that substituted nothing
+    /// is also empty. This list is not a refusal.
+    /// </remarks>
     public IReadOnlyList<TextEncodingWarning> TextEncodingWarnings => _textEncodingWarnings;
 
     /// <summary>
@@ -44,9 +59,16 @@ public sealed class Document : IDisposable
     /// save. At most one report per band, each naming the page that lost the most. Empty when both
     /// bands fitted, or when no band was set.
     /// </summary>
+    /// <remarks>
+    /// Empty until a save has run. Truncation is not refused; it is reported here after the fact.
+    /// See <see cref="RunningBand.Template"/>.
+    /// </remarks>
     public IReadOnlyList<BandTruncationWarning> BandTruncations => _bandTruncations;
 
     /// <summary>Document metadata (title, author, subject, keywords, etc.).</summary>
+    /// <remarks>
+    /// Stored as given. No field on this dictionary is validated by Layout.
+    /// </remarks>
     public PdfDocumentInfo Info => _pdf.Info;
 
     /// <summary>The default page size used for newly created pages.</summary>
@@ -95,6 +117,15 @@ public sealed class Document : IDisposable
     /// Requested PDF/A conformance level. Forwarded to the underlying <see cref="PdfDocument"/>.
     /// PDF/A-2a implies <see cref="Tagged"/> = true.
     /// </summary>
+    /// <remarks>
+    /// Setting a level does not run the rules. A document can declare PDF/A and still fail a
+    /// preflight; the stamp is written either way (#474). Combined with <see cref="Encrypt"/>,
+    /// <see cref="Save(System.IO.Stream)"/> throws <see cref="InvalidOperationException"/>
+    /// because ISO 19005-2 §6.1.3 forbids encryption in PDF/A.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from a save, when this is a PDF/A level and <see cref="Encrypt"/> has been called.
+    /// </exception>
     public PdfConformance Conformance
     {
         get => _pdf.Conformance;
@@ -106,6 +137,11 @@ public sealed class Document : IDisposable
     /// and a /StructTreeRoot is written. Default is false.
     /// Forwarded to the underlying <see cref="PdfDocument"/>.
     /// </summary>
+    /// <remarks>
+    /// PDF/A-2a implies this is true. Setting it false after requesting PDF/A-2a is not refused
+    /// here; the kernel's save path is what makes the pairing consistent. Untagged content is
+    /// not a throw.
+    /// </remarks>
     public bool Tagged
     {
         get => _pdf.Tagged;
@@ -119,6 +155,12 @@ public sealed class Document : IDisposable
     /// Required by PDF/A-2a and PDF/UA-1 (set it explicitly — no default is applied).
     /// Leading and trailing whitespace is trimmed when the value is written.
     /// </summary>
+    /// <remarks>
+    /// <b>Attention</b>: the string is not validated as BCP 47. After trim, an empty value
+    /// is omitted from <c>/Lang</c> and XMP. A non-empty ill-formed tag such as
+    /// <c>not a tag</c> is written as given. PDF/A-2a and PDF/UA-1 both require a well-formed
+    /// tag; this property will not refuse one that is not. A later major version will.
+    /// </remarks>
     public string? Language
     {
         get => _pdf.Language;
@@ -130,6 +172,14 @@ public sealed class Document : IDisposable
     /// cross-reference stream for smaller output. Forwarded to the underlying
     /// <see cref="PdfDocument"/>. Cannot be combined with <see cref="Encrypt"/>.
     /// </summary>
+    /// <remarks>
+    /// Combined with <see cref="Encrypt"/>, the save throws
+    /// <see cref="NotSupportedException"/>. Neither setter checks the other; the pairing is
+    /// refused only when the file is written.
+    /// </remarks>
+    /// <exception cref="NotSupportedException">
+    /// Raised from a save, when this is true and <see cref="Encrypt"/> has been called.
+    /// </exception>
     public bool UseObjectStreams
     {
         get => _pdf.UseObjectStreams;
@@ -176,6 +226,11 @@ public sealed class Document : IDisposable
     /// Set via <see cref="SetHeader"/> for a fluent API.
     /// Supports {page} and {pages} tokens.
     /// </summary>
+    /// <remarks>
+    /// A band whose <see cref="RunningBand.Template"/> is null throws
+    /// <see cref="NullReferenceException"/> from the save (#531). Same as
+    /// <see cref="SetHeader"/>.
+    /// </remarks>
     public RunningBand? Header { get; set; }
 
     /// <summary>
@@ -183,9 +238,19 @@ public sealed class Document : IDisposable
     /// Set via <see cref="SetFooter"/> for a fluent API.
     /// Supports {page} and {pages} tokens.
     /// </summary>
+    /// <remarks>
+    /// A band whose <see cref="RunningBand.Template"/> is null throws
+    /// <see cref="NullReferenceException"/> from the save (#531). Same as
+    /// <see cref="SetFooter"/>.
+    /// </remarks>
     public RunningBand? Footer { get; set; }
 
     /// <summary>Sets the default text style applied to content added without an explicit style. Returns this document for chaining.</summary>
+    /// <remarks>
+    /// A null style is stored as given and is not refused. <see cref="Add(string, TextStyle)"/>
+    /// still produces <see cref="TextStyle.Default"/>, because <see cref="Paragraph"/> coalesces
+    /// a null style. The call does not throw.
+    /// </remarks>
     public Document SetDefaultFont(TextStyle style) { _defaultStyle = style; return this; }
 
     /// <summary>Sets a header band with optional style and alignment. Returns this document for chaining.</summary>
@@ -236,12 +301,38 @@ public sealed class Document : IDisposable
     /// Registers a TrueType font for embedding and returns a handle that can be
     /// used in <see cref="TextStyle.FontRef"/>.
     /// </summary>
+    /// <remarks>
+    /// The bytes are parsed here, not at save. A null buffer raises
+    /// <see cref="ArgumentNullException"/>. A buffer that is not a TrueType font raises
+    /// <see cref="InvalidDataException"/> from this call.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="fontData"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="InvalidDataException">
+    /// <paramref name="fontData"/> is not a TrueType font this embedder can read.
+    /// </exception>
     public EmbeddedFontHandle UseTrueTypeFont(byte[] fontData) =>
         _pdf.UseTrueTypeFont(fontData);
 
     /// <summary>
     /// Loads a TrueType font file from disk, registers it for embedding, and returns a handle.
     /// </summary>
+    /// <remarks>
+    /// The path is read here, not at save. A missing file raises
+    /// <see cref="FileNotFoundException"/>. A missing directory raises
+    /// <see cref="DirectoryNotFoundException"/>. A file that is not a TrueType font then
+    /// raises <see cref="InvalidDataException"/> from <see cref="UseTrueTypeFont"/>.
+    /// </remarks>
+    /// <exception cref="FileNotFoundException">
+    /// <paramref name="path"/> names a file that does not exist.
+    /// </exception>
+    /// <exception cref="DirectoryNotFoundException">
+    /// The directory named in <paramref name="path"/> does not exist.
+    /// </exception>
+    /// <exception cref="InvalidDataException">
+    /// The file is not a TrueType font this embedder can read.
+    /// </exception>
     public EmbeddedFontHandle LoadTrueTypeFont(string path) =>
         UseTrueTypeFont(File.ReadAllBytes(path));
 
@@ -249,6 +340,19 @@ public sealed class Document : IDisposable
     /// Asynchronously loads a TrueType font file from disk, registers it for embedding, and
     /// returns a handle.
     /// </summary>
+    /// <remarks>
+    /// Same refusals as <see cref="LoadTrueTypeFont"/>, from this call rather than from a later
+    /// save.
+    /// </remarks>
+    /// <exception cref="FileNotFoundException">
+    /// <paramref name="path"/> names a file that does not exist.
+    /// </exception>
+    /// <exception cref="DirectoryNotFoundException">
+    /// The directory named in <paramref name="path"/> does not exist.
+    /// </exception>
+    /// <exception cref="InvalidDataException">
+    /// The file is not a TrueType font this embedder can read.
+    /// </exception>
     public async Task<EmbeddedFontHandle> LoadTrueTypeFontAsync(string path, CancellationToken cancellationToken = default)
     {
         byte[] bytes = await File.ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false);
@@ -258,6 +362,12 @@ public sealed class Document : IDisposable
     // ── Content methods ──────────────────────────────────────────────────────
 
     /// <summary>Adds a paragraph to the document content. Returns this document for chaining.</summary>
+    /// <remarks>
+    /// A null paragraph throws <see cref="NullReferenceException"/> from this call.
+    /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// <paramref name="paragraph"/> is <see langword="null"/>.
+    /// </exception>
     public Document Add(Paragraph paragraph)
     {
         _content.Add(new ParagraphRenderer(paragraph) { ElementLanguage = paragraph.Language });
@@ -265,6 +375,9 @@ public sealed class Document : IDisposable
     }
 
     /// <summary>Adds a horizontal line separator to the document content. Returns this document for chaining.</summary>
+    /// <remarks>
+    /// A null separator is stored. The throw is from save, when the renderer is laid out.
+    /// </remarks>
     public Document Add(LineSeparator separator)
     {
         _content.Add(new LineSeparatorRenderer(separator));
@@ -272,6 +385,10 @@ public sealed class Document : IDisposable
     }
 
     /// <summary>Adds a table to the document content. Returns this document for chaining.</summary>
+    /// <remarks>
+    /// A null table is stored. The throw is from save. An empty table is refused then; see
+    /// <see cref="TableElement.Rows"/>.
+    /// </remarks>
     public Document Add(TableElement table)
     {
         _content.Add(new TableRenderer(table));
@@ -279,6 +396,9 @@ public sealed class Document : IDisposable
     }
 
     /// <summary>Adds an image to the document content. Returns this document for chaining.</summary>
+    /// <remarks>
+    /// A null image is stored. The throw is from save.
+    /// </remarks>
     public Document Add(LayoutImage image)
     {
         _content.Add(new LayoutImageRenderer(image));
@@ -286,6 +406,9 @@ public sealed class Document : IDisposable
     }
 
     /// <summary>Adds a pie chart to the document content. Returns this document for chaining.</summary>
+    /// <remarks>
+    /// A null chart is stored. The throw is from save; see <see cref="PieChart.Slices"/>.
+    /// </remarks>
     public Document Add(PieChart chart)
     {
         _content.Add(new PieChartRenderer(chart));
@@ -293,6 +416,9 @@ public sealed class Document : IDisposable
     }
 
     /// <summary>Adds a bulleted or numbered list to the document content. Returns this document for chaining.</summary>
+    /// <remarks>
+    /// A null list is stored. The throw is from save.
+    /// </remarks>
     public Document Add(ListElement list)
     {
         _content.Add(new ListRenderer(list));
@@ -300,6 +426,12 @@ public sealed class Document : IDisposable
     }
 
     /// <summary>Adds a heading to the document content. Returns this document for chaining.</summary>
+    /// <remarks>
+    /// A null heading throws <see cref="NullReferenceException"/> from this call.
+    /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// <paramref name="heading"/> is <see langword="null"/>.
+    /// </exception>
     public Document Add(Heading heading)
     {
         _content.Add(new HeadingRenderer(heading));
@@ -307,6 +439,10 @@ public sealed class Document : IDisposable
     }
 
     /// <summary>Adds a paragraph built from the given text, using the supplied style or the default style. Returns this document for chaining.</summary>
+    /// <remarks>
+    /// A null <paramref name="text"/> is stored. <see cref="Save(System.IO.Stream)"/> then
+    /// throws <see cref="NullReferenceException"/> from word-wrap, not from this call.
+    /// </remarks>
     public Document Add(string text, TextStyle? style = null)
         => Add(new Paragraph(text, style ?? _defaultStyle));
 
@@ -316,6 +452,20 @@ public sealed class Document : IDisposable
     /// library — the seam satellite packages (e.g. VellumPdf.Barcodes) use to plug their own
     /// elements into the flow layout.
     /// </summary>
+    /// <remarks>
+    /// A renderer whose overflow never advances hits a cap of <b>50,000</b> page continuations.
+    /// <see cref="Save(System.IO.Stream)"/> then throws <see cref="InvalidOperationException"/>
+    /// naming that cap. The library's own renderers can reach it too, on a page that takes one
+    /// table row at a time. Split a long element yourself rather than relying on pagination to
+    /// run forever.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="renderer"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from a save, when this renderer, or an overflow it returns, needs more than
+    /// 50,000 page continuations.
+    /// </exception>
     public Document Add(IRenderer renderer)
     {
         ArgumentNullException.ThrowIfNull(renderer);
@@ -340,6 +490,21 @@ public sealed class Document : IDisposable
     /// <param name="componentCount">Number of colour components: 1 (Gray), 3 (RGB), or 4 (CMYK).</param>
     /// <param name="outputConditionIdentifier">The OutputConditionIdentifier string.</param>
     /// <param name="info">Optional /Info string. Defaults to <paramref name="outputConditionIdentifier"/> when null.</param>
+    /// <remarks>
+    /// Refused from this call, not from save. An empty or null profile raises
+    /// <see cref="ArgumentException"/>. A component count other than 1, 3 or 4 raises
+    /// <see cref="ArgumentOutOfRangeException"/>. A null identifier raises
+    /// <see cref="ArgumentNullException"/>.
+    /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="iccProfile"/> is null or empty.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="componentCount"/> is not 1, 3 or 4.
+    /// </exception>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="outputConditionIdentifier"/> is <see langword="null"/>.
+    /// </exception>
     public void SetPdfAOutputIntent(byte[] iccProfile, int componentCount, string outputConditionIdentifier, string? info = null) =>
         _pdf.SetPdfAOutputIntent(iccProfile, componentCount, outputConditionIdentifier, info);
 
@@ -354,6 +519,13 @@ public sealed class Document : IDisposable
     /// </para>
     /// </summary>
     /// <param name="outputConditionIdentifier">The OutputConditionIdentifier string written to the OutputIntent dictionary.</param>
+    /// <remarks>
+    /// Same identifier refusal as <see cref="SetPdfAOutputIntent"/>. The built-in profile is
+    /// never empty, so the profile and component-count throws on that method do not arise here.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="outputConditionIdentifier"/> is <see langword="null"/>.
+    /// </exception>
     public void UseCmykOutputIntent(string outputConditionIdentifier = "Generic CMYK") =>
         _pdf.UseCmykOutputIntent(outputConditionIdentifier);
 
@@ -364,10 +536,22 @@ public sealed class Document : IDisposable
     /// Delegates to <see cref="PdfDocument.Encrypt"/>.
     /// Must be called before <see cref="Save(Stream)"/>.
     /// </summary>
+    /// <remarks>
+    /// Combined with <see cref="UseObjectStreams"/>, the save throws
+    /// <see cref="NotSupportedException"/>. This method does not check that flag.
+    /// Combined with a PDF/A <see cref="Conformance"/>, the save throws
+    /// <see cref="InvalidOperationException"/>.
+    /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="settings"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="settings"/> has an empty <see cref="PdfEncryptionSettings.OwnerPassword"/>
     /// beside a non-empty <see cref="PdfEncryptionSettings.UserPassword"/>.
+    /// </exception>
+    /// <exception cref="NotSupportedException">
+    /// Raised from a save, when <see cref="UseObjectStreams"/> is true.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from a save, when <see cref="Conformance"/> is a PDF/A level.
     /// </exception>
     public Document Encrypt(PdfEncryptionSettings settings)
     {
@@ -748,5 +932,12 @@ public sealed class Document : IDisposable
     }
 
     /// <summary>Releases the underlying <see cref="PdfDocument"/> and its resources.</summary>
+    /// <remarks>
+    /// A later <see cref="Save(System.IO.Stream)"/> throws <see cref="ObjectDisposedException"/>
+    /// from the kernel document. Dispose is idempotent.
+    /// </remarks>
+    /// <exception cref="ObjectDisposedException">
+    /// Raised from a later save, not from this call.
+    /// </exception>
     public void Dispose() => _pdf.Dispose();
 }

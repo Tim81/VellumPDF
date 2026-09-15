@@ -7,9 +7,14 @@ using VellumPdf.Layout.Core;
 namespace VellumPdf.Layout.Elements;
 
 /// <summary>An image element that can be placed in document flow.</summary>
+/// <remarks>
+/// Width and height have the refusals. A null <see cref="Image"/> is stored and throws from
+/// layout. Justify is treated as left.
+/// </remarks>
 public sealed class LayoutImage
 {
     /// <summary>The image to draw.</summary>
+    /// <remarks>Stored as given. A null image throws from layout, not from construction.</remarks>
     public PdfImageXObject Image { get; }
 
     /// <summary>
@@ -80,9 +85,29 @@ public sealed class LayoutImage
     public double? Height { get; init; }  // null = maintain aspect ratio
 
     /// <summary>Horizontal alignment of the image within the available width.</summary>
+    /// <remarks>
+    /// <b>Attention</b>: <see cref="HorizontalAlignment.Justify"/> is neither refused nor
+    /// honoured. It falls through to left alignment. An image is one box; there is nothing to
+    /// justify against.
+    /// </remarks>
     public HorizontalAlignment Alignment { get; init; } = HorizontalAlignment.Left;
 
     /// <summary>Margins around the image.</summary>
+    /// <remarks>
+    /// <b>Attention</b>: this inset is <b>not</b> validated. <see cref="LineSeparator.Margins"/>
+    /// and <see cref="Table.Cell.Padding"/> are the only insets this package checks; every other
+    /// one, including this, reaches the geometry as given.
+    /// <para>So a non-finite inset is not refused on your behalf. What happens instead depends on
+    /// where the arithmetic lands, not on which member you set, and none of the outcomes is a
+    /// refusal naming this property: the value can reach the content stream as a token no reader
+    /// can parse, or trip a later geometry check that blames something else. Nothing reports it
+    /// either way.</para>
+    /// <para>Do <b>not</b> pass a negative inset either, and do not read one as a way to position
+    /// or resize. It is arithmetic on the available area rather than a placement instruction, so
+    /// what a renderer then does with that area is what you get: some carry the content off the
+    /// page, others absorb the value and draw exactly as they would at zero. Nothing is refused
+    /// and nothing is reported. A later major version will reject both.</para>
+    /// </remarks>
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 
     /// <summary>
@@ -90,8 +115,10 @@ public sealed class LayoutImage
     /// Used as the <c>/Alt</c> entry on the Figure struct elem when tagging is enabled.
     /// If null, a generic fallback "Figure" is used.
     /// </summary>
+    /// <remarks>Null becomes <c>Figure</c> when tagged. Empty is an empty <c>/Alt</c>.</remarks>
     public string? AltText { get; init; }
 
     /// <summary>Creates a flow image element for the given image.</summary>
+    /// <remarks>A null <paramref name="image"/> is stored. Layout then throws.</remarks>
     public LayoutImage(PdfImageXObject image) => Image = image;
 }

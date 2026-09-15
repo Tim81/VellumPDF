@@ -14,6 +14,9 @@ namespace VellumPdf.Layout.Rendering;
 /// allocates indirect objects for them during <c>Save</c>) and on the page's
 /// resource dictionary so content streams can reference them by name.
 /// </summary>
+/// <remarks>
+/// A null image on <see cref="RegisterImageXObject"/> throws from that call.
+/// </remarks>
 public sealed class RendererContext
 {
     private readonly PdfPage _page;
@@ -22,6 +25,7 @@ public sealed class RendererContext
     private int _imageCounter;
 
     /// <summary>Creates a rendering context bound to the given page and its owning document.</summary>
+    /// <remarks>Arguments are stored as given. A null page or document is not refused here.</remarks>
     public RendererContext(PdfPage page, PdfDocument document)
     {
         _page = page;
@@ -32,6 +36,13 @@ public sealed class RendererContext
     /// Registers an Image XObject on the current page and returns its resource name.
     /// Deduplicates: the same object instance always gets the same name.
     /// </summary>
+    /// <remarks>
+    /// A null <paramref name="image"/> throws <see cref="ArgumentNullException"/> from this
+    /// call (<c>ParamName</c> is <c>key</c>).
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="image"/> is <see langword="null"/>.
+    /// </exception>
     public string RegisterImageXObject(PdfImageXObject image)
     {
         if (_imageNames.TryGetValue(image, out var name)) return name;
@@ -45,8 +56,9 @@ public sealed class RendererContext
 
     /// <summary>
     /// Records that the current page uses the given embedded TrueType font.
-    /// Idempotent — safe to call on every draw call for the same font.
+    /// Idempotent: safe to call on every draw call for the same font.
     /// </summary>
+    /// <remarks>A null handle is forwarded to the kernel.</remarks>
     public void RegisterEmbeddedFontUsage(EmbeddedFontHandle handle) =>
         _document.RegisterEmbeddedFontUsage(_page, handle);
 }

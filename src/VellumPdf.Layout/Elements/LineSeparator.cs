@@ -6,8 +6,16 @@ using VellumPdf.Layout.Core;
 namespace VellumPdf.Layout.Elements;
 
 /// <summary>A horizontal rule drawn as a full-width line.</summary>
+/// <remarks>
+/// <see cref="LineWidth"/> and <see cref="Margins"/> are refused when non-finite, from save.
+/// Zero width is drawn as the thinnest device line.
+/// </remarks>
 public sealed class LineSeparator
 {
+    /// <summary>Creates a rule with a 1pt black stroke and default margins.</summary>
+    /// <remarks>See <see cref="LineWidth"/> and <see cref="Margins"/> for refusals at save.</remarks>
+    public LineSeparator() { }
+
     /// <summary>Stroke width of the rule in points.</summary>
     /// <remarks>
     /// A non-finite width is refused. <see cref="Document.Save(System.IO.Stream)"/> throws
@@ -33,6 +41,7 @@ public sealed class LineSeparator
     public double LineWidth { get; init; } = 1;
 
     /// <summary>Stroke color of the rule.</summary>
+    /// <remarks>Stored as given. Channels are not clamped; see <see cref="ColorRgb"/>.</remarks>
     public ColorRgb Color { get; init; } = ColorRgb.Black;
 
     /// <summary>Margins around the rule.</summary>
