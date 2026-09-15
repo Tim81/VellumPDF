@@ -38,6 +38,11 @@ public sealed class ParagraphRenderer : IRenderer
     // ── Phase 1: Layout ───────────────────────────────────────────────────────
 
     /// <summary>Word-wraps the paragraph and fits as many lines as the area allows, splitting at line boundaries on overflow.</summary>
+    /// <remarks>
+    /// Overflow returns <see cref="LayoutResult.Partial"/> at a line boundary. A single word
+    /// taller than the page is too tall for one page and throws from
+    /// <see cref="Document.Save(System.IO.Stream)"/>, not from this method.
+    /// </remarks>
     public LayoutResult Layout(LayoutContext context)
     {
         var area = context.Area.Deflate(_para.Margins);

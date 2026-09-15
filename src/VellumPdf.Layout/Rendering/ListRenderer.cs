@@ -55,6 +55,10 @@ public sealed class ListRenderer : IRenderer
     // ── Phase 1: Layout ───────────────────────────────────────────────────────
 
     /// <summary>Paginates the list item-by-item, splitting at item boundaries on overflow; handles mid-item splits by chaining content overflow renderers.</summary>
+    /// <remarks>
+    /// A negative <c>startItem</c> throws <see cref="ArgumentOutOfRangeException"/> here.
+    /// See the constructor. Overflow splits at an item, or mid-item when a paragraph does.
+    /// </remarks>
     public LayoutResult Layout(LayoutContext context)
     {
         var area = context.Area.Deflate(_list.Margins);

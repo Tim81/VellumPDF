@@ -164,5 +164,13 @@ public sealed class TextStyle
     public string? LinkUri { get; init; }
 
     /// <summary>Measures a string using whichever font this style references.</summary>
+    /// <remarks>
+    /// A null string throws <see cref="NullReferenceException"/> from the font metrics, not
+    /// <see cref="ArgumentNullException"/>. A non-finite <see cref="FontSize"/> is multiplied
+    /// through; this call does not refuse it.
+    /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// <paramref name="text"/> is <see langword="null"/>.
+    /// </exception>
     public double MeasureString(string text) => FontRef.MeasureString(text, FontSize);
 }

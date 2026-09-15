@@ -74,6 +74,11 @@ public sealed class DrawContext
     /// Registers a URI /Link annotation on the current page.
     /// <paramref name="box"/> is in layout space (Y-down); the method converts to PDF space.
     /// </summary>
+    /// <remarks>
+    /// <paramref name="uri"/> is not validated. Empty, <c>not a uri</c>, and
+    /// <c>javascript:alert(1)</c> are written into <c>/URI</c> as given, the same as
+    /// <see cref="TextStyle.LinkUri"/>.
+    /// </remarks>
     public void AddUriLinkAnnotation(LayoutBox box, string uri)
     {
         var (x, y, w, h) = ToPdfRect(box);
@@ -89,6 +94,10 @@ public sealed class DrawContext
     /// Registers a document-outline (bookmark) entry pointing to the current page.
     /// <paramref name="layoutY"/> is the layout-space Y of the target position.
     /// </summary>
+    /// <remarks>
+    /// <paramref name="level"/> is not refused. A negative level reaches the outline builder as
+    /// given, the same as <see cref="VellumPdf.Layout.Elements.Heading.Level"/>.
+    /// </remarks>
     public void AddOutlineEntry(string title, int level, double layoutY)
     {
         var pdfY = ToPdfY(layoutY);
@@ -107,6 +116,11 @@ public sealed class DrawContext
     /// Only has an effect when <see cref="Tagged"/> is true.
     /// The element's <see cref="PdfStructElem.Page"/> is automatically set to the current page.
     /// </summary>
+    /// <remarks>
+    /// When <see cref="Tagged"/> is false this still sets <paramref name="elem"/>.Page and
+    /// forwards the element. Whether the kernel keeps it is a tagged-document question, not a
+    /// throw.
+    /// </remarks>
     public void RegisterStructElem(PdfStructElem elem)
     {
         elem.Page = _page;

@@ -155,6 +155,17 @@ public sealed class DocumentRenderer
     internal readonly List<BookmarkEntry> PendingBookmarks = [];
 
     /// <summary>Creates a renderer that paginates content onto <paramref name="pdf"/> using the given page size and margins.</summary>
+    /// <remarks>
+    /// Geometry is checked here. A page with no positive size, or margins that leave no
+    /// content area, throws <see cref="ArgumentOutOfRangeException"/> or
+    /// <see cref="ArgumentException"/> from this constructor, not from <see cref="Render"/>.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// The page width or height is not a positive finite number.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// The margins meet or exceed the page on either axis.
+    /// </exception>
     public DocumentRenderer(PdfDocument pdf, PdfRectangle? pageSize = null, EdgeInsets? margins = null)
     {
         _pdf = pdf;

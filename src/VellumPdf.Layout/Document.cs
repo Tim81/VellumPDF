@@ -199,6 +199,11 @@ public sealed class Document : IDisposable
     /// Set via <see cref="SetHeader"/> for a fluent API.
     /// Supports {page} and {pages} tokens.
     /// </summary>
+    /// <remarks>
+    /// A band whose <see cref="RunningBand.Template"/> is null throws
+    /// <see cref="NullReferenceException"/> from the save (#531). Same as
+    /// <see cref="SetHeader"/>.
+    /// </remarks>
     public RunningBand? Header { get; set; }
 
     /// <summary>
@@ -206,9 +211,19 @@ public sealed class Document : IDisposable
     /// Set via <see cref="SetFooter"/> for a fluent API.
     /// Supports {page} and {pages} tokens.
     /// </summary>
+    /// <remarks>
+    /// A band whose <see cref="RunningBand.Template"/> is null throws
+    /// <see cref="NullReferenceException"/> from the save (#531). Same as
+    /// <see cref="SetFooter"/>.
+    /// </remarks>
     public RunningBand? Footer { get; set; }
 
     /// <summary>Sets the default text style applied to content added without an explicit style. Returns this document for chaining.</summary>
+    /// <remarks>
+    /// A null style is stored as given and is not refused. <see cref="Add(string, TextStyle)"/>
+    /// still produces <see cref="TextStyle.Default"/>, because <see cref="Paragraph"/> coalesces
+    /// a null style. The call does not throw.
+    /// </remarks>
     public Document SetDefaultFont(TextStyle style) { _defaultStyle = style; return this; }
 
     /// <summary>Sets a header band with optional style and alignment. Returns this document for chaining.</summary>
@@ -316,6 +331,12 @@ public sealed class Document : IDisposable
     // ── Content methods ──────────────────────────────────────────────────────
 
     /// <summary>Adds a paragraph to the document content. Returns this document for chaining.</summary>
+    /// <remarks>
+    /// A null paragraph throws <see cref="NullReferenceException"/> from this call.
+    /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// <paramref name="paragraph"/> is <see langword="null"/>.
+    /// </exception>
     public Document Add(Paragraph paragraph)
     {
         _content.Add(new ParagraphRenderer(paragraph) { ElementLanguage = paragraph.Language });
@@ -412,6 +433,21 @@ public sealed class Document : IDisposable
     /// <param name="componentCount">Number of colour components: 1 (Gray), 3 (RGB), or 4 (CMYK).</param>
     /// <param name="outputConditionIdentifier">The OutputConditionIdentifier string.</param>
     /// <param name="info">Optional /Info string. Defaults to <paramref name="outputConditionIdentifier"/> when null.</param>
+    /// <remarks>
+    /// Refused from this call, not from save. An empty or null profile raises
+    /// <see cref="ArgumentException"/>. A component count other than 1, 3 or 4 raises
+    /// <see cref="ArgumentOutOfRangeException"/>. A null identifier raises
+    /// <see cref="ArgumentNullException"/>.
+    /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="iccProfile"/> is null or empty.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="componentCount"/> is not 1, 3 or 4.
+    /// </exception>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="outputConditionIdentifier"/> is <see langword="null"/>.
+    /// </exception>
     public void SetPdfAOutputIntent(byte[] iccProfile, int componentCount, string outputConditionIdentifier, string? info = null) =>
         _pdf.SetPdfAOutputIntent(iccProfile, componentCount, outputConditionIdentifier, info);
 
@@ -426,6 +462,13 @@ public sealed class Document : IDisposable
     /// </para>
     /// </summary>
     /// <param name="outputConditionIdentifier">The OutputConditionIdentifier string written to the OutputIntent dictionary.</param>
+    /// <remarks>
+    /// Same identifier refusal as <see cref="SetPdfAOutputIntent"/>. The built-in profile is
+    /// never empty, so the profile and component-count throws on that method do not arise here.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="outputConditionIdentifier"/> is <see langword="null"/>.
+    /// </exception>
     public void UseCmykOutputIntent(string outputConditionIdentifier = "Generic CMYK") =>
         _pdf.UseCmykOutputIntent(outputConditionIdentifier);
 
@@ -832,5 +875,12 @@ public sealed class Document : IDisposable
     }
 
     /// <summary>Releases the underlying <see cref="PdfDocument"/> and its resources.</summary>
+    /// <remarks>
+    /// A later <see cref="Save(System.IO.Stream)"/> throws <see cref="ObjectDisposedException"/>
+    /// from the kernel document. Dispose is idempotent.
+    /// </remarks>
+    /// <exception cref="ObjectDisposedException">
+    /// Raised from a later save, not from this call.
+    /// </exception>
     public void Dispose() => _pdf.Dispose();
 }

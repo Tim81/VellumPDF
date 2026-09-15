@@ -58,12 +58,19 @@ public sealed class Heading
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 
     /// <summary>Horizontal alignment of the heading text.</summary>
+    /// <remarks>
+    /// Headings are laid out as paragraphs, so <see cref="HorizontalAlignment.Justify"/> is
+    /// honoured the same way: wrapped lines justify, the last line stays left.
+    /// </remarks>
     public HorizontalAlignment Alignment { get; init; } = HorizontalAlignment.Left;
 
     /// <summary>
     /// Optional per-element language override (BCP 47 / RFC 5646, e.g. <c>"en-US"</c>).
     /// When set and the document is tagged, written as <c>/Lang</c> on the struct element.
     /// </summary>
+    /// <remarks>
+    /// The string is not validated. Same as <see cref="Document.Language"/>.
+    /// </remarks>
     public string? Language { get; init; }
 
     /// <summary>Creates a heading with the given text and optional style (defaults to 14pt).</summary>

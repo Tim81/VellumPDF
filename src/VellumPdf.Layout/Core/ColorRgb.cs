@@ -6,6 +6,11 @@ using VellumPdf.Graphics;
 namespace VellumPdf.Layout.Core;
 
 /// <summary>Normalised RGB colour (0.0–1.0 per channel).</summary>
+/// <remarks>
+/// Channels are not clamped or checked for finiteness. A value outside 0 to 1, or a
+/// non-finite channel, can reach the content stream (#509). <see cref="FromHex"/> ignores
+/// the top byte.
+/// </remarks>
 /// <param name="R">The red channel (0.0–1.0).</param>
 /// <param name="G">The green channel (0.0–1.0).</param>
 /// <param name="B">The blue channel (0.0–1.0).</param>

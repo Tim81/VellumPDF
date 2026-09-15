@@ -25,5 +25,9 @@ public interface IRenderer
     /// Phase 2: emit PDF operators into <paramref name="context"/>.
     /// Called only after a successful Layout (Full or Partial).
     /// </summary>
+    /// <remarks>
+    /// Implementations must not assume Layout ran on this instance in the same call. A
+    /// <see cref="LayoutResult.Partial"/> split renderer is the object that Draw sees.
+    /// </remarks>
     void Draw(DrawContext context);
 }

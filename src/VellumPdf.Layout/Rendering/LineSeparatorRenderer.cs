@@ -16,6 +16,10 @@ public sealed class LineSeparatorRenderer : IRenderer
     public LineSeparatorRenderer(LineSeparator sep) => _sep = sep;
 
     /// <summary>Reserves the separator's line width plus margins and reports the occupied region.</summary>
+    /// <remarks>
+    /// A non-finite line width or inset is refused here as
+    /// <see cref="InvalidOperationException"/>. This renderer does not split.
+    /// </remarks>
     public LayoutResult Layout(LayoutContext ctx)
     {
         // A non-finite width reaches the stream as "NaN w", and carries into the line's own

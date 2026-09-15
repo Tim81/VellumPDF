@@ -57,6 +57,13 @@ public readonly struct FontReference
     /// <summary>
     /// Measures a string in points. Routes to Standard-14 or embedded metrics.
     /// </summary>
+    /// <remarks>
+    /// A null string throws <see cref="NullReferenceException"/>. A non-finite
+    /// <paramref name="pointSize"/> is multiplied through and is not refused here.
+    /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// <paramref name="text"/> is <see langword="null"/>.
+    /// </exception>
     public double MeasureString(string text, double pointSize) => IsEmbedded
         ? _embedded!.MeasureString(text, pointSize)
         : Standard14Metrics.MeasureString(_standard14, text, pointSize);

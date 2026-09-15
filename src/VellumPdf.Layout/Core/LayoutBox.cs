@@ -39,6 +39,10 @@ public readonly record struct LayoutBox(double X, double Y, double Width, double
         new(X + left, Y + top, Width - left - right, Height - top - bottom);
 
     /// <summary>Returns this box shrunk by the given insets.</summary>
+    /// <remarks>
+    /// Same as the four-argument overload: insets larger than the box yield a negative
+    /// extent and <see cref="IsEmpty"/> is then true.
+    /// </remarks>
     public LayoutBox Deflate(EdgeInsets insets) =>
         Deflate(insets.Left, insets.Top, insets.Right, insets.Bottom);
 

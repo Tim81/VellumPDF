@@ -43,12 +43,21 @@ public sealed class Paragraph
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 
     /// <summary>Horizontal alignment of the paragraph text.</summary>
+    /// <remarks>
+    /// <see cref="HorizontalAlignment.Justify"/> is honoured for wrapped lines; the last line
+    /// of a paragraph stays left-aligned. That is the one consumer in this package that
+    /// justifies. A cell, image, pie chart or running band treats Justify as left.
+    /// </remarks>
     public HorizontalAlignment Alignment { get; init; } = HorizontalAlignment.Left;
 
     /// <summary>
     /// Optional per-element language override (BCP 47 / RFC 5646, e.g. <c>"en-US"</c>).
     /// When set and the document is tagged, written as <c>/Lang</c> on the struct element.
     /// </summary>
+    /// <remarks>
+    /// The string is not validated. Same as <see cref="Document.Language"/>: an ill-formed tag
+    /// is written as given.
+    /// </remarks>
     public string? Language { get; init; }
 
     // ── Constructors ─────────────────────────────────────────────────────────

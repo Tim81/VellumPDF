@@ -111,7 +111,14 @@ public sealed class RunningBand
     /// <summary>Returns the effective band height (leading + small padding).</summary>
     public double EffectiveHeight => Height ?? (Style.EffectiveLeading + 4);
 
-    /// <summary>Substitutes {page} and {pages} tokens.</summary>
+    /// <summary>Substitutes <c>{page}</c> and <c>{pages}</c> in <see cref="Template"/>.</summary>
+    /// <remarks>
+    /// Any other brace text is left as given. A null template throws
+    /// <see cref="NullReferenceException"/> from this call (#531).
+    /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// <see cref="Template"/> is <see langword="null"/>.
+    /// </exception>
     public string Resolve(int pageNumber, int totalPages) =>
         Template
             .Replace("{page}", pageNumber.ToString(System.Globalization.CultureInfo.InvariantCulture),
