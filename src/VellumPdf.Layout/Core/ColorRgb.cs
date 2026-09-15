@@ -11,11 +11,29 @@ namespace VellumPdf.Layout.Core;
 /// non-finite channel, can reach the content stream (#509). <see cref="FromHex"/> ignores
 /// the top byte.
 /// </remarks>
-/// <param name="R">The red channel (0.0–1.0). Not clamped; see the type remarks.</param>
-/// <param name="G">The green channel (0.0–1.0). Not clamped; see the type remarks.</param>
-/// <param name="B">The blue channel (0.0–1.0). Not clamped; see the type remarks.</param>
-public readonly record struct ColorRgb(double R, double G, double B)
+public readonly record struct ColorRgb
 {
+    /// <summary>The red channel (0.0–1.0).</summary>
+    /// <remarks>Not clamped or checked for finiteness. See the type remarks.</remarks>
+    public double R { get; init; }
+
+    /// <summary>The green channel (0.0–1.0).</summary>
+    /// <remarks>Not clamped or checked for finiteness. See the type remarks.</remarks>
+    public double G { get; init; }
+
+    /// <summary>The blue channel (0.0–1.0).</summary>
+    /// <remarks>Not clamped or checked for finiteness. See the type remarks.</remarks>
+    public double B { get; init; }
+
+    /// <summary>Creates a colour from the given channels.</summary>
+    /// <remarks>Channels are stored as given. See the type remarks.</remarks>
+    public ColorRgb(double R, double G, double B)
+    {
+        this.R = R;
+        this.G = G;
+        this.B = B;
+    }
+
     /// <summary>Opaque black (0, 0, 0).</summary>
     /// <remarks>Finite and in range. Not a special case of the unclamped constructor.</remarks>
     public static readonly ColorRgb Black = new(0, 0, 0);
@@ -34,6 +52,15 @@ public readonly record struct ColorRgb(double R, double G, double B)
         ((rgb >> 16) & 0xFF) / 255.0,
         ((rgb >> 8) & 0xFF) / 255.0,
          (rgb & 0xFF) / 255.0);
+
+    /// <summary>Copies the three channels into the given variables.</summary>
+    /// <remarks>The values are as stored. No clamping.</remarks>
+    public void Deconstruct(out double R, out double G, out double B)
+    {
+        R = this.R;
+        G = this.G;
+        B = this.B;
+    }
 
     /// <summary>Converts a layout <see cref="ColorRgb"/> to the kernel's <see cref="KernelColor"/>.</summary>
     public static implicit operator KernelColor(ColorRgb c) => new(c.R, c.G, c.B);

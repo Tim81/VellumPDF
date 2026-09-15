@@ -8,17 +8,51 @@ namespace VellumPdf.Layout.Core;
 /// Channels are not clamped or checked for finiteness. A value outside 0 to 1, or a
 /// non-finite channel, can reach the content stream (#509).
 /// </remarks>
-/// <param name="C">The cyan channel (0.0–1.0). Not clamped; see the type remarks.</param>
-/// <param name="M">The magenta channel (0.0–1.0). Not clamped; see the type remarks.</param>
-/// <param name="Y">The yellow channel (0.0–1.0). Not clamped; see the type remarks.</param>
-/// <param name="K">The key (black) channel (0.0–1.0). Not clamped; see the type remarks.</param>
-public readonly record struct ColorCmyk(double C, double M, double Y, double K)
+public readonly record struct ColorCmyk
 {
+    /// <summary>The cyan channel (0.0–1.0).</summary>
+    /// <remarks>Not clamped or checked for finiteness. See the type remarks.</remarks>
+    public double C { get; init; }
+
+    /// <summary>The magenta channel (0.0–1.0).</summary>
+    /// <remarks>Not clamped or checked for finiteness. See the type remarks.</remarks>
+    public double M { get; init; }
+
+    /// <summary>The yellow channel (0.0–1.0).</summary>
+    /// <remarks>Not clamped or checked for finiteness. See the type remarks.</remarks>
+    public double Y { get; init; }
+
+    /// <summary>The key (black) channel (0.0–1.0).</summary>
+    /// <remarks>Not clamped or checked for finiteness. See the type remarks.</remarks>
+    public double K { get; init; }
+
+    /// <summary>Creates a colour from the given channels.</summary>
+    /// <remarks>Channels are stored as given. See the type remarks.</remarks>
+    public ColorCmyk(double C, double M, double Y, double K)
+    {
+        this.C = C;
+        this.M = M;
+        this.Y = Y;
+        this.K = K;
+    }
+
     /// <summary>Process black (0, 0, 0, 1).</summary>
+    /// <remarks>Finite and in range. Not a special case of the unclamped constructor.</remarks>
     public static readonly ColorCmyk Black = new(0, 0, 0, 1);
 
     /// <summary>White / no ink (0, 0, 0, 0).</summary>
+    /// <remarks>Finite and in range. Not a special case of the unclamped constructor.</remarks>
     public static readonly ColorCmyk White = new(0, 0, 0, 0);
+
+    /// <summary>Copies the four channels into the given variables.</summary>
+    /// <remarks>The values are as stored. No clamping.</remarks>
+    public void Deconstruct(out double C, out double M, out double Y, out double K)
+    {
+        C = this.C;
+        M = this.M;
+        Y = this.Y;
+        K = this.K;
+    }
 
     /// <summary>
     /// Naive (non-colour-managed) conversion to RGB for preview or interop.

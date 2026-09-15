@@ -33,23 +33,69 @@ public enum RunningBandKind
 /// <remarks>
 /// Counts only. The truncated text is not carried. A default instance has zeros.
 /// </remarks>
-/// <param name="Band">Which band was cut.</param>
-/// <param name="PageNumber">
-/// The one-based page carrying the worst cut, not the first cut. With a <c>{page}</c> or
-/// <c>{pages}</c> token the resolved text differs per page, so the page that lost the most is the
-/// one that tells a caller how much shorter the template has to be.
-/// </param>
-/// <param name="DrawnCharacters">How many characters of the resolved text were drawn on that page.</param>
-/// <param name="ResolvedCharacters">
-/// The length of the resolved text on that page, after token substitution rather than the
-/// template's own length, since substitution changes it.
-/// </param>
-public readonly record struct BandTruncationWarning(
-    RunningBandKind Band,
-    int PageNumber,
-    int DrawnCharacters,
-    int ResolvedCharacters)
+public readonly record struct BandTruncationWarning
 {
+    /// <summary>Which band was cut.</summary>
+    /// <remarks>One of the two <see cref="RunningBandKind"/> values.</remarks>
+    public RunningBandKind Band { get; init; }
+
+    /// <summary>
+    /// The one-based page carrying the worst cut, not the first cut. With a <c>{page}</c> or
+    /// <c>{pages}</c> token the resolved text differs per page, so the page that lost the most is the
+    /// one that tells a caller how much shorter the template has to be.
+    /// </summary>
+    /// <remarks>Not refused. A zero or negative page number is stored as given.</remarks>
+    public int PageNumber { get; init; }
+
+    /// <summary>How many characters of the resolved text were drawn on that page.</summary>
+    /// <remarks>
+    /// Not refused. Can exceed <see cref="ResolvedCharacters"/> if the counts were built by
+    /// hand.
+    /// </remarks>
+    public int DrawnCharacters { get; init; }
+
+    /// <summary>
+    /// The length of the resolved text on that page, after token substitution rather than the
+    /// template's own length, since substitution changes it.
+    /// </summary>
+    /// <remarks>Not refused. A negative length is stored as given.</remarks>
+    public int ResolvedCharacters { get; init; }
+
+    /// <summary>Creates a truncation report from the four counts.</summary>
+    /// <remarks>Arguments are stored as given. Nothing is validated.</remarks>
+    public BandTruncationWarning(
+        RunningBandKind Band,
+        int PageNumber,
+        int DrawnCharacters,
+        int ResolvedCharacters)
+    {
+        this.Band = Band;
+        this.PageNumber = PageNumber;
+        this.DrawnCharacters = DrawnCharacters;
+        this.ResolvedCharacters = ResolvedCharacters;
+    }
+
+    /// <summary>Copies the four fields into the given variables.</summary>
+    /// <remarks>
+    /// The values are as stored. No validation. Does not include
+    /// <see cref="DroppedCharacters"/>.
+    /// </remarks>
+    public void Deconstruct(
+        out RunningBandKind Band,
+        out int PageNumber,
+        out int DrawnCharacters,
+        out int ResolvedCharacters)
+    {
+        Band = this.Band;
+        PageNumber = this.PageNumber;
+        DrawnCharacters = this.DrawnCharacters;
+        ResolvedCharacters = this.ResolvedCharacters;
+    }
+
     /// <summary>How many characters the cut dropped on that page.</summary>
+    /// <remarks>
+    /// <see cref="ResolvedCharacters"/> minus <see cref="DrawnCharacters"/>. Can be negative
+    /// if those two were built by hand.
+    /// </remarks>
     public int DroppedCharacters => ResolvedCharacters - DrawnCharacters;
 }

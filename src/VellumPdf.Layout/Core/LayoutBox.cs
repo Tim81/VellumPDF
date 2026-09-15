@@ -13,12 +13,44 @@ namespace VellumPdf.Layout.Core;
 /// <see cref="IsEmpty"/> is true when width or height is less than or equal to zero;
 /// <c>NaN</c> is not, so a <c>NaN</c> extent leaves <see cref="IsEmpty"/> false.
 /// </remarks>
-/// <param name="X">The left edge of the box. Not validated.</param>
-/// <param name="Y">The top edge of the box. Not validated.</param>
-/// <param name="Width">The width of the box. Not validated; see the type remarks.</param>
-/// <param name="Height">The height of the box. Not validated; see the type remarks.</param>
-public readonly record struct LayoutBox(double X, double Y, double Width, double Height)
+public readonly record struct LayoutBox
 {
+    /// <summary>The left edge of the box.</summary>
+    /// <remarks>Not validated. See the type remarks.</remarks>
+    public double X { get; init; }
+
+    /// <summary>The top edge of the box.</summary>
+    /// <remarks>Not validated. See the type remarks.</remarks>
+    public double Y { get; init; }
+
+    /// <summary>The width of the box.</summary>
+    /// <remarks>Not validated. A negative or non-finite value is stored as given. See the type.</remarks>
+    public double Width { get; init; }
+
+    /// <summary>The height of the box.</summary>
+    /// <remarks>Not validated. A negative or non-finite value is stored as given. See the type.</remarks>
+    public double Height { get; init; }
+
+    /// <summary>Creates a box from the given origin and extents.</summary>
+    /// <remarks>Components are stored as given. See the type remarks.</remarks>
+    public LayoutBox(double X, double Y, double Width, double Height)
+    {
+        this.X = X;
+        this.Y = Y;
+        this.Width = Width;
+        this.Height = Height;
+    }
+
+    /// <summary>Copies the origin and extents into the given variables.</summary>
+    /// <remarks>The values are as stored. No validation.</remarks>
+    public void Deconstruct(out double X, out double Y, out double Width, out double Height)
+    {
+        X = this.X;
+        Y = this.Y;
+        Width = this.Width;
+        Height = this.Height;
+    }
+
     /// <summary>The right edge of the box (X + Width).</summary>
     /// <remarks>Arithmetic only. A negative width yields a Right less than X.</remarks>
     public double Right => X + Width;

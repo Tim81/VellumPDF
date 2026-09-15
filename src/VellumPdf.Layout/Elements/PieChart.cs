@@ -8,21 +8,51 @@ namespace VellumPdf.Layout.Elements;
 /// <summary>
 /// A single wedge of a <see cref="PieChart"/>.
 /// </summary>
-/// <param name="Value">
-/// The slice's magnitude. The wedge angle is this value as a fraction of the sum
-/// of all slice values. Must be finite and non-negative. Zero is accepted and contributes
-/// no angle; see <see cref="PieChart.Slices"/>.
-/// </param>
-/// <param name="Color">The fill colour of the wedge. Not clamped; see <see cref="ColorRgb"/>.</param>
-/// <param name="Label">
-/// Optional label carried with the slice (e.g. for an external legend). Currently
-/// stored as data only, not rendered as on-chart text. Null and empty are stored.
-/// </param>
 /// <remarks>
 /// <see cref="Value"/> must be finite and non-negative when the chart is laid out; zero
 /// contributes no angle. See <see cref="PieChart.Slices"/>.
 /// </remarks>
-public readonly record struct PieSlice(double Value, ColorRgb Color, string? Label = null);
+public readonly record struct PieSlice
+{
+    /// <summary>
+    /// The slice's magnitude. The wedge angle is this value as a fraction of the sum
+    /// of all slice values.
+    /// </summary>
+    /// <remarks>
+    /// Must be finite and non-negative at layout. Zero is accepted and contributes no angle.
+    /// See <see cref="PieChart.Slices"/>.
+    /// </remarks>
+    public double Value { get; init; }
+
+    /// <summary>The fill colour of the wedge.</summary>
+    /// <remarks>Not clamped. See <see cref="ColorRgb"/>.</remarks>
+    public ColorRgb Color { get; init; }
+
+    /// <summary>
+    /// Optional label carried with the slice (e.g. for an external legend). Currently
+    /// stored as data only, not rendered as on-chart text.
+    /// </summary>
+    /// <remarks>Null and empty are stored. Nothing draws this string on the chart.</remarks>
+    public string? Label { get; init; }
+
+    /// <summary>Copies the magnitude, colour, and label into the given variables.</summary>
+    /// <remarks>The values are as stored. No validation.</remarks>
+    public void Deconstruct(out double Value, out ColorRgb Color, out string? Label)
+    {
+        Value = this.Value;
+        Color = this.Color;
+        Label = this.Label;
+    }
+
+    /// <summary>Creates a slice from a magnitude, fill colour, and optional label.</summary>
+    /// <remarks>Arguments are stored as given. Refusals fire from <see cref="PieChart.Slices"/>.</remarks>
+    public PieSlice(double Value, ColorRgb Color, string? Label = null)
+    {
+        this.Value = Value;
+        this.Color = Color;
+        this.Label = Label;
+    }
+}
 
 /// <summary>
 /// A pie chart drawn as a sequence of filled Bézier-approximated wedges.
