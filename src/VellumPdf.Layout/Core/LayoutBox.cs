@@ -94,5 +94,6 @@ public readonly record struct LayoutBox
     public bool IsEmpty => Width <= 0 || Height <= 0;
 
     /// <summary>Returns a compact string of the form <c>(X,Y W×H)</c>.</summary>
+    /// <remarks>Invariant culture, one decimal place. Not a round-trip format.</remarks>
     public override string ToString() => $"({X:F1},{Y:F1} {Width:F1}×{Height:F1})";
 }

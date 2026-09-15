@@ -63,9 +63,11 @@ public readonly struct FontReference
     }
 
     /// <summary>Implicit conversion so existing <c>Standard14</c> values work unchanged.</summary>
+    /// <remarks>Same as <see cref="FontReference(Standard14)"/>.</remarks>
     public static implicit operator FontReference(Standard14 font) => new(font);
 
     /// <summary>Implicit conversion from an embedded handle for ergonomic use in TextStyle init.</summary>
+    /// <remarks>Same as <see cref="FontReference(EmbeddedFontHandle)"/>. A null handle is stored.</remarks>
     public static implicit operator FontReference(EmbeddedFontHandle handle) => new(handle);
 
     /// <summary>

@@ -68,6 +68,10 @@ public sealed class ListItem
     }
 
     /// <summary>Adds a nested child item with the given text and optional style. Returns this item.</summary>
+    /// <remarks>
+    /// A null <paramref name="text"/> is stored on the child. Same nesting rule as
+    /// <see cref="AddChild(ListItem)"/>.
+    /// </remarks>
     public ListItem AddChild(string text, TextStyle? style = null)
         => AddChild(new ListItem(text, style));
 }

@@ -63,8 +63,10 @@ public readonly record struct ColorRgb
     }
 
     /// <summary>Converts a layout <see cref="ColorRgb"/> to the kernel's <see cref="KernelColor"/>.</summary>
+    /// <remarks>Channels are copied as stored. No clamping.</remarks>
     public static implicit operator KernelColor(ColorRgb c) => new(c.R, c.G, c.B);
 
     /// <summary>Converts a kernel <see cref="KernelColor"/> to a layout <see cref="ColorRgb"/>.</summary>
+    /// <remarks>Channels are copied as stored. No clamping.</remarks>
     public static implicit operator ColorRgb(KernelColor c) => new(c.R, c.G, c.B);
 }
