@@ -12,8 +12,8 @@ public sealed class Row
 
     /// <summary>The cells in this row, in column order.</summary>
     /// <remarks>
-    /// A row with no cells is refused at save as part of the empty-table check on
-    /// <see cref="TableElement.Rows"/>.
+    /// An empty row among rows that have cells is not refused. A table is refused only when
+    /// no row contributes a cell; see <see cref="TableElement.Rows"/>.
     /// </remarks>
     public IReadOnlyList<Cell> Cells => _cells;
 

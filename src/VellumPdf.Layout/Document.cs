@@ -129,10 +129,10 @@ public sealed class Document : IDisposable
     /// Leading and trailing whitespace is trimmed when the value is written.
     /// </summary>
     /// <remarks>
-    /// <b>Attention</b>: the string is not validated. An empty value, whitespace, or
-    /// <c>not a tag</c> is written into <c>/Lang</c> and XMP as given, after trim. PDF/A-2a
-    /// and PDF/UA-1 both require a well-formed BCP 47 tag; this property will not refuse one
-    /// that is not. A later major version will.
+    /// <b>Attention</b>: the string is not validated as BCP 47. After trim, an empty value
+    /// is omitted from <c>/Lang</c> and XMP. A non-empty ill-formed tag such as
+    /// <c>not a tag</c> is written as given. PDF/A-2a and PDF/UA-1 both require a well-formed
+    /// tag; this property will not refuse one that is not. A later major version will.
     /// </remarks>
     public string? Language
     {
@@ -275,9 +275,13 @@ public sealed class Document : IDisposable
     /// used in <see cref="TextStyle.FontRef"/>.
     /// </summary>
     /// <remarks>
-    /// The bytes are parsed here, not at save. A buffer that is not a TrueType font raises
+    /// The bytes are parsed here, not at save. A null buffer raises
+    /// <see cref="ArgumentNullException"/>. A buffer that is not a TrueType font raises
     /// <see cref="InvalidDataException"/> from this call.
     /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="fontData"/> is <see langword="null"/>.
+    /// </exception>
     /// <exception cref="InvalidDataException">
     /// <paramref name="fontData"/> is not a TrueType font this embedder can read.
     /// </exception>

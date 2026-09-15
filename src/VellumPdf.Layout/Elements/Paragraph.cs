@@ -45,8 +45,8 @@ public sealed class Paragraph
     /// <summary>Horizontal alignment of the paragraph text.</summary>
     /// <remarks>
     /// <see cref="HorizontalAlignment.Justify"/> is honoured for wrapped lines; the last line
-    /// of a paragraph stays left-aligned. That is the one consumer in this package that
-    /// justifies. A cell, image, pie chart or running band treats Justify as left.
+    /// of a paragraph stays left-aligned. Headings are laid out as paragraphs and honour it
+    /// the same way. A cell, image, pie chart or running band treats Justify as left.
     /// </remarks>
     public HorizontalAlignment Alignment { get; init; } = HorizontalAlignment.Left;
 

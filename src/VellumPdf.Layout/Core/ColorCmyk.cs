@@ -33,8 +33,8 @@ public readonly record struct ColorCmyk(double C, double M, double Y, double K)
     /// Uses the standard max-based GCR (Grey Component Replacement) formula.
     /// </summary>
     /// <remarks>
-    /// Input channels are not clamped. A non-finite RGB channel produces a non-finite CMYK
-    /// channel (#509).
+    /// Input channels are not clamped. A non-finite RGB channel is not refused; the
+    /// <c>k &gt;= 1</c> path can still return <see cref="Black"/> (#509).
     /// </remarks>
     public static ColorCmyk FromRgb(ColorRgb rgb)
     {

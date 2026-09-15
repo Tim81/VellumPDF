@@ -23,7 +23,8 @@ public readonly record struct LayoutBox(double X, double Y, double Width, double
     /// <summary>Returns a copy of this box with the height replaced.</summary>
     /// <remarks>
     /// A negative or non-finite height is stored as given. <see cref="IsEmpty"/> is true when
-    /// the height is not positive.
+    /// width or height is less than or equal to zero. <c>NaN</c> is not less than or equal to
+    /// zero, so a <c>NaN</c> height leaves <see cref="IsEmpty"/> false.
     /// </remarks>
     public LayoutBox WithHeight(double height) => new(X, Y, Width, height);
 

@@ -62,9 +62,10 @@ public sealed class TableElement
 
     /// <summary>The rows in the table, in render order.</summary>
     /// <remarks>
-    /// A table with no rows, or whose rows hold no cells, is refused at save.
+    /// A table that resolves to no columns is refused at save: no rows, or every row empty.
+    /// A mix of empty rows and rows that have cells is not that case.
     /// <see cref="Document.Save(System.IO.Stream)"/> throws
-    /// <see cref="InvalidOperationException"/>: the grid resolved to no columns.
+    /// <see cref="InvalidOperationException"/> when there is nothing to draw.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from a save, when this collection is empty or every row has no cells.
@@ -73,9 +74,9 @@ public sealed class TableElement
 
     /// <summary>Configured column widths in points; a value of 0 means auto-size.</summary>
     /// <remarks>
-    /// An entry that cannot be a width is treated as auto: missing, zero, negative, or
-    /// non-finite. Extra entries past the column count are ignored. Explicit widths that
-    /// overrun the available width are scaled down. Nothing reports any of those.
+    /// An entry that cannot be a width is treated as auto. Extra entries past the column
+    /// count are ignored. Explicit widths that overrun the available width are scaled down.
+    /// Nothing reports any of those.
     /// </remarks>
     public IReadOnlyList<double> ColWidths => _colWidths;
 
@@ -97,7 +98,6 @@ public sealed class TableElement
     /// run of header rows; a header row added after a data row draws once, where it occurs.
     /// </summary>
     /// <remarks>
-    /// A row with no cells still counts toward the empty-table refusal on <see cref="Rows"/>.
     /// A table whose rows are all headers cannot paginate on a page with room to spare (#488);
     /// save throws the too-tall <see cref="InvalidOperationException"/>.
     /// </remarks>
@@ -113,7 +113,7 @@ public sealed class TableElement
     /// repeats across continuation pages.
     /// </summary>
     /// <remarks>
-    /// Same empty-row and all-header refusals as <see cref="AddRow"/>.
+    /// Same all-header refusal as <see cref="AddRow"/>.
     /// </remarks>
     public Row AddHeaderRow()
     {

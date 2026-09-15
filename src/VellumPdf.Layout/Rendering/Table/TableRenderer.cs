@@ -41,9 +41,9 @@ public sealed class TableRenderer : IRenderer
 
     /// <summary>Resolves column widths and row heights, fitting as many rows as possible and splitting at row boundaries on overflow.</summary>
     /// <remarks>
-    /// A table with no cells throws <see cref="InvalidOperationException"/> from this call
-    /// (via save). An all-header table that cannot leave the header run throws the too-tall
-    /// path (#488). Overflow splits at a row boundary.
+    /// A table that resolves to no columns throws <see cref="InvalidOperationException"/>
+    /// from this call (via save). An all-header table that cannot leave the header run
+    /// throws the too-tall path (#488). Overflow splits at a row boundary.
     /// </remarks>
     public LayoutResult Layout(LayoutContext context)
     {

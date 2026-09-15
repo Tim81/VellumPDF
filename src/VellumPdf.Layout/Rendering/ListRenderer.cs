@@ -32,12 +32,14 @@ public sealed class ListRenderer : IRenderer
     /// <summary>Creates a renderer for the list, optionally starting at <paramref name="startItem"/> for pagination.</summary>
     /// <remarks>
     /// A negative start throws <see cref="ArgumentOutOfRangeException"/> from
-    /// <see cref="Layout"/>, when the item list is indexed. A start past the last item
-    /// returns <see cref="LayoutResult.Full"/> occupying no height, having drawn nothing.
+    /// <see cref="Layout"/> only when the area is not empty and the list has items.
+    /// An empty area returns <see cref="LayoutResult.Nothing"/> first. A start past the
+    /// last item, or a negative start on an empty list, returns
+    /// <see cref="LayoutResult.Full"/> occupying no height.
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// Raised from <see cref="Layout"/>, when <paramref name="startItem"/> is negative and the
-    /// list has items.
+    /// Raised from <see cref="Layout"/>, when <paramref name="startItem"/> is negative, the
+    /// list has items, and the area is not empty.
     /// </exception>
     public ListRenderer(ListElement list, int startItem = 0)
     {
@@ -56,8 +58,8 @@ public sealed class ListRenderer : IRenderer
 
     /// <summary>Paginates the list item-by-item, splitting at item boundaries on overflow; handles mid-item splits by chaining content overflow renderers.</summary>
     /// <remarks>
-    /// A negative <c>startItem</c> throws <see cref="ArgumentOutOfRangeException"/> here.
-    /// See the constructor. Overflow splits at an item, or mid-item when a paragraph does.
+    /// See the constructor for a negative or past-end start. Overflow splits at an item, or
+    /// mid-item when a paragraph does.
     /// </remarks>
     public LayoutResult Layout(LayoutContext context)
     {
