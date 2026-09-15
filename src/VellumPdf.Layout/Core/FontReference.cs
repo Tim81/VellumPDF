@@ -10,12 +10,21 @@ namespace VellumPdf.Layout.Core;
 /// TrueType font handle. Used by <see cref="TextStyle"/> to carry either kind
 /// of font in a single, AOT-safe value type.
 /// </summary>
+/// <remarks>
+/// The two accessors are not exclusive. Reading <see cref="Standard14"/> on an embedded
+/// reference, or <see cref="Embedded"/> on a Standard-14 reference, is not refused; see
+/// those members.
+/// </remarks>
 public readonly struct FontReference
 {
     private readonly Standard14 _standard14;
     private readonly EmbeddedFontHandle? _embedded;
 
     /// <summary>Whether this reference points to an embedded TrueType font.</summary>
+    /// <remarks>
+    /// False for the default value, a Standard-14 constructor, and a null handle.
+    /// True only when constructed from a non-null <see cref="EmbeddedFontHandle"/>.
+    /// </remarks>
     public bool IsEmbedded => _embedded is not null;
 
     /// <summary>The Standard-14 font (valid only when <see cref="IsEmbedded"/> is false).</summary>
@@ -35,6 +44,7 @@ public readonly struct FontReference
     public EmbeddedFontHandle Embedded => _embedded!;
 
     /// <summary>Creates a reference to a Standard-14 font.</summary>
+    /// <remarks>Every <see cref="Standard14"/> value is accepted.</remarks>
     public FontReference(Standard14 font)
     {
         _standard14 = font;
@@ -42,6 +52,10 @@ public readonly struct FontReference
     }
 
     /// <summary>Creates a reference to an embedded TrueType font.</summary>
+    /// <remarks>
+    /// A null handle is stored. <see cref="IsEmbedded"/> is then false, and
+    /// <see cref="Embedded"/> returns null.
+    /// </remarks>
     public FontReference(EmbeddedFontHandle handle)
     {
         _standard14 = default;

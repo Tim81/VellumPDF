@@ -40,6 +40,7 @@ public sealed class RunningBand
     public string Template { get; }
 
     /// <summary>The text style of the band.</summary>
+    /// <remarks>Stored as given. Size and leading refusals are on <see cref="TextStyle"/>.</remarks>
     public TextStyle Style { get; }
 
     /// <summary>Horizontal alignment of the band text.</summary>
@@ -101,6 +102,10 @@ public sealed class RunningBand
     public double? Height { get; init; }
 
     /// <summary>Creates a running band from a text template, with optional style and alignment (defaults to centered).</summary>
+    /// <remarks>
+    /// A null template is stored and throws from <see cref="Resolve"/> / save (#531). A null
+    /// style becomes <see cref="TextStyle.Default"/>.
+    /// </remarks>
     public RunningBand(string template, TextStyle? style = null, HorizontalAlignment alignment = HorizontalAlignment.Center)
     {
         Template = template;
@@ -109,6 +114,10 @@ public sealed class RunningBand
     }
 
     /// <summary>Returns the effective band height (leading + small padding).</summary>
+    /// <remarks>
+    /// <see cref="Height"/> when set, otherwise leading plus 4. A set non-finite or negative
+    /// <see cref="Height"/> is returned as given.
+    /// </remarks>
     public double EffectiveHeight => Height ?? (Style.EffectiveLeading + 4);
 
     /// <summary>Substitutes <c>{page}</c> and <c>{pages}</c> in <see cref="Template"/>.</summary>

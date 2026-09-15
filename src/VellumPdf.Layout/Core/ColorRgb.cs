@@ -11,15 +11,17 @@ namespace VellumPdf.Layout.Core;
 /// non-finite channel, can reach the content stream (#509). <see cref="FromHex"/> ignores
 /// the top byte.
 /// </remarks>
-/// <param name="R">The red channel (0.0–1.0).</param>
-/// <param name="G">The green channel (0.0–1.0).</param>
-/// <param name="B">The blue channel (0.0–1.0).</param>
+/// <param name="R">The red channel (0.0–1.0). Not clamped; see the type remarks.</param>
+/// <param name="G">The green channel (0.0–1.0). Not clamped; see the type remarks.</param>
+/// <param name="B">The blue channel (0.0–1.0). Not clamped; see the type remarks.</param>
 public readonly record struct ColorRgb(double R, double G, double B)
 {
     /// <summary>Opaque black (0, 0, 0).</summary>
+    /// <remarks>Finite and in range. Not a special case of the unclamped constructor.</remarks>
     public static readonly ColorRgb Black = new(0, 0, 0);
 
     /// <summary>Opaque white (1, 1, 1).</summary>
+    /// <remarks>Finite and in range. Not a special case of the unclamped constructor.</remarks>
     public static readonly ColorRgb White = new(1, 1, 1);
 
     /// <summary>Creates a colour from a packed 24-bit RGB value (e.g. <c>0xFF8800</c>).</summary>

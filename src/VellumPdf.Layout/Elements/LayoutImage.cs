@@ -10,6 +10,7 @@ namespace VellumPdf.Layout.Elements;
 public sealed class LayoutImage
 {
     /// <summary>The image to draw.</summary>
+    /// <remarks>Stored as given. A null image throws from layout, not from construction.</remarks>
     public PdfImageXObject Image { get; }
 
     /// <summary>
@@ -110,8 +111,10 @@ public sealed class LayoutImage
     /// Used as the <c>/Alt</c> entry on the Figure struct elem when tagging is enabled.
     /// If null, a generic fallback "Figure" is used.
     /// </summary>
+    /// <remarks>Null becomes <c>Figure</c> when tagged. Empty is an empty <c>/Alt</c>.</remarks>
     public string? AltText { get; init; }
 
     /// <summary>Creates a flow image element for the given image.</summary>
+    /// <remarks>A null <paramref name="image"/> is stored. Layout then throws.</remarks>
     public LayoutImage(PdfImageXObject image) => Image = image;
 }

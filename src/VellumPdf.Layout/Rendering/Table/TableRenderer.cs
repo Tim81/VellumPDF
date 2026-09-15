@@ -153,6 +153,7 @@ public sealed class TableRenderer : IRenderer
     }
 
     /// <summary>Draws cell backgrounds, borders and text (repeating header rows) and builds the tagged Table struct tree when tagging is enabled.</summary>
+    /// <remarks>See <see cref="IRenderer.Draw"/>.</remarks>
     public void Draw(DrawContext ctx)
     {
         // Layout already deflated context.Area by _table.Margins and stored the result in

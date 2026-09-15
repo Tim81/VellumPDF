@@ -121,6 +121,7 @@ public sealed class ParagraphRenderer : IRenderer
     internal string? ElementLanguage { get; set; }
 
     /// <summary>Emits the wrapped lines as PDF text operators, applying alignment, justification, links and tagging.</summary>
+    /// <remarks>See <see cref="IRenderer.Draw"/>.</remarks>
     public void Draw(DrawContext ctx)
     {
         if (_lines is null) return;

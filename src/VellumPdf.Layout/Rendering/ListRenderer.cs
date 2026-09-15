@@ -152,6 +152,7 @@ public sealed class ListRenderer : IRenderer
     // ── Phase 2: Draw ─────────────────────────────────────────────────────────
 
     /// <summary>Draws each item's marker and content, building the tagged L → LI → Lbl/LBody hierarchy when tagging is enabled.</summary>
+    /// <remarks>See <see cref="IRenderer.Draw"/>.</remarks>
     public void Draw(DrawContext ctx)
     {
         if (_items is null) return;

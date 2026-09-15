@@ -22,6 +22,7 @@ public sealed class RendererContext
     private int _imageCounter;
 
     /// <summary>Creates a rendering context bound to the given page and its owning document.</summary>
+    /// <remarks>Arguments are stored as given. A null page or document is not refused here.</remarks>
     public RendererContext(PdfPage page, PdfDocument document)
     {
         _page = page;
@@ -32,6 +33,7 @@ public sealed class RendererContext
     /// Registers an Image XObject on the current page and returns its resource name.
     /// Deduplicates: the same object instance always gets the same name.
     /// </summary>
+    /// <remarks>A null image is not refused here; the kernel registration then throws.</remarks>
     public string RegisterImageXObject(PdfImageXObject image)
     {
         if (_imageNames.TryGetValue(image, out var name)) return name;
@@ -45,8 +47,9 @@ public sealed class RendererContext
 
     /// <summary>
     /// Records that the current page uses the given embedded TrueType font.
-    /// Idempotent — safe to call on every draw call for the same font.
+    /// Idempotent: safe to call on every draw call for the same font.
     /// </summary>
+    /// <remarks>A null handle is forwarded to the kernel.</remarks>
     public void RegisterEmbeddedFontUsage(EmbeddedFontHandle handle) =>
         _document.RegisterEmbeddedFontUsage(_page, handle);
 }

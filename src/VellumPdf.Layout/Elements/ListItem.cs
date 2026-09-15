@@ -13,15 +13,21 @@ public sealed class ListItem
     private List<ListItem>? _children;
 
     /// <summary>The item's text.</summary>
+    /// <remarks>Stored as given, including null.</remarks>
     public string Text { get; }
 
     /// <summary>Optional text style; when null the list's default style is used.</summary>
+    /// <remarks>
+    /// Null means the list's <see cref="ListElement.DefaultStyle"/>, then
+    /// <see cref="TextStyle.Default"/>.
+    /// </remarks>
     public TextStyle? Style { get; init; }
 
     /// <summary>
     /// Optional per-element language override (BCP 47 / RFC 5646, e.g. <c>"en-US"</c>).
     /// When set and the document is tagged, written as <c>/Lang</c> on the struct element.
     /// </summary>
+    /// <remarks>Not validated. Same as <see cref="Document.Language"/>.</remarks>
     public string? Language { get; init; }
 
     /// <summary>The nested child items, or null if this item has no children.</summary>
@@ -37,6 +43,9 @@ public sealed class ListItem
     public IReadOnlyList<ListItem>? Children => _children;
 
     /// <summary>Creates a list item with the given text and optional style.</summary>
+    /// <remarks>
+    /// A null <paramref name="text"/> is stored. A null <paramref name="style"/> is stored.
+    /// </remarks>
     public ListItem(string text, TextStyle? style = null)
     {
         Text = text;
@@ -44,6 +53,10 @@ public sealed class ListItem
     }
 
     /// <summary>Adds a nested child item. Returns this item.</summary>
+    /// <remarks>
+    /// A null <paramref name="child"/> is stored. A grandchild on that child is ignored; see
+    /// <see cref="Children"/>.
+    /// </remarks>
     public ListItem AddChild(ListItem child)
     {
         _children ??= [];

@@ -11,10 +11,10 @@ namespace VellumPdf.Layout.Core;
 /// <see cref="VellumPdf.Layout.Elements.Table.Cell.Padding"/> check finiteness at save.
 /// The other margin properties do not. Do not treat construction as validation.
 /// </remarks>
-/// <param name="Top">The inset on the top edge.</param>
-/// <param name="Right">The inset on the right edge.</param>
-/// <param name="Bottom">The inset on the bottom edge.</param>
-/// <param name="Left">The inset on the left edge.</param>
+/// <param name="Top">The inset on the top edge. Not validated; see the type remarks.</param>
+/// <param name="Right">The inset on the right edge. Not validated; see the type remarks.</param>
+/// <param name="Bottom">The inset on the bottom edge. Not validated; see the type remarks.</param>
+/// <param name="Left">The inset on the left edge. Not validated; see the type remarks.</param>
 public readonly record struct EdgeInsets(double Top, double Right, double Bottom, double Left)
 {
     /// <summary>Creates an inset with the same value on all four edges.</summary>
@@ -27,8 +27,10 @@ public readonly record struct EdgeInsets(double Top, double Right, double Bottom
     public static readonly EdgeInsets Zero = new(0);
 
     /// <summary>The total horizontal inset (Left + Right).</summary>
+    /// <remarks>Arithmetic only. Non-finite addends yield a non-finite sum.</remarks>
     public double Horizontal => Left + Right;
 
     /// <summary>The total vertical inset (Top + Bottom).</summary>
+    /// <remarks>Arithmetic only. Non-finite addends yield a non-finite sum.</remarks>
     public double Vertical => Top + Bottom;
 }

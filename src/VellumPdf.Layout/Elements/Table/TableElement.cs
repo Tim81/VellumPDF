@@ -19,6 +19,9 @@ public sealed class TableElement
     private readonly List<double> _colWidths = [];   // 0 = auto
 
     /// <summary>Text style applied to cells that have no explicit style.</summary>
+    /// <remarks>
+    /// Null means <see cref="TextStyle.Default"/> for cells that have no style of their own.
+    /// </remarks>
     public TextStyle? DefaultCellStyle { get; init; }
 
     /// <summary>Width of the table border lines, in points.</summary>
@@ -40,6 +43,7 @@ public sealed class TableElement
     public double BorderWidth { get; init; } = 0.5;
 
     /// <summary>Color of the table border lines.</summary>
+    /// <remarks>Stored as given. Channels are not clamped; see <see cref="ColorRgb"/>.</remarks>
     public ColorRgb BorderColor { get; init; } = ColorRgb.Black;
 
     /// <summary>Outer margins applied around the whole table.</summary>

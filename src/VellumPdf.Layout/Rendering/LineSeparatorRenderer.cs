@@ -35,6 +35,7 @@ public sealed class LineSeparatorRenderer : IRenderer
     }
 
     /// <summary>Strokes the separator line at the configured colour and width.</summary>
+    /// <remarks>See <see cref="IRenderer.Draw"/>.</remarks>
     public void Draw(DrawContext ctx)
     {
         var (x, y, w, h) = ctx.ToPdfRect(_occupied);

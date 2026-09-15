@@ -83,6 +83,7 @@ public sealed class LayoutImageRenderer : IRenderer
     }
 
     /// <summary>Draws the image XObject, emitting a tagged Figure struct element when tagging is enabled.</summary>
+    /// <remarks>See <see cref="IRenderer.Draw"/>.</remarks>
     public void Draw(DrawContext ctx)
     {
         var area = _occupied.Deflate(_img.Margins);

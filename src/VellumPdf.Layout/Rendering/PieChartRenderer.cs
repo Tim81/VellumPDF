@@ -100,6 +100,7 @@ public sealed class PieChartRenderer : IRenderer
     }
 
     /// <summary>Fills each wedge, optionally stroking separators, wrapped as an artifact when tagging is enabled.</summary>
+    /// <remarks>See <see cref="IRenderer.Draw"/>.</remarks>
     public void Draw(DrawContext ctx)
     {
         var area = _occupied.Deflate(_chart.Margins);

@@ -17,15 +17,22 @@ namespace VellumPdf.Layout.Core;
 ///
 /// Flip formula: pdfY = pageHeight - layoutY
 /// </summary>
+/// <remarks>
+/// Coordinates are not validated. A box or Y that is off the page is written into
+/// annotations and outline destinations as given.
+/// </remarks>
 public sealed class DrawContext
 {
     /// <summary>The content-stream canvas for the current page.</summary>
+    /// <remarks>The canvas this draw is writing to. Not null after construction.</remarks>
     public PdfCanvas Canvas { get; }
 
     /// <summary>The full page bounds in layout space (Y-down).</summary>
+    /// <remarks>Used by <see cref="ToPdfY"/> and <see cref="ToPdfRect"/>. Not validated here.</remarks>
     public LayoutBox PageBounds { get; }   // full page in layout space
 
     /// <summary>The per-page resource registration context.</summary>
+    /// <remarks>The same instance for every draw on this page.</remarks>
     public RendererContext RendererContext { get; }   // per-page resource registration
     private readonly PdfDocument _document;
     private readonly PdfPage _page;
@@ -35,9 +42,17 @@ public sealed class DrawContext
     /// wrap their content in <see cref="PdfCanvas.BeginMarkedContent"/> /
     /// <see cref="PdfCanvas.EndMarkedContent"/> and call <see cref="RegisterStructElem"/>.
     /// </summary>
+    /// <remarks>
+    /// Forwards <see cref="Document.Tagged"/>. Structure registration still runs when this is
+    /// false; whether the kernel keeps the element is a tagged-document question.
+    /// </remarks>
     public bool Tagged => _document.Tagged;
 
     /// <summary>Creates a draw context bound to the current page, its canvas, and the owning document.</summary>
+    /// <remarks>
+    /// Arguments are stored as given. A null canvas or document is not refused here; the throw
+    /// is from the first member that dereferences it.
+    /// </remarks>
     public DrawContext(PdfCanvas canvas, LayoutBox pageBounds, RendererContext rendererContext, PdfDocument document, PdfPage page)
     {
         Canvas = canvas;
@@ -48,12 +63,19 @@ public sealed class DrawContext
     }
 
     /// <summary>Returns (or creates) a font resource on the current document.</summary>
+    /// <remarks>
+    /// Every <see cref="Standard14"/> value is accepted. This does not embed a file.
+    /// </remarks>
     public PdfFontResource GetFont(Standard14 font) => _document.UseFont(font);
 
     /// <summary>
     /// Records that the current page uses the given embedded TrueType font handle
     /// and returns its PDF resource name so the canvas can select it.
     /// </summary>
+    /// <remarks>
+    /// A null handle throws <see cref="NullReferenceException"/> from
+    /// <c>handle.ResourceName</c>.
+    /// </remarks>
     public string UseEmbeddedFont(EmbeddedFontHandle handle)
     {
         RendererContext.RegisterEmbeddedFontUsage(handle);
@@ -61,12 +83,18 @@ public sealed class DrawContext
     }
 
     /// <summary>Converts a layout-space Y coordinate to PDF user-space Y.</summary>
+    /// <remarks>
+    /// Not refused. A non-finite <paramref name="layoutY"/> yields a non-finite PDF Y.
+    /// </remarks>
     public double ToPdfY(double layoutY) => PageBounds.Height - layoutY;
 
     /// <summary>
     /// Converts layout-space (x, y, width, height) → PDF (x, pdfY-height, width, height).
     /// PDF rectangles are anchored at their lower-left corner.
     /// </summary>
+    /// <remarks>
+    /// A negative or empty <paramref name="box"/> is converted as given.
+    /// </remarks>
     public (double x, double y, double w, double h) ToPdfRect(LayoutBox box) =>
         (box.X, PageBounds.Height - box.Bottom, box.Width, box.Height);
 
@@ -133,6 +161,10 @@ public sealed class DrawContext
     /// <see cref="StampStructElemPage"/> calls; this method only adds the root to the tree.
     /// Only has an effect when <see cref="Tagged"/> is true.
     /// </summary>
+    /// <remarks>
+    /// When <see cref="Tagged"/> is false this returns without registering. A null
+    /// <paramref name="root"/> is not checked when untagged; when tagged it is forwarded.
+    /// </remarks>
     public void RegisterStructElemTree(PdfStructElem root)
     {
         if (Tagged)
@@ -145,6 +177,10 @@ public sealed class DrawContext
     /// Used by table/list renderers to fill in page references on child elems.
     /// Only has an effect when <see cref="Tagged"/> is true.
     /// </summary>
+    /// <remarks>
+    /// When <see cref="Tagged"/> is false this returns without writing. A null
+    /// <paramref name="elem"/> then does not throw; when tagged it is dereferenced.
+    /// </remarks>
     public void StampStructElemPage(PdfStructElem elem)
     {
         if (Tagged)

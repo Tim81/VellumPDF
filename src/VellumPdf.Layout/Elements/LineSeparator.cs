@@ -33,6 +33,7 @@ public sealed class LineSeparator
     public double LineWidth { get; init; } = 1;
 
     /// <summary>Stroke color of the rule.</summary>
+    /// <remarks>Stored as given. Channels are not clamped; see <see cref="ColorRgb"/>.</remarks>
     public ColorRgb Color { get; init; } = ColorRgb.Black;
 
     /// <summary>Margins around the rule.</summary>

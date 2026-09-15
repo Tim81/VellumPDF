@@ -30,9 +30,16 @@ public sealed class ListElement
     private readonly List<ListItem> _items = [];
 
     /// <summary>Marker style used for the list (bullet or numbering scheme).</summary>
+    /// <remarks>
+    /// Stored as given, including a value this enum does not name.
+    /// <see cref="FormatMarker"/> then uses the bullet.
+    /// </remarks>
     public ListStyle Style { get; }
 
     /// <summary>The items contained in this list, in render order.</summary>
+    /// <remarks>
+    /// Empty is allowed. A null item added through <see cref="Add(ListItem)"/> is stored.
+    /// </remarks>
     public IReadOnlyList<ListItem> Items => _items;
 
     /// <summary>Points of indent for each list level.</summary>
@@ -94,9 +101,15 @@ public sealed class ListElement
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 
     /// <summary>Text style applied to items that have no explicit style.</summary>
+    /// <remarks>
+    /// Null means each item uses <see cref="TextStyle.Default"/> unless it has its own style.
+    /// </remarks>
     public TextStyle? DefaultStyle { get; init; }
 
     /// <summary>Creates a list with the given marker style and optional initial items.</summary>
+    /// <remarks>
+    /// A null <paramref name="items"/> is an empty list. Null entries inside it are stored.
+    /// </remarks>
     public ListElement(ListStyle style = ListStyle.Unordered, IEnumerable<ListItem>? items = null)
     {
         Style = style;
@@ -105,9 +118,11 @@ public sealed class ListElement
     }
 
     /// <summary>Appends an item to the list and returns this instance for chaining.</summary>
+    /// <remarks>A null <paramref name="item"/> is stored. The throw is from layout.</remarks>
     public ListElement Add(ListItem item) { _items.Add(item); return this; }
 
     /// <summary>Appends a text item with an optional text style and returns this instance for chaining.</summary>
+    /// <remarks>A null <paramref name="text"/> becomes a <see cref="ListItem"/> with null text.</remarks>
     public ListElement Add(string text, TextStyle? style = null)
         => Add(new ListItem(text, style));
 

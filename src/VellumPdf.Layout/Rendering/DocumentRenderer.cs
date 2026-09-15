@@ -134,6 +134,10 @@ public sealed class DocumentRenderer
     /// <c>RunningBandFitTests.Band_truncation_isReadableFromTheRendererItself</c>, which is what
     /// keeps this member from being public with nothing exercising it.
     /// </summary>
+    /// <remarks>
+    /// Empty until <see cref="Render"/> or <c>RunLayout</c> has run. Truncation is reported,
+    /// not refused.
+    /// </remarks>
     public IReadOnlyList<BandTruncationWarning> BandTruncations
     {
         get
@@ -146,9 +150,15 @@ public sealed class DocumentRenderer
     }
 
     /// <summary>Header band drawn at the top of every page. Optional.</summary>
+    /// <remarks>
+    /// Same null-template throw as <see cref="Document.Header"/> (#531).
+    /// </remarks>
     public RunningBand? Header { get; set; }
 
     /// <summary>Footer band drawn at the bottom of every page. Optional.</summary>
+    /// <remarks>
+    /// Same null-template throw as <see cref="Document.Footer"/> (#531).
+    /// </remarks>
     public RunningBand? Footer { get; set; }
 
     // Pending bookmarks: queued by Document.AddBookmark, drained on next Draw.

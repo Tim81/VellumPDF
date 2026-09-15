@@ -12,9 +12,14 @@ namespace VellumPdf.Layout.Elements;
 public sealed class Heading
 {
     /// <summary>Heading text (also used as the bookmark title unless <see cref="BookmarkTitle"/> is set).</summary>
+    /// <remarks>
+    /// Stored as given, including null (the constructor does not check). Empty is a heading
+    /// that draws nothing.
+    /// </remarks>
     public string Text { get; }
 
     /// <summary>The heading's text style.</summary>
+    /// <remarks>Stored as given. Refusals on size and leading are on <see cref="TextStyle"/>.</remarks>
     public TextStyle Style { get; }
 
     /// <summary>Outline nesting level: 0 = top-level, 1 = sub-heading, etc.</summary>
@@ -37,6 +42,7 @@ public sealed class Heading
     /// <summary>
     /// Override the bookmark title. When null the heading text is used.
     /// </summary>
+    /// <remarks>Null means use <see cref="Text"/>. Empty is an empty bookmark title.</remarks>
     public string? BookmarkTitle { get; init; }
 
     /// <summary>Margins around the heading.</summary>
@@ -74,6 +80,10 @@ public sealed class Heading
     public string? Language { get; init; }
 
     /// <summary>Creates a heading with the given text and optional style (defaults to 14pt).</summary>
+    /// <remarks>
+    /// A null <paramref name="text"/> is stored. A null <paramref name="style"/> becomes 14pt
+    /// Helvetica.
+    /// </remarks>
     public Heading(string text, TextStyle? style = null)
     {
         Text = text;

@@ -26,11 +26,14 @@ public sealed class Row
     public bool IsHeader { get; init; }
 
     /// <summary>Optional background fill color for the row.</summary>
+    /// <remarks>Null means no fill. A colour is stored as given; see <see cref="ColorRgb"/>.</remarks>
     public ColorRgb? Background { get; init; }
 
     /// <summary>Adds a cell to the row. Returns this row.</summary>
+    /// <remarks>A null <paramref name="cell"/> is stored. Layout then dereferences it.</remarks>
     public Row AddCell(Cell cell) { _cells.Add(cell); return this; }
 
     /// <summary>Adds a text cell to the row. Returns this row.</summary>
+    /// <remarks>A null <paramref name="text"/> becomes a cell with null content.</remarks>
     public Row AddCell(string text) => AddCell(new Cell(text));
 }

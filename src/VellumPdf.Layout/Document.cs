@@ -37,6 +37,10 @@ public sealed class Document : IDisposable
     /// represent (each was substituted with '?' in the saved PDF). Populated by <see cref="Save(Stream)"/>
     /// and the signing-prep path; empty when every character rendered is in WinAnsi.
     /// </summary>
+    /// <remarks>
+    /// Empty until a save (or signing prep) has run. A successful save that substituted nothing
+    /// is also empty. This list is not a refusal.
+    /// </remarks>
     public IReadOnlyList<TextEncodingWarning> TextEncodingWarnings => _textEncodingWarnings;
 
     /// <summary>
@@ -44,9 +48,16 @@ public sealed class Document : IDisposable
     /// save. At most one report per band, each naming the page that lost the most. Empty when both
     /// bands fitted, or when no band was set.
     /// </summary>
+    /// <remarks>
+    /// Empty until a save has run. Truncation is not refused; it is reported here after the fact.
+    /// See <see cref="RunningBand.Template"/>.
+    /// </remarks>
     public IReadOnlyList<BandTruncationWarning> BandTruncations => _bandTruncations;
 
     /// <summary>Document metadata (title, author, subject, keywords, etc.).</summary>
+    /// <remarks>
+    /// Stored as given. No field on this dictionary is validated by Layout.
+    /// </remarks>
     public PdfDocumentInfo Info => _pdf.Info;
 
     /// <summary>The default page size used for newly created pages.</summary>
@@ -115,6 +126,11 @@ public sealed class Document : IDisposable
     /// and a /StructTreeRoot is written. Default is false.
     /// Forwarded to the underlying <see cref="PdfDocument"/>.
     /// </summary>
+    /// <remarks>
+    /// PDF/A-2a implies this is true. Setting it false after requesting PDF/A-2a is not refused
+    /// here; the kernel's save path is what makes the pairing consistent. Untagged content is
+    /// not a throw.
+    /// </remarks>
     public bool Tagged
     {
         get => _pdf.Tagged;
@@ -348,6 +364,9 @@ public sealed class Document : IDisposable
     }
 
     /// <summary>Adds a horizontal line separator to the document content. Returns this document for chaining.</summary>
+    /// <remarks>
+    /// A null separator is stored. The throw is from save, when the renderer is laid out.
+    /// </remarks>
     public Document Add(LineSeparator separator)
     {
         _content.Add(new LineSeparatorRenderer(separator));
@@ -355,6 +374,10 @@ public sealed class Document : IDisposable
     }
 
     /// <summary>Adds a table to the document content. Returns this document for chaining.</summary>
+    /// <remarks>
+    /// A null table is stored. The throw is from save. An empty table is refused then; see
+    /// <see cref="TableElement.Rows"/>.
+    /// </remarks>
     public Document Add(TableElement table)
     {
         _content.Add(new TableRenderer(table));
@@ -362,6 +385,9 @@ public sealed class Document : IDisposable
     }
 
     /// <summary>Adds an image to the document content. Returns this document for chaining.</summary>
+    /// <remarks>
+    /// A null image is stored. The throw is from save.
+    /// </remarks>
     public Document Add(LayoutImage image)
     {
         _content.Add(new LayoutImageRenderer(image));
@@ -369,6 +395,9 @@ public sealed class Document : IDisposable
     }
 
     /// <summary>Adds a pie chart to the document content. Returns this document for chaining.</summary>
+    /// <remarks>
+    /// A null chart is stored. The throw is from save; see <see cref="PieChart.Slices"/>.
+    /// </remarks>
     public Document Add(PieChart chart)
     {
         _content.Add(new PieChartRenderer(chart));
@@ -376,6 +405,9 @@ public sealed class Document : IDisposable
     }
 
     /// <summary>Adds a bulleted or numbered list to the document content. Returns this document for chaining.</summary>
+    /// <remarks>
+    /// A null list is stored. The throw is from save.
+    /// </remarks>
     public Document Add(ListElement list)
     {
         _content.Add(new ListRenderer(list));
@@ -383,6 +415,12 @@ public sealed class Document : IDisposable
     }
 
     /// <summary>Adds a heading to the document content. Returns this document for chaining.</summary>
+    /// <remarks>
+    /// A null heading throws <see cref="NullReferenceException"/> from this call.
+    /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// <paramref name="heading"/> is <see langword="null"/>.
+    /// </exception>
     public Document Add(Heading heading)
     {
         _content.Add(new HeadingRenderer(heading));
@@ -390,6 +428,12 @@ public sealed class Document : IDisposable
     }
 
     /// <summary>Adds a paragraph built from the given text, using the supplied style or the default style. Returns this document for chaining.</summary>
+    /// <remarks>
+    /// A null <paramref name="text"/> throws <see cref="NullReferenceException"/> from this call.
+    /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// <paramref name="text"/> is <see langword="null"/>.
+    /// </exception>
     public Document Add(string text, TextStyle? style = null)
         => Add(new Paragraph(text, style ?? _defaultStyle));
 

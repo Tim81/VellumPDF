@@ -15,6 +15,10 @@ public sealed class TextStyle
     /// The font to use. Accepts a <see cref="Standard14"/> value (implicit conversion)
     /// or an <see cref="EmbeddedFontHandle"/> returned by <c>Document.UseTrueTypeFont</c>.
     /// </summary>
+    /// <remarks>
+    /// Stored as given. Invalid reads of <see cref="Font"/> / <see cref="FontReference"/>
+    /// are documented there, not refused here.
+    /// </remarks>
     public FontReference FontRef { get; init; } = Standard14.Helvetica;
 
     /// <summary>
@@ -135,6 +139,9 @@ public sealed class TextStyle
     public double Leading { get; init; } = 0;  // 0 = auto (font-size * 1.2)
 
     /// <summary>The text colour. Defaults to <see cref="ColorRgb.Black"/>.</summary>
+    /// <remarks>
+    /// Stored as given. Channels are not clamped; see <see cref="ColorRgb"/>.
+    /// </remarks>
     public ColorRgb Color { get; init; } = ColorRgb.Black;
 
     /// <summary>

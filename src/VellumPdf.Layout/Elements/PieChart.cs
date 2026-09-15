@@ -10,13 +10,18 @@ namespace VellumPdf.Layout.Elements;
 /// </summary>
 /// <param name="Value">
 /// The slice's magnitude. The wedge angle is this value as a fraction of the sum
-/// of all slice values. Must be finite and non-negative.
+/// of all slice values. Must be finite and non-negative. Zero is accepted and contributes
+/// no angle; see <see cref="PieChart.Slices"/>.
 /// </param>
-/// <param name="Color">The fill colour of the wedge.</param>
+/// <param name="Color">The fill colour of the wedge. Not clamped; see <see cref="ColorRgb"/>.</param>
 /// <param name="Label">
 /// Optional label carried with the slice (e.g. for an external legend). Currently
-/// stored as data only — it is not rendered as on-chart text.
+/// stored as data only, not rendered as on-chart text. Null and empty are stored.
 /// </param>
+/// <remarks>
+/// <see cref="Value"/> must be finite and non-negative when the chart is laid out; zero
+/// contributes no angle. See <see cref="PieChart.Slices"/>.
+/// </remarks>
 public readonly record struct PieSlice(double Value, ColorRgb Color, string? Label = null);
 
 /// <summary>
@@ -93,6 +98,7 @@ public sealed class PieChart
     /// Optional colour of the separator stroke drawn around each wedge.
     /// When <c>null</c> (the default) no stroke is drawn.
     /// </summary>
+    /// <remarks>Null means no stroke. A colour is stored as given; see <see cref="ColorRgb"/>.</remarks>
     public ColorRgb? StrokeColor { get; init; }
 
     /// <summary>Width of the separator stroke in points. Defaults to 0.5.</summary>
@@ -146,6 +152,7 @@ public sealed class PieChart
     /// matching the conventional pie-chart direction. When <c>false</c> they sweep
     /// counter-clockwise.
     /// </summary>
+    /// <remarks>Both values are honoured. There is no refusal.</remarks>
     public bool Clockwise { get; init; } = true;
 
     /// <summary>
@@ -155,6 +162,7 @@ public sealed class PieChart
     /// if no slice has a label, the generic fallback "Pie chart" is used.
     /// Ignored when <see cref="Decorative"/> is <c>true</c>.
     /// </summary>
+    /// <remarks>Null is the fallback. Empty is an empty <c>/Alt</c>. Ignored when decorative.</remarks>
     public string? AltText { get; init; }
 
     /// <summary>
@@ -164,5 +172,6 @@ public sealed class PieChart
     /// table), to avoid announcing the same values twice. When <c>false</c> (the default) the
     /// chart is a <c>/Figure</c> carrying <see cref="AltText"/>. No effect on untagged output.
     /// </summary>
+    /// <remarks>No effect on untagged output. True omits the figure from the structure tree.</remarks>
     public bool Decorative { get; init; }
 }

@@ -4,10 +4,14 @@
 namespace VellumPdf.Layout.Core;
 
 /// <summary>Normalised DeviceCMYK colour (0.0–1.0 per channel).</summary>
-/// <param name="C">The cyan channel (0.0–1.0).</param>
-/// <param name="M">The magenta channel (0.0–1.0).</param>
-/// <param name="Y">The yellow channel (0.0–1.0).</param>
-/// <param name="K">The key (black) channel (0.0–1.0).</param>
+/// <remarks>
+/// Channels are not clamped or checked for finiteness. A value outside 0 to 1, or a
+/// non-finite channel, can reach the content stream (#509).
+/// </remarks>
+/// <param name="C">The cyan channel (0.0–1.0). Not clamped; see the type remarks.</param>
+/// <param name="M">The magenta channel (0.0–1.0). Not clamped; see the type remarks.</param>
+/// <param name="Y">The yellow channel (0.0–1.0). Not clamped; see the type remarks.</param>
+/// <param name="K">The key (black) channel (0.0–1.0). Not clamped; see the type remarks.</param>
 public readonly record struct ColorCmyk(double C, double M, double Y, double K)
 {
     /// <summary>Process black (0, 0, 0, 1).</summary>

@@ -24,6 +24,10 @@ public sealed class LayoutResult
     }
 
     /// <summary>The outcome of the layout attempt.</summary>
+    /// <remarks>
+    /// Read this before <see cref="OccupiedArea"/>, <see cref="SplitRenderer"/> or
+    /// <see cref="OverflowRenderer"/>. Those are null on <see cref="Outcome.Nothing"/>.
+    /// </remarks>
     public Outcome Status { get; }
 
     /// <summary>The occupied area after layout (valid for Full and Partial).</summary>
@@ -56,6 +60,7 @@ public sealed class LayoutResult
     }
 
     /// <summary>Creates a result indicating the content fit entirely, occupying the given area.</summary>
+    /// <remarks>Occupied area is stored as given, including an empty box.</remarks>
     public static LayoutResult Full(LayoutBox occupied) =>
         new(Outcome.Full, occupied, null, null);
 
@@ -68,6 +73,10 @@ public sealed class LayoutResult
         new(Outcome.Partial, occupied, split, overflow);
 
     /// <summary>Creates a result indicating no content fit in the available area.</summary>
+    /// <remarks>
+    /// <see cref="OccupiedArea"/>, <see cref="SplitRenderer"/> and
+    /// <see cref="OverflowRenderer"/> are all null.
+    /// </remarks>
     public static LayoutResult Nothing() =>
         new(Outcome.Nothing, null, null, null);
 }

@@ -16,12 +16,17 @@ public sealed class Paragraph
     // ── Back-compat single-run properties ────────────────────────────────────
 
     /// <summary>The text of the first (or only) run. Valid for single-run paragraphs.</summary>
+    /// <remarks>
+    /// On a mixed-style paragraph this concatenates every run. It is a view, not a second store.
+    /// </remarks>
     public string Text => _runs.Count == 1 ? _runs[0].Text : string.Concat(_runs.Select(r => r.Text));
 
     /// <summary>The style of the first (or only) run.</summary>
+    /// <remarks>The first run's style, or <see cref="TextStyle.Default"/> if there are no runs.</remarks>
     public TextStyle Style => _runs.Count > 0 ? _runs[0].Style : TextStyle.Default;
 
     /// <summary>All inline text runs in this paragraph (always at least one entry).</summary>
+    /// <remarks>Never empty after construction: a zero-run input becomes one empty run.</remarks>
     public IReadOnlyList<TextRun> Runs => _runs;
 
     /// <summary>Margins around the paragraph.</summary>
@@ -63,12 +68,23 @@ public sealed class Paragraph
     // ── Constructors ─────────────────────────────────────────────────────────
 
     /// <summary>Creates a single-run paragraph with uniform style.</summary>
+    /// <remarks>
+    /// A null <paramref name="text"/> throws <see cref="ArgumentNullException"/>. A null
+    /// <paramref name="style"/> becomes <see cref="TextStyle.Default"/>.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="text"/> is <see langword="null"/>.
+    /// </exception>
     public Paragraph(string text, TextStyle? style = null)
     {
         _runs = [new TextRun(text, style ?? TextStyle.Default)];
     }
 
     /// <summary>Creates a mixed-style paragraph from a sequence of runs.</summary>
+    /// <remarks>
+    /// An empty sequence becomes one empty run at <see cref="TextStyle.Default"/>. A null
+    /// sequence throws.
+    /// </remarks>
     public Paragraph(IEnumerable<TextRun> runs)
     {
         _runs = [.. runs];
@@ -79,6 +95,10 @@ public sealed class Paragraph
     // ── Fluent builder ───────────────────────────────────────────────────────
 
     /// <summary>Appends a run with the given text and optional style. Returns this paragraph.</summary>
+    /// <remarks>
+    /// A null <paramref name="text"/> throws <see cref="ArgumentNullException"/>. A null
+    /// <paramref name="style"/> uses this paragraph's current <see cref="Style"/>.
+    /// </remarks>
     public Paragraph Add(string text, TextStyle? style = null)
     {
         _runs.Add(new TextRun(text, style ?? Style));
