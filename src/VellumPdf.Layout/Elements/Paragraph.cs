@@ -69,12 +69,9 @@ public sealed class Paragraph
 
     /// <summary>Creates a single-run paragraph with uniform style.</summary>
     /// <remarks>
-    /// A null <paramref name="text"/> throws <see cref="ArgumentNullException"/>. A null
-    /// <paramref name="style"/> becomes <see cref="TextStyle.Default"/>.
+    /// A null <paramref name="text"/> is stored. A null <paramref name="style"/> becomes
+    /// <see cref="TextStyle.Default"/>.
     /// </remarks>
-    /// <exception cref="ArgumentNullException">
-    /// <paramref name="text"/> is <see langword="null"/>.
-    /// </exception>
     public Paragraph(string text, TextStyle? style = null)
     {
         _runs = [new TextRun(text, style ?? TextStyle.Default)];
@@ -83,8 +80,11 @@ public sealed class Paragraph
     /// <summary>Creates a mixed-style paragraph from a sequence of runs.</summary>
     /// <remarks>
     /// An empty sequence becomes one empty run at <see cref="TextStyle.Default"/>. A null
-    /// sequence throws.
+    /// sequence throws <see cref="ArgumentNullException"/>.
     /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="runs"/> is <see langword="null"/>.
+    /// </exception>
     public Paragraph(IEnumerable<TextRun> runs)
     {
         _runs = [.. runs];
@@ -96,8 +96,8 @@ public sealed class Paragraph
 
     /// <summary>Appends a run with the given text and optional style. Returns this paragraph.</summary>
     /// <remarks>
-    /// A null <paramref name="text"/> throws <see cref="ArgumentNullException"/>. A null
-    /// <paramref name="style"/> uses this paragraph's current <see cref="Style"/>.
+    /// A null <paramref name="text"/> is stored as a run. A null <paramref name="style"/> uses
+    /// this paragraph's current <see cref="Style"/>.
     /// </remarks>
     public Paragraph Add(string text, TextStyle? style = null)
     {

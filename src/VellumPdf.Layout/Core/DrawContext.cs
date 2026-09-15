@@ -24,7 +24,9 @@ namespace VellumPdf.Layout.Core;
 public sealed class DrawContext
 {
     /// <summary>The content-stream canvas for the current page.</summary>
-    /// <remarks>The canvas this draw is writing to. Not null after construction.</remarks>
+    /// <remarks>
+    /// The canvas this draw is writing to. Null if the constructor was given null.
+    /// </remarks>
     public PdfCanvas Canvas { get; }
 
     /// <summary>The full page bounds in layout space (Y-down).</summary>
@@ -141,7 +143,6 @@ public sealed class DrawContext
 
     /// <summary>
     /// Registers a structure element with the document's structure tree.
-    /// Only has an effect when <see cref="Tagged"/> is true.
     /// The element's <see cref="PdfStructElem.Page"/> is automatically set to the current page.
     /// </summary>
     /// <remarks>

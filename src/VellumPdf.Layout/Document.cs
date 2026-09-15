@@ -429,11 +429,9 @@ public sealed class Document : IDisposable
 
     /// <summary>Adds a paragraph built from the given text, using the supplied style or the default style. Returns this document for chaining.</summary>
     /// <remarks>
-    /// A null <paramref name="text"/> throws <see cref="NullReferenceException"/> from this call.
+    /// A null <paramref name="text"/> is stored. <see cref="Save(System.IO.Stream)"/> then
+    /// throws <see cref="NullReferenceException"/> from word-wrap, not from this call.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// <paramref name="text"/> is <see langword="null"/>.
-    /// </exception>
     public Document Add(string text, TextStyle? style = null)
         => Add(new Paragraph(text, style ?? _defaultStyle));
 

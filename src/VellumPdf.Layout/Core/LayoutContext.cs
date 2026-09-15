@@ -9,7 +9,7 @@ namespace VellumPdf.Layout.Core;
 /// </summary>
 /// <remarks>
 /// The area is not validated. An empty or inverted <see cref="Area"/> is what renderers
-/// see; most then return <see cref="LayoutResult.Nothing"/>.
+/// see.
 /// </remarks>
 public sealed class LayoutContext
 {

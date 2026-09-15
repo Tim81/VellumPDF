@@ -33,7 +33,13 @@ public sealed class RendererContext
     /// Registers an Image XObject on the current page and returns its resource name.
     /// Deduplicates: the same object instance always gets the same name.
     /// </summary>
-    /// <remarks>A null image is not refused here; the kernel registration then throws.</remarks>
+    /// <remarks>
+    /// A null <paramref name="image"/> throws <see cref="ArgumentNullException"/> from this
+    /// call (<c>ParamName</c> is <c>key</c>).
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="image"/> is <see langword="null"/>.
+    /// </exception>
     public string RegisterImageXObject(PdfImageXObject image)
     {
         if (_imageNames.TryGetValue(image, out var name)) return name;
