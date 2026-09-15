@@ -7,6 +7,10 @@ using VellumPdf.Layout.Core;
 namespace VellumPdf.Layout.Elements;
 
 /// <summary>An image element that can be placed in document flow.</summary>
+/// <remarks>
+/// Width and height have the refusals. A null <see cref="Image"/> is stored and throws from
+/// layout. Justify is treated as left.
+/// </remarks>
 public sealed class LayoutImage
 {
     /// <summary>The image to draw.</summary>

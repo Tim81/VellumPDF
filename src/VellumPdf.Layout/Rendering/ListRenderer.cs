@@ -12,6 +12,9 @@ namespace VellumPdf.Layout.Rendering;
 /// The marker is drawn in the gutter (left of the indent); the content is indented.
 /// Nested items get an additional indent level.
 /// </summary>
+/// <remarks>
+/// A negative start is documented on the constructor. Nested grandchildren are ignored.
+/// </remarks>
 public sealed class ListRenderer : IRenderer
 {
     private readonly ListElement _list;

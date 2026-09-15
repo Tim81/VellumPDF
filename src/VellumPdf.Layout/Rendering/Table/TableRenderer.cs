@@ -23,6 +23,10 @@ namespace VellumPdf.Layout.Rendering.Table;
 ///   • Draws cell text, word-wrapped to the cell inner width.
 ///   • Draws collapsed borders (single shared line between cells).
 /// </summary>
+/// <remarks>
+/// A table that resolves to no columns is refused from Layout. An all-header table hits
+/// the too-tall path (#488).
+/// </remarks>
 public sealed class TableRenderer : IRenderer
 {
     private readonly TableElement _table;
@@ -33,6 +37,10 @@ public sealed class TableRenderer : IRenderer
     private LayoutBox _occupied;
 
     /// <summary>Creates a renderer for the table, optionally starting at data row <paramref name="startRow"/> for pagination.</summary>
+    /// <remarks>
+    /// A null <paramref name="table"/> is stored. Layout then throws. A negative start is
+    /// not checked here.
+    /// </remarks>
     public TableRenderer(TableElement table, int startRow = 0)
     {
         _table = table;

@@ -7,6 +7,10 @@ namespace VellumPdf.Layout.Core;
 /// The core two-phase rendering contract.
 /// Layout determines sizing and splitting; Draw emits PDF operators.
 /// </summary>
+/// <remarks>
+/// A custom implementation whose overflow never advances hits a cap of 50,000 page
+/// continuations. See <see cref="Layout"/>.
+/// </remarks>
 public interface IRenderer
 {
     /// <summary>

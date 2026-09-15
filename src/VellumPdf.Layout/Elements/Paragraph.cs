@@ -9,6 +9,10 @@ namespace VellumPdf.Layout.Elements;
 /// A block of text. Supports uniform style (single run) and mixed-style inline runs.
 /// Wraps text across lines and paginates automatically.
 /// </summary>
+/// <remarks>
+/// Size and leading refusals are on <see cref="TextStyle"/>. Justify is honoured for wrapped
+/// lines. A null text in the string constructor is stored.
+/// </remarks>
 public sealed class Paragraph
 {
     private readonly List<TextRun> _runs;

@@ -7,6 +7,7 @@ using VellumPdf.Layout.Elements;
 namespace VellumPdf.Layout.Rendering;
 
 /// <summary>Renders a <see cref="LayoutImage"/> as a placed XObject, honouring sizing, margins and alignment.</summary>
+/// <remarks>Does not split. Too-tall images throw from save. Justify is treated as left.</remarks>
 public sealed class LayoutImageRenderer : IRenderer
 {
     private readonly LayoutImage _img;
@@ -15,6 +16,7 @@ public sealed class LayoutImageRenderer : IRenderer
     private LayoutBox _occupied;
 
     /// <summary>Creates a renderer for the given layout image.</summary>
+    /// <remarks>A null <paramref name="img"/> is stored. Layout then throws.</remarks>
     public LayoutImageRenderer(LayoutImage img)
     {
         _img = img;

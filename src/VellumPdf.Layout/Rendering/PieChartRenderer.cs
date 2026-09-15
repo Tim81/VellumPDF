@@ -7,6 +7,7 @@ using VellumPdf.Layout.Elements;
 namespace VellumPdf.Layout.Rendering;
 
 /// <summary>Renders a <see cref="PieChart"/> as a set of filled Bézier-approximated wedges.</summary>
+/// <remarks>Does not split. Slice refusals fire from Layout. See <see cref="PieChart.Slices"/>.</remarks>
 public sealed class PieChartRenderer : IRenderer
 {
     private readonly PieChart _chart;
@@ -19,6 +20,7 @@ public sealed class PieChartRenderer : IRenderer
     private double _placementDiameter;
 
     /// <summary>Creates a renderer for the given pie chart.</summary>
+    /// <remarks>A null <paramref name="chart"/> is stored. Layout then throws.</remarks>
     public PieChartRenderer(PieChart chart) => _chart = chart;
 
     /// <summary>Validates the slices, reserves the chart diameter plus margins, and reports the occupied region.</summary>

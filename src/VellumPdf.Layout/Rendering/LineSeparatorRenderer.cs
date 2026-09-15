@@ -7,12 +7,14 @@ using VellumPdf.Layout.Elements;
 namespace VellumPdf.Layout.Rendering;
 
 /// <summary>Renders a <see cref="LineSeparator"/> as a horizontal rule spanning the content width.</summary>
+/// <remarks>Does not split. Non-finite width or inset is refused from Layout.</remarks>
 public sealed class LineSeparatorRenderer : IRenderer
 {
     private readonly LineSeparator _sep;
     private LayoutBox _occupied;
 
     /// <summary>Creates a renderer for the given line separator.</summary>
+    /// <remarks>A null <paramref name="sep"/> is stored. Layout then throws.</remarks>
     public LineSeparatorRenderer(LineSeparator sep) => _sep = sep;
 
     /// <summary>Reserves the separator's line width plus margins and reports the occupied region.</summary>

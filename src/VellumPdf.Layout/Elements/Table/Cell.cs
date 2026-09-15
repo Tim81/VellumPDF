@@ -6,6 +6,10 @@ using VellumPdf.Layout.Core;
 namespace VellumPdf.Layout.Elements.Table;
 
 /// <summary>A single table cell, optionally spanning multiple columns or rows.</summary>
+/// <remarks>
+/// <see cref="ColSpan"/> of zero is refused. <see cref="RowSpan"/> of zero is not.
+/// Justify is treated as left. A null <see cref="Content"/> is stored.
+/// </remarks>
 public sealed class Cell
 {
     /// <summary>The text content rendered in the cell.</summary>

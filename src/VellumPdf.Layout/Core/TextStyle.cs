@@ -6,9 +6,21 @@ using VellumPdf.Fonts;
 namespace VellumPdf.Layout.Core;
 
 /// <summary>Typography properties applied to a run of text.</summary>
+/// <remarks>
+/// Refusals on size and leading fire from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/>,
+/// not from the property setter. See those members.
+/// </remarks>
 public sealed class TextStyle
 {
+    /// <summary>Creates a style with Helvetica, 12 pt, auto leading, and black.</summary>
+    /// <remarks>
+    /// Same values as <see cref="Default"/>, as a new instance. Mutating this does not
+    /// change <see cref="Default"/>.
+    /// </remarks>
+    public TextStyle() { }
+
     /// <summary>A style with default values (Helvetica, 12 pt, auto leading, black).</summary>
+    /// <remarks>Helvetica, 12 pt, auto leading, black. A shared instance; do not mutate it.</remarks>
     public static readonly TextStyle Default = new();
 
     /// <summary>

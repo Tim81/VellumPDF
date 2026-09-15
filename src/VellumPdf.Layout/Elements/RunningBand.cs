@@ -10,6 +10,10 @@ namespace VellumPdf.Layout.Elements;
 /// Text supports <c>{page}</c> (current page number) and <c>{pages}</c> (total page count)
 /// tokens, which are substituted at render time.
 /// </summary>
+/// <remarks>
+/// A null template throws from <see cref="Resolve"/> / save (#531). Overlong text is
+/// truncated, not refused; see <see cref="Template"/>.
+/// </remarks>
 public sealed class RunningBand
 {
     /// <summary>Text template — may contain {page} and/or {pages}.</summary>

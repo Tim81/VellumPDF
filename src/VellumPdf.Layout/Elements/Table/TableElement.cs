@@ -13,8 +13,18 @@ namespace VellumPdf.Layout.Elements.Table;
 ///     the top of each continuation page
 ///   • Collapsed (shared) border rendering
 /// </summary>
+/// <remarks>
+/// A table that resolves to no columns is refused at save. An all-header table cannot
+/// paginate on a page with room to spare (#488).
+/// </remarks>
 public sealed class TableElement
 {
+    /// <summary>Creates an empty table.</summary>
+    /// <remarks>
+    /// Save throws until a row holding at least one cell is added. See <see cref="Rows"/>.
+    /// </remarks>
+    public TableElement() { }
+
     private readonly List<Row> _rows = [];
     private readonly List<double> _colWidths = [];   // 0 = auto
 

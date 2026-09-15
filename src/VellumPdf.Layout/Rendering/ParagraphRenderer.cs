@@ -15,6 +15,10 @@ namespace VellumPdf.Layout.Rendering;
 /// Supports Standard-14 fonts (Latin-1 ShowText) and embedded TrueType (hex glyph run).
 /// Justification: Tw for Standard-14 lines; explicit per-word Tm for embedded-font lines.
 /// </summary>
+/// <remarks>
+/// Justify is honoured for wrapped lines. A null run text throws from word-wrap, not from
+/// the constructor.
+/// </remarks>
 public sealed class ParagraphRenderer : IRenderer
 {
     private readonly Paragraph _para;
@@ -29,6 +33,10 @@ public sealed class ParagraphRenderer : IRenderer
     private int _endLine;  // exclusive
 
     /// <summary>Creates a renderer for the paragraph, optionally starting at <paramref name="startLine"/> for pagination.</summary>
+    /// <remarks>
+    /// A null <paramref name="para"/> is stored. Layout then throws. A negative start is
+    /// not checked here.
+    /// </remarks>
     public ParagraphRenderer(Paragraph para, int startLine = 0)
     {
         _para = para;

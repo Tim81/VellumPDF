@@ -4,12 +4,15 @@
 namespace VellumPdf.Layout.Elements;
 
 /// <summary>Which of a document's two running bands a report concerns.</summary>
+/// <remarks>These two values are the whole set.</remarks>
 public enum RunningBandKind
 {
     /// <summary>The band drawn at the top of every page.</summary>
+    /// <remarks>Corresponds to <see cref="Document.Header"/>.</remarks>
     Header,
 
     /// <summary>The band drawn at the bottom of every page.</summary>
+    /// <remarks>Corresponds to <see cref="Document.Footer"/>.</remarks>
     Footer,
 }
 
@@ -27,6 +30,9 @@ public enum RunningBandKind
 /// caller's input into a comparably sized retained allocation. The counts are what a caller acts
 /// on: they already hold the template, and now know how much of it survived.
 /// </summary>
+/// <remarks>
+/// Counts only. The truncated text is not carried. A default instance has zeros.
+/// </remarks>
 /// <param name="Band">Which band was cut.</param>
 /// <param name="PageNumber">
 /// The one-based page carrying the worst cut, not the first cut. With a <c>{page}</c> or

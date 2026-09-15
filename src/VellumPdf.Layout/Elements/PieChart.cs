@@ -28,8 +28,16 @@ public readonly record struct PieSlice(double Value, ColorRgb Color, string? Lab
 /// A pie chart drawn as a sequence of filled Bézier-approximated wedges.
 /// Atomic: the whole chart is placed on one page or moved to the next; it never splits.
 /// </summary>
+/// <remarks>
+/// Empty slices, a non-positive sum, and a negative or non-finite slice value are refused
+/// from layout. Justify is treated as left. The chart does not split.
+/// </remarks>
 public sealed class PieChart
 {
+    /// <summary>Creates a chart with no slices, 200pt diameter, and default styling.</summary>
+    /// <remarks>Save throws until <see cref="Slices"/> has a positive sum. See that member.</remarks>
+    public PieChart() { }
+
     /// <summary>The slices, drawn in order. The sum of their values must be positive.</summary>
     /// <remarks>
     /// An empty list is refused. So is a list whose values sum to zero or less. Laying the

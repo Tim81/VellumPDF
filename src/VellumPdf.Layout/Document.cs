@@ -23,8 +23,19 @@ namespace VellumPdf.Layout;
 /// doc.Save("output.pdf");
 /// </code>
 /// </summary>
+/// <remarks>
+/// Most refusals fire from <see cref="Save(System.IO.Stream)"/>, not from the property you
+/// set. A document with no pages throws at save. Dispose, then save, throws
+/// <see cref="ObjectDisposedException"/>.
+/// </remarks>
 public sealed class Document : IDisposable
 {
+    /// <summary>Creates an empty document with A4 pages and 72pt margins.</summary>
+    /// <remarks>
+    /// Save throws if no element has been added. See the type remarks.
+    /// </remarks>
+    public Document() { }
+
     private readonly PdfDocument _pdf = new();
     private readonly List<IRenderer> _content = [];
     private TextStyle _defaultStyle = TextStyle.Default;

@@ -9,6 +9,9 @@ namespace VellumPdf.Layout.Elements;
 /// A paragraph that also registers a document bookmark (outline entry) at the
 /// position where it is drawn. The bookmark title defaults to the heading text.
 /// </summary>
+/// <remarks>
+/// <see cref="Level"/> is the member with a trap. Alignment honours Justify as a paragraph does.
+/// </remarks>
 public sealed class Heading
 {
     /// <summary>Heading text (also used as the bookmark title unless <see cref="BookmarkTitle"/> is set).</summary>

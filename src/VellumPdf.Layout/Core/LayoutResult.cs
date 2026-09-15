@@ -5,21 +5,29 @@ namespace VellumPdf.Layout.Core;
 
 /// <summary>
 /// Result of <see cref="IRenderer.Layout"/>. The three outcomes drive pagination:
-/// Full — content fit entirely; Partial — some fit, overflow goes to next page;
-/// Nothing — nothing fit (content taller than a single page).
+/// Full: content fit entirely; Partial: some fit, overflow goes to next page;
+/// Nothing: nothing fit (content taller than a single page).
 /// </summary>
+/// <remarks>
+/// Read <see cref="Status"/> before the nullable members. A Partial overflow that never
+/// advances hits the continuation cap on <see cref="IRenderer.Layout"/>.
+/// </remarks>
 public sealed class LayoutResult
 {
     /// <summary>The possible outcomes of a layout attempt.</summary>
+    /// <remarks>These three values are the whole set. No other status is produced.</remarks>
     public enum Outcome
     {
         /// <summary>The content fit entirely within the available area.</summary>
+        /// <remarks><see cref="SplitRenderer"/> and <see cref="OverflowRenderer"/> are null.</remarks>
         Full,
 
         /// <summary>Part of the content fit; the remainder overflows to the next page.</summary>
+        /// <remarks>Both split and overflow renderers are set. The overflow is not inspected.</remarks>
         Partial,
 
         /// <summary>No content fit (it is taller than a single page).</summary>
+        /// <remarks>Occupied area and both renderers are null.</remarks>
         Nothing,
     }
 

@@ -6,8 +6,18 @@ using VellumPdf.Layout.Core;
 namespace VellumPdf.Layout.Elements.Table;
 
 /// <summary>A table row containing one or more cells.</summary>
+/// <remarks>
+/// An empty row among filled rows is not refused. A table with no cells at all is; see
+/// <see cref="TableElement.Rows"/>.
+/// </remarks>
 public sealed class Row
 {
+    /// <summary>Creates an empty row.</summary>
+    /// <remarks>
+    /// An empty row among filled rows is not refused. See <see cref="Cells"/>.
+    /// </remarks>
+    public Row() { }
+
     private readonly List<Cell> _cells = [];
 
     /// <summary>The cells in this row, in column order.</summary>

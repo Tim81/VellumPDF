@@ -14,6 +14,9 @@ namespace VellumPdf.Layout.Rendering;
 /// allocates indirect objects for them during <c>Save</c>) and on the page's
 /// resource dictionary so content streams can reference them by name.
 /// </summary>
+/// <remarks>
+/// A null image on <see cref="RegisterImageXObject"/> throws from that call.
+/// </remarks>
 public sealed class RendererContext
 {
     private readonly PdfPage _page;

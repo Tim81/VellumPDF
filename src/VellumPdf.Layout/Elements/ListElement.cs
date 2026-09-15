@@ -6,18 +6,28 @@ using VellumPdf.Layout.Core;
 namespace VellumPdf.Layout.Elements;
 
 /// <summary>Ordered or unordered list with optional nesting (one level deep).</summary>
+/// <remarks>
+/// An unnamed value is stored. <see cref="ListElement.FormatMarker"/> then emits the bullet.
+/// </remarks>
 public enum ListStyle
 {
     /// <summary>Unordered list rendered with a bullet marker.</summary>
+    /// <remarks>
+    /// Zero and negative indices still emit the bullet. See
+    /// <see cref="ListElement.FormatMarker"/>.
+    /// </remarks>
     Unordered,
 
     /// <summary>Ordered list numbered with decimal digits (1., 2., 3.).</summary>
+    /// <remarks>Zero and negative indices emit the number as given (<c>0.</c>, <c>-1.</c>).</remarks>
     OrderedDecimal,
 
     /// <summary>Ordered list numbered with lowercase letters (a., b., c.).</summary>
+    /// <remarks>Zero and negative indices emit a bare <c>.</c>.</remarks>
     OrderedAlpha,
 
     /// <summary>Ordered list numbered with lowercase Roman numerals (i., ii., iii.).</summary>
+    /// <remarks>Zero and negative indices emit the number as given (<c>0.</c>, <c>-1.</c>).</remarks>
     OrderedRoman,
 }
 
@@ -25,6 +35,10 @@ public enum ListStyle
 /// A block-level list element. Items are rendered with a gutter marker
 /// (bullet or sequence number) followed by indented paragraph content.
 /// </summary>
+/// <remarks>
+/// Nesting is one level, via <see cref="ListItem.Children"/>. Marker formatting of zero and
+/// negative indices is on <see cref="FormatMarker"/>.
+/// </remarks>
 public sealed class ListElement
 {
     private readonly List<ListItem> _items = [];

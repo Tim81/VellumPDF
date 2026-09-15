@@ -15,6 +15,10 @@ namespace VellumPdf.Layout.Rendering;
 /// is performed: pass 1 counts pages (layout only, no PDF objects created);
 /// pass 2 draws all pages including the running bands with {page}/{pages} resolved.
 /// </summary>
+/// <remarks>
+/// Geometry is checked in the constructor. A custom overflow that never advances hits
+/// 50,000 continuations in <see cref="Render"/>.
+/// </remarks>
 public sealed class DocumentRenderer
 {
     // Bounds the per-element continuation loop in both pagination passes (#459). It exists because
