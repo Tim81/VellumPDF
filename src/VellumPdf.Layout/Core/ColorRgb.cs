@@ -18,6 +18,11 @@ public readonly record struct ColorRgb(double R, double G, double B)
     public static readonly ColorRgb White = new(1, 1, 1);
 
     /// <summary>Creates a colour from a packed 24-bit RGB value (e.g. <c>0xFF8800</c>).</summary>
+    /// <remarks>
+    /// The top byte is ignored. <c>0x00FF0000</c> and <c>0xAAFF0000</c> produce the same
+    /// colour. Channels are not clamped: the constructor accepts any double, and a non-finite
+    /// channel can reach the content stream (#509).
+    /// </remarks>
     public static ColorRgb FromHex(uint rgb) => new(
         ((rgb >> 16) & 0xFF) / 255.0,
         ((rgb >> 8) & 0xFF) / 255.0,

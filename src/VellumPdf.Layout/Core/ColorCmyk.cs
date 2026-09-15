@@ -20,6 +20,11 @@ public readonly record struct ColorCmyk(double C, double M, double Y, double K)
     /// Naive (non-colour-managed) conversion to RGB for preview or interop.
     /// Uses the standard CMYK-to-RGB formula: channel = (1 − ink) × (1 − K).
     /// </summary>
+    /// <remarks>
+    /// Channels are not clamped or checked for finiteness. A value outside 0 to 1, or a
+    /// non-finite channel, is multiplied through and handed to <see cref="ColorRgb"/> as
+    /// given (#509).
+    /// </remarks>
     public ColorRgb ToRgbApproximate() =>
         new((1 - C) * (1 - K), (1 - M) * (1 - K), (1 - Y) * (1 - K));
 
@@ -27,6 +32,10 @@ public readonly record struct ColorCmyk(double C, double M, double Y, double K)
     /// Naive (non-colour-managed) conversion from RGB to CMYK.
     /// Uses the standard max-based GCR (Grey Component Replacement) formula.
     /// </summary>
+    /// <remarks>
+    /// Input channels are not clamped. A non-finite RGB channel produces a non-finite CMYK
+    /// channel (#509).
+    /// </remarks>
     public static ColorCmyk FromRgb(ColorRgb rgb)
     {
         var r = rgb.R;

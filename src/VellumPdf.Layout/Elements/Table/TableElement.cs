@@ -61,12 +61,29 @@ public sealed class TableElement
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 
     /// <summary>The rows in the table, in render order.</summary>
+    /// <remarks>
+    /// A table with no rows, or whose rows hold no cells, is refused at save.
+    /// <see cref="Document.Save(System.IO.Stream)"/> throws
+    /// <see cref="InvalidOperationException"/>: the grid resolved to no columns.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from a save, when this collection is empty or every row has no cells.
+    /// </exception>
     public IReadOnlyList<Row> Rows => _rows;
 
     /// <summary>Configured column widths in points; a value of 0 means auto-size.</summary>
+    /// <remarks>
+    /// An entry that cannot be a width is treated as auto: missing, zero, negative, or
+    /// non-finite. Extra entries past the column count are ignored. Explicit widths that
+    /// overrun the available width are scaled down. Nothing reports any of those.
+    /// </remarks>
     public IReadOnlyList<double> ColWidths => _colWidths;
 
     /// <summary>Sets the column widths (0 = auto) and returns this instance for chaining.</summary>
+    /// <remarks>
+    /// Same rules as <see cref="ColWidths"/>. This call does not refuse a negative or
+    /// non-finite entry; the grid treats it as auto at layout.
+    /// </remarks>
     public TableElement SetColumnWidths(params double[] widths)
     {
         _colWidths.Clear();
@@ -79,6 +96,11 @@ public sealed class TableElement
     /// the top of each continuation page only while it belongs to the table's leading contiguous
     /// run of header rows; a header row added after a data row draws once, where it occurs.
     /// </summary>
+    /// <remarks>
+    /// A row with no cells still counts toward the empty-table refusal on <see cref="Rows"/>.
+    /// A table whose rows are all headers cannot paginate on a page with room to spare (#488);
+    /// save throws the too-tall <see cref="InvalidOperationException"/>.
+    /// </remarks>
     public Row AddRow(bool isHeader = false)
     {
         var row = new Row { IsHeader = isHeader };
@@ -90,6 +112,9 @@ public sealed class TableElement
     /// Appends a new header row and returns it. See <see cref="AddRow"/> for when a header row
     /// repeats across continuation pages.
     /// </summary>
+    /// <remarks>
+    /// Same empty-row and all-header refusals as <see cref="AddRow"/>.
+    /// </remarks>
     public Row AddHeaderRow()
     {
         var row = new Row { IsHeader = true };

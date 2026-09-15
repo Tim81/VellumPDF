@@ -22,6 +22,11 @@ public sealed class PieChartRenderer : IRenderer
     public PieChartRenderer(PieChart chart) => _chart = chart;
 
     /// <summary>Validates the slices, reserves the chart diameter plus margins, and reports the occupied region.</summary>
+    /// <remarks>
+    /// This renderer does not split. A chart taller than the content area throws from
+    /// <see cref="Document.Save(System.IO.Stream)"/> as too tall. The 50,000-continuation
+    /// cap on <see cref="IRenderer.Layout"/> is for custom overflow, not for this type.
+    /// </remarks>
     public LayoutResult Layout(LayoutContext ctx)
     {
         // Every refusal below named nameof(_chart), a private field of this renderer, so the

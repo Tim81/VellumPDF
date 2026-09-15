@@ -27,12 +27,24 @@ public sealed class LayoutResult
     public Outcome Status { get; }
 
     /// <summary>The occupied area after layout (valid for Full and Partial).</summary>
+    /// <remarks>
+    /// A <see cref="Outcome.Nothing"/> result returns <see langword="null"/>. Do not dereference
+    /// this without checking <see cref="Status"/>.
+    /// </remarks>
     public LayoutBox? OccupiedArea { get; }
 
     /// <summary>Renderer representing the part that fit (Partial only).</summary>
+    /// <remarks>
+    /// Null on <see cref="Outcome.Full"/> and <see cref="Outcome.Nothing"/>.
+    /// </remarks>
     public IRenderer? SplitRenderer { get; }
 
     /// <summary>Renderer representing overflow to be placed on the next page (Partial only).</summary>
+    /// <remarks>
+    /// Null on <see cref="Outcome.Full"/> and <see cref="Outcome.Nothing"/>. The overflow is
+    /// accepted as given: a renderer that never advances hits the 50,000-continuation cap
+    /// described on <see cref="IRenderer.Layout"/>.
+    /// </remarks>
     public IRenderer? OverflowRenderer { get; }
 
     private LayoutResult(Outcome status, LayoutBox? area, IRenderer? split, IRenderer? overflow)
@@ -48,6 +60,10 @@ public sealed class LayoutResult
         new(Outcome.Full, occupied, null, null);
 
     /// <summary>Creates a result indicating the content was split, with the part that fit and the overflow to place on the next page.</summary>
+    /// <remarks>
+    /// Neither renderer is inspected here. An overflow that occupies the same height on every
+    /// call hits the 50,000-continuation cap on <see cref="IRenderer.Layout"/> at save.
+    /// </remarks>
     public static LayoutResult Partial(LayoutBox occupied, IRenderer split, IRenderer overflow) =>
         new(Outcome.Partial, occupied, split, overflow);
 

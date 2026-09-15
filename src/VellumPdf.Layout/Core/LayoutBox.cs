@@ -21,12 +21,20 @@ public readonly record struct LayoutBox(double X, double Y, double Width, double
     public double Bottom => Y + Height;
 
     /// <summary>Returns a copy of this box with the height replaced.</summary>
+    /// <remarks>
+    /// A negative or non-finite height is stored as given. <see cref="IsEmpty"/> is true when
+    /// the height is not positive.
+    /// </remarks>
     public LayoutBox WithHeight(double height) => new(X, Y, Width, height);
 
     /// <summary>Returns a copy of this box with the top edge (Y) replaced.</summary>
     public LayoutBox WithY(double y) => new(X, y, Width, Height);
 
     /// <summary>Returns this box shrunk by the given insets.</summary>
+    /// <remarks>
+    /// Insets larger than the box are not refused. The result can have a negative width or
+    /// height; <see cref="IsEmpty"/> is then true.
+    /// </remarks>
     public LayoutBox Deflate(double left, double top, double right, double bottom) =>
         new(X + left, Y + top, Width - left - right, Height - top - bottom);
 

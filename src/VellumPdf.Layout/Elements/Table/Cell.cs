@@ -102,6 +102,11 @@ public sealed class Cell
     public ColorRgb? Background { get; init; }
 
     /// <summary>Horizontal alignment of the cell content.</summary>
+    /// <remarks>
+    /// <b>Attention</b>: <see cref="HorizontalAlignment.Justify"/> is neither refused nor
+    /// honoured. It falls through to left alignment. Paragraph text outside a cell does honour
+    /// it; this box does not.
+    /// </remarks>
     public HorizontalAlignment Alignment { get; init; } = HorizontalAlignment.Left;
 
     /// <summary>

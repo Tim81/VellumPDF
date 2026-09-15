@@ -11,9 +11,18 @@ public sealed class Row
     private readonly List<Cell> _cells = [];
 
     /// <summary>The cells in this row, in column order.</summary>
+    /// <remarks>
+    /// A row with no cells is refused at save as part of the empty-table check on
+    /// <see cref="TableElement.Rows"/>.
+    /// </remarks>
     public IReadOnlyList<Cell> Cells => _cells;
 
     /// <summary>Whether this row is a header row (may be repeated on each page).</summary>
+    /// <remarks>
+    /// A table whose rows are all headers cannot paginate on a page with room to spare (#488).
+    /// Save throws the too-tall <see cref="InvalidOperationException"/>. Only the leading
+    /// contiguous run of header rows repeats on continuation pages.
+    /// </remarks>
     public bool IsHeader { get; init; }
 
     /// <summary>Optional background fill color for the row.</summary>

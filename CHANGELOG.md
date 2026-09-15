@@ -200,6 +200,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Documentation
 
+- **Layout's remaining public members with a measured boundary now name it (#510).** The six
+  element `Margins` properties share one rule: they are not validated, unlike
+  `LineSeparator.Margins` and `Cell.Padding`. `Justify` is honoured by paragraph and heading
+  text and treated as left by a single box. A table with no cells is refused at save. A custom
+  `IRenderer` whose overflow never advances hits a cap of 50,000 page continuations.
+  `UseObjectStreams` combined with `Encrypt` throws `NotSupportedException` from the save.
+  `LoadTrueTypeFont` throws `FileNotFoundException` for a missing file and
+  `DirectoryNotFoundException` for a missing directory, from that call rather than from save.
+  `TextStyle.LinkUri` and `Document.Language` write the string as given. `ColorRgb.FromHex`
+  ignores the top byte. `FontReference.Embedded` on a Standard-14 reference returns null
+  behind a non-nullable type.
+
 - **The public members that refuse input now say so, and say what not to pass (#503).** These
   boundaries were created by fixes already shipped in 2.3.2 and documented almost nowhere: of
   Layout's 298 documented public members, exactly one carried an `<exception>` tag before this

@@ -115,6 +115,11 @@ public sealed class ListElement
     /// Formats the marker at 1-based <paramref name="index"/>. The renderer uses this for nested
     /// ordered children as well, restarting the sequence at 1 under each parent.
     /// </summary>
+    /// <remarks>
+    /// Zero and negative are not refused. Decimal and roman emit the number as given
+    /// (<c>0.</c>, <c>-1.</c>). Alpha emits a bare <c>.</c>. Unordered still emits the bullet.
+    /// A later major version will reject a non-positive index.
+    /// </remarks>
     public string FormatMarker(int index) => Style switch
     {
         ListStyle.Unordered => "•",          // •

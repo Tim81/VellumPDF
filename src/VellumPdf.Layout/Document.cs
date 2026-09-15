@@ -95,6 +95,15 @@ public sealed class Document : IDisposable
     /// Requested PDF/A conformance level. Forwarded to the underlying <see cref="PdfDocument"/>.
     /// PDF/A-2a implies <see cref="Tagged"/> = true.
     /// </summary>
+    /// <remarks>
+    /// Setting a level does not run the rules. A document can declare PDF/A and still fail a
+    /// preflight; the stamp is written either way (#474). Combined with <see cref="Encrypt"/>,
+    /// <see cref="Save(System.IO.Stream)"/> throws <see cref="InvalidOperationException"/>
+    /// because ISO 19005-2 §6.1.3 forbids encryption in PDF/A.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from a save, when this is a PDF/A level and <see cref="Encrypt"/> has been called.
+    /// </exception>
     public PdfConformance Conformance
     {
         get => _pdf.Conformance;
@@ -119,6 +128,12 @@ public sealed class Document : IDisposable
     /// Required by PDF/A-2a and PDF/UA-1 (set it explicitly — no default is applied).
     /// Leading and trailing whitespace is trimmed when the value is written.
     /// </summary>
+    /// <remarks>
+    /// <b>Attention</b>: the string is not validated. An empty value, whitespace, or
+    /// <c>not a tag</c> is written into <c>/Lang</c> and XMP as given, after trim. PDF/A-2a
+    /// and PDF/UA-1 both require a well-formed BCP 47 tag; this property will not refuse one
+    /// that is not. A later major version will.
+    /// </remarks>
     public string? Language
     {
         get => _pdf.Language;
@@ -130,6 +145,14 @@ public sealed class Document : IDisposable
     /// cross-reference stream for smaller output. Forwarded to the underlying
     /// <see cref="PdfDocument"/>. Cannot be combined with <see cref="Encrypt"/>.
     /// </summary>
+    /// <remarks>
+    /// Combined with <see cref="Encrypt"/>, the save throws
+    /// <see cref="NotSupportedException"/>. Neither setter checks the other; the pairing is
+    /// refused only when the file is written.
+    /// </remarks>
+    /// <exception cref="NotSupportedException">
+    /// Raised from a save, when this is true and <see cref="Encrypt"/> has been called.
+    /// </exception>
     public bool UseObjectStreams
     {
         get => _pdf.UseObjectStreams;
@@ -236,12 +259,34 @@ public sealed class Document : IDisposable
     /// Registers a TrueType font for embedding and returns a handle that can be
     /// used in <see cref="TextStyle.FontRef"/>.
     /// </summary>
+    /// <remarks>
+    /// The bytes are parsed here, not at save. A buffer that is not a TrueType font raises
+    /// <see cref="InvalidDataException"/> from this call.
+    /// </remarks>
+    /// <exception cref="InvalidDataException">
+    /// <paramref name="fontData"/> is not a TrueType font this embedder can read.
+    /// </exception>
     public EmbeddedFontHandle UseTrueTypeFont(byte[] fontData) =>
         _pdf.UseTrueTypeFont(fontData);
 
     /// <summary>
     /// Loads a TrueType font file from disk, registers it for embedding, and returns a handle.
     /// </summary>
+    /// <remarks>
+    /// The path is read here, not at save. A missing file raises
+    /// <see cref="FileNotFoundException"/>. A missing directory raises
+    /// <see cref="DirectoryNotFoundException"/>. A file that is not a TrueType font then
+    /// raises <see cref="InvalidDataException"/> from <see cref="UseTrueTypeFont"/>.
+    /// </remarks>
+    /// <exception cref="FileNotFoundException">
+    /// <paramref name="path"/> names a file that does not exist.
+    /// </exception>
+    /// <exception cref="DirectoryNotFoundException">
+    /// The directory named in <paramref name="path"/> does not exist.
+    /// </exception>
+    /// <exception cref="InvalidDataException">
+    /// The file is not a TrueType font this embedder can read.
+    /// </exception>
     public EmbeddedFontHandle LoadTrueTypeFont(string path) =>
         UseTrueTypeFont(File.ReadAllBytes(path));
 
@@ -249,6 +294,19 @@ public sealed class Document : IDisposable
     /// Asynchronously loads a TrueType font file from disk, registers it for embedding, and
     /// returns a handle.
     /// </summary>
+    /// <remarks>
+    /// Same refusals as <see cref="LoadTrueTypeFont"/>, from this call rather than from a later
+    /// save.
+    /// </remarks>
+    /// <exception cref="FileNotFoundException">
+    /// <paramref name="path"/> names a file that does not exist.
+    /// </exception>
+    /// <exception cref="DirectoryNotFoundException">
+    /// The directory named in <paramref name="path"/> does not exist.
+    /// </exception>
+    /// <exception cref="InvalidDataException">
+    /// The file is not a TrueType font this embedder can read.
+    /// </exception>
     public async Task<EmbeddedFontHandle> LoadTrueTypeFontAsync(string path, CancellationToken cancellationToken = default)
     {
         byte[] bytes = await File.ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false);
@@ -316,6 +374,20 @@ public sealed class Document : IDisposable
     /// library — the seam satellite packages (e.g. VellumPdf.Barcodes) use to plug their own
     /// elements into the flow layout.
     /// </summary>
+    /// <remarks>
+    /// A renderer whose overflow never advances hits a cap of <b>50,000</b> page continuations.
+    /// <see cref="Save(System.IO.Stream)"/> then throws <see cref="InvalidOperationException"/>
+    /// naming that cap. The library's own renderers can reach it too, on a page that takes one
+    /// table row at a time. Split a long element yourself rather than relying on pagination to
+    /// run forever.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="renderer"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from a save, when this renderer, or an overflow it returns, needs more than
+    /// 50,000 page continuations.
+    /// </exception>
     public Document Add(IRenderer renderer)
     {
         ArgumentNullException.ThrowIfNull(renderer);
@@ -364,10 +436,22 @@ public sealed class Document : IDisposable
     /// Delegates to <see cref="PdfDocument.Encrypt"/>.
     /// Must be called before <see cref="Save(Stream)"/>.
     /// </summary>
+    /// <remarks>
+    /// Combined with <see cref="UseObjectStreams"/>, the save throws
+    /// <see cref="NotSupportedException"/>. This method does not check that flag.
+    /// Combined with a PDF/A <see cref="Conformance"/>, the save throws
+    /// <see cref="InvalidOperationException"/>.
+    /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="settings"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="settings"/> has an empty <see cref="PdfEncryptionSettings.OwnerPassword"/>
     /// beside a non-empty <see cref="PdfEncryptionSettings.UserPassword"/>.
+    /// </exception>
+    /// <exception cref="NotSupportedException">
+    /// Raised from a save, when <see cref="UseObjectStreams"/> is true.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from a save, when <see cref="Conformance"/> is a PDF/A level.
     /// </exception>
     public Document Encrypt(PdfEncryptionSettings settings)
     {

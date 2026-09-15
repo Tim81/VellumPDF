@@ -22,6 +22,12 @@ public sealed class TextStyle
     /// Valid only when <see cref="FontRef"/> is not an embedded font.
     /// Preserved for backward compatibility with existing code.
     /// </summary>
+    /// <remarks>
+    /// An invalid read is not refused. On an embedded <see cref="FontRef"/> the getter
+    /// returns <see cref="Standard14.Helvetica"/>, because that is what
+    /// <see cref="FontReference.Standard14"/> returns on an embedded reference. Check
+    /// <see cref="FontReference.IsEmbedded"/> first.
+    /// </remarks>
     public Standard14 Font
     {
         get => FontRef.Standard14;
@@ -149,6 +155,12 @@ public sealed class TextStyle
     /// When non-null, text rendered with this style will be wrapped in a /Link
     /// annotation pointing to this URI. Use a full URI string (e.g. "https://example.com").
     /// </summary>
+    /// <remarks>
+    /// <b>Attention</b>: the string is not validated. Empty, <c>not a uri</c>, and
+    /// <c>javascript:alert(1)</c> are all written into a <c>/URI</c> action as given.
+    /// Table cells and running bands silently drop the link (#475). A later major version
+    /// will refuse a value that is not an absolute URI.
+    /// </remarks>
     public string? LinkUri { get; init; }
 
     /// <summary>Measures a string using whichever font this style references.</summary>

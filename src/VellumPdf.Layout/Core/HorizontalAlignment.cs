@@ -16,5 +16,10 @@ public enum HorizontalAlignment
     Right,
 
     /// <summary>Stretch content to fill the width, flush with both the left and right edges.</summary>
+    /// <remarks>
+    /// Paragraph and heading text honour this. A consumer that lays out a single unbreakable
+    /// box treats it as <see cref="Left"/>: image, cell, pie chart, running band. Nothing
+    /// reports the fall-through.
+    /// </remarks>
     Justify,
 }

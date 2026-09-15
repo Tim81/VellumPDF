@@ -80,6 +80,11 @@ public sealed class LayoutImage
     public double? Height { get; init; }  // null = maintain aspect ratio
 
     /// <summary>Horizontal alignment of the image within the available width.</summary>
+    /// <remarks>
+    /// <b>Attention</b>: <see cref="HorizontalAlignment.Justify"/> is neither refused nor
+    /// honoured. It falls through to left alignment. An image is one box; there is nothing to
+    /// justify against.
+    /// </remarks>
     public HorizontalAlignment Alignment { get; init; } = HorizontalAlignment.Left;
 
     /// <summary>Margins around the image.</summary>

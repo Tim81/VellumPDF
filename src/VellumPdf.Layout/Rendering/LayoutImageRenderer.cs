@@ -21,6 +21,12 @@ public sealed class LayoutImageRenderer : IRenderer
     }
 
     /// <summary>Resolves the image size within the available area and reports the occupied region.</summary>
+    /// <remarks>
+    /// This renderer does not split. An image taller than the content area throws from
+    /// <see cref="Document.Save(System.IO.Stream)"/> as too tall, rather than hitting the
+    /// 50,000-continuation cap. That cap still applies to any custom overflow you return
+    /// from your own <see cref="IRenderer.Layout"/>.
+    /// </remarks>
     public LayoutResult Layout(LayoutContext ctx)
     {
         var area = ctx.Area.Deflate(_img.Margins);

@@ -30,6 +30,15 @@ public sealed class ListRenderer : IRenderer
     private LayoutBox _occupied;
 
     /// <summary>Creates a renderer for the list, optionally starting at <paramref name="startItem"/> for pagination.</summary>
+    /// <remarks>
+    /// A negative start throws <see cref="ArgumentOutOfRangeException"/> from
+    /// <see cref="Layout"/>, when the item list is indexed. A start past the last item
+    /// returns <see cref="LayoutResult.Full"/> occupying no height, having drawn nothing.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Raised from <see cref="Layout"/>, when <paramref name="startItem"/> is negative and the
+    /// list has items.
+    /// </exception>
     public ListRenderer(ListElement list, int startItem = 0)
     {
         _list = list;

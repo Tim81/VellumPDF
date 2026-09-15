@@ -165,9 +165,23 @@ public sealed class DocumentRenderer
     }
 
     /// <summary>Appends a renderer to the document flow and returns this instance for chaining.</summary>
+    /// <remarks>
+    /// Same 50,000-continuation cap as <see cref="Document.Add(IRenderer)"/>. A custom
+    /// overflow that never advances throws <see cref="InvalidOperationException"/> from
+    /// <see cref="Render"/>.
+    /// </remarks>
     public DocumentRenderer Add(IRenderer renderer) { _renderers.Add(renderer); return this; }
 
     /// <summary>Lays out all added renderers and saves the resulting PDF to <paramref name="destination"/>.</summary>
+    /// <remarks>
+    /// A single element that needs more than <b>50,000</b> page continuations throws
+    /// <see cref="InvalidOperationException"/>. That is a hard ceiling, not the old stack
+    /// overflow: a custom <see cref="IRenderer"/> whose overflow never advances used to crash,
+    /// and now throws here.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// An element needs more than 50,000 page continuations, or is too tall for one page.
+    /// </exception>
     public void Render(Stream destination)
     {
         RunLayout();

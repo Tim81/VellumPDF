@@ -13,6 +13,12 @@ public interface IRenderer
     /// Phase 1: determine how much of this element fits in <paramref name="context"/>.
     /// Must not mutate any state visible to the caller (pure computation).
     /// </summary>
+    /// <remarks>
+    /// An overflow renderer that never advances is accepted here. Pagination stops it at
+    /// <b>50,000</b> continuations and throws <see cref="InvalidOperationException"/> from
+    /// <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/>. Return <see cref="LayoutResult.Full"/>
+    /// or a smaller overflow, not a copy of yourself that occupies the same height again.
+    /// </remarks>
     LayoutResult Layout(LayoutContext context);
 
     /// <summary>

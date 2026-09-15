@@ -4,6 +4,13 @@
 namespace VellumPdf.Layout.Core;
 
 /// <summary>CSS-style four-sided inset (top, right, bottom, left) in points.</summary>
+/// <remarks>
+/// This type does not refuse a non-finite or negative inset. Consumers that write the
+/// value into a content stream do:
+/// <see cref="VellumPdf.Layout.Elements.LineSeparator.Margins"/> and
+/// <see cref="VellumPdf.Layout.Elements.Table.Cell.Padding"/> check finiteness at save.
+/// The other margin properties do not. Do not treat construction as validation.
+/// </remarks>
 /// <param name="Top">The inset on the top edge.</param>
 /// <param name="Right">The inset on the right edge.</param>
 /// <param name="Bottom">The inset on the bottom edge.</param>

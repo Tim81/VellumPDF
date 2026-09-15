@@ -19,9 +19,19 @@ public readonly struct FontReference
     public bool IsEmbedded => _embedded is not null;
 
     /// <summary>The Standard-14 font (valid only when <see cref="IsEmbedded"/> is false).</summary>
+    /// <remarks>
+    /// An invalid read is not refused. On an embedded reference this returns
+    /// <see cref="Standard14.Helvetica"/>, the default of the unused field, with nothing
+    /// reported. Check <see cref="IsEmbedded"/> first.
+    /// </remarks>
     public Standard14 Standard14 => _standard14;
 
     /// <summary>The embedded font handle (valid only when <see cref="IsEmbedded"/> is true).</summary>
+    /// <remarks>
+    /// An invalid read is not refused. On a Standard-14 reference this returns
+    /// <see langword="null"/> behind a non-nullable return type. Check
+    /// <see cref="IsEmbedded"/> first.
+    /// </remarks>
     public EmbeddedFontHandle Embedded => _embedded!;
 
     /// <summary>Creates a reference to a Standard-14 font.</summary>
