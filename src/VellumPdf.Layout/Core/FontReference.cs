@@ -45,16 +45,17 @@ public readonly struct FontReference
 
     /// <summary>Creates a reference to a Standard-14 font.</summary>
     /// <remarks>
-    /// Nothing is checked. A value the enumeration does not name, such as <c>(Standard14)99</c>,
-    /// is stored: <see cref="MeasureString"/> then returns 0, and the save that writes text in it
-    /// throws <see cref="IndexOutOfRangeException"/>.
+    /// Nothing is checked. A value the enumeration does not name, such as <c>(Standard14)99</c>, is
+    /// stored: <see cref="MeasureString"/> then returns 0 at any finite size, and the save throws
+    /// <see cref="IndexOutOfRangeException"/> once the font is selected on a page, as text in it
+    /// does, and as a table cell styled with it does even when empty.
     /// <para>Do not pass a value the enumeration does not name. A later major version will throw
     /// <see cref="ArgumentOutOfRangeException"/> from this call.</para>
     /// </remarks>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
     /// save overloads, not from this call, when <paramref name="font"/> is not a named
-    /// <see cref="VellumPdf.Fonts.Standard14"/> value and text is drawn in it.
+    /// <see cref="VellumPdf.Fonts.Standard14"/> value and the font is selected on a page.
     /// </exception>
     public FontReference(Standard14 font)
     {
@@ -67,10 +68,11 @@ public readonly struct FontReference
     /// A null handle is stored. <see cref="IsEmbedded"/> is then false, and text in this reference
     /// is drawn in Helvetica.
     /// <para><b>Attention</b>: the handle is not checked against the document that saves it. A
-    /// handle from a different <see cref="VellumPdf.Layout.Document"/> saves without an
-    /// exception. The page refers to the font by a resource name that the saving document either
-    /// leaves undefined or gives to one of its own fonts, so the text is not drawn in the font you
-    /// chose (#544). Use handles from the document you add the text to.</para>
+    /// handle from a different <see cref="VellumPdf.Layout.Document"/> saves without an exception.
+    /// The page refers to the font by its resource name and gets whatever font the saving document
+    /// registered under that name, or none. Unless that is the same font file, and the saving
+    /// document's own text in it uses the same characters, the text is drawn wrong or not at all
+    /// (#544). Use handles from the document you add the text to.</para>
     /// <para>Do not pass null. A later major version will throw
     /// <see cref="ArgumentNullException"/> from this call.</para>
     /// </remarks>

@@ -111,8 +111,9 @@ public sealed class Paragraph
     /// <remarks>
     /// An empty sequence becomes one empty run at <see cref="TextStyle.Default"/>. A null sequence
     /// throws <see cref="ArgumentNullException"/>. A null run inside the sequence is kept.
-    /// <see cref="Text"/> then throws, <see cref="Style"/> throws when the null run is the first,
-    /// and so does the save.
+    /// <see cref="Text"/> then throws, and so does <see cref="Style"/> when the null run is the
+    /// first. The save throws for a null run anywhere in the sequence, and <see cref="Add"/>
+    /// without a style throws when the null run is the first.
     /// <para>Do not put null in the sequence. A later major version will throw
     /// <see cref="ArgumentNullException"/> from this call.</para>
     /// </remarks>
@@ -136,14 +137,17 @@ public sealed class Paragraph
     /// <summary>Appends a run with the given text and optional style. Returns this paragraph.</summary>
     /// <remarks>
     /// A null <paramref name="style"/> uses the first run's style, <see cref="Style"/>, which is
-    /// itself null when the first run was built with a null style. A null <paramref name="text"/>
-    /// is stored, and the save throws when it lays out the paragraph.
+    /// itself null when the first run was built with a null style. Reading <see cref="Style"/>
+    /// throws when the first run is null, so this call then throws
+    /// <see cref="NullReferenceException"/> itself. A null <paramref name="text"/> is stored, and
+    /// the save throws when it lays out the paragraph.
     /// <para>Do not pass null text. A later major version will throw
     /// <see cref="ArgumentNullException"/> from this call.</para>
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when <paramref name="text"/> is <see langword="null"/>.
+    /// from this call, when <paramref name="text"/> is <see langword="null"/>. It is raised from this
+    /// call instead when <paramref name="style"/> is null and the first run is null.
     /// </exception>
     public Paragraph Add(string text, TextStyle? style = null)
     {

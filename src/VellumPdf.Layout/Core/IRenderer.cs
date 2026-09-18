@@ -27,8 +27,9 @@ public interface IRenderer
     /// <para>One element may take at most <b>50,000</b> page continuations. Each
     /// <see cref="LayoutResult.Outcome.Partial"/>, and each retry after
     /// <see cref="LayoutResult.Outcome.Nothing"/>, counts as one. An overflow that never gets
-    /// smaller reaches the limit, and the save throws. Make each overflow hold less than the
-    /// renderer that returned it.</para>
+    /// smaller reaches the limit, and so can a renderer that needs the whole content area exactly
+    /// (#549); the save then throws. Make each overflow hold less than the renderer that returned
+    /// it.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other

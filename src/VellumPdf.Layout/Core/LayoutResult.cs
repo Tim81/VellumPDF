@@ -41,10 +41,14 @@ public sealed class LayoutResult
         /// <remarks>
         /// The occupied area and both renderers are null. The document finishes the current page,
         /// even when nothing is on it, starts a new one, and calls <see cref="IRenderer.Layout"/>
-        /// again with the whole content area. Only a second <c>Nothing</c> there is an error. A
-        /// <c>Nothing</c> from the first element on a page therefore leaves that page blank.
-        /// <para>The retry only decides whether to throw. If it fits, the document calls
-        /// <see cref="IRenderer.Layout"/> once more and uses that result.</para>
+        /// again with the whole content area. A <c>Nothing</c> from the first element on a page
+        /// therefore leaves that page empty apart from any header or footer.
+        /// <para>The retry only decides whether to throw: a second <c>Nothing</c> makes the save
+        /// throw, and any other result is discarded, after which the document lays the renderer out
+        /// again from the top of the new page. That area can be one rounding step shorter than the
+        /// retry's, so a renderer that needs the whole content area exactly can return
+        /// <c>Nothing</c> again and repeat the cycle until the page-continuation limit
+        /// (#549).</para>
         /// </remarks>
         Nothing,
     }

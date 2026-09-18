@@ -100,9 +100,9 @@ public sealed class LayoutImage
     /// set, the image keeps that width, up to the content width, and its position is clamped back
     /// inside the content box; with it null, the image is sized to the width the edges leave. A
     /// negative or non-finite edge, or edges wider than the area, can make the save throw an
-    /// exception about something else, write a <c>NaN</c> token into the content stream, or move or
-    /// mirror the image. A negative or non-finite top or bottom edge can also move the elements
-    /// placed after this one.
+    /// exception about something else, write a <c>NaN</c> or <c>Infinity</c> token into the content
+    /// stream, or move or mirror the image. A negative or non-finite top or bottom edge can also
+    /// move the elements placed after this one.
     /// <para>Do not pass a negative or non-finite edge. A later major version will refuse
     /// both.</para>
     /// </remarks>

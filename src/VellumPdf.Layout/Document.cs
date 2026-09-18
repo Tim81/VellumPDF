@@ -24,16 +24,16 @@ namespace VellumPdf.Layout;
 /// </code>
 /// </summary>
 /// <remarks>
-/// Most refusals fire from the save, not from the member you set, and each member says which
-/// call throws. A document saved without an element throws
-/// <see cref="InvalidOperationException"/>.
+/// Most refusals fire from the save, not from the member you set, and each member says which call
+/// throws. A document saved without an element throws; see the constructor.
 /// </remarks>
 public sealed class Document : IDisposable
 {
     /// <summary>Creates an empty document with A4 pages and 72pt margins.</summary>
     /// <remarks>
     /// Saved before an element is added, the document throws
-    /// <see cref="InvalidOperationException"/>, whether or not a header or footer is set.
+    /// <see cref="InvalidOperationException"/>, unless a header or footer leaves the content area
+    /// no positive size, which throws <see cref="ArgumentException"/> first.
     /// </remarks>
     public Document() { }
 
@@ -124,6 +124,8 @@ public sealed class Document : IDisposable
     /// <remarks>
     /// Setting a level does not run the rules. A document can declare PDF/A and still fail a
     /// preflight; the stamp is written either way (#474).
+    /// <para>A value the enumeration does not name is accepted and stamped as PDF/A-2b. Do not pass
+    /// one; a later major version will refuse it.</para>
     /// <para>Combined with <see cref="Encrypt"/>, the save throws
     /// <see cref="InvalidOperationException"/> for every PDF/A level, because ISO 19005-2 §6.1.3
     /// forbids the <c>Encrypt</c> key in a PDF/A file. For PDF/UA-1 it throws only when the
@@ -376,15 +378,18 @@ public sealed class Document : IDisposable
     /// used in <see cref="TextStyle.FontRef"/>.
     /// </summary>
     /// <remarks>
-    /// Most of the font is parsed here: the table directory and the <c>cmap</c>, <c>head</c>,
-    /// <c>hhea</c>, <c>maxp</c>, <c>name</c>, <c>OS/2</c>, <c>post</c> and <c>hmtx</c> tables.
-    /// Malformed or truncated bytes throw <see cref="InvalidDataException"/>, and a missing table
-    /// from that list throws <see cref="InvalidOperationException"/>, both from this call.
-    /// <para>The outlines are read at save, for every font registered here whether or not text uses
-    /// it. A font missing its <c>glyf</c> table passes this call and makes the save throw
-    /// <see cref="InvalidOperationException"/>, and malformed outline data makes it throw
-    /// <see cref="InvalidDataException"/>. An OpenType font with CFF outlines is accepted, and
-    /// embedded as such.</para>
+    /// This call reads the table directory and the <c>cmap</c>, <c>head</c>, <c>hhea</c>,
+    /// <c>maxp</c>, <c>name</c>, <c>OS/2</c>, <c>post</c> and <c>hmtx</c> tables. It throws
+    /// <see cref="InvalidDataException"/> for bytes it cannot read as a font,
+    /// <see cref="InvalidOperationException"/> when a table from that list is missing, and
+    /// <see cref="NotSupportedException"/> when the <c>cmap</c> has no subtable in format 0, 4 or
+    /// 6.
+    /// <para>It does not check every value in those tables, and it does not read the outlines. Both
+    /// are used at save, for every font registered here whether or not text uses it, so a font this
+    /// call accepts can still make the save throw: <see cref="InvalidOperationException"/> for a
+    /// missing outline table, <see cref="InvalidDataException"/> for malformed outline data, and
+    /// <see cref="ArgumentException"/> for a value that makes a font metric non-finite, such as a
+    /// <c>unitsPerEm</c> of 0. An OpenType font with CFF outlines is accepted.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="fontData"/> is <see langword="null"/>. <c>ParamName</c> is <c>source</c>.
@@ -392,6 +397,9 @@ public sealed class Document : IDisposable
     /// <exception cref="InvalidDataException">
     /// <paramref name="fontData"/> is malformed or truncated. Malformed outline data is reported
     /// from the save instead.
+    /// </exception>
+    /// <exception cref="NotSupportedException">
+    /// The font's <c>cmap</c> table has no subtable in format 0, 4 or 6.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// A table the parser needs is missing: from this call for the tables listed in the remarks,
@@ -411,8 +419,8 @@ public sealed class Document : IDisposable
     /// <paramref name="path"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="path"/> is empty, holds only white space, or holds a character a path cannot
-    /// contain.
+    /// <paramref name="path"/> is empty, holds only white space, or holds a null character. Other
+    /// characters the file system refuses raise <see cref="IOException"/>.
     /// </exception>
     /// <exception cref="FileNotFoundException">
     /// <paramref name="path"/> names a file that does not exist.
@@ -431,6 +439,10 @@ public sealed class Document : IDisposable
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// A table the parser needs is missing; see <see cref="UseTrueTypeFont"/>.
+    /// </exception>
+    /// <exception cref="NotSupportedException">
+    /// The font's <c>cmap</c> table has no subtable in format 0, 4 or 6; see
+    /// <see cref="UseTrueTypeFont"/>.
     /// </exception>
     public EmbeddedFontHandle LoadTrueTypeFont(string path) =>
         UseTrueTypeFont(File.ReadAllBytes(path));
@@ -449,8 +461,8 @@ public sealed class Document : IDisposable
     /// <paramref name="path"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="path"/> is empty, holds only white space, or holds a character a path cannot
-    /// contain.
+    /// <paramref name="path"/> is empty, holds only white space, or holds a null character. Other
+    /// characters the file system refuses raise <see cref="IOException"/>.
     /// </exception>
     /// <exception cref="FileNotFoundException">
     /// <paramref name="path"/> names a file that does not exist.
@@ -469,6 +481,10 @@ public sealed class Document : IDisposable
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// A table the parser needs is missing; see <see cref="UseTrueTypeFont"/>.
+    /// </exception>
+    /// <exception cref="NotSupportedException">
+    /// The font's <c>cmap</c> table has no subtable in format 0, 4 or 6; see
+    /// <see cref="UseTrueTypeFont"/>.
     /// </exception>
     /// <exception cref="OperationCanceledException">
     /// <paramref name="cancellationToken"/> was cancelled before the file was read.
@@ -621,8 +637,10 @@ public sealed class Document : IDisposable
     /// <paramref name="renderer"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Raised from a save, when this renderer, or an overflow it returns, needs more than
-    /// 50,000 page continuations.
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
+    /// call, when this renderer, or an overflow it returns, needs more than 50,000 page
+    /// continuations, or when it returns <see cref="LayoutResult.Outcome.Nothing"/> twice in a row,
+    /// the second time on a new page.
     /// </exception>
     public Document Add(IRenderer renderer)
     {
@@ -791,11 +809,11 @@ public sealed class Document : IDisposable
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The document has already been written, or has no pages, or an element's input cannot be laid
-    /// out, or <see cref="Encrypt"/> was called on a PDF/A document, or on a PDF/UA-1 document
-    /// without <see cref="PdfPermissions.Extract"/>; see <see cref="Conformance"/>. It is also
-    /// raised when a font registered with <see cref="UseTrueTypeFont"/> lacks a table the save
-    /// needs. For the element inputs, the boundary documentation on the property you set says which
-    /// values reach this.
+    /// out, or <see cref="Encrypt"/> is combined with a PDF/A <see cref="Conformance"/>, or with
+    /// PDF/UA-1 when the settings leave out <see cref="PdfPermissions.Extract"/>; see
+    /// <see cref="Conformance"/>. It is also raised when a font registered with
+    /// <see cref="UseTrueTypeFont"/> lacks a table the save needs. For the element inputs, the
+    /// boundary documentation on the property you set says which values reach this.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Many unrelated conditions share this type, so <b>do not</b> switch on the parameter name to
@@ -883,9 +901,10 @@ public sealed class Document : IDisposable
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The document has already been written, or has no pages, or an element's input cannot be laid
-    /// out, or <see cref="Encrypt"/> was called on a PDF/A document, or on a PDF/UA-1 document
-    /// without <see cref="PdfPermissions.Extract"/>, or a registered font lacks a table the save
-    /// needs. The file is open and truncated by the time any of these fires.
+    /// out, or <see cref="Encrypt"/> is combined with a PDF/A <see cref="Conformance"/>, or with
+    /// PDF/UA-1 when the settings leave out <see cref="PdfPermissions.Extract"/>, or a registered
+    /// font lacks a table the save needs. The file is open and truncated by the time any of these
+    /// fires.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <see cref="PageSize"/> has a width or height that is not a positive finite number.
@@ -949,15 +968,16 @@ public sealed class Document : IDisposable
     /// This <see cref="Document"/> was already disposed. It derives from
     /// <see cref="InvalidOperationException"/>, so a catch written for the base type also catches
     /// it; <see cref="Document"/> implements <see cref="IDisposable"/>, so this is ordinary misuse
-    /// rather than a case this API adds.
+    /// rather than a case this API adds. It is also raised when <paramref name="destination"/> was
+    /// already closed.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The document has already been written, or has no pages, or an element's input cannot be laid
-    /// out, or <see cref="Encrypt"/> was called on a PDF/A document, or on a PDF/UA-1 document
-    /// without <see cref="PdfPermissions.Extract"/>; see <see cref="Conformance"/>. It is also
-    /// raised when a font registered with <see cref="UseTrueTypeFont"/> lacks a table the save
-    /// needs. For the element inputs, the boundary documentation on the property you set says which
-    /// values reach this.
+    /// out, or <see cref="Encrypt"/> is combined with a PDF/A <see cref="Conformance"/>, or with
+    /// PDF/UA-1 when the settings leave out <see cref="PdfPermissions.Extract"/>; see
+    /// <see cref="Conformance"/>. It is also raised when a font registered with
+    /// <see cref="UseTrueTypeFont"/> lacks a table the save needs. For the element inputs, the
+    /// boundary documentation on the property you set says which values reach this.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// The margins, header and footer leave the content area no positive size, or an element
@@ -993,11 +1013,12 @@ public sealed class Document : IDisposable
     /// <see cref="int.MaxValue"/>, asks for a per-column width array too large to allocate.
     /// </exception>
     /// <exception cref="OperationCanceledException">
-    /// <paramref name="cancellationToken"/> was cancelled before the write started. A cancellation
-    /// during the layout pass is reported once the layout has finished, and the pages it added
-    /// stay; see the remarks. Catch the base type: the layout pass raises the derived
-    /// <see cref="TaskCanceledException"/>, and a cancellation during the write raises whatever the
-    /// destination stream raises, which need not be the same type.
+    /// <paramref name="cancellationToken"/> was cancelled before the write finished. A token
+    /// already cancelled when the call starts stops it before the layout, and the task ends
+    /// cancelled with a <see cref="TaskCanceledException"/>. A cancellation during the layout is
+    /// seen only once the layout has finished, so its pages stay, and it is reported the same way.
+    /// A cancellation during the write raises whatever the destination stream raises. Catch
+    /// <see cref="OperationCanceledException"/> to cover all three.
     /// </exception>
     // RS0026 flags multiple overloads with optional parameters as a future-ambiguity risk;
     // Stream and string share no implicit conversion, so overload resolution can never be
@@ -1058,9 +1079,10 @@ public sealed class Document : IDisposable
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The document has already been written, or has no pages, or an element's input cannot be laid
-    /// out, or <see cref="Encrypt"/> was called on a PDF/A document, or on a PDF/UA-1 document
-    /// without <see cref="PdfPermissions.Extract"/>, or a registered font lacks a table the save
-    /// needs. The file is open and truncated by the time any of these fires.
+    /// out, or <see cref="Encrypt"/> is combined with a PDF/A <see cref="Conformance"/>, or with
+    /// PDF/UA-1 when the settings leave out <see cref="PdfPermissions.Extract"/>, or a registered
+    /// font lacks a table the save needs. The file is open and truncated by the time any of these
+    /// fires.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <see cref="PageSize"/> has a width or height that is not a positive finite number.
@@ -1088,11 +1110,12 @@ public sealed class Document : IDisposable
     /// too large to allocate.
     /// </exception>
     /// <exception cref="OperationCanceledException">
-    /// <paramref name="cancellationToken"/> was cancelled before the write started. A cancellation
-    /// during the layout pass is reported once the layout has finished, and the pages it added
-    /// stay; see the remarks. Catch the base type: the layout pass raises the derived
-    /// <see cref="TaskCanceledException"/>, and a cancellation during the write raises whatever the
-    /// destination stream raises, which need not be the same type.
+    /// <paramref name="cancellationToken"/> was cancelled before the write finished. A token
+    /// already cancelled when the call starts stops it before the layout, and the task ends
+    /// cancelled with a <see cref="TaskCanceledException"/>. A cancellation during the layout is
+    /// seen only once the layout has finished, so its pages stay, and it is reported the same way.
+    /// A cancellation during the write raises whatever the destination stream raises. Catch
+    /// <see cref="OperationCanceledException"/> to cover all three.
     /// </exception>
 #pragma warning disable RS0026
     public async Task SaveAsync(string path, CancellationToken cancellationToken = default)

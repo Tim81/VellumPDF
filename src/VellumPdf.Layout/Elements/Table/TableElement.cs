@@ -14,9 +14,9 @@ namespace VellumPdf.Layout.Elements.Table;
 ///   • Collapsed (shared) border rendering
 /// </summary>
 /// <remarks>
-/// A table that resolves to no columns is refused at save; see <see cref="Rows"/>. So is a table
-/// whose rows are all headers; see <see cref="AddRow"/>. The table is one element for the page
-/// limit described on <see cref="IRenderer.Layout"/>: a table that needs more than
+/// A table that resolves to no columns is refused at save; see <see cref="Rows"/>. A table whose
+/// rows are all headers cannot be drawn; see <see cref="AddRow"/>. The table is one element for the
+/// page limit described on <see cref="IRenderer.Layout"/>: a table that needs more than
 /// <b>50,000</b> page continuations makes the save throw.
 /// </remarks>
 public sealed class TableElement

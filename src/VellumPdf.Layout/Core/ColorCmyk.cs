@@ -6,11 +6,10 @@ namespace VellumPdf.Layout.Core;
 /// <summary>Normalised DeviceCMYK colour (0.0–1.0 per channel).</summary>
 /// <remarks>
 /// No Layout member takes a <see cref="ColorCmyk"/>, so a value of this type reaches a page only
-/// through <see cref="ToRgbApproximate"/>, or when you pass its channels to
-/// <see cref="VellumPdf.Canvas.PdfCanvas.SetFillColorCmyk"/> or
-/// <see cref="VellumPdf.Canvas.PdfCanvas.SetStrokeColorCmyk"/> yourself. Channels are not
-/// checked. ISO 32000-2, 8.6.4.4, requires each DeviceCMYK component to be a number from 0.0
-/// to 1.0.
+/// through <see cref="ToRgbApproximate"/>, or when you pass its channels to a
+/// <see cref="VellumPdf.Canvas.PdfCanvas"/> colour method yourself, such as
+/// <see cref="VellumPdf.Canvas.PdfCanvas.SetFillColorCmyk"/>. Channels are not checked. ISO
+/// 32000-2, 8.6.4.4, requires each DeviceCMYK component to be a number from 0.0 to 1.0.
 /// <para>Do not pass a channel outside 0 to 1, or a non-finite one. A later major version will
 /// refuse both (#509).</para>
 /// </remarks>
@@ -65,9 +64,9 @@ public readonly record struct ColorCmyk
     /// Uses the standard CMYK-to-RGB formula: channel = (1 − ink) × (1 − K).
     /// </summary>
     /// <remarks>
-    /// Computed without a check. A channel outside 0 to 1 gives an RGB channel outside 0 to 1:
-    /// a <see cref="K"/> of 2 gives -1 in all three. A non-finite channel gives a non-finite result
-    /// in each channel it feeds, and <see cref="K"/> feeds all three.
+    /// Computed without a check. A channel outside 0 to 1 gives an RGB channel outside 0 to 1: (0,
+    /// 0, 0, 2) gives -1 in all three. A non-finite channel gives a non-finite result in each
+    /// channel it feeds, and <see cref="K"/> feeds all three.
     /// </remarks>
     public ColorRgb ToRgbApproximate() =>
         new((1 - C) * (1 - K), (1 - M) * (1 - K), (1 - Y) * (1 - K));
@@ -77,10 +76,11 @@ public readonly record struct ColorCmyk
     /// Uses the standard max-based GCR (Grey Component Replacement) formula.
     /// </summary>
     /// <remarks>
-    /// Computed without a check. An input whose largest channel is 0 or less returns
-    /// <see cref="Black"/>. Otherwise any channel outside 0 to 1 can give a result outside 0 to
-    /// 1: (2, 0, 0) gives a <see cref="K"/> of -1, and (-1, 0.5, 0.5) a <see cref="C"/> of 3. A
-    /// non-finite channel gives a non-finite result.
+    /// Computed without a check. An input returns <see cref="Black"/> when 1 minus its largest
+    /// channel comes out at 1 or more, which includes a largest channel of 0 or less. Otherwise any
+    /// channel outside 0 to 1 can give a result outside 0 to 1: (2, 0, 0) gives a <see cref="K"/>
+    /// of -1, and (-1, 0.5, 0.5) a <see cref="C"/> of 3, and a non-finite channel gives a
+    /// non-finite result.
     /// </remarks>
     public static ColorCmyk FromRgb(ColorRgb rgb)
     {

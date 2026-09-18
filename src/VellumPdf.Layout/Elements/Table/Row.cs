@@ -24,23 +24,22 @@ public sealed class Row
 
     /// <summary>The cells in this row, in column order.</summary>
     /// <remarks>
-    /// An empty row among rows that have cells is not refused. A table is refused only when
-    /// no row contributes a cell; see <see cref="TableElement.Rows"/>.
+    /// An empty row among rows that have cells is not refused. A table in which no row has a cell
+    /// is; see <see cref="TableElement.Rows"/>.
     /// </remarks>
     public IReadOnlyList<Cell> Cells => _cells;
 
     /// <summary>Whether this row is a header row (may be repeated on each page).</summary>
     /// <remarks>
-    /// Only the leading run of header rows repeats on each continuation page. A header row after
-    /// a data row is drawn once, where it is.
-    /// A table whose rows are all headers is refused: it lays out as nothing, so the save
-    /// throws the too-tall <see cref="InvalidOperationException"/> even when the table would fit
-    /// (#488).
+    /// Only the leading run of header rows repeats on each continuation page. A header row after a
+    /// data row is drawn once, where it is. A table whose rows are all headers cannot be drawn: it
+    /// lays out as nothing, so the save throws the too-tall <see cref="InvalidOperationException"/>
+    /// even when the table would fit (#488).
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when every row of the table is a header row. The message says the element is
-    /// too tall to fit on a page (#488).
+    /// from this property, when every row of the table is a header row. The message says the
+    /// element is too tall to fit on a page (#488).
     /// </exception>
     public bool IsHeader { get; init; }
 
@@ -67,10 +66,10 @@ public sealed class Row
 
     /// <summary>Adds a text cell to the row. Returns this row.</summary>
     /// <remarks>
-    /// Creates the cell with <see cref="Cell(string)"/> and adds it.
-    /// A null <paramref name="text"/> is stored. The save throws when it sizes a column
-    /// automatically, which it does for any column without an explicit width; with every column
-    /// width set, the cell is drawn empty.
+    /// Creates the cell with <see cref="Cell(string)"/> and adds it, so a line break in the text is
+    /// not honoured; see <see cref="Cell.Content"/>. A null <paramref name="text"/> is stored. The
+    /// save throws when it sizes a column automatically, which it does for any column without an
+    /// explicit width; with every column width set, the cell is drawn empty.
     /// <para>Do not pass null. A later major version will throw
     /// <see cref="ArgumentNullException"/> from this call.</para>
     /// </remarks>

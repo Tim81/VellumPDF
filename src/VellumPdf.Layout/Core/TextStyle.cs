@@ -28,17 +28,18 @@ public sealed class TextStyle
     /// or an <see cref="EmbeddedFontHandle"/> returned by <c>Document.UseTrueTypeFont</c>.
     /// </summary>
     /// <remarks>
-    /// Stored as given. A null handle and a handle from another document both save without an
-    /// exception, and neither draws the font you asked for; see
+    /// Stored as given. A null handle saves in Helvetica, and a handle from another document
+    /// usually does not draw the font you asked for; see
     /// <see cref="FontReference(EmbeddedFontHandle)"/>. A Standard-14 value the enumeration does
-    /// not name makes the save throw once text is drawn in it.
+    /// not name makes the save throw once the font is selected on a page, as text in it does, and
+    /// as a table cell with this style does even when empty.
     /// <para><see cref="Standard14.Symbol"/> and <see cref="Standard14.ZapfDingbats"/> measure
     /// every character as zero width, so a paragraph in either is never wrapped (#470).</para>
     /// </remarks>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
-    /// save overloads, not from this property, when the reference holds a
-    /// <see cref="Standard14"/> value the enumeration does not name and text is drawn in it.
+    /// save overloads, not from this property, when the reference holds a <see cref="Standard14"/>
+    /// value the enumeration does not name and the font is selected on a page.
     /// </exception>
     public FontReference FontRef { get; init; } = Standard14.Helvetica;
 
@@ -191,10 +192,10 @@ public sealed class TextStyle
     /// annotation pointing to this URI. Use a full URI string (e.g. "https://example.com").
     /// </summary>
     /// <remarks>
-    /// <b>Attention</b>: the string is not validated. Empty, <c>not a uri</c>, and
-    /// <c>javascript:alert(1)</c> are all written into a <c>/URI</c> action as given. Table cells
-    /// and running bands silently drop the link (#475). In a list item the marker is linked as well
-    /// as the text.
+    /// <b>Attention</b>: the string is not validated. Empty and <c>not a uri</c> are written into a
+    /// <c>/URI</c> action as given, and so is an absolute URI of any scheme, such as
+    /// <c>javascript:alert(1)</c>. Table cells and running bands silently drop the link (#475). In
+    /// a list item the marker is linked as well as the text.
     /// <para>Do not pass a value that is not an absolute URI. A later major version will refuse
     /// one.</para>
     /// </remarks>

@@ -16,8 +16,9 @@ namespace VellumPdf.Layout.Rendering;
 /// Justification: Tw for Standard-14 lines; explicit per-word Tm for embedded-font lines.
 /// </summary>
 /// <remarks>
-/// The document creates one for each <see cref="Paragraph"/>. Refusals, and a null anywhere in
-/// the paragraph, are raised from <see cref="Layout"/>, which the document calls during a save.
+/// The document creates one for each <see cref="Paragraph"/>. The paragraph's refusals, and a null
+/// anywhere in it, are raised from <see cref="Layout"/>, which the document calls during a save; a
+/// negative start line is raised from <see cref="Draw"/>.
 /// </remarks>
 public sealed class ParagraphRenderer : IRenderer
 {

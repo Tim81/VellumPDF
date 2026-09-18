@@ -30,7 +30,8 @@ public sealed class RendererContext
     /// Nothing is checked. With a null <paramref name="page"/>, both methods throw
     /// <see cref="ArgumentNullException"/>; with a null <paramref name="document"/>, both throw
     /// <see cref="NullReferenceException"/>. A <paramref name="page"/> that belongs to a different
-    /// document is accepted, and an image registered on it is left out of the saved file.
+    /// document is accepted, and an image registered on it is left out of the saved file, while an
+    /// embedded font registered on it is written but named by no page.
     /// <para>Do not pass null, or a page from another document. A later major version will throw
     /// from this constructor.</para>
     /// </remarks>

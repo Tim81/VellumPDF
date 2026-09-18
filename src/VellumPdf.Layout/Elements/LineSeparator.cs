@@ -36,7 +36,9 @@ public sealed class LineSeparator
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property,
-    /// when the width is not finite. The message names the separator.
+    /// when the width is not finite. The message names the separator. It is also raised, as the
+    /// too-tall exception, when the width is large enough that the separator does not fit on a
+    /// page.
     /// </exception>
     public double LineWidth { get; init; } = 1;
 
@@ -54,10 +56,15 @@ public sealed class LineSeparator
     /// <para>All four edges are checked, and the message names none of them, so it tells you the
     /// separator is at fault rather than which edge you set. <c>Left</c> and <c>Right</c> are
     /// checked too, though the rule spans the content width and neither of them moves it.</para>
+    /// <para>A negative <c>Top</c> or <c>Bottom</c> is not refused: it moves the rule, or the
+    /// elements after it, up the page. Do not pass one; a later major version will refuse
+    /// it.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property,
-    /// when any of the four insets is not finite.
+    /// when any of the four insets is not finite. It is also raised, as the too-tall exception,
+    /// when <c>Top</c> and <c>Bottom</c> are large enough that the separator does not fit on a
+    /// page.
     /// </exception>
     public EdgeInsets Margins { get; init; } = new EdgeInsets(6, 0, 6, 0);
 }

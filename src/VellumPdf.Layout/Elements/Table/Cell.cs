@@ -16,6 +16,8 @@ public sealed class Cell
     /// <summary>The text content rendered in the cell.</summary>
     /// <remarks>
     /// An empty string draws no text. A null value can make the save throw; see the constructor.
+    /// The text is split into lines at spaces only: a line feed, carriage return or tab is not a
+    /// break, and is written into the cell as it is.
     /// </remarks>
     public string Content { get; }
 

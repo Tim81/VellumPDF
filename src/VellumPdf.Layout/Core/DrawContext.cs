@@ -63,6 +63,8 @@ public sealed class DrawContext
     /// Nothing is checked, and every argument is stored. A null argument surfaces later, from the
     /// first member that uses it. The document constructs this type itself and never passes null;
     /// construct one yourself only to test a renderer.
+    /// <para>Do not pass null. A later major version will throw <see cref="ArgumentNullException"/>
+    /// from this constructor.</para>
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised later, not from this constructor: by a renderer that draws on a null
@@ -85,12 +87,14 @@ public sealed class DrawContext
     /// <summary>Returns (or creates) a font resource on the current document.</summary>
     /// <remarks>
     /// This does not embed a file. Nothing is checked: a value the enumeration does not name is
-    /// accepted here, and the save throws if text is drawn with the resource this returns.
+    /// accepted here, and the save throws once the resource this returns is selected with
+    /// <see cref="PdfCanvas.SetFont"/>, with or without text after it.
     /// </remarks>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
     /// save overloads, not from this call, when <paramref name="font"/> is not a named
-    /// <see cref="Standard14"/> value and text is drawn with the resource this returns.
+    /// <see cref="Standard14"/> value and the resource this returns is selected with
+    /// <see cref="PdfCanvas.SetFont"/>.
     /// </exception>
     public PdfFontResource GetFont(Standard14 font) => _document.UseFont(font);
 
@@ -133,10 +137,11 @@ public sealed class DrawContext
     /// <paramref name="box"/> is in layout space (Y-down); the method converts to PDF space.
     /// </summary>
     /// <remarks>
-    /// <paramref name="uri"/> is not validated. Empty, <c>not a uri</c>, and
-    /// <c>javascript:alert(1)</c> are written into <c>/URI</c> as given, the same as
-    /// <see cref="TextStyle.LinkUri"/>. A null <paramref name="uri"/> writes a link annotation
-    /// with no action, so the area is a link that goes nowhere.
+    /// <paramref name="uri"/> is not validated. Empty and <c>not a uri</c> are written into
+    /// <c>/URI</c> as given, and so is an absolute URI of any scheme, such as
+    /// <c>javascript:alert(1)</c>, the same as <see cref="TextStyle.LinkUri"/>. A null
+    /// <paramref name="uri"/> writes a link annotation with no action, so the area is a link that
+    /// goes nowhere.
     /// <para>A non-finite coordinate in <paramref name="box"/> is accepted here. The save throws
     /// when it writes the annotation's rectangle.</para>
     /// <para>Do not pass a null or relative <paramref name="uri"/>. A later major version will
@@ -169,6 +174,8 @@ public sealed class DrawContext
     /// top level when there is none.
     /// <para>A null <paramref name="title"/> and a non-finite <paramref name="layoutY"/> are
     /// accepted here and make the save throw when it writes the outline.</para>
+    /// <para>Do not pass a null title or a non-finite position. A later major version will refuse
+    /// both from this call.</para>
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
@@ -221,6 +228,8 @@ public sealed class DrawContext
     /// When <see cref="Tagged"/> is false this returns without registering, so a null
     /// <paramref name="root"/> is accepted. When tagged, a null root is stored, and the save throws
     /// while it builds the structure tree.
+    /// <para>Do not pass null. A later major version will throw <see cref="ArgumentNullException"/>
+    /// from this call.</para>
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other

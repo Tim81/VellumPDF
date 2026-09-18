@@ -93,7 +93,7 @@ public sealed class PieChart
     /// If a zero slice should be visible in your chart, give it a small positive value.</para>
     /// <para>Finite values whose sum overflows to infinity are accepted, and every slice then has
     /// no angle and the chart has no area: it is blank, or, with <see cref="StrokeColor"/> set,
-    /// each slice strokes one radius (#546).</para>
+    /// every slice strokes the same radius, at <see cref="StartAngle"/> (#546).</para>
     /// <para>A null list makes the save throw. Do not pass one, or values whose sum can overflow; a
     /// later major version will refuse both.</para>
     /// </remarks>
@@ -141,8 +141,9 @@ public sealed class PieChart
     /// takes on the page. The left and right edges move the chart but do not shrink it: its
     /// diameter is limited by the whole content width, and its position is clamped back inside the
     /// content box. A negative or non-finite edge can make the save throw an exception about
-    /// something else, write a <c>NaN</c> token into the content stream, or move the chart. A
-    /// negative or non-finite top or bottom edge can also move the elements placed after this one.
+    /// something else, write a <c>NaN</c> or <c>Infinity</c> token into the content stream, or move
+    /// the chart. A negative or non-finite top or bottom edge can also move the elements placed
+    /// after this one.
     /// <para>Do not pass a negative or non-finite edge. A later major version will refuse
     /// both.</para>
     /// </remarks>
@@ -202,10 +203,10 @@ public sealed class PieChart
     /// A non-finite angle is refused. Laying the chart out throws
     /// <see cref="ArgumentException"/> and names <c>StartAngle</c>.
     /// <para>The unit is radians, not degrees. The angle is used as given, not reduced to 0 to 2π,
-    /// and each wedge ends at this angle plus its sweep. A very large angle draws wrong, because
-    /// doubles that large are too far apart to hold a sweep: measured on a two-slice chart without
-    /// a stroke colour, 1e15 draws correctly, 1e16 draws overlapping wedges and 1e17 draws none
-    /// (#546). Reduce the angle to 0 to 2π yourself.</para>
+    /// and each wedge ends at this angle plus its sweep. A large angle draws wrong, because doubles
+    /// that large are too far apart to hold a sweep exactly, and the error grows with the angle: on
+    /// a two-slice chart without a stroke colour, 1e15 leaves a gap at the rim, 1e16 draws
+    /// overlapping wedges and 1e17 draws none (#546). Reduce the angle to 0 to 2π yourself.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised while the chart is laid out, which happens inside
