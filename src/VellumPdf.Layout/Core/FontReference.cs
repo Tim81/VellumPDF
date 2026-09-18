@@ -11,9 +11,9 @@ namespace VellumPdf.Layout.Core;
 /// of font in a single, AOT-safe value type.
 /// </summary>
 /// <remarks>
-/// The two accessors are not exclusive. Reading <see cref="Standard14"/> on an embedded
-/// reference, or <see cref="Embedded"/> on a Standard-14 reference, is not refused; see
-/// those members.
+/// Reading the accessor for the other kind of font does not throw; it returns a value that is
+/// not your font. Check <see cref="IsEmbedded"/> before reading <see cref="Standard14"/> or
+/// <see cref="Embedded"/>.
 /// </remarks>
 public readonly struct FontReference
 {
@@ -44,7 +44,18 @@ public readonly struct FontReference
     public EmbeddedFontHandle Embedded => _embedded!;
 
     /// <summary>Creates a reference to a Standard-14 font.</summary>
-    /// <remarks>Every <see cref="Standard14"/> value is accepted.</remarks>
+    /// <remarks>
+    /// Nothing is checked. A value the enumeration does not name, such as <c>(Standard14)99</c>,
+    /// is stored: <see cref="MeasureString"/> then returns 0, and the save that writes text in it
+    /// throws <see cref="IndexOutOfRangeException"/>.
+    /// <para>Do not pass a value the enumeration does not name. A later major version will throw
+    /// <see cref="ArgumentOutOfRangeException"/> from this call.</para>
+    /// </remarks>
+    /// <exception cref="IndexOutOfRangeException">
+    /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
+    /// save overloads, not from this call, when <paramref name="font"/> is not a named
+    /// <see cref="VellumPdf.Fonts.Standard14"/> value and text is drawn in it.
+    /// </exception>
     public FontReference(Standard14 font)
     {
         _standard14 = font;
@@ -53,8 +64,14 @@ public readonly struct FontReference
 
     /// <summary>Creates a reference to an embedded TrueType font.</summary>
     /// <remarks>
-    /// A null handle is stored. <see cref="IsEmbedded"/> is then false, and
-    /// <see cref="Embedded"/> returns null.
+    /// A null handle is stored. <see cref="IsEmbedded"/> is then false, and text in this reference
+    /// is drawn in Helvetica.
+    /// <para><b>Attention</b>: the handle is not checked against the document that saves it. A
+    /// handle from a different <see cref="VellumPdf.Layout.Document"/> saves without an
+    /// exception, but the saved page uses a font that its resources do not define and the file
+    /// does not embed. Use handles from the document you add the text to.</para>
+    /// <para>Do not pass null. A later major version will throw
+    /// <see cref="ArgumentNullException"/> from this call.</para>
     /// </remarks>
     public FontReference(EmbeddedFontHandle handle)
     {
@@ -63,11 +80,20 @@ public readonly struct FontReference
     }
 
     /// <summary>Implicit conversion so existing <c>Standard14</c> values work unchanged.</summary>
-    /// <remarks>Same as <see cref="FontReference(Standard14)"/>.</remarks>
+    /// <remarks>
+    /// Same as <see cref="FontReference(Standard14)"/>, including a value the enumeration does not
+    /// name.
+    /// </remarks>
+    /// <exception cref="IndexOutOfRangeException">
+    /// Raised from a later save, as described on <see cref="FontReference(Standard14)"/>.
+    /// </exception>
     public static implicit operator FontReference(Standard14 font) => new(font);
 
     /// <summary>Implicit conversion from an embedded handle for ergonomic use in TextStyle init.</summary>
-    /// <remarks>Same as <see cref="FontReference(EmbeddedFontHandle)"/>. A null handle is stored.</remarks>
+    /// <remarks>
+    /// Same as <see cref="FontReference(EmbeddedFontHandle)"/>, including a null handle and a
+    /// handle from another document.
+    /// </remarks>
     public static implicit operator FontReference(EmbeddedFontHandle handle) => new(handle);
 
     /// <summary>
@@ -75,7 +101,10 @@ public readonly struct FontReference
     /// </summary>
     /// <remarks>
     /// A null string throws <see cref="NullReferenceException"/>. A non-finite
-    /// <paramref name="pointSize"/> is multiplied through and is not refused here.
+    /// <paramref name="pointSize"/> is multiplied through and is not refused here. A Standard-14
+    /// value the enumeration does not name measures 0.
+    /// <para>On an embedded font, every character measured is added to the font's subset, so a
+    /// string you measure but never draw still makes the embedded font larger.</para>
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// <paramref name="text"/> is <see langword="null"/>.

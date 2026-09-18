@@ -5,28 +5,36 @@ namespace VellumPdf.Layout.Core;
 
 /// <summary>Horizontal alignment of text or content within its available width.</summary>
 /// <remarks>
-/// <see cref="Left"/>, <see cref="Center"/> and <see cref="Right"/> are honoured by every
-/// consumer. <see cref="Justify"/> is not; see that member.
+/// Every consumer positions <see cref="Center"/> and <see cref="Right"/> and starts any other
+/// value at the left edge. Only paragraph and heading text also stretch <see cref="Justify"/>
+/// lines. A value this enumeration does not name is drawn as <see cref="Left"/>.
 /// </remarks>
 public enum HorizontalAlignment
 {
     /// <summary>Align content to the left edge.</summary>
-    /// <remarks>Honoured by every alignment consumer in this package.</remarks>
+    /// <remarks>Also what a consumer uses for a value it does not handle.</remarks>
     Left,
 
     /// <summary>Centre content horizontally.</summary>
-    /// <remarks>Honoured by every alignment consumer in this package.</remarks>
+    /// <remarks>
+    /// In paragraph, heading and table-cell text, a line wider than its area starts at the left
+    /// edge instead of overhanging both sides.
+    /// </remarks>
     Center,
 
     /// <summary>Align content to the right edge.</summary>
-    /// <remarks>Honoured by every alignment consumer in this package.</remarks>
+    /// <remarks>
+    /// In paragraph, heading and table-cell text, a line wider than its area starts at the left
+    /// edge instead of overhanging it.
+    /// </remarks>
     Right,
 
     /// <summary>Stretch content to fill the width, flush with both the left and right edges.</summary>
     /// <remarks>
-    /// Paragraph and heading text honour this. A consumer that lays out a single unbreakable
-    /// box treats it as <see cref="Left"/>: image, cell, pie chart, running band. Nothing
-    /// reports the fall-through.
+    /// Only paragraph and heading text are justified. They stretch every line except the
+    /// paragraph's last, and a line that ends at a hard line break is stretched too. An image, a
+    /// table cell, a pie chart, a running band and a barcode draw this value as
+    /// <see cref="Left"/>.
     /// </remarks>
     Justify,
 }

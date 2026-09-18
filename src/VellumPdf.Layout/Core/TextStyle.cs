@@ -7,20 +7,20 @@ namespace VellumPdf.Layout.Core;
 
 /// <summary>Typography properties applied to a run of text.</summary>
 /// <remarks>
-/// Refusals on size and leading fire from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/>,
+/// Refusals on <see cref="FontSize"/> and <see cref="Leading"/> fire from
+/// <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other save overloads,
 /// not from the property setter. See those members.
 /// </remarks>
 public sealed class TextStyle
 {
     /// <summary>Creates a style with Helvetica, 12 pt, auto leading, and black.</summary>
     /// <remarks>
-    /// Same values as <see cref="Default"/>, as a new instance. Mutating this does not
-    /// change <see cref="Default"/>.
+    /// Same values as <see cref="Default"/>, as a new instance.
     /// </remarks>
     public TextStyle() { }
 
     /// <summary>A style with default values (Helvetica, 12 pt, auto leading, black).</summary>
-    /// <remarks>Helvetica, 12 pt, auto leading, black. A shared instance; do not mutate it.</remarks>
+    /// <remarks>One shared instance. Every property of this type is init-only, so it cannot change.</remarks>
     public static readonly TextStyle Default = new();
 
     /// <summary>
@@ -28,9 +28,16 @@ public sealed class TextStyle
     /// or an <see cref="EmbeddedFontHandle"/> returned by <c>Document.UseTrueTypeFont</c>.
     /// </summary>
     /// <remarks>
-    /// Stored as given. Invalid reads of <see cref="Font"/> / <see cref="FontReference"/>
-    /// are documented there, not refused here.
+    /// Stored as given. A null handle and a handle from another document both save without an
+    /// exception, and neither draws the font you asked for; see
+    /// <see cref="FontReference(EmbeddedFontHandle)"/>. A Standard-14 value the enumeration does
+    /// not name makes the save throw.
     /// </remarks>
+    /// <exception cref="IndexOutOfRangeException">
+    /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
+    /// save overloads, not from this property, when the reference holds a
+    /// <see cref="Standard14"/> value the enumeration does not name.
+    /// </exception>
     public FontReference FontRef { get; init; } = Standard14.Helvetica;
 
     /// <summary>
@@ -43,7 +50,14 @@ public sealed class TextStyle
     /// returns <see cref="Standard14.Helvetica"/>, because that is what
     /// <see cref="FontReference.Standard14"/> returns on an embedded reference. Check
     /// <see cref="FontReference.IsEmbedded"/> first.
+    /// <para>Setting it replaces <see cref="FontRef"/>, and initialisers run in the order
+    /// written. <c>{ FontRef = handle, Font = Standard14.Courier }</c> ends in Courier, and the
+    /// reverse order ends in the embedded font. Set one of the two, not both.</para>
     /// </remarks>
+    /// <exception cref="IndexOutOfRangeException">
+    /// Raised from a later save, as described on <see cref="FontRef"/>, when set to a value the
+    /// enumeration does not name.
+    /// </exception>
     public Standard14 Font
     {
         get => FontRef.Standard14;

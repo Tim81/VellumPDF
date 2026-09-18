@@ -4,35 +4,35 @@
 namespace VellumPdf.Layout.Core;
 
 /// <summary>
-/// Immutable axis-aligned rectangle in layout space (Y-down, millimetres or points).
+/// Immutable axis-aligned rectangle in layout space (Y-down, points).
 /// X increases right, Y increases downward (opposite of PDF's Y-up convention).
 /// The Y-flip to PDF coordinates happens in <see cref="DrawContext"/>.
 /// </summary>
 /// <remarks>
-/// No component is refused. A negative or non-finite width or height is stored as given.
-/// <see cref="IsEmpty"/> is true when width or height is less than or equal to zero;
-/// <c>NaN</c> is not, so a <c>NaN</c> extent leaves <see cref="IsEmpty"/> false.
+/// A box is plain arithmetic. No component is checked, here or in any member of this type, so
+/// a negative or non-finite value is stored and carried through every computed member.
+/// Whatever consumes the box decides what that value means.
 /// </remarks>
 public readonly record struct LayoutBox
 {
     /// <summary>The left edge of the box.</summary>
-    /// <remarks>Not validated. See the type remarks.</remarks>
+    /// <remarks>Any value is stored. <see cref="IsEmpty"/> does not read it.</remarks>
     public double X { get; init; }
 
     /// <summary>The top edge of the box.</summary>
-    /// <remarks>Not validated. See the type remarks.</remarks>
+    /// <remarks>Any value is stored. <see cref="IsEmpty"/> does not read it.</remarks>
     public double Y { get; init; }
 
     /// <summary>The width of the box.</summary>
-    /// <remarks>Not validated. A negative or non-finite value is stored as given. See the type.</remarks>
+    /// <remarks>Any value is stored, including a negative or non-finite one.</remarks>
     public double Width { get; init; }
 
     /// <summary>The height of the box.</summary>
-    /// <remarks>Not validated. A negative or non-finite value is stored as given. See the type.</remarks>
+    /// <remarks>Any value is stored, including a negative or non-finite one.</remarks>
     public double Height { get; init; }
 
     /// <summary>Creates a box from the given origin and extents.</summary>
-    /// <remarks>Components are stored as given. See the type remarks.</remarks>
+    /// <remarks>Nothing is refused. The four values are stored as passed.</remarks>
     public LayoutBox(double X, double Y, double Width, double Height)
     {
         this.X = X;
@@ -42,7 +42,7 @@ public readonly record struct LayoutBox
     }
 
     /// <summary>Copies the origin and extents into the given variables.</summary>
-    /// <remarks>The values are as stored. No validation.</remarks>
+    /// <remarks>Order is X, Y, Width, Height, the order of the constructor.</remarks>
     public void Deconstruct(out double X, out double Y, out double Width, out double Height)
     {
         X = this.X;
@@ -52,48 +52,51 @@ public readonly record struct LayoutBox
     }
 
     /// <summary>The right edge of the box (X + Width).</summary>
-    /// <remarks>Arithmetic only. A negative width yields a Right less than X.</remarks>
+    /// <remarks>With a negative width, Right is left of X.</remarks>
     public double Right => X + Width;
 
     /// <summary>The bottom edge of the box (Y + Height).</summary>
-    /// <remarks>Arithmetic only. A negative height yields a Bottom less than Y.</remarks>
+    /// <remarks>With a negative height, Bottom is above Y.</remarks>
     public double Bottom => Y + Height;
 
     /// <summary>Returns a copy of this box with the height replaced.</summary>
-    /// <remarks>
-    /// A negative or non-finite height is stored as given. <see cref="IsEmpty"/> is true when
-    /// width or height is less than or equal to zero. <c>NaN</c> is not less than or equal to
-    /// zero, so a <c>NaN</c> height leaves <see cref="IsEmpty"/> false.
-    /// </remarks>
+    /// <remarks>Any height is accepted, including a negative or non-finite one.</remarks>
     public LayoutBox WithHeight(double height) => new(X, Y, Width, height);
 
     /// <summary>Returns a copy of this box with the top edge (Y) replaced.</summary>
-    /// <remarks>Not refused. A non-finite Y is stored as given.</remarks>
+    /// <remarks>Any value is accepted, including a non-finite one.</remarks>
     public LayoutBox WithY(double y) => new(X, y, Width, Height);
 
     /// <summary>Returns this box shrunk by the given insets.</summary>
     /// <remarks>
-    /// Insets larger than the box are not refused. The result can have a negative width or
-    /// height; <see cref="IsEmpty"/> is then true.
+    /// Insets larger than the box are accepted and give a negative width or height. A negative
+    /// inset grows the box. With infinite operands the subtraction can give <c>NaN</c>: an
+    /// infinite width deflated by an infinite inset has a <c>NaN</c> width, and
+    /// <see cref="IsEmpty"/> does not count that as empty.
     /// </remarks>
     public LayoutBox Deflate(double left, double top, double right, double bottom) =>
         new(X + left, Y + top, Width - left - right, Height - top - bottom);
 
     /// <summary>Returns this box shrunk by the given insets.</summary>
     /// <remarks>
-    /// Same as the four-argument overload: insets larger than the box yield a negative
-    /// extent and <see cref="IsEmpty"/> is then true.
+    /// Calls the four-argument overload with the four edges of <paramref name="insets"/>, so the
+    /// same arithmetic applies.
     /// </remarks>
     public LayoutBox Deflate(EdgeInsets insets) =>
         Deflate(insets.Left, insets.Top, insets.Right, insets.Bottom);
 
     /// <summary>True when the box has no positive area (zero or negative width or height).</summary>
     /// <remarks>
-    /// False when a component is <c>NaN</c>, because <c>NaN &lt;= 0</c> is false.
+    /// Reads <see cref="Width"/> and <see cref="Height"/> only. A <c>NaN</c> extent does not
+    /// make a box empty, because <c>NaN &lt;= 0</c> is false. The box is still empty when the
+    /// other extent is zero or negative.
     /// </remarks>
     public bool IsEmpty => Width <= 0 || Height <= 0;
 
     /// <summary>Returns a compact string of the form <c>(X,Y W×H)</c>.</summary>
-    /// <remarks>Invariant culture, one decimal place. Not a round-trip format.</remarks>
+    /// <remarks>
+    /// One decimal place in the current culture. Under <c>nl-NL</c> a box at 1, 2 of 3 by 4
+    /// prints as <c>(1,0,2,0 3,0×4,0)</c>. Use it for display, not for parsing.
+    /// </remarks>
     public override string ToString() => $"({X:F1},{Y:F1} {Width:F1}×{Height:F1})";
 }

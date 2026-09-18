@@ -5,29 +5,35 @@ namespace VellumPdf.Layout.Core;
 
 /// <summary>Normalised DeviceCMYK colour (0.0–1.0 per channel).</summary>
 /// <remarks>
-/// Channels are not clamped or checked for finiteness. A value outside 0 to 1, or a
-/// non-finite channel, can reach the content stream (#509).
+/// No Layout member takes a <see cref="ColorCmyk"/>, so a value of this type reaches a page only
+/// through <see cref="ToRgbApproximate"/>, or when you pass its channels to
+/// <see cref="VellumPdf.Canvas.PdfCanvas.SetFillColorCmyk"/> or
+/// <see cref="VellumPdf.Canvas.PdfCanvas.SetStrokeColorCmyk"/> yourself. Channels are not
+/// checked. ISO 32000-2, 8.6.4.4, requires each DeviceCMYK component to be a number from 0.0
+/// to 1.0.
+/// <para>Do not pass a channel outside 0 to 1, or a non-finite one. A later major version will
+/// refuse both (#509).</para>
 /// </remarks>
 public readonly record struct ColorCmyk
 {
     /// <summary>The cyan channel (0.0–1.0).</summary>
-    /// <remarks>Not clamped or checked for finiteness. See the type remarks.</remarks>
+    /// <remarks>Any value is stored.</remarks>
     public double C { get; init; }
 
     /// <summary>The magenta channel (0.0–1.0).</summary>
-    /// <remarks>Not clamped or checked for finiteness. See the type remarks.</remarks>
+    /// <remarks>Any value is stored.</remarks>
     public double M { get; init; }
 
     /// <summary>The yellow channel (0.0–1.0).</summary>
-    /// <remarks>Not clamped or checked for finiteness. See the type remarks.</remarks>
+    /// <remarks>Any value is stored.</remarks>
     public double Y { get; init; }
 
     /// <summary>The key (black) channel (0.0–1.0).</summary>
-    /// <remarks>Not clamped or checked for finiteness. See the type remarks.</remarks>
+    /// <remarks>Any value is stored.</remarks>
     public double K { get; init; }
 
     /// <summary>Creates a colour from the given channels.</summary>
-    /// <remarks>Channels are stored as given. See the type remarks.</remarks>
+    /// <remarks>Nothing is refused. The four values are stored as passed.</remarks>
     public ColorCmyk(double C, double M, double Y, double K)
     {
         this.C = C;
@@ -37,15 +43,15 @@ public readonly record struct ColorCmyk
     }
 
     /// <summary>Process black (0, 0, 0, 1).</summary>
-    /// <remarks>Finite and in range. Not a special case of the unclamped constructor.</remarks>
+    /// <remarks>Equal to <c>new ColorCmyk(0, 0, 0, 1)</c>.</remarks>
     public static readonly ColorCmyk Black = new(0, 0, 0, 1);
 
     /// <summary>White / no ink (0, 0, 0, 0).</summary>
-    /// <remarks>Finite and in range. Not a special case of the unclamped constructor.</remarks>
+    /// <remarks>Equal to <c>new ColorCmyk(0, 0, 0, 0)</c> and to <c>default(ColorCmyk)</c>.</remarks>
     public static readonly ColorCmyk White = new(0, 0, 0, 0);
 
     /// <summary>Copies the four channels into the given variables.</summary>
-    /// <remarks>The values are as stored. No clamping.</remarks>
+    /// <remarks>Order is C, M, Y, K, the order of the constructor.</remarks>
     public void Deconstruct(out double C, out double M, out double Y, out double K)
     {
         C = this.C;
@@ -59,9 +65,8 @@ public readonly record struct ColorCmyk
     /// Uses the standard CMYK-to-RGB formula: channel = (1 − ink) × (1 − K).
     /// </summary>
     /// <remarks>
-    /// Channels are not clamped or checked for finiteness. A value outside 0 to 1, or a
-    /// non-finite channel, is multiplied through and handed to <see cref="ColorRgb"/> as
-    /// given (#509).
+    /// Computed without a check. A channel outside 0 to 1 gives an RGB channel outside 0 to 1:
+    /// a <see cref="K"/> of 2 gives -1 in all three. A <c>NaN</c> channel gives <c>NaN</c>.
     /// </remarks>
     public ColorRgb ToRgbApproximate() =>
         new((1 - C) * (1 - K), (1 - M) * (1 - K), (1 - Y) * (1 - K));
@@ -71,8 +76,11 @@ public readonly record struct ColorCmyk
     /// Uses the standard max-based GCR (Grey Component Replacement) formula.
     /// </summary>
     /// <remarks>
-    /// Input channels are not clamped. A non-finite RGB channel is not refused; the
-    /// <c>k &gt;= 1</c> path can still return <see cref="Black"/> (#509).
+    /// Computed without a check. An input whose largest channel is 0 or less returns
+    /// <see cref="Black"/>. Otherwise a channel above 1 gives a result outside 0 to 1:
+    /// (2, 0, 0) gives a <see cref="K"/> of -1. A <c>NaN</c> channel gives <c>NaN</c> in all four,
+    /// and positive infinity gives <c>NaN</c> in <see cref="C"/>, <see cref="M"/> and
+    /// <see cref="Y"/>.
     /// </remarks>
     public static ColorCmyk FromRgb(ColorRgb rgb)
     {

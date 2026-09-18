@@ -18,19 +18,25 @@ namespace VellumPdf.Layout.Core;
 /// Flip formula: pdfY = pageHeight - layoutY
 /// </summary>
 /// <remarks>
-/// Coordinates are not validated. A box or Y that is off the page is written into
-/// annotations and outline destinations as given.
+/// Coordinates are not checked. A finite box or Y off the page is written into annotations and
+/// outline destinations as given, and a box with a negative width is written as an inverted
+/// rectangle. A non-finite coordinate is accepted here and refused later, when the save writes
+/// the annotation or outline entry.
 /// </remarks>
 public sealed class DrawContext
 {
     /// <summary>The content-stream canvas for the current page.</summary>
     /// <remarks>
-    /// The canvas this draw is writing to. Null if the constructor was given null.
+    /// Stored from the constructor without a check, so it is null if you passed null. The
+    /// document always passes the page's canvas.
     /// </remarks>
     public PdfCanvas Canvas { get; }
 
     /// <summary>The full page bounds in layout space (Y-down).</summary>
-    /// <remarks>Used by <see cref="ToPdfY"/> and <see cref="ToPdfRect"/>. Not validated here.</remarks>
+    /// <remarks>
+    /// Stored without a check. <see cref="ToPdfY"/> and <see cref="ToPdfRect"/> read only its
+    /// <see cref="LayoutBox.Height"/>.
+    /// </remarks>
     public LayoutBox PageBounds { get; }   // full page in layout space
 
     /// <summary>The per-page resource registration context.</summary>
@@ -45,16 +51,28 @@ public sealed class DrawContext
     /// <see cref="PdfCanvas.EndMarkedContent"/> and call <see cref="RegisterStructElem"/>.
     /// </summary>
     /// <remarks>
-    /// Forwards <see cref="Document.Tagged"/>. Structure registration still runs when this is
-    /// false; whether the kernel keeps the element is a tagged-document question.
+    /// Reads the kernel document, which reports true when tagging was requested and also when the
+    /// conformance level is PDF/A-2a or PDF/UA-1. When it is false,
+    /// <see cref="RegisterStructElemTree"/> and <see cref="StampStructElemPage"/> do nothing, and
+    /// the document discards an element passed to <see cref="RegisterStructElem"/>.
     /// </remarks>
     public bool Tagged => _document.Tagged;
 
     /// <summary>Creates a draw context bound to the current page, its canvas, and the owning document.</summary>
     /// <remarks>
-    /// Arguments are stored as given. A null canvas or document is not refused here; the throw
-    /// is from the first member that dereferences it.
+    /// Nothing is checked, and every argument is stored. A null argument surfaces later, from the
+    /// first member that uses it. The document constructs this type itself and never passes null;
+    /// construct one yourself only to test a renderer.
     /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised later, not from this constructor, by the first member that uses a null
+    /// <paramref name="canvas"/>, <paramref name="rendererContext"/> or
+    /// <paramref name="document"/>.
+    /// </exception>
+    /// <exception cref="ArgumentNullException">
+    /// Raised later, not from this constructor, when <paramref name="page"/> is null and a
+    /// member registers something on it, such as <see cref="AddUriLinkAnnotation"/>.
+    /// </exception>
     public DrawContext(PdfCanvas canvas, LayoutBox pageBounds, RendererContext rendererContext, PdfDocument document, PdfPage page)
     {
         Canvas = canvas;
@@ -66,8 +84,14 @@ public sealed class DrawContext
 
     /// <summary>Returns (or creates) a font resource on the current document.</summary>
     /// <remarks>
-    /// Every <see cref="Standard14"/> value is accepted. This does not embed a file.
+    /// This does not embed a file. Nothing is checked: a value the enumeration does not name is
+    /// accepted here, and the save throws when it writes the font resource.
     /// </remarks>
+    /// <exception cref="IndexOutOfRangeException">
+    /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
+    /// save overloads, not from this call, when <paramref name="font"/> is
+    /// not a named <see cref="Standard14"/> value.
+    /// </exception>
     public PdfFontResource GetFont(Standard14 font) => _document.UseFont(font);
 
     /// <summary>
@@ -75,9 +99,13 @@ public sealed class DrawContext
     /// and returns its PDF resource name so the canvas can select it.
     /// </summary>
     /// <remarks>
-    /// A null handle throws <see cref="NullReferenceException"/> from
-    /// <c>handle.ResourceName</c>.
+    /// A null handle throws <see cref="NullReferenceException"/> from this call. A handle from a
+    /// different document is accepted, and the saved page then uses a font it does not define;
+    /// see <see cref="FontReference(EmbeddedFontHandle)"/>.
     /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// <paramref name="handle"/> is <see langword="null"/>.
+    /// </exception>
     public string UseEmbeddedFont(EmbeddedFontHandle handle)
     {
         RendererContext.RegisterEmbeddedFontUsage(handle);
@@ -107,8 +135,19 @@ public sealed class DrawContext
     /// <remarks>
     /// <paramref name="uri"/> is not validated. Empty, <c>not a uri</c>, and
     /// <c>javascript:alert(1)</c> are written into <c>/URI</c> as given, the same as
-    /// <see cref="TextStyle.LinkUri"/>.
+    /// <see cref="TextStyle.LinkUri"/>. A null <paramref name="uri"/> writes a link annotation
+    /// with no action, so the area is a link that goes nowhere.
+    /// <para>A non-finite coordinate in <paramref name="box"/> is accepted here. The save throws
+    /// when it writes the annotation's rectangle.</para>
+    /// <para>Do not pass a null or relative <paramref name="uri"/>. A later major version will
+    /// refuse a value that is not an absolute URI.</para>
     /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
+    /// save overloads, not from this call, when
+    /// <paramref name="box"/> has a non-finite coordinate. The message says PDF does not support
+    /// NaN or Infinity as a real number.
+    /// </exception>
     public void AddUriLinkAnnotation(LayoutBox box, string uri)
     {
         var (x, y, w, h) = ToPdfRect(box);
@@ -125,9 +164,22 @@ public sealed class DrawContext
     /// <paramref name="layoutY"/> is the layout-space Y of the target position.
     /// </summary>
     /// <remarks>
-    /// <paramref name="level"/> is not refused. A negative level reaches the outline builder as
-    /// given, the same as <see cref="VellumPdf.Layout.Elements.Heading.Level"/>.
+    /// <paramref name="level"/> is not refused. Level 0 is a top-level entry. Any other level
+    /// nests under the most recent earlier entry one level up, and goes to the top level when
+    /// there is none, which is where a negative level always lands.
+    /// <para>A null <paramref name="title"/> and a non-finite <paramref name="layoutY"/> are
+    /// accepted here and make the save throw when it writes the outline.</para>
     /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
+    /// save overloads, not from this call, when <paramref name="title"/> is
+    /// <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
+    /// save overloads, not from this call, when <paramref name="layoutY"/>
+    /// is not finite.
+    /// </exception>
     public void AddOutlineEntry(string title, int level, double layoutY)
     {
         var pdfY = ToPdfY(layoutY);
@@ -146,10 +198,13 @@ public sealed class DrawContext
     /// The element's <see cref="PdfStructElem.Page"/> is automatically set to the current page.
     /// </summary>
     /// <remarks>
-    /// When <see cref="Tagged"/> is false this still sets <paramref name="elem"/>.Page and
-    /// forwards the element. Whether the kernel keeps it is a tagged-document question, not a
-    /// throw.
+    /// Sets <paramref name="elem"/>.Page and hands the element to the document, which keeps it only
+    /// when <see cref="Tagged"/> is true and otherwise discards it. A null
+    /// <paramref name="elem"/> throws from this call whether or not the document is tagged.
     /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// <paramref name="elem"/> is <see langword="null"/>.
+    /// </exception>
     public void RegisterStructElem(PdfStructElem elem)
     {
         elem.Page = _page;
@@ -163,9 +218,15 @@ public sealed class DrawContext
     /// Only has an effect when <see cref="Tagged"/> is true.
     /// </summary>
     /// <remarks>
-    /// When <see cref="Tagged"/> is false this returns without registering. A null
-    /// <paramref name="root"/> is not checked when untagged; when tagged it is forwarded.
+    /// When <see cref="Tagged"/> is false this returns without registering, so a null
+    /// <paramref name="root"/> is accepted. When tagged, a null root is stored, and the save throws
+    /// while it builds the structure tree.
     /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
+    /// save overloads, not from this call, when the document is tagged and
+    /// <paramref name="root"/> is <see langword="null"/>.
+    /// </exception>
     public void RegisterStructElemTree(PdfStructElem root)
     {
         if (Tagged)
@@ -179,9 +240,13 @@ public sealed class DrawContext
     /// Only has an effect when <see cref="Tagged"/> is true.
     /// </summary>
     /// <remarks>
-    /// When <see cref="Tagged"/> is false this returns without writing. A null
-    /// <paramref name="elem"/> then does not throw; when tagged it is dereferenced.
+    /// When <see cref="Tagged"/> is false this returns without writing, so a null
+    /// <paramref name="elem"/> is accepted. When tagged, a null <paramref name="elem"/> throws
+    /// from this call.
     /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// The document is tagged and <paramref name="elem"/> is <see langword="null"/>.
+    /// </exception>
     public void StampStructElemPage(PdfStructElem elem)
     {
         if (Tagged)

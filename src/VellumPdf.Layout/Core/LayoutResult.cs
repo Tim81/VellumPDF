@@ -5,57 +5,76 @@ namespace VellumPdf.Layout.Core;
 
 /// <summary>
 /// Result of <see cref="IRenderer.Layout"/>. The three outcomes drive pagination:
-/// Full: content fit entirely; Partial: some fit, overflow goes to next page;
-/// Nothing: nothing fit (content taller than a single page).
+/// Full: the content fit; Partial: some fit and the rest continues on the next page;
+/// Nothing: none of it fit in the area offered.
 /// </summary>
 /// <remarks>
-/// Read <see cref="Status"/> before the nullable members. A Partial overflow that never
-/// advances hits the continuation cap on <see cref="IRenderer.Layout"/>.
+/// Read <see cref="Status"/> before the nullable members. What the document does with each
+/// outcome is described on the members of <see cref="Outcome"/>.
 /// </remarks>
 public sealed class LayoutResult
 {
     /// <summary>The possible outcomes of a layout attempt.</summary>
-    /// <remarks>These three values are the whole set. No other status is produced.</remarks>
+    /// <remarks>
+    /// The constructor is private, so a result can only come from <see cref="LayoutResult.Full"/>,
+    /// <see cref="LayoutResult.Partial"/> or <see cref="LayoutResult.Nothing()"/>, and carries one
+    /// of these three values.
+    /// </remarks>
     public enum Outcome
     {
         /// <summary>The content fit entirely within the available area.</summary>
-        /// <remarks><see cref="SplitRenderer"/> and <see cref="OverflowRenderer"/> are null.</remarks>
+        /// <remarks>
+        /// <see cref="SplitRenderer"/> and <see cref="OverflowRenderer"/> are null. The document
+        /// draws the renderer and continues from the bottom of <see cref="OccupiedArea"/>.
+        /// </remarks>
         Full,
 
         /// <summary>Part of the content fit; the remainder overflows to the next page.</summary>
-        /// <remarks>Both split and overflow renderers are set. The overflow is not inspected.</remarks>
+        /// <remarks>
+        /// The document draws <see cref="SplitRenderer"/> on the current page, starts a new page,
+        /// and lays out <see cref="OverflowRenderer"/> there. <see cref="LayoutResult.Partial"/>
+        /// does not check that either renderer is set.
+        /// </remarks>
         Partial,
 
-        /// <summary>No content fit (it is taller than a single page).</summary>
-        /// <remarks>Occupied area and both renderers are null.</remarks>
+        /// <summary>No content fit in the area offered.</summary>
+        /// <remarks>
+        /// The occupied area and both renderers are null. The document starts a new page and calls
+        /// <see cref="IRenderer.Layout"/> again with the whole content area. Only a second
+        /// <c>Nothing</c> on that fresh page is an error.
+        /// </remarks>
         Nothing,
     }
 
     /// <summary>The outcome of the layout attempt.</summary>
     /// <remarks>
     /// Read this before <see cref="OccupiedArea"/>, <see cref="SplitRenderer"/> or
-    /// <see cref="OverflowRenderer"/>. Those are null on <see cref="Outcome.Nothing"/>.
+    /// <see cref="OverflowRenderer"/>. Which of those are null depends on this value.
     /// </remarks>
     public Outcome Status { get; }
 
     /// <summary>The occupied area after layout (valid for Full and Partial).</summary>
     /// <remarks>
-    /// A <see cref="Outcome.Nothing"/> result returns <see langword="null"/>. Do not dereference
-    /// this without checking <see cref="Status"/>.
+    /// Null on <see cref="Outcome.Nothing"/>. The document reads only the box's
+    /// <see cref="LayoutBox.Bottom"/>, and only after <see cref="Outcome.Full"/>: it becomes the
+    /// position of the next element. A Bottom above the current position moves the next element
+    /// up the page, and a <c>NaN</c> Bottom sends it to a new page. After
+    /// <see cref="Outcome.Partial"/> the box is not read.
     /// </remarks>
     public LayoutBox? OccupiedArea { get; }
 
     /// <summary>Renderer representing the part that fit (Partial only).</summary>
     /// <remarks>
-    /// Null on <see cref="Outcome.Full"/> and <see cref="Outcome.Nothing"/>.
+    /// Null on <see cref="Outcome.Full"/> and <see cref="Outcome.Nothing"/>. The document draws
+    /// it without calling its <see cref="IRenderer.Layout"/> first.
     /// </remarks>
     public IRenderer? SplitRenderer { get; }
 
     /// <summary>Renderer representing overflow to be placed on the next page (Partial only).</summary>
     /// <remarks>
-    /// Null on <see cref="Outcome.Full"/> and <see cref="Outcome.Nothing"/>. The overflow is
-    /// accepted as given: a renderer that never advances hits the 50,000-continuation cap
-    /// described on <see cref="IRenderer.Layout"/>.
+    /// Null on <see cref="Outcome.Full"/> and <see cref="Outcome.Nothing"/>. The document lays it
+    /// out on the next page, and counts every such step against the limit described on
+    /// <see cref="IRenderer.Layout"/>.
     /// </remarks>
     public IRenderer? OverflowRenderer { get; }
 
@@ -68,23 +87,39 @@ public sealed class LayoutResult
     }
 
     /// <summary>Creates a result indicating the content fit entirely, occupying the given area.</summary>
-    /// <remarks>Occupied area is stored as given, including an empty box.</remarks>
+    /// <remarks>
+    /// Any box is accepted. <see cref="OccupiedArea"/> says which part of it the document reads.
+    /// </remarks>
     public static LayoutResult Full(LayoutBox occupied) =>
         new(Outcome.Full, occupied, null, null);
 
     /// <summary>Creates a result indicating the content was split, with the part that fit and the overflow to place on the next page.</summary>
     /// <remarks>
-    /// Neither renderer is inspected here. An overflow that occupies the same height on every
-    /// call hits the 50,000-continuation cap on <see cref="IRenderer.Layout"/> at save.
+    /// Nothing is checked here, and the document does not read <paramref name="occupied"/>. A null
+    /// <paramref name="split"/> or <paramref name="overflow"/> is refused only when the document
+    /// is saved, as a <see cref="NullReferenceException"/>.
+    /// <para>Do not pass null for either renderer. A later major version will throw
+    /// <see cref="ArgumentNullException"/> from this call.</para>
     /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
+    /// save overloads, not from this call, when <paramref name="split"/> or
+    /// <paramref name="overflow"/> is <see langword="null"/>.
+    /// </exception>
     public static LayoutResult Partial(LayoutBox occupied, IRenderer split, IRenderer overflow) =>
         new(Outcome.Partial, occupied, split, overflow);
 
     /// <summary>Creates a result indicating no content fit in the available area.</summary>
     /// <remarks>
     /// <see cref="OccupiedArea"/>, <see cref="SplitRenderer"/> and
-    /// <see cref="OverflowRenderer"/> are all null.
+    /// <see cref="OverflowRenderer"/> are all null. The document retries on a new page. If the
+    /// renderer returns this again there, the save throws.
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
+    /// save overloads, not from this call, when the retry on a new page also returns
+    /// <c>Nothing</c>. The message says the element is too tall to fit on a single page.
+    /// </exception>
     public static LayoutResult Nothing() =>
         new(Outcome.Nothing, null, null, null);
 }

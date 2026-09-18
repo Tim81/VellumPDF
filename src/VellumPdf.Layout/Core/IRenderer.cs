@@ -8,8 +8,10 @@ namespace VellumPdf.Layout.Core;
 /// Layout determines sizing and splitting; Draw emits PDF operators.
 /// </summary>
 /// <remarks>
-/// A custom implementation whose overflow never advances hits a cap of 50,000 page
-/// continuations. See <see cref="Layout"/>.
+/// Implement this to add a custom element through
+/// <see cref="VellumPdf.Layout.Document.Add(IRenderer)"/>. The document calls
+/// <see cref="Layout"/> and <see cref="Draw"/> during a save, so an exception from either one,
+/// or from the limits described on <see cref="Layout"/>, reaches the caller from the save.
 /// </remarks>
 public interface IRenderer
 {
@@ -18,20 +20,33 @@ public interface IRenderer
     /// Must not mutate any state visible to the caller (pure computation).
     /// </summary>
     /// <remarks>
-    /// An overflow renderer that never advances is accepted here. Pagination stops it at
-    /// <b>50,000</b> continuations and throws <see cref="InvalidOperationException"/> from
-    /// <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/>. Return <see cref="LayoutResult.Full"/>
-    /// or a smaller overflow, not a copy of yourself that occupies the same height again.
+    /// The document may call this more than once on the same instance. A header or footer adds a
+    /// page-counting pass that lays every element out before the drawing pass does, and a
+    /// <see cref="LayoutResult.Outcome.Nothing"/> is followed by a retry. Return the same result
+    /// for the same area.
+    /// <para>One element may take at most <b>50,000</b> page continuations. Each
+    /// <see cref="LayoutResult.Outcome.Partial"/>, and each retry after
+    /// <see cref="LayoutResult.Outcome.Nothing"/>, counts as one. An overflow that never gets
+    /// smaller reaches the limit, and the save throws. Make each overflow hold less than the
+    /// renderer that returned it.</para>
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
+    /// save overloads, not from this method, when one element needs more than 50,000 page
+    /// continuations, or when it returns <see cref="LayoutResult.Outcome.Nothing"/> twice in a
+    /// row, the second time on a new page.
+    /// </exception>
     LayoutResult Layout(LayoutContext context);
 
     /// <summary>
     /// Phase 2: emit PDF operators into <paramref name="context"/>.
-    /// Called only after a successful Layout (Full or Partial).
     /// </summary>
     /// <remarks>
-    /// Implementations must not assume Layout ran on this instance in the same call. A
-    /// <see cref="LayoutResult.Partial"/> split renderer is the object that Draw sees.
+    /// The document calls this on a renderer that returned
+    /// <see cref="LayoutResult.Outcome.Full"/>, and on the
+    /// <see cref="LayoutResult.SplitRenderer"/> of a <see cref="LayoutResult.Outcome.Partial"/>
+    /// result. A split renderer is drawn without its own <see cref="Layout"/> ever being called,
+    /// so it must carry everything it needs to draw.
     /// </remarks>
     void Draw(DrawContext context);
 }
