@@ -11,22 +11,32 @@ namespace VellumPdf.Layout.Elements;
 /// <remarks>
 /// Both arguments are stored without a check. A null text makes the save throw when it lays out the
 /// paragraph holding this run, and so does a null style on a run whose text holds a character other
-/// than white space, where U+00A0 NO-BREAK SPACE counts as such a character and other white space,
-/// a tab included, does not. Refusals on the style's size also fire from the save; see
-/// <see cref="TextStyle"/>.
+/// than white space. U+00A0 NO-BREAK SPACE counts as such a character; a tab and other white space
+/// do not. Refusals on the style's size also fire from the save; see <see cref="TextStyle"/>.
 /// <para>Do not pass null for either argument. A later major version will throw
 /// <see cref="ArgumentNullException"/> from the constructor.</para>
 /// </remarks>
 /// <exception cref="NullReferenceException">
 /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not from
 /// the constructor, when the text is <see langword="null"/>, or the style is null and the text
-/// holds a character other than white space, where U+00A0 NO-BREAK SPACE counts as such a character
-/// and other white space, a tab included, does not.
+/// holds a character other than white space. U+00A0 NO-BREAK SPACE counts as such a character; a
+/// tab and other white space do not.
 /// </exception>
 /// <exception cref="ArgumentException">
 /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not from
-/// the constructor, when the text holds an unpaired surrogate and is measured in an embedded font,
-/// as layout does; see <see cref="TextStyle.FontRef"/>.
+/// the constructor, when the text holds an unpaired surrogate and is measured in an embedded font;
+/// see <see cref="TextStyle.FontRef"/>.
+/// </exception>
+/// <exception cref="InvalidOperationException">
+/// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not from
+/// this constructor, when the style's size or leading is refused; see
+/// <see cref="TextStyle.FontSize"/>.
+/// </exception>
+/// <exception cref="IndexOutOfRangeException">
+/// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not from
+/// this constructor, when the style holds a <see cref="VellumPdf.Fonts.Standard14"/> value the
+/// enumeration does not name and the font is selected on a page; see
+/// <see cref="TextStyle.FontRef"/>.
 /// </exception>
 public sealed class TextRun(string Text, TextStyle Style)
 {
@@ -39,8 +49,7 @@ public sealed class TextRun(string Text, TextStyle Style)
     /// <summary>The run's text style.</summary>
     /// <remarks>
     /// Any value is stored. A null value makes the save throw when the run's text holds a character
-    /// other than white space, where U+00A0 NO-BREAK SPACE counts as such a character and other
-    /// white space, a tab included, does not; see the type remarks.
+    /// other than white space; see the type remarks for which characters count.
     /// </remarks>
     public TextStyle Style { get; } = Style;
 }

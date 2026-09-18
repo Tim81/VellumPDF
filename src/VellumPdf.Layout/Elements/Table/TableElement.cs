@@ -80,7 +80,7 @@ public sealed class TableElement
     /// <summary>Color of the table border lines.</summary>
     /// <remarks>
     /// Stored as given. Channels are not checked or clamped. Each is written into the content
-    /// stream rounded to five decimals, <c>NaN</c> and <c>Infinity</c> included; see
+    /// stream rounded to five decimals, and <c>NaN</c> or <c>Infinity</c> as that token; see
     /// <see cref="ColorRgb"/>.
     /// </remarks>
     public ColorRgb BorderColor { get; init; } = ColorRgb.Black;
@@ -126,12 +126,16 @@ public sealed class TableElement
     /// <summary>Configured column widths in points; a value of 0 means auto-size.</summary>
     /// <remarks>
     /// Entry <c>i</c> sets column <c>i</c>. A missing, zero, negative or non-finite entry means
-    /// auto, and the auto columns share the width the explicit ones leave. Entries past the
-    /// column count are ignored.
-    /// <para>Explicit widths that together overrun the available width are all scaled by one
-    /// ratio. So one very large entry leaves the other explicit columns near zero, and entries
-    /// whose sum overflows to infinity are all scaled to zero (#546). A positive entry under
-    /// 5e-6 is kept and written as width 0. None of this is reported.</para>
+    /// auto. Entries past the column count are ignored.
+    /// <para>Each auto column first takes a share of the width the explicit entries leave, weighted
+    /// by its content and at least its longest word plus the cell's horizontal padding. When the
+    /// auto columns take more than the explicit entries leave them, the explicit widths are all
+    /// scaled by one ratio to the width that remains, even when they fit the available width on
+    /// their own. So one very large entry leaves the other explicit columns near zero, and entries
+    /// whose sum overflows to infinity are all scaled to zero (#546). When the auto columns take
+    /// all of the available width or more, every column, auto ones included, is scaled by one
+    /// ratio instead. A positive entry under 5e-6 is kept and written as width 0. None of this is
+    /// reported.</para>
     /// <para>Do not rely on scaling to fit a table. Pass widths that fit the space you give
     /// it.</para>
     /// </remarks>

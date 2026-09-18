@@ -97,10 +97,10 @@ public sealed class ListElement
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from a save rather than from this property, when a list with nested children has an
-    /// indent that reaches the list's own area width, which is the page's content width narrowed
-    /// by the left and right edges of <see cref="Margins"/>. Positive infinity is included; <c>NaN</c>
-    /// and negative infinity are not, and neither is a flat list at any indent. The message
-    /// reports an element too tall to fit and names neither this property nor the list.
+    /// indent that reaches the list's own area width, which is the page's content width narrowed by
+    /// the left and right edges of <see cref="Margins"/>. Positive infinity is included; <c>NaN</c>
+    /// and negative infinity are not, and neither is a flat list at any indent. The message reports
+    /// an element too tall to fit and names neither this property nor the list.
     /// </exception>
     public double Indent { get; init; } = 20;
 
@@ -200,7 +200,18 @@ public sealed class ListElement
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this call, when the text holds an unpaired surrogate and is measured in an embedded
-    /// font, as layout does; see <see cref="TextStyle.FontRef"/>.
+    /// font; see <see cref="TextStyle.FontRef"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this call, when the style's size or leading is refused; see
+    /// <see cref="TextStyle.FontSize"/>.
+    /// </exception>
+    /// <exception cref="IndexOutOfRangeException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this call, when the style holds a <see cref="VellumPdf.Fonts.Standard14"/> value the
+    /// enumeration does not name and the font is selected on a page; see
+    /// <see cref="TextStyle.FontRef"/>.
     /// </exception>
     public ListElement Add(string text, TextStyle? style = null)
         => Add(new ListItem(text, style));

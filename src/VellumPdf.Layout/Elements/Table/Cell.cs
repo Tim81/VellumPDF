@@ -17,8 +17,10 @@ public sealed class Cell
     /// <remarks>
     /// An empty string draws no text. A null value can make the save throw; see the constructor.
     /// Spaces are the only break points between words, and a word wider than the cell is broken
-    /// between characters. A line feed, carriage return or tab is not a break, and is written into
-    /// the cell as it is.
+    /// between characters. A line feed, carriage return or tab is not a break. In a standard-14
+    /// font each is written into the cell as it is; in an embedded font each is drawn as whatever
+    /// glyph the font's character map gives it, which is .notdef (glyph 0) when the map has no
+    /// entry.
     /// </remarks>
     public string Content { get; }
 
@@ -59,8 +61,11 @@ public sealed class Cell
     /// </summary>
     /// <remarks>
     /// A spanning cell is drawn once, at its own row, across the combined height of the rows it
-    /// covers, and those rows skip the columns it occupies. A page break is never placed inside a
-    /// spanning group; a group too tall for one page raises rather than splitting.
+    /// covers, and those rows skip the columns it occupies. A page break is not placed inside a
+    /// spanning group; a group too tall for one page raises rather than splitting. The exception is
+    /// a span whose last row, the row index plus RowSpan minus one, overflows <see cref="int"/>, as
+    /// <see cref="int.MaxValue"/> does from the third row on: the sum wraps, and the group can be
+    /// split across pages.
     /// <para><b>Attention</b>: zero and negative are <b>not</b> refused, and both behave as 1. That is
     /// an accident of how the draw loop tests the span, not a guarantee, so do not write code
     /// that depends on it. A later major version will reject both.</para>
@@ -134,8 +139,8 @@ public sealed class Cell
     /// <summary>Optional background fill color for the cell.</summary>
     /// <remarks>
     /// Null means no fill. A colour is stored as given. Channels are not checked or clamped. Each
-    /// is written into the content stream rounded to five decimals, <c>NaN</c> and <c>Infinity</c>
-    /// included; see <see cref="ColorRgb"/>.
+    /// is written into the content stream rounded to five decimals, and <c>NaN</c> or
+    /// <c>Infinity</c> as that token; see <see cref="ColorRgb"/>.
     /// </remarks>
     public ColorRgb? Background { get; init; }
 
@@ -176,8 +181,8 @@ public sealed class Cell
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when the text holds an unpaired surrogate and is measured in an
-    /// embedded font, as layout does; see <see cref="TextStyle.FontRef"/>.
+    /// from this call, when the text holds an unpaired surrogate and is measured in an embedded
+    /// font; see <see cref="TextStyle.FontRef"/>.
     /// </exception>
     public Cell(string content) => Content = content;
 }

@@ -32,7 +32,7 @@ public readonly record struct PieSlice
     /// <summary>The fill colour of the wedge.</summary>
     /// <remarks>
     /// Stored as given. Channels are not checked or clamped. Each is written into the content
-    /// stream rounded to five decimals, <c>NaN</c> and <c>Infinity</c> included; see
+    /// stream rounded to five decimals, and <c>NaN</c> or <c>Infinity</c> as that token; see
     /// <see cref="ColorRgb"/>.
     /// </remarks>
     public ColorRgb Color { get; init; }
@@ -181,8 +181,8 @@ public sealed class PieChart
     /// When <c>null</c> (the default) no stroke is drawn.
     /// </summary>
     /// <remarks>Null means no stroke. A colour is stored as given. Channels are not checked or
-    /// clamped. Each is written into the content stream rounded to five decimals, <c>NaN</c> and
-    /// <c>Infinity</c> included; see <see cref="ColorRgb"/>.</remarks>
+    /// clamped. Each is written into the content stream rounded to five decimals, and <c>NaN</c> or
+    /// <c>Infinity</c> as that token; see <see cref="ColorRgb"/>.</remarks>
     public ColorRgb? StrokeColor { get; init; }
 
     /// <summary>Width of the separator stroke in points. Defaults to 0.5.</summary>

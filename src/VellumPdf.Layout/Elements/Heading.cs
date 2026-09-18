@@ -30,6 +30,22 @@ public sealed class Heading
     /// Refusals on size, leading and font are on <see cref="TextStyle"/> and are raised from the
     /// save.
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when the style's size or leading is refused; see
+    /// <see cref="TextStyle.FontSize"/>.
+    /// </exception>
+    /// <exception cref="IndexOutOfRangeException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when the style holds a <see cref="VellumPdf.Fonts.Standard14"/> value
+    /// the enumeration does not name and the font is selected on a page; see
+    /// <see cref="TextStyle.FontRef"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when the heading's text holds an unpaired surrogate and is measured in
+    /// an embedded font; see <see cref="TextStyle.FontRef"/>.
+    /// </exception>
     public TextStyle Style { get; }
 
     /// <summary>Outline nesting level: 0 = top-level, 1 = sub-heading, etc.</summary>
@@ -39,8 +55,8 @@ public sealed class Heading
     /// Table 366 defines <c>Hn</c> for any unsigned integer from 1 upward. Its NOTE 2 says
     /// <c>H7</c> can be used for a seventh-level heading. That note is informative, not a
     /// requirement.
-    /// <para><b>Attention</b>: a negative level is <b>not</b> refused, and it does not clamp the way
-    /// you would expect. The mapping's catch-all sends it to <c>H6</c>, the deepest tag, where
+    /// <para><b>Attention</b>: a negative level is <b>not</b> refused, and it does not clamp the
+    /// way you would expect. The mapping's catch-all sends it to <c>H6</c>, the deepest tag, where
     /// you almost certainly meant the shallowest. The raw value also reaches the outline builder,
     /// so your bookmark tree nests on it. A later major version will reject it.</para>
     /// <para>Every level from 5 upward is the same <c>H6</c> tag. Assistive technology therefore
@@ -110,12 +126,23 @@ public sealed class Heading
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when <paramref name="text"/> is <see langword="null"/>.
+    /// from this constructor, when <paramref name="text"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when the text holds an unpaired surrogate and is measured in an
-    /// embedded font, as layout does; see <see cref="TextStyle.FontRef"/>.
+    /// from this constructor, when the text holds an unpaired surrogate and is measured in an
+    /// embedded font; see <see cref="TextStyle.FontRef"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this constructor, when the style's size or leading is refused; see
+    /// <see cref="TextStyle.FontSize"/>.
+    /// </exception>
+    /// <exception cref="IndexOutOfRangeException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this constructor, when the style holds a <see cref="VellumPdf.Fonts.Standard14"/> value
+    /// the enumeration does not name and the font is selected on a page; see
+    /// <see cref="TextStyle.FontRef"/>.
     /// </exception>
     public Heading(string text, TextStyle? style = null)
     {

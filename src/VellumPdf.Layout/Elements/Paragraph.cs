@@ -10,8 +10,9 @@ namespace VellumPdf.Layout.Elements;
 /// Wraps text across lines and paginates automatically.
 /// </summary>
 /// <remarks>
-/// Size and leading refusals are on <see cref="TextStyle"/>. Null text and null runs are
-/// stored and make the save throw; see the constructors and <see cref="Add"/>.
+/// Refusals on size, leading and font are on <see cref="TextStyle"/> and are raised from the save.
+/// Null text and null runs are stored and make the save throw; see the constructors and
+/// <see cref="Add"/>.
 /// </remarks>
 public sealed class Paragraph
 {
@@ -75,8 +76,9 @@ public sealed class Paragraph
     /// <remarks>
     /// <see cref="HorizontalAlignment.Justify"/> stretches every line except the paragraph's last,
     /// and a line that ends at a hard line break is stretched too. The last line stays
-    /// left-aligned, and a line with no space in it is not stretched. With a standard-14 font the
-    /// stretch covers only half the space left on the line (#548).
+    /// left-aligned, and a line with no space in it is not stretched; U+00A0 NO-BREAK SPACE does
+    /// not count as a space. With a standard-14 font the stretch covers only half the space left on
+    /// the line (#548).
     /// </remarks>
     public HorizontalAlignment Alignment { get; init; } = HorizontalAlignment.Left;
 
@@ -87,7 +89,8 @@ public sealed class Paragraph
     /// <remarks>
     /// The string is not validated: it is trimmed and written, so an ill-formed tag reaches the
     /// file. An empty or whitespace-only string is not written, and nothing is written when the
-    /// document is not tagged.
+    /// document is not tagged. It is applied by <see cref="Document.Add(Paragraph)"/>; a
+    /// <see cref="VellumPdf.Layout.Rendering.ParagraphRenderer"/> built directly ignores it.
     /// <para>Do not pass a tag that is not well-formed BCP 47. A later major version will refuse
     /// one.</para>
     /// </remarks>
@@ -104,12 +107,23 @@ public sealed class Paragraph
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when <paramref name="text"/> is <see langword="null"/>.
+    /// from this constructor, when <paramref name="text"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when the text holds an unpaired surrogate and is measured in an
-    /// embedded font, as layout does; see <see cref="TextStyle.FontRef"/>.
+    /// from this constructor, when the text holds an unpaired surrogate and is measured in an
+    /// embedded font; see <see cref="TextStyle.FontRef"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this constructor, when the style's size or leading is refused; see
+    /// <see cref="TextStyle.FontSize"/>.
+    /// </exception>
+    /// <exception cref="IndexOutOfRangeException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this constructor, when the style holds a <see cref="VellumPdf.Fonts.Standard14"/> value
+    /// the enumeration does not name and the font is selected on a page; see
+    /// <see cref="TextStyle.FontRef"/>.
     /// </exception>
     public Paragraph(string text, TextStyle? style = null)
     {
@@ -131,15 +145,26 @@ public sealed class Paragraph
     /// </exception>
     /// <exception cref="NullReferenceException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when <paramref name="runs"/> contains <see langword="null"/>, a run whose
-    /// text is null, or a run whose style is null and whose text holds a character other than white
-    /// space, where U+00A0 NO-BREAK SPACE counts as such a character and other white space, a tab
-    /// included, does not.
+    /// from this constructor, when <paramref name="runs"/> contains <see langword="null"/>, a run
+    /// whose text is null, or a run whose style is null and whose text holds a character other than
+    /// white space. U+00A0 NO-BREAK SPACE counts as such a character; a tab and other white space
+    /// do not.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when a run's text holds an unpaired surrogate and is measured in an
-    /// embedded font, as layout does; see <see cref="TextStyle.FontRef"/>.
+    /// from this constructor, when a run's text holds an unpaired surrogate and is measured in an
+    /// embedded font; see <see cref="TextStyle.FontRef"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this constructor, when a run's style has its size or leading refused; see
+    /// <see cref="TextStyle.FontSize"/>.
+    /// </exception>
+    /// <exception cref="IndexOutOfRangeException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this constructor, when a run's style holds a <see cref="VellumPdf.Fonts.Standard14"/>
+    /// value the enumeration does not name and the font is selected on a page; see
+    /// <see cref="TextStyle.FontRef"/>.
     /// </exception>
     public Paragraph(IEnumerable<TextRun> runs)
     {
@@ -168,7 +193,18 @@ public sealed class Paragraph
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this call, when the text holds an unpaired surrogate and is measured in an embedded
-    /// font, as layout does; see <see cref="TextStyle.FontRef"/>.
+    /// font; see <see cref="TextStyle.FontRef"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this call, when the style's size or leading is refused; see
+    /// <see cref="TextStyle.FontSize"/>.
+    /// </exception>
+    /// <exception cref="IndexOutOfRangeException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this call, when the style holds a <see cref="VellumPdf.Fonts.Standard14"/> value the
+    /// enumeration does not name and the font is selected on a page; see
+    /// <see cref="TextStyle.FontRef"/>.
     /// </exception>
     public Paragraph Add(string text, TextStyle? style = null)
     {

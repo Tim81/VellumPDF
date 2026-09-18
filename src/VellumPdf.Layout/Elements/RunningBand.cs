@@ -28,8 +28,8 @@ public sealed class RunningBand
     /// was then invisible in every reader while you paid for its bytes.</para>
     /// <para>The cut bounds the advance width, <b>not</b> the ink. Side bearings and italic
     /// overhang can still paint a little past it. Nothing in this package sets a clip path.</para>
-    /// <para><b>Attention</b>: truncation does nothing for a template whose glyphs measure zero. Control
-    /// characters, the five undefined WinAnsi codes and both symbolic standard-14 faces all
+    /// <para><b>Attention</b>: truncation does nothing for a template whose glyphs measure zero.
+    /// Control characters, the five undefined WinAnsi codes and both symbolic standard-14 faces all
     /// measure zero width, so any length of them fits and is drawn in full.</para>
     /// <para>You get one report per band per render, naming the page that lost the most rather
     /// than the first page cut. A <c>{page}</c> or <c>{pages}</c> token lengthens the resolved
@@ -55,6 +55,25 @@ public sealed class RunningBand
     /// other is stored as given. Refusals on size, leading and font are on <see cref="TextStyle"/>
     /// and are raised from the save. A <see cref="TextStyle.LinkUri"/> in it is ignored (#475).
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when the style's size or leading is refused; see
+    /// <see cref="TextStyle.FontSize"/>.
+    /// </exception>
+    /// <exception cref="IndexOutOfRangeException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when the style holds a <see cref="VellumPdf.Fonts.Standard14"/> value
+    /// the enumeration does not name and the font is selected on a page; see
+    /// <see cref="TextStyle.FontRef"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when the band measures text that holds an unpaired surrogate in an
+    /// embedded font, which can include part of the template it then does not draw; see
+    /// <see cref="TextStyle.FontRef"/>. It is also raised when the style's size or leading,
+    /// positive infinity included, makes the band leave the page's content area no positive size;
+    /// see <see cref="TextStyle.FontSize"/>.
+    /// </exception>
     public TextStyle Style { get; }
 
     /// <summary>Horizontal alignment of the band text.</summary>
@@ -132,6 +151,19 @@ public sealed class RunningBand
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this constructor, when the band measures text that holds an unpaired surrogate in an
     /// embedded font, which can include part of the template it then does not draw; see
+    /// <see cref="TextStyle.FontRef"/>. It is also raised when the style's size or leading,
+    /// positive infinity included, makes the band leave the page's content area no positive size;
+    /// see <see cref="TextStyle.FontSize"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this constructor, when the style's size or leading is refused; see
+    /// <see cref="TextStyle.FontSize"/>.
+    /// </exception>
+    /// <exception cref="IndexOutOfRangeException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this constructor, when the style holds a <see cref="VellumPdf.Fonts.Standard14"/> value
+    /// the enumeration does not name and the font is selected on a page; see
     /// <see cref="TextStyle.FontRef"/>.
     /// </exception>
     public RunningBand(string template, TextStyle? style = null, HorizontalAlignment alignment = HorizontalAlignment.Center)

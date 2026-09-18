@@ -18,8 +18,9 @@ namespace VellumPdf.Layout.Core;
 public interface IRenderer
 {
     /// <summary>
-    /// Phase 1: determine how much of this element fits in <paramref name="context"/>.
-    /// Must not mutate any state visible to the caller (pure computation).
+    /// Phase 1: determine how much of this element fits in <paramref name="context"/>. Must not
+    /// mutate any state visible to the caller, other than what measuring text adds to an embedded
+    /// font's subset.
     /// </summary>
     /// <remarks>
     /// The document may call this more than once on the same instance. A header or footer adds a

@@ -9,8 +9,8 @@ namespace VellumPdf.Layout.Core;
 /// is refused depends on the property the inset is assigned to, and each such property documents
 /// its own rule. <see cref="VellumPdf.Layout.Elements.LineSeparator.Margins"/> and
 /// <see cref="VellumPdf.Layout.Elements.Table.Cell.Padding"/> refuse a non-finite edge at save. The
-/// other element <c>Margins</c> properties check neither, and say what happens instead. Do not
-/// treat construction as validation.
+/// other element <c>Margins</c> properties in this package check neither a negative nor a
+/// non-finite edge, and say what happens instead.
 /// </remarks>
 public readonly record struct EdgeInsets
 {

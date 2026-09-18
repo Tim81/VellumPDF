@@ -82,10 +82,12 @@ public sealed class TextStyle
     /// <remarks>
     /// A non-finite size is refused. On a paragraph or heading style,
     /// <see cref="Document.Save(System.IO.Stream)"/> throws <see cref="InvalidOperationException"/>
-    /// naming the run and the size. Every height in a layout is derived from the font size, so a
-    /// non-finite size leaves nothing that can be measured or placed. A
-    /// <see cref="VellumPdf.Layout.Elements.RunningBand"/> style takes a band-specific route
-    /// instead, detailed on the exception tags below.
+    /// naming the run and the size. A run is checked once its text holds a character other than
+    /// white space. U+00A0 NO-BREAK SPACE counts as such a character; a tab and other white space
+    /// do not. An empty table cell or list item is checked as well. Every height in a layout is
+    /// derived from the font size, so a non-finite size leaves nothing that can be measured or
+    /// placed. A <see cref="VellumPdf.Layout.Elements.RunningBand"/> style takes a band-specific
+    /// route instead, detailed on the exception tags below.
     /// <para><b>Attention</b>: a size of zero or less is <b>not</b> refused. It reaches the content
     /// stream as a font operator that readers accept, so you still get a document. At zero the
     /// text is invisible. Below zero the glyphs are inverted. If you do not want either, check the
@@ -93,12 +95,12 @@ public sealed class TextStyle
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from a save rather than from this property, when the size is not finite, or when a
-    /// finite size is large enough on its own that the page's content area is left positive but
-    /// too small for the element. Neither case needs a
-    /// <see cref="VellumPdf.Layout.Elements.RunningBand"/>. On a paragraph style the message
-    /// names the run and the size; a <see cref="VellumPdf.Layout.Elements.Heading"/> is laid out
-    /// through the same paragraph code and reports the same way, as <c>"A paragraph run"</c>, not
-    /// by the heading's own name.
+    /// finite size is large enough on its own that the page's content area is left positive but too
+    /// small for the element. Neither case needs a
+    /// <see cref="VellumPdf.Layout.Elements.RunningBand"/>. On a paragraph style the message names
+    /// the run and the size; a <see cref="VellumPdf.Layout.Elements.Heading"/> is laid out through
+    /// the same paragraph code and reports the same way, as <c>"A paragraph run"</c>, not by the
+    /// heading's own name. On a table-cell style the message names the row and cell instead.
     /// <para>On a <see cref="VellumPdf.Layout.Elements.RunningBand"/> style, which message fires
     /// depends on the band and on whether
     /// <see cref="VellumPdf.Layout.Elements.RunningBand.Height"/> is set. Measured with
@@ -179,7 +181,7 @@ public sealed class TextStyle
     /// <summary>The text colour. Defaults to <see cref="ColorRgb.Black"/>.</summary>
     /// <remarks>
     /// Stored as given. Channels are not checked or clamped. Each is written into the content
-    /// stream rounded to five decimals, <c>NaN</c> and <c>Infinity</c> included; see
+    /// stream rounded to five decimals, and <c>NaN</c> or <c>Infinity</c> as that token; see
     /// <see cref="ColorRgb"/>.
     /// </remarks>
     public ColorRgb Color { get; init; } = ColorRgb.Black;
@@ -199,8 +201,9 @@ public sealed class TextStyle
         Leading > 0 && double.IsFinite(Leading) ? Leading : FontSize * 1.2;
 
     /// <summary>
-    /// When non-null, text rendered with this style will be wrapped in a /Link
-    /// annotation pointing to this URI. Use a full URI string (e.g. "https://example.com").
+    /// When non-null, text rendered with this style will be wrapped in a /Link annotation pointing
+    /// to this URI, except in table cells and running bands. Use a full URI string (e.g.
+    /// "https://example.com").
     /// </summary>
     /// <remarks>
     /// <b>Attention</b>: the string is not validated. Empty and <c>not a uri</c> are written into a
@@ -210,8 +213,8 @@ public sealed class TextStyle
     /// link (#475). In a list item the marker is linked as well as the text. In a document whose
     /// <c>Conformance</c> is PDF/UA-1, the link is written untagged and without the alternate
     /// description ISO 14289-1, 7.18.5 requires, and no exception reports it (#550). On a justified
-    /// line in an embedded font, the link's rectangle is placed where the text would be without
-    /// justification, so it can lie away from the linked words (#551).
+    /// line the link's rectangle is sized and placed as if the line were not stretched, so the
+    /// linked words can run past it, and in an embedded font can lie away from it (#551).
     /// <para>Do not pass a value that is not an absolute URI. A later major version will refuse
     /// one.</para>
     /// </remarks>

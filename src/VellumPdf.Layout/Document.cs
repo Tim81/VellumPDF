@@ -214,12 +214,12 @@ public sealed class Document : IDisposable
     /// otherwise have no positive size, and no element could be placed in it.
     /// <para>The header and footer count toward this. Their heights come off the same box, so
     /// margins that fit on their own can still leave nothing once you set a running band.</para>
-    /// <para><b>Attention</b>: a negative inset is not refused. The document saves and the content
-    /// is placed outside the page's boundaries, where a reader clips it. On a one-paragraph
+    /// <para><b>Attention</b>: a finite negative inset is not refused. The document saves and the
+    /// content is placed outside the page's boundaries, where a reader clips it. On a one-paragraph
     /// document with every inset at -72, the file is written with no invalid token in it, so
     /// nothing downstream reports the loss either. A later major version will reject it.</para>
-    /// <para>Do not pass <c>NaN</c> either. A later major version will refuse it, as it will a
-    /// negative inset.</para>
+    /// <para>Do not pass <c>NaN</c> or negative infinity. A later major version will reject both,
+    /// as it will a negative inset.</para>
     /// <para>A non-finite inset is checked only through the sum on its axis, and is refused only
     /// when that sum is positive infinity. <c>NaN</c> and negative infinity pass, because neither
     /// makes the sum meet or exceed the page. An inset that passes leaves a content area that is
@@ -230,16 +230,16 @@ public sealed class Document : IDisposable
     /// <exception cref="ArgumentException">
     /// Raised from a save rather than from this property, when the margins on either axis meet or
     /// exceed the page, or when they leave the content area no positive size once the header and
-    /// footer are taken off. An axis whose inset sum is positive infinity reaches this check. It is
-    /// also raised, with a message saying PDF does not support NaN or Infinity as a real number,
-    /// when an inset that passes the check puts a position the save writes outside the content
-    /// stream, such as a link rectangle, at a non-finite value.
+    /// footer are taken off. An axis whose inset sum is positive infinity is refused by this check.
+    /// The exception is also raised, with a message saying PDF does not support NaN or Infinity as
+    /// a real number, when an inset that passes the check puts a position the save writes outside
+    /// the content stream, such as a link rectangle, at a non-finite value.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from a save when an inset that passes the <see cref="ArgumentException"/> check
-    /// leaves an element no area it can be laid out in, or an image an extent it cannot draw, and
-    /// also when a large finite inset leaves the content area positive but too small for a single
-    /// element. See the remarks.
+    /// leaves an element no area it can be laid out in, makes it reach the page-continuation limit,
+    /// or leaves an image an extent it cannot draw, and also when a large finite inset leaves the
+    /// content area positive but too small for a single element. See the remarks.
     /// </exception>
     public EdgeInsets Margins { get; set; } = new EdgeInsets(72); // 1 inch
 
@@ -680,8 +680,8 @@ public sealed class Document : IDisposable
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
-    /// call, when the text holds an unpaired surrogate and is measured in an embedded font, as
-    /// layout does; see <see cref="TextStyle.FontRef"/>.
+    /// call, when the text holds an unpaired surrogate and is measured in an embedded font; see
+    /// <see cref="TextStyle.FontRef"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
@@ -880,9 +880,11 @@ public sealed class Document : IDisposable
     /// reads every font registered with <see cref="UseTrueTypeFont"/>, and writes to
     /// <paramref name="destination"/>, so an exception from any of those reaches you from
     /// here.</para>
-    /// <para>A second call after a save that succeeded throws, unless a check the save runs earlier
-    /// fails first. It reports that the document has already been written and tells you to create a
+    /// <para>A second call after a save that succeeded throws. Unless a check the save runs earlier
+    /// fails first, it reports that the document has already been written and tells you to create a
     /// new one. It writes nothing to the stream, appended or otherwise.</para>
+    /// <para>A failure once the save has started writing leaves what was written so far in
+    /// <paramref name="destination"/>, which can be the PDF header alone.</para>
     /// <para>A save that threw can leave the document holding pages from the failed attempt, and
     /// its elements holding state from it, so a retry can succeed on a file that differs from a
     /// fresh build: a one-page document retried after a null <paramref name="destination"/> saved
@@ -970,14 +972,15 @@ public sealed class Document : IDisposable
     /// <summary>Runs the layout pass and writes the resulting PDF to a file at the given path.</summary>
     /// <remarks>
     /// Everything on <see cref="Save(System.IO.Stream)"/> applies, and one thing more.
-    /// <para><b>Attention</b>: the file is opened before the layout runs, so a failure destroys whatever
-    /// the path held. Measured: a path already holding a 1,535-byte file, given to a new
-    /// document whose layout then fails, is left existing and zero bytes long. The same happens
-    /// on a second call to the same path, since opening it already truncates whatever was there
-    /// before the "document already written" check runs, so
-    /// <see cref="Save(System.IO.Stream)"/>'s "writes nothing to the stream" guarantee does not
-    /// carry over here. If the target matters, write to a temporary path and move it into place
-    /// yourself, or save to a stream you control (#508).</para>
+    /// <para><b>Attention</b>: the file is opened before the layout runs, so a failure destroys
+    /// whatever the path held. Measured: a path already holding a 1,535-byte file, given to a new
+    /// document whose layout then fails, is left existing and zero bytes long. The same happens on
+    /// a second call to the same path, since opening it already truncates whatever was there before
+    /// the "document already written" check runs, so <see cref="Save(System.IO.Stream)"/>'s "writes
+    /// nothing to the stream" guarantee does not carry over here. A failure once writing has
+    /// started leaves what was written, which can be the PDF header alone. If the target matters,
+    /// write to a temporary path and move it into place yourself, or save to a stream you control
+    /// (#508).</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="path"/> is <see langword="null"/>.</exception>
     /// <exception cref="ObjectDisposedException">
@@ -1059,9 +1062,11 @@ public sealed class Document : IDisposable
     /// reads every font registered with <see cref="UseTrueTypeFont"/>, and writes to
     /// <paramref name="destination"/>, so an exception from any of those reaches you from
     /// here.</para>
-    /// <para>A second call after a save that succeeded throws, unless a check the save runs earlier
-    /// fails first. It reports that the document has already been written and tells you to create a
+    /// <para>A second call after a save that succeeded throws. Unless a check the save runs earlier
+    /// fails first, it reports that the document has already been written and tells you to create a
     /// new one. It writes nothing to the stream, appended or otherwise.</para>
+    /// <para>The PDF is built in memory before any of it is written to
+    /// <paramref name="destination"/>, so a failure while it is built writes nothing to it.</para>
     /// <para>A save that threw can leave the document holding pages and element state from the
     /// failed attempt, so a retry can succeed on a wrong file (#530). Build a fresh
     /// <see cref="Document"/> rather than retrying a save that threw.</para>

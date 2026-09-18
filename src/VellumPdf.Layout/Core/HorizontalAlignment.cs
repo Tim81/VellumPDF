@@ -30,13 +30,13 @@ public enum HorizontalAlignment
     Right,
 
     /// <summary>
-    /// Stretch the spaces in each line of paragraph and heading text toward both edges.
+    /// Stretch the spaces in paragraph and heading lines toward both edges.
     /// </summary>
     /// <remarks>
     /// Only paragraph and heading text are justified. They stretch every line except the
-    /// paragraph's last, and a line that ends at a hard line break is stretched too. A line with
-    /// no space in it is not stretched. An image, a table cell, a pie chart, a running band and a
-    /// barcode draw this value as <see cref="Left"/>.
+    /// paragraph's last, and a line that ends at a hard line break is stretched too. A line with no
+    /// space in it is not stretched, and U+00A0 NO-BREAK SPACE does not count as one. An image, a
+    /// table cell, a pie chart, a running band and a barcode draw this value as <see cref="Left"/>.
     /// <para><b>Attention</b>: with a standard-14 font the stretch covers only half the space
     /// left on the line, so justified lines stop short of the right edge (#548).</para>
     /// </remarks>

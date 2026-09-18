@@ -75,7 +75,7 @@ public readonly struct FontReference
     /// the text is drawn wrong or not at all (#544). Use handles from the document you add the text
     /// to.</para>
     /// <para>Text that holds an unpaired surrogate makes the save throw
-    /// <see cref="ArgumentException"/> when it is measured in an embedded font, as layout does; see
+    /// <see cref="ArgumentException"/> when it is measured in an embedded font; see
     /// <see cref="TextStyle.FontRef"/>.</para>
     /// <para>Do not pass null. A later major version will throw <see cref="ArgumentNullException"/>
     /// from this call.</para>

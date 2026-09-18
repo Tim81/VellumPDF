@@ -16,11 +16,10 @@ namespace VellumPdf.Layout.Rendering;
 /// Justification: Tw for Standard-14 lines; explicit per-word Tm for embedded-font lines.
 /// </summary>
 /// <remarks>
-/// The document creates one for each <see cref="Paragraph"/>. The paragraph's refusals, and a null
-/// run or text in it, or a null style on a run whose text holds a character other than white space,
-/// where U+00A0 NO-BREAK SPACE counts as such a character and other white space, a tab included,
-/// does not, are raised from <see cref="Layout"/>, which the document calls during a save; a
-/// negative start line is raised from <see cref="Draw"/>.
+/// The document creates one for each <see cref="Paragraph"/>. The paragraph's refusals, a null run,
+/// and the null texts and styles described on <see cref="TextRun"/> are raised from
+/// <see cref="Layout"/>, which the document calls during a save. A negative start line is raised
+/// from <see cref="Draw"/>.
 /// </remarks>
 public sealed class ParagraphRenderer : IRenderer
 {
@@ -41,9 +40,10 @@ public sealed class ParagraphRenderer : IRenderer
     /// negative <paramref name="startLine"/> lays out that many lines too tall and makes
     /// <see cref="Draw"/> throw. A start past the last line lays out as
     /// <see cref="LayoutResult.Outcome.Nothing"/>, so a document saving it throws
-    /// <see cref="InvalidOperationException"/> saying the element is too tall to fit.
-    /// <para>Do not pass null or a start outside the paragraph's lines. A later major version
-    /// will throw from this call.</para>
+    /// <see cref="InvalidOperationException"/> saying the element is too tall to fit. A renderer
+    /// built directly ignores the paragraph's <see cref="Paragraph.Language"/>.
+    /// <para>Do not pass null or a start outside the paragraph's lines. A later major version will
+    /// throw from this call.</para>
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised later from <see cref="Layout"/>, not from this constructor, when
@@ -75,8 +75,8 @@ public sealed class ParagraphRenderer : IRenderer
     /// </exception>
     /// <exception cref="NullReferenceException">
     /// The paragraph, one of its runs, or a run's text is <see langword="null"/>, or a run has a
-    /// null style and its text holds a character other than white space, where U+00A0 NO-BREAK
-    /// SPACE counts as such a character and other white space, a tab included, does not.
+    /// null style and its text holds a character other than white space. U+00A0 NO-BREAK SPACE
+    /// counts as such a character; a tab and other white space do not.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Text this method measures in an embedded font holds an unpaired surrogate; see

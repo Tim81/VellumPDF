@@ -151,9 +151,10 @@ public sealed class DocumentRenderer
     /// <summary>Header band drawn at the top of every page. Optional.</summary>
     /// <remarks>
     /// A band whose <see cref="RunningBand.Template"/> is null makes <see cref="Render"/> throw
-    /// (#531). The band's height and style refusals also come from <see cref="Render"/>; see
-    /// <see cref="RunningBand.Height"/>, <see cref="TextStyle.FontSize"/> and
-    /// <see cref="TextStyle.FontRef"/>.
+    /// (#531). Pages the kernel document already held when <see cref="Render"/> runs get no band,
+    /// and <c>{page}</c> counts those pages while <c>{pages}</c> does not. The band's height and
+    /// style refusals also come from <see cref="Render"/>; see <see cref="RunningBand.Height"/>,
+    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.FontRef"/>.
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised from <see cref="Render"/>, not from this property, when the band's
@@ -179,9 +180,10 @@ public sealed class DocumentRenderer
     /// <summary>Footer band drawn at the bottom of every page. Optional.</summary>
     /// <remarks>
     /// A band whose <see cref="RunningBand.Template"/> is null makes <see cref="Render"/> throw
-    /// (#531). The band's height and style refusals also come from <see cref="Render"/>; see
-    /// <see cref="RunningBand.Height"/>, <see cref="TextStyle.FontSize"/> and
-    /// <see cref="TextStyle.FontRef"/>.
+    /// (#531). Pages the kernel document already held when <see cref="Render"/> runs get no band,
+    /// and <c>{page}</c> counts those pages while <c>{pages}</c> does not. The band's height and
+    /// style refusals also come from <see cref="Render"/>; see <see cref="RunningBand.Height"/>,
+    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.FontRef"/>.
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised from <see cref="Render"/>, not from this property, when the band's
@@ -227,11 +229,20 @@ public sealed class DocumentRenderer
     /// The page width or height is not a positive finite number.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// The margins meet or exceed the page on either axis.
+    /// The margins meet or exceed the page on either axis. It is also raised from
+    /// <see cref="Render"/>, not from this constructor, when a margin that passes this check puts a
+    /// position written outside the content stream at a non-finite value; see
+    /// <see cref="Document.Margins"/>.
     /// </exception>
     /// <exception cref="NullReferenceException">
     /// <paramref name="pageSize"/> is null and <paramref name="pdf"/> is null, or its
-    /// <see cref="PdfDocument.DefaultPageSize"/> is null.
+    /// <see cref="PdfDocument.DefaultPageSize"/> is null. With a page size given, a null
+    /// <paramref name="pdf"/> makes <see cref="Render"/> throw it instead.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Render"/>, not from this constructor, when a margin that passes the
+    /// <see cref="ArgumentException"/> check still leaves an element unable to be laid out, for any
+    /// of the causes listed on <see cref="Document.Margins"/>.
     /// </exception>
     public DocumentRenderer(PdfDocument pdf, PdfRectangle? pageSize = null, EdgeInsets? margins = null)
     {
@@ -276,11 +287,13 @@ public sealed class DocumentRenderer
     /// renderer and calls this method, so the exceptions listed on that save, other than those
     /// about the <see cref="Document"/> itself, can reach you from here, and so can anything a
     /// custom renderer or the destination raises. A second call after one that succeeded throws;
-    /// after one that threw, it can succeed and write the failed call's pages as well (#530).
+    /// after one that threw, it can succeed and write the failed call's pages as well (#530). A
+    /// failure once writing has started leaves what was written so far in
+    /// <paramref name="destination"/>, which can be the PDF header alone.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// An element needs more than <b>50,000</b> page continuations or is too tall for one page, or
-    /// there is nothing to draw, or this document has already been written, or the kernel
+    /// the kernel document has no pages, or this document has already been written, or the kernel
     /// document's conformance level refuses its encryption settings, or an element's input cannot
     /// be laid out, or a registered font lacks a table the write needs.
     /// </exception>

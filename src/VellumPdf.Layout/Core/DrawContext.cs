@@ -20,9 +20,10 @@ namespace VellumPdf.Layout.Core;
 /// <remarks>
 /// Coordinates are not checked. A finite Y off the page is written into outline destinations
 /// without clamping, and so is a finite box into an annotation unless X plus Width or Y plus Height
-/// overflows. A box with a negative width is written as an inverted rectangle. The save refuses a
-/// non-finite coordinate in an annotation or outline entry, and writes it as <c>NaN</c> or
-/// <c>Infinity</c> where a renderer draws with a converted value on the canvas.
+/// overflows. The save refuses that box; see <see cref="AddUriLinkAnnotation"/>. A box with a
+/// negative width is written as an inverted rectangle. The save refuses a non-finite coordinate in
+/// an annotation or outline entry, and writes it as <c>NaN</c> or <c>Infinity</c> where a renderer
+/// draws with a converted value on the canvas.
 /// </remarks>
 public sealed class DrawContext
 {
