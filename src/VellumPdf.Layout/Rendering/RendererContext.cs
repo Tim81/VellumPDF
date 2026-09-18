@@ -15,7 +15,8 @@ namespace VellumPdf.Layout.Rendering;
 /// resource dictionary so content streams can reference them by name.
 /// </summary>
 /// <remarks>
-/// A null image on <see cref="RegisterImageXObject"/> throws from that call.
+/// The document creates one per page. The constructor checks nothing; each method says what a
+/// null argument does.
 /// </remarks>
 public sealed class RendererContext
 {
@@ -25,7 +26,15 @@ public sealed class RendererContext
     private int _imageCounter;
 
     /// <summary>Creates a rendering context bound to the given page and its owning document.</summary>
-    /// <remarks>Arguments are stored as given. A null page or document is not refused here.</remarks>
+    /// <remarks>
+    /// Nothing is checked. With a null <paramref name="page"/>,
+    /// <see cref="RegisterImageXObject"/> throws <see cref="ArgumentNullException"/>; with a null
+    /// <paramref name="document"/> it throws <see cref="NullReferenceException"/>. A
+    /// <paramref name="page"/> that belongs to a different document is accepted, and an image
+    /// registered on it is left out of the saved file.
+    /// <para>Do not pass null, or a page from another document. A later major version will throw
+    /// from this constructor.</para>
+    /// </remarks>
     public RendererContext(PdfPage page, PdfDocument document)
     {
         _page = page;
@@ -39,9 +48,16 @@ public sealed class RendererContext
     /// <remarks>
     /// A null <paramref name="image"/> throws <see cref="ArgumentNullException"/> from this
     /// call (<c>ParamName</c> is <c>key</c>).
+    /// <para>The name is recorded before the image is registered with the document. If that
+    /// registration throws, a second call with the same image returns the name without
+    /// registering the image.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
-    /// <paramref name="image"/> is <see langword="null"/>.
+    /// <paramref name="image"/> is <see langword="null"/>, or this context was constructed with a
+    /// null page. <c>ParamName</c> is <c>key</c> in both cases.
+    /// </exception>
+    /// <exception cref="NullReferenceException">
+    /// This context was constructed with a null document.
     /// </exception>
     public string RegisterImageXObject(PdfImageXObject image)
     {
@@ -58,7 +74,14 @@ public sealed class RendererContext
     /// Records that the current page uses the given embedded TrueType font.
     /// Idempotent: safe to call on every draw call for the same font.
     /// </summary>
-    /// <remarks>A null handle is forwarded to the kernel.</remarks>
+    /// <remarks>
+    /// A null <paramref name="handle"/> throws <see cref="NullReferenceException"/> from this
+    /// call. A handle from a different document is accepted; see
+    /// <see cref="VellumPdf.Layout.Core.FontReference.FontReference(EmbeddedFontHandle)"/>.
+    /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// <paramref name="handle"/> is <see langword="null"/>.
+    /// </exception>
     public void RegisterEmbeddedFontUsage(EmbeddedFontHandle handle) =>
         _document.RegisterEmbeddedFontUsage(_page, handle);
 }

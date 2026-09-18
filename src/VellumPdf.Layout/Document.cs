@@ -19,20 +19,21 @@ namespace VellumPdf.Layout;
 /// <code>
 /// using var doc = new Document();
 /// doc.SetDefaultFont(new TextStyle { Font = Standard14.Helvetica, FontSize = 11 });
-/// doc.Add(new Paragraph("Hello, world!"));
+/// doc.Add("Hello, world!");
 /// doc.Save("output.pdf");
 /// </code>
 /// </summary>
 /// <remarks>
-/// Most refusals fire from <see cref="Save(System.IO.Stream)"/>, not from the property you
-/// set. A document with no pages throws at save. Dispose, then save, throws
-/// <see cref="ObjectDisposedException"/>.
+/// Most refusals fire from the save, not from the member you set, and each member says which
+/// call throws. A document saved without an element throws
+/// <see cref="InvalidOperationException"/>.
 /// </remarks>
 public sealed class Document : IDisposable
 {
     /// <summary>Creates an empty document with A4 pages and 72pt margins.</summary>
     /// <remarks>
-    /// Save throws if no element has been added. See the type remarks.
+    /// Saved before an element is added, the document throws
+    /// <see cref="InvalidOperationException"/>, whether or not a header or footer is set.
     /// </remarks>
     public Document() { }
 
@@ -49,8 +50,7 @@ public sealed class Document : IDisposable
     /// and the signing-prep path; empty when every character rendered is in WinAnsi.
     /// </summary>
     /// <remarks>
-    /// Empty until a save (or signing prep) has run. A successful save that substituted nothing
-    /// is also empty. This list is not a refusal.
+    /// Empty until a save (or signing prep) has run, and replaced by each one that succeeds.
     /// </remarks>
     public IReadOnlyList<TextEncodingWarning> TextEncodingWarnings => _textEncodingWarnings;
 
@@ -60,8 +60,8 @@ public sealed class Document : IDisposable
     /// bands fitted, or when no band was set.
     /// </summary>
     /// <remarks>
-    /// Empty until a save has run. Truncation is not refused; it is reported here after the fact.
-    /// See <see cref="RunningBand.Template"/>.
+    /// Empty until a save has run, and replaced by each one that succeeds. A cut band is not an
+    /// error, and this list is the only report of it. See <see cref="RunningBand.Template"/>.
     /// </remarks>
     public IReadOnlyList<BandTruncationWarning> BandTruncations => _bandTruncations;
 
@@ -115,16 +115,21 @@ public sealed class Document : IDisposable
 
     /// <summary>
     /// Requested PDF/A conformance level. Forwarded to the underlying <see cref="PdfDocument"/>.
-    /// PDF/A-2a implies <see cref="Tagged"/> = true.
+    /// PDF/A-2a and PDF/UA-1 imply <see cref="Tagged"/> = true.
     /// </summary>
     /// <remarks>
     /// Setting a level does not run the rules. A document can declare PDF/A and still fail a
-    /// preflight; the stamp is written either way (#474). Combined with <see cref="Encrypt"/>,
-    /// <see cref="Save(System.IO.Stream)"/> throws <see cref="InvalidOperationException"/>
-    /// because ISO 19005-2 §6.1.3 forbids encryption in PDF/A.
+    /// preflight; the stamp is written either way (#474).
+    /// <para>Combined with <see cref="Encrypt"/>, the save throws
+    /// <see cref="InvalidOperationException"/> for every PDF/A level, because ISO 19005-2 §6.1.3
+    /// forbids the <c>Encrypt</c> key in a PDF/A file. For PDF/UA-1 it throws only when the
+    /// encryption settings leave out <see cref="PdfPermissions.Extract"/>, because ISO 14289-1,
+    /// 7.16, requires the permission that allows extraction for accessibility.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
-    /// Raised from a save, when this is a PDF/A level and <see cref="Encrypt"/> has been called.
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when
+    /// <see cref="Encrypt"/> has been called and this is a PDF/A level, or PDF/UA-1 without
+    /// <see cref="PdfPermissions.Extract"/>.
     /// </exception>
     public PdfConformance Conformance
     {
@@ -138,9 +143,8 @@ public sealed class Document : IDisposable
     /// Forwarded to the underlying <see cref="PdfDocument"/>.
     /// </summary>
     /// <remarks>
-    /// PDF/A-2a implies this is true. Setting it false after requesting PDF/A-2a is not refused
-    /// here; the kernel's save path is what makes the pairing consistent. Untagged content is
-    /// not a throw.
+    /// Reads true while <see cref="Conformance"/> is PDF/A-2a or PDF/UA-1, whatever you set. The
+    /// value you set is kept and used again once the conformance level changes to another one.
     /// </remarks>
     public bool Tagged
     {
@@ -174,11 +178,15 @@ public sealed class Document : IDisposable
     /// </summary>
     /// <remarks>
     /// Combined with <see cref="Encrypt"/>, the save throws
-    /// <see cref="NotSupportedException"/>. Neither setter checks the other; the pairing is
-    /// refused only when the file is written.
+    /// <see cref="NotSupportedException"/>. Neither member checks the other. The pairing is
+    /// refused after the layout has run, so a retry after this refusal adds the pages again; see
+    /// <see cref="Save(System.IO.Stream)"/>.
+    /// <para>A document signed through VellumPdf.Signing is written without object streams,
+    /// whatever this property holds.</para>
     /// </remarks>
     /// <exception cref="NotSupportedException">
-    /// Raised from a save, when this is true and <see cref="Encrypt"/> has been called.
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when this is
+    /// true and <see cref="Encrypt"/> has been called.
     /// </exception>
     public bool UseObjectStreams
     {
@@ -227,10 +235,25 @@ public sealed class Document : IDisposable
     /// Supports {page} and {pages} tokens.
     /// </summary>
     /// <remarks>
-    /// A band whose <see cref="RunningBand.Template"/> is null throws
-    /// <see cref="NullReferenceException"/> from the save (#531). Same as
-    /// <see cref="SetHeader"/>.
+    /// A band whose <see cref="RunningBand.Template"/> is null makes the save throw (#531). The
+    /// band's height and style carry refusals of their own; see <see cref="RunningBand.Height"/>
+    /// and <see cref="TextStyle.FontSize"/>.
     /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
+    /// property, when the band's <see cref="RunningBand.Template"/> is <see langword="null"/>
+    /// (#531).
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
+    /// band's height leaves the content area no positive size; see
+    /// <see cref="RunningBand.Height"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
+    /// band's height or its style's size is refused; see <see cref="RunningBand.Height"/> and
+    /// <see cref="TextStyle.FontSize"/>.
+    /// </exception>
     public RunningBand? Header { get; set; }
 
     /// <summary>
@@ -239,17 +262,38 @@ public sealed class Document : IDisposable
     /// Supports {page} and {pages} tokens.
     /// </summary>
     /// <remarks>
-    /// A band whose <see cref="RunningBand.Template"/> is null throws
-    /// <see cref="NullReferenceException"/> from the save (#531). Same as
-    /// <see cref="SetFooter"/>.
+    /// A band whose <see cref="RunningBand.Template"/> is null makes the save throw (#531). The
+    /// band's height and style carry refusals of their own; see <see cref="RunningBand.Height"/>
+    /// and <see cref="TextStyle.FontSize"/>.
     /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
+    /// property, when the band's <see cref="RunningBand.Template"/> is <see langword="null"/>
+    /// (#531).
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
+    /// band's height leaves the content area no positive size; see
+    /// <see cref="RunningBand.Height"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
+    /// band's height or its style's size is refused; see <see cref="RunningBand.Height"/> and
+    /// <see cref="TextStyle.FontSize"/>.
+    /// </exception>
     public RunningBand? Footer { get; set; }
 
-    /// <summary>Sets the default text style applied to content added without an explicit style. Returns this document for chaining.</summary>
+    /// <summary>
+    /// Sets the text style that later <see cref="Add(string, TextStyle)"/> calls use when they are
+    /// given no style. Returns this document for chaining.
+    /// </summary>
     /// <remarks>
-    /// A null style is stored as given and is not refused. <see cref="Add(string, TextStyle)"/>
-    /// still produces <see cref="TextStyle.Default"/>, because <see cref="Paragraph"/> coalesces
-    /// a null style. The call does not throw.
+    /// <b>Attention</b>: nothing else reads it. <see cref="Add(string, TextStyle)"/> takes the
+    /// style in force when it is called, so text added before this call keeps the earlier
+    /// style, and a <see cref="Paragraph"/>, <see cref="Heading"/>, list, table or running band
+    /// never uses it. Give those their own style.
+    /// <para>A null style is stored. A later <see cref="Add(string, TextStyle)"/> then uses
+    /// <see cref="TextStyle.Default"/>.</para>
     /// </remarks>
     public Document SetDefaultFont(TextStyle style) { _defaultStyle = style; return this; }
 
@@ -263,10 +307,22 @@ public sealed class Document : IDisposable
     /// failure surfaces as a <see cref="NullReferenceException"/> from a call you did not make.
     /// Pass an empty string for a band that draws no text (#531). Assigning to <see cref="Header"/>
     /// directly reaches the same throw.
+    /// <para>The band's height and <paramref name="style"/> carry refusals of their own; see
+    /// <see cref="RunningBand.Height"/> and <see cref="TextStyle.FontSize"/>.</para>
     /// </remarks>
     /// <exception cref="NullReferenceException">
-    /// Raised from a save rather than from this method, when <paramref name="template"/> is
-    /// <see langword="null"/> (#531).
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
+    /// method, when the band's <see cref="RunningBand.Template"/> is <see langword="null"/> (#531).
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
+    /// band's height leaves the content area no positive size; see
+    /// <see cref="RunningBand.Height"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
+    /// band's height or its style's size is refused; see <see cref="RunningBand.Height"/> and
+    /// <see cref="TextStyle.FontSize"/>.
     /// </exception>
     public Document SetHeader(string template, TextStyle? style = null, HorizontalAlignment alignment = HorizontalAlignment.Center)
     {
@@ -284,10 +340,22 @@ public sealed class Document : IDisposable
     /// failure surfaces as a <see cref="NullReferenceException"/> from a call you did not make.
     /// Pass an empty string for a band that draws no text (#531). Assigning to <see cref="Footer"/>
     /// directly reaches the same throw.
+    /// <para>The band's height and <paramref name="style"/> carry refusals of their own; see
+    /// <see cref="RunningBand.Height"/> and <see cref="TextStyle.FontSize"/>.</para>
     /// </remarks>
     /// <exception cref="NullReferenceException">
-    /// Raised from a save rather than from this method, when <paramref name="template"/> is
-    /// <see langword="null"/> (#531).
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
+    /// method, when the band's <see cref="RunningBand.Template"/> is <see langword="null"/> (#531).
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
+    /// band's height leaves the content area no positive size; see
+    /// <see cref="RunningBand.Height"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
+    /// band's height or its style's size is refused; see <see cref="RunningBand.Height"/> and
+    /// <see cref="TextStyle.FontSize"/>.
     /// </exception>
     public Document SetFooter(string template, TextStyle? style = null, HorizontalAlignment alignment = HorizontalAlignment.Center)
     {
@@ -302,15 +370,23 @@ public sealed class Document : IDisposable
     /// used in <see cref="TextStyle.FontRef"/>.
     /// </summary>
     /// <remarks>
-    /// The bytes are parsed here, not at save. A null buffer raises
-    /// <see cref="ArgumentNullException"/>. A buffer that is not a TrueType font raises
-    /// <see cref="InvalidDataException"/> from this call.
+    /// Most of the font is parsed here: the table directory and the <c>cmap</c>, <c>head</c>,
+    /// <c>hhea</c>, <c>maxp</c>, <c>name</c>, <c>OS/2</c>, <c>post</c> and <c>hmtx</c> tables.
+    /// Malformed or truncated bytes throw <see cref="InvalidDataException"/>, and a missing table
+    /// from that list throws <see cref="InvalidOperationException"/>, both from this call.
+    /// <para>The outlines are read at save. A font missing its <c>glyf</c> table passes this call
+    /// and makes the save throw <see cref="InvalidOperationException"/>. An OpenType font with CFF
+    /// outlines is accepted, and embedded as such.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="fontData"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="InvalidDataException">
-    /// <paramref name="fontData"/> is not a TrueType font this embedder can read.
+    /// <paramref name="fontData"/> is malformed or truncated.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// A table the parser needs is missing: from this call for the tables listed in the remarks,
+    /// and from <see cref="Save(System.IO.Stream)"/> and the other save overloads for the outline tables.
     /// </exception>
     public EmbeddedFontHandle UseTrueTypeFont(byte[] fontData) =>
         _pdf.UseTrueTypeFont(fontData);
@@ -319,19 +395,32 @@ public sealed class Document : IDisposable
     /// Loads a TrueType font file from disk, registers it for embedding, and returns a handle.
     /// </summary>
     /// <remarks>
-    /// The path is read here, not at save. A missing file raises
-    /// <see cref="FileNotFoundException"/>. A missing directory raises
-    /// <see cref="DirectoryNotFoundException"/>. A file that is not a TrueType font then
-    /// raises <see cref="InvalidDataException"/> from <see cref="UseTrueTypeFont"/>.
+    /// The file is read here, not at save, and then parsed as <see cref="UseTrueTypeFont"/>
+    /// parses it, with the same exceptions.
     /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="path"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="path"/> is empty.
+    /// </exception>
     /// <exception cref="FileNotFoundException">
     /// <paramref name="path"/> names a file that does not exist.
     /// </exception>
     /// <exception cref="DirectoryNotFoundException">
     /// The directory named in <paramref name="path"/> does not exist.
     /// </exception>
+    /// <exception cref="UnauthorizedAccessException">
+    /// <paramref name="path"/> names a directory, or a file you may not read.
+    /// </exception>
+    /// <exception cref="IOException">
+    /// The file cannot be read for another reason the file system reports.
+    /// </exception>
     /// <exception cref="InvalidDataException">
-    /// The file is not a TrueType font this embedder can read.
+    /// The file's bytes are malformed or truncated; see <see cref="UseTrueTypeFont"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// A table the parser needs is missing; see <see cref="UseTrueTypeFont"/>.
     /// </exception>
     public EmbeddedFontHandle LoadTrueTypeFont(string path) =>
         UseTrueTypeFont(File.ReadAllBytes(path));
@@ -341,17 +430,36 @@ public sealed class Document : IDisposable
     /// returns a handle.
     /// </summary>
     /// <remarks>
-    /// Same refusals as <see cref="LoadTrueTypeFont"/>, from this call rather than from a later
-    /// save.
+    /// Same refusals as <see cref="LoadTrueTypeFont"/>. This method does not throw them itself:
+    /// each one faults the returned task, and surfaces when you await it. A cancelled
+    /// <paramref name="cancellationToken"/> faults the task too.
     /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="path"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="path"/> is empty.
+    /// </exception>
     /// <exception cref="FileNotFoundException">
     /// <paramref name="path"/> names a file that does not exist.
     /// </exception>
     /// <exception cref="DirectoryNotFoundException">
     /// The directory named in <paramref name="path"/> does not exist.
     /// </exception>
+    /// <exception cref="UnauthorizedAccessException">
+    /// <paramref name="path"/> names a directory, or a file you may not read.
+    /// </exception>
+    /// <exception cref="IOException">
+    /// The file cannot be read for another reason the file system reports.
+    /// </exception>
     /// <exception cref="InvalidDataException">
-    /// The file is not a TrueType font this embedder can read.
+    /// The file's bytes are malformed or truncated; see <see cref="UseTrueTypeFont"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// A table the parser needs is missing; see <see cref="UseTrueTypeFont"/>.
+    /// </exception>
+    /// <exception cref="OperationCanceledException">
+    /// <paramref name="cancellationToken"/> was cancelled before the file was read.
     /// </exception>
     public async Task<EmbeddedFontHandle> LoadTrueTypeFontAsync(string path, CancellationToken cancellationToken = default)
     {
@@ -376,8 +484,14 @@ public sealed class Document : IDisposable
 
     /// <summary>Adds a horizontal line separator to the document content. Returns this document for chaining.</summary>
     /// <remarks>
-    /// A null separator is stored. The throw is from save, when the renderer is laid out.
+    /// A null separator is stored, and the save throws when it lays the element out.
+    /// <para>Do not pass null. A later major version will throw
+    /// <see cref="ArgumentNullException"/> from this call.</para>
     /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
+    /// call, when <paramref name="separator"/> is <see langword="null"/>.
+    /// </exception>
     public Document Add(LineSeparator separator)
     {
         _content.Add(new LineSeparatorRenderer(separator));
@@ -386,9 +500,16 @@ public sealed class Document : IDisposable
 
     /// <summary>Adds a table to the document content. Returns this document for chaining.</summary>
     /// <remarks>
-    /// A null table is stored. The throw is from save. An empty table is refused then; see
-    /// <see cref="TableElement.Rows"/>.
+    /// A null table is stored, and the save throws when it lays the element out. A table's own
+    /// refusals are on <see cref="TableElement"/>, among them a table that needs more than 50,000
+    /// page continuations.
+    /// <para>Do not pass null. A later major version will throw
+    /// <see cref="ArgumentNullException"/> from this call.</para>
     /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
+    /// call, when <paramref name="table"/> is <see langword="null"/>.
+    /// </exception>
     public Document Add(TableElement table)
     {
         _content.Add(new TableRenderer(table));
@@ -397,8 +518,14 @@ public sealed class Document : IDisposable
 
     /// <summary>Adds an image to the document content. Returns this document for chaining.</summary>
     /// <remarks>
-    /// A null image is stored. The throw is from save.
+    /// A null image is stored, and the save throws when it lays the element out.
+    /// <para>Do not pass null. A later major version will throw
+    /// <see cref="ArgumentNullException"/> from this call.</para>
     /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
+    /// call, when <paramref name="image"/> is <see langword="null"/>.
+    /// </exception>
     public Document Add(LayoutImage image)
     {
         _content.Add(new LayoutImageRenderer(image));
@@ -407,8 +534,14 @@ public sealed class Document : IDisposable
 
     /// <summary>Adds a pie chart to the document content. Returns this document for chaining.</summary>
     /// <remarks>
-    /// A null chart is stored. The throw is from save; see <see cref="PieChart.Slices"/>.
+    /// A null chart is stored, and the save throws when it lays the element out.
+    /// <para>Do not pass null. A later major version will throw
+    /// <see cref="ArgumentNullException"/> from this call.</para>
     /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
+    /// call, when <paramref name="chart"/> is <see langword="null"/>.
+    /// </exception>
     public Document Add(PieChart chart)
     {
         _content.Add(new PieChartRenderer(chart));
@@ -417,8 +550,14 @@ public sealed class Document : IDisposable
 
     /// <summary>Adds a bulleted or numbered list to the document content. Returns this document for chaining.</summary>
     /// <remarks>
-    /// A null list is stored. The throw is from save.
+    /// A null list is stored, and the save throws when it lays the element out.
+    /// <para>Do not pass null. A later major version will throw
+    /// <see cref="ArgumentNullException"/> from this call.</para>
     /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
+    /// call, when <paramref name="list"/> is <see langword="null"/>.
+    /// </exception>
     public Document Add(ListElement list)
     {
         _content.Add(new ListRenderer(list));
@@ -440,9 +579,17 @@ public sealed class Document : IDisposable
 
     /// <summary>Adds a paragraph built from the given text, using the supplied style or the default style. Returns this document for chaining.</summary>
     /// <remarks>
-    /// A null <paramref name="text"/> is stored. <see cref="Save(System.IO.Stream)"/> then
-    /// throws <see cref="NullReferenceException"/> from word-wrap, not from this call.
+    /// With <paramref name="style"/> null, the paragraph takes the style from the most recent
+    /// <see cref="SetDefaultFont"/> call made before this one.
+    /// A null <paramref name="text"/> is stored, and the save throws when it lays the paragraph
+    /// out.
+    /// <para>Do not pass null text. A later major version will throw
+    /// <see cref="ArgumentNullException"/> from this call.</para>
     /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
+    /// call, when <paramref name="text"/> is <see langword="null"/>.
+    /// </exception>
     public Document Add(string text, TextStyle? style = null)
         => Add(new Paragraph(text, style ?? _defaultStyle));
 
@@ -453,11 +600,10 @@ public sealed class Document : IDisposable
     /// elements into the flow layout.
     /// </summary>
     /// <remarks>
-    /// A renderer whose overflow never advances hits a cap of <b>50,000</b> page continuations.
-    /// <see cref="Save(System.IO.Stream)"/> then throws <see cref="InvalidOperationException"/>
-    /// naming that cap. The library's own renderers can reach it too, on a page that takes one
-    /// table row at a time. Split a long element yourself rather than relying on pagination to
-    /// run forever.
+    /// One element may take at most <b>50,000</b> page continuations, and a renderer whose
+    /// overflow never gets smaller reaches that limit; <see cref="IRenderer.Layout"/> has the
+    /// rule. The save then throws <see cref="InvalidOperationException"/> naming the limit. Split
+    /// a long element yourself rather than relying on pagination to run forever.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="renderer"/> is <see langword="null"/>.
@@ -487,14 +633,21 @@ public sealed class Document : IDisposable
     /// </para>
     /// </summary>
     /// <param name="iccProfile">The raw ICC profile bytes.</param>
-    /// <param name="componentCount">Number of colour components: 1 (Gray), 3 (RGB), or 4 (CMYK).</param>
-    /// <param name="outputConditionIdentifier">The OutputConditionIdentifier string.</param>
-    /// <param name="info">Optional /Info string. Defaults to <paramref name="outputConditionIdentifier"/> when null.</param>
+    /// <param name="componentCount">Number of colour components: 1 (Gray), 3 (RGB), or 4
+    /// (CMYK).</param> <param name="outputConditionIdentifier">The OutputConditionIdentifier
+    /// string.</param> <param name="info">Optional /Info string. Defaults to
+    /// <paramref name="outputConditionIdentifier"/> when null.</param>
     /// <remarks>
     /// Refused from this call, not from save. An empty or null profile raises
     /// <see cref="ArgumentException"/>. A component count other than 1, 3 or 4 raises
     /// <see cref="ArgumentOutOfRangeException"/>. A null identifier raises
     /// <see cref="ArgumentNullException"/>.
+    /// <para><b>Attention</b>: the output intent is written only when <see cref="Conformance"/>
+    /// is not <see cref="PdfConformance.None"/>. Otherwise the call is accepted and the intent is
+    /// left out of the file.</para>
+    /// <para>The profile is not parsed, and <paramref name="componentCount"/> is not checked
+    /// against it: any non-empty bytes are embedded as the profile. Do not pass bytes that are
+    /// not an ICC profile, or a count that does not match the profile.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// <paramref name="iccProfile"/> is null or empty.
@@ -518,10 +671,12 @@ public sealed class Document : IDisposable
     /// intended for documents that combine layout content with custom CMYK kernel drawing.
     /// </para>
     /// </summary>
-    /// <param name="outputConditionIdentifier">The OutputConditionIdentifier string written to the OutputIntent dictionary.</param>
+    /// <param name="outputConditionIdentifier">The OutputConditionIdentifier string written to the
+    /// OutputIntent dictionary.</param>
     /// <remarks>
-    /// Same identifier refusal as <see cref="SetPdfAOutputIntent"/>. The built-in profile is
-    /// never empty, so the profile and component-count throws on that method do not arise here.
+    /// Same identifier refusal as <see cref="SetPdfAOutputIntent"/>, and the same condition: the
+    /// intent is written only when <see cref="Conformance"/> is not
+    /// <see cref="PdfConformance.None"/>.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="outputConditionIdentifier"/> is <see langword="null"/>.
@@ -539,10 +694,18 @@ public sealed class Document : IDisposable
     /// <remarks>
     /// Combined with <see cref="UseObjectStreams"/>, the save throws
     /// <see cref="NotSupportedException"/>. This method does not check that flag.
-    /// Combined with a PDF/A <see cref="Conformance"/>, the save throws
-    /// <see cref="InvalidOperationException"/>.
+    /// Combined with a PDF/A <see cref="Conformance"/>, or with PDF/UA-1 when the settings leave
+    /// out <see cref="PdfPermissions.Extract"/>, the save throws
+    /// <see cref="InvalidOperationException"/>; see <see cref="Conformance"/>. All three are
+    /// refused after the layout has run; see <see cref="Save(System.IO.Stream)"/>.
+    /// <para>An encrypted document cannot be signed: VellumPdf.Signing throws
+    /// <see cref="NotSupportedException"/> for one.</para>
     /// </remarks>
-    /// <exception cref="ArgumentNullException"><paramref name="settings"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="settings"/> is
+    /// <see langword="null"/>.</exception>
+    /// <exception cref="ObjectDisposedException">
+    /// This <see cref="Document"/> was already disposed.
+    /// </exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="settings"/> has an empty <see cref="PdfEncryptionSettings.OwnerPassword"/>
     /// beside a non-empty <see cref="PdfEncryptionSettings.UserPassword"/>.
@@ -551,7 +714,9 @@ public sealed class Document : IDisposable
     /// Raised from a save, when <see cref="UseObjectStreams"/> is true.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Raised from a save, when <see cref="Conformance"/> is a PDF/A level.
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when
+    /// <see cref="Conformance"/> is a PDF/A level, or PDF/UA-1 and the settings leave out
+    /// <see cref="PdfPermissions.Extract"/>.
     /// </exception>
     public Document Encrypt(PdfEncryptionSettings settings)
     {
@@ -593,27 +758,29 @@ public sealed class Document : IDisposable
     /// <para>A second call after a save that succeeded throws. It reports that
     /// the document has already been written and tells you to create a new one. It writes nothing
     /// to the stream, appended or otherwise.</para>
-    /// <para>A save that threw does not reliably leave the document usable again either, and the
-    /// three routes out of a failed save leave it in three different states. Geometry refused
-    /// before the layout starts, such as margins exceeding the page, leaves it clean: after
-    /// correcting the geometry, a retry produced a file identical in length and page count to a
-    /// fresh document's. Reaching the writer leaves it dead, and a retry on a good stream throws
-    /// about the document having already been written.</para>
-    /// <para>A throw from the layout itself leaves it alive and wrong. Every page the attempt
-    /// committed before it threw stays, and a retry lays the document out again on top of them,
-    /// so each further attempt adds that many again. Whether the retry itself throws depends on
-    /// whether you changed anything: correct the cause and it succeeds silently on a wrong file,
-    /// leave the cause in place and it raises the same exception once more, having committed
-    /// another set of pages first (#530).</para>
-    /// <para>So a quiet retry means nothing on its own. A retry after a pre-layout refusal
-    /// returns quietly and the file is right; a retry after one from the layout itself returns
-    /// just as quietly and it is not. Build a fresh <see cref="Document"/> rather than retrying
-    /// either.</para>
+    /// <para>A save that threw does not reliably leave the document usable again either. What
+    /// decides it is whether the layout had run. Only the geometry checks run before it: the
+    /// <see cref="PageSize"/> and <see cref="Margins"/>, and the content area left once the header
+    /// and footer are taken off. A document refused there is clean: after correcting the margins,
+    /// a retry produced a file identical in length and page count to a fresh document's.</para>
+    /// <para>Every other refusal comes after the layout has added its pages. That includes an
+    /// element's own refusals, and also the checks made just before writing: a null
+    /// <paramref name="destination"/>, <see cref="Encrypt"/> combined with
+    /// <see cref="UseObjectStreams"/> or with a PDF/A or PDF/UA-1 <see cref="Conformance"/>.
+    /// The pages stay, and a retry lays the document out again on top of them. Correct
+    /// the cause and the retry succeeds silently on a wrong file; a one-page document retried
+    /// after a null <paramref name="destination"/> saved two pages. Leave the cause in place and
+    /// it raises again, having added another set of pages first (#530). Only a failure once
+    /// writing has begun leaves the document dead, and a retry then throws about the document
+    /// having already been written.</para>
+    /// <para>So a quiet retry means nothing on its own. Build a fresh <see cref="Document"/>
+    /// rather than retrying a save that threw.</para>
     /// <para>A document with no pages throws as well. Add at least one element before you
     /// save.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
-    /// <paramref name="destination"/> is <see langword="null"/>.
+    /// <paramref name="destination"/> is <see langword="null"/>. This is checked after the layout
+    /// has run, so the document is left holding a layout's pages; see the remarks.
     /// </exception>
     /// <exception cref="ObjectDisposedException">
     /// This <see cref="Document"/> was already disposed. It derives from
@@ -623,10 +790,10 @@ public sealed class Document : IDisposable
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The document has already been written, or has no pages, or an element's input cannot be
-    /// laid out, or <see cref="Conformance"/> asks for PDF/A while <see cref="Encrypt"/> has been
-    /// called, which ISO 19005-2 §6.1.3 prohibits. For the element inputs, the boundary
-    /// documentation on the property you set says which values reach this. That last pairing has
-    /// no such documentation on either member, so it is stated here.
+    /// laid out, or <see cref="Encrypt"/> was called on a PDF/A document, or on a PDF/UA-1
+    /// document without <see cref="PdfPermissions.Extract"/>; see <see cref="Conformance"/>. For
+    /// the element inputs, the boundary documentation on the property you set says which values
+    /// reach this.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Many unrelated conditions share this type, so <b>do not</b> switch on the parameter name to
@@ -708,8 +875,9 @@ public sealed class Document : IDisposable
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The document has already been written, or has no pages, or an element's input cannot be
-    /// laid out, or PDF/A <see cref="Conformance"/> is combined with <see cref="Encrypt"/>. The
-    /// file is open and truncated by the time any of these fires.
+    /// laid out, or <see cref="Encrypt"/> was called on a PDF/A document, or on a PDF/UA-1
+    /// document without <see cref="PdfPermissions.Extract"/>. The file is open and truncated by
+    /// the time any of these fires.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <see cref="PageSize"/> has a width or height that is not a positive finite number.
@@ -753,17 +921,18 @@ public sealed class Document : IDisposable
     /// <para>A second call after a save that succeeded throws. It reports that
     /// the document has already been written and tells you to create a new one. It writes nothing
     /// to the stream, appended or otherwise.</para>
-    /// <para>A save that threw does not reliably leave the document usable again either. The
-    /// three routes out of a failed save leave it clean, dead, or alive and wrong. A quiet retry
-    /// therefore proves nothing. Correct the cause and the first route returns the right file
-    /// while the third returns a wrong one; leave it in place and both raise again. The dead
-    /// route raises either way. Build a fresh <see cref="Document"/> rather than retrying a save
-    /// that threw; <see cref="Save(System.IO.Stream)"/> has the detail (#530).</para>
+    /// <para>A save that threw does not reliably leave the document usable again either. Only a
+    /// geometry refusal comes before the layout and leaves the document clean. Every other
+    /// refusal, a null <paramref name="destination"/> included, comes after the layout has added
+    /// its pages, and a retry adds them again. Build a fresh <see cref="Document"/> rather than
+    /// retrying a save that threw; <see cref="Save(System.IO.Stream)"/> has the detail
+    /// (#530).</para>
     /// <para>A document with no pages throws as well. Add at least one element before you
     /// save.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
-    /// <paramref name="destination"/> is <see langword="null"/>.
+    /// <paramref name="destination"/> is <see langword="null"/>. This is checked after the layout
+    /// has run, so the document is left holding a layout's pages; see the remarks.
     /// </exception>
     /// <exception cref="ObjectDisposedException">
     /// This <see cref="Document"/> was already disposed. It derives from
@@ -773,10 +942,10 @@ public sealed class Document : IDisposable
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The document has already been written, or has no pages, or an element's input cannot be
-    /// laid out, or <see cref="Conformance"/> asks for PDF/A while <see cref="Encrypt"/> has been
-    /// called, which ISO 19005-2 §6.1.3 prohibits. For the element inputs, the boundary
-    /// documentation on the property you set says which values reach this. That last pairing has
-    /// no such documentation on either member, so it is stated here.
+    /// laid out, or <see cref="Encrypt"/> was called on a PDF/A document, or on a PDF/UA-1
+    /// document without <see cref="PdfPermissions.Extract"/>; see <see cref="Conformance"/>. For
+    /// the element inputs, the boundary documentation on the property you set says which values
+    /// reach this.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// The margins, header and footer leave the content area no positive size, or an element
@@ -870,8 +1039,9 @@ public sealed class Document : IDisposable
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The document has already been written, or has no pages, or an element's input cannot be
-    /// laid out, or PDF/A <see cref="Conformance"/> is combined with <see cref="Encrypt"/>. The
-    /// file is open and truncated by the time any of these fires.
+    /// laid out, or <see cref="Encrypt"/> was called on a PDF/A document, or on a PDF/UA-1
+    /// document without <see cref="PdfPermissions.Extract"/>. The file is open and truncated by
+    /// the time any of these fires.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <see cref="PageSize"/> has a width or height that is not a positive finite number.
@@ -933,11 +1103,13 @@ public sealed class Document : IDisposable
 
     /// <summary>Releases the underlying <see cref="PdfDocument"/> and its resources.</summary>
     /// <remarks>
-    /// A later <see cref="Save(System.IO.Stream)"/> throws <see cref="ObjectDisposedException"/>
-    /// from the kernel document. Dispose is idempotent.
+    /// Calling it again does nothing. Afterwards <see cref="Encrypt"/> throws
+    /// <see cref="ObjectDisposedException"/>, and so does a save once its geometry check and
+    /// layout have passed; a geometry refusal is reported first. <see cref="Add(string, TextStyle)"/>
+    /// and the other <c>Add</c> overloads are still accepted, and their content is lost.
     /// </remarks>
     /// <exception cref="ObjectDisposedException">
-    /// Raised from a later save, not from this call.
+    /// Raised from a later save or <see cref="Encrypt"/>, not from this call.
     /// </exception>
     public void Dispose() => _pdf.Dispose();
 }

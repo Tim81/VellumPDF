@@ -16,8 +16,9 @@ namespace VellumPdf.Layout.Rendering;
 /// pass 2 draws all pages including the running bands with {page}/{pages} resolved.
 /// </summary>
 /// <remarks>
-/// Geometry is checked in the constructor. A custom overflow that never advances hits
-/// 50,000 continuations in <see cref="Render"/>.
+/// The page size and margins are checked in the constructor. Every other refusal comes from
+/// <see cref="Render"/>, including what the header and footer take off the content area. One
+/// element may take at most 50,000 page continuations; see <see cref="IRenderer.Layout"/>.
 /// </remarks>
 public sealed class DocumentRenderer
 {
@@ -130,17 +131,10 @@ public sealed class DocumentRenderer
     /// <summary>
     /// Running bands whose text did not fit the content box and was cut, at most one report per
     /// band, each naming the page that lost the most.
-    ///
-    /// Public here, unlike <see cref="TextEncodingWarnings"/>, because there is no other route to
-    /// it: a canvas can be asked what it could not encode, but only the renderer knows the content
-    /// box a band was measured against, and the layout assembly grants internal visibility only to
-    /// VellumPdf.Signing. Read directly by
-    /// <c>RunningBandFitTests.Band_truncation_isReadableFromTheRendererItself</c>, which is what
-    /// keeps this member from being public with nothing exercising it.
     /// </summary>
     /// <remarks>
-    /// Empty until <see cref="Render"/> or <c>RunLayout</c> has run. Truncation is reported,
-    /// not refused.
+    /// Empty until <see cref="Render"/> has run. A cut band is not an error, and this list is the
+    /// only report of it.
     /// </remarks>
     public IReadOnlyList<BandTruncationWarning> BandTruncations
     {
@@ -155,14 +149,26 @@ public sealed class DocumentRenderer
 
     /// <summary>Header band drawn at the top of every page. Optional.</summary>
     /// <remarks>
-    /// Same null-template throw as <see cref="Document.Header"/> (#531).
+    /// A band whose <see cref="RunningBand.Template"/> is null makes <see cref="Render"/> throw
+    /// (#531). The band's height and style refusals also come from <see cref="Render"/>; see
+    /// <see cref="RunningBand.Height"/>.
     /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised from <see cref="Render"/>, not from this property, when the band's
+    /// <see cref="RunningBand.Template"/> is <see langword="null"/>.
+    /// </exception>
     public RunningBand? Header { get; set; }
 
     /// <summary>Footer band drawn at the bottom of every page. Optional.</summary>
     /// <remarks>
-    /// Same null-template throw as <see cref="Document.Footer"/> (#531).
+    /// A band whose <see cref="RunningBand.Template"/> is null makes <see cref="Render"/> throw
+    /// (#531). The band's height and style refusals also come from <see cref="Render"/>; see
+    /// <see cref="RunningBand.Height"/>.
     /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised from <see cref="Render"/>, not from this property, when the band's
+    /// <see cref="RunningBand.Template"/> is <see langword="null"/>.
+    /// </exception>
     public RunningBand? Footer { get; set; }
 
     // Pending bookmarks: queued by Document.AddBookmark, drained on next Draw.
@@ -170,15 +176,22 @@ public sealed class DocumentRenderer
 
     /// <summary>Creates a renderer that paginates content onto <paramref name="pdf"/> using the given page size and margins.</summary>
     /// <remarks>
-    /// Geometry is checked here. A page with no positive size, or margins that leave no
-    /// content area, throws <see cref="ArgumentOutOfRangeException"/> or
-    /// <see cref="ArgumentException"/> from this constructor, not from <see cref="Render"/>.
+    /// The page size and margins are checked here. A page width or height that is not a positive
+    /// finite number throws <see cref="ArgumentOutOfRangeException"/>, and margins that meet or
+    /// exceed the page throw <see cref="ArgumentException"/>, both from this constructor. Margins
+    /// of <c>NaN</c> or negative infinity pass this check, as on <see cref="Document.Margins"/>.
+    /// <para>A null <paramref name="pdf"/> throws <see cref="NullReferenceException"/>: from this
+    /// constructor when <paramref name="pageSize"/> is null, and from <see cref="Render"/>
+    /// otherwise.</para>
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// The page width or height is not a positive finite number.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// The margins meet or exceed the page on either axis.
+    /// </exception>
+    /// <exception cref="NullReferenceException">
+    /// <paramref name="pdf"/> is <see langword="null"/> and <paramref name="pageSize"/> is null.
     /// </exception>
     public DocumentRenderer(PdfDocument pdf, PdfRectangle? pageSize = null, EdgeInsets? margins = null)
     {
@@ -191,21 +204,42 @@ public sealed class DocumentRenderer
 
     /// <summary>Appends a renderer to the document flow and returns this instance for chaining.</summary>
     /// <remarks>
-    /// Same 50,000-continuation cap as <see cref="Document.Add(IRenderer)"/>. A custom
-    /// overflow that never advances throws <see cref="InvalidOperationException"/> from
-    /// <see cref="Render"/>.
+    /// Nothing is checked here. A null <paramref name="renderer"/> is stored, and
+    /// <see cref="Render"/> throws when it reaches it. The page-continuation limit on
+    /// <see cref="IRenderer.Layout"/> applies from <see cref="Render"/>.
     /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised from <see cref="Render"/>, not from this call, when <paramref name="renderer"/> is
+    /// <see langword="null"/>.
+    /// </exception>
     public DocumentRenderer Add(IRenderer renderer) { _renderers.Add(renderer); return this; }
 
     /// <summary>Lays out all added renderers and saves the resulting PDF to <paramref name="destination"/>.</summary>
     /// <remarks>
-    /// A single element that needs more than <b>50,000</b> page continuations throws
-    /// <see cref="InvalidOperationException"/>. That is a hard ceiling, not the old stack
-    /// overflow: a custom <see cref="IRenderer"/> whose overflow never advances used to crash,
-    /// and now throws here.
+    /// The layout runs first and adds pages to the kernel document; the checks on
+    /// <paramref name="destination"/> and on the document's options run after it, just before
+    /// writing. A second call throws.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
-    /// An element needs more than 50,000 page continuations, or is too tall for one page.
+    /// An element needs more than <b>50,000</b> page continuations or is too tall for one page, or
+    /// there is nothing to draw, or this document has already been written, or the kernel
+    /// document's conformance level refuses its encryption settings.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// The margins, header and footer together leave the content area no positive size, or an
+    /// element refuses its own input.
+    /// </exception>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="destination"/> is <see langword="null"/>, checked after the layout has run.
+    /// </exception>
+    /// <exception cref="NullReferenceException">
+    /// An added renderer is <see langword="null"/>, or a band's template is null.
+    /// </exception>
+    /// <exception cref="NotSupportedException">
+    /// The kernel document combines object streams with encryption.
+    /// </exception>
+    /// <exception cref="ObjectDisposedException">
+    /// The kernel document was disposed.
     /// </exception>
     public void Render(Stream destination)
     {
