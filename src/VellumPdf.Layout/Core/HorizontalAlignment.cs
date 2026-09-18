@@ -34,11 +34,12 @@ public enum HorizontalAlignment
     /// </summary>
     /// <remarks>
     /// Only paragraph and heading text are justified. They stretch every line except the
-    /// paragraph's last, and a line that ends at a hard line break is stretched too. A line with no
-    /// space in it is not stretched. A carriage return or line feed starts a new line. Any other
-    /// white space except U+00A0 NO-BREAK SPACE, a tab included, is drawn as a space and counts as
-    /// one. An image, a table cell, a pie chart, a running band and a barcode draw this value as
-    /// <see cref="Left"/>.
+    /// paragraph's last, and a line that ends at a hard line break is stretched too. A single
+    /// trailing line break is dropped, so the line before it is the last; a second one adds an
+    /// empty last line, and the line before the empty one is stretched. A line with no space in it
+    /// is not stretched; white space is drawn as described on
+    /// <see cref="VellumPdf.Layout.Elements.Paragraph"/>. An image, a table cell, a pie chart, a
+    /// running band and a barcode draw this value as <see cref="Left"/>.
     /// <para><b>Attention</b>: with a standard-14 font the stretch covers only half the space
     /// left on the line, so justified lines stop short of the right edge (#548).</para>
     /// </remarks>

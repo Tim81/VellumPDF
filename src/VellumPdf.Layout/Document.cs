@@ -45,8 +45,9 @@ public sealed class Document : IDisposable
 
     /// <summary>
     /// Characters written in a Standard-14 font, by an element or a running band, that
-    /// WinAnsiEncoding could not represent (each was substituted with '?' in the saved PDF). Empty
-    /// when every character rendered is in WinAnsi.
+    /// WinAnsiEncoding could not represent (each UTF-16 code unit was substituted with '?' in the
+    /// saved PDF, so a character outside the Basic Multilingual Plane gives two question marks).
+    /// Empty when every character rendered is in WinAnsi.
     /// </summary>
     /// <remarks>
     /// Empty until a save (or signing prep) has run, and replaced by each one that succeeds.
@@ -59,8 +60,9 @@ public sealed class Document : IDisposable
     /// bands fitted, or when no band was set.
     /// </summary>
     /// <remarks>
-    /// Empty until a save has run, and replaced by each one that succeeds. A cut band is not an
-    /// error, and this list is the only report of it. See <see cref="RunningBand.Template"/>.
+    /// Empty until a save (or signing prep) has run, and replaced by each one that succeeds. A cut
+    /// band is not an error, and this list is the only report of it. See
+    /// <see cref="RunningBand.Template"/>.
     /// </remarks>
     public IReadOnlyList<BandTruncationWarning> BandTruncations => _bandTruncations;
 
@@ -212,10 +214,12 @@ public sealed class Document : IDisposable
     /// otherwise have no positive size, and no element could be placed in it.
     /// <para>The header and footer count toward this. Their heights come off the same box, so
     /// margins that fit on their own can still leave nothing once you set a running band.</para>
-    /// <para><b>Attention</b>: a finite negative inset is not refused. The document saves and the
-    /// content is placed outside the page's boundaries, where a reader clips it. On a one-paragraph
-    /// document with every inset at -72, the file is written with no invalid token in it, so
-    /// nothing downstream reports the loss either.</para>
+    /// <para><b>Attention</b>: a finite negative inset is not refused. It moves that edge of the
+    /// content area past the page's edge, and content placed beyond the page is clipped by a
+    /// reader. On a one-paragraph document with every inset at -72, the file is written with no
+    /// invalid token in it, so nothing downstream reports the loss either. Negative insets large
+    /// enough in magnitude to overflow the position arithmetic, such as -1e308, reach the outcomes
+    /// described below for a non-finite inset.</para>
     /// <para>A non-finite inset is checked only through the sum on its axis, and is refused only
     /// when that sum is positive infinity. <c>NaN</c> and negative infinity pass, because neither
     /// makes the sum meet or exceed the page. An inset that passes leaves a content area that is
@@ -249,7 +253,8 @@ public sealed class Document : IDisposable
     /// <remarks>
     /// A band whose <see cref="RunningBand.Template"/> is null makes the save throw (#531). The
     /// band's height and style carry refusals of their own; see <see cref="RunningBand.Height"/>,
-    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.FontRef"/>.
+    /// <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/> and
+    /// <see cref="TextStyle.FontRef"/>.
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
@@ -285,7 +290,8 @@ public sealed class Document : IDisposable
     /// <remarks>
     /// A band whose <see cref="RunningBand.Template"/> is null makes the save throw (#531). The
     /// band's height and style carry refusals of their own; see <see cref="RunningBand.Height"/>,
-    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.FontRef"/>.
+    /// <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/> and
+    /// <see cref="TextStyle.FontRef"/>.
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
@@ -325,13 +331,13 @@ public sealed class Document : IDisposable
     /// <para>A null style is stored. A later <see cref="Add(string, TextStyle)"/> then uses
     /// <see cref="TextStyle.Default"/>.</para>
     /// <para>The style is not checked here. Its refusals are raised from the save, for the text
-    /// that uses it; see <see cref="TextStyle.FontSize"/> and
+    /// that uses it; see <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/> and
     /// <see cref="TextStyle.FontRef"/>.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
     /// call, when the style a later <see cref="Add(string, TextStyle)"/> uses has a size or leading
-    /// that is refused; see <see cref="TextStyle.FontSize"/>.
+    /// that is refused; see <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
@@ -357,10 +363,10 @@ public sealed class Document : IDisposable
     /// a band that draws no text (#531). Assigning to <see cref="Header"/> directly reaches the
     /// same throw.
     /// <para>The band's height and <paramref name="style"/> carry refusals of their own; see
-    /// <see cref="RunningBand.Height"/>, <see cref="TextStyle.FontSize"/> and
-    /// <see cref="TextStyle.FontRef"/>. <see cref="HorizontalAlignment.Justify"/> and values the
-    /// enumeration does not name are drawn left-aligned; see
-    /// <see cref="RunningBand.Alignment"/>.</para>
+    /// <see cref="RunningBand.Height"/>, <see cref="TextStyle.FontSize"/>,
+    /// <see cref="TextStyle.Leading"/> and <see cref="TextStyle.FontRef"/>.
+    /// <see cref="HorizontalAlignment.Justify"/> and values the enumeration does not name are drawn
+    /// left-aligned; see <see cref="RunningBand.Alignment"/>.</para>
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
@@ -402,10 +408,10 @@ public sealed class Document : IDisposable
     /// a band that draws no text (#531). Assigning to <see cref="Footer"/> directly reaches the
     /// same throw.
     /// <para>The band's height and <paramref name="style"/> carry refusals of their own; see
-    /// <see cref="RunningBand.Height"/>, <see cref="TextStyle.FontSize"/> and
-    /// <see cref="TextStyle.FontRef"/>. <see cref="HorizontalAlignment.Justify"/> and values the
-    /// enumeration does not name are drawn left-aligned; see
-    /// <see cref="RunningBand.Alignment"/>.</para>
+    /// <see cref="RunningBand.Height"/>, <see cref="TextStyle.FontSize"/>,
+    /// <see cref="TextStyle.Leading"/> and <see cref="TextStyle.FontRef"/>.
+    /// <see cref="HorizontalAlignment.Justify"/> and values the enumeration does not name are drawn
+    /// left-aligned; see <see cref="RunningBand.Alignment"/>.</para>
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
@@ -692,7 +698,7 @@ public sealed class Document : IDisposable
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
     /// call, when the style used has a size or leading that is refused; see
-    /// <see cref="TextStyle.FontSize"/>.
+    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
@@ -1064,7 +1070,9 @@ public sealed class Document : IDisposable
     /// </summary>
     /// <remarks>
     /// A document is single-use. The layout runs here, not when you add an element, so most of what
-    /// can go wrong goes wrong at this call rather than at the one that set the bad value.
+    /// can go wrong goes wrong at this call rather than at the one that set the bad value, and
+    /// reaches you when the returned task is awaited: each exception this method lists faults the
+    /// task, except a cancellation, which ends the task in the <c>Canceled</c> state.
     /// <para>The save runs every element's renderer, a custom <see cref="IRenderer"/> included,
     /// reads every font registered with <see cref="UseTrueTypeFont"/>, and writes to
     /// <paramref name="destination"/>, so an exception from any of those reaches you from

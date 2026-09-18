@@ -20,6 +20,15 @@ public sealed class ListItem
     /// A null value makes the save throw; see the constructor. White space is drawn as on
     /// <see cref="Paragraph"/>.
     /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when the text is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when the text holds an unpaired surrogate and is measured in an embedded
+    /// font; see <see cref="TextStyle.FontRef"/>.
+    /// </exception>
     public string Text { get; }
 
     /// <summary>Optional text style; when null, the item inherits one.</summary>
@@ -32,7 +41,7 @@ public sealed class ListItem
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when the style's size or leading is refused; see
-    /// <see cref="TextStyle.FontSize"/>.
+    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -96,7 +105,7 @@ public sealed class ListItem
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this constructor, when the style's size or leading is refused; see
-    /// <see cref="TextStyle.FontSize"/>.
+    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -147,7 +156,7 @@ public sealed class ListItem
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this call, when the style's size or leading is refused; see
-    /// <see cref="TextStyle.FontSize"/>.
+    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not

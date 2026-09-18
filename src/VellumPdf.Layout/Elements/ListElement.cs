@@ -45,11 +45,12 @@ public enum ListStyle
 /// <remarks>
 /// Nesting is one level, via <see cref="ListItem.Children"/>. Marker formatting of zero and
 /// negative indices is on <see cref="FormatMarker"/>.
-/// <para><b>Attention</b>: an item can be drawn without its last line, while the space for that
-/// line stays reserved and nothing reports it. The draw pass lays each item out again in a height
-/// it recomputes from the page position, and rounding can leave that height just short of the lines
-/// the layout pass fitted. It depends on the font size and the line count: at the default 12pt, an
-/// item of exactly two lines draws only its first.</para>
+/// <para><b>Attention</b>: the last item a list draws on a page can lose its last line, while the
+/// space for that line stays reserved and nothing reports it. The draw pass lays each item out
+/// again in the height between the item and the bottom of the list's area. For the last item on a
+/// page that height is exactly the item's own, and rounding can leave it just short. Whether a line
+/// is lost depends on the font size, the line count and where the item falls on the page: a single
+/// two-line item at 12pt at the top of an A4 page draws only its first line.</para>
 /// </remarks>
 public sealed class ListElement
 {
@@ -146,7 +147,7 @@ public sealed class ListElement
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when the style's size or leading is refused; see
-    /// <see cref="TextStyle.FontSize"/>.
+    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -210,7 +211,7 @@ public sealed class ListElement
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this call, when the style's size or leading is refused; see
-    /// <see cref="TextStyle.FontSize"/>.
+    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not

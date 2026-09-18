@@ -34,8 +34,8 @@ public sealed class LineSeparator
     /// want no rule, leave the element out.</para>
     /// <para>A negative width is not refused, though ISO 32000-2, 8.4.3.2 requires a line width to
     /// be a non-negative number. The height the separator takes is <c>Top</c> plus the width plus
-    /// <c>Bottom</c>, so a negative width shortens that height. The elements after the separator
-    /// move up the page, and off it once the width's magnitude is large enough.</para>
+    /// <c>Bottom</c>, so a negative width shortens that height. The rule and the elements after it
+    /// move up the page, and off the page once the width's magnitude is large enough.</para>
     /// <para>Do not pass a negative width. #482 decides whether a later major version refuses
     /// it.</para>
     /// </remarks>

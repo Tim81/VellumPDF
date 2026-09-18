@@ -16,6 +16,10 @@ public sealed class LayoutImage
 {
     /// <summary>The image to draw.</summary>
     /// <remarks>A null value makes the save throw; see the constructor.</remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when the image is <see langword="null"/>.
+    /// </exception>
     public PdfImageXObject Image { get; }
 
     /// <summary>

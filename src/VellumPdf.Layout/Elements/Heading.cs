@@ -23,6 +23,15 @@ public sealed class Heading
     /// bookmark, titled by <see cref="BookmarkTitle"/> or else empty, and, in a tagged document,
     /// its structure element.
     /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when the text is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when the text holds an unpaired surrogate and is measured in an embedded
+    /// font; see <see cref="TextStyle.FontRef"/>.
+    /// </exception>
     public string Text { get; }
 
     /// <summary>The heading's text style.</summary>
@@ -34,7 +43,7 @@ public sealed class Heading
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when the style's size or leading is refused; see
-    /// <see cref="TextStyle.FontSize"/>.
+    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -137,7 +146,7 @@ public sealed class Heading
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this constructor, when the style's size or leading is refused; see
-    /// <see cref="TextStyle.FontSize"/>.
+    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not

@@ -135,8 +135,10 @@ public sealed class DocumentRenderer
     /// </summary>
     /// <remarks>
     /// Empty until <see cref="Render"/> has run. A cut band is not an error, and this list is the
-    /// only report of it. A template whose glyphs measure zero width is never cut, so it is never
-    /// reported; see <see cref="RunningBand.Template"/>.
+    /// only report of it. A band is cut only when its measured width exceeds the content width. A
+    /// template whose glyphs measure zero or negative width, as at a negative font size, is
+    /// therefore never cut or reported, and no band is when the content width is <c>NaN</c>; see
+    /// <see cref="RunningBand.Template"/>.
     /// </remarks>
     public IReadOnlyList<BandTruncationWarning> BandTruncations
     {
@@ -155,7 +157,8 @@ public sealed class DocumentRenderer
     /// (#531). Pages the kernel document already held when <see cref="Render"/> runs get no band,
     /// and <c>{page}</c> counts those pages while <c>{pages}</c> does not. The band's height and
     /// style refusals also come from <see cref="Render"/>; see <see cref="RunningBand.Height"/>,
-    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.FontRef"/>.
+    /// <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/> and
+    /// <see cref="TextStyle.FontRef"/>.
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised from <see cref="Render"/>, not from this property, when the band's
@@ -186,7 +189,8 @@ public sealed class DocumentRenderer
     /// (#531). Pages the kernel document already held when <see cref="Render"/> runs get no band,
     /// and <c>{page}</c> counts those pages while <c>{pages}</c> does not. The band's height and
     /// style refusals also come from <see cref="Render"/>; see <see cref="RunningBand.Height"/>,
-    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.FontRef"/>.
+    /// <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/> and
+    /// <see cref="TextStyle.FontRef"/>.
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised from <see cref="Render"/>, not from this property, when the band's
@@ -224,9 +228,9 @@ public sealed class DocumentRenderer
     /// <para>A null <paramref name="pdf"/> throws <see cref="NullReferenceException"/>: from this
     /// constructor when <paramref name="pageSize"/> is null, and from <see cref="Render"/>
     /// otherwise.</para>
-    /// <para>A negative margin is accepted and lays content out beyond the page edge, as on
-    /// <see cref="Document.Margins"/>. The origin of <paramref name="pageSize"/> is not used for
-    /// layout, as on <see cref="Document.PageSize"/>.</para>
+    /// <para>A negative margin is accepted and moves that edge of the content area past the page
+    /// edge, as on <see cref="Document.Margins"/>. The origin of <paramref name="pageSize"/> is not
+    /// used for layout, as on <see cref="Document.PageSize"/>.</para>
     /// <para>Do not pass a null <paramref name="pdf"/>, a negative or <c>NaN</c> margin, or a page
     /// rectangle not at the origin. A later major version will refuse them.</para>
     /// </remarks>
@@ -803,8 +807,8 @@ public sealed class DocumentRenderer
     // ── Validation ────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Validates that page size and margins are finite, positive, and leave a non-empty content
-    /// area.
+    /// Validates that the page size is positive and finite, and refuses margins whose sum on either
+    /// axis meets or exceeds the page; a NaN sum passes.
     /// </summary>
     private static void ValidateGeometry(PdfRectangle pageSize, EdgeInsets margins)
     {

@@ -13,13 +13,13 @@ namespace VellumPdf.Layout.Elements;
 /// Refusals on size, leading and font are on <see cref="TextStyle"/> and are raised from the save.
 /// Null text and null runs are stored and make the save throw; see the constructors and
 /// <see cref="Add"/>.
-/// <para>Text is laid out word by word. A carriage return, a line feed or both start a new line.
-/// One before the first word leaves an empty first line; at the end of the text the first is
-/// dropped and each further one adds an empty line. Any other sequence of white space, except
-/// U+00A0 NO-BREAK SPACE, is drawn as one space, and is dropped at the start and end of the text.
-/// The boundary between two runs is drawn as a space too, unless a line break falls on it, so a
-/// word cannot change style part-way: the run <c>Bold</c> followed by the run <c>er</c> is drawn as
-/// <c>Bold er</c>.</para>
+/// <para>Text is laid out word by word. A carriage return, a line feed, or a carriage return
+/// followed by a line feed starts a new line. One before the first word leaves an empty first line;
+/// at the end of the text the first is dropped and each further one adds an empty line. Any other
+/// sequence of white space, except U+00A0 NO-BREAK SPACE, is drawn as one space, and is dropped at
+/// the start and end of each line. The boundary between two runs is drawn as a space too, unless a
+/// line break falls on it, so a word cannot change style part-way: the run <c>Bold</c> followed by
+/// the run <c>er</c> is drawn as <c>Bold er</c>.</para>
 /// </remarks>
 public sealed class Paragraph
 {
@@ -84,9 +84,9 @@ public sealed class Paragraph
     /// <remarks>
     /// <see cref="HorizontalAlignment.Justify"/> stretches every line except the paragraph's last,
     /// which stays left-aligned, and a line that ends at a hard line break is stretched too. A line
-    /// with no space in it is not stretched; see <see cref="HorizontalAlignment.Justify"/> for
-    /// which characters count. With a standard-14 font the stretch covers only half the space left
-    /// on the line (#548).
+    /// with no space in it is not stretched. White space is drawn as the type remarks describe; see
+    /// <see cref="HorizontalAlignment.Justify"/> for trailing line breaks. With a standard-14 font
+    /// the stretch covers only half the space left on the line (#548).
     /// </remarks>
     public HorizontalAlignment Alignment { get; init; } = HorizontalAlignment.Left;
 
@@ -125,7 +125,7 @@ public sealed class Paragraph
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this constructor, when the style's size or leading is refused; see
-    /// <see cref="TextStyle.FontSize"/>.
+    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -166,7 +166,7 @@ public sealed class Paragraph
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this constructor, when a run's style has its size or leading refused; see
-    /// <see cref="TextStyle.FontSize"/>.
+    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -209,7 +209,7 @@ public sealed class Paragraph
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this call, when the style's size or leading is refused; see
-    /// <see cref="TextStyle.FontSize"/>.
+    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not

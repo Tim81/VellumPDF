@@ -65,9 +65,8 @@ public sealed class TableRenderer : IRenderer
     /// <summary>Resolves column widths and row heights, fitting as many rows as possible and splitting at row boundaries on overflow.</summary>
     /// <remarks>
     /// Overflow splits at a row boundary. An area with no width returns
-    /// <see cref="LayoutResult.Outcome.Nothing"/> before anything is checked. Otherwise this method
-    /// itself throws the exceptions its tags list. When the document calls it, they reach you from
-    /// the save.
+    /// <see cref="LayoutResult.Outcome.Nothing"/> before anything is checked. When the document
+    /// calls this method, the exceptions it lists reach you from the save.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// The table resolves to no columns, or a cell's span, padding or style, or the table's
@@ -373,14 +372,14 @@ public sealed class TableRenderer : IRenderer
     /// actually covers on this page: the longest run of consecutive rows from its own, all of which
     /// this page draws, capped by the declared count.
     ///
-    /// A page break does not clip a span that starts in a data row, because <c>Layout</c> walks the
-    /// break back out of such a group; a group that cannot fit a page at all raises
-    /// <c>ElementTooTall</c> instead of splitting. A span from the leading header rows is not
-    /// walked back out of, so it is clipped on each continuation page (see <c>Cell.RowSpan</c>).
-    /// What this also clips, on a data row as readily as a header row, is a span reaching
-    /// past the last row of the table. Measured on a 300x170pt page at 20pt margins with a repeated
-    /// header, where the box holds five 20pt rows under it: groups of two to five keep their
-    /// declared span, six and up raise.
+    /// A page break does not clip a span that starts in a data row and whose last row does not
+    /// overflow int, because <c>Layout</c> walks the break back out of such a group; a group taller
+    /// than the page leaves below the repeated header rows raises <c>ElementTooTall</c> instead of
+    /// splitting. A span from the leading header rows is not walked back out of, so it is clipped
+    /// on each continuation page (see <c>Cell.RowSpan</c>). What this also clips, on a data row as
+    /// readily as a header row, is a span reaching past the last row of the table. Measured on a
+    /// 300x170pt page at 20pt margins with a repeated header, where the box holds five 20pt rows
+    /// under it: groups of two to five keep their declared span, six and up raise.
     ///
     /// The repeated header run is the case this exists for. <c>Draw</c> draws that run again at the
     /// top of every continuation page, but

@@ -212,7 +212,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **The rest of Layout's public members now document their boundaries (#510):** what is
   refused and which call throws, what is accepted but should not be relied on, and what is
-  accepted and then ignored. **129** public members and the `TextRun` type carry an
+  accepted and then ignored. **133** public members and the `TextRun` type carry an
   `<exception>` tag, counted in the compiler's XML output. What a caller is most likely to act
   on:
 
@@ -247,13 +247,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - `LayoutBox.ToString` formats in the current culture.
   - A pie chart whose slice values sum past the largest double has no area, and a very large
     `StartAngle` draws the wedges wrong (#546).
-  - A paragraph, heading or list item draws each sequence of white space other than U+00A0 and
-    line breaks as one space. A paragraph also draws the boundary between two runs as a space,
-    so a word cannot change style part-way.
+  - A paragraph, heading or list item draws each sequence of white space other than U+00A0, a
+    carriage return or a line feed as one space, and drops it at the start and end of each line.
+    A paragraph also draws the boundary between two runs as a space, so a word cannot change
+    style part-way.
   - A `Cell.RowSpan` group that starts in the table's leading header rows can be split across
     pages, and on each continuation page the data rows it covers draw their cells in its columns.
-  - A list item can be drawn without its last line while the space for it stays reserved: at the
-    default 12pt, an item of exactly two lines draws only its first.
+  - The last item a list draws on a page can lose its last line while the space for it stays
+    reserved. Whether it does depends on the font size, the line count and where the item falls
+    on the page.
 
 - **The public members that refuse input now say so, and say what not to pass (#503).** These
   boundaries were created by fixes already shipped in 2.3.2 and documented almost nowhere: of
@@ -288,13 +290,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   positive infinity; `NaN` and negative infinity slip past the check, because neither makes the sum
   meet or exceed the page. What follows depends on the elements laid out in the content area it
   leaves; `Document.Margins` gives the rule, and #502 the measured cases. A positive-infinity image
-  width is not refused but clamped to the content box. A marker wider than the list indent does not
-  overprint the item text, because the gutter widens per item rather than to the widest one seen so
-  far, and reverts to the plain indent whenever the widened gutter would leave less room than that
-  item's longest word. With roman numerals at the default 20-point indent, the first marker to
-  exceed the indent is item 17. On an ordinary page the revert never fires at all: it needs the
-  widened gutter to leave less room than the item's longest word, which a normal content width does
-  not reach. Padding wider than its column does not collapse the cell: the inner width clamps to one
+  width is not refused but clamped to the content box. With roman numerals at the default 20-point
+  indent, the first marker wider than the indent is item 17. Such a marker and the item text do
+  not overlap unless the gutter reverts: the gutter widens per item rather than to the widest one
+  seen so far, and reverts to the plain indent whenever the widened gutter would leave less room
+  than that item's longest word. When it reverts, the text starts at the plain indent, inside the
+  marker: on US Letter at 72-point margins, item 18 holding an unbroken word of 68 lowercase `a`
+  starts its text at x=92, inside the marker that ends at 95.33.
+  Padding wider than its column does not collapse the cell: the inner width clamps to one
   point and the text wraps to one glyph per line, landing outside the page when the padding is
   lopsided (`Left` alone at 400 in a 260-point column) but back inside it when the same total is
   split evenly across `Left` and `Right`. `H6` is this library's own deepest heading tag, not the

@@ -12,9 +12,9 @@ namespace VellumPdf.Layout.Elements;
 /// Both arguments are stored without a check. A null text makes the save throw when it lays out the
 /// paragraph holding this run, and so does a null style on a run whose text holds a character other
 /// than white space. U+00A0 NO-BREAK SPACE counts as such a character; a tab and other white space
-/// do not. Refusals on the style's size also fire from the save; see <see cref="TextStyle"/>. The
-/// boundary between this run and the next is drawn as a space unless a line break falls on it; see
-/// <see cref="Paragraph"/>.
+/// do not. Refusals on size, leading and font are on <see cref="TextStyle"/> and are raised from
+/// the save. The boundary between this run and the next is drawn as a space unless a line break
+/// falls on it; see <see cref="Paragraph"/>.
 /// <para>Do not pass null for either argument. A later major version will throw
 /// <see cref="ArgumentNullException"/> from the constructor.</para>
 /// </remarks>
@@ -32,7 +32,7 @@ namespace VellumPdf.Layout.Elements;
 /// <exception cref="InvalidOperationException">
 /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not from
 /// the constructor, when the style's size or leading is refused; see
-/// <see cref="TextStyle.FontSize"/>.
+/// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
 /// </exception>
 /// <exception cref="IndexOutOfRangeException">
 /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not from
@@ -75,7 +75,7 @@ public sealed class TextRun(string Text, TextStyle Style)
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when the style's size or leading is refused; see
-    /// <see cref="TextStyle.FontSize"/>.
+    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not

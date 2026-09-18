@@ -16,9 +16,9 @@ namespace VellumPdf.Layout.Rendering;
 /// Justification: Tw for Standard-14 lines; explicit per-word Tm for embedded-font lines.
 /// </summary>
 /// <remarks>
-/// The document creates one for each <see cref="Paragraph"/>. <see cref="Layout"/>, which the
-/// document calls during a save, throws the exceptions its tags list. A negative start line makes
-/// <see cref="Draw"/> throw.
+/// The document creates one for each <see cref="Paragraph"/>. The document calls
+/// <see cref="Layout"/> during a save, so the exceptions on that method reach you from the save. A
+/// negative start line makes <see cref="Draw"/> throw.
 /// </remarks>
 public sealed class ParagraphRenderer : IRenderer
 {
@@ -66,8 +66,8 @@ public sealed class ParagraphRenderer : IRenderer
     /// the area it returns <see cref="LayoutResult.Outcome.Nothing"/>; the document then retries on
     /// a new page, and, if that fails too, its save throws <see cref="InvalidOperationException"/>
     /// saying the element is too tall to fit.
-    /// <para>This method itself throws the exceptions its tags list. When the document calls it,
-    /// they reach you from the save.</para>
+    /// <para>When the document calls this method, the exceptions it lists reach you from the
+    /// save.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// A run's <see cref="TextStyle.FontSize"/> is refused; see that member.

@@ -33,8 +33,8 @@ public sealed class RendererContext
     /// file. An embedded font registered on it is recorded for no page, though the font file is
     /// written anyway, as a registered font is even when unused.
     /// <para>A second context on the same page names its images from <c>Im1</c> again. The page's
-    /// resource entry for a shared name keeps the image registered last under it, so the other
-    /// image is written but not drawn.</para>
+    /// resource entry for a shared name keeps the image registered last under it, so the image
+    /// registered first is written but not drawn.</para>
     /// <para>Do not pass null, a page from another document, or a page another context already
     /// draws on. A later major version will throw from this constructor.</para>
     /// </remarks>
