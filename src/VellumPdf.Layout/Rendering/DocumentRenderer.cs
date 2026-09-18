@@ -16,10 +16,10 @@ namespace VellumPdf.Layout.Rendering;
 /// pass 2 draws all pages including the running bands with {page}/{pages} resolved.
 /// </summary>
 /// <remarks>
-/// The page size and margins, and a null <c>pdf</c> without a page size, are checked in the
-/// constructor. Every other refusal comes from <see cref="Render"/>, including what the header and
-/// footer take off the content area. One element may take at most 50,000 page continuations; see
-/// <see cref="IRenderer.Layout"/>.
+/// The page size and margins are checked in the constructor, which also throws for a null
+/// <c>pdf</c> when no page size is given. Every other refusal comes from <see cref="Render"/>,
+/// including a header or footer that leaves the content area no positive size. One element may take
+/// at most 50,000 page continuations; see <see cref="IRenderer.Layout"/>.
 /// </remarks>
 public sealed class DocumentRenderer
 {
@@ -166,6 +166,11 @@ public sealed class DocumentRenderer
     /// Raised from <see cref="Render"/>, when the band's height or its style's size is refused; see
     /// <see cref="RunningBand.Height"/> and <see cref="TextStyle.FontSize"/>.
     /// </exception>
+    /// <exception cref="IndexOutOfRangeException">
+    /// Raised from <see cref="Render"/>, when the band's style holds a
+    /// <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name and the band
+    /// draws text.
+    /// </exception>
     public RunningBand? Header { get; set; }
 
     /// <summary>Footer band drawn at the bottom of every page. Optional.</summary>
@@ -185,6 +190,11 @@ public sealed class DocumentRenderer
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Render"/>, when the band's height or its style's size is refused; see
     /// <see cref="RunningBand.Height"/> and <see cref="TextStyle.FontSize"/>.
+    /// </exception>
+    /// <exception cref="IndexOutOfRangeException">
+    /// Raised from <see cref="Render"/>, when the band's style holds a
+    /// <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name and the band
+    /// draws text.
     /// </exception>
     public RunningBand? Footer { get; set; }
 
@@ -223,15 +233,19 @@ public sealed class DocumentRenderer
     /// <summary>Appends a renderer to the document flow and returns this instance for chaining.</summary>
     /// <remarks>
     /// Nothing is checked here. A null <paramref name="renderer"/> is stored, and
-    /// <see cref="Render"/> throws when it reaches it.
+    /// <see cref="Render"/> throws when it reaches it. The page-continuation limit on
+    /// <see cref="IRenderer.Layout"/> applies from <see cref="Render"/>.
     /// <para>Do not pass null. A later major version will throw <see cref="ArgumentNullException"/>
     /// from this call.</para>
-    /// The page-continuation limit on <see cref="IRenderer.Layout"/> applies from
-    /// <see cref="Render"/>.
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised from <see cref="Render"/>, not from this call, when <paramref name="renderer"/> is
     /// <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Render"/>, not from this call, when <paramref name="renderer"/>, or an
+    /// overflow it returns, needs more than 50,000 page continuations, or when it returns
+    /// <see cref="LayoutResult.Outcome.Nothing"/> twice in a row, the second time on a new page.
     /// </exception>
     public DocumentRenderer Add(IRenderer renderer) { _renderers.Add(renderer); return this; }
 
@@ -242,9 +256,9 @@ public sealed class DocumentRenderer
     /// writing. That write is <see cref="PdfDocument.Save(System.IO.Stream)"/>, so every exception
     /// it documents can reach you from here. <see cref="Document.Save(System.IO.Stream)"/> builds a
     /// renderer and calls this method, so the exceptions listed on it, other than those about the
-    /// <see cref="Document"/> itself, are the ones this method raises. A second call after one that
-    /// succeeded throws; after one that threw, it can succeed and write the failed call's pages as
-    /// well (#530).
+    /// <see cref="Document"/> itself, can reach you from here, and so can anything a custom
+    /// renderer or the destination raises. A second call after one that succeeded throws; after one
+    /// that threw, it can succeed and write the failed call's pages as well (#530).
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// An element needs more than <b>50,000</b> page continuations or is too tall for one page, or
@@ -254,7 +268,8 @@ public sealed class DocumentRenderer
     /// </exception>
     /// <exception cref="ArgumentException">
     /// The margins, header and footer together leave the content area no positive size, or an
-    /// element refuses its own input, or <paramref name="destination"/> is not writable.
+    /// element refuses its own input, or <paramref name="destination"/> is not writable, or a
+    /// registered font has a metric this library cannot write.
     /// </exception>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="destination"/> is <see langword="null"/>, checked after the layout has run.
@@ -264,8 +279,8 @@ public sealed class DocumentRenderer
     /// an element stored without a check is null.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
-    /// Text is drawn in a <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not
-    /// name; see <see cref="TextStyle.FontRef"/>.
+    /// A <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name is selected
+    /// on a page; see <see cref="TextStyle.FontRef"/>.
     /// </exception>
     /// <exception cref="InvalidDataException">
     /// A registered embedded font has malformed outline data.
@@ -277,6 +292,9 @@ public sealed class DocumentRenderer
     /// <exception cref="OutOfMemoryException">
     /// A column count resolved from <see cref="Elements.Table.Cell.ColSpan"/> is too large to
     /// allocate.
+    /// </exception>
+    /// <exception cref="IOException">
+    /// The destination stream failed to write.
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// The kernel document combines options it cannot write together, such as object streams with

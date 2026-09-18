@@ -139,7 +139,7 @@ public sealed class DrawContext
     /// <remarks>
     /// <paramref name="uri"/> is not validated. Empty and <c>not a uri</c> are written into
     /// <c>/URI</c> as given, and so is an absolute URI of any scheme, such as
-    /// <c>javascript:alert(1)</c>, the same as <see cref="TextStyle.LinkUri"/>. A null
+    /// <c>javascript:alert(1)</c>. Non-ASCII characters are percent-encoded. A null
     /// <paramref name="uri"/> writes a link annotation with no action, so the area is a link that
     /// goes nowhere.
     /// <para>A non-finite coordinate in <paramref name="box"/> is accepted here. The save throws

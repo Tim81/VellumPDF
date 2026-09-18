@@ -212,7 +212,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **The rest of Layout's public members now document their boundaries (#510):** what is
   refused and which call throws, what is accepted but should not be relied on, and what is
-  accepted and then ignored. **113** public members carry an `<exception>` tag, counted in the
+  accepted and then ignored. **114** public members carry an `<exception>` tag, counted in the
   compiler's XML output. What a caller is most likely to act on:
 
   - Null text, a null run, cell, item or image, and a null `PieChart.Slices` are stored without
@@ -221,8 +221,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     `Layout` method throws (#547).
   - `SetDefaultFont` is used only by `Add(string)` calls made after it. A `Paragraph`,
     `Heading`, list, table or running band never uses it.
-  - A font handle from a different `Document` saves without an exception, and the text is not
-    drawn in that font (#544).
+  - A font handle from a different `Document` saves without an exception. The text is drawn in
+    whatever font the saving document registered under the same resource name, if any, and even
+    when that is the same font file, only the characters the saving document's own text also uses
+    survive (#544).
   - `HorizontalAlignment.Justify` is drawn as left everywhere except paragraph and heading text,
     and with a standard-14 font it stretches a line by only half its free space (#548).
   - `Row.Background` cannot take effect, because no table row can be given one (#543).
@@ -330,21 +332,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **A save that threw can leave the document holding pages and element state from the failed
   attempt (#530).** A retry after a save that threw can succeed on a file that differs from a
-  fresh build: a one-page document retried after a save to a null destination saved two pages. The overloads now say a document is single-use, and that the answer to a save that threw
-  is a fresh `Document` rather than a retry. The behaviour itself is unchanged here; #530 carries
-  the defect.
+  fresh build: a one-page document retried after a save to a null destination saved two pages.
+  The overloads now say a document is single-use, and that the answer to a save that threw is a
+  fresh `Document` rather than a retry. The behaviour itself is unchanged here; #530 carries the
+  defect.
 
-- Further boundaries the save overloads did not carry. The save overloads' `InvalidOperationException` list
-  read as complete and was not: `Conformance` set to a PDF/A level together with `Encrypt` throws
-  from `Save`, since ISO 19005-2 §6.1.3 prohibits encryption. The save overloads,
-  `Document.Conformance` and `Document.Encrypt` now say so, and name a second pairing: PDF/UA-1
-  with `Encrypt` but without `PdfPermissions.Extract`, which ISO 14289-1, 7.16, does not allow.
-  `Cell.ColSpan` documented `OverflowException` and `OutOfMemoryException` against `Document.Save` while `Save`
-  itself listed neither, which is where a caller writing catch clauses looks first; all four
-  overloads now carry both, each naming the member that causes it. `ListElement.Indent` covered
-  only magnitude. Its other inputs each do something different: `NaN` and negative infinity each
-  write a text-matrix coordinate that is not a PDF number, and positive infinity draws the marker
-  and drops the item text on a flat list.
+- Further boundaries the save overloads did not carry. The save overloads'
+  `InvalidOperationException` list read as complete and was not: `Conformance` set to a PDF/A level
+  together with `Encrypt` throws from `Save`, since ISO 19005-2 §6.1.3 prohibits encryption. The
+  save overloads, `Document.Conformance` and `Document.Encrypt` now say so, and name a second
+  pairing: PDF/UA-1 with `Encrypt` but without `PdfPermissions.Extract`, which ISO 14289-1, 7.16,
+  does not allow. `Cell.ColSpan` documented `OverflowException` and `OutOfMemoryException` against
+  `Document.Save` while `Save` itself listed neither, which is where a caller writing catch clauses
+  looks first; all four overloads now carry both, each naming the member that causes it.
+  `ListElement.Indent` covered only magnitude. Its other inputs each do something different: `NaN`
+  and negative infinity each write a text-matrix coordinate that is not a PDF number, and positive
+  infinity draws the marker and drops the item text on a flat list.
 
   A negative value needed a rule rather than a list of outcomes. Where it puts the text depends
   on the nesting level, on which branch of the widening override is taken and on the font size,

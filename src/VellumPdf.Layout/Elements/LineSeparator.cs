@@ -57,8 +57,8 @@ public sealed class LineSeparator
     /// separator is at fault rather than which edge you set. <c>Left</c> and <c>Right</c> are
     /// checked too, though the rule spans the content width and neither of them moves it.</para>
     /// <para>A negative <c>Top</c> or <c>Bottom</c> is not refused: it moves the rule, or the
-    /// elements after it, up the page. Do not pass one; a later major version will refuse
-    /// it.</para>
+    /// elements after it, up the page.</para>
+    /// <para>Do not pass one. A later major version will refuse it.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property,

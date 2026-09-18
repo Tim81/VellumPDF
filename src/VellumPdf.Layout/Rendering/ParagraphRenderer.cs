@@ -17,8 +17,9 @@ namespace VellumPdf.Layout.Rendering;
 /// </summary>
 /// <remarks>
 /// The document creates one for each <see cref="Paragraph"/>. The paragraph's refusals, and a null
-/// anywhere in it, are raised from <see cref="Layout"/>, which the document calls during a save; a
-/// negative start line is raised from <see cref="Draw"/>.
+/// run or text in it, or a null style on a run whose text holds a word, are raised from
+/// <see cref="Layout"/>, which the document calls during a save; a negative start line is raised
+/// from <see cref="Draw"/>.
 /// </remarks>
 public sealed class ParagraphRenderer : IRenderer
 {

@@ -23,8 +23,8 @@ public sealed class TableElement
 {
     /// <summary>Creates an empty table.</summary>
     /// <remarks>
-    /// Saved before a row holding a cell is added, the table makes the save throw
-    /// <see cref="InvalidOperationException"/>; see <see cref="Rows"/>.
+    /// A save before a row holding a cell is added throws <see cref="InvalidOperationException"/>;
+    /// see <see cref="Rows"/>.
     /// </remarks>
     public TableElement() { }
 
@@ -139,7 +139,8 @@ public sealed class TableElement
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this call, when every row of the table is a header row. The message says the element is
-    /// too tall to fit on a page (#488).
+    /// too tall to fit on a page (#488), or, when no header row has a cell, that the table resolved
+    /// to no columns.
     /// </exception>
     public Row AddRow(bool isHeader = false)
     {
@@ -160,7 +161,8 @@ public sealed class TableElement
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this call, when every row of the table is a header row. The message says the element is
-    /// too tall to fit on a page (#488).
+    /// too tall to fit on a page (#488), or, when no header row has a cell, that the table resolved
+    /// to no columns.
     /// </exception>
     public Row AddHeaderRow()
     {

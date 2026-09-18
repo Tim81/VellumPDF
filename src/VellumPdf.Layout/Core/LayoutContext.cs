@@ -17,8 +17,9 @@ public sealed class LayoutContext
     /// <remarks>
     /// When the document lays out an element, the area runs from the current position to the bottom
     /// of the page's content area. The content area already excludes the page margins and any
-    /// header or footer band. On a fresh page this area can be one rounding step shorter than the
-    /// content area (#549).
+    /// header or footer band. On a fresh page this area can differ from the content area by one
+    /// rounding step. When it is the shorter of the two, a renderer that needs the whole content
+    /// area exactly can fail to paginate (#549).
     /// </remarks>
     public LayoutBox Area { get; }
 

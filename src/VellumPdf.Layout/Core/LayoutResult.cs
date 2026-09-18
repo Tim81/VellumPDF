@@ -103,9 +103,9 @@ public sealed class LayoutResult
 
     /// <summary>Creates a result indicating the content was split, with the part that fit and the overflow to place on the next page.</summary>
     /// <remarks>
-    /// Nothing is checked here, and the document does not read <paramref name="occupied"/>. A null
-    /// <paramref name="split"/> or <paramref name="overflow"/> is refused only when the document
-    /// is saved, as a <see cref="NullReferenceException"/>.
+    /// No argument is checked here, and the document does not read <paramref name="occupied"/>. A
+    /// null <paramref name="split"/> or <paramref name="overflow"/> is stored, and the save throws
+    /// <see cref="NullReferenceException"/>.
     /// <para>Do not pass null for either renderer. A later major version will throw
     /// <see cref="ArgumentNullException"/> from this call.</para>
     /// </remarks>
@@ -126,7 +126,9 @@ public sealed class LayoutResult
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
     /// save overloads, not from this call, when the retry on a new page also returns
-    /// <c>Nothing</c>. The message says the element is too tall to fit on a single page.
+    /// <c>Nothing</c>. The message says the element is too tall to fit on a single page. Through
+    /// the cycle described on <see cref="Outcome.Nothing"/>, a renderer can instead reach the
+    /// page-continuation limit, which raises the same type with a different message (#549).
     /// </exception>
     public static LayoutResult Nothing() =>
         new(Outcome.Nothing, null, null, null);

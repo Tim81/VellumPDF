@@ -38,14 +38,17 @@ public sealed class ListRenderer : IRenderer
     /// on a list whose first item has children begins at that item's first child. A negative start
     /// throws <see cref="ArgumentOutOfRangeException"/> from <see cref="Layout"/> only when the
     /// area is not empty and the list has items. An empty area returns
-    /// <see cref="LayoutResult.Nothing"/> first. A start past the last item, or a negative start on
-    /// an empty list, returns <see cref="LayoutResult.Full"/> occupying no height.
+    /// <see cref="LayoutResult.Nothing"/> first. A start past the last item returns
+    /// <see cref="LayoutResult.Full"/> occupying no height. A negative start on an empty list also
+    /// lays out as that, and <see cref="Draw"/> then throws
+    /// <see cref="ArgumentOutOfRangeException"/>.
     /// <para>Do not pass null or a negative start. A later major version will throw from this
     /// constructor.</para>
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// Raised from <see cref="Layout"/>, when <paramref name="startItem"/> is negative, the
-    /// list has items, and the area is not empty.
+    /// list has items, and the area is not empty. On an empty list it is raised from
+    /// <see cref="Draw"/> instead.
     /// </exception>
     /// <exception cref="NullReferenceException">
     /// Raised later from <see cref="Layout"/>, not from this constructor, when
@@ -173,6 +176,10 @@ public sealed class ListRenderer : IRenderer
 
     /// <summary>Draws each item's marker and content, building the tagged L → LI → Lbl/LBody hierarchy when tagging is enabled.</summary>
     /// <remarks>See <see cref="IRenderer.Draw"/>.</remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// The start item is negative and the list has no items, which <see cref="Layout"/> accepts;
+    /// see the constructor.
+    /// </exception>
     public void Draw(DrawContext ctx)
     {
         if (_items is null) return;

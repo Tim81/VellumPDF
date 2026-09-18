@@ -101,15 +101,17 @@ public sealed class LayoutImage
     /// inside the content box; with it null, the image is sized to the width the edges leave. A
     /// negative or non-finite edge, or edges wider than the area, can make the save throw an
     /// exception about something else, write a <c>NaN</c> or <c>Infinity</c> token into the content
-    /// stream, or move or mirror the image. A negative or non-finite top or bottom edge can also
-    /// move the elements placed after this one.
+    /// stream, or move, mirror or rotate the image. A negative or non-finite top or bottom edge can
+    /// also move the elements placed after this one.
     /// <para>Do not pass a negative or non-finite edge. A later major version will refuse
     /// both.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when the box the edges leave is too small for the element. The message
-    /// says the element is too tall to fit on a page and does not name the margins.
+    /// says the element is too tall to fit on a page and does not name the margins. With
+    /// <see cref="Width"/> null, edges that leave a drawn width of zero, under 5e-6 or non-finite
+    /// raise the image-extent message naming that width instead.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not

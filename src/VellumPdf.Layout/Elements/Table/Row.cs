@@ -39,7 +39,8 @@ public sealed class Row
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when every row of the table is a header row. The message says the
-    /// element is too tall to fit on a page (#488).
+    /// element is too tall to fit on a page (#488), or, when no header row has a cell, that the
+    /// table resolved to no columns.
     /// </exception>
     public bool IsHeader { get; init; }
 

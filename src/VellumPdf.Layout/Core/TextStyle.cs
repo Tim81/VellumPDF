@@ -28,11 +28,10 @@ public sealed class TextStyle
     /// or an <see cref="EmbeddedFontHandle"/> returned by <c>Document.UseTrueTypeFont</c>.
     /// </summary>
     /// <remarks>
-    /// Stored as given. A null handle saves in Helvetica, and a handle from another document
-    /// usually does not draw the font you asked for; see
-    /// <see cref="FontReference(EmbeddedFontHandle)"/>. A Standard-14 value the enumeration does
-    /// not name makes the save throw once the font is selected on a page, as text in it does, and
-    /// as a table cell with this style does even when empty.
+    /// Stored as given. A null handle saves in Helvetica, and a handle from another document draws
+    /// correctly only in the case <see cref="FontReference(EmbeddedFontHandle)"/> describes. A
+    /// Standard-14 value the enumeration does not name makes the save throw once the font is
+    /// selected on a page, which an empty table cell or list item with this style also does.
     /// <para><see cref="Standard14.Symbol"/> and <see cref="Standard14.ZapfDingbats"/> measure
     /// every character as zero width, so a paragraph in either is never wrapped (#470).</para>
     /// </remarks>
@@ -194,8 +193,9 @@ public sealed class TextStyle
     /// <remarks>
     /// <b>Attention</b>: the string is not validated. Empty and <c>not a uri</c> are written into a
     /// <c>/URI</c> action as given, and so is an absolute URI of any scheme, such as
-    /// <c>javascript:alert(1)</c>. Table cells and running bands silently drop the link (#475). In
-    /// a list item the marker is linked as well as the text.
+    /// <c>javascript:alert(1)</c>. Non-ASCII characters are percent-encoded. Table cells and
+    /// running bands silently drop the link (#475). In a list item the marker is linked as well as
+    /// the text.
     /// <para>Do not pass a value that is not an absolute URI. A later major version will refuse
     /// one.</para>
     /// </remarks>

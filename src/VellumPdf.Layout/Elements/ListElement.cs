@@ -112,8 +112,8 @@ public sealed class ListElement
     /// make the save throw an exception about something else, write a <c>NaN</c> or <c>Infinity</c>
     /// token into the content stream, re-wrap, move or mirror the content, or leave the element off
     /// the page. The bottom edge only limits that box and adds no space before the next element,
-    /// except that negative infinity sends the next element to a new page. A negative or non-finite
-    /// top edge can also move the elements placed after this one.
+    /// though a non-finite one can still disturb the elements placed after it. A negative or
+    /// non-finite top edge can also move the elements placed after this one.
     /// <para>Do not pass a negative or non-finite edge. A later major version will refuse
     /// both.</para>
     /// </remarks>
@@ -121,6 +121,12 @@ public sealed class ListElement
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when the box the edges leave is too small for the element. The message
     /// says the element is too tall to fit on a page and does not name the margins.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when a list with no items has a top edge of negative infinity and a
+    /// later <see cref="Heading"/> places its bookmark at the non-finite position that leaves. The
+    /// message says PDF does not support NaN or Infinity as a real number.
     /// </exception>
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 
