@@ -52,6 +52,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   naming Apache-2.0 alone. The Liberation fonts were never affected: their licence is packed
   beside them in the Standard 14 package already.
 
+### Changed
+
+- **Six Layout record structs are declared with explicit properties instead of positional
+  parameters,** so that each property can carry its own documentation. `ColorRgb`, `ColorCmyk`,
+  `EdgeInsets`, `LayoutBox`, `BandTruncationWarning` and `PieSlice` keep their constructors,
+  properties, `Deconstruct`, equality and `ToString`. Known-answer tests pin those against the
+  positional declarations, and ApiCompat 10.0.401 in strict mode finds no breaking change against
+  the published 2.3.2 assembly. The hand-written `Deconstruct` methods no longer carry
+  `[CompilerGenerated]`.
+
 ### Fixed
 
 - **The GIF decoder refused a third of the files put to it and silently corrupted others
@@ -200,12 +210,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Documentation
 
-- **Layout's remaining public members with a measured boundary now name it (#510).** The
-  ignore set is in: unread insets, `Justify` treated as left on an unbreakable box, invalid
-  font-reference reads, unvalidated language and URI strings. A table that resolves to no
-  columns is refused at save. A custom `IRenderer` whose overflow never advances hits a cap
-  of 50,000 page continuations. Font-path and object-stream-plus-encrypt throws are named
-  on the members that raise them.
+- **The rest of Layout's public members now document their boundaries (#510):** what is
+  refused and which call throws, what is accepted but should not be relied on, and what is
+  accepted and then ignored. **113** members carry an `<exception>` tag, counted in the
+  compiler's XML output. What a caller is most likely to act on:
+
+  - A null argument to an element constructor or `Add` method is stored, and the save throws
+    `NullReferenceException`. `Paragraph`, `Heading`, `TextRun`, `ListItem`, `ListElement`,
+    `Cell`, `Row`, `LayoutImage`, `PieChart.Slices` and the public renderers all behave this
+    way (#547).
+  - `SetDefaultFont` is read only by `Add(string)` calls made after it. A `Paragraph`,
+    `Heading`, list, table or running band never uses it.
+  - A font handle from a different `Document` saves without an exception, and the page then
+    uses a font it does not define (#544).
+  - `HorizontalAlignment.Justify` is drawn as left everywhere except paragraph and heading text.
+    `Row.Background` cannot take effect, because no table row can be given one (#543).
+  - `LayoutContext.ContentTop` is read by nothing, and `LayoutBox.ToString` formats in the
+    current culture.
+  - A pie chart whose slice values sum past the largest double draws blank, and a very large
+    `StartAngle` draws the wedges wrong (#546).
 
 - **The public members that refuse input now say so, and say what not to pass (#503).** These
   boundaries were created by fixes already shipped in 2.3.2 and documented almost nowhere: of
@@ -307,10 +330,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   describes only a save that succeeded. Measured, the three states are these.
 
   Geometry refused before the layout starts leaves the document clean: a retry after correcting it
-  produced a file identical in length and page count to a fresh document's. Reaching the writer
-  leaves it dead, and a retry on a good stream throws about the document having already been
-  written. A throw from the layout itself leaves it alive and wrong, because the pages it had
-  already laid out stay, and a retry appends a whole second layout to them. The page count
+  produced a file identical in length and page count to a fresh document's. Any later refusal
+  leaves it alive and wrong, because the pages already laid out stay, and a retry appends a whole
+  second layout to them. That includes the checks made just before writing: a null destination,
+  and `Encrypt` combined with object streams, PDF/A or PDF/UA-1. A one-page document retried after
+  `Save(null)` saved two pages. Only a failure once writing has begun leaves the document dead,
+  and a retry then throws about the document having already been written. The page count
   therefore grows by whatever the failed attempt had
   committed, on every attempt; how many that is depends on the document, so no figure for it is
   quoted. Correct the cause after a layout throw and the retry returns quietly, on a file carrying
@@ -323,8 +348,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Further boundaries the save overloads did not carry. The save overloads' `InvalidOperationException` list
   read as complete and was not: `Conformance` set to a PDF/A level together with `Encrypt` throws
-  from `Save`, since ISO 19005-2 §6.1.3 prohibits encryption, and neither `Document.Conformance`
-  nor `Document.Encrypt` documents that pairing, so the save overloads now do. `Cell.ColSpan`
+  from `Save`, since ISO 19005-2 §6.1.3 prohibits encryption. The save overloads,
+  `Document.Conformance` and `Document.Encrypt` now say so, together with PDF/UA-1 and
+  `Encrypt` without `PdfPermissions.Extract`, which ISO 14289-1 7.16 does not allow. `Cell.ColSpan`
   documented `OverflowException` and `OutOfMemoryException` against `Document.Save` while `Save`
   itself listed neither, which is where a caller writing catch clauses looks first; all four
   overloads now carry both, each naming the member that causes it. `ListElement.Indent` covered
