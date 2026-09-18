@@ -63,10 +63,14 @@ public readonly record struct EdgeInsets
     }
 
     /// <summary>The total horizontal inset (Left + Right).</summary>
-    /// <remarks>Summed without a check. Infinite edges of opposite sign sum to <c>NaN</c>.</remarks>
+    /// <remarks>
+    /// Summed without a check. Infinite edges of opposite sign sum to <c>NaN</c>.
+    /// </remarks>
     public double Horizontal => Left + Right;
 
     /// <summary>The total vertical inset (Top + Bottom).</summary>
-    /// <remarks>Summed without a check. Infinite edges of opposite sign sum to <c>NaN</c>.</remarks>
+    /// <remarks>
+    /// Summed without a check. Infinite edges of opposite sign sum to <c>NaN</c>.
+    /// </remarks>
     public double Vertical => Top + Bottom;
 }

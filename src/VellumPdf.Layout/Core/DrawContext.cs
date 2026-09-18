@@ -18,11 +18,11 @@ namespace VellumPdf.Layout.Core;
 /// Flip formula: pdfY = pageHeight - layoutY
 /// </summary>
 /// <remarks>
-/// Coordinates are not checked. A finite box or Y off the page is written into annotations and
-/// outline destinations as given, and a box with a negative width is written as an inverted
-/// rectangle. A non-finite coordinate is accepted here. The save refuses it in an annotation or
-/// outline entry, and writes it as <c>NaN</c> or <c>Infinity</c> where a renderer draws with a
-/// converted value on the canvas.
+/// Coordinates are not checked. A finite Y off the page is written into outline destinations
+/// without clamping, and so is a finite box into an annotation unless X plus Width or Y plus Height
+/// overflows. A box with a negative width is written as an inverted rectangle. The save refuses a
+/// non-finite coordinate in an annotation or outline entry, and writes it as <c>NaN</c> or
+/// <c>Infinity</c> where a renderer draws with a converted value on the canvas.
 /// </remarks>
 public sealed class DrawContext
 {
@@ -148,8 +148,8 @@ public sealed class DrawContext
     /// the link is written untagged and without the alternate description ISO 14289-1, 7.18.5
     /// requires, and no exception reports it (#550). A null <paramref name="uri"/> writes a link
     /// annotation with no action, so the area is a link that goes nowhere.
-    /// <para>A non-finite coordinate in <paramref name="box"/> is accepted here. The save throws
-    /// when it writes the annotation's rectangle.</para>
+    /// <para>A non-finite coordinate in <paramref name="box"/>, or finite ones whose sum overflows,
+    /// is accepted here. The save throws when it writes the annotation's rectangle.</para>
     /// <para>Do not pass a null or relative <paramref name="uri"/>. A later major version will
     /// refuse a value that is not an absolute URI.</para>
     /// </remarks>
@@ -181,7 +181,8 @@ public sealed class DrawContext
     /// <remarks>
     /// <paramref name="level"/> is not refused. Level 0 is a top-level entry. Any other level,
     /// negative included, nests under the most recent earlier entry one level up, and goes to the
-    /// top level when there is none.
+    /// top level when there is none. For <see cref="int.MinValue"/> the level one up wraps to
+    /// <see cref="int.MaxValue"/>.
     /// <para>A null <paramref name="title"/> and a non-finite <paramref name="layoutY"/> are
     /// accepted here and make the save throw when it writes the outline.</para>
     /// <para>Do not pass a null title or a non-finite position. A later major version will refuse

@@ -46,7 +46,9 @@ public readonly record struct ColorCmyk
     public static readonly ColorCmyk Black = new(0, 0, 0, 1);
 
     /// <summary>White / no ink (0, 0, 0, 0).</summary>
-    /// <remarks>Equal to <c>new ColorCmyk(0, 0, 0, 0)</c> and to <c>default(ColorCmyk)</c>.</remarks>
+    /// <remarks>
+    /// Equal to <c>new ColorCmyk(0, 0, 0, 0)</c> and to <c>default(ColorCmyk)</c>.
+    /// </remarks>
     public static readonly ColorCmyk White = new(0, 0, 0, 0);
 
     /// <summary>Copies the four channels into the given variables.</summary>

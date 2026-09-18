@@ -111,8 +111,8 @@ public sealed class ListElement
     /// or <c>NaN</c>. A negative or non-finite edge, or edges wider than the area, can therefore
     /// make the save throw an exception about something else, write a <c>NaN</c> or <c>Infinity</c>
     /// token into the content stream, re-wrap, move or mirror the content, or leave the element off
-    /// the page. The bottom edge only limits that box and adds no space before the next element,
-    /// though a non-finite one can still disturb the elements placed after this one, and a negative
+    /// the page. The bottom edge only limits that box and adds no space before the next element. A
+    /// non-finite bottom edge can still disturb the elements placed after this one, and a negative
     /// or non-finite top edge can move them.
     /// <para>Do not pass a negative or non-finite edge. A later major version will refuse
     /// both.</para>
@@ -135,8 +135,25 @@ public sealed class ListElement
     /// <summary>Text style applied to items that have no explicit style.</summary>
     /// <remarks>
     /// Used by a top-level item with no style of its own, and through that item by its children.
-    /// Null means <see cref="TextStyle.Default"/>.
+    /// Null means <see cref="TextStyle.Default"/>. Refusals on size, leading and font are on
+    /// <see cref="TextStyle"/> and are raised from the save.
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when the style's size or leading is refused; see
+    /// <see cref="TextStyle.FontSize"/>.
+    /// </exception>
+    /// <exception cref="IndexOutOfRangeException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when the style holds a <see cref="VellumPdf.Fonts.Standard14"/> value
+    /// the enumeration does not name and the font is selected on a page; see
+    /// <see cref="TextStyle.FontRef"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when text in this style holds an unpaired surrogate and is measured in
+    /// an embedded font; see <see cref="TextStyle.FontRef"/>.
+    /// </exception>
     public TextStyle? DefaultStyle { get; init; }
 
     /// <summary>Creates a list with the given marker style and optional initial items.</summary>

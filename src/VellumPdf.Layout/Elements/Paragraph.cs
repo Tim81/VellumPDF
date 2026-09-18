@@ -39,7 +39,9 @@ public sealed class Paragraph
     public TextStyle Style => _runs.Count > 0 ? _runs[0].Style : TextStyle.Default;
 
     /// <summary>All inline text runs in this paragraph (always at least one entry).</summary>
-    /// <remarks>Never empty: a zero-run input becomes one empty run. Null entries are kept.</remarks>
+    /// <remarks>
+    /// Never empty: a zero-run input becomes one empty run. Null entries are kept.
+    /// </remarks>
     public IReadOnlyList<TextRun> Runs => _runs;
 
     /// <summary>Margins around the paragraph.</summary>
@@ -131,7 +133,8 @@ public sealed class Paragraph
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this call, when <paramref name="runs"/> contains <see langword="null"/>, a run whose
     /// text is null, or a run whose style is null and whose text holds a character other than white
-    /// space, where a no-break space counts and a tab does not.
+    /// space, where U+00A0 NO-BREAK SPACE counts as such a character and other white space, a tab
+    /// included, does not.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -159,8 +162,8 @@ public sealed class Paragraph
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when <paramref name="text"/> is <see langword="null"/>. It is raised from this
-    /// call instead when <paramref name="style"/> is null and the first run is null.
+    /// from this call, when <paramref name="text"/> is <see langword="null"/>. It is raised from
+    /// this call instead when <paramref name="style"/> is null and the first run is null.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not

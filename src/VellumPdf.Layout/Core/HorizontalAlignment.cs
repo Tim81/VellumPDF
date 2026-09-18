@@ -29,7 +29,9 @@ public enum HorizontalAlignment
     /// </remarks>
     Right,
 
-    /// <summary>Stretch the spaces in each line of paragraph and heading text toward both edges.</summary>
+    /// <summary>
+    /// Stretch the spaces in each line of paragraph and heading text toward both edges.
+    /// </summary>
     /// <remarks>
     /// Only paragraph and heading text are justified. They stretch every line except the
     /// paragraph's last, and a line that ends at a hard line break is stretched too. A line with

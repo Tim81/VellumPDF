@@ -44,11 +44,11 @@ public sealed class TextStyle
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from the save, not from this property, when text in this style holds an unpaired
-    /// surrogate, a UTF-16 code unit from U+D800 to U+DFFF without its partner, and is measured in
-    /// an embedded font. The built-in elements measure their text during layout, and a running band
-    /// can measure part of its template that it then does not draw. Text drawn without being
-    /// measured, as a custom renderer can draw it, has the surrogate replaced by U+FFFD instead.
-    /// <c>ParamName</c> is <c>s</c>.
+    /// surrogate and is measured in an embedded font. An unpaired surrogate is a UTF-16 code unit
+    /// from U+D800 to U+DFFF without its partner. The built-in elements measure their text during
+    /// layout, and a running band can measure part of its template that it then does not draw. Text
+    /// drawn without being measured, as a custom renderer can draw it, has the surrogate replaced
+    /// by U+FFFD instead. <c>ParamName</c> is <c>s</c>.
     /// </exception>
     public FontReference FontRef { get; init; } = Standard14.Helvetica;
 
@@ -178,7 +178,9 @@ public sealed class TextStyle
 
     /// <summary>The text colour. Defaults to <see cref="ColorRgb.Black"/>.</summary>
     /// <remarks>
-    /// Stored as given. Channels are not clamped; see <see cref="ColorRgb"/>.
+    /// Stored as given. Channels are not checked or clamped. Each is written into the content
+    /// stream rounded to five decimals, <c>NaN</c> and <c>Infinity</c> included; see
+    /// <see cref="ColorRgb"/>.
     /// </remarks>
     public ColorRgb Color { get; init; } = ColorRgb.Black;
 

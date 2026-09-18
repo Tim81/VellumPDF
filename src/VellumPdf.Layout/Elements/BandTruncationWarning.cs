@@ -45,13 +45,13 @@ public readonly record struct BandTruncationWarning
 
     /// <summary>
     /// The one-based page carrying the worst cut, not the first cut. With a <c>{page}</c> or
-    /// <c>{pages}</c> token the resolved text differs per page, so the page that lost the most is the
-    /// one that tells a caller how much shorter the template has to be.
+    /// <c>{pages}</c> token the resolved text differs per page, so the page that lost the most is
+    /// the one that tells a caller how much shorter the template has to be.
     /// </summary>
     /// <remarks>Not refused. A zero or negative page number is stored as given.</remarks>
     public int PageNumber { get; init; }
 
-    /// <summary>How many characters of the resolved text were drawn on that page.</summary>
+    /// <summary>How many UTF-16 code units of the resolved text were drawn on that page.</summary>
     /// <remarks>
     /// Not refused. Can exceed <see cref="ResolvedCharacters"/> if the counts were built by
     /// hand.
@@ -96,7 +96,7 @@ public readonly record struct BandTruncationWarning
         ResolvedCharacters = this.ResolvedCharacters;
     }
 
-    /// <summary>How many characters the cut dropped on that page.</summary>
+    /// <summary>How many UTF-16 code units the cut dropped on that page.</summary>
     /// <remarks>
     /// <see cref="ResolvedCharacters"/> minus <see cref="DrawnCharacters"/>. Can be negative
     /// if those two were built by hand.

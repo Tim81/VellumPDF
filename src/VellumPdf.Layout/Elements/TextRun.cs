@@ -11,15 +11,17 @@ namespace VellumPdf.Layout.Elements;
 /// <remarks>
 /// Both arguments are stored without a check. A null text makes the save throw when it lays out the
 /// paragraph holding this run, and so does a null style on a run whose text holds a character other
-/// than white space, where a no-break space counts and a tab does not. Refusals on the style's size
-/// also fire from the save; see <see cref="TextStyle"/>.
+/// than white space, where U+00A0 NO-BREAK SPACE counts as such a character and other white space,
+/// a tab included, does not. Refusals on the style's size also fire from the save; see
+/// <see cref="TextStyle"/>.
 /// <para>Do not pass null for either argument. A later major version will throw
 /// <see cref="ArgumentNullException"/> from the constructor.</para>
 /// </remarks>
 /// <exception cref="NullReferenceException">
 /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not from
 /// the constructor, when the text is <see langword="null"/>, or the style is null and the text
-/// holds a character other than white space, where a no-break space counts and a tab does not.
+/// holds a character other than white space, where U+00A0 NO-BREAK SPACE counts as such a character
+/// and other white space, a tab included, does not.
 /// </exception>
 /// <exception cref="ArgumentException">
 /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not from
@@ -29,14 +31,16 @@ namespace VellumPdf.Layout.Elements;
 public sealed class TextRun(string Text, TextStyle Style)
 {
     /// <summary>The run's text.</summary>
-    /// <remarks>Any value is stored. A null value makes the save throw; see the type remarks.</remarks>
+    /// <remarks>
+    /// Any value is stored. A null value makes the save throw; see the type remarks.
+    /// </remarks>
     public string Text { get; } = Text;
 
     /// <summary>The run's text style.</summary>
     /// <remarks>
     /// Any value is stored. A null value makes the save throw when the run's text holds a character
-    /// other than white space, where a no-break space counts and a tab does not; see the type
-    /// remarks.
+    /// other than white space, where U+00A0 NO-BREAK SPACE counts as such a character and other
+    /// white space, a tab included, does not; see the type remarks.
     /// </remarks>
     public TextStyle Style { get; } = Style;
 }

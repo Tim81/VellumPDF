@@ -23,8 +23,25 @@ public sealed class ListItem
     /// <remarks>
     /// On a top-level item, null means the list's <see cref="ListElement.DefaultStyle"/>, then
     /// <see cref="TextStyle.Default"/>. On a child, null means the parent item's style after that
-    /// same fallback.
+    /// same fallback. Refusals on size, leading and font are on <see cref="TextStyle"/> and are
+    /// raised from the save.
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when the style's size or leading is refused; see
+    /// <see cref="TextStyle.FontSize"/>.
+    /// </exception>
+    /// <exception cref="IndexOutOfRangeException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when the style holds a <see cref="VellumPdf.Fonts.Standard14"/> value
+    /// the enumeration does not name and the font is selected on a page; see
+    /// <see cref="TextStyle.FontRef"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when text in this style holds an unpaired surrogate and is measured in
+    /// an embedded font; see <see cref="TextStyle.FontRef"/>.
+    /// </exception>
     public TextStyle? Style { get; init; }
 
     /// <summary>

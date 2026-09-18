@@ -38,7 +38,7 @@ public sealed class ListRenderer : IRenderer
     /// on a list whose first item has children begins at that item's first child. A negative start
     /// throws <see cref="ArgumentOutOfRangeException"/> from <see cref="Layout"/> only when the
     /// area is not empty and the list has items. An empty area returns
-    /// <see cref="LayoutResult.Nothing"/> first. A start past the last item returns
+    /// <see cref="LayoutResult.Nothing"/> first. A start past the last entry returns
     /// <see cref="LayoutResult.Full"/> occupying no height. A negative start on an empty list also
     /// returns <see cref="LayoutResult.Full"/> occupying no height, and <see cref="Draw"/> then
     /// throws <see cref="ArgumentOutOfRangeException"/>.

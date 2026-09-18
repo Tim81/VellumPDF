@@ -19,13 +19,17 @@ public sealed class Heading
     /// <summary>Heading text (also used as the bookmark title unless <see cref="BookmarkTitle"/> is set).</summary>
     /// <remarks>
     /// A null value makes the save throw; see the constructor. An empty string draws no text, but
-    /// the heading still adds a bookmark with an empty title and, in a tagged document, its
-    /// structure element.
+    /// the heading still adds a bookmark, titled by <see cref="BookmarkTitle"/> or else empty, and,
+    /// in a tagged document, its structure element.
     /// </remarks>
     public string Text { get; }
 
     /// <summary>The heading's text style.</summary>
-    /// <remarks>Stored as given. Refusals on size and leading are on <see cref="TextStyle"/>.</remarks>
+    /// <remarks>
+    /// A null style passed to the constructor becomes 14pt Helvetica; any other is stored as given.
+    /// Refusals on size, leading and font are on <see cref="TextStyle"/> and are raised from the
+    /// save.
+    /// </remarks>
     public TextStyle Style { get; }
 
     /// <summary>Outline nesting level: 0 = top-level, 1 = sub-heading, etc.</summary>

@@ -161,9 +161,9 @@ public sealed class DocumentRenderer
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Render"/>, when the band's height leaves the content area no positive
-    /// size; see <see cref="RunningBand.Height"/>. It is also raised when the band measures text in
-    /// an embedded font that holds an unpaired surrogate, which can include part of the template it
-    /// then does not draw; see <see cref="TextStyle.FontRef"/>.
+    /// size; see <see cref="RunningBand.Height"/>. It is also raised when the band measures text
+    /// that holds an unpaired surrogate in an embedded font, which can include part of the template
+    /// it then does not draw; see <see cref="TextStyle.FontRef"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Render"/>, when the band's height or its style's size is refused; see
@@ -189,9 +189,9 @@ public sealed class DocumentRenderer
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Render"/>, when the band's height leaves the content area no positive
-    /// size; see <see cref="RunningBand.Height"/>. It is also raised when the band measures text in
-    /// an embedded font that holds an unpaired surrogate, which can include part of the template it
-    /// then does not draw; see <see cref="TextStyle.FontRef"/>.
+    /// size; see <see cref="RunningBand.Height"/>. It is also raised when the band measures text
+    /// that holds an unpaired surrogate in an embedded font, which can include part of the template
+    /// it then does not draw; see <see cref="TextStyle.FontRef"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Render"/>, when the band's height or its style's size is refused; see
@@ -262,8 +262,8 @@ public sealed class DocumentRenderer
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Render"/>, not from this call, when <paramref name="renderer"/>
-    /// returns a result whose non-finite bottom leaves a later element at a position the save
-    /// writes outside the content stream; see <see cref="LayoutResult.Full"/>.
+    /// returns a result whose non-finite bottom leaves a later element at a position
+    /// <see cref="Render"/> writes outside the content stream; see <see cref="LayoutResult.Full"/>.
     /// </exception>
     public DocumentRenderer Add(IRenderer renderer) { _renderers.Add(renderer); return this; }
 
@@ -288,7 +288,8 @@ public sealed class DocumentRenderer
     /// The margins, header and footer together leave the content area no positive size, or an
     /// element refuses its own input, or <paramref name="destination"/> is not writable and the
     /// kernel document is not linearized, or a registered font has a value that makes a font metric
-    /// non-finite, or text measured in an embedded font holds an unpaired surrogate.
+    /// non-finite, or text measured in an embedded font holds an unpaired surrogate, or a
+    /// non-finite position is written outside the content stream, such as a link rectangle.
     /// </exception>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="destination"/> is <see langword="null"/>, checked after the layout has run.

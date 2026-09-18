@@ -101,10 +101,11 @@ public sealed class LayoutResult
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
-    /// save overloads, not from this call, when a <see cref="LayoutBox.Bottom"/> of negative
-    /// infinity leaves a later element at a position the save writes outside the content stream,
-    /// such as a heading's bookmark or a link's rectangle. The message says PDF does not support
-    /// NaN or Infinity as a real number.
+    /// save overloads, not from this call, when a non-finite <see cref="LayoutBox.Bottom"/> leaves
+    /// a later element at a position the save writes outside the content stream, such as the
+    /// rectangle of a link a later renderer places in the area it was given, or, after negative
+    /// infinity, a heading's bookmark. The message says PDF does not support NaN or Infinity as a
+    /// real number.
     /// </exception>
     public static LayoutResult Full(LayoutBox occupied) =>
         new(Outcome.Full, occupied, null, null);

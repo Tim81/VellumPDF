@@ -120,8 +120,9 @@ public readonly struct FontReference
     /// <see cref="VellumPdf.Fonts.Standard14.ZapfDingbats"/> and a Standard-14 value the
     /// enumeration does not name measure 0 for every character, so text in them is never wrapped
     /// (#470).</para>
-    /// <para>On an embedded font, every character measured is added to the font's subset, so a
-    /// string you measure but never draw still makes the embedded font larger.</para>
+    /// <para>On an embedded font, every character measured that the subset does not already hold is
+    /// added to it, so a string you measure but never draw can still make the embedded font
+    /// larger.</para>
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// <paramref name="text"/> is <see langword="null"/>.

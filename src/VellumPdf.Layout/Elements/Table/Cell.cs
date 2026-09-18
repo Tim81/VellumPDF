@@ -79,8 +79,26 @@ public sealed class Cell
     /// <summary>Text style for the cell content; falls back to the table default when null.</summary>
     /// <remarks>
     /// Null means <see cref="TableElement.DefaultCellStyle"/>, then
-    /// <see cref="TextStyle.Default"/>.
+    /// <see cref="TextStyle.Default"/>. Refusals on size, leading and font are on
+    /// <see cref="TextStyle"/> and are raised from the save. A <see cref="TextStyle.LinkUri"/> in
+    /// it is ignored (#475).
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when the style's size or leading is refused; see
+    /// <see cref="TextStyle.FontSize"/>.
+    /// </exception>
+    /// <exception cref="IndexOutOfRangeException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when the style holds a <see cref="VellumPdf.Fonts.Standard14"/> value
+    /// the enumeration does not name and the font is selected on a page; see
+    /// <see cref="TextStyle.FontRef"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when text in this style holds an unpaired surrogate and is measured in
+    /// an embedded font; see <see cref="TextStyle.FontRef"/>.
+    /// </exception>
     public TextStyle? Style { get; init; }
 
     /// <summary>Inner padding between the cell border and its content.</summary>
@@ -114,7 +132,11 @@ public sealed class Cell
     public EdgeInsets Padding { get; init; } = new EdgeInsets(4, 6, 4, 6);
 
     /// <summary>Optional background fill color for the cell.</summary>
-    /// <remarks>Null means no fill. A colour is stored as given; see <see cref="ColorRgb"/>.</remarks>
+    /// <remarks>
+    /// Null means no fill. A colour is stored as given. Channels are not checked or clamped. Each
+    /// is written into the content stream rounded to five decimals, <c>NaN</c> and <c>Infinity</c>
+    /// included; see <see cref="ColorRgb"/>.
+    /// </remarks>
     public ColorRgb? Background { get; init; }
 
     /// <summary>Horizontal alignment of the cell content.</summary>
@@ -142,8 +164,8 @@ public sealed class Cell
     /// <remarks>
     /// A null <paramref name="content"/> is stored. The save throws when it sizes a column
     /// automatically, which it does for a column without a positive finite width in
-    /// <see cref="TableElement.ColWidths"/>. In a column with a positive finite width, the cell is
-    /// drawn empty.
+    /// <see cref="TableElement.ColWidths"/>. In a table where every column has a positive finite
+    /// width, the cell is drawn empty.
     /// <para>Do not pass null. A later major version will throw
     /// <see cref="ArgumentNullException"/> from this call.</para>
     /// </remarks>

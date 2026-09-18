@@ -30,7 +30,11 @@ public readonly record struct PieSlice
     public double Value { get; init; }
 
     /// <summary>The fill colour of the wedge.</summary>
-    /// <remarks>Stored as given. Channels are not clamped; see <see cref="ColorRgb"/>.</remarks>
+    /// <remarks>
+    /// Stored as given. Channels are not checked or clamped. Each is written into the content
+    /// stream rounded to five decimals, <c>NaN</c> and <c>Infinity</c> included; see
+    /// <see cref="ColorRgb"/>.
+    /// </remarks>
     public ColorRgb Color { get; init; }
 
     /// <summary>
@@ -176,7 +180,9 @@ public sealed class PieChart
     /// Optional colour of the separator stroke drawn around each wedge.
     /// When <c>null</c> (the default) no stroke is drawn.
     /// </summary>
-    /// <remarks>Null means no stroke. A colour is stored as given; see <see cref="ColorRgb"/>.</remarks>
+    /// <remarks>Null means no stroke. A colour is stored as given. Channels are not checked or
+    /// clamped. Each is written into the content stream rounded to five decimals, <c>NaN</c> and
+    /// <c>Infinity</c> included; see <see cref="ColorRgb"/>.</remarks>
     public ColorRgb? StrokeColor { get; init; }
 
     /// <summary>Width of the separator stroke in points. Defaults to 0.5.</summary>
@@ -256,6 +262,8 @@ public sealed class PieChart
     /// table), to avoid announcing the same values twice. When <c>false</c> (the default) the
     /// chart is a <c>/Figure</c> carrying <see cref="AltText"/>. No effect on untagged output.
     /// </summary>
-    /// <remarks>No effect on untagged output. True omits the figure from the structure tree.</remarks>
+    /// <remarks>
+    /// No effect on untagged output. True omits the figure from the structure tree.
+    /// </remarks>
     public bool Decorative { get; init; }
 }

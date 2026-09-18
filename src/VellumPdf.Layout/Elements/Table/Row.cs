@@ -47,15 +47,18 @@ public sealed class Row
     /// <summary>Optional background fill color for the row.</summary>
     /// <remarks>
     /// <b>Attention</b>: a row added through <see cref="TableElement.AddRow"/> or
-    /// <see cref="TableElement.AddHeaderRow"/>, the only members that add a row, has no background.
-    /// Those create the row without a background, and this property can only be set when a row is
-    /// constructed. Set <see cref="Cell.Background"/> on each cell instead (#543).
+    /// <see cref="TableElement.AddHeaderRow"/>, the only members that add a row, has no background,
+    /// and this property can only be set when a row is constructed. Set
+    /// <see cref="Cell.Background"/> on each cell instead (#543).
     /// </remarks>
     public ColorRgb? Background { get; init; }
 
     /// <summary>Adds a cell to the row. Returns this row.</summary>
     /// <remarks>
-    /// A null <paramref name="cell"/> is stored, and the save throws when it lays out the table.
+    /// A null <paramref name="cell"/> is stored, and the save throws when it lays out the table. In
+    /// a row that a cell above covers through <see cref="Cell.RowSpan"/>, the row's cells fill the
+    /// columns left over, in order, and a cell past the last column is not drawn, though its text
+    /// is still measured (#487).
     /// <para>Do not pass null. A later major version will throw
     /// <see cref="ArgumentNullException"/> from this call.</para>
     /// </remarks>
@@ -70,10 +73,10 @@ public sealed class Row
     /// Creates the cell with <see cref="Cell(string)"/> and adds it, so a line break in the text is
     /// not honoured; see <see cref="Cell.Content"/>. A null <paramref name="text"/> is stored. The
     /// save throws when it sizes a column automatically, which it does for a column without a
-    /// positive finite width in <see cref="TableElement.ColWidths"/>. In a column with a positive
-    /// finite width, the cell is drawn empty. In a row that a cell above covers through
-    /// <see cref="Cell.RowSpan"/>, the row's cells fill the columns left, in order, and a cell past
-    /// the last column is not drawn, though its text is still measured (#487).
+    /// positive finite width in <see cref="TableElement.ColWidths"/>. In a table where every column
+    /// has a positive finite width, the cell is drawn empty. In a row that a cell above covers
+    /// through <see cref="Cell.RowSpan"/>, the row's cells fill the columns left over, in order,
+    /// and a cell past the last column is not drawn, though its text is still measured (#487).
     /// <para>Do not pass null. A later major version will throw
     /// <see cref="ArgumentNullException"/> from this call.</para>
     /// </remarks>

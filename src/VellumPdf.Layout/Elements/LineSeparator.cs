@@ -13,7 +13,9 @@ namespace VellumPdf.Layout.Elements;
 public sealed class LineSeparator
 {
     /// <summary>Creates a rule with a 1pt black stroke and default margins.</summary>
-    /// <remarks>See <see cref="LineWidth"/> and <see cref="Margins"/> for refusals at save.</remarks>
+    /// <remarks>
+    /// See <see cref="LineWidth"/> and <see cref="Margins"/> for refusals at save.
+    /// </remarks>
     public LineSeparator() { }
 
     /// <summary>Stroke width of the rule in points.</summary>
@@ -30,8 +32,7 @@ public sealed class LineSeparator
     /// shrinks, so it reads as proportionally heavier the further the page is scaled down. If you
     /// want no rule, leave the element out.</para>
     /// <para>A negative width is not refused, though ISO 32000-2, 8.4.3.2 requires a line width to
-    /// be a non-negative number.</para>
-    /// <para>A negative width is also subtracted from the height the separator takes, so the
+    /// be a non-negative number. It is also subtracted from the height the separator takes, so the
     /// elements after it move up the page, and off it once the width's magnitude is large
     /// enough.</para>
     /// <para>Do not pass a negative width. #482 decides whether a later major version refuses
@@ -46,7 +47,11 @@ public sealed class LineSeparator
     public double LineWidth { get; init; } = 1;
 
     /// <summary>Stroke color of the rule.</summary>
-    /// <remarks>Stored as given. Channels are not clamped; see <see cref="ColorRgb"/>.</remarks>
+    /// <remarks>
+    /// Stored as given. Channels are not checked or clamped. Each is written into the content
+    /// stream rounded to five decimals, <c>NaN</c> and <c>Infinity</c> included; see
+    /// <see cref="ColorRgb"/>.
+    /// </remarks>
     public ColorRgb Color { get; init; } = ColorRgb.Black;
 
     /// <summary>Margins around the rule.</summary>

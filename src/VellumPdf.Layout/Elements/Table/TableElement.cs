@@ -34,7 +34,25 @@ public sealed class TableElement
     /// <summary>Text style applied to cells that have no explicit style.</summary>
     /// <remarks>
     /// Null means <see cref="TextStyle.Default"/> for cells that have no style of their own.
+    /// Refusals on size, leading and font are on <see cref="TextStyle"/> and are raised from the
+    /// save. A <see cref="TextStyle.LinkUri"/> in it is ignored (#475).
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when the style's size or leading is refused; see
+    /// <see cref="TextStyle.FontSize"/>.
+    /// </exception>
+    /// <exception cref="IndexOutOfRangeException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when the style holds a <see cref="VellumPdf.Fonts.Standard14"/> value
+    /// the enumeration does not name and the font is selected on a page; see
+    /// <see cref="TextStyle.FontRef"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when text in this style holds an unpaired surrogate and is measured in
+    /// an embedded font; see <see cref="TextStyle.FontRef"/>.
+    /// </exception>
     public TextStyle? DefaultCellStyle { get; init; }
 
     /// <summary>Width of the table border lines, in points.</summary>
@@ -50,8 +68,8 @@ public sealed class TableElement
     /// gridless table, the nearest you can get is a border colour matching the page.</para>
     /// <para>A negative width is accepted and written as a negative line width, which ISO 32000-2,
     /// 8.4.3.2 does not allow; see <see cref="LineSeparator.LineWidth"/>.</para>
-    /// <para>Do not pass a negative width. No release is committed to refusing it yet; #482 decides
-    /// the same question for <see cref="LineSeparator.LineWidth"/>.</para>
+    /// <para>Do not pass a negative width. #482 decides whether a later major version refuses it,
+    /// as for <see cref="LineSeparator.LineWidth"/>.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this
@@ -60,7 +78,11 @@ public sealed class TableElement
     public double BorderWidth { get; init; } = 0.5;
 
     /// <summary>Color of the table border lines.</summary>
-    /// <remarks>Stored as given. Channels are not clamped; see <see cref="ColorRgb"/>.</remarks>
+    /// <remarks>
+    /// Stored as given. Channels are not checked or clamped. Each is written into the content
+    /// stream rounded to five decimals, <c>NaN</c> and <c>Infinity</c> included; see
+    /// <see cref="ColorRgb"/>.
+    /// </remarks>
     public ColorRgb BorderColor { get; init; } = ColorRgb.Black;
 
     /// <summary>Outer margins applied around the whole table.</summary>
