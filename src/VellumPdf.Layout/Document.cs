@@ -31,8 +31,8 @@ public sealed class Document : IDisposable
 {
     /// <summary>Creates an empty document with A4 pages and 72pt margins.</summary>
     /// <remarks>
-    /// A save before an element is added throws <see cref="InvalidOperationException"/>. A refused
-    /// page geometry, or a disposed document, is reported first.
+    /// A save before an element is added throws <see cref="InvalidOperationException"/>, unless a
+    /// check the save runs earlier fails first; see <see cref="Save(System.IO.Stream)"/>.
     /// </remarks>
     public Document() { }
 
@@ -44,9 +44,10 @@ public sealed class Document : IDisposable
     private readonly List<BandTruncationWarning> _bandTruncations = [];
 
     /// <summary>
-    /// Characters written through a Standard-14 text element that WinAnsiEncoding could not
-    /// represent (each was substituted with '?' in the saved PDF). Populated by each save and by
-    /// the signing-prep path; empty when every character rendered is in WinAnsi.
+    /// Characters written in a Standard-14 font, by an element or a running band, that
+    /// WinAnsiEncoding could not represent (each was substituted with '?' in the saved PDF).
+    /// Populated by each save and by the signing-prep path; empty when every character rendered is
+    /// in WinAnsi.
     /// </summary>
     /// <remarks>
     /// Empty until a save (or signing prep) has run, and replaced by each one that succeeds.
@@ -78,9 +79,9 @@ public sealed class Document : IDisposable
     /// a page whose <see cref="Margins"/> meet or exceed its width or height is refused with
     /// <see cref="ArgumentException"/>.
     /// <para>The rectangle's lower-left corner is written to each page's <c>/MediaBox</c> but not
-    /// used for layout, which places content from (0, 0) and reads only the width and height. A
-    /// rectangle not at the origin therefore shifts the content toward the lower left of the page
-    /// by that corner's offset, and off the page once the offset exceeds the margins.</para>
+    /// used for layout, which places content from (0, 0) and reads only the width and height.
+    /// Relative to the page, the content therefore moves by minus that corner, and off the page
+    /// once the corner's offset exceeds the margins.</para>
     /// <para>Do not pass null, or a rectangle not at the origin. A later major version will refuse
     /// both.</para>
     /// <para>Setting this after adding elements applies to what you have already
@@ -127,7 +128,6 @@ public sealed class Document : IDisposable
     /// <remarks>
     /// Setting a level does not run the rules. A document can declare PDF/A and still fail a
     /// preflight; the stamp is written either way (#474).
-    /// 
     /// <para>A value the enumeration does not name is accepted and stamped as PDF/A-2b.</para>
     /// <para>Do not pass a value the enumeration does not name. A later major version will refuse
     /// it.</para>
@@ -218,15 +218,15 @@ public sealed class Document : IDisposable
     /// placed outside the page's boundaries, where a reader clips it. On a one-paragraph document
     /// with every inset at -72, the file is written with no invalid token in it, so nothing
     /// downstream reports the loss either. A later major version will reject it.</para>
-    /// <para>The three non-finite forms fail three different ways, and only one names its own
-    /// cause. Positive infinity reaches the margin check and throws
-    /// <see cref="ArgumentException"/> naming the margin. <c>NaN</c> and negative infinity both
-    /// slip past that check, because a comparison against either is false, and surface as
-    /// <see cref="InvalidOperationException"/> instead. One type for one cause and another for
-    /// two, so you cannot catch all three together.</para>
-    /// <para><c>NaN</c> surfaces as an element being too tall to fit, and negative infinity as
-    /// the page-continuation cap. Neither message is what actually happened. The same wrong-cause
-    /// messages were corrected elsewhere (#481); here they are still open (#502).</para>
+    /// <para>A non-finite inset is checked only through the sum on its axis. Positive infinity
+    /// makes that sum infinite and throws <see cref="ArgumentException"/> naming the margin, unless
+    /// the other inset on that axis is negative infinity. <c>NaN</c> and negative infinity pass the
+    /// check, because a comparison against either is false. On the top or bottom edge they make the
+    /// save throw <see cref="InvalidOperationException"/>, as an element too tall to fit or as the
+    /// page-continuation cap, except negative infinity at the bottom, which saves everything onto
+    /// one page and loses what falls below it. On the left or right edge they save, and can write
+    /// <c>NaN</c> or <c>Infinity</c> into the content stream. None of these messages names the
+    /// margin (#502).</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from a save rather than from this property, when the margins on either axis meet
@@ -234,11 +234,11 @@ public sealed class Document : IDisposable
     /// and footer are taken off. Positive infinity reaches this check.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Raised from a save when an inset is <c>NaN</c> or negative infinity, and also when a large
-    /// finite inset leaves the content area positive but too small for a single element. The two
-    /// non-finite forms do not reach the check above, so each surfaces as one of the unrelated
-    /// messages described in the remarks. Catching <see cref="ArgumentException"/> alone will not
-    /// catch them.
+    /// Raised from a save when the top or bottom inset is <c>NaN</c>, or the top inset is negative
+    /// infinity, and also when a large finite inset leaves the content area positive but too small
+    /// for a single element. These do not reach the check above, so each surfaces as one of the
+    /// unrelated messages described in the remarks. Catching <see cref="ArgumentException"/> alone
+    /// will not catch them.
     /// </exception>
     public EdgeInsets Margins { get; set; } = new EdgeInsets(72); // 1 inch
 
@@ -261,7 +261,7 @@ public sealed class Document : IDisposable
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
     /// band's height leaves the content area no positive size; see
     /// <see cref="RunningBand.Height"/>. It is also raised when the band draws text in an embedded
-    /// font and the template holds an unpaired surrogate.
+    /// font and the part of the template that fits the band holds an unpaired surrogate.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
@@ -294,7 +294,7 @@ public sealed class Document : IDisposable
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
     /// band's height leaves the content area no positive size; see
     /// <see cref="RunningBand.Height"/>. It is also raised when the band draws text in an embedded
-    /// font and the template holds an unpaired surrogate.
+    /// font and the part of the template that fits the band holds an unpaired surrogate.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
@@ -346,7 +346,7 @@ public sealed class Document : IDisposable
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
     /// band's height leaves the content area no positive size; see
     /// <see cref="RunningBand.Height"/>. It is also raised when the band draws text in an embedded
-    /// font and the template holds an unpaired surrogate.
+    /// font and the part of the template that fits the band holds an unpaired surrogate.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
@@ -388,7 +388,7 @@ public sealed class Document : IDisposable
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
     /// band's height leaves the content area no positive size; see
     /// <see cref="RunningBand.Height"/>. It is also raised when the band draws text in an embedded
-    /// font and the template holds an unpaired surrogate.
+    /// font and the part of the template that fits the band holds an unpaired surrogate.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
@@ -653,6 +653,11 @@ public sealed class Document : IDisposable
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
     /// call, when <paramref name="text"/> is <see langword="null"/>.
     /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
+    /// call, when the text is drawn in an embedded font and holds an unpaired surrogate; see
+    /// <see cref="TextStyle.FontRef"/>.
+    /// </exception>
     public Document Add(string text, TextStyle? style = null)
         => Add(new Paragraph(text, style ?? _defaultStyle));
 
@@ -676,6 +681,11 @@ public sealed class Document : IDisposable
     /// call, when this renderer, or an overflow it returns, needs more than 50,000 page
     /// continuations, or when it returns <see cref="LayoutResult.Outcome.Nothing"/> twice in a row,
     /// the second time on a new page.
+    /// </exception>
+    /// <exception cref="NullReferenceException">
+    /// Raised from the save, not from this call, when <paramref name="renderer"/> returns a null
+    /// result from <see cref="IRenderer.Layout"/>, or a <see cref="LayoutResult.Partial"/> with a
+    /// null renderer.
     /// </exception>
     public Document Add(IRenderer renderer)
     {
@@ -826,8 +836,8 @@ public sealed class Document : IDisposable
     /// can go wrong goes wrong at this call rather than at the one that set the bad value.
     /// <para>The save runs every element's renderer, a custom <see cref="IRenderer"/> included,
     /// reads every font registered with <see cref="UseTrueTypeFont"/>, and writes to
-    /// <paramref name="destination"/>, so an exception from any of those reaches you from here.
-    /// </para>
+    /// <paramref name="destination"/>, so an exception from any of those reaches you from
+    /// here.</para>
     /// <para>A second call after a save that succeeded throws. It reports that
     /// the document has already been written and tells you to create a new one. It writes nothing
     /// to the stream, appended or otherwise.</para>
@@ -863,11 +873,11 @@ public sealed class Document : IDisposable
     /// <c>stream</c> rather than <c>destination</c>. Document geometry reports <c>margins</c>. An
     /// element that refuses its own input reports a name of its own choosing, which is not always
     /// the property you set. A pie chart names the property; an image names a private field of its
-    /// renderer, the chart having been fixed and the image left (#481). Read the boundary
-    /// documentation on the property instead, where each element has it. A registered font with a
-    /// value that makes a font metric non-finite, such as a <c>unitsPerEm</c> of 0, reports
-    /// <c>value</c>; see <see cref="UseTrueTypeFont"/>. So does text in an embedded font holding an
-    /// unpaired surrogate, which reports <c>s</c>.
+    /// renderer (#481). Read the boundary documentation on the property instead, where each element
+    /// has it. A registered font with a value that makes a font metric non-finite, such as a
+    /// <c>unitsPerEm</c> of 0, reports <c>value</c>; see <see cref="UseTrueTypeFont"/>. Text that
+    /// holds an unpaired surrogate and is drawn in an embedded font raises it too, and reports
+    /// <c>s</c>.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <see cref="PageSize"/> has a width or height that is not a positive finite number.
@@ -879,7 +889,8 @@ public sealed class Document : IDisposable
     /// <exception cref="NullReferenceException">
     /// A null that a member stored without a check: a band's <see cref="RunningBand.Template"/>
     /// (#531), an element or text passed to an <c>Add</c> overload that stores it, a null
-    /// <see cref="PageSize"/>, or a null inside an element.
+    /// <see cref="PageSize"/>, or a null inside an element. A custom renderer that returns a null
+    /// result, or a null renderer inside one, raises it too; see <see cref="IRenderer.Layout"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// A <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name is selected
@@ -965,7 +976,8 @@ public sealed class Document : IDisposable
     /// <exception cref="NullReferenceException">
     /// A null that a member stored without a check: a band's <see cref="RunningBand.Template"/>
     /// (#531), an element or text passed to an <c>Add</c> overload that stores it, a null
-    /// <see cref="PageSize"/>, or a null inside an element.
+    /// <see cref="PageSize"/>, or a null inside an element. A custom renderer that returns a null
+    /// result, or a null renderer inside one, raises it too; see <see cref="IRenderer.Layout"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// A <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name is selected
@@ -1001,8 +1013,8 @@ public sealed class Document : IDisposable
     /// can go wrong goes wrong at this call rather than at the one that set the bad value.
     /// <para>The save runs every element's renderer, a custom <see cref="IRenderer"/> included,
     /// reads every font registered with <see cref="UseTrueTypeFont"/>, and writes to
-    /// <paramref name="destination"/>, so an exception from any of those reaches you from here.
-    /// </para>
+    /// <paramref name="destination"/>, so an exception from any of those reaches you from
+    /// here.</para>
     /// <para>A second call after a save that succeeded throws. It reports that
     /// the document has already been written and tells you to create a new one. It writes nothing
     /// to the stream, appended or otherwise.</para>
@@ -1021,7 +1033,7 @@ public sealed class Document : IDisposable
     /// <see cref="InvalidOperationException"/>, so a catch written for the base type also catches
     /// it; <see cref="Document"/> implements <see cref="IDisposable"/>, so this is ordinary misuse
     /// rather than a case this API adds. It is also raised when <paramref name="destination"/> was
-    /// already closed.
+    /// already closed, or reports that it can neither read nor write.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The document has already been written, or has no pages, or an element's input cannot be laid
@@ -1036,8 +1048,8 @@ public sealed class Document : IDisposable
     /// refuses its own input while being laid out. The boundary documentation on the individual
     /// properties says which inputs those are. A registered font with a value that makes a font
     /// metric non-finite, such as a <c>unitsPerEm</c> of 0, raises it too; see
-    /// <see cref="UseTrueTypeFont"/>. So does text in an embedded font holding an unpaired
-    /// surrogate.
+    /// <see cref="UseTrueTypeFont"/>. So does text that holds an unpaired surrogate and is drawn in
+    /// an embedded font.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <see cref="PageSize"/> has a width or height that is not a positive finite number.
@@ -1050,7 +1062,8 @@ public sealed class Document : IDisposable
     /// <exception cref="NullReferenceException">
     /// A null that a member stored without a check: a band's <see cref="RunningBand.Template"/>
     /// (#531), an element or text passed to an <c>Add</c> overload that stores it, a null
-    /// <see cref="PageSize"/>, or a null inside an element.
+    /// <see cref="PageSize"/>, or a null inside an element. A custom renderer that returns a null
+    /// result, or a null renderer inside one, raises it too; see <see cref="IRenderer.Layout"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// A <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name is selected
@@ -1070,9 +1083,9 @@ public sealed class Document : IDisposable
     /// <exception cref="OperationCanceledException">
     /// A token already cancelled when the call starts stops the save before the layout, and one
     /// cancelled during the layout or serialisation is seen once that step has finished. Each ends
-    /// the task with a <see cref="TaskCanceledException"/> before anything is written, except that
-    /// a cancellation during serialisation reports a closed or non-writable
-    /// <paramref name="destination"/> by that stream's own exception instead. During the write,
+    /// the task with a <see cref="TaskCanceledException"/> before anything is written, unless
+    /// <paramref name="destination"/> is refused first: a null destination after the layout, or a
+    /// closed or non-writable one after serialisation, raises its own exception. During the write,
     /// <paramref name="destination"/> receives the token and decides what to raise.
     /// </exception>
     /// <exception cref="IOException">
@@ -1153,7 +1166,8 @@ public sealed class Document : IDisposable
     /// <exception cref="NullReferenceException">
     /// A null that a member stored without a check: a band's <see cref="RunningBand.Template"/>
     /// (#531), an element or text passed to an <c>Add</c> overload that stores it, a null
-    /// <see cref="PageSize"/>, or a null inside an element.
+    /// <see cref="PageSize"/>, or a null inside an element. A custom renderer that returns a null
+    /// result, or a null renderer inside one, raises it too; see <see cref="IRenderer.Layout"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// A <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name is selected
@@ -1209,14 +1223,13 @@ public sealed class Document : IDisposable
         return prepared;
     }
 
-    /// <summary>Releases the underlying <see cref="PdfDocument"/> and its resources.</summary>
+    /// <summary>Marks the underlying <see cref="PdfDocument"/> as disposed.</summary>
     /// <remarks>
     /// Calling it again does nothing. Afterwards only <see cref="Encrypt"/>, the saves and signing
-    /// check for it. <see cref="Encrypt"/> throws <see cref="ObjectDisposedException"/>, and so
-    /// does a save once its geometry check and layout have passed. A geometry refusal, and on
-    /// <see cref="SaveAsync(System.IO.Stream, System.Threading.CancellationToken)"/> a null
-    /// destination, is reported first. Every other member works as before, and what it adds is
-    /// lost.
+    /// through <c>VellumPdf.Signing</c> check whether the document is disposed.
+    /// <see cref="Encrypt"/> throws <see cref="ObjectDisposedException"/>, and so does a save,
+    /// unless a check the save runs earlier fails first. A save to a path opens and truncates the
+    /// file before that. Every other member works as before, and what it adds is lost.
     /// </remarks>
     /// <exception cref="ObjectDisposedException">
     /// Raised from a later save or <see cref="Encrypt"/>, not from this call.

@@ -60,10 +60,11 @@ public sealed class DrawContext
 
     /// <summary>Creates a draw context bound to the current page, its canvas, and the owning document.</summary>
     /// <remarks>
-    /// Nothing is checked, and every argument is stored. A null <paramref name="page"/> is written
-    /// without an exception as the page of each structure element this type registers. The other
-    /// nulls surface later, from the first member that uses them. The document constructs this type
-    /// itself and never passes null; construct one yourself only to test a renderer.
+    /// Nothing is checked, and every argument is stored. A null <paramref name="page"/> leaves each
+    /// structure element this type registers without a page, and the save writes it without a
+    /// <c>/Pg</c> entry and without an exception. Any null, the page included, can also surface
+    /// later, from the first member that uses it; see the exception tags. The document constructs
+    /// this type itself and never passes null; construct one yourself only to test a renderer.
     /// <para>Do not pass null. A later major version will throw <see cref="ArgumentNullException"/>
     /// from this constructor.</para>
     /// </remarks>
@@ -153,9 +154,11 @@ public sealed class DrawContext
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
-    /// save overloads, not from this call, when
-    /// <paramref name="box"/> has a non-finite coordinate. The message says PDF does not support
-    /// NaN or Infinity as a real number.
+    /// save overloads, not from this call, when <paramref name="box"/> has a non-finite coordinate.
+    /// The message says PDF does not support NaN or Infinity as a real number.
+    /// </exception>
+    /// <exception cref="ArgumentNullException">
+    /// This context was constructed with a null page.
     /// </exception>
     public void AddUriLinkAnnotation(LayoutBox box, string uri)
     {

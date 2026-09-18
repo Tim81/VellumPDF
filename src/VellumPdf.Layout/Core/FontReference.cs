@@ -74,11 +74,16 @@ public readonly struct FontReference
     /// saving document's own text also uses are drawn correctly and the rest are lost; otherwise
     /// the text is drawn wrong or not at all (#544). Use handles from the document you add the text
     /// to.</para>
-    /// <para>Text drawn in an embedded font that holds an unpaired surrogate makes the save throw
-    /// <see cref="ArgumentException"/>; see <see cref="TextStyle.FontRef"/>.</para>
-    /// <para>Do not pass null. A later major version will throw
-    /// <see cref="ArgumentNullException"/> from this call.</para>
+    /// <para>Text that holds an unpaired surrogate makes the save throw
+    /// <see cref="ArgumentException"/> when it is drawn in an embedded font; see
+    /// <see cref="TextStyle.FontRef"/>.</para>
+    /// <para>Do not pass null. A later major version will throw <see cref="ArgumentNullException"/>
+    /// from this call.</para>
     /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// Raised from the save, not from this call, when text drawn in this font holds an unpaired
+    /// surrogate; see <see cref="TextStyle.FontRef"/>.
+    /// </exception>
     public FontReference(EmbeddedFontHandle handle)
     {
         _standard14 = default;
@@ -117,6 +122,11 @@ public readonly struct FontReference
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// <paramref name="text"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// The font is embedded and <paramref name="text"/> holds an unpaired surrogate, a UTF-16 code
+    /// unit from U+D800 to U+DFFF without its partner. <c>ParamName</c> is <c>s</c>. A Standard-14
+    /// font measures such text without an exception.
     /// </exception>
     public double MeasureString(string text, double pointSize) => IsEmbedded
         ? _embedded!.MeasureString(text, pointSize)

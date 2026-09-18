@@ -9,9 +9,11 @@ namespace VellumPdf.Layout.Core;
 /// </summary>
 /// <remarks>
 /// Implement this to add a custom element through
-/// <see cref="VellumPdf.Layout.Document.Add(IRenderer)"/>. The document calls
-/// <see cref="Layout"/> and <see cref="Draw"/> during a save, so an exception from either one,
-/// or from the limits described on <see cref="Layout"/>, reaches the caller from the save.
+/// <see cref="VellumPdf.Layout.Document.Add(IRenderer)"/>. The document calls <see cref="Layout"/>
+/// and <see cref="Draw"/> during a save, so an exception from either one, or from the limits
+/// described on <see cref="Layout"/>, reaches the caller from the save.
+/// <see cref="VellumPdf.Layout.Rendering.DocumentRenderer.Render"/> runs the same layout, so the
+/// exceptions these members name as raised from the save reach you from it too.
 /// </remarks>
 public interface IRenderer
 {
@@ -46,11 +48,12 @@ public interface IRenderer
     /// Phase 2: emit PDF operators into <paramref name="context"/>.
     /// </summary>
     /// <remarks>
-    /// The document calls this on a renderer that returned
-    /// <see cref="LayoutResult.Outcome.Full"/>, and on the
-    /// <see cref="LayoutResult.SplitRenderer"/> of a <see cref="LayoutResult.Outcome.Partial"/>
-    /// result. A split renderer is drawn without its own <see cref="Layout"/> ever being called,
-    /// so it must carry everything it needs to draw.
+    /// The document calls this on a renderer that returned <see cref="LayoutResult.Outcome.Full"/>,
+    /// and on the <see cref="LayoutResult.SplitRenderer"/> of a
+    /// <see cref="LayoutResult.Outcome.Partial"/> result. A split renderer is drawn without its own
+    /// <see cref="Layout"/> ever being called, so it must carry everything it needs to draw.
+    /// Calling it before <see cref="Layout"/> is not supported: the built-in renderers then draw
+    /// nothing, draw a zero-size or off-page mark, or throw.
     /// </remarks>
     void Draw(DrawContext context);
 }

@@ -39,8 +39,8 @@ public sealed class ParagraphRenderer : IRenderer
     /// Nothing is checked here. A null <paramref name="para"/> makes <see cref="Layout"/> throw. A
     /// negative <paramref name="startLine"/> lays out that many lines too tall and makes
     /// <see cref="Draw"/> throw. A start past the last line lays out as
-    /// <see cref="LayoutResult.Outcome.Nothing"/>, so a document saving it throws the too-tall
-    /// <see cref="InvalidOperationException"/>.
+    /// <see cref="LayoutResult.Outcome.Nothing"/>, so a document saving it throws
+    /// <see cref="InvalidOperationException"/> saying the element is too tall to fit.
     /// <para>Do not pass null or a start outside the paragraph's lines. A later major version
     /// will throw from this call.</para>
     /// </remarks>
@@ -63,8 +63,9 @@ public sealed class ParagraphRenderer : IRenderer
     /// <summary>Word-wraps the paragraph and fits as many lines as the area allows, splitting at line boundaries on overflow.</summary>
     /// <remarks>
     /// Overflow returns <see cref="LayoutResult.Partial"/> at a line boundary. When no line fits
-    /// the area it returns <see cref="LayoutResult.Outcome.Nothing"/>; the document then retries
-    /// on a new page, and throws the too-tall exception from its save if that fails too.
+    /// the area it returns <see cref="LayoutResult.Outcome.Nothing"/>; the document then retries on
+    /// a new page, and, if that fails too, its save throws <see cref="InvalidOperationException"/>
+    /// saying the element is too tall to fit.
     /// <para>This method raises the refusals of the paragraph's styles itself. When the document
     /// calls this method, they reach you from the save.</para>
     /// </remarks>
@@ -74,6 +75,10 @@ public sealed class ParagraphRenderer : IRenderer
     /// <exception cref="NullReferenceException">
     /// The paragraph, one of its runs, or a run's text is <see langword="null"/>, or a run whose
     /// text holds a word has a null style.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Text this method measures is drawn in an embedded font and holds an unpaired surrogate; see
+    /// <see cref="TextStyle.FontRef"/>.
     /// </exception>
     public LayoutResult Layout(LayoutContext context)
     {

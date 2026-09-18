@@ -15,8 +15,8 @@ public sealed class Row
 {
     /// <summary>Creates an empty row.</summary>
     /// <remarks>
-    /// A row built here cannot join a table, because no member of <see cref="TableElement"/>
-    /// accepts one. Use <see cref="TableElement.AddRow"/>.
+    /// No member of <see cref="TableElement"/> accepts a row built here. Use
+    /// <see cref="TableElement.AddRow"/>.
     /// </remarks>
     public Row() { }
 
@@ -46,10 +46,10 @@ public sealed class Row
 
     /// <summary>Optional background fill color for the row.</summary>
     /// <remarks>
-    /// <b>Attention</b>: this has no effect through <see cref="TableElement.AddRow"/> and
-    /// <see cref="TableElement.AddHeaderRow"/>. Those create the row without a background, and this
-    /// property can only be set when a row is constructed. Set <see cref="Cell.Background"/> on
-    /// each cell instead (#543).
+    /// <b>Attention</b>: a row added through <see cref="TableElement.AddRow"/> or
+    /// <see cref="TableElement.AddHeaderRow"/>, the only members that add one, has no background.
+    /// Those create the row without one, and this property can only be set when a row is
+    /// constructed. Set <see cref="Cell.Background"/> on each cell instead (#543).
     /// </remarks>
     public ColorRgb? Background { get; init; }
 
@@ -78,6 +78,11 @@ public sealed class Row
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this call, when <paramref name="text"/> is <see langword="null"/> and the table has a
     /// column without an explicit width.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this call, when the text is drawn in an embedded font and holds an unpaired surrogate;
+    /// see <see cref="TextStyle.FontRef"/>.
     /// </exception>
     public Row AddCell(string text) => AddCell(new Cell(text));
 }

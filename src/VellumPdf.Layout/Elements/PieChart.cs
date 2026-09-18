@@ -22,6 +22,11 @@ public readonly record struct PieSlice
     /// Must be finite and non-negative at layout. Zero is accepted and contributes no angle.
     /// See <see cref="PieChart.Slices"/>.
     /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// Raised while the chart is laid out, which happens inside
+    /// <see cref="Document.Save(System.IO.Stream)"/>, when the value is negative or not finite.
+    /// <c>ParamName</c> is <c>Slices</c>, the chart's property, not this one.
+    /// </exception>
     public double Value { get; init; }
 
     /// <summary>The fill colour of the wedge.</summary>
@@ -53,6 +58,11 @@ public readonly record struct PieSlice
     /// Nothing is checked here. The save refuses a negative or non-finite
     /// <paramref name="Value"/>; see <see cref="PieChart.Slices"/>.
     /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// Raised while the chart is laid out, which happens inside
+    /// <see cref="Document.Save(System.IO.Stream)"/>, when <paramref name="Value"/> is negative or
+    /// not finite. <c>ParamName</c> is <c>Slices</c>, the chart's property, not this one.
+    /// </exception>
     public PieSlice(double Value, ColorRgb Color, string? Label = null)
     {
         this.Value = Value;
@@ -93,7 +103,7 @@ public sealed class PieChart
     /// <para>Finite values whose sum overflows to infinity are accepted, and every slice then has
     /// no angle and the chart has no area: it is blank, or, with <see cref="StrokeColor"/> set,
     /// every non-zero slice strokes the same radius, at <see cref="StartAngle"/> (#546). In a
-    /// tagged document the composed alternate text then gives every slice 0%.</para>
+    /// tagged document the composed alternate text then gives every labelled slice 0%.</para>
     /// <para>A null list makes the save throw.</para>
     /// <para>Do not pass a null list, or values whose sum can overflow. A later major version will
     /// refuse both.</para>

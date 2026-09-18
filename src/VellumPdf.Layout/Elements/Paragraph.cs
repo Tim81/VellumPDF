@@ -104,6 +104,11 @@ public sealed class Paragraph
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this call, when <paramref name="text"/> is <see langword="null"/>.
     /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this constructor, when the text is drawn in an embedded font and holds an unpaired
+    /// surrogate; see <see cref="TextStyle.FontRef"/>.
+    /// </exception>
     public Paragraph(string text, TextStyle? style = null)
     {
         _runs = [new TextRun(text, style ?? TextStyle.Default)];
@@ -126,6 +131,11 @@ public sealed class Paragraph
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this call, when <paramref name="runs"/> contains <see langword="null"/>, a run whose
     /// text is null, or a run whose style is null and whose text holds a word.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this constructor, when a run's text is drawn in an embedded font and holds an unpaired
+    /// surrogate; see <see cref="TextStyle.FontRef"/>.
     /// </exception>
     public Paragraph(IEnumerable<TextRun> runs)
     {
@@ -150,6 +160,11 @@ public sealed class Paragraph
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this call, when <paramref name="text"/> is <see langword="null"/>. It is raised from this
     /// call instead when <paramref name="style"/> is null and the first run is null.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this call, when the text is drawn in an embedded font and holds an unpaired surrogate;
+    /// see <see cref="TextStyle.FontRef"/>.
     /// </exception>
     public Paragraph Add(string text, TextStyle? style = null)
     {

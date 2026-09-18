@@ -20,7 +20,9 @@ public sealed class TextStyle
     public TextStyle() { }
 
     /// <summary>A style with default values (Helvetica, 12 pt, auto leading, black).</summary>
-    /// <remarks>One shared instance. Every property of this type is init-only, so it cannot change.</remarks>
+    /// <remarks>
+    /// One shared instance. Every property of this type is init-only, so it cannot change.
+    /// </remarks>
     public static readonly TextStyle Default = new();
 
     /// <summary>
@@ -29,9 +31,9 @@ public sealed class TextStyle
     /// </summary>
     /// <remarks>
     /// Stored as given. A null handle saves in Helvetica, and a handle from another document keeps
-    /// only the characters <see cref="FontReference(EmbeddedFontHandle)"/> describes. A Standard-14
-    /// value the enumeration does not name makes the save throw once the font is selected on a
-    /// page, which an empty table cell or list item with this style also does.
+    /// at most the characters <see cref="FontReference(EmbeddedFontHandle)"/> describes. A
+    /// Standard-14 value the enumeration does not name makes the save throw once the font is
+    /// selected on a page, which an empty table cell or list item with this style also does.
     /// <para><see cref="Standard14.Symbol"/> and <see cref="Standard14.ZapfDingbats"/> measure
     /// every character as zero width, so a paragraph in either is never wrapped (#470).</para>
     /// </remarks>
@@ -202,7 +204,9 @@ public sealed class TextStyle
     /// unpaired surrogate becomes U+FFFD first. Table cells and running bands silently drop the
     /// link (#475). In a list item the marker is linked as well as the text. In a document whose
     /// <c>Conformance</c> is PDF/UA-1, the link is written untagged and without the alternate
-    /// description ISO 14289-1, 7.18.5 requires, and no exception reports it (#550).
+    /// description ISO 14289-1, 7.18.5 requires, and no exception reports it (#550). On a justified
+    /// line in an embedded font, the link's rectangle is placed where the text would be without
+    /// justification, so it can lie away from the linked words (#551).
     /// <para>Do not pass a value that is not an absolute URI. A later major version will refuse
     /// one.</para>
     /// </remarks>
@@ -216,6 +220,11 @@ public sealed class TextStyle
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// <paramref name="text"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// The font is embedded and <paramref name="text"/> holds an unpaired surrogate, a UTF-16 code
+    /// unit from U+D800 to U+DFFF without its partner. <c>ParamName</c> is <c>s</c>. A Standard-14
+    /// font measures such text without an exception.
     /// </exception>
     public double MeasureString(string text) => FontRef.MeasureString(text, FontSize);
 }

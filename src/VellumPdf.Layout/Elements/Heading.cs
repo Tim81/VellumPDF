@@ -108,6 +108,11 @@ public sealed class Heading
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this call, when <paramref name="text"/> is <see langword="null"/>.
     /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this constructor, when the text is drawn in an embedded font and holds an unpaired
+    /// surrogate; see <see cref="TextStyle.FontRef"/>.
+    /// </exception>
     public Heading(string text, TextStyle? style = null)
     {
         Text = text;

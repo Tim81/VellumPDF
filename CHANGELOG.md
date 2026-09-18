@@ -212,13 +212,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **The rest of Layout's public members now document their boundaries (#510):** what is
   refused and which call throws, what is accepted but should not be relied on, and what is
-  accepted and then ignored. **115** public members carry an `<exception>` tag, counted in the
+  accepted and then ignored. **119** public members carry an `<exception>` tag, counted in the
   compiler's XML output. What a caller is most likely to act on:
 
   - Null text, a null run, cell, item or image, and a null `PieChart.Slices` are stored without
     a check, and the save throws `NullReferenceException`; null cell text throws only when a
-    column is sized automatically. The public renderers' constructors store a null too, and their
-    `Layout` method throws (#547).
+    column is sized automatically. The constructors of the public `IRenderer` implementations
+    store a null too, and their `Layout` method throws (#547).
   - `SetDefaultFont` is used only by `Add(string)` calls made after it. A `Paragraph`,
     `Heading`, list, table or running band never uses it.
   - A font handle from a different `Document` saves without an exception. The text is drawn in
@@ -231,10 +231,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     create rows without one (#543).
   - A link from `TextStyle.LinkUri` or `DrawContext.AddUriLinkAnnotation` is written untagged
     and without an alternate description, so a PDF/UA-1 document holding one is not conformant,
-    and nothing reports it (#550).
+    and nothing reports it (#550). On a justified line in an embedded font, the link rectangle
+    can lie away from the linked words (#551).
+  - Text that holds an unpaired surrogate makes the save throw `ArgumentException` when it is
+    drawn in an embedded font, and so does measuring it with `TextStyle.MeasureString`. A
+    standard-14 font draws such text without an exception.
   - Nothing in this package acts on `LayoutContext.ContentTop`.
   - An element exactly as tall as the content area can repeat its layout until the
-    page-continuation limit throws, for some margins (#549).
+    page-continuation limit throws, when rounding offers it an area one step shorter than the
+    content area (#549).
   - `LayoutBox.ToString` formats in the current culture.
   - A pie chart whose slice values sum past the largest double has no area, and a very large
     `StartAngle` draws the wedges wrong (#546).
@@ -270,9 +275,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   grid cannot be suppressed at all, since the border colour is not nullable and every cell is
   stroked unconditionally. A non-finite document margin is refused only when it is positive
   infinity; `NaN` and negative infinity slip past the check, because a comparison against either
-  is false, and surface instead as a message about an element being too tall or about the
-  page-continuation cap (tracked as #502). A positive-infinity image width is not refused but
-  clamped to the content box. A marker wider than the list indent does not overprint the item
+  is false. On the top edge, and `NaN` on the bottom, they surface as a message about an element
+  being too tall or about the page-continuation cap (tracked as #502); on a side edge, and negative
+  infinity on the bottom, the document saves, and `Document.Margins` says what each does. A
+  positive-infinity image width is not refused but clamped to the content box. A marker wider than the list indent does not overprint the item
   text, because the gutter widens per item rather than to the widest one seen so far, and reverts
   to the plain indent whenever the widened gutter would leave less room than that item's longest
   word. With roman numerals at the default 20-point indent, the first marker to exceed the indent
@@ -335,10 +341,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   it under `"destination"`.
 
 - **A save that threw can leave the document holding pages and element state from the failed
-  attempt (#530).** A retry after a save that threw can succeed on a file that differs from a
-  fresh build: a one-page document retried after a save to a null destination saved two pages.
-  The overloads now say a document is single-use, and that the answer to a save that threw is a
-  fresh `Document` rather than a retry. The behaviour itself is unchanged here; #530 carries the
+  attempt (#530).** A retry can then succeed on a file that differs from a fresh build: a
+  one-page document retried after a save to a null destination saved two pages. The overloads
+  now say a document is single-use, and that the answer to a failed save is a fresh `Document`
+  rather than a retry. The behaviour itself is unchanged here; #530 carries the
   defect.
 
 - Further boundaries the save overloads did not carry. The save overloads'

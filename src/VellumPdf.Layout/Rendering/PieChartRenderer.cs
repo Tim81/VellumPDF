@@ -35,9 +35,10 @@ public sealed class PieChartRenderer : IRenderer
     /// <summary>Validates the slices, reserves the chart diameter plus margins, and reports the occupied region.</summary>
     /// <remarks>
     /// This renderer does not split. A chart taller than the area returns
-    /// <see cref="LayoutResult.Outcome.Nothing"/>, and the document then throws the too-tall
-    /// exception from its save. This method raises the chart's refusals itself. When the document
-    /// calls this method, they reach you from the save.
+    /// <see cref="LayoutResult.Outcome.Nothing"/>, and the document's save then throws
+    /// <see cref="InvalidOperationException"/> saying the element is too tall to fit. This method
+    /// raises the chart's refusals itself. When the document calls this method, they reach you from
+    /// the save.
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// <see cref="PieChart.Slices"/>, <see cref="PieChart.Diameter"/>,

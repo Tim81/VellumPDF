@@ -33,9 +33,10 @@ public sealed class LayoutImageRenderer : IRenderer
     /// <summary>Resolves the image size within the available area and reports the occupied region.</summary>
     /// <remarks>
     /// This renderer does not split. An image taller than the area returns
-    /// <see cref="LayoutResult.Outcome.Nothing"/>, and the document then throws the too-tall
-    /// exception from its save. This method raises the image's size refusals itself. When the
-    /// document calls this method, they reach you from the save.
+    /// <see cref="LayoutResult.Outcome.Nothing"/>, and the document's save then throws
+    /// <see cref="InvalidOperationException"/> saying the element is too tall to fit. This method
+    /// raises the image's size refusals itself. When the document calls this method, they reach you
+    /// from the save.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// <see cref="LayoutImage.Width"/> or <see cref="LayoutImage.Height"/>, or the height derived

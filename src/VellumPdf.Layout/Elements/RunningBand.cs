@@ -41,6 +41,12 @@ public sealed class RunningBand
     /// <see langword="null"/>. The type is wrong for a null argument and the throw lands far from
     /// the constructor that accepted it; both are tracked as #531.
     /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when the band draws text in an embedded font and the part of the
+    /// template that fits the band holds an unpaired surrogate; see
+    /// <see cref="TextStyle.FontRef"/>.
+    /// </exception>
     public string Template { get; }
 
     /// <summary>The text style of the band.</summary>
@@ -49,9 +55,9 @@ public sealed class RunningBand
 
     /// <summary>Horizontal alignment of the band text.</summary>
     /// <remarks>
-    /// <see cref="HorizontalAlignment.Justify"/> is neither refused <b>nor</b> honoured. It falls
-    /// through to left alignment, and so does a value the enumeration does not name. A single-line
-    /// band has nothing to justify against, so there is no meaning to give it.
+    /// <see cref="HorizontalAlignment.Justify"/> is neither refused nor honoured. It falls through
+    /// to left alignment, and so does a value the enumeration does not name. A single-line band has
+    /// nothing to justify against, so there is no meaning to give it.
     /// </remarks>
     public HorizontalAlignment Alignment { get; }
 
@@ -117,6 +123,12 @@ public sealed class RunningBand
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this constructor, when <paramref name="template"/> is <see langword="null"/> and the
     /// band is attached to a document.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this constructor, when the band draws text in an embedded font and the part of the
+    /// template that fits the band holds an unpaired surrogate; see
+    /// <see cref="TextStyle.FontRef"/>.
     /// </exception>
     public RunningBand(string template, TextStyle? style = null, HorizontalAlignment alignment = HorizontalAlignment.Center)
     {

@@ -87,9 +87,8 @@ public sealed class LayoutImage
 
     /// <summary>Horizontal alignment of the image within the available width.</summary>
     /// <remarks>
-    /// <b>Attention</b>: <see cref="HorizontalAlignment.Justify"/> is neither refused nor
-    /// honoured. It falls through to left alignment. An image is one box; there is nothing to
-    /// justify against.
+    /// <see cref="HorizontalAlignment.Justify"/> is neither refused nor honoured. It falls through
+    /// to left alignment. An image is one box; there is nothing to justify against.
     /// </remarks>
     public HorizontalAlignment Alignment { get; init; } = HorizontalAlignment.Left;
 
@@ -110,9 +109,9 @@ public sealed class LayoutImage
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when the box the edges leave is too small for the element. The message
     /// says the element is too tall to fit on a page and does not name the margins. With
-    /// <see cref="Width"/> null, the width the edges leave is refused as described on
-    /// <see cref="Width"/>: zero, a magnitude under 5e-6, or a non-finite value, or a derived
-    /// height that falls under the floor. The message then names that width or height instead.
+    /// <see cref="Width"/> null, the width the edges leave is refused when it is zero, under 5e-6
+    /// in magnitude, or not finite, positive infinity included, and so is a height derived from it
+    /// that is under 5e-6. The message then names that width or height instead.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not

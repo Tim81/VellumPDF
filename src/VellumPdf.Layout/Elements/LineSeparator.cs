@@ -31,18 +31,18 @@ public sealed class LineSeparator
     /// want no rule, leave the element out.</para>
     /// <para>A negative width is not refused today, though ISO 32000-2, 8.4.3.2 requires a line
     /// width to be a non-negative number: the token this writes is one the specification forbids,
-    /// so refusing a negative width is the format's business, not only the renderer's. Whether to
-    /// refuse it is undecided (#482).</para>
+    /// so refusing a negative width is the format's business, not only the renderer's.</para>
     /// <para>A negative width is also subtracted from the height the separator takes, so the
-    /// elements after it move up the page, and off it once the width is large enough.</para>
+    /// elements after it move up the page, and off it once the width's magnitude is large
+    /// enough.</para>
     /// <para>Do not pass a negative width. #482 decides whether a later major version refuses
     /// it.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property,
-    /// when the width is not finite. The message names the separator. It is also raised, as the
-    /// too-tall exception, when the width is large enough that the separator does not fit on a
-    /// page.
+    /// when the width is not finite. The message names the separator. It is also raised when the
+    /// width is large enough that the separator does not fit on a page, with a message saying the
+    /// element is too tall to fit.
     /// </exception>
     public double LineWidth { get; init; } = 1;
 
@@ -62,15 +62,14 @@ public sealed class LineSeparator
     /// checked too, though the rule spans the content width and neither of them moves it.</para>
     /// <para>A negative <c>Top</c> or <c>Bottom</c> is not refused: it moves the rule, or the
     /// elements after it, up the page.</para>
-    /// 
     /// <para>Do not pass a negative <c>Top</c> or <c>Bottom</c>. A later major version will refuse
     /// both.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property,
-    /// when any of the four insets is not finite. It is also raised, as the too-tall exception,
-    /// when <c>Top</c> and <c>Bottom</c> are large enough that the separator does not fit on a
-    /// page.
+    /// when any of the four insets is not finite. It is also raised when <c>Top</c> and
+    /// <c>Bottom</c> are large enough that the separator does not fit on a page, with a message
+    /// saying the element is too tall to fit.
     /// </exception>
     public EdgeInsets Margins { get; init; } = new EdgeInsets(6, 0, 6, 0);
 }

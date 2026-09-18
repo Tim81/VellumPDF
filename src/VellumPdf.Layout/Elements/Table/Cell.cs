@@ -150,5 +150,10 @@ public sealed class Cell
     /// from this call, when <paramref name="content"/> is <see langword="null"/> and the table has
     /// a column without an explicit width.
     /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this constructor, when the text is drawn in an embedded font and holds an unpaired
+    /// surrogate; see <see cref="TextStyle.FontRef"/>.
+    /// </exception>
     public Cell(string content) => Content = content;
 }

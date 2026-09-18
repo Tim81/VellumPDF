@@ -42,8 +42,8 @@ public sealed class ListRenderer : IRenderer
     /// <see cref="LayoutResult.Full"/> occupying no height. A negative start on an empty list also
     /// returns <see cref="LayoutResult.Full"/> occupying no height, and <see cref="Draw"/> then
     /// throws <see cref="ArgumentOutOfRangeException"/>.
-    /// <para>Do not pass null or a negative start. A later major version will throw from this
-    /// constructor.</para>
+    /// <para>Do not pass null or a start outside the list's items. A later major version will throw
+    /// from this constructor.</para>
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// Raised from <see cref="Layout"/>, when <paramref name="startItem"/> is negative, the
@@ -83,6 +83,10 @@ public sealed class ListRenderer : IRenderer
     /// </exception>
     /// <exception cref="NullReferenceException">
     /// The list, an item, or an item's text is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Text this method measures is drawn in an embedded font and holds an unpaired surrogate; see
+    /// <see cref="TextStyle.FontRef"/>.
     /// </exception>
     public LayoutResult Layout(LayoutContext context)
     {

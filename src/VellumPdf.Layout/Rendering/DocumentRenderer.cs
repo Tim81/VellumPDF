@@ -162,7 +162,7 @@ public sealed class DocumentRenderer
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Render"/>, when the band's height leaves the content area no positive
     /// size; see <see cref="RunningBand.Height"/>. It is also raised when the band draws text in an
-    /// embedded font and the template holds an unpaired surrogate.
+    /// embedded font and the part of the template that fits the band holds an unpaired surrogate.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Render"/>, when the band's height or its style's size is refused; see
@@ -189,7 +189,7 @@ public sealed class DocumentRenderer
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Render"/>, when the band's height leaves the content area no positive
     /// size; see <see cref="RunningBand.Height"/>. It is also raised when the band draws text in an
-    /// embedded font and the template holds an unpaired surrogate.
+    /// embedded font and the part of the template that fits the band holds an unpaired surrogate.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Render"/>, when the band's height or its style's size is refused; see
@@ -217,9 +217,8 @@ public sealed class DocumentRenderer
     /// <para>A negative margin is accepted and lays content out beyond the page edge, as on
     /// <see cref="Document.Margins"/>. The origin of <paramref name="pageSize"/> is not used for
     /// layout, as on <see cref="Document.PageSize"/>.</para>
-    /// <para>Do not pass a null <paramref name="pdf"/>, a negative, <c>NaN</c> or negative-infinity
-    /// margin, or a page rectangle not at the origin. A later major version will refuse
-    /// them.</para>
+    /// <para>Do not pass a null <paramref name="pdf"/>, a negative or <c>NaN</c> margin, or a page
+    /// rectangle not at the origin. A later major version will refuse them.</para>
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// The page width or height is not a positive finite number.
@@ -253,9 +252,14 @@ public sealed class DocumentRenderer
     /// <see langword="null"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Raised from <see cref="Render"/>, not from this call, when <paramref name="renderer"/>, or an
-    /// overflow it returns, needs more than 50,000 page continuations, or when it returns
+    /// Raised from <see cref="Render"/>, not from this call, when <paramref name="renderer"/>, or
+    /// an overflow it returns, needs more than 50,000 page continuations, or when it returns
     /// <see cref="LayoutResult.Outcome.Nothing"/> twice in a row, the second time on a new page.
+    /// </exception>
+    /// <exception cref="NullReferenceException">
+    /// Raised from the save, not from this call, when <paramref name="renderer"/> returns a null
+    /// result from <see cref="IRenderer.Layout"/>, or a <see cref="LayoutResult.Partial"/> with a
+    /// null renderer.
     /// </exception>
     public DocumentRenderer Add(IRenderer renderer) { _renderers.Add(renderer); return this; }
 
@@ -309,12 +313,13 @@ public sealed class DocumentRenderer
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// The kernel document combines options it cannot write together, such as object streams with
-    /// encryption, or linearization with either. A linearized kernel document also reports a
-    /// <paramref name="destination"/> that is not writable this way, after the document counts as
-    /// written.
+    /// encryption, or linearization with either. A linearized kernel document raises this type, not
+    /// <see cref="ArgumentException"/>, for an open <paramref name="destination"/> that is not
+    /// writable.
     /// </exception>
     /// <exception cref="ObjectDisposedException">
-    /// The kernel document was disposed.
+    /// The kernel document was disposed, or, for a linearized kernel document,
+    /// <paramref name="destination"/> is closed.
     /// </exception>
     public void Render(Stream destination)
     {

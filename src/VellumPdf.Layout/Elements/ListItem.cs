@@ -68,6 +68,11 @@ public sealed class ListItem
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this call, when <paramref name="text"/> is <see langword="null"/>.
     /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this constructor, when the text is drawn in an embedded font and holds an unpaired
+    /// surrogate; see <see cref="TextStyle.FontRef"/>.
+    /// </exception>
     public ListItem(string text, TextStyle? style = null)
     {
         Text = text;
@@ -102,6 +107,11 @@ public sealed class ListItem
     /// <exception cref="NullReferenceException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this call, when <paramref name="text"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this call, when the text is drawn in an embedded font and holds an unpaired surrogate;
+    /// see <see cref="TextStyle.FontRef"/>.
     /// </exception>
     public ListItem AddChild(string text, TextStyle? style = null)
         => AddChild(new ListItem(text, style));

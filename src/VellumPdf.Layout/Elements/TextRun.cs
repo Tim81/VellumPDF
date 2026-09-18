@@ -20,6 +20,11 @@ namespace VellumPdf.Layout.Elements;
 /// the constructor, when the text is <see langword="null"/>, or the style is null and the text
 /// holds a word.
 /// </exception>
+/// <exception cref="ArgumentException">
+/// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not from
+/// this constructor, when the text is drawn in an embedded font and holds an unpaired surrogate;
+/// see <see cref="TextStyle.FontRef"/>.
+/// </exception>
 public sealed class TextRun(string Text, TextStyle Style)
 {
     /// <summary>The run's text.</summary>
@@ -27,6 +32,9 @@ public sealed class TextRun(string Text, TextStyle Style)
     public string Text { get; } = Text;
 
     /// <summary>The run's text style.</summary>
-    /// <remarks>Any value is stored. A null value makes the save throw; see the type remarks.</remarks>
+    /// <remarks>
+    /// Any value is stored. A null value makes the save throw when the run's text holds a word; see
+    /// the type remarks.
+    /// </remarks>
     public TextStyle Style { get; } = Style;
 }

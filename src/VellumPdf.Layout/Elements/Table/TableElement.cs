@@ -48,6 +48,9 @@ public sealed class TableElement
     /// <para>There is at present <b>no</b> way to draw a table without a grid. Every cell is
     /// stroked unconditionally and <see cref="BorderColor"/> is not nullable. If you need a
     /// gridless table, the nearest you can get is a border colour matching the page.</para>
+    /// <para>A negative width is accepted and written as a negative line width, which ISO 32000-2,
+    /// 8.4.3.2 does not allow; see <see cref="LineSeparator.LineWidth"/>.</para>
+    /// <para>Do not pass a negative width. A later major version will refuse it.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this
@@ -118,7 +121,8 @@ public sealed class TableElement
     /// entries follow the rules on <see cref="ColWidths"/>; none is refused here.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
-    /// <paramref name="widths"/> is <see langword="null"/>.
+    /// <paramref name="widths"/> is <see langword="null"/>. <c>ParamName</c> is <c>collection</c>,
+    /// not <c>widths</c>.
     /// </exception>
     public TableElement SetColumnWidths(params double[] widths)
     {

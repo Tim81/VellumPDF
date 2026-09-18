@@ -112,7 +112,7 @@ public sealed class ListElement
     /// make the save throw an exception about something else, write a <c>NaN</c> or <c>Infinity</c>
     /// token into the content stream, re-wrap, move or mirror the content, or leave the element off
     /// the page. The bottom edge only limits that box and adds no space before the next element,
-    /// though a non-finite one can still disturb the elements placed after it. A negative or
+    /// though a non-finite one can still disturb the elements placed after this one. A negative or
     /// non-finite top edge can also move the elements placed after this one.
     /// <para>Do not pass a negative or non-finite edge. A later major version will refuse
     /// both.</para>
@@ -179,6 +179,11 @@ public sealed class ListElement
     /// <exception cref="NullReferenceException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this call, when <paramref name="text"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this call, when the text is drawn in an embedded font and holds an unpaired surrogate;
+    /// see <see cref="TextStyle.FontRef"/>.
     /// </exception>
     public ListElement Add(string text, TextStyle? style = null)
         => Add(new ListItem(text, style));

@@ -66,8 +66,8 @@ public sealed class LayoutResult
     /// <see cref="LayoutBox.Bottom"/>, and only after <see cref="Outcome.Full"/>: it becomes the
     /// position of the next element. The Bottom is not checked. One above the current position
     /// moves the next element up the page, and a non-finite one becomes the top of the next
-    /// element's area. The elements after it can then write <c>NaN</c> or <c>Infinity</c> into the
-    /// content stream, be left out of the file without an exception, or make the save throw. After
+    /// element's area. Later elements can then write <c>NaN</c> or <c>Infinity</c> into the content
+    /// stream, be left out of the file without an exception, or make the save throw. After
     /// <see cref="Outcome.Partial"/> the box is not read.
     /// </remarks>
     public LayoutBox? OccupiedArea { get; }
@@ -101,9 +101,11 @@ public sealed class LayoutResult
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
-    /// save overloads, not from this call, when a non-finite <see cref="LayoutBox.Bottom"/> leaves
-    /// a later element at a position the save writes outside the content stream, such as a
-    /// heading's bookmark. The message says PDF does not support NaN or Infinity as a real number.
+    /// save overloads, not from this call, when a <see cref="LayoutBox.Bottom"/> of negative
+    /// infinity leaves a later element at a position the save writes outside the content stream,
+    /// such as a heading's bookmark or a link's rectangle. <c>NaN</c> and positive infinity move a
+    /// later heading or paragraph to a new page instead. The message says PDF does not support NaN
+    /// or Infinity as a real number.
     /// </exception>
     public static LayoutResult Full(LayoutBox occupied) =>
         new(Outcome.Full, occupied, null, null);
@@ -120,6 +122,11 @@ public sealed class LayoutResult
     /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
     /// save overloads, not from this call, when <paramref name="split"/> or
     /// <paramref name="overflow"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from the save, not from this call, when the element needs more than 50,000 page
+    /// continuations, such as an <paramref name="overflow"/> that never gets smaller; see
+    /// <see cref="IRenderer.Layout"/>.
     /// </exception>
     public static LayoutResult Partial(LayoutBox occupied, IRenderer split, IRenderer overflow) =>
         new(Outcome.Partial, occupied, split, overflow);

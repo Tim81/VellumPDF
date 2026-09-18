@@ -10,8 +10,8 @@ namespace VellumPdf.Layout.Core;
 /// Channels are not checked or clamped. Layout writes them into the content stream rounded to five
 /// decimals, so a text colour of (<c>NaN</c>, 2, -1) is written as <c>NaN 2 -1 rg</c>. ISO 32000-2,
 /// 8.6.4.3, requires each DeviceRGB component to be a number from 0.0 to 1.0.
-/// <para>Do not pass a channel outside 0 to 1, or a non-finite one. A later major version will
-/// refuse both (#509).</para>
+/// <para>Do not pass a non-finite channel; #509 plans to refuse one. Keep each channel within 0 to
+/// 1, the range that clause requires.</para>
 /// </remarks>
 public readonly record struct ColorRgb
 {

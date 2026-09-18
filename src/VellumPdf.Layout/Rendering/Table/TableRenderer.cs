@@ -24,9 +24,9 @@ namespace VellumPdf.Layout.Rendering.Table;
 ///   • Draws collapsed borders (single shared line between cells).
 /// </summary>
 /// <remarks>
-/// A table that resolves to no columns is refused from <see cref="Layout"/>. A table whose rows
-/// are all headers lays out as <see cref="LayoutResult.Outcome.Nothing"/>, so the document's save
-/// throws the too-tall exception (#488).
+/// A table that resolves to no columns is refused from <see cref="Layout"/>. A table whose rows are
+/// all headers lays out as <see cref="LayoutResult.Outcome.Nothing"/>, so the document's save
+/// throws <see cref="InvalidOperationException"/> saying the element is too tall to fit (#488).
 /// </remarks>
 public sealed class TableRenderer : IRenderer
 {
@@ -46,8 +46,8 @@ public sealed class TableRenderer : IRenderer
     /// counted. The leading header rows are drawn first on every page, then the other rows from
     /// <paramref name="startRow"/> on, so a start below zero or inside the header run draws every
     /// row. A start past the last row lays out as <see cref="LayoutResult.Outcome.Nothing"/>, so a
-    /// document saving it throws the too-tall <see cref="InvalidOperationException"/>. A null
-    /// <paramref name="table"/> makes <see cref="Layout"/> throw.
+    /// document saving it throws <see cref="InvalidOperationException"/> saying the element is too
+    /// tall to fit. A null <paramref name="table"/> makes <see cref="Layout"/> throw.
     /// <para>Do not pass null or a start outside the table's rows. A later major version will
     /// throw from this call.</para>
     /// </remarks>
@@ -82,6 +82,10 @@ public sealed class TableRenderer : IRenderer
     /// </exception>
     /// <exception cref="OutOfMemoryException">
     /// The resolved column count is too large to allocate; see <see cref="Cell.ColSpan"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Text this method measures is drawn in an embedded font and holds an unpaired surrogate; see
+    /// <see cref="TextStyle.FontRef"/>.
     /// </exception>
     public LayoutResult Layout(LayoutContext context)
     {
@@ -192,6 +196,10 @@ public sealed class TableRenderer : IRenderer
 
     /// <summary>Draws cell backgrounds, borders and text (repeating header rows) and builds the tagged Table struct tree when tagging is enabled.</summary>
     /// <remarks>See <see cref="IRenderer.Draw"/>.</remarks>
+    /// <exception cref="IndexOutOfRangeException">
+    /// This method is called before <see cref="Layout"/> on a table that has a header row; see
+    /// <see cref="IRenderer.Draw"/>.
+    /// </exception>
     public void Draw(DrawContext ctx)
     {
         // Layout already deflated context.Area by _table.Margins and stored the result in
