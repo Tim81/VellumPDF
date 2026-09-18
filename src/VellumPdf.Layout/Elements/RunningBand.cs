@@ -43,14 +43,15 @@ public sealed class RunningBand
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the band draws text in an embedded font and the part of the
-    /// template that fits the band holds an unpaired surrogate; see
+    /// from this property, when the band measures text in an embedded font that holds an unpaired
+    /// surrogate, which can include part of the template it then does not draw; see
     /// <see cref="TextStyle.FontRef"/>.
     /// </exception>
     public string Template { get; }
 
-    /// <summary>The text style of the band.</summary>
-    /// <remarks>Stored as given. Size and leading refusals are on <see cref="TextStyle"/>.</remarks>
+    /// <summary>The text style of the band.</summary> <remarks>A null style passed to the
+    /// constructor is replaced by <see cref="TextStyle.Default"/>; any other is stored as given.
+    /// Size and leading refusals are on <see cref="TextStyle"/>.</remarks>
     public TextStyle Style { get; }
 
     /// <summary>Horizontal alignment of the band text.</summary>
@@ -126,8 +127,8 @@ public sealed class RunningBand
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this constructor, when the band draws text in an embedded font and the part of the
-    /// template that fits the band holds an unpaired surrogate; see
+    /// from this constructor, when the band measures text in an embedded font that holds an
+    /// unpaired surrogate, which can include part of the template it then does not draw; see
     /// <see cref="TextStyle.FontRef"/>.
     /// </exception>
     public RunningBand(string template, TextStyle? style = null, HorizontalAlignment alignment = HorizontalAlignment.Center)

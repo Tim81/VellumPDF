@@ -112,8 +112,8 @@ public sealed class ListElement
     /// make the save throw an exception about something else, write a <c>NaN</c> or <c>Infinity</c>
     /// token into the content stream, re-wrap, move or mirror the content, or leave the element off
     /// the page. The bottom edge only limits that box and adds no space before the next element,
-    /// though a non-finite one can still disturb the elements placed after this one. A negative or
-    /// non-finite top edge can also move the elements placed after this one.
+    /// though a non-finite one can still disturb the elements placed after this one, and a negative
+    /// or non-finite top edge can move them.
     /// <para>Do not pass a negative or non-finite edge. A later major version will refuse
     /// both.</para>
     /// </remarks>
@@ -182,8 +182,8 @@ public sealed class ListElement
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when the text is drawn in an embedded font and holds an unpaired surrogate;
-    /// see <see cref="TextStyle.FontRef"/>.
+    /// from this call, when the text holds an unpaired surrogate and is measured in an embedded
+    /// font, as layout does; see <see cref="TextStyle.FontRef"/>.
     /// </exception>
     public ListElement Add(string text, TextStyle? style = null)
         => Add(new ListItem(text, style));

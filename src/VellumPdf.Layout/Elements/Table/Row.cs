@@ -47,8 +47,8 @@ public sealed class Row
     /// <summary>Optional background fill color for the row.</summary>
     /// <remarks>
     /// <b>Attention</b>: a row added through <see cref="TableElement.AddRow"/> or
-    /// <see cref="TableElement.AddHeaderRow"/>, the only members that add one, has no background.
-    /// Those create the row without one, and this property can only be set when a row is
+    /// <see cref="TableElement.AddHeaderRow"/>, the only members that add a row, has no background.
+    /// Those create the row without a background, and this property can only be set when a row is
     /// constructed. Set <see cref="Cell.Background"/> on each cell instead (#543).
     /// </remarks>
     public ColorRgb? Background { get; init; }
@@ -69,20 +69,23 @@ public sealed class Row
     /// <remarks>
     /// Creates the cell with <see cref="Cell(string)"/> and adds it, so a line break in the text is
     /// not honoured; see <see cref="Cell.Content"/>. A null <paramref name="text"/> is stored. The
-    /// save throws when it sizes a column automatically, which it does for any column without an
-    /// explicit width; with every column width set, the cell is drawn empty.
+    /// save throws when it sizes a column automatically, which it does for a column without a
+    /// positive finite width in <see cref="TableElement.ColWidths"/>. In a column with a positive
+    /// finite width, the cell is drawn empty. In a row that a cell above covers through
+    /// <see cref="Cell.RowSpan"/>, the row's cells fill the columns left, in order, and a cell past
+    /// the last column is not drawn, though its text is still measured (#487).
     /// <para>Do not pass null. A later major version will throw
     /// <see cref="ArgumentNullException"/> from this call.</para>
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when <paramref name="text"/> is <see langword="null"/> and the table has a
-    /// column without an explicit width.
+    /// from this call, when <paramref name="text"/> is <see langword="null"/> and the table sizes a
+    /// column automatically; see <see cref="TableElement.ColWidths"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when the text is drawn in an embedded font and holds an unpaired surrogate;
-    /// see <see cref="TextStyle.FontRef"/>.
+    /// from this call, when the text holds an unpaired surrogate and is measured in an embedded
+    /// font, as layout does; see <see cref="TextStyle.FontRef"/>.
     /// </exception>
     public Row AddCell(string text) => AddCell(new Cell(text));
 }

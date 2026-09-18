@@ -43,8 +43,11 @@ public sealed class TextStyle
     /// value the enumeration does not name and the font is selected on a page.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// Raised from the save, not from this property, when text drawn in an embedded font holds an
-    /// unpaired surrogate, a UTF-16 code unit from U+D800 to U+DFFF without its partner.
+    /// Raised from the save, not from this property, when text in this style holds an unpaired
+    /// surrogate, a UTF-16 code unit from U+D800 to U+DFFF without its partner, and is measured in
+    /// an embedded font. The built-in elements measure their text during layout, and a running band
+    /// can measure part of its template that it then does not draw. Text drawn without being
+    /// measured, as a custom renderer can draw it, has the surrogate replaced by U+FFFD instead.
     /// <c>ParamName</c> is <c>s</c>.
     /// </exception>
     public FontReference FontRef { get; init; } = Standard14.Helvetica;
@@ -216,7 +219,8 @@ public sealed class TextStyle
     /// <remarks>
     /// A null string throws <see cref="NullReferenceException"/> from the font metrics, not
     /// <see cref="ArgumentNullException"/>. A non-finite <see cref="FontSize"/> is multiplied
-    /// through; this call does not refuse it.
+    /// through; this call does not refuse it. On an embedded font, measuring adds the characters to
+    /// the font's subset; see <see cref="FontReference.MeasureString"/>.
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// <paramref name="text"/> is <see langword="null"/>.

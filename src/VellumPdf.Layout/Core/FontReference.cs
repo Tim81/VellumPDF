@@ -75,13 +75,13 @@ public readonly struct FontReference
     /// the text is drawn wrong or not at all (#544). Use handles from the document you add the text
     /// to.</para>
     /// <para>Text that holds an unpaired surrogate makes the save throw
-    /// <see cref="ArgumentException"/> when it is drawn in an embedded font; see
+    /// <see cref="ArgumentException"/> when it is measured in an embedded font, as layout does; see
     /// <see cref="TextStyle.FontRef"/>.</para>
     /// <para>Do not pass null. A later major version will throw <see cref="ArgumentNullException"/>
     /// from this call.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
-    /// Raised from the save, not from this call, when text drawn in this font holds an unpaired
+    /// Raised from the save, not from this call, when text measured in this font holds an unpaired
     /// surrogate; see <see cref="TextStyle.FontRef"/>.
     /// </exception>
     public FontReference(EmbeddedFontHandle handle)
@@ -105,6 +105,9 @@ public readonly struct FontReference
     /// Same as <see cref="FontReference(EmbeddedFontHandle)"/>, including a null handle and a
     /// handle from another document.
     /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// Raised from the save, as described on <see cref="FontReference(EmbeddedFontHandle)"/>.
+    /// </exception>
     public static implicit operator FontReference(EmbeddedFontHandle handle) => new(handle);
 
     /// <summary>

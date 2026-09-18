@@ -52,8 +52,10 @@ public interface IRenderer
     /// and on the <see cref="LayoutResult.SplitRenderer"/> of a
     /// <see cref="LayoutResult.Outcome.Partial"/> result. A split renderer is drawn without its own
     /// <see cref="Layout"/> ever being called, so it must carry everything it needs to draw.
-    /// Calling it before <see cref="Layout"/> is not supported: the built-in renderers then draw
-    /// nothing, draw a zero-size or off-page mark, or throw.
+    /// Calling <see cref="Draw"/> on a renderer whose <see cref="Layout"/> has not run is not
+    /// supported, except on a split renderer the document received from a
+    /// <see cref="LayoutResult.Outcome.Partial"/> result. The built-in renderers then draw nothing,
+    /// draw a zero-size or off-page mark, or throw.
     /// </remarks>
     void Draw(DrawContext context);
 }

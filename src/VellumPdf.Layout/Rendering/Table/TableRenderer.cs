@@ -84,7 +84,7 @@ public sealed class TableRenderer : IRenderer
     /// The resolved column count is too large to allocate; see <see cref="Cell.ColSpan"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// Text this method measures is drawn in an embedded font and holds an unpaired surrogate; see
+    /// Text this method measures in an embedded font holds an unpaired surrogate; see
     /// <see cref="TextStyle.FontRef"/>.
     /// </exception>
     public LayoutResult Layout(LayoutContext context)

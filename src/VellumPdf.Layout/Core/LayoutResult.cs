@@ -103,9 +103,8 @@ public sealed class LayoutResult
     /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
     /// save overloads, not from this call, when a <see cref="LayoutBox.Bottom"/> of negative
     /// infinity leaves a later element at a position the save writes outside the content stream,
-    /// such as a heading's bookmark or a link's rectangle. <c>NaN</c> and positive infinity move a
-    /// later heading or paragraph to a new page instead. The message says PDF does not support NaN
-    /// or Infinity as a real number.
+    /// such as a heading's bookmark or a link's rectangle. The message says PDF does not support
+    /// NaN or Infinity as a real number.
     /// </exception>
     public static LayoutResult Full(LayoutBox occupied) =>
         new(Outcome.Full, occupied, null, null);

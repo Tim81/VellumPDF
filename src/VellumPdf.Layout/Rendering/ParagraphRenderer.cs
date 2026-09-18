@@ -17,9 +17,9 @@ namespace VellumPdf.Layout.Rendering;
 /// </summary>
 /// <remarks>
 /// The document creates one for each <see cref="Paragraph"/>. The paragraph's refusals, and a null
-/// run or text in it, or a null style on a run whose text holds a word, are raised from
-/// <see cref="Layout"/>, which the document calls during a save; a negative start line is raised
-/// from <see cref="Draw"/>.
+/// run or text in it, or a null style on a run whose text holds a character other than white space,
+/// where a no-break space counts and a tab does not, are raised from <see cref="Layout"/>, which
+/// the document calls during a save; a negative start line is raised from <see cref="Draw"/>.
 /// </remarks>
 public sealed class ParagraphRenderer : IRenderer
 {
@@ -74,10 +74,11 @@ public sealed class ParagraphRenderer : IRenderer
     /// </exception>
     /// <exception cref="NullReferenceException">
     /// The paragraph, one of its runs, or a run's text is <see langword="null"/>, or a run whose
-    /// text holds a word has a null style.
+    /// text holds a character other than white space, where a no-break space counts and a tab does
+    /// not has a null style.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// Text this method measures is drawn in an embedded font and holds an unpaired surrogate; see
+    /// Text this method measures in an embedded font holds an unpaired surrogate; see
     /// <see cref="TextStyle.FontRef"/>.
     /// </exception>
     public LayoutResult Layout(LayoutContext context)

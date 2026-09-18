@@ -106,8 +106,8 @@ public sealed class Paragraph
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this constructor, when the text is drawn in an embedded font and holds an unpaired
-    /// surrogate; see <see cref="TextStyle.FontRef"/>.
+    /// from this call, when the text holds an unpaired surrogate and is measured in an
+    /// embedded font, as layout does; see <see cref="TextStyle.FontRef"/>.
     /// </exception>
     public Paragraph(string text, TextStyle? style = null)
     {
@@ -130,12 +130,13 @@ public sealed class Paragraph
     /// <exception cref="NullReferenceException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this call, when <paramref name="runs"/> contains <see langword="null"/>, a run whose
-    /// text is null, or a run whose style is null and whose text holds a word.
+    /// text is null, or a run whose style is null and whose text holds a character other than white
+    /// space, where a no-break space counts and a tab does not.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this constructor, when a run's text is drawn in an embedded font and holds an unpaired
-    /// surrogate; see <see cref="TextStyle.FontRef"/>.
+    /// from this call, when a run's text holds an unpaired surrogate and is measured in an
+    /// embedded font, as layout does; see <see cref="TextStyle.FontRef"/>.
     /// </exception>
     public Paragraph(IEnumerable<TextRun> runs)
     {
@@ -163,8 +164,8 @@ public sealed class Paragraph
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when the text is drawn in an embedded font and holds an unpaired surrogate;
-    /// see <see cref="TextStyle.FontRef"/>.
+    /// from this call, when the text holds an unpaired surrogate and is measured in an embedded
+    /// font, as layout does; see <see cref="TextStyle.FontRef"/>.
     /// </exception>
     public Paragraph Add(string text, TextStyle? style = null)
     {

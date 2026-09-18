@@ -161,8 +161,9 @@ public sealed class DocumentRenderer
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Render"/>, when the band's height leaves the content area no positive
-    /// size; see <see cref="RunningBand.Height"/>. It is also raised when the band draws text in an
-    /// embedded font and the part of the template that fits the band holds an unpaired surrogate.
+    /// size; see <see cref="RunningBand.Height"/>. It is also raised when the band measures text in
+    /// an embedded font that holds an unpaired surrogate, which can include part of the template it
+    /// then does not draw; see <see cref="TextStyle.FontRef"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Render"/>, when the band's height or its style's size is refused; see
@@ -188,8 +189,9 @@ public sealed class DocumentRenderer
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Render"/>, when the band's height leaves the content area no positive
-    /// size; see <see cref="RunningBand.Height"/>. It is also raised when the band draws text in an
-    /// embedded font and the part of the template that fits the band holds an unpaired surrogate.
+    /// size; see <see cref="RunningBand.Height"/>. It is also raised when the band measures text in
+    /// an embedded font that holds an unpaired surrogate, which can include part of the template it
+    /// then does not draw; see <see cref="TextStyle.FontRef"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Render"/>, when the band's height or its style's size is refused; see
@@ -209,8 +211,9 @@ public sealed class DocumentRenderer
     /// <remarks>
     /// The page size and margins are checked here. A page width or height that is not a positive
     /// finite number throws <see cref="ArgumentOutOfRangeException"/>, and margins that meet or
-    /// exceed the page throw <see cref="ArgumentException"/>, both from this constructor. Margins
-    /// of <c>NaN</c> or negative infinity pass this check, as on <see cref="Document.Margins"/>.
+    /// exceed the page throw <see cref="ArgumentException"/>, both from this constructor. A margin
+    /// of <c>NaN</c> or negative infinity passes this check, and so does positive infinity opposite
+    /// one of those; see <see cref="Document.Margins"/>.
     /// <para>A null <paramref name="pdf"/> throws <see cref="NullReferenceException"/>: from this
     /// constructor when <paramref name="pageSize"/> is null, and from <see cref="Render"/>
     /// otherwise.</para>
@@ -249,17 +252,18 @@ public sealed class DocumentRenderer
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised from <see cref="Render"/>, not from this call, when <paramref name="renderer"/> is
-    /// <see langword="null"/>.
+    /// <see langword="null"/>, or returns a null result from <see cref="IRenderer.Layout"/> or a
+    /// <see cref="LayoutResult.Partial"/> with a null renderer.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Render"/>, not from this call, when <paramref name="renderer"/>, or
     /// an overflow it returns, needs more than 50,000 page continuations, or when it returns
     /// <see cref="LayoutResult.Outcome.Nothing"/> twice in a row, the second time on a new page.
     /// </exception>
-    /// <exception cref="NullReferenceException">
-    /// Raised from the save, not from this call, when <paramref name="renderer"/> returns a null
-    /// result from <see cref="IRenderer.Layout"/>, or a <see cref="LayoutResult.Partial"/> with a
-    /// null renderer.
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Render"/>, not from this call, when <paramref name="renderer"/>
+    /// returns a result whose non-finite bottom leaves a later element at a position the save
+    /// writes outside the content stream; see <see cref="LayoutResult.Full"/>.
     /// </exception>
     public DocumentRenderer Add(IRenderer renderer) { _renderers.Add(renderer); return this; }
 
@@ -284,14 +288,15 @@ public sealed class DocumentRenderer
     /// The margins, header and footer together leave the content area no positive size, or an
     /// element refuses its own input, or <paramref name="destination"/> is not writable and the
     /// kernel document is not linearized, or a registered font has a value that makes a font metric
-    /// non-finite, or text in an embedded font holds an unpaired surrogate.
+    /// non-finite, or text measured in an embedded font holds an unpaired surrogate.
     /// </exception>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="destination"/> is <see langword="null"/>, checked after the layout has run.
     /// </exception>
     /// <exception cref="NullReferenceException">
-    /// An added renderer is <see langword="null"/>, or a band's template, a text or another member
-    /// an element stored without a check is null.
+    /// An added renderer is <see langword="null"/> or returns a null result, or a band's template,
+    /// a text or another member an element stored without a check is null, or the constructor was
+    /// given a null <c>pdf</c> with a page size.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// A <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name is selected

@@ -10,8 +10,8 @@ namespace VellumPdf.Layout.Core;
 /// <see cref="VellumPdf.Canvas.PdfCanvas"/> colour method yourself, such as
 /// <see cref="VellumPdf.Canvas.PdfCanvas.SetFillColorCmyk"/>. Channels are not checked. ISO
 /// 32000-2, 8.6.4.4, requires each DeviceCMYK component to be a number from 0.0 to 1.0.
-/// <para>Do not pass a non-finite channel, and keep each channel within 0 to 1, the range that
-/// clause requires.</para>
+/// <para>Do not pass a non-finite channel; #509 plans to refuse one, as for <see cref="ColorRgb"/>.
+/// Keep each channel within 0 to 1, the range that clause requires.</para>
 /// </remarks>
 public readonly record struct ColorCmyk
 {

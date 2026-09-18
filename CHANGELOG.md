@@ -212,13 +212,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **The rest of Layout's public members now document their boundaries (#510):** what is
   refused and which call throws, what is accepted but should not be relied on, and what is
-  accepted and then ignored. **119** public members carry an `<exception>` tag, counted in the
+  accepted and then ignored. **121** public members carry an `<exception>` tag, counted in the
   compiler's XML output. What a caller is most likely to act on:
 
   - Null text, a null run, cell, item or image, and a null `PieChart.Slices` are stored without
     a check, and the save throws `NullReferenceException`; null cell text throws only when a
-    column is sized automatically. The constructors of the public `IRenderer` implementations
-    store a null too, and their `Layout` method throws (#547).
+    column is sized automatically. The constructors of Layout's public renderers store a null
+    too, and their `Layout` method throws (#547).
   - `SetDefaultFont` is used only by `Add(string)` calls made after it. A `Paragraph`,
     `Heading`, list, table or running band never uses it.
   - A font handle from a different `Document` saves without an exception. The text is drawn in
@@ -234,8 +234,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     and nothing reports it (#550). On a justified line in an embedded font, the link rectangle
     can lie away from the linked words (#551).
   - Text that holds an unpaired surrogate makes the save throw `ArgumentException` when it is
-    drawn in an embedded font, and so does measuring it with `TextStyle.MeasureString`. A
-    standard-14 font draws such text without an exception.
+    measured in an embedded font, as layout does for the built-in elements, and so does
+    `TextStyle.MeasureString`. A running band can throw for part of its template it does not draw.
+    Drawing such text without measuring it, or measuring it in a standard-14 font, throws
+    nothing.
   - Nothing in this package acts on `LayoutContext.ContentTop`.
   - An element exactly as tall as the content area can repeat its layout until the
     page-continuation limit throws, when rounding offers it an area one step shorter than the
@@ -270,27 +272,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - `Document.Margins`, `Document.PageSize`, and all four save overloads
   - `TextStyle.FontSize`, `TextStyle.Leading`
 
-  The 2.3.2 documentation stated several things the code does not do. The pie chart does not skip
-  a zero-width stroke: it strokes whenever the stroke colour is set, emitting `0 w`. A table's
-  grid cannot be suppressed at all, since the border colour is not nullable and every cell is
-  stroked unconditionally. A non-finite document margin is refused only when it is positive
-  infinity; `NaN` and negative infinity slip past the check, because a comparison against either
-  is false. On the top edge, and `NaN` on the bottom, they surface as a message about an element
-  being too tall or about the page-continuation cap (tracked as #502); on a side edge, and negative
-  infinity on the bottom, the document saves, and `Document.Margins` says what each does. A
-  positive-infinity image width is not refused but clamped to the content box. A marker wider than the list indent does not overprint the item
-  text, because the gutter widens per item rather than to the widest one seen so far, and reverts
-  to the plain indent whenever the widened gutter would leave less room than that item's longest
-  word. With roman numerals at the default 20-point indent, the first marker to exceed the indent
-  is item 17. On an ordinary page the revert never fires at all: it needs the widened gutter to
-  leave less room than the item's longest word, which a normal content width does not reach.
-  Padding wider than its column
-  does not collapse the cell: the inner width clamps to one point and the text wraps to one glyph
-  per line, landing outside the page when the padding is lopsided (`Left` alone at 400 in a
-  260-point column) but back inside it when the same total is split evenly across `Left` and
-  `Right`. `H6` is this library's own deepest heading tag, not the format's: ISO 32000-2 Table 366
-  defines `Hn` for any integer from one upward, and its NOTE 2, informative rather than a
-  requirement, names `H7` as usable further still.
+  The 2.3.2 documentation stated several things the code does not do. The pie chart does not skip a
+  zero-width stroke: it strokes whenever the stroke colour is set, emitting `0 w`. A table's grid
+  cannot be suppressed at all, since the border colour is not nullable and every cell is stroked
+  unconditionally. A non-finite document margin is refused only when its axis sums to positive
+  infinity; `NaN` and negative infinity slip past the check, because neither makes the sum meet or
+  exceed the page. What follows depends on the elements: an exception about an element rather than
+  the margin (tracked as #502), or a saved file with `NaN` or `Infinity` in it. `Document.Margins`
+  gives the rule. A positive-infinity image width is not refused but clamped to the content box. A
+  marker wider than the list indent does not overprint the item text, because the gutter widens per
+  item rather than to the widest one seen so far, and reverts to the plain indent whenever the
+  widened gutter would leave less room than that item's longest word. With roman numerals at the
+  default 20-point indent, the first marker to exceed the indent is item 17. On an ordinary page the
+  revert never fires at all: it needs the widened gutter to leave less room than the item's longest
+  word, which a normal content width does not reach. Padding wider than its column does not collapse
+  the cell: the inner width clamps to one point and the text wraps to one glyph per line, landing
+  outside the page when the padding is lopsided (`Left` alone at 400 in a 260-point column) but back
+  inside it when the same total is split evenly across `Left` and `Right`. `H6` is this library's
+  own deepest heading tag, not the format's: ISO 32000-2 Table 366 defines `Hn` for any integer from
+  one upward, and its NOTE 2, informative rather than a requirement, names `H7` as usable further
+  still.
 
 - **`RunningBand.Height`, `TextStyle.FontSize` and `TextStyle.Leading` share one mechanism with
   three entry points, and every entry point now carries the boundary that mechanism actually

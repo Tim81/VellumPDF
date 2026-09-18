@@ -16,8 +16,9 @@ public sealed class Cell
     /// <summary>The text content rendered in the cell.</summary>
     /// <remarks>
     /// An empty string draws no text. A null value can make the save throw; see the constructor.
-    /// The text is split into lines at spaces only: a line feed, carriage return or tab is not a
-    /// break, and is written into the cell as it is.
+    /// Spaces are the only break points between words, and a word wider than the cell is broken
+    /// between characters. A line feed, carriage return or tab is not a break, and is written into
+    /// the cell as it is.
     /// </remarks>
     public string Content { get; }
 
@@ -140,20 +141,21 @@ public sealed class Cell
     /// <summary>Creates a cell with the given text content.</summary>
     /// <remarks>
     /// A null <paramref name="content"/> is stored. The save throws when it sizes a column
-    /// automatically, which it does for any column without an explicit width; with every column
-    /// width set, the cell is drawn empty.
+    /// automatically, which it does for a column without a positive finite width in
+    /// <see cref="TableElement.ColWidths"/>. In a column with a positive finite width, the cell is
+    /// drawn empty.
     /// <para>Do not pass null. A later major version will throw
     /// <see cref="ArgumentNullException"/> from this call.</para>
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when <paramref name="content"/> is <see langword="null"/> and the table has
-    /// a column without an explicit width.
+    /// from this call, when <paramref name="content"/> is <see langword="null"/> and the table
+    /// sizes a column automatically; see <see cref="TableElement.ColWidths"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this constructor, when the text is drawn in an embedded font and holds an unpaired
-    /// surrogate; see <see cref="TextStyle.FontRef"/>.
+    /// from this call, when the text holds an unpaired surrogate and is measured in an
+    /// embedded font, as layout does; see <see cref="TextStyle.FontRef"/>.
     /// </exception>
     public Cell(string content) => Content = content;
 }

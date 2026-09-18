@@ -29,9 +29,8 @@ public sealed class LineSeparator
     /// Zoom is a separate matter: the line stays one device pixel while everything around it
     /// shrinks, so it reads as proportionally heavier the further the page is scaled down. If you
     /// want no rule, leave the element out.</para>
-    /// <para>A negative width is not refused today, though ISO 32000-2, 8.4.3.2 requires a line
-    /// width to be a non-negative number: the token this writes is one the specification forbids,
-    /// so refusing a negative width is the format's business, not only the renderer's.</para>
+    /// <para>A negative width is not refused, though ISO 32000-2, 8.4.3.2 requires a line width to
+    /// be a non-negative number.</para>
     /// <para>A negative width is also subtracted from the height the separator takes, so the
     /// elements after it move up the page, and off it once the width's magnitude is large
     /// enough.</para>

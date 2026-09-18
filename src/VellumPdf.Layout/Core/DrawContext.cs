@@ -20,8 +20,9 @@ namespace VellumPdf.Layout.Core;
 /// <remarks>
 /// Coordinates are not checked. A finite box or Y off the page is written into annotations and
 /// outline destinations as given, and a box with a negative width is written as an inverted
-/// rectangle. A non-finite coordinate is accepted here and refused later, when the save writes
-/// the annotation or outline entry.
+/// rectangle. A non-finite coordinate is accepted here. The save refuses it in an annotation or
+/// outline entry, and writes it as <c>NaN</c> or <c>Infinity</c> where a renderer draws with a
+/// converted value on the canvas.
 /// </remarks>
 public sealed class DrawContext
 {
@@ -154,8 +155,10 @@ public sealed class DrawContext
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
-    /// save overloads, not from this call, when <paramref name="box"/> has a non-finite coordinate.
-    /// The message says PDF does not support NaN or Infinity as a real number.
+    /// save overloads, not from this call, when <paramref name="box"/> has a non-finite coordinate,
+    /// or finite ones whose sum overflows, such as an X and a width near
+    /// <see cref="double.MaxValue"/>. The message says PDF does not support NaN or Infinity as a
+    /// real number.
     /// </exception>
     /// <exception cref="ArgumentNullException">
     /// This context was constructed with a null page.

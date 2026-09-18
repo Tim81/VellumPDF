@@ -10,20 +10,21 @@ namespace VellumPdf.Layout.Elements;
 /// </summary>
 /// <remarks>
 /// Both arguments are stored without a check. A null text makes the save throw when it lays out the
-/// paragraph holding this run, and so does a null style on a run whose text holds a word. Refusals
-/// on the style's size also fire from the save; see <see cref="TextStyle"/>.
+/// paragraph holding this run, and so does a null style on a run whose text holds a character other
+/// than white space, where a no-break space counts and a tab does not. Refusals on the style's size
+/// also fire from the save; see <see cref="TextStyle"/>.
 /// <para>Do not pass null for either argument. A later major version will throw
 /// <see cref="ArgumentNullException"/> from the constructor.</para>
 /// </remarks>
 /// <exception cref="NullReferenceException">
 /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not from
 /// the constructor, when the text is <see langword="null"/>, or the style is null and the text
-/// holds a word.
+/// holds a character other than white space, where a no-break space counts and a tab does not.
 /// </exception>
 /// <exception cref="ArgumentException">
 /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not from
-/// this constructor, when the text is drawn in an embedded font and holds an unpaired surrogate;
-/// see <see cref="TextStyle.FontRef"/>.
+/// the constructor, when the text holds an unpaired surrogate and is measured in an embedded font,
+/// as layout does; see <see cref="TextStyle.FontRef"/>.
 /// </exception>
 public sealed class TextRun(string Text, TextStyle Style)
 {
@@ -33,8 +34,9 @@ public sealed class TextRun(string Text, TextStyle Style)
 
     /// <summary>The run's text style.</summary>
     /// <remarks>
-    /// Any value is stored. A null value makes the save throw when the run's text holds a word; see
-    /// the type remarks.
+    /// Any value is stored. A null value makes the save throw when the run's text holds a character
+    /// other than white space, where a no-break space counts and a tab does not; see the type
+    /// remarks.
     /// </remarks>
     public TextStyle Style { get; } = Style;
 }
