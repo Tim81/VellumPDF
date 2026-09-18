@@ -7,7 +7,8 @@ using VellumPdf.Layout.Elements;
 namespace VellumPdf.Layout.Rendering;
 
 /// <summary>Renders a <see cref="PieChart"/> as a set of filled Bézier-approximated wedges.</summary>
-/// <remarks>Does not split. Slice refusals fire from Layout. See <see cref="PieChart.Slices"/>.</remarks>
+/// <remarks>Does not split. The chart's refusals are raised from <see cref="Layout"/>; see
+/// <see cref="PieChart"/>.</remarks>
 public sealed class PieChartRenderer : IRenderer
 {
     private readonly PieChart _chart;
@@ -20,15 +21,30 @@ public sealed class PieChartRenderer : IRenderer
     private double _placementDiameter;
 
     /// <summary>Creates a renderer for the given pie chart.</summary>
-    /// <remarks>A null <paramref name="chart"/> is stored. Layout then throws.</remarks>
+    /// <remarks>
+    /// A null <paramref name="chart"/> is stored, and <see cref="Layout"/> throws.
+    /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised later from <see cref="Layout"/>, not from this constructor, when
+    /// <paramref name="chart"/> is <see langword="null"/>.
+    /// </exception>
     public PieChartRenderer(PieChart chart) => _chart = chart;
 
     /// <summary>Validates the slices, reserves the chart diameter plus margins, and reports the occupied region.</summary>
     /// <remarks>
-    /// This renderer does not split. A chart taller than the content area throws from
-    /// <see cref="Document.Save(System.IO.Stream)"/> as too tall. The 50,000-continuation
-    /// cap on <see cref="IRenderer.Layout"/> is for custom overflow, not for this type.
+    /// This renderer does not split. A chart taller than the area returns
+    /// <see cref="LayoutResult.Outcome.Nothing"/>, and the document then throws the too-tall
+    /// exception from its save. This method raises the chart's refusals itself; called by the
+    /// document, they reach you from the save.
     /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// <see cref="PieChart.Slices"/>, <see cref="PieChart.Diameter"/>,
+    /// <see cref="PieChart.StartAngle"/> or <see cref="PieChart.StrokeWidth"/> is refused;
+    /// <c>ParamName</c> names the property.
+    /// </exception>
+    /// <exception cref="NullReferenceException">
+    /// The chart, or its <see cref="PieChart.Slices"/>, is <see langword="null"/>.
+    /// </exception>
     public LayoutResult Layout(LayoutContext ctx)
     {
         // Every refusal below named nameof(_chart), a private field of this renderer, so the

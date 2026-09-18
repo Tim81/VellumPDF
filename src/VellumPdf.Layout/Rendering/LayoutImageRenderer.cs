@@ -16,7 +16,13 @@ public sealed class LayoutImageRenderer : IRenderer
     private LayoutBox _occupied;
 
     /// <summary>Creates a renderer for the given layout image.</summary>
-    /// <remarks>A null <paramref name="img"/> is stored. Layout then throws.</remarks>
+    /// <remarks>
+    /// A null <paramref name="img"/> is stored, and <see cref="Layout"/> throws.
+    /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised later from <see cref="Layout"/>, not from this constructor, when
+    /// <paramref name="img"/> or its image is <see langword="null"/>.
+    /// </exception>
     public LayoutImageRenderer(LayoutImage img)
     {
         _img = img;
@@ -24,11 +30,21 @@ public sealed class LayoutImageRenderer : IRenderer
 
     /// <summary>Resolves the image size within the available area and reports the occupied region.</summary>
     /// <remarks>
-    /// This renderer does not split. An image taller than the content area throws from
-    /// <see cref="Document.Save(System.IO.Stream)"/> as too tall, rather than hitting the
-    /// 50,000-continuation cap. That cap still applies to any custom overflow you return
-    /// from your own <see cref="IRenderer.Layout"/>.
+    /// This renderer does not split. An image taller than the area returns
+    /// <see cref="LayoutResult.Outcome.Nothing"/>, and the document then throws the too-tall
+    /// exception from its save. This method raises the image's size refusals itself; called by the
+    /// document, they reach you from the save.
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// <see cref="LayoutImage.Width"/> or <see cref="LayoutImage.Height"/>, or the height derived
+    /// from the width, is refused; see those members.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// The image's own pixel width or height is not a positive number.
+    /// </exception>
+    /// <exception cref="NullReferenceException">
+    /// The layout image, or the image it holds, is <see langword="null"/>.
+    /// </exception>
     public LayoutResult Layout(LayoutContext ctx)
     {
         var area = ctx.Area.Deflate(_img.Margins);

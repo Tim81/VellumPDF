@@ -107,9 +107,17 @@ public sealed class RunningBand
 
     /// <summary>Creates a running band from a text template, with optional style and alignment (defaults to centered).</summary>
     /// <remarks>
-    /// A null template is stored and throws from <see cref="Resolve"/> / save (#531). A null
-    /// style becomes <see cref="TextStyle.Default"/>.
+    /// A null <paramref name="style"/> becomes <see cref="TextStyle.Default"/>. A null
+    /// <paramref name="template"/> is stored, and <see cref="Resolve"/> throws when the save
+    /// calls it (#531).
+    /// <para>Do not pass null. A later major version will throw
+    /// <see cref="ArgumentNullException"/> from this call.</para>
     /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this constructor, when <paramref name="template"/> is <see langword="null"/> and the
+    /// band is attached to a document.
+    /// </exception>
     public RunningBand(string template, TextStyle? style = null, HorizontalAlignment alignment = HorizontalAlignment.Center)
     {
         Template = template;

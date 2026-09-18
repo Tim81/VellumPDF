@@ -14,14 +14,27 @@ public sealed class LineSeparatorRenderer : IRenderer
     private LayoutBox _occupied;
 
     /// <summary>Creates a renderer for the given line separator.</summary>
-    /// <remarks>A null <paramref name="sep"/> is stored. Layout then throws.</remarks>
+    /// <remarks>
+    /// A null <paramref name="sep"/> is stored, and <see cref="Layout"/> throws.
+    /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised later from <see cref="Layout"/>, not from this constructor, when
+    /// <paramref name="sep"/> is <see langword="null"/>.
+    /// </exception>
     public LineSeparatorRenderer(LineSeparator sep) => _sep = sep;
 
     /// <summary>Reserves the separator's line width plus margins and reports the occupied region.</summary>
     /// <remarks>
-    /// A non-finite line width or inset is refused here as
-    /// <see cref="InvalidOperationException"/>. This renderer does not split.
+    /// This renderer does not split. It refuses a non-finite line width or inset itself; called by
+    /// the document, the refusal reaches you from the save.
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// <see cref="LineSeparator.LineWidth"/> or an edge of <see cref="LineSeparator.Margins"/> is
+    /// not finite.
+    /// </exception>
+    /// <exception cref="NullReferenceException">
+    /// The separator is <see langword="null"/>.
+    /// </exception>
     public LayoutResult Layout(LayoutContext ctx)
     {
         // A non-finite width reaches the stream as "NaN w", and carries into the line's own

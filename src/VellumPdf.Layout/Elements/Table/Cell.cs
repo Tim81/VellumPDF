@@ -7,13 +7,16 @@ namespace VellumPdf.Layout.Elements.Table;
 
 /// <summary>A single table cell, optionally spanning multiple columns or rows.</summary>
 /// <remarks>
-/// <see cref="ColSpan"/> of zero is refused. <see cref="RowSpan"/> of zero is not.
-/// Justify is treated as left. A null <see cref="Content"/> is stored.
+/// A <see cref="ColSpan"/> below 1 is refused at save, and a <see cref="RowSpan"/> below 1 is
+/// drawn as 1. A null <see cref="Content"/> can make the save throw; see the constructor.
+/// <see cref="HorizontalAlignment.Justify"/> is drawn as <see cref="HorizontalAlignment.Left"/>.
 /// </remarks>
 public sealed class Cell
 {
     /// <summary>The text content rendered in the cell.</summary>
-    /// <remarks>Stored as given, including null. Empty is a cell that draws no text.</remarks>
+    /// <remarks>
+    /// An empty string draws no text. A null value can make the save throw; see the constructor.
+    /// </remarks>
     public string Content { get; }
 
     /// <summary>
@@ -113,9 +116,9 @@ public sealed class Cell
 
     /// <summary>Horizontal alignment of the cell content.</summary>
     /// <remarks>
-    /// <b>Attention</b>: <see cref="HorizontalAlignment.Justify"/> is neither refused nor
-    /// honoured. It falls through to left alignment. Paragraph text outside a cell does honour
-    /// it; this box does not.
+    /// <b>Attention</b>: <see cref="HorizontalAlignment.Justify"/> is drawn as
+    /// <see cref="HorizontalAlignment.Left"/>. Cell text is wrapped but never stretched; only
+    /// paragraph and heading text are justified.
     /// </remarks>
     public HorizontalAlignment Alignment { get; init; } = HorizontalAlignment.Left;
 
@@ -123,10 +126,27 @@ public sealed class Cell
     /// Optional per-element language override (BCP 47 / RFC 5646, e.g. <c>"en-US"</c>).
     /// When set and the document is tagged, written as <c>/Lang</c> on the struct element.
     /// </summary>
-    /// <remarks>Not validated. Same as <see cref="Document.Language"/>.</remarks>
+    /// <remarks>
+    /// The string is not validated: it is trimmed and written, so an ill-formed tag reaches the
+    /// file. An empty or whitespace-only string is not written, and nothing is written when the
+    /// document is not tagged.
+    /// <para>Do not pass a tag that is not well-formed BCP 47. A later major version will refuse
+    /// one.</para>
+    /// </remarks>
     public string? Language { get; init; }
 
     /// <summary>Creates a cell with the given text content.</summary>
-    /// <remarks>A null <paramref name="content"/> is stored.</remarks>
+    /// <remarks>
+    /// A null <paramref name="content"/> is stored. The save throws when it sizes a column
+    /// automatically, which it does for any column without an explicit width; with every column
+    /// width set, the cell is drawn empty.
+    /// <para>Do not pass null. A later major version will throw
+    /// <see cref="ArgumentNullException"/> from this call.</para>
+    /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this call, when <paramref name="content"/> is <see langword="null"/> and the table has
+    /// a column without an explicit width.
+    /// </exception>
     public Cell(string content) => Content = content;
 }

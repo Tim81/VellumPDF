@@ -13,21 +13,27 @@ public enum ListStyle
 {
     /// <summary>Unordered list rendered with a bullet marker.</summary>
     /// <remarks>
-    /// Zero and negative indices still emit the bullet. See
-    /// <see cref="ListElement.FormatMarker"/>.
+    /// Every index gives the bullet, zero and negative included. A nested child is marked with a
+    /// different character; see <see cref="ListItem.Children"/>.
     /// </remarks>
     Unordered,
 
     /// <summary>Ordered list numbered with decimal digits (1., 2., 3.).</summary>
-    /// <remarks>Zero and negative indices emit the number as given (<c>0.</c>, <c>-1.</c>).</remarks>
+    /// <remarks>
+    /// Zero and negative indices are formatted as numbers in the current culture, so the sign
+    /// differs by culture; see <see cref="ListElement.FormatMarker"/>.
+    /// </remarks>
     OrderedDecimal,
 
     /// <summary>Ordered list numbered with lowercase letters (a., b., c.).</summary>
-    /// <remarks>Zero and negative indices emit a bare <c>.</c>.</remarks>
+    /// <remarks>Zero and negative indices give a marker that is only the full stop.</remarks>
     OrderedAlpha,
 
     /// <summary>Ordered list numbered with lowercase Roman numerals (i., ii., iii.).</summary>
-    /// <remarks>Zero and negative indices emit the number as given (<c>0.</c>, <c>-1.</c>).</remarks>
+    /// <remarks>
+    /// Zero and negative indices are formatted as decimal numbers in the current culture; see
+    /// <see cref="ListElement.FormatMarker"/>.
+    /// </remarks>
     OrderedRoman,
 }
 
@@ -52,7 +58,8 @@ public sealed class ListElement
 
     /// <summary>The items contained in this list, in render order.</summary>
     /// <remarks>
-    /// Empty is allowed. A null item added through <see cref="Add(ListItem)"/> is stored.
+    /// Empty is allowed. A null item is kept, and the save throws when it lays the list out;
+    /// see <see cref="Add(ListItem)"/>.
     /// </remarks>
     public IReadOnlyList<ListItem> Items => _items;
 
@@ -98,20 +105,27 @@ public sealed class ListElement
 
     /// <summary>Outer margins applied around the whole list block.</summary>
     /// <remarks>
-    /// <b>Attention</b>: this inset is <b>not</b> validated. <see cref="LineSeparator.Margins"/>
-    /// and <see cref="Table.Cell.Padding"/> are the only insets this package checks; every other
-    /// one, including this, reaches the geometry as given.
-    /// <para>So a non-finite inset is not refused on your behalf. What happens instead depends on
-    /// where the arithmetic lands, not on which member you set, and none of the outcomes is a
-    /// refusal naming this property: the value can reach the content stream as a token no reader
-    /// can parse, or trip a later geometry check that blames something else. Nothing reports it
-    /// either way.</para>
-    /// <para>Do <b>not</b> pass a negative inset either, and do not read one as a way to position
-    /// or resize. It is arithmetic on the available area rather than a placement instruction, so
-    /// what a renderer then does with that area is what you get: some carry the content off the
-    /// page, others absorb the value and draw exactly as they would at zero. Nothing is refused
-    /// and nothing is reported. A later major version will reject both.</para>
+    /// <b>Attention</b>: no edge is checked. Each edge is taken off the area this element is
+    /// given, and the element is laid out in whatever box is left, even when that box is empty,
+    /// inverted or <c>NaN</c>. A negative or non-finite edge, or edges wider than the area, can
+    /// therefore make the save throw an exception about something else, write a <c>NaN</c> or
+    /// <c>Infinity</c> token into the content stream, re-wrap, move or mirror the content, or leave
+    /// the element off the page. Which of these you get depends on the element, the edge and the
+    /// value. A negative or non-finite top edge also moves every element placed after this one.
+    /// <para>Do not pass a negative or non-finite edge. A later major version will refuse
+    /// both.</para>
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when the box the edges leave is too small for the element. The message
+    /// says the element is too tall to fit on a page and does not name the margins.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when a non-finite top edge puts the bookmark of a later
+    /// <see cref="Heading"/> at a non-finite position. The message says PDF does not support NaN or
+    /// Infinity as a real number.
+    /// </exception>
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 
     /// <summary>Text style applied to items that have no explicit style.</summary>
@@ -122,8 +136,15 @@ public sealed class ListElement
 
     /// <summary>Creates a list with the given marker style and optional initial items.</summary>
     /// <remarks>
-    /// A null <paramref name="items"/> is an empty list. Null entries inside it are stored.
+    /// A null <paramref name="items"/> is an empty list. A null entry inside it is kept, and the
+    /// save throws when it lays the list out.
+    /// <para>Do not put null in <paramref name="items"/>. A later major version will throw
+    /// <see cref="ArgumentNullException"/> from this call.</para>
     /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this call, when <paramref name="items"/> contains <see langword="null"/>.
+    /// </exception>
     public ListElement(ListStyle style = ListStyle.Unordered, IEnumerable<ListItem>? items = null)
     {
         Style = style;
@@ -132,11 +153,28 @@ public sealed class ListElement
     }
 
     /// <summary>Appends an item to the list and returns this instance for chaining.</summary>
-    /// <remarks>A null <paramref name="item"/> is stored. The throw is from layout.</remarks>
+    /// <remarks>
+    /// A null <paramref name="item"/> is stored, and the save throws when it lays out the list.
+    /// <para>Do not pass null. A later major version will throw
+    /// <see cref="ArgumentNullException"/> from this call.</para>
+    /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this call, when <paramref name="item"/> is <see langword="null"/>.
+    /// </exception>
     public ListElement Add(ListItem item) { _items.Add(item); return this; }
 
     /// <summary>Appends a text item with an optional text style and returns this instance for chaining.</summary>
-    /// <remarks>A null <paramref name="text"/> becomes a <see cref="ListItem"/> with null text.</remarks>
+    /// <remarks>
+    /// Creates the item with <see cref="ListItem(string, TextStyle?)"/> and adds it.
+    /// A null <paramref name="text"/> is stored, and the save throws when it lays out the list.
+    /// <para>Do not pass null. A later major version will throw
+    /// <see cref="ArgumentNullException"/> from this call.</para>
+    /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this call, when <paramref name="text"/> is <see langword="null"/>.
+    /// </exception>
     public ListElement Add(string text, TextStyle? style = null)
         => Add(new ListItem(text, style));
 
@@ -145,9 +183,12 @@ public sealed class ListElement
     /// ordered children as well, restarting the sequence at 1 under each parent.
     /// </summary>
     /// <remarks>
-    /// Zero and negative are not refused. Decimal and roman emit the number as given
-    /// (<c>0.</c>, <c>-1.</c>). Alpha emits a bare <c>.</c>. Unordered still emits the bullet.
-    /// A later major version will reject a non-positive index.
+    /// Zero and negative are not refused. For those, Decimal and Roman give the number in the
+    /// current culture followed by a full stop, so <c>-1</c> gives <c>-1.</c> under <c>en-US</c>
+    /// and a U+2212 minus sign under <c>sv-SE</c>, and Alpha gives the full stop alone.
+    /// Unordered, and a style this enumeration does not name, give the bullet for every
+    /// index.
+    /// <para>Do not pass an index below 1. A later major version will refuse one.</para>
     /// </remarks>
     public string FormatMarker(int index) => Style switch
     {

@@ -16,8 +16,8 @@ namespace VellumPdf.Layout.Rendering;
 /// Justification: Tw for Standard-14 lines; explicit per-word Tm for embedded-font lines.
 /// </summary>
 /// <remarks>
-/// Justify is honoured for wrapped lines. A null run text throws from word-wrap, not from
-/// the constructor.
+/// The document creates one for each <see cref="Paragraph"/>. Refusals, and a null anywhere in
+/// the paragraph, are raised from <see cref="Layout"/>, which the document calls during a save.
 /// </remarks>
 public sealed class ParagraphRenderer : IRenderer
 {
@@ -34,9 +34,22 @@ public sealed class ParagraphRenderer : IRenderer
 
     /// <summary>Creates a renderer for the paragraph, optionally starting at <paramref name="startLine"/> for pagination.</summary>
     /// <remarks>
-    /// A null <paramref name="para"/> is stored. Layout then throws. A negative start is
-    /// not checked here.
+    /// Nothing is checked here. A null <paramref name="para"/> makes <see cref="Layout"/> throw.
+    /// A negative <paramref name="startLine"/> lays out one line too tall and makes
+    /// <see cref="Draw"/> throw. A start at or past the last line lays out as
+    /// <see cref="LayoutResult.Outcome.Nothing"/>, so a document saving it throws the too-tall
+    /// <see cref="InvalidOperationException"/>.
+    /// <para>Do not pass null or a start outside the paragraph's lines. A later major version
+    /// will throw from this call.</para>
     /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised later from <see cref="Layout"/>, not from this constructor, when
+    /// <paramref name="para"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Raised later from <see cref="Draw"/>, not from this constructor, when
+    /// <paramref name="startLine"/> is negative.
+    /// </exception>
     public ParagraphRenderer(Paragraph para, int startLine = 0)
     {
         _para = para;
@@ -47,10 +60,18 @@ public sealed class ParagraphRenderer : IRenderer
 
     /// <summary>Word-wraps the paragraph and fits as many lines as the area allows, splitting at line boundaries on overflow.</summary>
     /// <remarks>
-    /// Overflow returns <see cref="LayoutResult.Partial"/> at a line boundary. A single word
-    /// taller than the page is too tall for one page and throws from
-    /// <see cref="Document.Save(System.IO.Stream)"/>, not from this method.
+    /// Overflow returns <see cref="LayoutResult.Partial"/> at a line boundary. When no line fits
+    /// the area it returns <see cref="LayoutResult.Outcome.Nothing"/>; the document then retries
+    /// on a new page, and throws the too-tall exception from its save if that fails too.
+    /// <para>This method raises the refusals of the paragraph's styles itself. Called by the
+    /// document, they reach you from the save.</para>
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// A run's <see cref="TextStyle.FontSize"/> is refused; see that member.
+    /// </exception>
+    /// <exception cref="NullReferenceException">
+    /// The paragraph, one of its runs, or a run's text or style is <see langword="null"/>.
+    /// </exception>
     public LayoutResult Layout(LayoutContext context)
     {
         var area = context.Area.Deflate(_para.Margins);
@@ -130,6 +151,9 @@ public sealed class ParagraphRenderer : IRenderer
 
     /// <summary>Emits the wrapped lines as PDF text operators, applying alignment, justification, links and tagging.</summary>
     /// <remarks>See <see cref="IRenderer.Draw"/>.</remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// The renderer was constructed with a negative start line.
+    /// </exception>
     public void Draw(DrawContext ctx)
     {
         if (_lines is null) return;

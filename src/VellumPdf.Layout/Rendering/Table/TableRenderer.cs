@@ -24,8 +24,9 @@ namespace VellumPdf.Layout.Rendering.Table;
 ///   • Draws collapsed borders (single shared line between cells).
 /// </summary>
 /// <remarks>
-/// A table that resolves to no columns is refused from Layout. An all-header table hits
-/// the too-tall path (#488).
+/// A table that resolves to no columns is refused from <see cref="Layout"/>. A table whose rows
+/// are all headers lays out as <see cref="LayoutResult.Outcome.Nothing"/>, so the document's save
+/// throws the too-tall exception (#488).
 /// </remarks>
 public sealed class TableRenderer : IRenderer
 {
@@ -36,11 +37,25 @@ public sealed class TableRenderer : IRenderer
     private double[] _rowHeights = [];
     private LayoutBox _occupied;
 
-    /// <summary>Creates a renderer for the table, optionally starting at data row <paramref name="startRow"/> for pagination.</summary>
+    /// <summary>
+    /// Creates a renderer for the table, optionally starting at row <paramref name="startRow"/>
+    /// of <see cref="TableElement.Rows"/> for pagination.
+    /// </summary>
     /// <remarks>
-    /// A null <paramref name="table"/> is stored. Layout then throws. A negative start is
-    /// not checked here.
+    /// <paramref name="startRow"/> indexes <see cref="TableElement.Rows"/> with the header rows
+    /// counted. The leading header rows are drawn first on every page, then the other rows from
+    /// <paramref name="startRow"/> on, so a start below zero or inside the header run draws every
+    /// row. A start at or past the last row lays out as
+    /// <see cref="LayoutResult.Outcome.Nothing"/>, so a document saving it throws the too-tall
+    /// <see cref="InvalidOperationException"/>. A null <paramref name="table"/> makes
+    /// <see cref="Layout"/> throw.
+    /// <para>Do not pass null or a start outside the table's rows. A later major version will
+    /// throw from this call.</para>
     /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised later from <see cref="Layout"/>, not from this constructor, when
+    /// <paramref name="table"/> is <see langword="null"/>.
+    /// </exception>
     public TableRenderer(TableElement table, int startRow = 0)
     {
         _table = table;
@@ -49,10 +64,26 @@ public sealed class TableRenderer : IRenderer
 
     /// <summary>Resolves column widths and row heights, fitting as many rows as possible and splitting at row boundaries on overflow.</summary>
     /// <remarks>
-    /// A table that resolves to no columns throws <see cref="InvalidOperationException"/>
-    /// from this call (via save). An all-header table that cannot leave the header run
-    /// throws the too-tall path (#488). Overflow splits at a row boundary.
+    /// Overflow splits at a row boundary. An area with no width returns
+    /// <see cref="LayoutResult.Outcome.Nothing"/> before anything is checked. Otherwise this
+    /// method raises the table's refusals itself; called by the document, they reach you from the
+    /// save.
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// The table resolves to no columns, or a cell's span, padding or style, or the table's
+    /// border width, is refused; see <see cref="TableElement.Rows"/>, <see cref="Cell.ColSpan"/>,
+    /// <see cref="Cell.Padding"/> and <see cref="TableElement.BorderWidth"/>.
+    /// </exception>
+    /// <exception cref="NullReferenceException">
+    /// The table or a cell is <see langword="null"/>, or a cell's content is null in a table with
+    /// an automatically sized column.
+    /// </exception>
+    /// <exception cref="OverflowException">
+    /// A row's column spans sum past <see cref="int.MaxValue"/>; see <see cref="Cell.ColSpan"/>.
+    /// </exception>
+    /// <exception cref="OutOfMemoryException">
+    /// The resolved column count is too large to allocate; see <see cref="Cell.ColSpan"/>.
+    /// </exception>
     public LayoutResult Layout(LayoutContext context)
     {
         var area = context.Area.Deflate(_table.Margins);

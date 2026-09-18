@@ -14,14 +14,17 @@ namespace VellumPdf.Layout.Elements.Table;
 ///   • Collapsed (shared) border rendering
 /// </summary>
 /// <remarks>
-/// A table that resolves to no columns is refused at save. An all-header table cannot
-/// paginate on a page with room to spare (#488).
+/// A table that resolves to no columns is refused at save; see <see cref="Rows"/>. So is a table
+/// whose rows are all headers; see <see cref="AddRow"/>. The table is one element for the page
+/// limit described on <see cref="IRenderer.Layout"/>: a table that needs more than
+/// <b>50,000</b> page continuations makes the save throw.
 /// </remarks>
 public sealed class TableElement
 {
     /// <summary>Creates an empty table.</summary>
     /// <remarks>
-    /// Save throws until a row holding at least one cell is added. See <see cref="Rows"/>.
+    /// Saved before a row holding a cell is added, the table makes the save throw
+    /// <see cref="InvalidOperationException"/>; see <see cref="Rows"/>.
     /// </remarks>
     public TableElement() { }
 
@@ -58,20 +61,27 @@ public sealed class TableElement
 
     /// <summary>Outer margins applied around the whole table.</summary>
     /// <remarks>
-    /// <b>Attention</b>: this inset is <b>not</b> validated. <see cref="LineSeparator.Margins"/>
-    /// and <see cref="Table.Cell.Padding"/> are the only insets this package checks; every other
-    /// one, including this, reaches the geometry as given.
-    /// <para>So a non-finite inset is not refused on your behalf. What happens instead depends on
-    /// where the arithmetic lands, not on which member you set, and none of the outcomes is a
-    /// refusal naming this property: the value can reach the content stream as a token no reader
-    /// can parse, or trip a later geometry check that blames something else. Nothing reports it
-    /// either way.</para>
-    /// <para>Do <b>not</b> pass a negative inset either, and do not read one as a way to position
-    /// or resize. It is arithmetic on the available area rather than a placement instruction, so
-    /// what a renderer then does with that area is what you get: some carry the content off the
-    /// page, others absorb the value and draw exactly as they would at zero. Nothing is refused
-    /// and nothing is reported. A later major version will reject both.</para>
+    /// <b>Attention</b>: no edge is checked. Each edge is taken off the area this element is
+    /// given, and the element is laid out in whatever box is left, even when that box is empty,
+    /// inverted or <c>NaN</c>. A negative or non-finite edge, or edges wider than the area, can
+    /// therefore make the save throw an exception about something else, write a <c>NaN</c> or
+    /// <c>Infinity</c> token into the content stream, re-wrap, move or mirror the content, or leave
+    /// the element off the page. Which of these you get depends on the element, the edge and the
+    /// value. A negative or non-finite top edge also moves every element placed after this one.
+    /// <para>Do not pass a negative or non-finite edge. A later major version will refuse
+    /// both.</para>
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when the box the edges leave is too small for the element. The message
+    /// says the element is too tall to fit on a page and does not name the margins.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when a non-finite top edge puts the bookmark of a later
+    /// <see cref="Heading"/> at a non-finite position. The message says PDF does not support NaN or
+    /// Infinity as a real number.
+    /// </exception>
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 
     /// <summary>The rows in the table, in render order.</summary>
@@ -88,17 +98,26 @@ public sealed class TableElement
 
     /// <summary>Configured column widths in points; a value of 0 means auto-size.</summary>
     /// <remarks>
-    /// An entry that cannot be a width is treated as auto. Extra entries past the column
-    /// count are ignored. Explicit widths that overrun the available width are scaled down.
-    /// Nothing reports any of those.
+    /// Entry <c>i</c> sets column <c>i</c>. A missing, zero, negative or non-finite entry means
+    /// auto, and the auto columns share the width the explicit ones leave. Entries past the
+    /// column count are ignored.
+    /// <para>Explicit widths that together overrun the available width are all scaled by one
+    /// ratio. So one very large entry leaves the other explicit columns near zero, and entries
+    /// whose sum overflows to infinity are all scaled to zero (#546). A positive entry under
+    /// 5e-6 is kept and written as width 0. None of this is reported.</para>
+    /// <para>Do not rely on scaling to fit a table. Pass widths that fit the space you give
+    /// it.</para>
     /// </remarks>
     public IReadOnlyList<double> ColWidths => _colWidths;
 
     /// <summary>Sets the column widths (0 = auto) and returns this instance for chaining.</summary>
     /// <remarks>
-    /// Same rules as <see cref="ColWidths"/>. This call does not refuse a negative or
-    /// non-finite entry; the grid treats it as auto at layout.
+    /// Replaces every width. Called with no arguments it clears them, so every column is auto.
+    /// The entries follow the rules on <see cref="ColWidths"/>; none is refused here.
     /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="widths"/> is <see langword="null"/>.
+    /// </exception>
     public TableElement SetColumnWidths(params double[] widths)
     {
         _colWidths.Clear();
@@ -112,9 +131,15 @@ public sealed class TableElement
     /// run of header rows; a header row added after a data row draws once, where it occurs.
     /// </summary>
     /// <remarks>
-    /// A table whose rows are all headers cannot paginate on a page with room to spare (#488);
-    /// save throws the too-tall <see cref="InvalidOperationException"/>.
+    /// A table whose rows are all headers is refused: it lays out as nothing, so the save
+    /// throws the too-tall <see cref="InvalidOperationException"/> even when the table would fit
+    /// (#488).
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this call, when every row of the table is a header row. The message says the element is
+    /// too tall to fit on a page (#488).
+    /// </exception>
     public Row AddRow(bool isHeader = false)
     {
         var row = new Row { IsHeader = isHeader };
@@ -127,8 +152,15 @@ public sealed class TableElement
     /// repeats across continuation pages.
     /// </summary>
     /// <remarks>
-    /// Same all-header refusal as <see cref="AddRow"/>.
+    /// A table whose rows are all headers is refused: it lays out as nothing, so the save
+    /// throws the too-tall <see cref="InvalidOperationException"/> even when the table would fit
+    /// (#488).
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this call, when every row of the table is a header row. The message says the element is
+    /// too tall to fit on a page (#488).
+    /// </exception>
     public Row AddHeaderRow()
     {
         var row = new Row { IsHeader = true };

@@ -4,7 +4,7 @@
 namespace VellumPdf.Layout.Elements;
 
 /// <summary>Which of a document's two running bands a report concerns.</summary>
-/// <remarks>These two values are the whole set.</remarks>
+/// <remarks>A report from a save holds one of these two values.</remarks>
 public enum RunningBandKind
 {
     /// <summary>The band drawn at the top of every page.</summary>
@@ -31,12 +31,16 @@ public enum RunningBandKind
 /// on: they already hold the template, and now know how much of it survived.
 /// </summary>
 /// <remarks>
-/// Counts only. The truncated text is not carried. A default instance has zeros.
+/// Counts only; the text itself is not carried. A default instance has every count at zero and
+/// <see cref="Band"/> set to <see cref="RunningBandKind.Header"/>.
 /// </remarks>
 public readonly record struct BandTruncationWarning
 {
     /// <summary>Which band was cut.</summary>
-    /// <remarks>One of the two <see cref="RunningBandKind"/> values.</remarks>
+    /// <remarks>
+    /// Any value is stored, including one the enumeration does not name. A report from a save
+    /// holds <see cref="RunningBandKind.Header"/> or <see cref="RunningBandKind.Footer"/>.
+    /// </remarks>
     public RunningBandKind Band { get; init; }
 
     /// <summary>
@@ -77,8 +81,8 @@ public readonly record struct BandTruncationWarning
 
     /// <summary>Copies the four fields into the given variables.</summary>
     /// <remarks>
-    /// The values are as stored. No validation. Does not include
-    /// <see cref="DroppedCharacters"/>.
+    /// Order is Band, PageNumber, DrawnCharacters, ResolvedCharacters, the order of the
+    /// constructor. <see cref="DroppedCharacters"/> is not included.
     /// </remarks>
     public void Deconstruct(
         out RunningBandKind Band,

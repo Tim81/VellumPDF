@@ -44,6 +44,10 @@ public sealed class ListRenderer : IRenderer
     /// Raised from <see cref="Layout"/>, when <paramref name="startItem"/> is negative, the
     /// list has items, and the area is not empty.
     /// </exception>
+    /// <exception cref="NullReferenceException">
+    /// Raised later from <see cref="Layout"/>, not from this constructor, when
+    /// <paramref name="list"/> is <see langword="null"/>, even for an empty area.
+    /// </exception>
     public ListRenderer(ListElement list, int startItem = 0)
     {
         _list = list;
@@ -62,8 +66,18 @@ public sealed class ListRenderer : IRenderer
     /// <summary>Paginates the list item-by-item, splitting at item boundaries on overflow; handles mid-item splits by chaining content overflow renderers.</summary>
     /// <remarks>
     /// See the constructor for a negative or past-end start. Overflow splits at an item, or
-    /// mid-item when a paragraph does.
+    /// mid-item when a paragraph does. This method raises the refusals of the items' styles
+    /// itself; called by the document, they reach you from the save.
     /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// The start item is negative, the list has items, and the area is not empty.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// An item's <see cref="TextStyle.FontSize"/> is refused; see that member.
+    /// </exception>
+    /// <exception cref="NullReferenceException">
+    /// The list, an item, or an item's text is <see langword="null"/>.
+    /// </exception>
     public LayoutResult Layout(LayoutContext context)
     {
         var area = context.Area.Deflate(_list.Margins);

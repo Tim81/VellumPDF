@@ -29,14 +29,18 @@ public readonly record struct PieSlice
     public ColorRgb Color { get; init; }
 
     /// <summary>
-    /// Optional label carried with the slice (e.g. for an external legend). Currently
-    /// stored as data only, not rendered as on-chart text.
+    /// Optional label carried with the slice (e.g. for an external legend). It is not drawn on
+    /// the chart.
     /// </summary>
-    /// <remarks>Null and empty are stored. Nothing draws this string on the chart.</remarks>
+    /// <remarks>
+    /// In a tagged document, when <see cref="PieChart.AltText"/> is null, the chart's alternate
+    /// text is composed from the labels and each slice's share. A slice whose label is null or
+    /// empty is left out of that text.
+    /// </remarks>
     public string? Label { get; init; }
 
     /// <summary>Copies the magnitude, colour, and label into the given variables.</summary>
-    /// <remarks>The values are as stored. No validation.</remarks>
+    /// <remarks>Order is Value, Color, Label, the order of the constructor.</remarks>
     public void Deconstruct(out double Value, out ColorRgb Color, out string? Label)
     {
         Value = this.Value;
@@ -45,7 +49,10 @@ public readonly record struct PieSlice
     }
 
     /// <summary>Creates a slice from a magnitude, fill colour, and optional label.</summary>
-    /// <remarks>Arguments are stored as given. Refusals fire from <see cref="PieChart.Slices"/>.</remarks>
+    /// <remarks>
+    /// Nothing is checked here. The save refuses a negative or non-finite
+    /// <paramref name="Value"/>; see <see cref="PieChart.Slices"/>.
+    /// </remarks>
     public PieSlice(double Value, ColorRgb Color, string? Label = null)
     {
         this.Value = Value;
@@ -59,13 +66,18 @@ public readonly record struct PieSlice
 /// Atomic: the whole chart is placed on one page or moved to the next; it never splits.
 /// </summary>
 /// <remarks>
-/// Empty slices, a non-positive sum, and a negative or non-finite slice value are refused
-/// from layout. Justify is treated as left. The chart does not split.
+/// An empty slice list, a sum of zero or less, and a negative or non-finite slice value are
+/// refused when the chart is laid out, during the save; see <see cref="Slices"/>.
+/// <see cref="HorizontalAlignment.Justify"/> is drawn as <see cref="HorizontalAlignment.Left"/>.
+/// The chart does not split.
 /// </remarks>
 public sealed class PieChart
 {
     /// <summary>Creates a chart with no slices, 200pt diameter, and default styling.</summary>
-    /// <remarks>Save throws until <see cref="Slices"/> has a positive sum. See that member.</remarks>
+    /// <remarks>
+    /// Saved with no slices, the chart makes the save throw <see cref="ArgumentException"/>; see
+    /// <see cref="Slices"/>.
+    /// </remarks>
     public PieChart() { }
 
     /// <summary>The slices, drawn in order. The sum of their values must be positive.</summary>
@@ -79,12 +91,20 @@ public sealed class PieChart
     /// <para><b>Attention</b>: a value of zero is accepted and contributes no angle. The slice
     /// stays in this list and is absent from the chart, and nothing reports that it was dropped.
     /// If a zero slice should be visible in your chart, give it a small positive value.</para>
+    /// <para>Finite values whose sum overflows to infinity are accepted, and every slice then
+    /// has no angle, so the chart is drawn blank (#546). A null list makes the save throw.</para>
+    /// <para>Do not pass values whose sum can overflow. A later major version will refuse a
+    /// non-finite sum.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised while the chart is laid out, which happens inside
     /// <see cref="Document.Save(System.IO.Stream)"/>, when the list is empty, when a value is
     /// negative or not finite, or when the values sum to zero or less. <c>ParamName</c> is this
     /// property's name.
+    /// </exception>
+    /// <exception cref="NullReferenceException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when the list is <see langword="null"/>.
     /// </exception>
     public IReadOnlyList<PieSlice> Slices { get; init; } = [];
 
@@ -116,20 +136,27 @@ public sealed class PieChart
 
     /// <summary>Margins around the chart. Defaults to 6 points on all sides.</summary>
     /// <remarks>
-    /// <b>Attention</b>: this inset is <b>not</b> validated. <see cref="LineSeparator.Margins"/>
-    /// and <see cref="Table.Cell.Padding"/> are the only insets this package checks; every other
-    /// one, including this, reaches the geometry as given.
-    /// <para>So a non-finite inset is not refused on your behalf. What happens instead depends on
-    /// where the arithmetic lands, not on which member you set, and none of the outcomes is a
-    /// refusal naming this property: the value can reach the content stream as a token no reader
-    /// can parse, or trip a later geometry check that blames something else. Nothing reports it
-    /// either way.</para>
-    /// <para>Do <b>not</b> pass a negative inset either, and do not read one as a way to position
-    /// or resize. It is arithmetic on the available area rather than a placement instruction, so
-    /// what a renderer then does with that area is what you get: some carry the content off the
-    /// page, others absorb the value and draw exactly as they would at zero. Nothing is refused
-    /// and nothing is reported. A later major version will reject both.</para>
+    /// <b>Attention</b>: no edge is checked. Each edge is taken off the area this element is
+    /// given, and the element is laid out in whatever box is left, even when that box is empty,
+    /// inverted or <c>NaN</c>. A negative or non-finite edge, or edges wider than the area, can
+    /// therefore make the save throw an exception about something else, write a <c>NaN</c> or
+    /// <c>Infinity</c> token into the content stream, re-wrap, move or mirror the content, or leave
+    /// the element off the page. Which of these you get depends on the element, the edge and the
+    /// value. A negative or non-finite top edge also moves every element placed after this one.
+    /// <para>Do not pass a negative or non-finite edge. A later major version will refuse
+    /// both.</para>
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when the box the edges leave is too small for the element. The message
+    /// says the element is too tall to fit on a page and does not name the margins.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when a non-finite top edge puts the bookmark of a later
+    /// <see cref="Heading"/> at a non-finite position. The message says PDF does not support NaN or
+    /// Infinity as a real number.
+    /// </exception>
     public EdgeInsets Margins { get; init; } = new EdgeInsets(6);
 
     /// <summary>
@@ -174,9 +201,11 @@ public sealed class PieChart
     /// <remarks>
     /// A non-finite angle is refused. Laying the chart out throws
     /// <see cref="ArgumentException"/> and names <c>StartAngle</c>.
-    /// <para>The unit is radians, not degrees. No range is imposed: a value outside 0 to 2π is
-    /// accepted and wraps, so you do not have to normalise one yourself. The default of π/2
-    /// starts the first slice at the top.</para>
+    /// <para>The unit is radians, not degrees. The angle is used as given, not reduced to 0
+    /// to 2π, and each wedge ends at this angle plus its sweep. A value within a few turns of zero
+    /// draws correctly. A very large one does not, because doubles that large are too far apart
+    /// to hold a sweep: measured on a two-slice chart, 1e16 draws overlapping wedges and 1e17 draws
+    /// none (#546). Reduce the angle to 0 to 2π yourself.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised while the chart is laid out, which happens inside
@@ -200,7 +229,10 @@ public sealed class PieChart
     /// if no slice has a label, the generic fallback "Pie chart" is used.
     /// Ignored when <see cref="Decorative"/> is <c>true</c>.
     /// </summary>
-    /// <remarks>Null is the fallback. Empty is an empty <c>/Alt</c>. Ignored when decorative.</remarks>
+    /// <remarks>
+    /// Null composes the text from the slice labels, or uses <c>Pie chart</c> when no slice has
+    /// one. Empty writes an empty <c>/Alt</c>. Ignored when <see cref="Decorative"/> is true.
+    /// </remarks>
     public string? AltText { get; init; }
 
     /// <summary>
