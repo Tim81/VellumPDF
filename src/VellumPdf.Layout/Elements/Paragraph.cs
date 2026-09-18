@@ -61,9 +61,11 @@ public sealed class Paragraph
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when a non-finite top edge puts the bookmark of a later
-    /// <see cref="Heading"/> at a non-finite position. The message says PDF does not support NaN or
-    /// Infinity as a real number.
+    /// from this property, when an edge leaves this element or a later one at a non-finite
+    /// position, and the save writes that position outside the content stream, as a heading's
+    /// bookmark or the rectangle of a link from <see cref="TextStyle.LinkUri"/>. Negative infinity
+    /// can do this, and so can <c>NaN</c> on the left edge of linked text. The message says PDF
+    /// does not support NaN or Infinity as a real number.
     /// </exception>
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 

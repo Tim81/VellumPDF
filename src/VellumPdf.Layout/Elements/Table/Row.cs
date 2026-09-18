@@ -33,8 +33,8 @@ public sealed class Row
     /// <remarks>
     /// Only the leading run of header rows repeats on each continuation page. A header row after a
     /// data row is drawn once, where it is. A table whose rows are all headers cannot be drawn: it
-    /// lays out as nothing, so the save throws the too-tall <see cref="InvalidOperationException"/>
-    /// even when the table would fit (#488).
+    /// lays out as nothing, so the save throws <see cref="InvalidOperationException"/> even when
+    /// the table would fit (#488).
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -46,10 +46,10 @@ public sealed class Row
 
     /// <summary>Optional background fill color for the row.</summary>
     /// <remarks>
-    /// <b>Attention</b>: no row in a table can have a background. Rows join a table only through
-    /// <see cref="TableElement.AddRow"/> and <see cref="TableElement.AddHeaderRow"/>, which create
-    /// them without one, and this property can only be set when the row is constructed. Set
-    /// <see cref="Cell.Background"/> on each cell instead (#543).
+    /// <b>Attention</b>: this has no effect through <see cref="TableElement.AddRow"/> and
+    /// <see cref="TableElement.AddHeaderRow"/>. Those create the row without a background, and this
+    /// property can only be set when a row is constructed. Set <see cref="Cell.Background"/> on
+    /// each cell instead (#543).
     /// </remarks>
     public ColorRgb? Background { get; init; }
 

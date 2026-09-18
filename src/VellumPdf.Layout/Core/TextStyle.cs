@@ -28,10 +28,10 @@ public sealed class TextStyle
     /// or an <see cref="EmbeddedFontHandle"/> returned by <c>Document.UseTrueTypeFont</c>.
     /// </summary>
     /// <remarks>
-    /// Stored as given. A null handle saves in Helvetica, and a handle from another document draws
-    /// correctly only in the case <see cref="FontReference(EmbeddedFontHandle)"/> describes. A
-    /// Standard-14 value the enumeration does not name makes the save throw once the font is
-    /// selected on a page, which an empty table cell or list item with this style also does.
+    /// Stored as given. A null handle saves in Helvetica, and a handle from another document keeps
+    /// only the characters <see cref="FontReference(EmbeddedFontHandle)"/> describes. A Standard-14
+    /// value the enumeration does not name makes the save throw once the font is selected on a
+    /// page, which an empty table cell or list item with this style also does.
     /// <para><see cref="Standard14.Symbol"/> and <see cref="Standard14.ZapfDingbats"/> measure
     /// every character as zero width, so a paragraph in either is never wrapped (#470).</para>
     /// </remarks>
@@ -39,6 +39,11 @@ public sealed class TextStyle
     /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
     /// save overloads, not from this property, when the reference holds a <see cref="Standard14"/>
     /// value the enumeration does not name and the font is selected on a page.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from the save, not from this property, when text drawn in an embedded font holds an
+    /// unpaired surrogate, a UTF-16 code unit from U+D800 to U+DFFF without its partner.
+    /// <c>ParamName</c> is <c>s</c>.
     /// </exception>
     public FontReference FontRef { get; init; } = Standard14.Helvetica;
 
@@ -193,9 +198,11 @@ public sealed class TextStyle
     /// <remarks>
     /// <b>Attention</b>: the string is not validated. Empty and <c>not a uri</c> are written into a
     /// <c>/URI</c> action as given, and so is an absolute URI of any scheme, such as
-    /// <c>javascript:alert(1)</c>. Non-ASCII characters are percent-encoded. Table cells and
-    /// running bands silently drop the link (#475). In a list item the marker is linked as well as
-    /// the text.
+    /// <c>javascript:alert(1)</c>. Non-ASCII characters are percent-encoded as UTF-8, and an
+    /// unpaired surrogate becomes U+FFFD first. Table cells and running bands silently drop the
+    /// link (#475). In a list item the marker is linked as well as the text. In a document whose
+    /// <c>Conformance</c> is PDF/UA-1, the link is written untagged and without the alternate
+    /// description ISO 14289-1, 7.18.5 requires, and no exception reports it (#550).
     /// <para>Do not pass a value that is not an absolute URI. A later major version will refuse
     /// one.</para>
     /// </remarks>

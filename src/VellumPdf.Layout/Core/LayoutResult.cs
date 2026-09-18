@@ -47,7 +47,7 @@ public sealed class LayoutResult
         /// throw, and any other result is discarded, after which the document lays the renderer out
         /// again from the top of the new page. That area can be one rounding step shorter than the
         /// retry's, so a renderer that needs the whole content area exactly can return
-        /// <c>Nothing</c> again and repeat the cycle until the page-continuation limit
+        /// <c>Nothing</c> again and repeat the cycle until it reaches the page-continuation limit
         /// (#549).</para>
         /// </remarks>
         Nothing,
@@ -66,8 +66,9 @@ public sealed class LayoutResult
     /// <see cref="LayoutBox.Bottom"/>, and only after <see cref="Outcome.Full"/>: it becomes the
     /// position of the next element. The Bottom is not checked. One above the current position
     /// moves the next element up the page, and a non-finite one becomes the top of the next
-    /// element's area, from where it can reach the content stream as <c>NaN</c> or
-    /// <c>Infinity</c>. After <see cref="Outcome.Partial"/> the box is not read.
+    /// element's area. The elements after it can then write <c>NaN</c> or <c>Infinity</c> into the
+    /// content stream, be left out of the file without an exception, or make the save throw. After
+    /// <see cref="Outcome.Partial"/> the box is not read.
     /// </remarks>
     public LayoutBox? OccupiedArea { get; }
 
@@ -98,6 +99,12 @@ public sealed class LayoutResult
     /// <remarks>
     /// Any box is accepted. <see cref="OccupiedArea"/> says which part of it the document reads.
     /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
+    /// save overloads, not from this call, when a non-finite <see cref="LayoutBox.Bottom"/> leaves
+    /// a later element at a position the save writes outside the content stream, such as a
+    /// heading's bookmark. The message says PDF does not support NaN or Infinity as a real number.
+    /// </exception>
     public static LayoutResult Full(LayoutBox occupied) =>
         new(Outcome.Full, occupied, null, null);
 

@@ -23,7 +23,7 @@ public interface IRenderer
     /// The document may call this more than once on the same instance. A header or footer adds a
     /// page-counting pass that lays every element out before the drawing pass does, and a
     /// <see cref="LayoutResult.Outcome.Nothing"/> is followed by a retry. Return the same result
-    /// for the same area.
+    /// for the same area. A null return is not checked, and the save throws.
     /// <para>One element may take at most <b>50,000</b> page continuations. Each
     /// <see cref="LayoutResult.Outcome.Partial"/>, and each retry after
     /// <see cref="LayoutResult.Outcome.Nothing"/>, counts as one. An overflow that never gets
@@ -34,8 +34,11 @@ public interface IRenderer
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
     /// save overloads, not from this method, when one element needs more than 50,000 page
-    /// continuations, or when it returns <see cref="LayoutResult.Outcome.Nothing"/> twice in a
-    /// row, the second time on a new page.
+    /// continuations, or when it returns <see cref="LayoutResult.Outcome.Nothing"/> twice in a row,
+    /// the second time on a new page.
+    /// </exception>
+    /// <exception cref="NullReferenceException">
+    /// Raised from the save, not from this method, when it returns <see langword="null"/>.
     /// </exception>
     LayoutResult Layout(LayoutContext context);
 

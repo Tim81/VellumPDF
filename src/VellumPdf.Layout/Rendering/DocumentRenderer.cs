@@ -152,7 +152,8 @@ public sealed class DocumentRenderer
     /// <remarks>
     /// A band whose <see cref="RunningBand.Template"/> is null makes <see cref="Render"/> throw
     /// (#531). The band's height and style refusals also come from <see cref="Render"/>; see
-    /// <see cref="RunningBand.Height"/>.
+    /// <see cref="RunningBand.Height"/>, <see cref="TextStyle.FontSize"/> and
+    /// <see cref="TextStyle.FontRef"/>.
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised from <see cref="Render"/>, not from this property, when the band's
@@ -160,7 +161,8 @@ public sealed class DocumentRenderer
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Render"/>, when the band's height leaves the content area no positive
-    /// size; see <see cref="RunningBand.Height"/>.
+    /// size; see <see cref="RunningBand.Height"/>. It is also raised when the band draws text in an
+    /// embedded font and the template holds an unpaired surrogate.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Render"/>, when the band's height or its style's size is refused; see
@@ -177,7 +179,8 @@ public sealed class DocumentRenderer
     /// <remarks>
     /// A band whose <see cref="RunningBand.Template"/> is null makes <see cref="Render"/> throw
     /// (#531). The band's height and style refusals also come from <see cref="Render"/>; see
-    /// <see cref="RunningBand.Height"/>.
+    /// <see cref="RunningBand.Height"/>, <see cref="TextStyle.FontSize"/> and
+    /// <see cref="TextStyle.FontRef"/>.
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised from <see cref="Render"/>, not from this property, when the band's
@@ -185,7 +188,8 @@ public sealed class DocumentRenderer
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Render"/>, when the band's height leaves the content area no positive
-    /// size; see <see cref="RunningBand.Height"/>.
+    /// size; see <see cref="RunningBand.Height"/>. It is also raised when the band draws text in an
+    /// embedded font and the template holds an unpaired surrogate.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Render"/>, when the band's height or its style's size is refused; see
@@ -210,6 +214,12 @@ public sealed class DocumentRenderer
     /// <para>A null <paramref name="pdf"/> throws <see cref="NullReferenceException"/>: from this
     /// constructor when <paramref name="pageSize"/> is null, and from <see cref="Render"/>
     /// otherwise.</para>
+    /// <para>A negative margin is accepted and lays content out beyond the page edge, as on
+    /// <see cref="Document.Margins"/>. The origin of <paramref name="pageSize"/> is not used for
+    /// layout, as on <see cref="Document.PageSize"/>.</para>
+    /// <para>Do not pass a null <paramref name="pdf"/>, a negative, <c>NaN</c> or negative-infinity
+    /// margin, or a page rectangle not at the origin. A later major version will refuse
+    /// them.</para>
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// The page width or height is not a positive finite number.
@@ -255,10 +265,10 @@ public sealed class DocumentRenderer
     /// <paramref name="destination"/> and on the document's options run after it, just before
     /// writing. That write is <see cref="PdfDocument.Save(System.IO.Stream)"/>, so every exception
     /// it documents can reach you from here. <see cref="Document.Save(System.IO.Stream)"/> builds a
-    /// renderer and calls this method, so the exceptions listed on it, other than those about the
-    /// <see cref="Document"/> itself, can reach you from here, and so can anything a custom
-    /// renderer or the destination raises. A second call after one that succeeded throws; after one
-    /// that threw, it can succeed and write the failed call's pages as well (#530).
+    /// renderer and calls this method, so the exceptions listed on that save, other than those
+    /// about the <see cref="Document"/> itself, can reach you from here, and so can anything a
+    /// custom renderer or the destination raises. A second call after one that succeeded throws;
+    /// after one that threw, it can succeed and write the failed call's pages as well (#530).
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// An element needs more than <b>50,000</b> page continuations or is too tall for one page, or
@@ -268,8 +278,9 @@ public sealed class DocumentRenderer
     /// </exception>
     /// <exception cref="ArgumentException">
     /// The margins, header and footer together leave the content area no positive size, or an
-    /// element refuses its own input, or <paramref name="destination"/> is not writable, or a
-    /// registered font has a metric this library cannot write.
+    /// element refuses its own input, or <paramref name="destination"/> is not writable and the
+    /// kernel document is not linearized, or a registered font has a value that makes a font metric
+    /// non-finite, or text in an embedded font holds an unpaired surrogate.
     /// </exception>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="destination"/> is <see langword="null"/>, checked after the layout has run.
@@ -298,7 +309,9 @@ public sealed class DocumentRenderer
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// The kernel document combines options it cannot write together, such as object streams with
-    /// encryption, or linearization with either.
+    /// encryption, or linearization with either. A linearized kernel document also reports a
+    /// <paramref name="destination"/> that is not writable this way, after the document counts as
+    /// written.
     /// </exception>
     /// <exception cref="ObjectDisposedException">
     /// The kernel document was disposed.

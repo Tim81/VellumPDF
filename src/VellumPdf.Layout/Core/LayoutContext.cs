@@ -19,13 +19,14 @@ public sealed class LayoutContext
     /// of the page's content area. The content area already excludes the page margins and any
     /// header or footer band. On a fresh page this area can differ from the content area by one
     /// rounding step. When it is the shorter of the two, a renderer that needs the whole content
-    /// area exactly can fail to paginate (#549).
+    /// area exactly can reach the page-continuation limit; see <see cref="IRenderer.Layout"/>
+    /// (#549).
     /// </remarks>
     public LayoutBox Area { get; }
 
     /// <summary>A minimum Y position, carried for callers that set one.</summary>
     /// <remarks>
-    /// Nothing in this package reads it, and the document passes <b>0</b> on every call. Use
+    /// Nothing in this package acts on it, and the document passes <b>0</b> on every call. Use
     /// <see cref="Area"/> to find where content may start.
     /// </remarks>
     public double ContentTop { get; }

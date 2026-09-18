@@ -60,9 +60,10 @@ public sealed class DrawContext
 
     /// <summary>Creates a draw context bound to the current page, its canvas, and the owning document.</summary>
     /// <remarks>
-    /// Nothing is checked, and every argument is stored. A null argument surfaces later, from the
-    /// first member that uses it. The document constructs this type itself and never passes null;
-    /// construct one yourself only to test a renderer.
+    /// Nothing is checked, and every argument is stored. A null <paramref name="page"/> is written
+    /// without an exception as the page of each structure element this type registers. The other
+    /// nulls surface later, from the first member that uses them. The document constructs this type
+    /// itself and never passes null; construct one yourself only to test a renderer.
     /// <para>Do not pass null. A later major version will throw <see cref="ArgumentNullException"/>
     /// from this constructor.</para>
     /// </remarks>
@@ -72,8 +73,9 @@ public sealed class DrawContext
     /// <paramref name="rendererContext"/> or <paramref name="document"/>.
     /// </exception>
     /// <exception cref="ArgumentNullException">
-    /// Raised later, not from this constructor, when <paramref name="page"/> is null and a
-    /// member registers something on it, such as <see cref="AddUriLinkAnnotation"/>.
+    /// Raised later, not from this constructor, when <paramref name="page"/> is null: by
+    /// <see cref="AddUriLinkAnnotation"/>, and by the document's save after
+    /// <see cref="AddOutlineEntry"/>.
     /// </exception>
     public DrawContext(PdfCanvas canvas, LayoutBox pageBounds, RendererContext rendererContext, PdfDocument document, PdfPage page)
     {
@@ -139,9 +141,11 @@ public sealed class DrawContext
     /// <remarks>
     /// <paramref name="uri"/> is not validated. Empty and <c>not a uri</c> are written into
     /// <c>/URI</c> as given, and so is an absolute URI of any scheme, such as
-    /// <c>javascript:alert(1)</c>. Non-ASCII characters are percent-encoded. A null
-    /// <paramref name="uri"/> writes a link annotation with no action, so the area is a link that
-    /// goes nowhere.
+    /// <c>javascript:alert(1)</c>. Non-ASCII characters are percent-encoded as UTF-8, and an
+    /// unpaired surrogate becomes U+FFFD first. In a document whose <c>Conformance</c> is PDF/UA-1,
+    /// the link is written untagged and without the alternate description ISO 14289-1, 7.18.5
+    /// requires, and no exception reports it (#550). A null <paramref name="uri"/> writes a link
+    /// annotation with no action, so the area is a link that goes nowhere.
     /// <para>A non-finite coordinate in <paramref name="box"/> is accepted here. The save throws
     /// when it writes the annotation's rectangle.</para>
     /// <para>Do not pass a null or relative <paramref name="uri"/>. A later major version will

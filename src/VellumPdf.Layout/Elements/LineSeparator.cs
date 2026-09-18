@@ -33,6 +33,10 @@ public sealed class LineSeparator
     /// width to be a non-negative number: the token this writes is one the specification forbids,
     /// so refusing a negative width is the format's business, not only the renderer's. Whether to
     /// refuse it is undecided (#482).</para>
+    /// <para>A negative width is also subtracted from the height the separator takes, so the
+    /// elements after it move up the page, and off it once the width is large enough.</para>
+    /// <para>Do not pass a negative width. #482 decides whether a later major version refuses
+    /// it.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property,
@@ -58,7 +62,9 @@ public sealed class LineSeparator
     /// checked too, though the rule spans the content width and neither of them moves it.</para>
     /// <para>A negative <c>Top</c> or <c>Bottom</c> is not refused: it moves the rule, or the
     /// elements after it, up the page.</para>
-    /// <para>Do not pass one. A later major version will refuse it.</para>
+    /// 
+    /// <para>Do not pass a negative <c>Top</c> or <c>Bottom</c>. A later major version will refuse
+    /// both.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property,

@@ -39,7 +39,7 @@ public sealed class LayoutImageRenderer : IRenderer
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// <see cref="LayoutImage.Width"/> or <see cref="LayoutImage.Height"/>, or the height derived
-    /// from the width, is refused; see those members.
+    /// from the width, is refused; see those members and <see cref="LayoutImage.Margins"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// The image's own pixel width or height is not a positive number.

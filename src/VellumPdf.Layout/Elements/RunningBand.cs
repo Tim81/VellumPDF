@@ -49,9 +49,9 @@ public sealed class RunningBand
 
     /// <summary>Horizontal alignment of the band text.</summary>
     /// <remarks>
-    /// <see cref="HorizontalAlignment.Justify"/> is neither refused <b>nor</b>
-    /// honoured. It falls through to left alignment. A single-line band has nothing to justify
-    /// against, so there is no meaning to give it.
+    /// <see cref="HorizontalAlignment.Justify"/> is neither refused <b>nor</b> honoured. It falls
+    /// through to left alignment, and so does a value the enumeration does not name. A single-line
+    /// band has nothing to justify against, so there is no meaning to give it.
     /// </remarks>
     public HorizontalAlignment Alignment { get; }
 

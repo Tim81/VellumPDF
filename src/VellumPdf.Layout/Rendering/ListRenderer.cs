@@ -40,8 +40,8 @@ public sealed class ListRenderer : IRenderer
     /// area is not empty and the list has items. An empty area returns
     /// <see cref="LayoutResult.Nothing"/> first. A start past the last item returns
     /// <see cref="LayoutResult.Full"/> occupying no height. A negative start on an empty list also
-    /// lays out as that, and <see cref="Draw"/> then throws
-    /// <see cref="ArgumentOutOfRangeException"/>.
+    /// returns <see cref="LayoutResult.Full"/> occupying no height, and <see cref="Draw"/> then
+    /// throws <see cref="ArgumentOutOfRangeException"/>.
     /// <para>Do not pass null or a negative start. A later major version will throw from this
     /// constructor.</para>
     /// </remarks>

@@ -5,12 +5,12 @@ namespace VellumPdf.Layout.Core;
 
 /// <summary>CSS-style four-sided inset (top, right, bottom, left) in points.</summary>
 /// <remarks>
-/// This type checks nothing. Whether a negative or non-finite edge is refused depends on the
-/// property the inset is assigned to, and each such property documents its own rule.
-/// <see cref="VellumPdf.Layout.Elements.LineSeparator.Margins"/> and
-/// <see cref="VellumPdf.Layout.Elements.Table.Cell.Padding"/> refuse a non-finite edge at save.
-/// The other element <c>Margins</c> properties check neither, and say what happens instead.
-/// Do not treat construction as validation.
+/// This type checks nothing. No property refuses a finite negative edge. Whether a non-finite edge
+/// is refused depends on the property the inset is assigned to, and each such property documents
+/// its own rule. <see cref="VellumPdf.Layout.Elements.LineSeparator.Margins"/> and
+/// <see cref="VellumPdf.Layout.Elements.Table.Cell.Padding"/> refuse a non-finite edge at save. The
+/// other element <c>Margins</c> properties check neither, and say what happens instead. Do not
+/// treat construction as validation.
 /// </remarks>
 public readonly record struct EdgeInsets
 {

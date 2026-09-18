@@ -212,7 +212,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **The rest of Layout's public members now document their boundaries (#510):** what is
   refused and which call throws, what is accepted but should not be relied on, and what is
-  accepted and then ignored. **114** public members carry an `<exception>` tag, counted in the
+  accepted and then ignored. **115** public members carry an `<exception>` tag, counted in the
   compiler's XML output. What a caller is most likely to act on:
 
   - Null text, a null run, cell, item or image, and a null `PieChart.Slices` are stored without
@@ -222,12 +222,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - `SetDefaultFont` is used only by `Add(string)` calls made after it. A `Paragraph`,
     `Heading`, list, table or running band never uses it.
   - A font handle from a different `Document` saves without an exception. The text is drawn in
-    whatever font the saving document registered under the same resource name, if any, and even
-    when that is the same font file, only the characters the saving document's own text also uses
+    whatever font the saving document registered under the same resource name, if any. Even when
+    that is the same font file, only the characters the saving document's own text also uses
     survive (#544).
   - `HorizontalAlignment.Justify` is drawn as left everywhere except paragraph and heading text,
     and with a standard-14 font it stretches a line by only half its free space (#548).
-  - `Row.Background` cannot take effect, because no table row can be given one (#543).
+  - `Row.Background` has no effect through `TableElement.AddRow` or `AddHeaderRow`, which
+    create rows without one (#543).
+  - A link from `TextStyle.LinkUri` or `DrawContext.AddUriLinkAnnotation` is written untagged
+    and without an alternate description, so a PDF/UA-1 document holding one is not conformant,
+    and nothing reports it (#550).
   - Nothing in this package acts on `LayoutContext.ContentTop`.
   - An element exactly as tall as the content area can repeat its layout until the
     page-continuation limit throws, for some margins (#549).

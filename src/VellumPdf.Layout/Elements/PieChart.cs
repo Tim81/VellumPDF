@@ -92,7 +92,8 @@ public sealed class PieChart
     /// If a zero slice should be visible in your chart, give it a small positive value.</para>
     /// <para>Finite values whose sum overflows to infinity are accepted, and every slice then has
     /// no angle and the chart has no area: it is blank, or, with <see cref="StrokeColor"/> set,
-    /// every non-zero slice strokes the same radius, at <see cref="StartAngle"/> (#546).</para>
+    /// every non-zero slice strokes the same radius, at <see cref="StartAngle"/> (#546). In a
+    /// tagged document the composed alternate text then gives every slice 0%.</para>
     /// <para>A null list makes the save throw.</para>
     /// <para>Do not pass a null list, or values whose sum can overflow. A later major version will
     /// refuse both.</para>
@@ -154,9 +155,10 @@ public sealed class PieChart
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when a non-finite top or bottom edge puts the bookmark of a later
-    /// <see cref="Heading"/> at a non-finite position. The message says PDF does not support NaN or
-    /// Infinity as a real number.
+    /// from this property, when an edge leaves a later element at a non-finite position, and the
+    /// save writes that position outside the content stream, as a heading's bookmark or the
+    /// rectangle of a link from <see cref="TextStyle.LinkUri"/>. Negative infinity can do this. The
+    /// message says PDF does not support NaN or Infinity as a real number.
     /// </exception>
     public EdgeInsets Margins { get; init; } = new EdgeInsets(6);
 

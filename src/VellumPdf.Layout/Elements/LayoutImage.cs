@@ -110,14 +110,16 @@ public sealed class LayoutImage
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when the box the edges leave is too small for the element. The message
     /// says the element is too tall to fit on a page and does not name the margins. With
-    /// <see cref="Width"/> null, edges that leave a drawn width of zero, under 5e-6 or non-finite
-    /// raise the image-extent message naming that width instead.
+    /// <see cref="Width"/> null, the width the edges leave is refused as described on
+    /// <see cref="Width"/>: zero, a magnitude under 5e-6, or a non-finite value, or a derived
+    /// height that falls under the floor. The message then names that width or height instead.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when a non-finite top or bottom edge puts the bookmark of a later
-    /// <see cref="Heading"/> at a non-finite position. The message says PDF does not support NaN or
-    /// Infinity as a real number.
+    /// from this property, when an edge leaves a later element at a non-finite position, and the
+    /// save writes that position outside the content stream, as a heading's bookmark or the
+    /// rectangle of a link from <see cref="TextStyle.LinkUri"/>. Negative infinity can do this. The
+    /// message says PDF does not support NaN or Infinity as a real number.
     /// </exception>
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 

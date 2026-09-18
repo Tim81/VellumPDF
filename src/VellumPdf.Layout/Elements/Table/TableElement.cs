@@ -78,9 +78,10 @@ public sealed class TableElement
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when a non-finite top edge puts the bookmark of a later
-    /// <see cref="Heading"/> at a non-finite position. The message says PDF does not support NaN or
-    /// Infinity as a real number.
+    /// from this property, when an edge leaves a later element at a non-finite position, and the
+    /// save writes that position outside the content stream, as a heading's bookmark or the
+    /// rectangle of a link from <see cref="TextStyle.LinkUri"/>. Negative infinity can do this. The
+    /// message says PDF does not support NaN or Infinity as a real number.
     /// </exception>
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 
@@ -133,8 +134,7 @@ public sealed class TableElement
     /// </summary>
     /// <remarks>
     /// A table whose rows are all headers cannot be drawn: it lays out as nothing, so the save
-    /// throws the too-tall <see cref="InvalidOperationException"/> even when the table would fit
-    /// (#488).
+    /// throws <see cref="InvalidOperationException"/> even when the table would fit (#488).
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -155,8 +155,7 @@ public sealed class TableElement
     /// </summary>
     /// <remarks>
     /// A table whose rows are all headers cannot be drawn: it lays out as nothing, so the save
-    /// throws the too-tall <see cref="InvalidOperationException"/> even when the table would fit
-    /// (#488).
+    /// throws <see cref="InvalidOperationException"/> even when the table would fit (#488).
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
