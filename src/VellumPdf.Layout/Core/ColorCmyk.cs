@@ -66,7 +66,8 @@ public readonly record struct ColorCmyk
     /// </summary>
     /// <remarks>
     /// Computed without a check. A channel outside 0 to 1 gives an RGB channel outside 0 to 1:
-    /// a <see cref="K"/> of 2 gives -1 in all three. A <c>NaN</c> channel gives <c>NaN</c>.
+    /// a <see cref="K"/> of 2 gives -1 in all three. A non-finite channel gives a non-finite result
+    /// in each channel it feeds, and <see cref="K"/> feeds all three.
     /// </remarks>
     public ColorRgb ToRgbApproximate() =>
         new((1 - C) * (1 - K), (1 - M) * (1 - K), (1 - Y) * (1 - K));
@@ -77,10 +78,9 @@ public readonly record struct ColorCmyk
     /// </summary>
     /// <remarks>
     /// Computed without a check. An input whose largest channel is 0 or less returns
-    /// <see cref="Black"/>. Otherwise a channel above 1 gives a result outside 0 to 1:
-    /// (2, 0, 0) gives a <see cref="K"/> of -1. A <c>NaN</c> channel gives <c>NaN</c> in all four,
-    /// and positive infinity gives <c>NaN</c> in <see cref="C"/>, <see cref="M"/> and
-    /// <see cref="Y"/>.
+    /// <see cref="Black"/>. Otherwise any channel outside 0 to 1 can give a result outside 0 to
+    /// 1: (2, 0, 0) gives a <see cref="K"/> of -1, and (-1, 0.5, 0.5) a <see cref="C"/> of 3. A
+    /// non-finite channel gives a non-finite result.
     /// </remarks>
     public static ColorCmyk FromRgb(ColorRgb rgb)
     {

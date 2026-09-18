@@ -23,6 +23,8 @@ public sealed class PieChartRenderer : IRenderer
     /// <summary>Creates a renderer for the given pie chart.</summary>
     /// <remarks>
     /// A null <paramref name="chart"/> is stored, and <see cref="Layout"/> throws.
+    /// <para>Do not pass null. A later major version will throw <see cref="ArgumentNullException"/>
+    /// from this constructor.</para>
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised later from <see cref="Layout"/>, not from this constructor, when
@@ -34,8 +36,8 @@ public sealed class PieChartRenderer : IRenderer
     /// <remarks>
     /// This renderer does not split. A chart taller than the area returns
     /// <see cref="LayoutResult.Outcome.Nothing"/>, and the document then throws the too-tall
-    /// exception from its save. This method raises the chart's refusals itself; called by the
-    /// document, they reach you from the save.
+    /// exception from its save. This method raises the chart's refusals itself. When the document
+    /// calls this method, they reach you from the save.
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// <see cref="PieChart.Slices"/>, <see cref="PieChart.Diameter"/>,

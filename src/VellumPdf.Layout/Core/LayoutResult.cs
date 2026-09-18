@@ -39,9 +39,12 @@ public sealed class LayoutResult
 
         /// <summary>No content fit in the area offered.</summary>
         /// <remarks>
-        /// The occupied area and both renderers are null. The document starts a new page and calls
-        /// <see cref="IRenderer.Layout"/> again with the whole content area. Only a second
-        /// <c>Nothing</c> on that fresh page is an error.
+        /// The occupied area and both renderers are null. The document finishes the current page,
+        /// even when nothing is on it, starts a new one, and calls <see cref="IRenderer.Layout"/>
+        /// again with the whole content area. Only a second <c>Nothing</c> there is an error. A
+        /// <c>Nothing</c> from the first element on a page therefore leaves that page blank.
+        /// <para>The retry only decides whether to throw. If it fits, the document calls
+        /// <see cref="IRenderer.Layout"/> once more and uses that result.</para>
         /// </remarks>
         Nothing,
     }
@@ -57,9 +60,10 @@ public sealed class LayoutResult
     /// <remarks>
     /// Null on <see cref="Outcome.Nothing"/>. The document reads only the box's
     /// <see cref="LayoutBox.Bottom"/>, and only after <see cref="Outcome.Full"/>: it becomes the
-    /// position of the next element. A Bottom above the current position moves the next element
-    /// up the page, and a <c>NaN</c> Bottom sends it to a new page. After
-    /// <see cref="Outcome.Partial"/> the box is not read.
+    /// position of the next element. The Bottom is not checked. One above the current position
+    /// moves the next element up the page, and a non-finite one becomes the top of the next
+    /// element's area, from where it can reach the content stream as <c>NaN</c> or
+    /// <c>Infinity</c>. After <see cref="Outcome.Partial"/> the box is not read.
     /// </remarks>
     public LayoutBox? OccupiedArea { get; }
 

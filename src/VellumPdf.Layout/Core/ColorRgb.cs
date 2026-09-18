@@ -7,24 +7,24 @@ namespace VellumPdf.Layout.Core;
 
 /// <summary>Normalised RGB colour (0.0–1.0 per channel).</summary>
 /// <remarks>
-/// Channels are not checked, and Layout writes them into the content stream as they are. A text
-/// colour of (<c>NaN</c>, 2, -1) is written as <c>NaN 2 -1 rg</c>. ISO 32000-2, 8.6.4.3, requires
-/// each DeviceRGB component to be a number from 0.0 to 1.0.
+/// Channels are not checked or clamped. Layout writes them into the content stream rounded to five
+/// decimals, so a text colour of (<c>NaN</c>, 2, -1) is written as <c>NaN 2 -1 rg</c>. ISO 32000-2,
+/// 8.6.4.3, requires each DeviceRGB component to be a number from 0.0 to 1.0.
 /// <para>Do not pass a channel outside 0 to 1, or a non-finite one. A later major version will
 /// refuse both (#509).</para>
 /// </remarks>
 public readonly record struct ColorRgb
 {
     /// <summary>The red channel (0.0–1.0).</summary>
-    /// <remarks>Any value is stored and written to the page unchanged.</remarks>
+    /// <remarks>Any value is stored, and written to the page without clamping.</remarks>
     public double R { get; init; }
 
     /// <summary>The green channel (0.0–1.0).</summary>
-    /// <remarks>Any value is stored and written to the page unchanged.</remarks>
+    /// <remarks>Any value is stored, and written to the page without clamping.</remarks>
     public double G { get; init; }
 
     /// <summary>The blue channel (0.0–1.0).</summary>
-    /// <remarks>Any value is stored and written to the page unchanged.</remarks>
+    /// <remarks>Any value is stored, and written to the page without clamping.</remarks>
     public double B { get; init; }
 
     /// <summary>Creates a colour from the given channels.</summary>

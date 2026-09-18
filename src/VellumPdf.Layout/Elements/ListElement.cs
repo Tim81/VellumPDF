@@ -7,7 +7,8 @@ namespace VellumPdf.Layout.Elements;
 
 /// <summary>Ordered or unordered list with optional nesting (one level deep).</summary>
 /// <remarks>
-/// An unnamed value is stored. <see cref="ListElement.FormatMarker"/> then emits the bullet.
+/// A value this enumeration does not name is stored. <see cref="ListElement.FormatMarker"/> then
+/// emits the bullet.
 /// </remarks>
 public enum ListStyle
 {
@@ -105,13 +106,13 @@ public sealed class ListElement
 
     /// <summary>Outer margins applied around the whole list block.</summary>
     /// <remarks>
-    /// <b>Attention</b>: no edge is checked. Each edge is taken off the area this element is
-    /// given, and the element is laid out in whatever box is left, even when that box is empty,
-    /// inverted or <c>NaN</c>. A negative or non-finite edge, or edges wider than the area, can
-    /// therefore make the save throw an exception about something else, write a <c>NaN</c> or
-    /// <c>Infinity</c> token into the content stream, re-wrap, move or mirror the content, or leave
-    /// the element off the page. Which of these you get depends on the element, the edge and the
-    /// value. A negative or non-finite top edge also moves every element placed after this one.
+    /// <b>Attention</b>: no edge is checked. Each edge is taken off the area this element is given,
+    /// and the element is laid out in whatever box is left, even when that box is empty, inverted
+    /// or <c>NaN</c>. A negative or non-finite edge, or edges wider than the area, can therefore
+    /// make the save throw an exception about something else, write a <c>NaN</c> or <c>Infinity</c>
+    /// token into the content stream, re-wrap, move or mirror the content, or leave the element off
+    /// the page. The bottom edge only limits that box: it adds no space before the next element. A
+    /// negative or non-finite top edge can also move the elements placed after this one.
     /// <para>Do not pass a negative or non-finite edge. A later major version will refuse
     /// both.</para>
     /// </remarks>
@@ -130,7 +131,8 @@ public sealed class ListElement
 
     /// <summary>Text style applied to items that have no explicit style.</summary>
     /// <remarks>
-    /// Null means each item uses <see cref="TextStyle.Default"/> unless it has its own style.
+    /// Used by a top-level item with no style of its own, and through that item by its children.
+    /// Null means <see cref="TextStyle.Default"/>.
     /// </remarks>
     public TextStyle? DefaultStyle { get; init; }
 
@@ -166,9 +168,9 @@ public sealed class ListElement
 
     /// <summary>Appends a text item with an optional text style and returns this instance for chaining.</summary>
     /// <remarks>
-    /// Creates the item with <see cref="ListItem(string, TextStyle?)"/> and adds it.
-    /// A null <paramref name="text"/> is stored, and the save throws when it lays out the list.
-    /// <para>Do not pass null. A later major version will throw
+    /// Creates the item with <see cref="ListItem(string, TextStyle?)"/> and adds it. A null
+    /// <paramref name="text"/> is stored, and the save throws when it lays out the list.
+    /// <para>Do not pass null text. A later major version will throw
     /// <see cref="ArgumentNullException"/> from this call.</para>
     /// </remarks>
     /// <exception cref="NullReferenceException">

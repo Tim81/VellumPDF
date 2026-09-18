@@ -16,6 +16,8 @@ public sealed class LineSeparatorRenderer : IRenderer
     /// <summary>Creates a renderer for the given line separator.</summary>
     /// <remarks>
     /// A null <paramref name="sep"/> is stored, and <see cref="Layout"/> throws.
+    /// <para>Do not pass null. A later major version will throw <see cref="ArgumentNullException"/>
+    /// from this constructor.</para>
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised later from <see cref="Layout"/>, not from this constructor, when
@@ -25,8 +27,8 @@ public sealed class LineSeparatorRenderer : IRenderer
 
     /// <summary>Reserves the separator's line width plus margins and reports the occupied region.</summary>
     /// <remarks>
-    /// This renderer does not split. It refuses a non-finite line width or inset itself; called by
-    /// the document, the refusal reaches you from the save.
+    /// This renderer does not split. It refuses a non-finite line width or inset itself. When the
+    /// document calls this method, the refusal reaches you from the save.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// <see cref="LineSeparator.LineWidth"/> or an edge of <see cref="LineSeparator.Margins"/> is

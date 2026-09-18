@@ -7,7 +7,7 @@ namespace VellumPdf.Layout.Core;
 
 /// <summary>Typography properties applied to a run of text.</summary>
 /// <remarks>
-/// Refusals on <see cref="FontSize"/> and <see cref="Leading"/> fire from
+/// Refusals on <see cref="FontSize"/>, <see cref="Leading"/> and <see cref="FontRef"/> fire from
 /// <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other save overloads,
 /// not from the property setter. See those members.
 /// </remarks>
@@ -31,12 +31,14 @@ public sealed class TextStyle
     /// Stored as given. A null handle and a handle from another document both save without an
     /// exception, and neither draws the font you asked for; see
     /// <see cref="FontReference(EmbeddedFontHandle)"/>. A Standard-14 value the enumeration does
-    /// not name makes the save throw.
+    /// not name makes the save throw once text is drawn in it.
+    /// <para><see cref="Standard14.Symbol"/> and <see cref="Standard14.ZapfDingbats"/> measure
+    /// every character as zero width, so a paragraph in either is never wrapped (#470).</para>
     /// </remarks>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
     /// save overloads, not from this property, when the reference holds a
-    /// <see cref="Standard14"/> value the enumeration does not name.
+    /// <see cref="Standard14"/> value the enumeration does not name and text is drawn in it.
     /// </exception>
     public FontReference FontRef { get; init; } = Standard14.Helvetica;
 
@@ -190,9 +192,11 @@ public sealed class TextStyle
     /// </summary>
     /// <remarks>
     /// <b>Attention</b>: the string is not validated. Empty, <c>not a uri</c>, and
-    /// <c>javascript:alert(1)</c> are all written into a <c>/URI</c> action as given.
-    /// Table cells and running bands silently drop the link (#475). A later major version
-    /// will refuse a value that is not an absolute URI.
+    /// <c>javascript:alert(1)</c> are all written into a <c>/URI</c> action as given. Table cells
+    /// and running bands silently drop the link (#475). In a list item the marker is linked as well
+    /// as the text.
+    /// <para>Do not pass a value that is not an absolute URI. A later major version will refuse
+    /// one.</para>
     /// </remarks>
     public string? LinkUri { get; init; }
 

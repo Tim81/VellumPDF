@@ -53,13 +53,13 @@ public sealed class Heading
 
     /// <summary>Margins around the heading.</summary>
     /// <remarks>
-    /// <b>Attention</b>: no edge is checked. Each edge is taken off the area this element is
-    /// given, and the element is laid out in whatever box is left, even when that box is empty,
-    /// inverted or <c>NaN</c>. A negative or non-finite edge, or edges wider than the area, can
-    /// therefore make the save throw an exception about something else, write a <c>NaN</c> or
-    /// <c>Infinity</c> token into the content stream, re-wrap, move or mirror the content, or leave
-    /// the element off the page. Which of these you get depends on the element, the edge and the
-    /// value. A negative or non-finite top edge also moves every element placed after this one.
+    /// <b>Attention</b>: no edge is checked. Each edge is taken off the area this element is given,
+    /// and the element is laid out in whatever box is left, even when that box is empty, inverted
+    /// or <c>NaN</c>. A negative or non-finite edge, or edges wider than the area, can therefore
+    /// make the save throw an exception about something else, write a <c>NaN</c> or <c>Infinity</c>
+    /// token into the content stream, re-wrap, move or mirror the content, or leave the element off
+    /// the page. The bottom edge only limits that box: it adds no space before the next element. A
+    /// negative or non-finite top edge can also move the elements placed after this one.
     /// <para>Do not pass a negative or non-finite edge. A later major version will refuse
     /// both.</para>
     /// </remarks>
@@ -78,8 +78,7 @@ public sealed class Heading
 
     /// <summary>Horizontal alignment of the heading text.</summary>
     /// <remarks>
-    /// Same as <see cref="Paragraph.Alignment"/>: <see cref="HorizontalAlignment.Justify"/>
-    /// stretches every line except the last, including a line that ends at a hard line break.
+    /// Same as <see cref="Paragraph.Alignment"/>.
     /// </remarks>
     public HorizontalAlignment Alignment { get; init; } = HorizontalAlignment.Left;
 
@@ -98,9 +97,9 @@ public sealed class Heading
 
     /// <summary>Creates a heading with the given text and optional style (defaults to 14pt).</summary>
     /// <remarks>
-    /// A null <paramref name="style"/> becomes 14pt Helvetica.
-    /// A null <paramref name="text"/> is stored, and the save throws when it lays out the heading.
-    /// <para>Do not pass null. A later major version will throw
+    /// A null <paramref name="style"/> becomes 14pt Helvetica. A null <paramref name="text"/> is
+    /// stored, and the save throws when it lays out the heading.
+    /// <para>Do not pass null text. A later major version will throw
     /// <see cref="ArgumentNullException"/> from this call.</para>
     /// </remarks>
     /// <exception cref="NullReferenceException">

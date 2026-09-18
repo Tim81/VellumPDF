@@ -44,13 +44,13 @@ public sealed class Paragraph
 
     /// <summary>Margins around the paragraph.</summary>
     /// <remarks>
-    /// <b>Attention</b>: no edge is checked. Each edge is taken off the area this element is
-    /// given, and the element is laid out in whatever box is left, even when that box is empty,
-    /// inverted or <c>NaN</c>. A negative or non-finite edge, or edges wider than the area, can
-    /// therefore make the save throw an exception about something else, write a <c>NaN</c> or
-    /// <c>Infinity</c> token into the content stream, re-wrap, move or mirror the content, or leave
-    /// the element off the page. Which of these you get depends on the element, the edge and the
-    /// value. A negative or non-finite top edge also moves every element placed after this one.
+    /// <b>Attention</b>: no edge is checked. Each edge is taken off the area this element is given,
+    /// and the element is laid out in whatever box is left, even when that box is empty, inverted
+    /// or <c>NaN</c>. A negative or non-finite edge, or edges wider than the area, can therefore
+    /// make the save throw an exception about something else, write a <c>NaN</c> or <c>Infinity</c>
+    /// token into the content stream, re-wrap, move or mirror the content, or leave the element off
+    /// the page. The bottom edge only limits that box: it adds no space before the next element. A
+    /// negative or non-finite top edge can also move the elements placed after this one.
     /// <para>Do not pass a negative or non-finite edge. A later major version will refuse
     /// both.</para>
     /// </remarks>
@@ -69,9 +69,10 @@ public sealed class Paragraph
 
     /// <summary>Horizontal alignment of the paragraph text.</summary>
     /// <remarks>
-    /// <see cref="HorizontalAlignment.Justify"/> stretches every line except the paragraph's
-    /// last, and a line that ends at a hard line break is stretched too. The last line stays
-    /// left-aligned.
+    /// <see cref="HorizontalAlignment.Justify"/> stretches every line except the paragraph's last,
+    /// and a line that ends at a hard line break is stretched too. The last line stays
+    /// left-aligned, and a line with no space in it is not stretched. With a standard-14 font the
+    /// stretch covers only half the space left on the line (#548).
     /// </remarks>
     public HorizontalAlignment Alignment { get; init; } = HorizontalAlignment.Left;
 
@@ -92,9 +93,9 @@ public sealed class Paragraph
 
     /// <summary>Creates a single-run paragraph with uniform style.</summary>
     /// <remarks>
-    /// A null <paramref name="style"/> becomes <see cref="TextStyle.Default"/>.
-    /// A null <paramref name="text"/> is stored, and the save throws when it lays out the paragraph.
-    /// <para>Do not pass null. A later major version will throw
+    /// A null <paramref name="style"/> becomes <see cref="TextStyle.Default"/>. A null
+    /// <paramref name="text"/> is stored, and the save throws when it lays out the paragraph.
+    /// <para>Do not pass null text. A later major version will throw
     /// <see cref="ArgumentNullException"/> from this call.</para>
     /// </remarks>
     /// <exception cref="NullReferenceException">
@@ -108,9 +109,10 @@ public sealed class Paragraph
 
     /// <summary>Creates a mixed-style paragraph from a sequence of runs.</summary>
     /// <remarks>
-    /// An empty sequence becomes one empty run at <see cref="TextStyle.Default"/>. A null
-    /// sequence throws <see cref="ArgumentNullException"/>. A null run inside the sequence is
-    /// kept: <see cref="Text"/> and <see cref="Style"/> then throw, and so does the save.
+    /// An empty sequence becomes one empty run at <see cref="TextStyle.Default"/>. A null sequence
+    /// throws <see cref="ArgumentNullException"/>. A null run inside the sequence is kept.
+    /// <see cref="Text"/> then throws, <see cref="Style"/> throws when the null run is the first,
+    /// and so does the save.
     /// <para>Do not put null in the sequence. A later major version will throw
     /// <see cref="ArgumentNullException"/> from this call.</para>
     /// </remarks>
@@ -119,8 +121,8 @@ public sealed class Paragraph
     /// </exception>
     /// <exception cref="NullReferenceException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when <paramref name="runs"/> contains <see langword="null"/>, or a run whose
-    /// text or style is null.
+    /// from this call, when <paramref name="runs"/> contains <see langword="null"/>, a run whose
+    /// text is null, or a run whose style is null and whose text holds a word.
     /// </exception>
     public Paragraph(IEnumerable<TextRun> runs)
     {
@@ -133,9 +135,10 @@ public sealed class Paragraph
 
     /// <summary>Appends a run with the given text and optional style. Returns this paragraph.</summary>
     /// <remarks>
-    /// A null <paramref name="style"/> uses the first run's style, <see cref="Style"/>.
-    /// A null <paramref name="text"/> is stored, and the save throws when it lays out the paragraph.
-    /// <para>Do not pass null. A later major version will throw
+    /// A null <paramref name="style"/> uses the first run's style, <see cref="Style"/>, which is
+    /// itself null when the first run was built with a null style. A null <paramref name="text"/>
+    /// is stored, and the save throws when it lays out the paragraph.
+    /// <para>Do not pass null text. A later major version will throw
     /// <see cref="ArgumentNullException"/> from this call.</para>
     /// </remarks>
     /// <exception cref="NullReferenceException">

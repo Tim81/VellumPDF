@@ -13,7 +13,7 @@ namespace VellumPdf.Layout.Rendering;
 /// Nested items get an additional indent level.
 /// </summary>
 /// <remarks>
-/// A negative start is documented on the constructor. Nested grandchildren are ignored.
+/// Grandchildren are ignored; see <see cref="ListItem.Children"/>.
 /// </remarks>
 public sealed class ListRenderer : IRenderer
 {
@@ -34,11 +34,14 @@ public sealed class ListRenderer : IRenderer
 
     /// <summary>Creates a renderer for the list, optionally starting at <paramref name="startItem"/> for pagination.</summary>
     /// <remarks>
-    /// A negative start throws <see cref="ArgumentOutOfRangeException"/> from
-    /// <see cref="Layout"/> only when the area is not empty and the list has items.
-    /// An empty area returns <see cref="LayoutResult.Nothing"/> first. A start past the
-    /// last item, or a negative start on an empty list, returns
-    /// <see cref="LayoutResult.Full"/> occupying no height.
+    /// <paramref name="startItem"/> counts each child as an entry after its parent, so a start of 1
+    /// on a list whose first item has children begins at that item's first child. A negative start
+    /// throws <see cref="ArgumentOutOfRangeException"/> from <see cref="Layout"/> only when the
+    /// area is not empty and the list has items. An empty area returns
+    /// <see cref="LayoutResult.Nothing"/> first. A start past the last item, or a negative start on
+    /// an empty list, returns <see cref="LayoutResult.Full"/> occupying no height.
+    /// <para>Do not pass null or a negative start. A later major version will throw from this
+    /// constructor.</para>
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// Raised from <see cref="Layout"/>, when <paramref name="startItem"/> is negative, the
@@ -66,8 +69,8 @@ public sealed class ListRenderer : IRenderer
     /// <summary>Paginates the list item-by-item, splitting at item boundaries on overflow; handles mid-item splits by chaining content overflow renderers.</summary>
     /// <remarks>
     /// See the constructor for a negative or past-end start. Overflow splits at an item, or
-    /// mid-item when a paragraph does. This method raises the refusals of the items' styles
-    /// itself; called by the document, they reach you from the save.
+    /// mid-item when a paragraph does. This method raises the refusals of the items' styles itself.
+    /// When the document calls this method, they reach you from the save.
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// The start item is negative, the list has items, and the area is not empty.

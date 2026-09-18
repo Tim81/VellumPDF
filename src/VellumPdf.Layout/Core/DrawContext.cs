@@ -65,9 +65,9 @@ public sealed class DrawContext
     /// construct one yourself only to test a renderer.
     /// </remarks>
     /// <exception cref="NullReferenceException">
-    /// Raised later, not from this constructor, by the first member that uses a null
-    /// <paramref name="canvas"/>, <paramref name="rendererContext"/> or
-    /// <paramref name="document"/>.
+    /// Raised later, not from this constructor: by a renderer that draws on a null
+    /// <paramref name="canvas"/>, or by a member of this type that uses a null
+    /// <paramref name="rendererContext"/> or <paramref name="document"/>.
     /// </exception>
     /// <exception cref="ArgumentNullException">
     /// Raised later, not from this constructor, when <paramref name="page"/> is null and a
@@ -85,12 +85,12 @@ public sealed class DrawContext
     /// <summary>Returns (or creates) a font resource on the current document.</summary>
     /// <remarks>
     /// This does not embed a file. Nothing is checked: a value the enumeration does not name is
-    /// accepted here, and the save throws when it writes the font resource.
+    /// accepted here, and the save throws if text is drawn with the resource this returns.
     /// </remarks>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
-    /// save overloads, not from this call, when <paramref name="font"/> is
-    /// not a named <see cref="Standard14"/> value.
+    /// save overloads, not from this call, when <paramref name="font"/> is not a named
+    /// <see cref="Standard14"/> value and text is drawn with the resource this returns.
     /// </exception>
     public PdfFontResource GetFont(Standard14 font) => _document.UseFont(font);
 
@@ -100,8 +100,8 @@ public sealed class DrawContext
     /// </summary>
     /// <remarks>
     /// A null handle throws <see cref="NullReferenceException"/> from this call. A handle from a
-    /// different document is accepted, and the saved page then uses a font it does not define;
-    /// see <see cref="FontReference(EmbeddedFontHandle)"/>.
+    /// different document is accepted; <see cref="FontReference(EmbeddedFontHandle)"/> says what
+    /// the page then shows.
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// <paramref name="handle"/> is <see langword="null"/>.
@@ -164,9 +164,9 @@ public sealed class DrawContext
     /// <paramref name="layoutY"/> is the layout-space Y of the target position.
     /// </summary>
     /// <remarks>
-    /// <paramref name="level"/> is not refused. Level 0 is a top-level entry. Any other level
-    /// nests under the most recent earlier entry one level up, and goes to the top level when
-    /// there is none, which is where a negative level always lands.
+    /// <paramref name="level"/> is not refused. Level 0 is a top-level entry. Any other level,
+    /// negative included, nests under the most recent earlier entry one level up, and goes to the
+    /// top level when there is none.
     /// <para>A null <paramref name="title"/> and a non-finite <paramref name="layoutY"/> are
     /// accepted here and make the save throw when it writes the outline.</para>
     /// </remarks>

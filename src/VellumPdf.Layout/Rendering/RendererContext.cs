@@ -27,11 +27,10 @@ public sealed class RendererContext
 
     /// <summary>Creates a rendering context bound to the given page and its owning document.</summary>
     /// <remarks>
-    /// Nothing is checked. With a null <paramref name="page"/>,
-    /// <see cref="RegisterImageXObject"/> throws <see cref="ArgumentNullException"/>; with a null
-    /// <paramref name="document"/> it throws <see cref="NullReferenceException"/>. A
-    /// <paramref name="page"/> that belongs to a different document is accepted, and an image
-    /// registered on it is left out of the saved file.
+    /// Nothing is checked. With a null <paramref name="page"/>, both methods throw
+    /// <see cref="ArgumentNullException"/>; with a null <paramref name="document"/>, both throw
+    /// <see cref="NullReferenceException"/>. A <paramref name="page"/> that belongs to a different
+    /// document is accepted, and an image registered on it is left out of the saved file.
     /// <para>Do not pass null, or a page from another document. A later major version will throw
     /// from this constructor.</para>
     /// </remarks>
@@ -75,12 +74,17 @@ public sealed class RendererContext
     /// Idempotent: safe to call on every draw call for the same font.
     /// </summary>
     /// <remarks>
-    /// A null <paramref name="handle"/> throws <see cref="NullReferenceException"/> from this
-    /// call. A handle from a different document is accepted; see
+    /// A null <paramref name="handle"/> throws <see cref="NullReferenceException"/> from this call,
+    /// and so does a context constructed with a null document. A handle from a different document
+    /// is accepted; see
     /// <see cref="VellumPdf.Layout.Core.FontReference.FontReference(EmbeddedFontHandle)"/>.
     /// </remarks>
     /// <exception cref="NullReferenceException">
-    /// <paramref name="handle"/> is <see langword="null"/>.
+    /// <paramref name="handle"/> is <see langword="null"/>, or this context was constructed with a
+    /// null document.
+    /// </exception>
+    /// <exception cref="ArgumentNullException">
+    /// This context was constructed with a null page. <c>ParamName</c> is <c>key</c>.
     /// </exception>
     public void RegisterEmbeddedFontUsage(EmbeddedFontHandle handle) =>
         _document.RegisterEmbeddedFontUsage(_page, handle);

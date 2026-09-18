@@ -19,10 +19,11 @@ public sealed class ListItem
     /// <remarks>A null value makes the save throw; see the constructor.</remarks>
     public string Text { get; }
 
-    /// <summary>Optional text style; when null the list's default style is used.</summary>
+    /// <summary>Optional text style; when null, the item inherits one.</summary>
     /// <remarks>
-    /// Null means the list's <see cref="ListElement.DefaultStyle"/>, then
-    /// <see cref="TextStyle.Default"/>.
+    /// On a top-level item, null means the list's <see cref="ListElement.DefaultStyle"/>, then
+    /// <see cref="TextStyle.Default"/>. On a child, null means the parent item's style after that
+    /// same fallback.
     /// </remarks>
     public TextStyle? Style { get; init; }
 
@@ -57,10 +58,10 @@ public sealed class ListItem
 
     /// <summary>Creates a list item with the given text and optional style.</summary>
     /// <remarks>
-    /// A null <paramref name="style"/> is stored and means the list's style; see
-    /// <see cref="Style"/>. A null <paramref name="text"/> is stored, and the save throws when it
-    /// lays out the list.
-    /// <para>Do not pass null. A later major version will throw
+    /// A null <paramref name="style"/> is stored; <see cref="Style"/> says which style the item
+    /// then inherits. A null <paramref name="text"/> is stored, and the save throws when it lays
+    /// out the list.
+    /// <para>Do not pass null text. A later major version will throw
     /// <see cref="ArgumentNullException"/> from this call.</para>
     /// </remarks>
     /// <exception cref="NullReferenceException">
@@ -93,9 +94,9 @@ public sealed class ListItem
 
     /// <summary>Adds a nested child item with the given text and optional style. Returns this item.</summary>
     /// <remarks>
-    /// Creates the child with <see cref="ListItem(string, TextStyle?)"/> and adds it.
-    /// A null <paramref name="text"/> is stored, and the save throws when it lays out the list.
-    /// <para>Do not pass null. A later major version will throw
+    /// Creates the child with <see cref="ListItem(string, TextStyle?)"/> and adds it. A null
+    /// <paramref name="text"/> is stored, and the save throws when it lays out the list.
+    /// <para>Do not pass null text. A later major version will throw
     /// <see cref="ArgumentNullException"/> from this call.</para>
     /// </remarks>
     /// <exception cref="NullReferenceException">

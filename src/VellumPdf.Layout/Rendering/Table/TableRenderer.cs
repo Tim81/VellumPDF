@@ -45,10 +45,9 @@ public sealed class TableRenderer : IRenderer
     /// <paramref name="startRow"/> indexes <see cref="TableElement.Rows"/> with the header rows
     /// counted. The leading header rows are drawn first on every page, then the other rows from
     /// <paramref name="startRow"/> on, so a start below zero or inside the header run draws every
-    /// row. A start at or past the last row lays out as
-    /// <see cref="LayoutResult.Outcome.Nothing"/>, so a document saving it throws the too-tall
-    /// <see cref="InvalidOperationException"/>. A null <paramref name="table"/> makes
-    /// <see cref="Layout"/> throw.
+    /// row. A start past the last row lays out as <see cref="LayoutResult.Outcome.Nothing"/>, so a
+    /// document saving it throws the too-tall <see cref="InvalidOperationException"/>. A null
+    /// <paramref name="table"/> makes <see cref="Layout"/> throw.
     /// <para>Do not pass null or a start outside the table's rows. A later major version will
     /// throw from this call.</para>
     /// </remarks>
@@ -65,9 +64,9 @@ public sealed class TableRenderer : IRenderer
     /// <summary>Resolves column widths and row heights, fitting as many rows as possible and splitting at row boundaries on overflow.</summary>
     /// <remarks>
     /// Overflow splits at a row boundary. An area with no width returns
-    /// <see cref="LayoutResult.Outcome.Nothing"/> before anything is checked. Otherwise this
-    /// method raises the table's refusals itself; called by the document, they reach you from the
-    /// save.
+    /// <see cref="LayoutResult.Outcome.Nothing"/> before anything is checked. Otherwise this method
+    /// raises the table's refusals itself. When the document calls this method, they reach you from
+    /// the save.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// The table resolves to no columns, or a cell's span, padding or style, or the table's

@@ -215,19 +215,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   accepted and then ignored. **113** members carry an `<exception>` tag, counted in the
   compiler's XML output. What a caller is most likely to act on:
 
-  - A null argument to an element constructor or `Add` method is stored, and the save throws
-    `NullReferenceException`. `Paragraph`, `Heading`, `TextRun`, `ListItem`, `ListElement`,
-    `Cell`, `Row`, `LayoutImage`, `PieChart.Slices` and the public renderers all behave this
-    way (#547).
+  - Null text, a null run, cell, item or image, and a null `PieChart.Slices` are stored without
+    a check, and the save throws `NullReferenceException`; null cell text throws only when a
+    column is sized automatically. The public renderers' constructors store a null too, and
+    `Layout` throws (#547).
   - `SetDefaultFont` is read only by `Add(string)` calls made after it. A `Paragraph`,
     `Heading`, list, table or running band never uses it.
-  - A font handle from a different `Document` saves without an exception, and the page then
-    uses a font it does not define (#544).
-  - `HorizontalAlignment.Justify` is drawn as left everywhere except paragraph and heading text.
-    `Row.Background` cannot take effect, because no table row can be given one (#543).
-  - `LayoutContext.ContentTop` is read by nothing, and `LayoutBox.ToString` formats in the
-    current culture.
-  - A pie chart whose slice values sum past the largest double draws blank, and a very large
+  - A font handle from a different `Document` saves without an exception, and the text is not
+    drawn in that font (#544).
+  - `HorizontalAlignment.Justify` is drawn as left everywhere except paragraph and heading text,
+    and with a standard-14 font it stretches a line by only half its free space (#548).
+  - `Row.Background` cannot take effect, because no table row can be given one (#543).
+  - Nothing in this package reads `LayoutContext.ContentTop`.
+  - `LayoutBox.ToString` formats in the current culture.
+  - A pie chart whose slice values sum past the largest double has no area, and a very large
     `StartAngle` draws the wedges wrong (#546).
 
 - **The public members that refuse input now say so, and say what not to pass (#503).** These
@@ -325,32 +326,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `destination` parameter it is documented against, so catching by parameter name will not find
   it under `"destination"`.
 
-- **A save that threw leaves the document in one of three states, and one of them is silent
-  (#530).** All four save overloads said some version of "calling this twice throws", which
-  describes only a save that succeeded. Measured, the three states are these.
-
-  Geometry refused before the layout starts leaves the document clean: a retry after correcting it
-  produced a file identical in length and page count to a fresh document's. Any later refusal
-  leaves it alive and wrong, because the pages already laid out stay, and a retry appends a whole
-  second layout to them. That includes the checks made just before writing: a null destination,
-  and `Encrypt` combined with object streams, PDF/A or PDF/UA-1. A one-page document retried after
-  `Save(null)` saved two pages. Only a failure once writing has begun leaves the document dead,
-  and a retry then throws about the document having already been written. The page count
-  therefore grows by whatever the failed attempt had
-  committed, on every attempt; how many that is depends on the document, so no figure for it is
-  quoted. Correct the cause after a layout throw and the retry returns quietly, on a file carrying
-  both layouts. Leave the cause in place and the same exception fires again, another set of pages
-  committed first. A retry after a pre-layout refusal is just as quiet and its file is right, so
-  silence does not separate the two.
-  The overloads now say a document is single-use, that a save which threw does
-  not reliably return it to a usable state, and that the answer is a fresh `Document` rather than
-  a retry. The behaviour itself is unchanged here; #530 carries the defect.
+- **A save that threw can leave the document holding pages and element state from the failed
+  attempt (#530).** All four save overloads said some version of "calling this twice throws",
+  which describes only a save that succeeded. A retry after a save that threw can succeed on a
+  file that differs from a fresh build: a one-page document retried after `Save(null)` saved two
+  pages. The overloads now say a document is single-use, and that the answer to a save that threw
+  is a fresh `Document` rather than a retry. The behaviour itself is unchanged here; #530 carries
+  the defect.
 
 - Further boundaries the save overloads did not carry. The save overloads' `InvalidOperationException` list
   read as complete and was not: `Conformance` set to a PDF/A level together with `Encrypt` throws
   from `Save`, since ISO 19005-2 §6.1.3 prohibits encryption. The save overloads,
-  `Document.Conformance` and `Document.Encrypt` now say so, together with PDF/UA-1 and
-  `Encrypt` without `PdfPermissions.Extract`, which ISO 14289-1 7.16 does not allow. `Cell.ColSpan`
+  `Document.Conformance` and `Document.Encrypt` now say so, and name a second pairing: PDF/UA-1
+  with `Encrypt` but without `PdfPermissions.Extract`, which ISO 14289-1 7.16 does not allow. `Cell.ColSpan`
   documented `OverflowException` and `OutOfMemoryException` against `Document.Save` while `Save`
   itself listed neither, which is where a caller writing catch clauses looks first; all four
   overloads now carry both, each naming the member that causes it. `ListElement.Indent` covered

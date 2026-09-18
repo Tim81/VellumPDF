@@ -61,13 +61,13 @@ public sealed class TableElement
 
     /// <summary>Outer margins applied around the whole table.</summary>
     /// <remarks>
-    /// <b>Attention</b>: no edge is checked. Each edge is taken off the area this element is
-    /// given, and the element is laid out in whatever box is left, even when that box is empty,
-    /// inverted or <c>NaN</c>. A negative or non-finite edge, or edges wider than the area, can
-    /// therefore make the save throw an exception about something else, write a <c>NaN</c> or
-    /// <c>Infinity</c> token into the content stream, re-wrap, move or mirror the content, or leave
-    /// the element off the page. Which of these you get depends on the element, the edge and the
-    /// value. A negative or non-finite top edge also moves every element placed after this one.
+    /// <b>Attention</b>: no edge is checked. Each edge is taken off the area this element is given,
+    /// and the element is laid out in whatever box is left, even when that box is empty, inverted
+    /// or <c>NaN</c>. A negative or non-finite edge, or edges wider than the area, can therefore
+    /// make the save throw an exception about something else, write a <c>NaN</c> or <c>Infinity</c>
+    /// token into the content stream, re-wrap, move or mirror the content, or leave the element off
+    /// the page. The bottom edge only limits that box: it adds no space before the next element. A
+    /// negative or non-finite top edge can also move the elements placed after this one.
     /// <para>Do not pass a negative or non-finite edge. A later major version will refuse
     /// both.</para>
     /// </remarks>
@@ -112,8 +112,9 @@ public sealed class TableElement
 
     /// <summary>Sets the column widths (0 = auto) and returns this instance for chaining.</summary>
     /// <remarks>
-    /// Replaces every width. Called with no arguments it clears them, so every column is auto.
-    /// The entries follow the rules on <see cref="ColWidths"/>; none is refused here.
+    /// Replaces every width. Called with no arguments it clears them, so every column is auto. A
+    /// null array is refused only after the existing widths are cleared, so they are lost. The
+    /// entries follow the rules on <see cref="ColWidths"/>; none is refused here.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="widths"/> is <see langword="null"/>.
@@ -131,7 +132,7 @@ public sealed class TableElement
     /// run of header rows; a header row added after a data row draws once, where it occurs.
     /// </summary>
     /// <remarks>
-    /// A table whose rows are all headers is refused: it lays out as nothing, so the save
+    /// A table whose rows are all headers cannot be drawn: it lays out as nothing, so the save
     /// throws the too-tall <see cref="InvalidOperationException"/> even when the table would fit
     /// (#488).
     /// </remarks>
@@ -152,7 +153,7 @@ public sealed class TableElement
     /// repeats across continuation pages.
     /// </summary>
     /// <remarks>
-    /// A table whose rows are all headers is refused: it lays out as nothing, so the save
+    /// A table whose rows are all headers cannot be drawn: it lays out as nothing, so the save
     /// throws the too-tall <see cref="InvalidOperationException"/> even when the table would fit
     /// (#488).
     /// </remarks>

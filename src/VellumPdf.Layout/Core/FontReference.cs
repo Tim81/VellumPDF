@@ -68,8 +68,9 @@ public readonly struct FontReference
     /// is drawn in Helvetica.
     /// <para><b>Attention</b>: the handle is not checked against the document that saves it. A
     /// handle from a different <see cref="VellumPdf.Layout.Document"/> saves without an
-    /// exception, but the saved page uses a font that its resources do not define and the file
-    /// does not embed. Use handles from the document you add the text to.</para>
+    /// exception. The page refers to the font by a resource name that the saving document either
+    /// leaves undefined or gives to one of its own fonts, so the text is not drawn in the font you
+    /// chose (#544). Use handles from the document you add the text to.</para>
     /// <para>Do not pass null. A later major version will throw
     /// <see cref="ArgumentNullException"/> from this call.</para>
     /// </remarks>
@@ -101,8 +102,11 @@ public readonly struct FontReference
     /// </summary>
     /// <remarks>
     /// A null string throws <see cref="NullReferenceException"/>. A non-finite
-    /// <paramref name="pointSize"/> is multiplied through and is not refused here. A Standard-14
-    /// value the enumeration does not name measures 0.
+    /// <paramref name="pointSize"/> is multiplied through and is not refused here.
+    /// <para><see cref="VellumPdf.Fonts.Standard14.Symbol"/>,
+    /// <see cref="VellumPdf.Fonts.Standard14.ZapfDingbats"/> and a Standard-14 value the
+    /// enumeration does not name measure 0 for every character, so text in them is never wrapped
+    /// (#470).</para>
     /// <para>On an embedded font, every character measured is added to the font's subset, so a
     /// string you measure but never draw still makes the embedded font larger.</para>
     /// </remarks>

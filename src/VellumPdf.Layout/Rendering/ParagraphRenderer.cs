@@ -34,9 +34,9 @@ public sealed class ParagraphRenderer : IRenderer
 
     /// <summary>Creates a renderer for the paragraph, optionally starting at <paramref name="startLine"/> for pagination.</summary>
     /// <remarks>
-    /// Nothing is checked here. A null <paramref name="para"/> makes <see cref="Layout"/> throw.
-    /// A negative <paramref name="startLine"/> lays out one line too tall and makes
-    /// <see cref="Draw"/> throw. A start at or past the last line lays out as
+    /// Nothing is checked here. A null <paramref name="para"/> makes <see cref="Layout"/> throw. A
+    /// negative <paramref name="startLine"/> lays out that many lines too tall and makes
+    /// <see cref="Draw"/> throw. A start past the last line lays out as
     /// <see cref="LayoutResult.Outcome.Nothing"/>, so a document saving it throws the too-tall
     /// <see cref="InvalidOperationException"/>.
     /// <para>Do not pass null or a start outside the paragraph's lines. A later major version
@@ -63,14 +63,15 @@ public sealed class ParagraphRenderer : IRenderer
     /// Overflow returns <see cref="LayoutResult.Partial"/> at a line boundary. When no line fits
     /// the area it returns <see cref="LayoutResult.Outcome.Nothing"/>; the document then retries
     /// on a new page, and throws the too-tall exception from its save if that fails too.
-    /// <para>This method raises the refusals of the paragraph's styles itself. Called by the
-    /// document, they reach you from the save.</para>
+    /// <para>This method raises the refusals of the paragraph's styles itself. When the document
+    /// calls this method, they reach you from the save.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// A run's <see cref="TextStyle.FontSize"/> is refused; see that member.
     /// </exception>
     /// <exception cref="NullReferenceException">
-    /// The paragraph, one of its runs, or a run's text or style is <see langword="null"/>.
+    /// The paragraph, one of its runs, or a run's text is <see langword="null"/>, or a run whose
+    /// text holds a word has a null style.
     /// </exception>
     public LayoutResult Layout(LayoutContext context)
     {

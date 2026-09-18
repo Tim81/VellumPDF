@@ -95,13 +95,14 @@ public sealed class LayoutImage
 
     /// <summary>Margins around the image.</summary>
     /// <remarks>
-    /// <b>Attention</b>: no edge is checked. Each edge is taken off the area this element is
-    /// given, and the element is laid out in whatever box is left, even when that box is empty,
-    /// inverted or <c>NaN</c>. A negative or non-finite edge, or edges wider than the area, can
-    /// therefore make the save throw an exception about something else, write a <c>NaN</c> or
-    /// <c>Infinity</c> token into the content stream, re-wrap, move or mirror the content, or leave
-    /// the element off the page. Which of these you get depends on the element, the edge and the
-    /// value. A negative or non-finite top edge also moves every element placed after this one.
+    /// <b>Attention</b>: no edge is checked. The top and bottom edges add to the space the image
+    /// takes on the page. The left and right edges work differently by <see cref="Width"/>: with it
+    /// set, the image keeps that width, up to the content width, and its position is clamped back
+    /// inside the content box; with it null, the image is sized to the width the edges leave. A
+    /// negative or non-finite edge, or edges wider than the area, can make the save throw an
+    /// exception about something else, write a <c>NaN</c> token into the content stream, or move or
+    /// mirror the image. A negative or non-finite top or bottom edge can also move the elements
+    /// placed after this one.
     /// <para>Do not pass a negative or non-finite edge. A later major version will refuse
     /// both.</para>
     /// </remarks>
@@ -112,7 +113,7 @@ public sealed class LayoutImage
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when a non-finite top edge puts the bookmark of a later
+    /// from this property, when a non-finite top or bottom edge puts the bookmark of a later
     /// <see cref="Heading"/> at a non-finite position. The message says PDF does not support NaN or
     /// Infinity as a real number.
     /// </exception>

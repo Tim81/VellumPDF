@@ -18,6 +18,8 @@ public sealed class LayoutImageRenderer : IRenderer
     /// <summary>Creates a renderer for the given layout image.</summary>
     /// <remarks>
     /// A null <paramref name="img"/> is stored, and <see cref="Layout"/> throws.
+    /// <para>Do not pass null. A later major version will throw <see cref="ArgumentNullException"/>
+    /// from this constructor.</para>
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised later from <see cref="Layout"/>, not from this constructor, when
@@ -32,8 +34,8 @@ public sealed class LayoutImageRenderer : IRenderer
     /// <remarks>
     /// This renderer does not split. An image taller than the area returns
     /// <see cref="LayoutResult.Outcome.Nothing"/>, and the document then throws the too-tall
-    /// exception from its save. This method raises the image's size refusals itself; called by the
-    /// document, they reach you from the save.
+    /// exception from its save. This method raises the image's size refusals itself. When the
+    /// document calls this method, they reach you from the save.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// <see cref="LayoutImage.Width"/> or <see cref="LayoutImage.Height"/>, or the height derived

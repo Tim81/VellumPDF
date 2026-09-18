@@ -73,8 +73,9 @@ public sealed class Document : IDisposable
 
     /// <summary>The default page size used for newly created pages.</summary>
     /// <remarks>
-    /// Validated at save, not here. A width or height that is not a positive finite number is
-    /// refused with <see cref="ArgumentOutOfRangeException"/> naming the axis and the value, and
+    /// Validated at save, not here. A null value is accepted here, and the save throws
+    /// <see cref="NullReferenceException"/>. A width or height that is not a positive finite number
+    /// is refused with <see cref="ArgumentOutOfRangeException"/> naming the axis and the value, and
     /// a page narrower or shorter than <see cref="Margins"/> is refused with
     /// <see cref="ArgumentException"/>.
     /// <para>Setting this after adding elements applies to what you have already
@@ -96,6 +97,9 @@ public sealed class Document : IDisposable
     /// <exception cref="ArgumentOutOfRangeException">
     /// Raised from a save rather than from this property, when the width or height is zero,
     /// negative or not finite.
+    /// </exception>
+    /// <exception cref="NullReferenceException">
+    /// Raised from a save rather than from this property, when the value is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from a save, when the margins on either axis meet or exceed this page size.
@@ -160,10 +164,12 @@ public sealed class Document : IDisposable
     /// Leading and trailing whitespace is trimmed when the value is written.
     /// </summary>
     /// <remarks>
-    /// <b>Attention</b>: the string is not validated as BCP 47. After trim, an empty value
-    /// is omitted from <c>/Lang</c> and XMP. A non-empty ill-formed tag such as
-    /// <c>not a tag</c> is written as given. PDF/A-2a and PDF/UA-1 both require a well-formed
-    /// tag; this property will not refuse one that is not. A later major version will.
+    /// <b>Attention</b>: the string is not validated as BCP 47. After trim, an empty value is
+    /// omitted from <c>/Lang</c> and XMP. A non-empty ill-formed tag such as <c>not a tag</c> is
+    /// written as given. PDF/A-2a and PDF/UA-1 both require a well-formed tag, and this property
+    /// does not check one.
+    /// <para>Do not pass a tag that is not well-formed BCP 47. A later major version will refuse
+    /// one.</para>
     /// </remarks>
     public string? Language
     {
@@ -177,10 +183,10 @@ public sealed class Document : IDisposable
     /// <see cref="PdfDocument"/>. Cannot be combined with <see cref="Encrypt"/>.
     /// </summary>
     /// <remarks>
-    /// Combined with <see cref="Encrypt"/>, the save throws
-    /// <see cref="NotSupportedException"/>. Neither member checks the other. The pairing is
-    /// refused after the layout has run, so a retry after this refusal adds the pages again; see
-    /// <see cref="Save(System.IO.Stream)"/>.
+    /// Combined with <see cref="Encrypt"/>, the save throws <see cref="NotSupportedException"/>.
+    /// Neither this property nor <see cref="Encrypt"/> refuses the pairing when it is set. The
+    /// pairing is refused after the layout has run, so a retry after this refusal adds the pages
+    /// again; see <see cref="Save(System.IO.Stream)"/>.
     /// <para>A document signed through VellumPdf.Signing is written without object streams,
     /// whatever this property holds.</para>
     /// </remarks>
@@ -374,15 +380,18 @@ public sealed class Document : IDisposable
     /// <c>hhea</c>, <c>maxp</c>, <c>name</c>, <c>OS/2</c>, <c>post</c> and <c>hmtx</c> tables.
     /// Malformed or truncated bytes throw <see cref="InvalidDataException"/>, and a missing table
     /// from that list throws <see cref="InvalidOperationException"/>, both from this call.
-    /// <para>The outlines are read at save. A font missing its <c>glyf</c> table passes this call
-    /// and makes the save throw <see cref="InvalidOperationException"/>. An OpenType font with CFF
-    /// outlines is accepted, and embedded as such.</para>
+    /// <para>The outlines are read at save, for every font registered here whether or not text uses
+    /// it. A font missing its <c>glyf</c> table passes this call and makes the save throw
+    /// <see cref="InvalidOperationException"/>, and malformed outline data makes it throw
+    /// <see cref="InvalidDataException"/>. An OpenType font with CFF outlines is accepted, and
+    /// embedded as such.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
-    /// <paramref name="fontData"/> is <see langword="null"/>.
+    /// <paramref name="fontData"/> is <see langword="null"/>. <c>ParamName</c> is <c>source</c>.
     /// </exception>
     /// <exception cref="InvalidDataException">
-    /// <paramref name="fontData"/> is malformed or truncated.
+    /// <paramref name="fontData"/> is malformed or truncated. Malformed outline data is reported
+    /// from the save instead.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// A table the parser needs is missing: from this call for the tables listed in the remarks,
@@ -402,7 +411,8 @@ public sealed class Document : IDisposable
     /// <paramref name="path"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="path"/> is empty.
+    /// <paramref name="path"/> is empty, holds only white space, or holds a character a path cannot
+    /// contain.
     /// </exception>
     /// <exception cref="FileNotFoundException">
     /// <paramref name="path"/> names a file that does not exist.
@@ -432,13 +442,15 @@ public sealed class Document : IDisposable
     /// <remarks>
     /// Same refusals as <see cref="LoadTrueTypeFont"/>. This method does not throw them itself:
     /// each one faults the returned task, and surfaces when you await it. A cancelled
-    /// <paramref name="cancellationToken"/> faults the task too.
+    /// <paramref name="cancellationToken"/> cancels the task instead, and awaiting it throws
+    /// <see cref="OperationCanceledException"/>.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="path"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="path"/> is empty.
+    /// <paramref name="path"/> is empty, holds only white space, or holds a character a path cannot
+    /// contain.
     /// </exception>
     /// <exception cref="FileNotFoundException">
     /// <paramref name="path"/> names a file that does not exist.
@@ -600,10 +612,10 @@ public sealed class Document : IDisposable
     /// elements into the flow layout.
     /// </summary>
     /// <remarks>
-    /// One element may take at most <b>50,000</b> page continuations, and a renderer whose
-    /// overflow never gets smaller reaches that limit; <see cref="IRenderer.Layout"/> has the
-    /// rule. The save then throws <see cref="InvalidOperationException"/> naming the limit. Split
-    /// a long element yourself rather than relying on pagination to run forever.
+    /// One element may take at most <b>50,000</b> page continuations, and a renderer whose overflow
+    /// never gets smaller reaches that limit; <see cref="IRenderer.Layout"/> has the rule. The save
+    /// then throws <see cref="InvalidOperationException"/> naming the limit. Split a long element
+    /// yourself.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="renderer"/> is <see langword="null"/>.
@@ -646,8 +658,9 @@ public sealed class Document : IDisposable
     /// is not <see cref="PdfConformance.None"/>. Otherwise the call is accepted and the intent is
     /// left out of the file.</para>
     /// <para>The profile is not parsed, and <paramref name="componentCount"/> is not checked
-    /// against it: any non-empty bytes are embedded as the profile. Do not pass bytes that are
-    /// not an ICC profile, or a count that does not match the profile.</para>
+    /// against it: any non-empty bytes are embedded as the profile.</para>
+    /// <para>Do not pass bytes that are not an ICC profile, or a count that does not match
+    /// it.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// <paramref name="iccProfile"/> is null or empty.
@@ -758,23 +771,11 @@ public sealed class Document : IDisposable
     /// <para>A second call after a save that succeeded throws. It reports that
     /// the document has already been written and tells you to create a new one. It writes nothing
     /// to the stream, appended or otherwise.</para>
-    /// <para>A save that threw does not reliably leave the document usable again either. What
-    /// decides it is whether the layout had run. Only the geometry checks run before it: the
-    /// <see cref="PageSize"/> and <see cref="Margins"/>, and the content area left once the header
-    /// and footer are taken off. A document refused there is clean: after correcting the margins,
-    /// a retry produced a file identical in length and page count to a fresh document's.</para>
-    /// <para>Every other refusal comes after the layout has added its pages. That includes an
-    /// element's own refusals, and also the checks made just before writing: a null
-    /// <paramref name="destination"/>, <see cref="Encrypt"/> combined with
-    /// <see cref="UseObjectStreams"/> or with a PDF/A or PDF/UA-1 <see cref="Conformance"/>.
-    /// The pages stay, and a retry lays the document out again on top of them. Correct
-    /// the cause and the retry succeeds silently on a wrong file; a one-page document retried
-    /// after a null <paramref name="destination"/> saved two pages. Leave the cause in place and
-    /// it raises again, having added another set of pages first (#530). Only a failure once
-    /// writing has begun leaves the document dead, and a retry then throws about the document
-    /// having already been written.</para>
-    /// <para>So a quiet retry means nothing on its own. Build a fresh <see cref="Document"/>
-    /// rather than retrying a save that threw.</para>
+    /// <para>A save that threw can leave the document holding pages from the failed attempt, and
+    /// its elements holding state from it, so a retry can succeed on a file that differs from a
+    /// fresh build: a one-page document retried after a null <paramref name="destination"/> saved
+    /// two pages (#530). Build a fresh <see cref="Document"/> rather than retrying a save that
+    /// threw.</para>
     /// <para>A document with no pages throws as well. Add at least one element before you
     /// save.</para>
     /// </remarks>
@@ -789,11 +790,12 @@ public sealed class Document : IDisposable
     /// rather than a case this API adds.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// The document has already been written, or has no pages, or an element's input cannot be
-    /// laid out, or <see cref="Encrypt"/> was called on a PDF/A document, or on a PDF/UA-1
-    /// document without <see cref="PdfPermissions.Extract"/>; see <see cref="Conformance"/>. For
-    /// the element inputs, the boundary documentation on the property you set says which values
-    /// reach this.
+    /// The document has already been written, or has no pages, or an element's input cannot be laid
+    /// out, or <see cref="Encrypt"/> was called on a PDF/A document, or on a PDF/UA-1 document
+    /// without <see cref="PdfPermissions.Extract"/>; see <see cref="Conformance"/>. It is also
+    /// raised when a font registered with <see cref="UseTrueTypeFont"/> lacks a table the save
+    /// needs. For the element inputs, the boundary documentation on the property you set says which
+    /// values reach this.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Many unrelated conditions share this type, so <b>do not</b> switch on the parameter name to
@@ -812,10 +814,16 @@ public sealed class Document : IDisposable
     /// cannot be combined.
     /// </exception>
     /// <exception cref="NullReferenceException">
-    /// A header or footer band has a null <see cref="RunningBand.Template"/>, whether it was set
-    /// through <see cref="SetHeader"/> or <see cref="SetFooter"/>, or assigned to
-    /// <see cref="Header"/> or <see cref="Footer"/> directly. The constructor does not check it
-    /// and the band resolves its template during the save (#531).
+    /// A null that a member stored without a check: a band's <see cref="RunningBand.Template"/>
+    /// (#531), an element or text passed to an <c>Add</c> overload that stores it, a null
+    /// <see cref="PageSize"/>, or a null inside an element.
+    /// </exception>
+    /// <exception cref="IndexOutOfRangeException">
+    /// Text is drawn in a <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not
+    /// name; see <see cref="TextStyle.FontRef"/>.
+    /// </exception>
+    /// <exception cref="InvalidDataException">
+    /// A font registered with <see cref="UseTrueTypeFont"/> has malformed outline data.
     /// </exception>
     /// <exception cref="OverflowException">
     /// A row's <see cref="Cell.ColSpan"/> values sum past <see cref="int.MaxValue"/> while a
@@ -874,10 +882,10 @@ public sealed class Document : IDisposable
     /// the file system refuses.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// The document has already been written, or has no pages, or an element's input cannot be
-    /// laid out, or <see cref="Encrypt"/> was called on a PDF/A document, or on a PDF/UA-1
-    /// document without <see cref="PdfPermissions.Extract"/>. The file is open and truncated by
-    /// the time any of these fires.
+    /// The document has already been written, or has no pages, or an element's input cannot be laid
+    /// out, or <see cref="Encrypt"/> was called on a PDF/A document, or on a PDF/UA-1 document
+    /// without <see cref="PdfPermissions.Extract"/>, or a registered font lacks a table the save
+    /// needs. The file is open and truncated by the time any of these fires.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <see cref="PageSize"/> has a width or height that is not a positive finite number.
@@ -886,10 +894,16 @@ public sealed class Document : IDisposable
     /// <see cref="UseObjectStreams"/> was set and <see cref="Encrypt"/> was called.
     /// </exception>
     /// <exception cref="NullReferenceException">
-    /// A header or footer band has a null <see cref="RunningBand.Template"/>, whether it was set
-    /// through <see cref="SetHeader"/> or <see cref="SetFooter"/>, or assigned to
-    /// <see cref="Header"/> or <see cref="Footer"/> directly. The constructor does not check it
-    /// and the band resolves its template during the save (#531).
+    /// A null that a member stored without a check: a band's <see cref="RunningBand.Template"/>
+    /// (#531), an element or text passed to an <c>Add</c> overload that stores it, a null
+    /// <see cref="PageSize"/>, or a null inside an element.
+    /// </exception>
+    /// <exception cref="IndexOutOfRangeException">
+    /// Text is drawn in a <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not
+    /// name; see <see cref="TextStyle.FontRef"/>.
+    /// </exception>
+    /// <exception cref="InvalidDataException">
+    /// A font registered with <see cref="UseTrueTypeFont"/> has malformed outline data.
     /// </exception>
     /// <exception cref="OverflowException">
     /// A row's <see cref="Cell.ColSpan"/> values sum past <see cref="int.MaxValue"/>.
@@ -921,12 +935,9 @@ public sealed class Document : IDisposable
     /// <para>A second call after a save that succeeded throws. It reports that
     /// the document has already been written and tells you to create a new one. It writes nothing
     /// to the stream, appended or otherwise.</para>
-    /// <para>A save that threw does not reliably leave the document usable again either. Only a
-    /// geometry refusal comes before the layout and leaves the document clean. Every other
-    /// refusal, a null <paramref name="destination"/> included, comes after the layout has added
-    /// its pages, and a retry adds them again. Build a fresh <see cref="Document"/> rather than
-    /// retrying a save that threw; <see cref="Save(System.IO.Stream)"/> has the detail
-    /// (#530).</para>
+    /// <para>A save that threw can leave the document holding pages and element state from the
+    /// failed attempt, so a retry can succeed on a wrong file (#530). Build a fresh
+    /// <see cref="Document"/> rather than retrying a save that threw.</para>
     /// <para>A document with no pages throws as well. Add at least one element before you
     /// save.</para>
     /// </remarks>
@@ -941,11 +952,12 @@ public sealed class Document : IDisposable
     /// rather than a case this API adds.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// The document has already been written, or has no pages, or an element's input cannot be
-    /// laid out, or <see cref="Encrypt"/> was called on a PDF/A document, or on a PDF/UA-1
-    /// document without <see cref="PdfPermissions.Extract"/>; see <see cref="Conformance"/>. For
-    /// the element inputs, the boundary documentation on the property you set says which values
-    /// reach this.
+    /// The document has already been written, or has no pages, or an element's input cannot be laid
+    /// out, or <see cref="Encrypt"/> was called on a PDF/A document, or on a PDF/UA-1 document
+    /// without <see cref="PdfPermissions.Extract"/>; see <see cref="Conformance"/>. It is also
+    /// raised when a font registered with <see cref="UseTrueTypeFont"/> lacks a table the save
+    /// needs. For the element inputs, the boundary documentation on the property you set says which
+    /// values reach this.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// The margins, header and footer leave the content area no positive size, or an element
@@ -961,10 +973,16 @@ public sealed class Document : IDisposable
     /// which cannot be combined.
     /// </exception>
     /// <exception cref="NullReferenceException">
-    /// A header or footer band has a null <see cref="RunningBand.Template"/>, whether it was set
-    /// through <see cref="SetHeader"/> or <see cref="SetFooter"/>, or assigned to
-    /// <see cref="Header"/> or <see cref="Footer"/> directly. The constructor does not check it
-    /// and the band resolves its template during the save (#531).
+    /// A null that a member stored without a check: a band's <see cref="RunningBand.Template"/>
+    /// (#531), an element or text passed to an <c>Add</c> overload that stores it, a null
+    /// <see cref="PageSize"/>, or a null inside an element.
+    /// </exception>
+    /// <exception cref="IndexOutOfRangeException">
+    /// Text is drawn in a <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not
+    /// name; see <see cref="TextStyle.FontRef"/>.
+    /// </exception>
+    /// <exception cref="InvalidDataException">
+    /// A font registered with <see cref="UseTrueTypeFont"/> has malformed outline data.
     /// </exception>
     /// <exception cref="OverflowException">
     /// A row's <see cref="Cell.ColSpan"/> values sum past <see cref="int.MaxValue"/> while a
@@ -975,10 +993,11 @@ public sealed class Document : IDisposable
     /// <see cref="int.MaxValue"/>, asks for a per-column width array too large to allocate.
     /// </exception>
     /// <exception cref="OperationCanceledException">
-    /// <paramref name="cancellationToken"/> was already cancelled, or was cancelled before the
-    /// layout pass started. Catch the base type: the layout pass raises the derived
-    /// <see cref="TaskCanceledException"/>, and a cancellation during the write raises whatever
-    /// the destination stream raises, which need not be the same type.
+    /// <paramref name="cancellationToken"/> was cancelled before the write started. A cancellation
+    /// during the layout pass is reported once the layout has finished, and the pages it added
+    /// stay; see the remarks. Catch the base type: the layout pass raises the derived
+    /// <see cref="TaskCanceledException"/>, and a cancellation during the write raises whatever the
+    /// destination stream raises, which need not be the same type.
     /// </exception>
     // RS0026 flags multiple overloads with optional parameters as a future-ambiguity risk;
     // Stream and string share no implicit conversion, so overload resolution can never be
@@ -1038,10 +1057,10 @@ public sealed class Document : IDisposable
     /// the file system refuses.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// The document has already been written, or has no pages, or an element's input cannot be
-    /// laid out, or <see cref="Encrypt"/> was called on a PDF/A document, or on a PDF/UA-1
-    /// document without <see cref="PdfPermissions.Extract"/>. The file is open and truncated by
-    /// the time any of these fires.
+    /// The document has already been written, or has no pages, or an element's input cannot be laid
+    /// out, or <see cref="Encrypt"/> was called on a PDF/A document, or on a PDF/UA-1 document
+    /// without <see cref="PdfPermissions.Extract"/>, or a registered font lacks a table the save
+    /// needs. The file is open and truncated by the time any of these fires.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <see cref="PageSize"/> has a width or height that is not a positive finite number.
@@ -1050,10 +1069,16 @@ public sealed class Document : IDisposable
     /// <see cref="UseObjectStreams"/> was set and <see cref="Encrypt"/> was called.
     /// </exception>
     /// <exception cref="NullReferenceException">
-    /// A header or footer band has a null <see cref="RunningBand.Template"/>, whether it was set
-    /// through <see cref="SetHeader"/> or <see cref="SetFooter"/>, or assigned to
-    /// <see cref="Header"/> or <see cref="Footer"/> directly. The constructor does not check it
-    /// and the band resolves its template during the save (#531).
+    /// A null that a member stored without a check: a band's <see cref="RunningBand.Template"/>
+    /// (#531), an element or text passed to an <c>Add</c> overload that stores it, a null
+    /// <see cref="PageSize"/>, or a null inside an element.
+    /// </exception>
+    /// <exception cref="IndexOutOfRangeException">
+    /// Text is drawn in a <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not
+    /// name; see <see cref="TextStyle.FontRef"/>.
+    /// </exception>
+    /// <exception cref="InvalidDataException">
+    /// A font registered with <see cref="UseTrueTypeFont"/> has malformed outline data.
     /// </exception>
     /// <exception cref="OverflowException">
     /// A row's <see cref="Cell.ColSpan"/> values sum past <see cref="int.MaxValue"/>.
@@ -1063,10 +1088,11 @@ public sealed class Document : IDisposable
     /// too large to allocate.
     /// </exception>
     /// <exception cref="OperationCanceledException">
-    /// <paramref name="cancellationToken"/> was already cancelled, or was cancelled before the
-    /// layout pass started. Catch the base type: the layout pass raises the derived
-    /// <see cref="TaskCanceledException"/>, and a cancellation during the write raises whatever
-    /// the destination stream raises, which need not be the same type.
+    /// <paramref name="cancellationToken"/> was cancelled before the write started. A cancellation
+    /// during the layout pass is reported once the layout has finished, and the pages it added
+    /// stay; see the remarks. Catch the base type: the layout pass raises the derived
+    /// <see cref="TaskCanceledException"/>, and a cancellation during the write raises whatever the
+    /// destination stream raises, which need not be the same type.
     /// </exception>
 #pragma warning disable RS0026
     public async Task SaveAsync(string path, CancellationToken cancellationToken = default)

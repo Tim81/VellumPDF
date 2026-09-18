@@ -70,9 +70,9 @@ public readonly record struct LayoutBox
     /// <summary>Returns this box shrunk by the given insets.</summary>
     /// <remarks>
     /// Insets larger than the box are accepted and give a negative width or height. A negative
-    /// inset grows the box. With infinite operands the subtraction can give <c>NaN</c>: an
-    /// infinite width deflated by an infinite inset has a <c>NaN</c> width, and
-    /// <see cref="IsEmpty"/> does not count that as empty.
+    /// inset grows the box. Infinite operands follow IEEE 754: an infinite width less an infinite
+    /// inset of the same sign is <c>NaN</c>, and <see cref="IsEmpty"/> does not count <c>NaN</c>
+    /// as empty.
     /// </remarks>
     public LayoutBox Deflate(double left, double top, double right, double bottom) =>
         new(X + left, Y + top, Width - left - right, Height - top - bottom);
@@ -95,8 +95,9 @@ public readonly record struct LayoutBox
 
     /// <summary>Returns a compact string of the form <c>(X,Y W×H)</c>.</summary>
     /// <remarks>
-    /// One decimal place in the current culture. Under <c>nl-NL</c> a box at 1, 2 of 3 by 4
-    /// prints as <c>(1,0,2,0 3,0×4,0)</c>. Use it for display, not for parsing.
+    /// One decimal place in the current culture. Under <c>nl-NL</c>,
+    /// <c>new LayoutBox(1, 2, 3, 4)</c> prints as <c>(1,0,2,0 3,0×4,0)</c>. Use it for display,
+    /// not for parsing.
     /// </remarks>
     public override string ToString() => $"({X:F1},{Y:F1} {Width:F1}×{Height:F1})";
 }

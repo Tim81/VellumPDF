@@ -218,7 +218,9 @@ public sealed class DocumentRenderer
     /// <remarks>
     /// The layout runs first and adds pages to the kernel document; the checks on
     /// <paramref name="destination"/> and on the document's options run after it, just before
-    /// writing. A second call throws.
+    /// writing. That write is <see cref="PdfDocument.Save(System.IO.Stream)"/>, so every exception
+    /// it documents can reach you from here. A second call after one that succeeded throws; after
+    /// one that threw, it can succeed and write the failed call's pages as well (#530).
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// An element needs more than <b>50,000</b> page continuations or is too tall for one page, or
@@ -227,7 +229,7 @@ public sealed class DocumentRenderer
     /// </exception>
     /// <exception cref="ArgumentException">
     /// The margins, header and footer together leave the content area no positive size, or an
-    /// element refuses its own input.
+    /// element refuses its own input, or <paramref name="destination"/> is not writable.
     /// </exception>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="destination"/> is <see langword="null"/>, checked after the layout has run.
@@ -236,7 +238,8 @@ public sealed class DocumentRenderer
     /// An added renderer is <see langword="null"/>, or a band's template is null.
     /// </exception>
     /// <exception cref="NotSupportedException">
-    /// The kernel document combines object streams with encryption.
+    /// The kernel document combines options it cannot write together, such as object streams with
+    /// encryption, or linearization with either.
     /// </exception>
     /// <exception cref="ObjectDisposedException">
     /// The kernel document was disposed.
