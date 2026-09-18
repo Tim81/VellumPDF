@@ -8,8 +8,9 @@ namespace VellumPdf.Layout.Core;
 /// <summary>Typography properties applied to a run of text.</summary>
 /// <remarks>
 /// Refusals on <see cref="FontSize"/>, <see cref="Leading"/> and <see cref="FontRef"/> fire from
-/// <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other save overloads,
-/// not from the property setter. See those members.
+/// <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/>, the other save overloads and
+/// <see cref="VellumPdf.Layout.Rendering.DocumentRenderer.Render"/>, not from the property setter.
+/// See those members.
 /// </remarks>
 public sealed class TextStyle
 {
@@ -82,12 +83,13 @@ public sealed class TextStyle
     /// <remarks>
     /// A non-finite size is refused. On a paragraph or heading style,
     /// <see cref="Document.Save(System.IO.Stream)"/> throws <see cref="InvalidOperationException"/>
-    /// naming the run and the size. A run is checked once its text holds a character other than
-    /// white space. U+00A0 NO-BREAK SPACE counts as such a character; a tab and other white space
-    /// do not. An empty table cell or list item is checked as well. Every height in a layout is
-    /// derived from the font size, so a non-finite size leaves nothing that can be measured or
-    /// placed. A <see cref="VellumPdf.Layout.Elements.RunningBand"/> style takes a band-specific
-    /// route instead, detailed on the exception tags below.
+    /// naming the run and the size. Every height in a layout is derived from the font size, so a
+    /// non-finite size leaves nothing that can be measured or placed. A
+    /// <see cref="VellumPdf.Layout.Elements.RunningBand"/> style takes a band-specific route
+    /// instead, detailed on the exception tags below.
+    /// <para>Each paragraph run, and a heading's text, is checked when it holds a character other
+    /// than white space. U+00A0 NO-BREAK SPACE counts as such a character; a tab and other white
+    /// space do not. A table cell or list item is checked whatever its text holds.</para>
     /// <para><b>Attention</b>: a size of zero or less is <b>not</b> refused. It reaches the content
     /// stream as a font operator that readers accept, so you still get a document. At zero the
     /// text is invisible. Below zero the glyphs are inverted. If you do not want either, check the
@@ -218,6 +220,13 @@ public sealed class TextStyle
     /// <para>Do not pass a value that is not an absolute URI. A later major version will refuse
     /// one.</para>
     /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when linked text is placed at a non-finite position, for example through
+    /// a non-finite margin or a renderer's non-finite result. The link's rectangle is written
+    /// outside the content stream, and the save refuses a non-finite coordinate there; without a
+    /// link the same text saves. See <see cref="Document.Margins"/>.
+    /// </exception>
     public string? LinkUri { get; init; }
 
     /// <summary>Measures a string using whichever font this style references.</summary>

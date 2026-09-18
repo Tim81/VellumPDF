@@ -16,7 +16,8 @@ namespace VellumPdf.Layout.Rendering.Table;
 ///   • Computes row heights (max cell content height in each row).
 ///   • Splits at row boundaries if the table crosses a page break.
 ///   • Header rows are repeated at the top of each continuation page.
-///   • Rowspan cells: the page break is never placed inside a rowspan group.
+///   • Rowspan cells: the page break is not placed inside a rowspan group that starts in a
+///     data row; see <see cref="Cell.RowSpan"/>.
 ///
 /// Draw:
 ///   • Fills cell backgrounds.
@@ -65,7 +66,7 @@ public sealed class TableRenderer : IRenderer
     /// <remarks>
     /// Overflow splits at a row boundary. An area with no width returns
     /// <see cref="LayoutResult.Outcome.Nothing"/> before anything is checked. Otherwise this method
-    /// raises the table's refusals itself. When the document calls this method, they reach you from
+    /// itself throws the exceptions its tags list. When the document calls it, they reach you from
     /// the save.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
@@ -372,9 +373,11 @@ public sealed class TableRenderer : IRenderer
     /// actually covers on this page: the longest run of consecutive rows from its own, all of which
     /// this page draws, capped by the declared count.
     ///
-    /// A page break never clips a span, because <c>Layout</c> walks the break back out of a rowspan
-    /// group; a group that cannot fit a page at all raises <c>ElementTooTall</c> instead of
-    /// splitting. What this does clip, on a data row as readily as a header row, is a span reaching
+    /// A page break does not clip a span that starts in a data row, because <c>Layout</c> walks the
+    /// break back out of such a group; a group that cannot fit a page at all raises
+    /// <c>ElementTooTall</c> instead of splitting. A span from the leading header rows is not
+    /// walked back out of, so it is clipped on each continuation page (see <c>Cell.RowSpan</c>).
+    /// What this also clips, on a data row as readily as a header row, is a span reaching
     /// past the last row of the table. Measured on a 300x170pt page at 20pt margins with a repeated
     /// header, where the box holds five 20pt rows under it: groups of two to five keep their
     /// declared span, six and up raise.

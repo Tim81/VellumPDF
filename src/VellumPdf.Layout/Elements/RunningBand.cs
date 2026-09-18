@@ -70,9 +70,10 @@ public sealed class RunningBand
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when the band measures text that holds an unpaired surrogate in an
     /// embedded font, which can include part of the template it then does not draw; see
-    /// <see cref="TextStyle.FontRef"/>. It is also raised when the style's size or leading,
-    /// positive infinity included, makes the band leave the page's content area no positive size;
-    /// see <see cref="TextStyle.FontSize"/>.
+    /// <see cref="TextStyle.FontRef"/>. It is also raised when <see cref="Height"/> is null and the
+    /// style's size, positive infinity included, or a finite leading is large enough to leave the
+    /// page's content area no positive size; see <see cref="TextStyle.FontSize"/> and
+    /// <see cref="TextStyle.Leading"/>.
     /// </exception>
     public TextStyle Style { get; }
 
@@ -151,9 +152,10 @@ public sealed class RunningBand
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this constructor, when the band measures text that holds an unpaired surrogate in an
     /// embedded font, which can include part of the template it then does not draw; see
-    /// <see cref="TextStyle.FontRef"/>. It is also raised when the style's size or leading,
-    /// positive infinity included, makes the band leave the page's content area no positive size;
-    /// see <see cref="TextStyle.FontSize"/>.
+    /// <see cref="TextStyle.FontRef"/>. It is also raised when <see cref="Height"/> is null and the
+    /// style's size, positive infinity included, or a finite leading is large enough to leave the
+    /// page's content area no positive size; see <see cref="TextStyle.FontSize"/> and
+    /// <see cref="TextStyle.Leading"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not

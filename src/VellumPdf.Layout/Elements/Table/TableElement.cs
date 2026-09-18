@@ -129,13 +129,13 @@ public sealed class TableElement
     /// auto. Entries past the column count are ignored.
     /// <para>Each auto column first takes a share of the width the explicit entries leave, weighted
     /// by its content and at least its longest word plus the cell's horizontal padding. When the
-    /// auto columns take more than the explicit entries leave them, the explicit widths are all
-    /// scaled by one ratio to the width that remains, even when they fit the available width on
-    /// their own. So one very large entry leaves the other explicit columns near zero, and entries
-    /// whose sum overflows to infinity are all scaled to zero (#546). When the auto columns take
-    /// all of the available width or more, every column, auto ones included, is scaled by one
-    /// ratio instead. A positive entry under 5e-6 is kept and written as width 0. None of this is
-    /// reported.</para>
+    /// explicit widths exceed the width the auto columns leave them, they are all scaled by one
+    /// ratio to that width, even when they fit the available width on their own. With no auto
+    /// column, that width is the whole available width. So one very large entry leaves the other
+    /// explicit columns near zero, and entries whose sum overflows to infinity are all scaled to
+    /// zero (#546). When the auto columns take all of the available width or more, every column,
+    /// auto ones included, is scaled by one ratio instead. A positive entry under 5e-6 is kept and
+    /// written as width 0. None of this is reported.</para>
     /// <para>Do not rely on scaling to fit a table. Pass widths that fit the space you give
     /// it.</para>
     /// </remarks>

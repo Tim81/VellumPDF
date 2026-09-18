@@ -18,9 +18,10 @@ public sealed class Heading
 {
     /// <summary>Heading text (also used as the bookmark title unless <see cref="BookmarkTitle"/> is set).</summary>
     /// <remarks>
-    /// A null value makes the save throw; see the constructor. An empty string draws no text, but
-    /// the heading still adds a bookmark, titled by <see cref="BookmarkTitle"/> or else empty, and,
-    /// in a tagged document, its structure element.
+    /// A null value makes the save throw; see the constructor. White space is drawn as on
+    /// <see cref="Paragraph"/>. An empty string draws no text, but the heading still adds a
+    /// bookmark, titled by <see cref="BookmarkTitle"/> or else empty, and, in a tagged document,
+    /// its structure element.
     /// </remarks>
     public string Text { get; }
 

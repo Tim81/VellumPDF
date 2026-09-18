@@ -13,6 +13,13 @@ namespace VellumPdf.Layout.Elements;
 /// Refusals on size, leading and font are on <see cref="TextStyle"/> and are raised from the save.
 /// Null text and null runs are stored and make the save throw; see the constructors and
 /// <see cref="Add"/>.
+/// <para>Text is laid out word by word. A carriage return, a line feed or both start a new line.
+/// One before the first word leaves an empty first line; at the end of the text the first is
+/// dropped and each further one adds an empty line. Any other sequence of white space, except
+/// U+00A0 NO-BREAK SPACE, is drawn as one space, and is dropped at the start and end of the text.
+/// The boundary between two runs is drawn as a space too, unless a line break falls on it, so a
+/// word cannot change style part-way: the run <c>Bold</c> followed by the run <c>er</c> is drawn as
+/// <c>Bold er</c>.</para>
 /// </remarks>
 public sealed class Paragraph
 {
@@ -22,8 +29,9 @@ public sealed class Paragraph
 
     /// <summary>The text of every run, concatenated in order.</summary>
     /// <remarks>
-    /// On a single-run paragraph this is that run's text. A null run in the sequence given to
-    /// <see cref="Paragraph(IEnumerable{TextRun})"/> makes this getter throw.
+    /// On a single-run paragraph this is that run's text. This is the text as stored; the type
+    /// remarks say how its white space and run boundaries are drawn. A null run in the sequence
+    /// given to <see cref="Paragraph(IEnumerable{TextRun})"/> makes this getter throw.
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// A run in <see cref="Runs"/> is <see langword="null"/>.
@@ -75,10 +83,10 @@ public sealed class Paragraph
     /// <summary>Horizontal alignment of the paragraph text.</summary>
     /// <remarks>
     /// <see cref="HorizontalAlignment.Justify"/> stretches every line except the paragraph's last,
-    /// and a line that ends at a hard line break is stretched too. The last line stays
-    /// left-aligned, and a line with no space in it is not stretched; U+00A0 NO-BREAK SPACE does
-    /// not count as a space. With a standard-14 font the stretch covers only half the space left on
-    /// the line (#548).
+    /// which stays left-aligned, and a line that ends at a hard line break is stretched too. A line
+    /// with no space in it is not stretched; see <see cref="HorizontalAlignment.Justify"/> for
+    /// which characters count. With a standard-14 font the stretch covers only half the space left
+    /// on the line (#548).
     /// </remarks>
     public HorizontalAlignment Alignment { get; init; } = HorizontalAlignment.Left;
 
@@ -178,8 +186,9 @@ public sealed class Paragraph
     /// <summary>Appends a run with the given text and optional style. Returns this paragraph.</summary>
     /// <remarks>
     /// A null <paramref name="style"/> uses the first run's style, <see cref="Style"/>, which is
-    /// itself null when the first run was built with a null style. Reading <see cref="Style"/>
-    /// throws when the first run is null, so this call then throws
+    /// itself null when the first run was built with a null style; the run added then has a null
+    /// style too, with the consequences described on <see cref="TextRun"/>. Reading
+    /// <see cref="Style"/> throws when the first run is null, so this call then throws
     /// <see cref="NullReferenceException"/> itself. A null <paramref name="text"/> is stored, and
     /// the save throws when it lays out the paragraph.
     /// <para>Do not pass null text. A later major version will throw
@@ -187,8 +196,10 @@ public sealed class Paragraph
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when <paramref name="text"/> is <see langword="null"/>. It is raised from
-    /// this call instead when <paramref name="style"/> is null and the first run is null.
+    /// from this call, when <paramref name="text"/> is <see langword="null"/>, or when
+    /// <paramref name="style"/> and the first run's style are both null and <paramref name="text"/>
+    /// holds a character other than white space; see <see cref="TextRun"/>. It is raised from this
+    /// call instead when <paramref name="style"/> is null and the first run is null.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not

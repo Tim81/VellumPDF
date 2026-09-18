@@ -135,7 +135,8 @@ public sealed class DocumentRenderer
     /// </summary>
     /// <remarks>
     /// Empty until <see cref="Render"/> has run. A cut band is not an error, and this list is the
-    /// only report of it.
+    /// only report of it. A template whose glyphs measure zero width is never cut, so it is never
+    /// reported; see <see cref="RunningBand.Template"/>.
     /// </remarks>
     public IReadOnlyList<BandTruncationWarning> BandTruncations
     {
@@ -162,13 +163,15 @@ public sealed class DocumentRenderer
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Render"/>, when the band's height leaves the content area no positive
-    /// size; see <see cref="RunningBand.Height"/>. It is also raised when the band measures text
-    /// that holds an unpaired surrogate in an embedded font, which can include part of the template
-    /// it then does not draw; see <see cref="TextStyle.FontRef"/>.
+    /// size, or when <c>Height</c> is null and its style's size or leading does; see
+    /// <see cref="RunningBand.Height"/> and <see cref="RunningBand.Style"/>. It is also raised when
+    /// the band measures text that holds an unpaired surrogate in an embedded font, which can
+    /// include part of the template it then does not draw; see <see cref="TextStyle.FontRef"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Raised from <see cref="Render"/>, when the band's height or its style's size is refused; see
-    /// <see cref="RunningBand.Height"/> and <see cref="TextStyle.FontSize"/>.
+    /// Raised from <see cref="Render"/>, when the band's height, or its style's size or leading, is
+    /// refused; see <see cref="RunningBand.Height"/>, <see cref="TextStyle.FontSize"/> and
+    /// <see cref="TextStyle.Leading"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Render"/>, when the band's style holds a
@@ -191,13 +194,15 @@ public sealed class DocumentRenderer
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Render"/>, when the band's height leaves the content area no positive
-    /// size; see <see cref="RunningBand.Height"/>. It is also raised when the band measures text
-    /// that holds an unpaired surrogate in an embedded font, which can include part of the template
-    /// it then does not draw; see <see cref="TextStyle.FontRef"/>.
+    /// size, or when <c>Height</c> is null and its style's size or leading does; see
+    /// <see cref="RunningBand.Height"/> and <see cref="RunningBand.Style"/>. It is also raised when
+    /// the band measures text that holds an unpaired surrogate in an embedded font, which can
+    /// include part of the template it then does not draw; see <see cref="TextStyle.FontRef"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Raised from <see cref="Render"/>, when the band's height or its style's size is refused; see
-    /// <see cref="RunningBand.Height"/> and <see cref="TextStyle.FontSize"/>.
+    /// Raised from <see cref="Render"/>, when the band's height, or its style's size or leading, is
+    /// refused; see <see cref="RunningBand.Height"/>, <see cref="TextStyle.FontSize"/> and
+    /// <see cref="TextStyle.Leading"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Render"/>, when the band's style holds a
@@ -230,9 +235,9 @@ public sealed class DocumentRenderer
     /// </exception>
     /// <exception cref="ArgumentException">
     /// The margins meet or exceed the page on either axis. It is also raised from
-    /// <see cref="Render"/>, not from this constructor, when a margin that passes this check puts a
-    /// position written outside the content stream at a non-finite value; see
-    /// <see cref="Document.Margins"/>.
+    /// <see cref="Render"/>, not from this constructor, when margins that pass this check leave no
+    /// positive content area once a header or footer is taken off, or put a position written
+    /// outside the content stream at a non-finite value; see <see cref="Document.Margins"/>.
     /// </exception>
     /// <exception cref="NullReferenceException">
     /// <paramref name="pageSize"/> is null and <paramref name="pdf"/> is null, or its
@@ -240,9 +245,9 @@ public sealed class DocumentRenderer
     /// <paramref name="pdf"/> makes <see cref="Render"/> throw it instead.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Raised from <see cref="Render"/>, not from this constructor, when a margin that passes the
-    /// <see cref="ArgumentException"/> check still leaves an element unable to be laid out, for any
-    /// of the causes listed on <see cref="Document.Margins"/>.
+    /// Raised from <see cref="Render"/>, not from this constructor, when a page size and margins
+    /// that pass this constructor's checks still leave an element unable to be laid out, for any of
+    /// the causes listed on <see cref="Document.PageSize"/> and <see cref="Document.Margins"/>.
     /// </exception>
     public DocumentRenderer(PdfDocument pdf, PdfRectangle? pageSize = null, EdgeInsets? margins = null)
     {
@@ -308,9 +313,10 @@ public sealed class DocumentRenderer
     /// <paramref name="destination"/> is <see langword="null"/>, checked after the layout has run.
     /// </exception>
     /// <exception cref="NullReferenceException">
-    /// An added renderer is <see langword="null"/> or returns a null result, or a band's template,
-    /// a text or another member an element stored without a check is null, or the constructor was
-    /// given a null <c>pdf</c> with a page size.
+    /// An added renderer is <see langword="null"/>, returns a null result, or returns a
+    /// <see cref="LayoutResult.Partial"/> result with a null renderer. It is also raised when a
+    /// band's template, a text or another member an element stored without a check is null, and
+    /// when the constructor was given a null <c>pdf</c> with a page size.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// A <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name is selected
@@ -797,7 +803,8 @@ public sealed class DocumentRenderer
     // ── Validation ────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Validates that page size and margins are finite, positive, and leave a non-empty content area.
+    /// Validates that page size and margins are finite, positive, and leave a non-empty content
+    /// area.
     /// </summary>
     private static void ValidateGeometry(PdfRectangle pageSize, EdgeInsets margins)
     {

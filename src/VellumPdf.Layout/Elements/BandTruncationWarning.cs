@@ -46,7 +46,8 @@ public readonly record struct BandTruncationWarning
     /// <summary>
     /// The one-based page carrying the worst cut, not the first cut. With a <c>{page}</c> or
     /// <c>{pages}</c> token the resolved text differs per page, so the page that lost the most is
-    /// the one that tells a caller how much shorter the template has to be.
+    /// the one that tells a caller how much shorter the template has to be. Among pages that lost
+    /// the same amount, the first is reported.
     /// </summary>
     /// <remarks>Not refused. A zero or negative page number is stored as given.</remarks>
     public int PageNumber { get; init; }

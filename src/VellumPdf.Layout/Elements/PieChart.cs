@@ -224,8 +224,8 @@ public sealed class PieChart
     /// and each wedge's end is computed by adding its sweep to the angle before it. A large angle
     /// draws wrong, because doubles that large are too far apart to hold a sweep exactly, and the
     /// error grows with the angle: on a two-slice chart without a stroke colour, 1e15 already
-    /// leaves gaps or overlaps between the wedges, and 1e17 draws none (#546). Reduce the angle to
-    /// 0 to 2π yourself.</para>
+    /// leaves gaps or overlaps between the wedges, and at 1e17 every wedge collapses to a line with
+    /// no area (#546). Reduce the angle to 0 to 2π yourself.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised while the chart is laid out, which happens inside

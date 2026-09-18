@@ -16,7 +16,10 @@ public sealed class ListItem
     private List<ListItem>? _children;
 
     /// <summary>The item's text.</summary>
-    /// <remarks>A null value makes the save throw; see the constructor.</remarks>
+    /// <remarks>
+    /// A null value makes the save throw; see the constructor. White space is drawn as on
+    /// <see cref="Paragraph"/>.
+    /// </remarks>
     public string Text { get; }
 
     /// <summary>Optional text style; when null, the item inherits one.</summary>

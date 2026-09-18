@@ -45,6 +45,11 @@ public enum ListStyle
 /// <remarks>
 /// Nesting is one level, via <see cref="ListItem.Children"/>. Marker formatting of zero and
 /// negative indices is on <see cref="FormatMarker"/>.
+/// <para><b>Attention</b>: an item can be drawn without its last line, while the space for that
+/// line stays reserved and nothing reports it. The draw pass lays each item out again in a height
+/// it recomputes from the page position, and rounding can leave that height just short of the lines
+/// the layout pass fitted. It depends on the font size and the line count: at the default 12pt, an
+/// item of exactly two lines draws only its first.</para>
 /// </remarks>
 public sealed class ListElement
 {

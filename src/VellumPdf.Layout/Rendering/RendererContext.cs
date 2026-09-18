@@ -32,8 +32,11 @@ public sealed class RendererContext
     /// to a different document is accepted. An image registered on it is left out of the saved
     /// file. An embedded font registered on it is recorded for no page, though the font file is
     /// written anyway, as a registered font is even when unused.
-    /// <para>Do not pass null, or a page from another document. A later major version will throw
-    /// from this constructor.</para>
+    /// <para>A second context on the same page names its images from <c>Im1</c> again. The page's
+    /// resource entry for a shared name keeps the image registered last under it, so the other
+    /// image is written but not drawn.</para>
+    /// <para>Do not pass null, a page from another document, or a page another context already
+    /// draws on. A later major version will throw from this constructor.</para>
     /// </remarks>
     public RendererContext(PdfPage page, PdfDocument document)
     {
@@ -42,8 +45,8 @@ public sealed class RendererContext
     }
 
     /// <summary>
-    /// Registers an Image XObject on the current page and returns its resource name.
-    /// Deduplicates: the same object instance always gets the same name.
+    /// Registers an Image XObject on the current page and returns its resource name. Deduplicates:
+    /// the same object instance always gets the same name from this context.
     /// </summary>
     /// <remarks>
     /// A null <paramref name="image"/> throws <see cref="ArgumentNullException"/> from this

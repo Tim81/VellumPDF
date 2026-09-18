@@ -72,8 +72,8 @@ public sealed class ListRenderer : IRenderer
     /// <summary>Paginates the list item-by-item, splitting at item boundaries on overflow; handles mid-item splits by chaining content overflow renderers.</summary>
     /// <remarks>
     /// See the constructor for a negative or past-end start. Overflow splits at an item, or
-    /// mid-item when a paragraph does. This method raises the refusals of the items' styles itself.
-    /// When the document calls this method, they reach you from the save.
+    /// mid-item when a paragraph does. This method itself throws the exceptions its tags list. When
+    /// the document calls it, they reach you from the save.
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// The start item is negative, the list has items, and the area is not empty.

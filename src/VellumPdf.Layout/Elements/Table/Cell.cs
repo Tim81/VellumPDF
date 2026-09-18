@@ -62,12 +62,15 @@ public sealed class Cell
     /// <remarks>
     /// A spanning cell is drawn once, at its own row, across the combined height of the rows it
     /// covers, and those rows skip the columns it occupies. A page break is not placed inside a
-    /// spanning group; a group too tall for one page raises rather than splitting. The exception is
-    /// a span whose last row, the row index plus RowSpan minus one, overflows <see cref="int"/>, as
-    /// <see cref="int.MaxValue"/> does from the third row on: the sum wraps, and the group can be
+    /// spanning group that starts in a data row; such a group too tall for one page raises rather
+    /// than splitting. Two kinds of group can still be split across pages. One starts in the
+    /// table's leading header rows: on each continuation page the data rows it covers stop skipping
+    /// its columns, so their cells move into those columns. The other is a span whose last row, the
+    /// zero-based row index plus RowSpan minus one, overflows <see cref="int"/>, as
+    /// <see cref="int.MaxValue"/> does from the third row on. The sum wraps, and the group can be
     /// split across pages.
-    /// <para><b>Attention</b>: zero and negative are <b>not</b> refused, and both behave as 1. That is
-    /// an accident of how the draw loop tests the span, not a guarantee, so do not write code
+    /// <para><b>Attention</b>: zero and negative are <b>not</b> refused, and both behave as 1. That
+    /// is an accident of how the draw loop tests the span, not a guarantee, so do not write code
     /// that depends on it. A later major version will reject both.</para>
     /// <para>A span reaching past the rows this page draws is reduced to the rows actually
     /// drawn. The <c>/RowSpan</c> attribute written into the tagged structure follows the reduced
@@ -75,9 +78,9 @@ public sealed class Cell
     /// page.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
-    /// Raised from a save rather than from this property, when a spanning group is taller than
-    /// one page. A page break is never placed inside such a group, so it raises instead of
-    /// splitting.
+    /// Raised from a save rather than from this property, when a spanning group that starts in a
+    /// data row, and whose last row does not overflow <see cref="int"/>, is taller than one page.
+    /// The remarks name the groups that can be split instead.
     /// </exception>
     public int RowSpan { get; init; } = 1;
 
@@ -111,9 +114,9 @@ public sealed class Cell
     /// A non-finite inset is refused. <see cref="Document.Save(System.IO.Stream)"/> throws
     /// <see cref="InvalidOperationException"/> and names the row and the cell. The number would
     /// otherwise reach the content stream as a token that no reader can parse.
-    /// <para><b>Attention</b>: a negative inset is not refused, and nothing clips the result. The cell's
-    /// text is placed outside the cell, over its neighbour or past the table's edge. You have to
-    /// keep the insets positive yourself. A later major version will reject them.</para>
+    /// <para><b>Attention</b>: a negative inset is not refused, and nothing clips the result. The
+    /// cell's text is placed outside the cell, over its neighbour or past the table's edge. You
+    /// have to keep the insets positive yourself. A later major version will reject them.</para>
     /// <para>Padding wider than the column is not refused either, and the result is worse than a
     /// collapsed cell. The inner width is clamped to one point, so the text wraps to one glyph per
     /// line, and every line is placed at <c>Left</c>'s own offset, outside the column and usually
@@ -146,7 +149,7 @@ public sealed class Cell
 
     /// <summary>Horizontal alignment of the cell content.</summary>
     /// <remarks>
-    /// <b>Attention</b>: <see cref="HorizontalAlignment.Justify"/> is drawn as
+    /// <see cref="HorizontalAlignment.Justify"/> is drawn as
     /// <see cref="HorizontalAlignment.Left"/>. Cell text is wrapped but never stretched; only
     /// paragraph and heading text are justified.
     /// </remarks>

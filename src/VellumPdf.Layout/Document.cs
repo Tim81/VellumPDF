@@ -45,9 +45,8 @@ public sealed class Document : IDisposable
 
     /// <summary>
     /// Characters written in a Standard-14 font, by an element or a running band, that
-    /// WinAnsiEncoding could not represent (each was substituted with '?' in the saved PDF).
-    /// Populated by each save and by the signing-prep path; empty when every character rendered is
-    /// in WinAnsi.
+    /// WinAnsiEncoding could not represent (each was substituted with '?' in the saved PDF). Empty
+    /// when every character rendered is in WinAnsi.
     /// </summary>
     /// <remarks>
     /// Empty until a save (or signing prep) has run, and replaced by each one that succeeds.
@@ -173,8 +172,7 @@ public sealed class Document : IDisposable
     /// <remarks>
     /// <b>Attention</b>: the string is not validated as BCP 47. After trim, an empty value is
     /// omitted from <c>/Lang</c> and XMP. A non-empty ill-formed tag such as <c>not a tag</c> is
-    /// written as given. PDF/A-2a and PDF/UA-1 both require a well-formed tag, and this property
-    /// does not check one.
+    /// written as given. PDF/A-2a and PDF/UA-1 both require a well-formed tag.
     /// <para>Do not pass a tag that is not well-formed BCP 47. A later major version will refuse
     /// one.</para>
     /// </remarks>
@@ -217,15 +215,15 @@ public sealed class Document : IDisposable
     /// <para><b>Attention</b>: a finite negative inset is not refused. The document saves and the
     /// content is placed outside the page's boundaries, where a reader clips it. On a one-paragraph
     /// document with every inset at -72, the file is written with no invalid token in it, so
-    /// nothing downstream reports the loss either. A later major version will reject it.</para>
-    /// <para>Do not pass <c>NaN</c> or negative infinity. A later major version will reject both,
-    /// as it will a negative inset.</para>
+    /// nothing downstream reports the loss either.</para>
     /// <para>A non-finite inset is checked only through the sum on its axis, and is refused only
     /// when that sum is positive infinity. <c>NaN</c> and negative infinity pass, because neither
     /// makes the sum meet or exceed the page. An inset that passes leaves a content area that is
     /// not finite, and what follows depends on the elements laid out in it. The save can throw an
     /// exception about an element rather than the margin, or it can succeed with <c>NaN</c> or
     /// <c>Infinity</c> in the content stream or content off the page (#502).</para>
+    /// <para>Do not pass a finite negative inset, <c>NaN</c> or negative infinity. A later major
+    /// version will reject all three.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from a save rather than from this property, when the margins on either axis meet or
@@ -260,15 +258,17 @@ public sealed class Document : IDisposable
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
-    /// band's height leaves the content area no positive size; see
-    /// <see cref="RunningBand.Height"/>. It is also raised when the band measures text that holds
-    /// an unpaired surrogate in an embedded font, which can include part of the template it then
-    /// does not draw; see <see cref="TextStyle.FontRef"/>.
+    /// band's height leaves the content area no positive size, or when <c>Height</c> is null and
+    /// its style's size or leading does; see <see cref="RunningBand.Height"/> and
+    /// <see cref="RunningBand.Style"/>. It is also raised when the band measures text that holds an
+    /// unpaired surrogate in an embedded font, which can include part of the template it then does
+    /// not draw; see <see cref="TextStyle.FontRef"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
-    /// band's height or its style's size is refused; see <see cref="RunningBand.Height"/> and
-    /// <see cref="TextStyle.FontSize"/>.
+    /// band's height, or its style's size or leading, is refused; see
+    /// <see cref="RunningBand.Height"/>, <see cref="TextStyle.FontSize"/> and
+    /// <see cref="TextStyle.Leading"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
@@ -294,15 +294,17 @@ public sealed class Document : IDisposable
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
-    /// band's height leaves the content area no positive size; see
-    /// <see cref="RunningBand.Height"/>. It is also raised when the band measures text that holds
-    /// an unpaired surrogate in an embedded font, which can include part of the template it then
-    /// does not draw; see <see cref="TextStyle.FontRef"/>.
+    /// band's height leaves the content area no positive size, or when <c>Height</c> is null and
+    /// its style's size or leading does; see <see cref="RunningBand.Height"/> and
+    /// <see cref="RunningBand.Style"/>. It is also raised when the band measures text that holds an
+    /// unpaired surrogate in an embedded font, which can include part of the template it then does
+    /// not draw; see <see cref="TextStyle.FontRef"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
-    /// band's height or its style's size is refused; see <see cref="RunningBand.Height"/> and
-    /// <see cref="TextStyle.FontSize"/>.
+    /// band's height, or its style's size or leading, is refused; see
+    /// <see cref="RunningBand.Height"/>, <see cref="TextStyle.FontSize"/> and
+    /// <see cref="TextStyle.Leading"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
@@ -346,14 +348,14 @@ public sealed class Document : IDisposable
 
     /// <summary>Sets a header band with optional style and alignment. Returns this document for chaining.</summary>
     /// <remarks>
-    /// A null <paramref name="template"/> is accepted here and throws during the save. The parameter
-    /// is non-nullable, but that is a compiler diagnostic rather than a check: how loudly your
-    /// build complains depends on your own nullable settings, and <c>null!</c> silences it
-    /// entirely. This method builds a <see cref="RunningBand"/>, whose
-    /// constructor does not check the template, so the band resolves it during layout and the
-    /// failure surfaces as a <see cref="NullReferenceException"/> from a call you did not make.
-    /// Pass an empty string for a band that draws no text (#531). Assigning to <see cref="Header"/>
-    /// directly reaches the same throw.
+    /// A null <paramref name="template"/> is accepted here and throws during the save. The
+    /// parameter is non-nullable, but that is a compiler diagnostic rather than a check: how loudly
+    /// your build complains depends on your own nullable settings, and <c>null!</c> silences it
+    /// entirely. This method builds a <see cref="RunningBand"/>, whose constructor does not check
+    /// the template, so the band resolves it during layout and the failure surfaces as a
+    /// <see cref="NullReferenceException"/> from a call you did not make. Pass an empty string for
+    /// a band that draws no text (#531). Assigning to <see cref="Header"/> directly reaches the
+    /// same throw.
     /// <para>The band's height and <paramref name="style"/> carry refusals of their own; see
     /// <see cref="RunningBand.Height"/>, <see cref="TextStyle.FontSize"/> and
     /// <see cref="TextStyle.FontRef"/>. <see cref="HorizontalAlignment.Justify"/> and values the
@@ -366,15 +368,17 @@ public sealed class Document : IDisposable
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
-    /// band's height leaves the content area no positive size; see
-    /// <see cref="RunningBand.Height"/>. It is also raised when the band measures text that holds
-    /// an unpaired surrogate in an embedded font, which can include part of the template it then
-    /// does not draw; see <see cref="TextStyle.FontRef"/>.
+    /// band's height leaves the content area no positive size, or when <c>Height</c> is null and
+    /// its style's size or leading does; see <see cref="RunningBand.Height"/> and
+    /// <see cref="RunningBand.Style"/>. It is also raised when the band measures text that holds an
+    /// unpaired surrogate in an embedded font, which can include part of the template it then does
+    /// not draw; see <see cref="TextStyle.FontRef"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
-    /// band's height or its style's size is refused; see <see cref="RunningBand.Height"/> and
-    /// <see cref="TextStyle.FontSize"/>.
+    /// band's height, or its style's size or leading, is refused; see
+    /// <see cref="RunningBand.Height"/>, <see cref="TextStyle.FontSize"/> and
+    /// <see cref="TextStyle.Leading"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
@@ -389,14 +393,14 @@ public sealed class Document : IDisposable
 
     /// <summary>Sets a footer band with optional style and alignment. Returns this document for chaining.</summary>
     /// <remarks>
-    /// A null <paramref name="template"/> is accepted here and throws during the save. The parameter
-    /// is non-nullable, but that is a compiler diagnostic rather than a check: how loudly your
-    /// build complains depends on your own nullable settings, and <c>null!</c> silences it
-    /// entirely. This method builds a <see cref="RunningBand"/>, whose
-    /// constructor does not check the template, so the band resolves it during layout and the
-    /// failure surfaces as a <see cref="NullReferenceException"/> from a call you did not make.
-    /// Pass an empty string for a band that draws no text (#531). Assigning to <see cref="Footer"/>
-    /// directly reaches the same throw.
+    /// A null <paramref name="template"/> is accepted here and throws during the save. The
+    /// parameter is non-nullable, but that is a compiler diagnostic rather than a check: how loudly
+    /// your build complains depends on your own nullable settings, and <c>null!</c> silences it
+    /// entirely. This method builds a <see cref="RunningBand"/>, whose constructor does not check
+    /// the template, so the band resolves it during layout and the failure surfaces as a
+    /// <see cref="NullReferenceException"/> from a call you did not make. Pass an empty string for
+    /// a band that draws no text (#531). Assigning to <see cref="Footer"/> directly reaches the
+    /// same throw.
     /// <para>The band's height and <paramref name="style"/> carry refusals of their own; see
     /// <see cref="RunningBand.Height"/>, <see cref="TextStyle.FontSize"/> and
     /// <see cref="TextStyle.FontRef"/>. <see cref="HorizontalAlignment.Justify"/> and values the
@@ -409,15 +413,17 @@ public sealed class Document : IDisposable
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
-    /// band's height leaves the content area no positive size; see
-    /// <see cref="RunningBand.Height"/>. It is also raised when the band measures text that holds
-    /// an unpaired surrogate in an embedded font, which can include part of the template it then
-    /// does not draw; see <see cref="TextStyle.FontRef"/>.
+    /// band's height leaves the content area no positive size, or when <c>Height</c> is null and
+    /// its style's size or leading does; see <see cref="RunningBand.Height"/> and
+    /// <see cref="RunningBand.Style"/>. It is also raised when the band measures text that holds an
+    /// unpaired surrogate in an embedded font, which can include part of the template it then does
+    /// not draw; see <see cref="TextStyle.FontRef"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
-    /// band's height or its style's size is refused; see <see cref="RunningBand.Height"/> and
-    /// <see cref="TextStyle.FontSize"/>.
+    /// band's height, or its style's size or leading, is refused; see
+    /// <see cref="RunningBand.Height"/>, <see cref="TextStyle.FontSize"/> and
+    /// <see cref="TextStyle.Leading"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
@@ -982,7 +988,8 @@ public sealed class Document : IDisposable
     /// write to a temporary path and move it into place yourself, or save to a stream you control
     /// (#508).</para>
     /// </remarks>
-    /// <exception cref="ArgumentNullException"><paramref name="path"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="path"/> is
+    /// <see langword="null"/>.</exception>
     /// <exception cref="ObjectDisposedException">
     /// This <see cref="Document"/> was already disposed. It derives from
     /// <see cref="InvalidOperationException"/>, so a catch written for the base type also
@@ -1066,7 +1073,8 @@ public sealed class Document : IDisposable
     /// fails first, it reports that the document has already been written and tells you to create a
     /// new one. It writes nothing to the stream, appended or otherwise.</para>
     /// <para>The PDF is built in memory before any of it is written to
-    /// <paramref name="destination"/>, so a failure while it is built writes nothing to it.</para>
+    /// <paramref name="destination"/>, so a failure while it is built writes nothing to
+    /// <paramref name="destination"/>.</para>
     /// <para>A save that threw can leave the document holding pages and element state from the
     /// failed attempt, so a retry can succeed on a wrong file (#530). Build a fresh
     /// <see cref="Document"/> rather than retrying a save that threw.</para>
@@ -1164,17 +1172,18 @@ public sealed class Document : IDisposable
     /// <remarks>
     /// Everything on <see cref="SaveAsync(System.IO.Stream, System.Threading.CancellationToken)"/>
     /// applies, and one thing more.
-    /// <para><b>Attention</b>: the file is opened before the layout runs, so a failure destroys whatever
-    /// the path held. Measured: a path already holding a 1,535-byte file, given to a new
-    /// document whose layout then fails, is left existing and zero bytes long. The same happens
-    /// on a second call to the same path, since opening it already truncates whatever was there
-    /// before the "document already written" check runs, so
+    /// <para><b>Attention</b>: the file is opened before the layout runs, so a failure destroys
+    /// whatever the path held. Measured: a path already holding a 1,535-byte file, given to a new
+    /// document whose layout then fails, is left existing and zero bytes long. The same happens on
+    /// a second call to the same path, since opening it already truncates whatever was there before
+    /// the "document already written" check runs, so
     /// <see cref="SaveAsync(System.IO.Stream, System.Threading.CancellationToken)"/>'s "writes
-    /// nothing to the stream" guarantee does not carry over here. If the target matters, write to
-    /// a temporary path and move it into place yourself, or save to a stream you control
+    /// nothing to the stream" guarantee does not carry over here. If the target matters, write to a
+    /// temporary path and move it into place yourself, or save to a stream you control
     /// (#508).</para>
     /// </remarks>
-    /// <exception cref="ArgumentNullException"><paramref name="path"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="path"/> is
+    /// <see langword="null"/>.</exception>
     /// <exception cref="ObjectDisposedException">
     /// This <see cref="Document"/> was already disposed. It derives from
     /// <see cref="InvalidOperationException"/>, so a catch written for the base type also
@@ -1182,7 +1191,7 @@ public sealed class Document : IDisposable
     /// </exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="path"/> is empty, holds only white space, or holds a null character,
-    /// reported while the file is opened. The layout causes listed on
+    /// reported while the file is opened. The layout and writing causes listed on
     /// <see cref="SaveAsync(System.IO.Stream, System.Threading.CancellationToken)"/> reach here
     /// too, once it is open. These are unrelated conditions that happen to share a type, so do
     /// <b>not</b> tell them apart by parameter name.

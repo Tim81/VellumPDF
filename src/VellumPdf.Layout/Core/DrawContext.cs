@@ -22,8 +22,11 @@ namespace VellumPdf.Layout.Core;
 /// without clamping, and so is a finite box into an annotation unless X plus Width or Y plus Height
 /// overflows. The save refuses that box; see <see cref="AddUriLinkAnnotation"/>. A box with a
 /// negative width is written as an inverted rectangle. The save refuses a non-finite coordinate in
-/// an annotation or outline entry, and writes it as <c>NaN</c> or <c>Infinity</c> where a renderer
-/// draws with a converted value on the canvas.
+/// an annotation or outline entry. Where a renderer draws with a converted value on the canvas, a
+/// non-finite one is written as <c>NaN</c> or <c>Infinity</c>.
+/// <para>A coordinate is written in plain decimal, with no exponent. A finite one beyond the 64-bit
+/// integer range therefore becomes an integer token that a 64-bit reader cannot hold. qpdf 12.4.1
+/// drops the annotation or outline item holding <b>9.3e18</b> and keeps one holding 9.2e18.</para>
 /// </remarks>
 public sealed class DrawContext
 {

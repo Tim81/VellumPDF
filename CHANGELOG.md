@@ -212,7 +212,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **The rest of Layout's public members now document their boundaries (#510):** what is
   refused and which call throws, what is accepted but should not be relied on, and what is
-  accepted and then ignored. **126** public members and the `TextRun` type carry an
+  accepted and then ignored. **129** public members and the `TextRun` type carry an
   `<exception>` tag, counted in the compiler's XML output. What a caller is most likely to act
   on:
 
@@ -247,6 +247,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - `LayoutBox.ToString` formats in the current culture.
   - A pie chart whose slice values sum past the largest double has no area, and a very large
     `StartAngle` draws the wedges wrong (#546).
+  - A paragraph, heading or list item draws each sequence of white space other than U+00A0 and
+    line breaks as one space. A paragraph also draws the boundary between two runs as a space,
+    so a word cannot change style part-way.
+  - A `Cell.RowSpan` group that starts in the table's leading header rows can be split across
+    pages, and on each continuation page the data rows it covers draw their cells in its columns.
+  - A list item can be drawn without its last line while the space for it stays reserved: at the
+    default 12pt, an item of exactly two lines draws only its first.
 
 - **The public members that refuse input now say so, and say what not to pass (#503).** These
   boundaries were created by fixes already shipped in 2.3.2 and documented almost nowhere: of

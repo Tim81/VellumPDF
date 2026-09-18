@@ -52,10 +52,9 @@ public interface IRenderer
     /// The document calls this on a renderer that returned <see cref="LayoutResult.Outcome.Full"/>,
     /// and on the <see cref="LayoutResult.SplitRenderer"/> of a
     /// <see cref="LayoutResult.Outcome.Partial"/> result. A split renderer is drawn without its own
-    /// <see cref="Layout"/> ever being called, so it must carry everything it needs to draw.
-    /// Calling <see cref="Draw"/> on a renderer whose <see cref="Layout"/> has not run is not
-    /// supported, except on a split renderer the document received from a
-    /// <see cref="LayoutResult.Outcome.Partial"/> result. Called before <see cref="Layout"/>, the
+    /// <see cref="Layout"/> ever being called, so it must carry everything it needs to draw. Apart
+    /// from such a split renderer, calling <see cref="Draw"/> on a renderer whose
+    /// <see cref="Layout"/> has not run is not supported. Called before <see cref="Layout"/>, the
     /// built-in renderers draw nothing, draw a zero-size or off-page mark, or throw; see
     /// <see cref="VellumPdf.Layout.Rendering.Table.TableRenderer.Draw"/>.
     /// </remarks>
