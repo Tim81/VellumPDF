@@ -96,7 +96,7 @@ public sealed class ListElement
     /// gutter needs. The child marker, inset by this value alone, is not refused and is still
     /// drawn. Keep this value well below half the area width (#476).</para>
     /// <para>Do <b>not</b> pass a negative value. It can carry content left of the margin and off
-    /// the page. A finite negative value neither throws nor is reported. Where an item lands
+    /// the page. A finite negative value is not reported. Where an item lands
     /// follows from the rules above, the override included; the measured figures are on #476, not
     /// here, because they depend on the level, on which branch the override takes and on
     /// <see cref="TextStyle.FontSize"/>. A later major version will reject a negative value.</para>
@@ -107,12 +107,16 @@ public sealed class ListElement
     /// throws nor is reported (#532).</para>
     /// <para>When <c>NaN</c> or negative infinity puts linked item text, or a linked nested
     /// marker, at a non-finite position, the save throws <see cref="ArgumentException"/> for the
-    /// link's rectangle; see <see cref="TextStyle.LinkUri"/>.</para>
+    /// link's rectangle; see <see cref="TextStyle.LinkUri"/>. A finite negative value can do the
+    /// same when the gutter taken from it, added to the list's left edge, overflows, as a nested
+    /// list with an indent of -1e308 and a left margin of -1e308 does.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
-    /// Raised from a save rather than from this property, when this value is <c>NaN</c> or negative
-    /// infinity and linked item text, or a linked nested marker, lands at a non-finite position.
-    /// The message says PDF does not support NaN or Infinity as a real number.
+    /// Raised from a save rather than from this property, when linked item text, or a linked nested
+    /// marker, lands at a non-finite position. This value at <c>NaN</c> or negative infinity can
+    /// cause that, and so can a finite negative value when the gutter taken from it, added to the
+    /// list's left edge, overflows. The message says PDF does not support NaN or Infinity as a real
+    /// number.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from a save rather than from this property, when a list with nested children has an

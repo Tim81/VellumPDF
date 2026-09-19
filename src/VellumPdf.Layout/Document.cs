@@ -44,13 +44,15 @@ public sealed class Document : IDisposable
     private readonly List<BandTruncationWarning> _bandTruncations = [];
 
     /// <summary>
-    /// Characters written to a page in a Standard-14 font, by anything that draws on it, that
-    /// WinAnsiEncoding could not represent (each UTF-16 code unit was substituted with '?' in the
-    /// saved PDF, so a character outside the Basic Multilingual Plane gives two question marks).
-    /// Empty when every character rendered is in WinAnsi.
+    /// Characters passed to a page canvas's <see cref="PdfCanvas.ShowText"/> that WinAnsiEncoding
+    /// could not represent (each UTF-16 code unit was substituted with '?' in the saved PDF, so a
+    /// character outside the Basic Multilingual Plane gives two question marks).
     /// </summary>
     /// <remarks>
     /// Empty until a save (or signing prep) has run, and replaced by each one that succeeds.
+    /// <para>The built-in elements and running bands pass <see cref="PdfCanvas.ShowText"/> only
+    /// their Standard-14 text. Characters a custom <see cref="IRenderer"/> passes to
+    /// <see cref="PdfCanvas.ShowText"/> are recorded whatever font is selected.</para>
     /// </remarks>
     public IReadOnlyList<TextEncodingWarning> TextEncodingWarnings => _textEncodingWarnings;
 

@@ -118,6 +118,10 @@ public sealed class DrawContext
     /// <exception cref="NullReferenceException">
     /// <paramref name="handle"/> is <see langword="null"/>.
     /// </exception>
+    /// <exception cref="ArgumentNullException">
+    /// Raised from this call when this context's <see cref="RendererContext"/> was constructed with
+    /// a null page and a non-null document.
+    /// </exception>
     public string UseEmbeddedFont(EmbeddedFontHandle handle)
     {
         RendererContext.RegisterEmbeddedFontUsage(handle);

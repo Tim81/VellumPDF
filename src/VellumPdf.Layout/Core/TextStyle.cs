@@ -37,8 +37,9 @@ public sealed class TextStyle
     /// selected on a page, which an empty table cell or list item with this style also does.
     /// <para><see cref="Standard14.Symbol"/> and <see cref="Standard14.ZapfDingbats"/> measure
     /// every character as zero width at any finite size (#470). A paragraph set wholly in either
-    /// font is therefore never wrapped. A centred or right-aligned line is placed as if it had no
-    /// width, and a justified line can run past the right edge. A run that follows a Symbol or
+    /// font is therefore never wrapped. A centred or right-aligned line set wholly in either font
+    /// is placed as if it had no width. A justified line holding text in either font can run past
+    /// the right edge. A run that follows a Symbol or
     /// ZapfDingbats run on the same line, in a different <see cref="TextStyle"/> instance, can
     /// start where that run starts and be drawn over it.</para>
     /// </remarks>

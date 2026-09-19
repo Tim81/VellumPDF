@@ -387,7 +387,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   so any list of the cases is incomplete. The member states the gutter rules that generate all of
   them, the override included, and says a negative value is not to be relied on; the measured
   figures are on #476, where they can name the page size, margins and font they were taken at.
-  Nothing here is reported, and at a finite value on a **flat** list nothing throws either.
+  A finite negative value is not reported.
 
   The indent that loses content was documented against the wrong width. It is the list's own area,
   which is the page's content width narrowed by the left and right edges of
