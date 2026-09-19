@@ -18,16 +18,16 @@ public enum HorizontalAlignment
     /// <summary>Centre content horizontally.</summary>
     /// <remarks>
     /// In paragraph, heading and table-cell text, a line wider than its area starts at the left
-    /// edge instead of overhanging both sides. A line's width is its measured width; see
-    /// <see cref="TextStyle.FontRef"/> for fonts that measure every character as zero.
+    /// edge instead of overhanging both sides. See <see cref="TextStyle.FontRef"/> for fonts that
+    /// measure every character as zero.
     /// </remarks>
     Center,
 
     /// <summary>Align content to the right edge.</summary>
     /// <remarks>
     /// In paragraph, heading and table-cell text, a line wider than its area starts at the left
-    /// edge instead of overhanging it. A line's width is its measured width; see
-    /// <see cref="TextStyle.FontRef"/> for fonts that measure every character as zero.
+    /// edge instead of overhanging it. See <see cref="TextStyle.FontRef"/> for fonts that measure
+    /// every character as zero.
     /// </remarks>
     Right,
 

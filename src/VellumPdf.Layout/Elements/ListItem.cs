@@ -153,7 +153,7 @@ public sealed class ListItem
     /// <remarks>
     /// Creates the child with <see cref="ListItem(string, TextStyle?)"/> and adds it. A null
     /// <paramref name="text"/> is stored, and the save throws when it lays out the new child, which
-    /// happens only when this item is a top-level item.
+    /// happens only when this item is laid out as a top-level item.
     /// <para>Do not pass null text. A later major version will throw
     /// <see cref="ArgumentNullException"/> from this call.</para>
     /// </remarks>

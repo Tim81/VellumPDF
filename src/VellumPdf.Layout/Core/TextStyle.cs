@@ -36,11 +36,11 @@ public sealed class TextStyle
     /// Standard-14 value the enumeration does not name makes the save throw once the font is
     /// selected on a page, which an empty table cell or list item with this style also does.
     /// <para><see cref="Standard14.Symbol"/> and <see cref="Standard14.ZapfDingbats"/> measure
-    /// every character as zero width (#470). Every layout step that measures text treats theirs as
-    /// having no width: a paragraph in either is never wrapped, a centred or right-aligned line is
-    /// placed as if it had no width, and a justified line can run past the right edge. A run after
-    /// a Symbol or ZapfDingbats run on the same line starts where that run starts and is drawn over
-    /// it.</para>
+    /// every character as zero width at any finite size (#470). In either font, a paragraph is
+    /// therefore never wrapped, a centred or right-aligned line is placed as if it had no width,
+    /// and a justified line can run past the right edge. A run that follows a Symbol or
+    /// ZapfDingbats run on the same line, in a different <see cref="TextStyle"/> instance, can
+    /// start where that run starts and be drawn over it.</para>
     /// </remarks>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
@@ -216,11 +216,12 @@ public sealed class TextStyle
     /// <c>/URI</c> action as given, and so is an absolute URI of any scheme, such as
     /// <c>javascript:alert(1)</c>. Non-ASCII characters are percent-encoded as UTF-8, and an
     /// unpaired surrogate becomes U+FFFD first. Table cells and running bands silently drop the
-    /// link (#475). In a list item the marker is linked as well as the text. In a document whose
-    /// <c>Conformance</c> is PDF/UA-1, the link is written untagged and without the alternate
-    /// description ISO 14289-1, 7.18.5 requires, and no exception reports it (#550). On a justified
-    /// line the link's rectangle is sized and placed as if the line were not stretched, so the
-    /// linked words can run past it, and in an embedded font can lie away from it (#551).
+    /// link (#475). In a list item the marker is linked as well as the text. The link is written
+    /// untagged and without an alternate description, whatever the conformance, and no exception
+    /// reports it. In a document whose <c>Conformance</c> is PDF/UA-1, such a link breaks ISO
+    /// 14289-1, 7.18.5 (#550). On a justified line the link's rectangle is sized and placed as if
+    /// the line were not stretched, so the linked words can run past it, and in an embedded font
+    /// can lie away from it (#551).
     /// <para>Do not pass a value that is not an absolute URI. A later major version will refuse
     /// one.</para>
     /// </remarks>

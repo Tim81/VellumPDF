@@ -148,10 +148,11 @@ public sealed class DrawContext
     /// <paramref name="uri"/> is not validated. Empty and <c>not a uri</c> are written into
     /// <c>/URI</c> as given, and so is an absolute URI of any scheme, such as
     /// <c>javascript:alert(1)</c>. Non-ASCII characters are percent-encoded as UTF-8, and an
-    /// unpaired surrogate becomes U+FFFD first. In a document whose <c>Conformance</c> is PDF/UA-1,
-    /// the link is written untagged and without the alternate description ISO 14289-1, 7.18.5
-    /// requires, and no exception reports it (#550). A null <paramref name="uri"/> writes a link
-    /// annotation with no action, so the area is a link that goes nowhere.
+    /// unpaired surrogate becomes U+FFFD first. The link is written untagged and without an
+    /// alternate description, whatever the conformance, and no exception reports it. In a document
+    /// whose <c>Conformance</c> is PDF/UA-1, such a link breaks ISO 14289-1, 7.18.5 (#550). A null
+    /// <paramref name="uri"/> writes a link annotation with no action, so the area is a link that
+    /// goes nowhere.
     /// <para>A non-finite coordinate in <paramref name="box"/>, or finite ones whose sum overflows,
     /// is accepted here. The save throws when it writes the annotation's rectangle.</para>
     /// <para>Do not pass a null or relative <paramref name="uri"/>. A later major version will

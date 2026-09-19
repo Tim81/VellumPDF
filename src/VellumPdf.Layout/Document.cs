@@ -504,8 +504,8 @@ public sealed class Document : IDisposable
     /// <paramref name="path"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="path"/> is empty, holds only white space, or holds a null character. Other
-    /// characters the file system refuses raise <see cref="IOException"/>.
+    /// <paramref name="path"/> is empty, holds a null character, or, on Windows, holds only spaces.
+    /// Other characters the file system refuses raise <see cref="IOException"/>.
     /// </exception>
     /// <exception cref="FileNotFoundException">
     /// <paramref name="path"/> names a file that does not exist.
@@ -546,8 +546,8 @@ public sealed class Document : IDisposable
     /// <paramref name="path"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="path"/> is empty, holds only white space, or holds a null character. Other
-    /// characters the file system refuses raise <see cref="IOException"/>.
+    /// <paramref name="path"/> is empty, holds a null character, or, on Windows, holds only spaces.
+    /// Other characters the file system refuses raise <see cref="IOException"/>.
     /// </exception>
     /// <exception cref="FileNotFoundException">
     /// <paramref name="path"/> names a file that does not exist.
@@ -1019,8 +1019,8 @@ public sealed class Document : IDisposable
     /// catches it.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="path"/> is empty, holds only white space, or holds a null character,
-    /// reported while the file is opened. The layout and writing causes listed on
+    /// <paramref name="path"/> is empty, holds a null character, or, on Windows, holds only spaces.
+    /// It is raised while the file is opened. The layout and writing causes listed on
     /// <see cref="Save(System.IO.Stream)"/> reach here too, once it is open. That tag says why not
     /// to tell any of them apart by parameter name.
     /// </exception>
@@ -1215,8 +1215,8 @@ public sealed class Document : IDisposable
     /// catches it.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="path"/> is empty, holds only white space, or holds a null character,
-    /// reported while the file is opened. The layout and writing causes listed on
+    /// <paramref name="path"/> is empty, holds a null character, or, on Windows, holds only spaces.
+    /// It is raised while the file is opened. The layout and writing causes listed on
     /// <see cref="SaveAsync(System.IO.Stream, System.Threading.CancellationToken)"/> reach here
     /// too, once it is open. These are unrelated conditions that happen to share a type, so do
     /// <b>not</b> tell them apart by parameter name.

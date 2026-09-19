@@ -257,9 +257,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     when one adds an empty line. Any other sequence of white space except U+00A0
     is drawn as one space, and is dropped at the start and end of each line. A paragraph also
     draws the boundary between two runs as a space, so a word cannot change style part-way.
-    Text holding only white space is laid out at the leading of `TextStyle.Default`, whatever its
-    style, so a list item whose text holds only white space, and whose marker line does not fit,
-    is placed without its marker.
+    Paragraph, heading or list-item text holding only white space other than U+00A0 is laid out
+    at the leading of `TextStyle.Default`, whatever its style. A list item's marker keeps the
+    item's own style. When the marker's line does not fit where the item lands, the item is placed
+    without its marker.
   - A `Cell.RowSpan` group that starts in the table's leading header rows can be split across
     pages, and on each continuation page the data rows it covers draw their cells in its columns.
   - The last item a list draws on a page can lose a line while the space for that line stays
