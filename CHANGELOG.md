@@ -237,7 +237,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     create rows without one (#543).
   - A link from `TextStyle.LinkUri` or `DrawContext.AddUriLinkAnnotation` is written untagged
     and without an alternate description, so a PDF/UA-1 document holding one is not conformant,
-    and nothing reports it (#550). On a justified line the link rectangle keeps its unstretched
+    and nothing reports it (#550). ISO 14289-1, 7.18.1 exempts a link whose rectangle lies
+    wholly outside the page's crop box. On a justified line the link rectangle keeps its unstretched
     size and position, so the linked words can run past it, and in an embedded font it can lie
     away from them (#551).
   - Text that holds an unpaired surrogate makes the save throw `ArgumentException` when it is
@@ -377,16 +378,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `Document.Save` while `Save` itself listed neither, which is where a caller writing catch clauses
   looks first; all four overloads now carry both, each naming the member that causes it.
   `ListElement.Indent` covered only magnitude. Its other inputs each do something different: `NaN`
-  and negative infinity each write a text-matrix coordinate that is not a PDF number, and positive
-  infinity draws the marker and drops the item text on a flat list.
+  and negative infinity can each write a text-matrix coordinate that is not a PDF number, or make
+  the save throw `ArgumentException` when the item text is linked. Positive infinity draws the
+  marker and drops the item text on a flat list.
 
   A negative value needed a rule rather than a list of outcomes. Where it puts the text depends
   on the nesting level, on which branch of the widening override is taken and on the font size,
   so any list of the cases is incomplete. The member states the gutter rules that generate all of
-  them, the override included, and says a negative value is not to be relied on; the measured figures are on
-  #476, where they can
-  name the page size, margins and font they were taken at. Nothing here is reported, and on a **flat** list
-  nothing throws either.
+  them, the override included, and says a negative value is not to be relied on; the measured
+  figures are on #476, where they can name the page size, margins and font they were taken at.
+  Nothing here is reported, and at a finite value on a **flat** list nothing throws either.
 
   The indent that loses content was documented against the wrong width. It is the list's own area,
   which is the page's content width narrowed by the left and right edges of

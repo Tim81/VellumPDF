@@ -219,7 +219,8 @@ public sealed class TextStyle
     /// link (#475). In a list item the marker is linked as well as the text. The link is written
     /// untagged and without an alternate description, whatever the conformance, and no exception
     /// reports it. In a document whose <c>Conformance</c> is PDF/UA-1, the link breaks ISO
-    /// 14289-1, 7.18.5 (#550). On a justified line the link's rectangle is sized and placed as if
+    /// 14289-1, 7.18.5 (#550). Clause 7.18.1 exempts a link whose rectangle lies wholly outside the
+    /// page's crop box. On a justified line the link's rectangle is sized and placed as if
     /// the line were not stretched, so the linked words can run past it, and in an embedded font
     /// can lie away from it (#551).
     /// <para>Do not pass a value that is not an absolute URI. A later major version will refuse

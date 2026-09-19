@@ -150,7 +150,8 @@ public sealed class DrawContext
     /// <c>javascript:alert(1)</c>. Non-ASCII characters are percent-encoded as UTF-8, and an
     /// unpaired surrogate becomes U+FFFD first. The link is written untagged and without an
     /// alternate description, whatever the conformance, and no exception reports it. In a document
-    /// whose <c>Conformance</c> is PDF/UA-1, the link breaks ISO 14289-1, 7.18.5 (#550). A null
+    /// whose <c>Conformance</c> is PDF/UA-1, the link breaks ISO 14289-1, 7.18.5 (#550). Clause
+    /// 7.18.1 exempts a link whose rectangle lies wholly outside the page's crop box. A null
     /// <paramref name="uri"/> writes a link annotation with no action, so the area is a link that
     /// goes nowhere.
     /// <para>A non-finite coordinate in <paramref name="box"/>, or finite ones whose sum overflows,

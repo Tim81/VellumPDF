@@ -97,13 +97,13 @@ public sealed class Document : IDisposable
     /// <para>On a document no save has been attempted on, that holds byte for byte. Resizing before
     /// <see cref="Save(System.IO.Stream)"/> produces a file matching one built at the new size from
     /// the start, except the random <c>/ID</c> and the XMP <c>CreateDate</c>/<c>ModifyDate</c>
-    /// timestamps, which carry the time each build actually ran. Measured by resizing a document
-    /// from 600 by 800 to 200 by 120 at <b>10pt</b> margins and normalising those three fields: the
-    /// bytes match a build at 200 by 120 throughout, and every <c>/MediaBox</c> carries the new
-    /// size. The margin is part of the measurement, not an aside: the default 72pt insets on
-    /// <see cref="Margins"/> do not fit a 120pt page, so that combination is refused before either
-    /// file is built. A save that already threw breaks that equivalence, along with the rest of the
-    /// document's state; see <see cref="Save(System.IO.Stream)"/>.</para>
+    /// timestamps, which carry the time each build ran. Measured by resizing a document from 600 by
+    /// 800 to 200 by 120 at <b>10pt</b> margins and normalising those three fields: the bytes match
+    /// a build at 200 by 120 throughout, and every <c>/MediaBox</c> carries the new size. The
+    /// default 72pt insets on <see cref="Margins"/> do not fit a 120pt page, so that combination is
+    /// refused before either file is built. A save that already threw breaks that equivalence,
+    /// along with the rest of the document's state; see
+    /// <see cref="Save(System.IO.Stream)"/>.</para>
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// Raised from a save rather than from this property, when the width or height is zero,
@@ -545,11 +545,13 @@ public sealed class Document : IDisposable
     /// returns a handle.
     /// </summary>
     /// <remarks>
-    /// Same refusals as <see cref="LoadTrueTypeFont"/>. This method does not throw the ones raised
-    /// while the file is read and parsed: each one faults the returned task, and surfaces when you
-    /// await it. The ones <see cref="UseTrueTypeFont"/> leaves to the save are raised by the save,
-    /// not the task. A cancelled <paramref name="cancellationToken"/> cancels the task instead of
-    /// faulting it, and awaiting it throws <see cref="OperationCanceledException"/>.
+    /// Same refusals as <see cref="LoadTrueTypeFont"/>. This method throws none of them itself.
+    /// Each one, a null or empty path included, faults the returned task and surfaces when you
+    /// await it. The ones <see cref="UseTrueTypeFont"/> leaves to the save are raised by
+    /// the save, not the task. A <paramref name="cancellationToken"/> already cancelled when you
+    /// call this cancels the task instead of faulting it, and awaiting it throws
+    /// <see cref="OperationCanceledException"/>. The token is passed only to the file read. A
+    /// cancellation after the read has no effect, and a font the parse accepts stays registered.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="path"/> is <see langword="null"/>.

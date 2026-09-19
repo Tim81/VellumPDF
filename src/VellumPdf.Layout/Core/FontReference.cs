@@ -116,10 +116,12 @@ public readonly struct FontReference
     /// <remarks>
     /// A null string throws <see cref="NullReferenceException"/>. A non-finite
     /// <paramref name="pointSize"/> is multiplied through and is not refused here.
-    /// <para><see cref="VellumPdf.Fonts.Standard14.Symbol"/>,
-    /// <see cref="VellumPdf.Fonts.Standard14.ZapfDingbats"/> and a Standard-14 value the
-    /// enumeration does not name measure 0 for every character at any finite size (#470). Text in
-    /// them is therefore never wrapped.</para>
+    /// <para><see cref="VellumPdf.Fonts.Standard14.Symbol"/> and
+    /// <see cref="VellumPdf.Fonts.Standard14.ZapfDingbats"/> (#470), and a Standard-14 value the
+    /// enumeration does not name, measure 0 for every character at any finite size. A paragraph set
+    /// wholly in Symbol or ZapfDingbats is therefore never wrapped. A run in either that follows
+    /// text in another font can still move to the next line, because the space character before it
+    /// is measured in that other font.</para>
     /// <para>On an embedded font, every character measured that the subset does not already hold is
     /// added to it, so a string you measure but never draw can still make the embedded font
     /// larger.</para>
