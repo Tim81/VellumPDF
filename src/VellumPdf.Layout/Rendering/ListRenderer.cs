@@ -12,6 +12,9 @@ namespace VellumPdf.Layout.Rendering;
 /// The marker is drawn in the gutter (left of the indent); the content is indented.
 /// Nested items get an additional indent level.
 /// </summary>
+/// <remarks>
+/// Grandchildren are ignored; see <see cref="ListItem.Children"/>.
+/// </remarks>
 public sealed class ListRenderer : IRenderer
 {
     private readonly ListElement _list;
@@ -30,6 +33,27 @@ public sealed class ListRenderer : IRenderer
     private LayoutBox _occupied;
 
     /// <summary>Creates a renderer for the list, optionally starting at <paramref name="startItem"/> for pagination.</summary>
+    /// <remarks>
+    /// <paramref name="startItem"/> counts each child as an entry after its parent, so a start of 1
+    /// on a list whose first item has children begins at that item's first child. A negative start
+    /// throws <see cref="ArgumentOutOfRangeException"/> from <see cref="Layout"/> only when the
+    /// area is not empty and the list has items. An empty area returns
+    /// <see cref="LayoutResult.Nothing"/> first. A start past the last entry returns
+    /// <see cref="LayoutResult.Full"/> occupying no height. A negative start on an empty list also
+    /// returns <see cref="LayoutResult.Full"/> occupying no height, and <see cref="Draw"/> then
+    /// throws <see cref="ArgumentOutOfRangeException"/>.
+    /// <para>Do not pass null or a start outside the list's entries, which count each child after
+    /// its parent. A later major version will throw from this constructor.</para>
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Raised from <see cref="Layout"/>, when <paramref name="startItem"/> is negative, the
+    /// list has items, and the area is not empty. On an empty list it is raised from
+    /// <see cref="Draw"/> instead.
+    /// </exception>
+    /// <exception cref="NullReferenceException">
+    /// Raised later from <see cref="Layout"/>, not from this constructor, when
+    /// <paramref name="list"/> is <see langword="null"/>, even for an empty area.
+    /// </exception>
     public ListRenderer(ListElement list, int startItem = 0)
     {
         _list = list;
@@ -46,6 +70,26 @@ public sealed class ListRenderer : IRenderer
     // ── Phase 1: Layout ───────────────────────────────────────────────────────
 
     /// <summary>Paginates the list item-by-item, splitting at item boundaries on overflow; handles mid-item splits by chaining content overflow renderers.</summary>
+    /// <remarks>
+    /// See the constructor for a negative or past-end start. Overflow splits at an item, or
+    /// mid-item when a paragraph does. When the document calls this method, the exceptions it lists
+    /// reach you from the save. A list added with <see cref="Document.Add(ListElement)"/> never
+    /// starts at a negative item, so <see cref="ArgumentOutOfRangeException"/> reaches the save
+    /// only from a renderer you construct with a negative start and add yourself.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// The start item is negative, the list has items, and the area is not empty.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// An item's <see cref="TextStyle.FontSize"/> is refused; see that member.
+    /// </exception>
+    /// <exception cref="NullReferenceException">
+    /// The list, an item, or an item's text is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Text this method measures in an embedded font holds an unpaired surrogate; see
+    /// <see cref="TextStyle.FontRef"/>.
+    /// </exception>
     public LayoutResult Layout(LayoutContext context)
     {
         var area = context.Area.Deflate(_list.Margins);
@@ -137,6 +181,11 @@ public sealed class ListRenderer : IRenderer
     // ── Phase 2: Draw ─────────────────────────────────────────────────────────
 
     /// <summary>Draws each item's marker and content, building the tagged L → LI → Lbl/LBody hierarchy when tagging is enabled.</summary>
+    /// <remarks>See <see cref="IRenderer.Draw"/>.</remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// The start item is negative and the list has no items, which <see cref="Layout"/> accepts;
+    /// see the constructor.
+    /// </exception>
     public void Draw(DrawContext ctx)
     {
         if (_items is null) return;

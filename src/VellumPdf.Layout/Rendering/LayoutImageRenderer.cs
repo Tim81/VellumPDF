@@ -7,6 +7,7 @@ using VellumPdf.Layout.Elements;
 namespace VellumPdf.Layout.Rendering;
 
 /// <summary>Renders a <see cref="LayoutImage"/> as a placed XObject, honouring sizing, margins and alignment.</summary>
+/// <remarks>Does not split. Too-tall images throw from save. Justify is treated as left.</remarks>
 public sealed class LayoutImageRenderer : IRenderer
 {
     private readonly LayoutImage _img;
@@ -15,12 +16,38 @@ public sealed class LayoutImageRenderer : IRenderer
     private LayoutBox _occupied;
 
     /// <summary>Creates a renderer for the given layout image.</summary>
+    /// <remarks>
+    /// A null <paramref name="img"/> is stored, and <see cref="Layout"/> throws.
+    /// <para>Do not pass null. A later major version will throw <see cref="ArgumentNullException"/>
+    /// from this constructor.</para>
+    /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised later from <see cref="Layout"/>, not from this constructor, when
+    /// <paramref name="img"/> or its image is <see langword="null"/>.
+    /// </exception>
     public LayoutImageRenderer(LayoutImage img)
     {
         _img = img;
     }
 
     /// <summary>Resolves the image size within the available area and reports the occupied region.</summary>
+    /// <remarks>
+    /// This renderer does not split. An image taller than the area returns
+    /// <see cref="LayoutResult.Outcome.Nothing"/>, and the document's save then throws
+    /// <see cref="InvalidOperationException"/> saying the element is too tall to fit. This method
+    /// raises the image's size refusals itself. When the document calls this method, they reach you
+    /// from the save.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// <see cref="LayoutImage.Width"/> or <see cref="LayoutImage.Height"/>, or the height derived
+    /// from the width, is refused; see those members and <see cref="LayoutImage.Margins"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// The image's own pixel width or height is not a positive number.
+    /// </exception>
+    /// <exception cref="NullReferenceException">
+    /// The layout image, or the image it holds, is <see langword="null"/>.
+    /// </exception>
     public LayoutResult Layout(LayoutContext ctx)
     {
         var area = ctx.Area.Deflate(_img.Margins);
@@ -77,6 +104,7 @@ public sealed class LayoutImageRenderer : IRenderer
     }
 
     /// <summary>Draws the image XObject, emitting a tagged Figure struct element when tagging is enabled.</summary>
+    /// <remarks>See <see cref="IRenderer.Draw"/>.</remarks>
     public void Draw(DrawContext ctx)
     {
         var area = _occupied.Deflate(_img.Margins);

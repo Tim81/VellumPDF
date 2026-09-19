@@ -13,12 +13,46 @@ namespace VellumPdf.Layout.Elements.Table;
 ///     the top of each continuation page
 ///   • Collapsed (shared) border rendering
 /// </summary>
+/// <remarks>
+/// A table that resolves to no columns is refused at save; see <see cref="Rows"/>. A table whose
+/// rows are all headers cannot be drawn; see <see cref="AddRow"/>. The table is one element for the
+/// page limit described on <see cref="IRenderer.Layout"/>: a table that needs more than
+/// <b>50,000</b> page continuations makes the save throw.
+/// </remarks>
 public sealed class TableElement
 {
+    /// <summary>Creates an empty table.</summary>
+    /// <remarks>
+    /// A save before a row holding a cell is added throws <see cref="InvalidOperationException"/>;
+    /// see <see cref="Rows"/>.
+    /// </remarks>
+    public TableElement() { }
+
     private readonly List<Row> _rows = [];
     private readonly List<double> _colWidths = [];   // 0 = auto
 
     /// <summary>Text style applied to cells that have no explicit style.</summary>
+    /// <remarks>
+    /// Null means <see cref="TextStyle.Default"/> for cells that have no style of their own.
+    /// Refusals on size, leading and font are on <see cref="TextStyle"/> and are raised from the
+    /// save. A <see cref="TextStyle.LinkUri"/> in it is ignored (#475).
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when the style's size or leading is refused; see
+    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
+    /// </exception>
+    /// <exception cref="IndexOutOfRangeException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when the style holds a <see cref="VellumPdf.Fonts.Standard14"/> value
+    /// the enumeration does not name and the font is selected on a page; see
+    /// <see cref="TextStyle.FontRef"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when text in this style holds an unpaired surrogate and is measured in
+    /// an embedded font; see <see cref="TextStyle.FontRef"/>.
+    /// </exception>
     public TextStyle? DefaultCellStyle { get; init; }
 
     /// <summary>Width of the table border lines, in points.</summary>
@@ -32,6 +66,10 @@ public sealed class TableElement
     /// <para>There is at present <b>no</b> way to draw a table without a grid. Every cell is
     /// stroked unconditionally and <see cref="BorderColor"/> is not nullable. If you need a
     /// gridless table, the nearest you can get is a border colour matching the page.</para>
+    /// <para>A negative width is accepted and written as a negative line width, which ISO 32000-2,
+    /// 8.4.3.2 does not allow; see <see cref="LineSeparator.LineWidth"/>.</para>
+    /// <para>Do not pass a negative width. Whether a negative line width is refused, and in which
+    /// release, is being decided in #482.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this
@@ -40,18 +78,79 @@ public sealed class TableElement
     public double BorderWidth { get; init; } = 0.5;
 
     /// <summary>Color of the table border lines.</summary>
+    /// <remarks>
+    /// Stored as given. Channels are not checked or clamped. Each is written into the content
+    /// stream rounded to five decimals, and <c>NaN</c> or <c>Infinity</c> as that token; see
+    /// <see cref="ColorRgb"/>.
+    /// </remarks>
     public ColorRgb BorderColor { get; init; } = ColorRgb.Black;
 
     /// <summary>Outer margins applied around the whole table.</summary>
+    /// <remarks>
+    /// <b>Attention</b>: no edge is checked. Each edge is taken off the area this element is given,
+    /// and the element is laid out in whatever box is left, even when that box is empty, inverted
+    /// or <c>NaN</c>. A negative or non-finite edge, or edges wider than the area, can therefore
+    /// make the save throw an exception about something else, write a <c>NaN</c> or <c>Infinity</c>
+    /// token into the content stream, re-wrap, move or mirror the content, or leave the element off
+    /// the page. The bottom edge only limits that box: it adds no space before the next element. A
+    /// negative or non-finite top edge can also move the elements placed after this one.
+    /// <para>Do not pass a negative or non-finite edge. A later major version will refuse
+    /// both.</para>
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when the box the edges leave is too small for the element. The message
+    /// says the element is too tall to fit on a page and does not name the margins.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when an edge leaves a later element at a non-finite position, and the
+    /// save writes that position outside the content stream, as a heading's bookmark or the
+    /// rectangle of a link from <see cref="TextStyle.LinkUri"/>. Negative infinity can do this. The
+    /// message says PDF does not support NaN or Infinity as a real number.
+    /// </exception>
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 
     /// <summary>The rows in the table, in render order.</summary>
+    /// <remarks>
+    /// A table that resolves to no columns is refused at save: no rows, or every row empty.
+    /// A mix of empty rows and rows that have cells is not that case.
+    /// <see cref="Document.Save(System.IO.Stream)"/> throws
+    /// <see cref="InvalidOperationException"/> when there is nothing to draw.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from a save, when this collection is empty or every row has no cells.
+    /// </exception>
     public IReadOnlyList<Row> Rows => _rows;
 
     /// <summary>Configured column widths in points; a value of 0 means auto-size.</summary>
+    /// <remarks>
+    /// Entry <c>i</c> sets column <c>i</c>. A missing, zero, negative or non-finite entry means
+    /// auto. Entries past the column count are ignored.
+    /// <para>Each auto column first takes a share of the width the explicit entries leave, weighted
+    /// by its content and at least its longest word plus the cell's horizontal padding. When the
+    /// explicit widths exceed the width the auto columns leave them, they are all scaled by one
+    /// ratio to that width, even when they fit the available width on their own. With no auto
+    /// column, that width is the whole available width. So one very large entry leaves the other
+    /// explicit columns near zero, and entries whose sum overflows to infinity are all scaled to
+    /// zero (#546). When the auto columns take all of the available width or more, every column,
+    /// auto ones included, is scaled by one ratio instead. A positive entry under 5e-6 is kept and
+    /// written as width 0. None of this is reported.</para>
+    /// <para>Do not rely on scaling to fit a table. Pass widths that fit the space you give
+    /// it.</para>
+    /// </remarks>
     public IReadOnlyList<double> ColWidths => _colWidths;
 
     /// <summary>Sets the column widths (0 = auto) and returns this instance for chaining.</summary>
+    /// <remarks>
+    /// Replaces every width. Called with no arguments it clears them, so every column is auto. A
+    /// null array is refused only after the existing widths are cleared, so they are lost. The
+    /// entries follow the rules on <see cref="ColWidths"/>; none is refused here.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="widths"/> is <see langword="null"/>. <c>ParamName</c> is <c>collection</c>,
+    /// not <c>widths</c>.
+    /// </exception>
     public TableElement SetColumnWidths(params double[] widths)
     {
         _colWidths.Clear();
@@ -64,6 +163,16 @@ public sealed class TableElement
     /// the top of each continuation page only while it belongs to the table's leading contiguous
     /// run of header rows; a header row added after a data row draws once, where it occurs.
     /// </summary>
+    /// <remarks>
+    /// A table whose rows are all headers cannot be drawn: it lays out as nothing, so the save
+    /// throws <see cref="InvalidOperationException"/> even when the table would fit (#488).
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this call, when every row of the table is a header row. The message says the element is
+    /// too tall to fit on a page (#488), or, when no header row has a cell, that the table resolved
+    /// to no columns.
+    /// </exception>
     public Row AddRow(bool isHeader = false)
     {
         var row = new Row { IsHeader = isHeader };
@@ -75,6 +184,16 @@ public sealed class TableElement
     /// Appends a new header row and returns it. See <see cref="AddRow"/> for when a header row
     /// repeats across continuation pages.
     /// </summary>
+    /// <remarks>
+    /// A table whose rows are all headers cannot be drawn: it lays out as nothing, so the save
+    /// throws <see cref="InvalidOperationException"/> even when the table would fit (#488).
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this call, when every row of the table is a header row. The message says the element is
+    /// too tall to fit on a page (#488), or, when no header row has a cell, that the table resolved
+    /// to no columns.
+    /// </exception>
     public Row AddHeaderRow()
     {
         var row = new Row { IsHeader = true };

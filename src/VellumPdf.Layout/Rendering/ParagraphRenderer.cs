@@ -15,6 +15,11 @@ namespace VellumPdf.Layout.Rendering;
 /// Supports Standard-14 fonts (Latin-1 ShowText) and embedded TrueType (hex glyph run).
 /// Justification: Tw for Standard-14 lines; explicit per-word Tm for embedded-font lines.
 /// </summary>
+/// <remarks>
+/// The document creates one for each <see cref="Paragraph"/>. The document calls
+/// <see cref="Layout"/> during a save, so the exceptions on that method reach you from the save. A
+/// negative start line makes <see cref="Draw"/> throw.
+/// </remarks>
 public sealed class ParagraphRenderer : IRenderer
 {
     private readonly Paragraph _para;
@@ -29,6 +34,24 @@ public sealed class ParagraphRenderer : IRenderer
     private int _endLine;  // exclusive
 
     /// <summary>Creates a renderer for the paragraph, optionally starting at <paramref name="startLine"/> for pagination.</summary>
+    /// <remarks>
+    /// Nothing is checked here. A null <paramref name="para"/> makes <see cref="Layout"/> throw. A
+    /// negative <paramref name="startLine"/> makes <see cref="Layout"/> count that many lines more
+    /// than the text holds, and makes <see cref="Draw"/> throw. A start past the last line lays out
+    /// as <see cref="LayoutResult.Outcome.Nothing"/>, so a document saving it throws
+    /// <see cref="InvalidOperationException"/> saying the element is too tall to fit. A renderer
+    /// built directly ignores the paragraph's <see cref="Paragraph.Language"/>.
+    /// <para>Do not pass null or a start outside the paragraph's lines. A later major version will
+    /// throw from this call.</para>
+    /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised later from <see cref="Layout"/>, not from this constructor, when
+    /// <paramref name="para"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Raised later from <see cref="Draw"/>, not from this constructor, when
+    /// <paramref name="startLine"/> is negative.
+    /// </exception>
     public ParagraphRenderer(Paragraph para, int startLine = 0)
     {
         _para = para;
@@ -38,6 +61,26 @@ public sealed class ParagraphRenderer : IRenderer
     // ── Phase 1: Layout ───────────────────────────────────────────────────────
 
     /// <summary>Word-wraps the paragraph and fits as many lines as the area allows, splitting at line boundaries on overflow.</summary>
+    /// <remarks>
+    /// Overflow returns <see cref="LayoutResult.Partial"/> at a line boundary. When no line fits
+    /// the area it returns <see cref="LayoutResult.Outcome.Nothing"/>; the document then retries on
+    /// a new page, and, if that fails too, its save throws <see cref="InvalidOperationException"/>
+    /// saying the element is too tall to fit.
+    /// <para>When the document calls this method, the exceptions it lists reach you from the
+    /// save.</para>
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// A run's <see cref="TextStyle.FontSize"/> is refused; see that member.
+    /// </exception>
+    /// <exception cref="NullReferenceException">
+    /// The paragraph, one of its runs, or a run's text is <see langword="null"/>, or a run has a
+    /// null style and its text holds a character other than white space. U+00A0 NO-BREAK SPACE
+    /// counts as such a character; a tab and other white space do not.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Text this method measures in an embedded font holds an unpaired surrogate; see
+    /// <see cref="TextStyle.FontRef"/>.
+    /// </exception>
     public LayoutResult Layout(LayoutContext context)
     {
         var area = context.Area.Deflate(_para.Margins);
@@ -116,6 +159,10 @@ public sealed class ParagraphRenderer : IRenderer
     internal string? ElementLanguage { get; set; }
 
     /// <summary>Emits the wrapped lines as PDF text operators, applying alignment, justification, links and tagging.</summary>
+    /// <remarks>See <see cref="IRenderer.Draw"/>.</remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// The renderer was constructed with a negative start line.
+    /// </exception>
     public void Draw(DrawContext ctx)
     {
         if (_lines is null) return;

@@ -6,15 +6,56 @@ using VellumPdf.Fonts;
 namespace VellumPdf.Layout.Core;
 
 /// <summary>Typography properties applied to a run of text.</summary>
+/// <remarks>
+/// Refusals on <see cref="FontSize"/>, <see cref="Leading"/> and <see cref="FontRef"/>, and the
+/// exception on <see cref="LinkUri"/>, fire from calls such as
+/// <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/>, the other save overloads and
+/// <see cref="VellumPdf.Layout.Rendering.DocumentRenderer.Render"/>, not from the property setter.
+/// </remarks>
 public sealed class TextStyle
 {
+    /// <summary>Creates a style with Helvetica, 12 pt, auto leading, and black text.</summary>
+    /// <remarks>
+    /// Same values as <see cref="Default"/>, as a new instance.
+    /// </remarks>
+    public TextStyle() { }
+
     /// <summary>A style with default values (Helvetica, 12 pt, auto leading, black).</summary>
+    /// <remarks>
+    /// One shared instance. Every property of this type is init-only, so it cannot change.
+    /// </remarks>
     public static readonly TextStyle Default = new();
 
     /// <summary>
     /// The font to use. Accepts a <see cref="Standard14"/> value (implicit conversion)
     /// or an <see cref="EmbeddedFontHandle"/> returned by <c>Document.UseTrueTypeFont</c>.
     /// </summary>
+    /// <remarks>
+    /// Stored as given. A null handle saves in Helvetica, and a handle from another document keeps
+    /// at most the characters <see cref="FontReference(EmbeddedFontHandle)"/> describes. A
+    /// Standard-14 value the enumeration does not name makes the save throw once the font is
+    /// selected on a page, which an empty table cell or list item with this style also does.
+    /// <para><see cref="Standard14.Symbol"/> and <see cref="Standard14.ZapfDingbats"/> measure
+    /// every character as zero width at any finite size (#470). A paragraph set wholly in either
+    /// font is therefore never wrapped. A centred or right-aligned line set wholly in either font
+    /// is placed as if it had no width. A justified line holding text in either font can run past
+    /// the right edge. A run that follows a Symbol or
+    /// ZapfDingbats run on the same line, in a different <see cref="TextStyle"/> instance, can
+    /// start where that run starts and be drawn over it.</para>
+    /// </remarks>
+    /// <exception cref="IndexOutOfRangeException">
+    /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
+    /// save overloads, not from this property, when the reference holds a <see cref="Standard14"/>
+    /// value the enumeration does not name and the font is selected on a page.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from the save, not from this property, when text in this style holds an unpaired
+    /// surrogate and is measured in an embedded font. An unpaired surrogate is a UTF-16 code unit
+    /// from U+D800 to U+DFFF without its partner. The built-in elements measure their text during
+    /// layout, and a running band can measure part of its template that it then does not draw. Text
+    /// drawn without being measured, as a custom renderer can draw it, has the surrogate replaced
+    /// by U+FFFD instead. <c>ParamName</c> is <c>s</c>.
+    /// </exception>
     public FontReference FontRef { get; init; } = Standard14.Helvetica;
 
     /// <summary>
@@ -22,6 +63,19 @@ public sealed class TextStyle
     /// Valid only when <see cref="FontRef"/> is not an embedded font.
     /// Preserved for backward compatibility with existing code.
     /// </summary>
+    /// <remarks>
+    /// An invalid read is not refused. On an embedded <see cref="FontRef"/> the getter
+    /// returns <see cref="Standard14.Helvetica"/>, because that is what
+    /// <see cref="FontReference.Standard14"/> returns on an embedded reference. Check
+    /// <see cref="FontReference.IsEmbedded"/> first.
+    /// <para>Setting it replaces <see cref="FontRef"/>, and initialisers run in the order
+    /// written. <c>{ FontRef = handle, Font = Standard14.Courier }</c> ends in Courier, and the
+    /// reverse order ends in the embedded font. Set one of the two, not both.</para>
+    /// </remarks>
+    /// <exception cref="IndexOutOfRangeException">
+    /// Raised from a later save, as described on <see cref="FontRef"/>, when set to a value the
+    /// enumeration does not name.
+    /// </exception>
     public Standard14 Font
     {
         get => FontRef.Standard14;
@@ -38,19 +92,22 @@ public sealed class TextStyle
     /// non-finite size leaves nothing that can be measured or placed. A
     /// <see cref="VellumPdf.Layout.Elements.RunningBand"/> style takes a band-specific route
     /// instead, detailed on the exception tags below.
+    /// <para>Each paragraph run, and a heading's text, is checked when it holds a character other
+    /// than white space. U+00A0 NO-BREAK SPACE counts as such a character; a tab and other white
+    /// space do not. A table cell or list item is checked whatever its text holds.</para>
     /// <para><b>Attention</b>: a size of zero or less is <b>not</b> refused. It reaches the content
     /// stream as a font operator that readers accept, so you still get a document. At zero the
     /// text is invisible. Below zero the glyphs are inverted. If you do not want either, check the
     /// value before you set it. A later major version will reject both.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
-    /// Raised from a save rather than from this property, when the size is not finite, or when a
-    /// finite size is large enough on its own that the page's content area is left positive but
-    /// too small for the element. Neither case needs a
-    /// <see cref="VellumPdf.Layout.Elements.RunningBand"/>. On a paragraph style the message
-    /// names the run and the size; a <see cref="VellumPdf.Layout.Elements.Heading"/> is laid out
-    /// through the same paragraph code and reports the same way, as <c>"A paragraph run"</c>, not
-    /// by the heading's own name.
+    /// Raised from a save rather than from this property, when a checked size is not finite (see
+    /// the remarks), or when a finite size makes the element too tall for the content area. On a
+    /// paragraph style the message names the run and the size; a
+    /// <see cref="VellumPdf.Layout.Elements.Heading"/> is laid out through the same paragraph code
+    /// and reports the same way, as <c>"A paragraph run"</c>, not by the heading's own name. A list
+    /// item's marker is laid out as a paragraph, so a list-item style reports as <c>"A paragraph
+    /// run"</c> too. On a table-cell style the message names the row and cell instead.
     /// <para>On a <see cref="VellumPdf.Layout.Elements.RunningBand"/> style, which message fires
     /// depends on the band and on whether
     /// <see cref="VellumPdf.Layout.Elements.RunningBand.Height"/> is set. Measured with
@@ -129,6 +186,11 @@ public sealed class TextStyle
     public double Leading { get; init; } = 0;  // 0 = auto (font-size * 1.2)
 
     /// <summary>The text colour. Defaults to <see cref="ColorRgb.Black"/>.</summary>
+    /// <remarks>
+    /// Stored as given. Channels are not checked or clamped. Each is written into the content
+    /// stream rounded to five decimals, and <c>NaN</c> or <c>Infinity</c> as that token; see
+    /// <see cref="ColorRgb"/>.
+    /// </remarks>
     public ColorRgb Color { get; init; } = ColorRgb.Black;
 
     /// <summary>
@@ -146,11 +208,51 @@ public sealed class TextStyle
         Leading > 0 && double.IsFinite(Leading) ? Leading : FontSize * 1.2;
 
     /// <summary>
-    /// When non-null, text rendered with this style will be wrapped in a /Link
-    /// annotation pointing to this URI. Use a full URI string (e.g. "https://example.com").
+    /// When non-null, text rendered with this style will be wrapped in a /Link annotation pointing
+    /// to this URI, except in table cells and running bands. Use a full URI string (e.g.
+    /// "https://example.com").
     /// </summary>
+    /// <remarks>
+    /// <b>Attention</b>: the string is not validated. Empty and <c>not a uri</c> are written into a
+    /// <c>/URI</c> action as given, and so is an absolute URI of any scheme, such as
+    /// <c>javascript:alert(1)</c>. Non-ASCII characters are percent-encoded as UTF-8, and an
+    /// unpaired surrogate becomes U+FFFD first. Table cells and running bands silently drop the
+    /// link (#475). In a list item the marker is linked as well as the text. The link is written
+    /// untagged and without an alternate description, whatever the conformance, and no exception
+    /// reports it. In a document whose <c>Conformance</c> is PDF/UA-1, the link breaks ISO
+    /// 14289-1, 7.18.5 (#550). A link whose rectangle lies wholly outside the page's crop box is
+    /// exempt: clause 7.18.1 lifts the requirements of clause 7.18 for it. On a justified line
+    /// the link's rectangle is sized and placed as if the line were not stretched, so the linked
+    /// words can run past it, and in an embedded font can lie away from it (#551).
+    /// <para>Do not pass a value that is not an absolute URI. A later major version will refuse
+    /// one.</para>
+    /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when linked text is placed at a non-finite position, for example through
+    /// a non-finite margin (see <see cref="Document.Margins"/>) or a bottom of negative infinity in
+    /// a renderer's result (see <see cref="LayoutResult.Full"/>). The link's rectangle is written
+    /// outside the content stream, and the save refuses a non-finite coordinate there. Without a
+    /// link, the same paragraph or list-item text saves. A heading placed at a non-finite height
+    /// throws either way, from its bookmark; see
+    /// <see cref="VellumPdf.Layout.Elements.Heading.Margins"/>.
+    /// </exception>
     public string? LinkUri { get; init; }
 
     /// <summary>Measures a string using whichever font this style references.</summary>
+    /// <remarks>
+    /// A null string throws <see cref="NullReferenceException"/> from the font metrics, not
+    /// <see cref="ArgumentNullException"/>. A non-finite <see cref="FontSize"/> is multiplied
+    /// through; this call does not refuse it. On an embedded font, measuring adds the characters to
+    /// the font's subset; see <see cref="FontReference.MeasureString"/>.
+    /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// <paramref name="text"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// The font is embedded and <paramref name="text"/> holds an unpaired surrogate, a UTF-16 code
+    /// unit from U+D800 to U+DFFF without its partner. <c>ParamName</c> is <c>s</c>. A Standard-14
+    /// font measures such text without an exception.
+    /// </exception>
     public double MeasureString(string text) => FontRef.MeasureString(text, FontSize);
 }

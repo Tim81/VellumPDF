@@ -52,6 +52,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   naming Apache-2.0 alone. The Liberation fonts were never affected: their licence is packed
   beside them in the Standard 14 package already.
 
+### Changed
+
+- **Six Layout record structs are declared with explicit properties instead of positional
+  parameters,** so that each property can carry its own documentation. `ColorRgb`, `ColorCmyk`,
+  `EdgeInsets`, `LayoutBox`, `BandTruncationWarning` and `PieSlice` keep their constructors,
+  properties, `Deconstruct`, equality and `ToString`. Known-answer tests pin those against the
+  positional declarations, and ApiCompat 10.0.401 in strict mode finds no breaking change against
+  the published 2.3.2 assembly. The hand-written `Deconstruct` methods no longer carry
+  `[CompilerGenerated]`.
+
 ### Fixed
 
 - **The GIF decoder refused a third of the files put to it and silently corrupted others
@@ -200,6 +210,64 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Documentation
 
+- **The rest of Layout's public members now document their boundaries (#510):** what is
+  refused and which call throws, what is accepted but should not be relied on, and what is
+  accepted and then ignored. **133** public members and the `TextRun` type carry an
+  `<exception>` tag, counted in the compiler's XML output. What a caller is most likely to act
+  on:
+
+  - Null text, a null run, cell, item or image, and a null `PieChart.Slices` are stored without
+    a check, and the save throws `NullReferenceException`; null cell text throws only when a
+    column is sized automatically. The constructors of Layout's public `IRenderer` implementations
+    store a null too, and their `Layout` method throws (#547).
+  - `SetDefaultFont` is used only by `Add(string)` calls made after it. A `Paragraph`,
+    `Heading`, list, table or running band never uses it.
+  - A font handle from a different `Document` saves without an exception. The text is drawn in
+    whatever font the saving document registered under the same resource name, if any. Even when
+    that is the same font file, only the characters the saving document's own text also uses
+    survive (#544).
+  - `HorizontalAlignment.Justify` is drawn as left everywhere except paragraph and heading text.
+    A justified line whose text is all in one `TextStyle` instance and in the standard-14 text
+    faces (every standard-14 font but Symbol and ZapfDingbats) is stretched by only half the free
+    space (#548). On a line in those faces holding text in more than one instance, each
+    instance's text is placed at its unstretched width while its spaces are stretched, and can
+    overprint the text after it. Symbol and ZapfDingbats measure every glyph as zero (#470), so a
+    justified line in either can run past the right edge.
+  - `Row.Background` has no effect through `TableElement.AddRow` or `AddHeaderRow`, which
+    create rows without one (#543).
+  - A link from `TextStyle.LinkUri` or `DrawContext.AddUriLinkAnnotation` is written untagged
+    and without an alternate description, so a PDF/UA-1 document holding one is not conformant,
+    and nothing reports it (#550). A link whose rectangle lies wholly outside the page's crop
+    box is exempt: ISO 14289-1, 7.18.1 lifts the requirements of clause 7.18 for it. On a
+    justified line the link rectangle keeps its unstretched size and position, so the linked
+    words can run past it, and in an embedded font it can lie away from them (#551).
+  - Text that holds an unpaired surrogate makes the save throw `ArgumentException` when it is
+    measured in an embedded font. `TextStyle.MeasureString` throws the same exception itself.
+    The save can throw for part of a running band's template that the band does not draw.
+    Drawing such text without measuring it, or measuring it in a standard-14 font, throws
+    nothing.
+  - Nothing in this package acts on `LayoutContext.ContentTop`.
+  - An element exactly as tall as the content area can repeat its layout until the
+    page-continuation limit throws, when rounding offers it an area one step shorter than the
+    content area (#549).
+  - `LayoutBox.ToString` formats in the current culture.
+  - A pie chart whose slice values sum past the largest double has no area, and a very large
+    `StartAngle` draws the wedges wrong (#546).
+  - A carriage return, a line feed, or a carriage return followed by a line feed breaks the line
+    in a paragraph, heading or list item; `Paragraph` says when a trailing break is dropped and
+    when one adds an empty line. Any other sequence of white space except U+00A0
+    is drawn as one space, and is dropped at the start and end of each line. A paragraph also
+    draws the boundary between two runs as a space, so a word cannot change style part-way.
+    Paragraph, heading or list-item text holding only white space other than U+00A0 is laid out
+    at the leading of `TextStyle.Default`, whatever its style. Such a list item's marker keeps the
+    item's own style, and when the marker's line does not fit where the item lands, the item is
+    placed without its marker.
+  - A `Cell.RowSpan` group that starts in the table's leading header rows can be split across
+    pages, and on each continuation page the data rows it covers draw their cells in its columns.
+  - The last item a list draws on a page can lose a line while the space for that line stays
+    reserved. Whether it does depends on the font size, the line count and where the item falls
+    on the page.
+
 - **The public members that refuse input now say so, and say what not to pass (#503).** These
   boundaries were created by fixes already shipped in 2.3.2 and documented almost nowhere: of
   Layout's 298 documented public members, exactly one carried an `<exception>` tag before this
@@ -226,26 +294,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - `Document.Margins`, `Document.PageSize`, and all four save overloads
   - `TextStyle.FontSize`, `TextStyle.Leading`
 
-  The 2.3.2 documentation stated several things the code does not do. The pie chart does not skip
-  a zero-width stroke: it strokes whenever the stroke colour is set, emitting `0 w`. A table's
-  grid cannot be suppressed at all, since the border colour is not nullable and every cell is
-  stroked unconditionally. A non-finite document margin is refused only when it is positive
-  infinity; `NaN` and negative infinity slip past the check, because a comparison against either
-  is false, and surface instead as a message about an element being too tall or about the
-  page-continuation cap (tracked as #502). A positive-infinity image width is not refused but
-  clamped to the content box. A marker wider than the list indent does not overprint the item
-  text, because the gutter widens per item rather than to the widest one seen so far, and reverts
-  to the plain indent whenever the widened gutter would leave less room than that item's longest
-  word. With roman numerals at the default 20-point indent, the first marker to exceed the indent
-  is item 17. On an ordinary page the revert never fires at all: it needs the widened gutter to
-  leave less room than the item's longest word, which a normal content width does not reach.
-  Padding wider than its column
-  does not collapse the cell: the inner width clamps to one point and the text wraps to one glyph
-  per line, landing outside the page when the padding is lopsided (`Left` alone at 400 in a
-  260-point column) but back inside it when the same total is split evenly across `Left` and
-  `Right`. `H6` is this library's own deepest heading tag, not the format's: ISO 32000-2 Table 366
-  defines `Hn` for any integer from one upward, and its NOTE 2, informative rather than a
-  requirement, names `H7` as usable further still.
+  The 2.3.2 documentation stated several things the code does not do. The pie chart does not skip a
+  zero-width stroke: it strokes whenever the stroke colour is set, emitting `0 w`. A table's grid
+  cannot be suppressed at all, since the border colour is not nullable and every cell is stroked
+  unconditionally. A non-finite document margin is refused only when the insets on its axis sum to
+  positive infinity; `NaN` and negative infinity slip past the check, because neither makes the sum
+  meet or exceed the page. What follows depends on the elements laid out in the content area it
+  leaves; `Document.Margins` gives the rule, and #502 the measured cases. A positive-infinity image
+  width is not refused but clamped to the content box. With roman numerals at the default 20-point
+  indent, the first marker wider than the indent is item 17. Such a marker and the item text do
+  not overlap unless the gutter reverts: the gutter widens per item rather than to the widest one
+  seen so far, and reverts to the plain indent whenever the widened gutter would leave less room
+  than that item's longest word. When it reverts, the text starts at the plain indent, inside the
+  marker: on US Letter at 72-point margins, item 18 holding an unbroken word of 68 lowercase `a`
+  starts its text at x=92, inside the marker that ends at 95.33.
+  Padding wider than its column does not collapse the cell: the inner width clamps to one
+  point and the text wraps to one glyph per line, landing outside the page when the padding is
+  lopsided (`Left` alone at 400 in a 260-point column) but back inside it when the same total is
+  split evenly across `Left` and `Right`. `H6` is this library's own deepest heading tag, not the
+  format's: ISO 32000-2 Table 366 defines `Hn` for any integer from one upward, and its NOTE 2,
+  informative rather than a requirement, names `H7` as usable further still.
 
 - **`RunningBand.Height`, `TextStyle.FontSize` and `TextStyle.Leading` share one mechanism with
   three entry points, and every entry point now carries the boundary that mechanism actually
@@ -295,43 +363,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `destination` parameter it is documented against, so catching by parameter name will not find
   it under `"destination"`.
 
-- **A save that threw leaves the document in one of three states, and one of them is silent
-  (#530).** All four save overloads said some version of "calling this twice throws", which
-  describes only a save that succeeded. Measured, the three states are these.
+- **A save that threw can leave the document holding pages and element state from the failed attempt
+  (#530).** A retry can then succeed on a file that differs from a fresh build: a one-page document
+  retried after a save to a null destination saved two pages. The overloads now say a document is
+  single-use, and that the answer to a failed save is a fresh `Document` rather than a retry. The
+  behaviour itself is unchanged here; #530 carries the defect.
 
-  Geometry refused before the layout starts leaves the document clean: a retry after correcting it
-  produced a file identical in length and page count to a fresh document's. Reaching the writer
-  leaves it dead, and a retry on a good stream throws about the document having already been
-  written. A throw from the layout itself leaves it alive and wrong, because the pages it had
-  already laid out stay, and a retry appends a whole second layout to them. The page count
-  therefore grows by whatever the failed attempt had
-  committed, on every attempt; how many that is depends on the document, so no figure for it is
-  quoted. Correct the cause after a layout throw and the retry returns quietly, on a file carrying
-  both layouts. Leave the cause in place and the same exception fires again, another set of pages
-  committed first. A retry after a pre-layout refusal is just as quiet and its file is right, so
-  silence does not separate the two.
-  The overloads now say a document is single-use, that a save which threw does
-  not reliably return it to a usable state, and that the answer is a fresh `Document` rather than
-  a retry. The behaviour itself is unchanged here; #530 carries the defect.
-
-- Further boundaries the save overloads did not carry. The save overloads' `InvalidOperationException` list
-  read as complete and was not: `Conformance` set to a PDF/A level together with `Encrypt` throws
-  from `Save`, since ISO 19005-2 §6.1.3 prohibits encryption, and neither `Document.Conformance`
-  nor `Document.Encrypt` documents that pairing, so the save overloads now do. `Cell.ColSpan`
-  documented `OverflowException` and `OutOfMemoryException` against `Document.Save` while `Save`
-  itself listed neither, which is where a caller writing catch clauses looks first; all four
-  overloads now carry both, each naming the member that causes it. `ListElement.Indent` covered
-  only magnitude. Its other inputs each do something different: `NaN` and negative infinity each
-  write a text-matrix coordinate that is not a PDF number, and positive infinity draws the marker
-  and drops the item text on a flat list.
+- Further boundaries the save overloads did not carry. The save overloads'
+  `InvalidOperationException` list read as complete and was not: `Conformance` set to a PDF/A level
+  together with `Encrypt` throws from `Save`, since ISO 19005-2 §6.1.3 prohibits encryption. The
+  save overloads, `Document.Conformance` and `Document.Encrypt` now say so, and name a second
+  pairing: PDF/UA-1 with `Encrypt` but without `PdfPermissions.Extract`, which ISO 14289-1, 7.16,
+  does not allow. `Cell.ColSpan` documented `OverflowException` and `OutOfMemoryException` against
+  `Document.Save` while `Save` itself listed neither, which is where a caller writing catch clauses
+  looks first; all four overloads now carry both, each naming the member that causes it.
+  `ListElement.Indent` covered only magnitude. Its other inputs each do something different: `NaN`
+  and negative infinity can each write a text-matrix coordinate that is not a PDF number, or make
+  the save throw `ArgumentException` when the item text is linked. Positive infinity draws the
+  marker and drops the item text on a flat list.
 
   A negative value needed a rule rather than a list of outcomes. Where it puts the text depends
   on the nesting level, on which branch of the widening override is taken and on the font size,
   so any list of the cases is incomplete. The member states the gutter rules that generate all of
-  them, the override included, and says a negative value is not to be relied on; the measured figures are on
-  #476, where they can
-  name the page size, margins and font they were taken at. Nothing here is reported, and on a **flat** list
-  nothing throws either.
+  them, the override included, and says a negative value is not to be relied on; the measured
+  figures are on #476, where they can name the page size, margins and font they were taken at.
+  A finite negative value is not reported.
 
   The indent that loses content was documented against the wrong width. It is the list's own area,
   which is the page's content width narrowed by the left and right edges of

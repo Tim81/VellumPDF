@@ -7,6 +7,8 @@ using VellumPdf.Layout.Elements;
 namespace VellumPdf.Layout.Rendering;
 
 /// <summary>Renders a <see cref="PieChart"/> as a set of filled Bézier-approximated wedges.</summary>
+/// <remarks>Does not split. The chart's refusals are raised from <see cref="Layout"/>; see
+/// <see cref="PieChart"/>.</remarks>
 public sealed class PieChartRenderer : IRenderer
 {
     private readonly PieChart _chart;
@@ -19,9 +21,33 @@ public sealed class PieChartRenderer : IRenderer
     private double _placementDiameter;
 
     /// <summary>Creates a renderer for the given pie chart.</summary>
+    /// <remarks>
+    /// A null <paramref name="chart"/> is stored, and <see cref="Layout"/> throws.
+    /// <para>Do not pass null. A later major version will throw <see cref="ArgumentNullException"/>
+    /// from this constructor.</para>
+    /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised later from <see cref="Layout"/>, not from this constructor, when
+    /// <paramref name="chart"/> is <see langword="null"/>.
+    /// </exception>
     public PieChartRenderer(PieChart chart) => _chart = chart;
 
     /// <summary>Validates the slices, reserves the chart diameter plus margins, and reports the occupied region.</summary>
+    /// <remarks>
+    /// This renderer does not split. A chart taller than the area returns
+    /// <see cref="LayoutResult.Outcome.Nothing"/>, and the document's save then throws
+    /// <see cref="InvalidOperationException"/> saying the element is too tall to fit. This method
+    /// raises the chart's refusals itself. When the document calls this method, they reach you from
+    /// the save.
+    /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// <see cref="PieChart.Slices"/>, <see cref="PieChart.Diameter"/>,
+    /// <see cref="PieChart.StartAngle"/> or <see cref="PieChart.StrokeWidth"/> is refused;
+    /// <c>ParamName</c> names the property.
+    /// </exception>
+    /// <exception cref="NullReferenceException">
+    /// The chart, or its <see cref="PieChart.Slices"/>, is <see langword="null"/>.
+    /// </exception>
     public LayoutResult Layout(LayoutContext ctx)
     {
         // Every refusal below named nameof(_chart), a private field of this renderer, so the
@@ -95,6 +121,7 @@ public sealed class PieChartRenderer : IRenderer
     }
 
     /// <summary>Fills each wedge, optionally stroking separators, wrapped as an artifact when tagging is enabled.</summary>
+    /// <remarks>See <see cref="IRenderer.Draw"/>.</remarks>
     public void Draw(DrawContext ctx)
     {
         var area = _occupied.Deflate(_chart.Margins);

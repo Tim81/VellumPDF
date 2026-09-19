@@ -16,13 +16,19 @@ namespace VellumPdf.Layout.Rendering.Table;
 ///   • Computes row heights (max cell content height in each row).
 ///   • Splits at row boundaries if the table crosses a page break.
 ///   • Header rows are repeated at the top of each continuation page.
-///   • Rowspan cells: the page break is never placed inside a rowspan group.
+///   • Rowspan cells: the page break is not placed inside a rowspan group that starts in a
+///     data row; see <see cref="Cell.RowSpan"/>.
 ///
 /// Draw:
 ///   • Fills cell backgrounds.
 ///   • Draws cell text, word-wrapped to the cell inner width.
 ///   • Draws collapsed borders (single shared line between cells).
 /// </summary>
+/// <remarks>
+/// A table that resolves to no columns is refused from <see cref="Layout"/>. A table whose rows are
+/// all headers lays out as <see cref="LayoutResult.Outcome.Nothing"/>, so the document's save
+/// throws <see cref="InvalidOperationException"/> saying the element is too tall to fit (#488).
+/// </remarks>
 public sealed class TableRenderer : IRenderer
 {
     private readonly TableElement _table;
@@ -32,7 +38,24 @@ public sealed class TableRenderer : IRenderer
     private double[] _rowHeights = [];
     private LayoutBox _occupied;
 
-    /// <summary>Creates a renderer for the table, optionally starting at data row <paramref name="startRow"/> for pagination.</summary>
+    /// <summary>
+    /// Creates a renderer for the table, optionally starting at row <paramref name="startRow"/>
+    /// of <see cref="TableElement.Rows"/> for pagination.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="startRow"/> indexes <see cref="TableElement.Rows"/> with the header rows
+    /// counted. The leading header rows are drawn first on every page, then the other rows from
+    /// <paramref name="startRow"/> on, so a start below zero or inside the header run draws every
+    /// row. A start past the last row lays out as <see cref="LayoutResult.Outcome.Nothing"/>, so a
+    /// document saving it throws <see cref="InvalidOperationException"/> saying the element is too
+    /// tall to fit. A null <paramref name="table"/> makes <see cref="Layout"/> throw.
+    /// <para>Do not pass null or a start outside the table's rows. A later major version will
+    /// throw from this call.</para>
+    /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised later from <see cref="Layout"/>, not from this constructor, when
+    /// <paramref name="table"/> is <see langword="null"/>.
+    /// </exception>
     public TableRenderer(TableElement table, int startRow = 0)
     {
         _table = table;
@@ -40,6 +63,30 @@ public sealed class TableRenderer : IRenderer
     }
 
     /// <summary>Resolves column widths and row heights, fitting as many rows as possible and splitting at row boundaries on overflow.</summary>
+    /// <remarks>
+    /// Overflow splits at a row boundary. An area with no width returns
+    /// <see cref="LayoutResult.Outcome.Nothing"/> before anything is checked. When the document
+    /// calls this method, the exceptions it lists reach you from the save.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// The table resolves to no columns, or a cell's span, padding or style, or the table's
+    /// border width, is refused; see <see cref="TableElement.Rows"/>, <see cref="Cell.ColSpan"/>,
+    /// <see cref="Cell.Padding"/> and <see cref="TableElement.BorderWidth"/>.
+    /// </exception>
+    /// <exception cref="NullReferenceException">
+    /// The table or a cell is <see langword="null"/>, or a cell's content is null in a table with
+    /// an automatically sized column.
+    /// </exception>
+    /// <exception cref="OverflowException">
+    /// A row's column spans sum past <see cref="int.MaxValue"/>; see <see cref="Cell.ColSpan"/>.
+    /// </exception>
+    /// <exception cref="OutOfMemoryException">
+    /// The resolved column count is too large to allocate; see <see cref="Cell.ColSpan"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Text this method measures in an embedded font holds an unpaired surrogate; see
+    /// <see cref="TextStyle.FontRef"/>.
+    /// </exception>
     public LayoutResult Layout(LayoutContext context)
     {
         var area = context.Area.Deflate(_table.Margins);
@@ -148,6 +195,11 @@ public sealed class TableRenderer : IRenderer
     }
 
     /// <summary>Draws cell backgrounds, borders and text (repeating header rows) and builds the tagged Table struct tree when tagging is enabled.</summary>
+    /// <remarks>See <see cref="IRenderer.Draw"/>.</remarks>
+    /// <exception cref="IndexOutOfRangeException">
+    /// This method is called before <see cref="Layout"/> on a table that has a header row; see
+    /// <see cref="IRenderer.Draw"/>.
+    /// </exception>
     public void Draw(DrawContext ctx)
     {
         // Layout already deflated context.Area by _table.Margins and stored the result in
@@ -320,12 +372,14 @@ public sealed class TableRenderer : IRenderer
     /// actually covers on this page: the longest run of consecutive rows from its own, all of which
     /// this page draws, capped by the declared count.
     ///
-    /// A page break never clips a span, because <c>Layout</c> walks the break back out of a rowspan
-    /// group; a group that cannot fit a page at all raises <c>ElementTooTall</c> instead of
-    /// splitting. What this does clip, on a data row as readily as a header row, is a span reaching
-    /// past the last row of the table. Measured on a 300x170pt page at 20pt margins with a repeated
-    /// header, where the box holds five 20pt rows under it: groups of two to five keep their
-    /// declared span, six and up raise.
+    /// A page break does not clip a span that starts in a data row and whose last row does not
+    /// overflow int, because <c>Layout</c> walks the break back out of such a group; a group taller
+    /// than the page leaves below the repeated header rows raises <c>ElementTooTall</c> instead of
+    /// splitting. A span from the leading header rows is not walked back out of, so it is clipped
+    /// on each continuation page (see <c>Cell.RowSpan</c>). What this also clips, on a data row as
+    /// readily as a header row, is a span reaching past the last row of the table. Measured on a
+    /// 300x170pt page at 20pt margins with a repeated header, where the box holds five 20pt rows
+    /// under it: groups of two to five keep their declared span, six and up raise.
     ///
     /// The repeated header run is the case this exists for. <c>Draw</c> draws that run again at the
     /// top of every continuation page, but
