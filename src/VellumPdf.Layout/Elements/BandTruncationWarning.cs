@@ -17,7 +17,7 @@ public enum RunningBandKind
 }
 
 /// <summary>
-/// Reports that a running band's resolved text was wider than the content box and was cut to fit.
+/// Reports that a running band's resolved text was cut to fit the content box.
 ///
 /// A band that does not fit used to be drawn off the page with every glyph still written into the
 /// content stream, so the header or footer was absent from every viewer while its bytes were paid
@@ -99,8 +99,8 @@ public readonly record struct BandTruncationWarning
 
     /// <summary>How many UTF-16 code units the cut dropped on that page.</summary>
     /// <remarks>
-    /// <see cref="ResolvedCharacters"/> minus <see cref="DrawnCharacters"/>. Can be negative
-    /// if those two were built by hand.
+    /// <see cref="ResolvedCharacters"/> minus <see cref="DrawnCharacters"/>. Can be negative, or
+    /// wrap, if those two were built by hand.
     /// </remarks>
     public int DroppedCharacters => ResolvedCharacters - DrawnCharacters;
 }

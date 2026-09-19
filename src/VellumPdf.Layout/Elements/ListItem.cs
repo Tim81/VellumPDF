@@ -17,12 +17,13 @@ public sealed class ListItem
 
     /// <summary>The item's text.</summary>
     /// <remarks>
-    /// A null value makes the save throw; see the constructor. White space is drawn as on
-    /// <see cref="Paragraph"/>.
+    /// A null value makes the save throw on a top-level item or a child; see the constructor. White
+    /// space is drawn as on <see cref="Paragraph"/>.
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the text is <see langword="null"/>.
+    /// from this property, when the text is <see langword="null"/> on a top-level item or a child;
+    /// a grandchild is ignored (see <see cref="Children"/>).
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not

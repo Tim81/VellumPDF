@@ -15,11 +15,12 @@ namespace VellumPdf.Layout.Elements;
 /// <see cref="Add"/>.
 /// <para>Text is laid out word by word. A carriage return, a line feed, or a carriage return
 /// followed by a line feed starts a new line. One before the first word leaves an empty first line;
-/// at the end of the text the first is dropped and each further one adds an empty line. Any other
-/// sequence of white space, except U+00A0 NO-BREAK SPACE, is drawn as one space, and is dropped at
-/// the start and end of each line. The boundary between two runs is drawn as a space too, unless a
-/// line break falls on it, so a word cannot change style part-way: the run <c>Bold</c> followed by
-/// the run <c>er</c> is drawn as <c>Bold er</c>.</para>
+/// at the end of the text the first is dropped and each further one adds an empty line. A break
+/// right after a word too wide for its line adds an empty line too, whether or not the break is the
+/// last. Any other sequence of white space, except U+00A0 NO-BREAK SPACE, is drawn as one space,
+/// and is dropped at the start and end of each line. The boundary between two runs is drawn as a
+/// space too, unless a line break falls on it, so a word cannot change style part-way: the run
+/// <c>Bold</c> followed by the run <c>er</c> is drawn as <c>Bold er</c>.</para>
 /// </remarks>
 public sealed class Paragraph
 {
@@ -85,8 +86,9 @@ public sealed class Paragraph
     /// <see cref="HorizontalAlignment.Justify"/> stretches every line except the paragraph's last,
     /// which stays left-aligned, and a line that ends at a hard line break is stretched too. A line
     /// with no space in it is not stretched. White space is drawn as the type remarks describe; see
-    /// <see cref="HorizontalAlignment.Justify"/> for trailing line breaks. With a standard-14 font
-    /// the stretch covers only half the space left on the line (#548).
+    /// <see cref="HorizontalAlignment.Justify"/> for trailing line breaks. With standard-14 fonts a
+    /// line can stop short of the right edge, and its runs can overprint; see
+    /// <see cref="HorizontalAlignment.Justify"/> (#548).
     /// </remarks>
     public HorizontalAlignment Alignment { get; init; } = HorizontalAlignment.Left;
 

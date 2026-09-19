@@ -55,14 +55,15 @@ public sealed class Document : IDisposable
     public IReadOnlyList<TextEncodingWarning> TextEncodingWarnings => _textEncodingWarnings;
 
     /// <summary>
-    /// Running bands whose text was wider than the content box and was cut to fit, from the last
-    /// save. At most one report per band, each naming the page that lost the most. Empty when both
-    /// bands fitted, or when no band was set.
+    /// Running bands whose text was cut to fit the content box, from the last save that succeeded.
+    /// At most one report per band, each naming the page that lost the most. Empty when no band was
+    /// cut, or when no band was set.
     /// </summary>
     /// <remarks>
     /// Empty until a save (or signing prep) has run, and replaced by each one that succeeds. A cut
-    /// band is not an error, and this list is the only report of it. See
-    /// <see cref="RunningBand.Template"/>.
+    /// band is not an error, and this list is the only report of it.
+    /// <see cref="VellumPdf.Layout.Rendering.DocumentRenderer.BandTruncations"/> describes when a
+    /// band is cut.
     /// </remarks>
     public IReadOnlyList<BandTruncationWarning> BandTruncations => _bandTruncations;
 
@@ -214,12 +215,14 @@ public sealed class Document : IDisposable
     /// otherwise have no positive size, and no element could be placed in it.
     /// <para>The header and footer count toward this. Their heights come off the same box, so
     /// margins that fit on their own can still leave nothing once you set a running band.</para>
-    /// <para><b>Attention</b>: a finite negative inset is not refused. It moves that edge of the
-    /// content area past the page's edge, and content placed beyond the page is clipped by a
-    /// reader. On a one-paragraph document with every inset at -72, the file is written with no
-    /// invalid token in it, so nothing downstream reports the loss either. Negative insets large
-    /// enough in magnitude to overflow the position arithmetic, such as -1e308, reach the outcomes
-    /// described below for a non-finite inset.</para>
+    /// <para><b>Attention</b>: a finite negative inset is not refused. That edge of the content
+    /// area then lies at the inset plus the height of any header or footer there, measured inward
+    /// from the page's edge, so a negative total places it beyond the page, where a reader clips
+    /// the content. A header or footer on that edge starts at the inset, so part or all of it lies
+    /// beyond the page. On a one-paragraph document with every inset at -72, the file is written
+    /// with no invalid token in it, so nothing downstream reports the loss either. Negative insets
+    /// large enough in magnitude to overflow the position arithmetic, such as -1e308 on both sides
+    /// of an axis, reach the outcomes described below for a non-finite inset.</para>
     /// <para>A non-finite inset is checked only through the sum on its axis, and is refused only
     /// when that sum is positive infinity. <c>NaN</c> and negative infinity pass, because neither
     /// makes the sum meet or exceed the page. An inset that passes leaves a content area that is
@@ -241,7 +244,7 @@ public sealed class Document : IDisposable
     /// Raised from a save when an inset that passes the <see cref="ArgumentException"/> check
     /// leaves an element no area it can be laid out in, makes it reach the page-continuation limit,
     /// or leaves an image an extent it cannot draw, and also when a large finite inset leaves the
-    /// content area positive but too small for a single element. See the remarks.
+    /// content area positive but too small for a single element. The measured cases are on #502.
     /// </exception>
     public EdgeInsets Margins { get; set; } = new EdgeInsets(72); // 1 inch
 
@@ -1070,8 +1073,8 @@ public sealed class Document : IDisposable
     /// </summary>
     /// <remarks>
     /// A document is single-use. The layout runs here, not when you add an element, so most of what
-    /// can go wrong goes wrong at this call rather than at the one that set the bad value, and
-    /// reaches you when the returned task is awaited: each exception this method lists faults the
+    /// can go wrong goes wrong at this call rather than at the one that set the bad value. Each
+    /// exception this method lists reaches you when the returned task is awaited: it faults the
     /// task, except a cancellation, which ends the task in the <c>Canceled</c> state.
     /// <para>The save runs every element's renderer, a custom <see cref="IRenderer"/> included,
     /// reads every font registered with <see cref="UseTrueTypeFont"/>, and writes to

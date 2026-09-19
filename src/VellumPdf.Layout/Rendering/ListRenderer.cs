@@ -73,7 +73,9 @@ public sealed class ListRenderer : IRenderer
     /// <remarks>
     /// See the constructor for a negative or past-end start. Overflow splits at an item, or
     /// mid-item when a paragraph does. When the document calls this method, the exceptions it lists
-    /// reach you from the save.
+    /// reach you from the save. A list added with <see cref="Document.Add(ListElement)"/> never
+    /// starts at a negative item, so <see cref="ArgumentOutOfRangeException"/> reaches the save
+    /// only from a renderer you construct with a negative start and add yourself.
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// The start item is negative, the list has items, and the area is not empty.

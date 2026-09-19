@@ -15,10 +15,20 @@ namespace VellumPdf.Layout.Elements;
 public sealed class LayoutImage
 {
     /// <summary>The image to draw.</summary>
-    /// <remarks>A null value makes the save throw; see the constructor.</remarks>
+    /// <remarks>
+    /// A null value makes the save throw; see the constructor. So does an image whose own pixel
+    /// width or height is not a positive number. A JPEG that declares a zero dimension loads as
+    /// such an image.
+    /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when the image is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when the image's own pixel width or height is not a positive number; a
+    /// JPEG that declares a zero dimension loads as such an image. <c>ParamName</c> is <c>_img</c>.
+    /// It is raised before <see cref="Width"/> and <see cref="Height"/> are checked.
     /// </exception>
     public PdfImageXObject Image { get; }
 
@@ -113,9 +123,9 @@ public sealed class LayoutImage
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when the box the edges leave is too small for the element. The message
     /// says the element is too tall to fit on a page and does not name the margins. With
-    /// <see cref="Width"/> null, the width the edges leave is refused when it is zero, under 5e-6
-    /// in magnitude, or not finite, positive infinity included, and so is a height derived from it
-    /// that is under 5e-6. The message then names that width or height instead.
+    /// <see cref="Width"/> null, the width the edges leave is refused when it is under 5e-6 in
+    /// magnitude, or not finite, and so is a height derived from it that is under 5e-6. The message
+    /// then names that width or height instead.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -143,6 +153,12 @@ public sealed class LayoutImage
     /// <exception cref="NullReferenceException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this call, when <paramref name="image"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this constructor, when the image's own pixel width or height is not a positive number;
+    /// a JPEG that declares a zero dimension loads as such an image. <c>ParamName</c> is
+    /// <c>_img</c>. It is raised before <see cref="Width"/> and <see cref="Height"/> are checked.
     /// </exception>
     public LayoutImage(PdfImageXObject image) => Image = image;
 }

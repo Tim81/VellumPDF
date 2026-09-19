@@ -70,16 +70,17 @@ public sealed class Cell
     /// Number of rows this cell spans. Must be at least 1.
     /// </summary>
     /// <remarks>
-    /// A spanning cell is drawn once, at its own row, across the combined height of the rows it
-    /// covers, and those rows skip the columns it occupies. A page break is not placed inside a
-    /// spanning group that starts in a data row. A header row placed after the first data row
-    /// counts as a data row here. The save throws when such a group is taller than the page leaves
-    /// below the repeated header rows. Two kinds of group can still be split across pages. One
-    /// starts in the table's leading header rows: on each continuation page its cell is drawn
-    /// again, only as tall as the header rows it covers there, and the data rows it covers stop
-    /// skipping its columns, so their cells move into those columns. The other is a span whose last
-    /// row, the zero-based row index plus RowSpan minus one, overflows <see cref="int"/>, as
-    /// <see cref="int.MaxValue"/> does from the third row on.
+    /// A spanning cell is drawn at its own row, across the combined height of the rows it covers,
+    /// and those rows skip the columns it occupies. A page break is not placed inside a spanning
+    /// group that starts in a data row. A header row placed after the first data row counts as a
+    /// data row here. Such groups that share a row are held together as one block, and the save
+    /// throws when a group or block is taller than the page leaves below the repeated header rows.
+    /// Two kinds of group can still be split across pages. One starts in the table's leading header
+    /// rows: on each continuation page its cell is drawn again, only as tall as the header rows it
+    /// covers there, and the data rows it covers stop skipping its columns, so their cells move
+    /// into those columns. The other is a span whose last row, the zero-based row index plus
+    /// RowSpan minus one, overflows <see cref="int"/>, as <see cref="int.MaxValue"/> does from the
+    /// third row on.
     /// <para><b>Attention</b>: zero and negative are <b>not</b> refused, and both behave as 1. That
     /// is an accident of how the draw loop tests the span, not a guarantee, so do not write code
     /// that depends on it. A later major version will reject both.</para>
@@ -91,8 +92,8 @@ public sealed class Cell
     /// <exception cref="InvalidOperationException">
     /// Raised from a save rather than from this property, when a spanning group that starts in a
     /// data row, or in a header row placed after the first data row, is taller than the page leaves
-    /// below the repeated header rows, unless its last row overflows <see cref="int"/>. The remarks
-    /// name the groups that can be split instead.
+    /// below the repeated header rows, unless its last row overflows <see cref="int"/>. Such groups
+    /// that share a row count as one. The remarks name the groups that can be split instead.
     /// </exception>
     public int RowSpan { get; init; } = 1;
 

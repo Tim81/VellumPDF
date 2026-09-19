@@ -130,15 +130,16 @@ public sealed class DocumentRenderer
     internal IReadOnlyList<TextEncodingWarning> TextEncodingWarnings => _textEncodingWarnings;
 
     /// <summary>
-    /// Running bands whose text did not fit the content box and was cut, at most one report per
-    /// band, each naming the page that lost the most.
+    /// Running bands whose text was cut to fit the content box, at most one report per band, each
+    /// naming the page that lost the most.
     /// </summary>
     /// <remarks>
     /// Empty until <see cref="Render"/> has run. A cut band is not an error, and this list is the
-    /// only report of it. A band is cut only when its measured width exceeds the content width. A
-    /// template whose glyphs measure zero or negative width, as at a negative font size, is
-    /// therefore never cut or reported, and no band is when the content width is <c>NaN</c>; see
-    /// <see cref="RunningBand.Template"/>.
+    /// only report of it. The cut compares a running total of the template's character widths with
+    /// the content width. A template whose glyphs measure zero or negative width, as at a negative
+    /// font size, is not cut or reported (see <see cref="RunningBand.Template"/>), and neither is
+    /// any band when the content width is <c>NaN</c>. A template that fits exactly can still be
+    /// cut, because the running total can exceed the whole-string width by a rounding error.
     /// </remarks>
     public IReadOnlyList<BandTruncationWarning> BandTruncations
     {
@@ -223,14 +224,14 @@ public sealed class DocumentRenderer
     /// The page size and margins are checked here. A page width or height that is not a positive
     /// finite number throws <see cref="ArgumentOutOfRangeException"/>, and margins that meet or
     /// exceed the page throw <see cref="ArgumentException"/>, both from this constructor. A margin
-    /// of <c>NaN</c> or negative infinity passes this check, and so does positive infinity opposite
-    /// one of those; see <see cref="Document.Margins"/>.
+    /// of <c>NaN</c> or negative infinity passes this check, and so does positive infinity when the
+    /// opposite edge on its axis holds one of those; see <see cref="Document.Margins"/>.
     /// <para>A null <paramref name="pdf"/> throws <see cref="NullReferenceException"/>: from this
     /// constructor when <paramref name="pageSize"/> is null, and from <see cref="Render"/>
     /// otherwise.</para>
-    /// <para>A negative margin is accepted and moves that edge of the content area past the page
-    /// edge, as on <see cref="Document.Margins"/>. The origin of <paramref name="pageSize"/> is not
-    /// used for layout, as on <see cref="Document.PageSize"/>.</para>
+    /// <para>A negative margin is accepted and moves that edge of the content area outward, as on
+    /// <see cref="Document.Margins"/>. The origin of <paramref name="pageSize"/> is not used for
+    /// layout, as on <see cref="Document.PageSize"/>.</para>
     /// <para>Do not pass a null <paramref name="pdf"/>, a negative or <c>NaN</c> margin, or a page
     /// rectangle not at the origin. A later major version will refuse them.</para>
     /// </remarks>

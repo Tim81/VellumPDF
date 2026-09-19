@@ -18,11 +18,13 @@ public sealed class RunningBand
 {
     /// <summary>Text template — may contain {page} and/or {pages}.</summary>
     /// <remarks>
-    /// A template too wide for the content box is truncated, not refused. The cut is reported
-    /// through <c>Document.BandTruncations</c> and <c>DocumentRenderer.BandTruncations</c>, so
-    /// read one of those if you need to know it happened. A <see langword="null"/> template is a
-    /// different matter: the constructor does not check it and <see cref="Resolve"/> dereferences
-    /// it during the save, so pass an empty string for a band that draws no text.
+    /// A template that does not fit the content box is truncated, not refused;
+    /// <see cref="VellumPdf.Layout.Rendering.DocumentRenderer.BandTruncations"/> says when it
+    /// counts as not fitting. The cut is reported through <c>Document.BandTruncations</c> and
+    /// <c>DocumentRenderer.BandTruncations</c>, so read one of those if you need to know it
+    /// happened. A <see langword="null"/> template is a different matter: the constructor does not
+    /// check it and <see cref="Resolve"/> dereferences it during the save, so pass an empty string
+    /// for a band that draws no text.
     /// <para><b>NOTE</b>: before #365 an overlong template was drawn off the page at a negative
     /// coordinate, with every glyph still written into the content stream. The header or footer
     /// was then invisible in every reader while you paid for its bytes.</para>

@@ -11,7 +11,7 @@ namespace VellumPdf.Layout.Core;
 /// exception on <see cref="LinkUri"/>, fire from
 /// <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/>, the other save overloads and
 /// <see cref="VellumPdf.Layout.Rendering.DocumentRenderer.Render"/>, not from the property setter.
-/// See those members.
+/// Each property names any other call that raises its refusal.
 /// </remarks>
 public sealed class TextStyle
 {
@@ -98,13 +98,12 @@ public sealed class TextStyle
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from a save rather than from this property, when a checked size is not finite (see
-    /// the remarks), or when a finite size is large enough on its own that the page's content area
-    /// is left positive but too small for the element. Neither case needs a
-    /// <see cref="VellumPdf.Layout.Elements.RunningBand"/>. On a paragraph style the message names
-    /// the run and the size; a <see cref="VellumPdf.Layout.Elements.Heading"/> is laid out through
-    /// the same paragraph code and reports the same way, as <c>"A paragraph run"</c>, not by the
-    /// heading's own name. A list-item style reports as <c>"A paragraph run"</c> too, because the
-    /// item's marker is checked. On a table-cell style the message names the row and cell instead.
+    /// the remarks), or when a finite size makes the element too tall for the content area. On a
+    /// paragraph style the message names the run and the size; a
+    /// <see cref="VellumPdf.Layout.Elements.Heading"/> is laid out through the same paragraph code
+    /// and reports the same way, as <c>"A paragraph run"</c>, not by the heading's own name. A
+    /// list-item style reports as <c>"A paragraph run"</c> too, because the item's marker is
+    /// checked. On a table-cell style the message names the row and cell instead.
     /// <para>On a <see cref="VellumPdf.Layout.Elements.RunningBand"/> style, which message fires
     /// depends on the band and on whether
     /// <see cref="VellumPdf.Layout.Elements.RunningBand.Height"/> is set. Measured with
@@ -225,10 +224,11 @@ public sealed class TextStyle
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when linked text is placed at a non-finite position, for example through
-    /// a non-finite margin (see <see cref="Document.Margins"/>) or a renderer's non-finite result.
-    /// The link's rectangle is written outside the content stream, and the save refuses a
-    /// non-finite coordinate there. Without a link, the same paragraph or list-item text saves. A
-    /// heading placed at a non-finite height throws either way, from its bookmark; see
+    /// a non-finite margin (see <see cref="Document.Margins"/>) or a non-finite bottom in a
+    /// renderer's result (see <see cref="LayoutResult.Full"/>). The link's rectangle is written
+    /// outside the content stream, and the save refuses a non-finite coordinate there. Without a
+    /// link, the same paragraph or list-item text saves. A heading placed at a non-finite height
+    /// throws either way, from its bookmark; see
     /// <see cref="VellumPdf.Layout.Elements.Heading.Margins"/>.
     /// </exception>
     public string? LinkUri { get; init; }
