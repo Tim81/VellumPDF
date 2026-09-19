@@ -96,17 +96,18 @@ public sealed class ListElement
     /// gutter needs. The child marker, inset by this value alone, is not refused and is still
     /// drawn. Keep this value well below half the area width (#476).</para>
     /// <para>Do <b>not</b> pass a negative value. It can carry content left of the margin and off
-    /// the page, and at a finite value nothing throws or reports it. Where an item lands follows
-    /// from the rules above, the override included; the measured figures are on #476, not here,
-    /// because they depend on the level, on which branch the override takes and on
+    /// the page. A finite negative value neither throws nor is reported. Where an item lands
+    /// follows from the rules above, the override included; the measured figures are on #476, not
+    /// here, because they depend on the level, on which branch the override takes and on
     /// <see cref="TextStyle.FontSize"/>. A later major version will reject a negative value.</para>
     /// <para>Of the non-finite values only positive infinity is refused with
     /// <see cref="InvalidOperationException"/>, and only with nested children. <c>NaN</c> and
     /// negative infinity are accepted, and each can reach the text matrix as a token that is not a
     /// PDF number, leaving a reader no coordinate to place the item at. For unlinked text neither
-    /// throws nor is reported (#532). When linked item text, or a linked nested marker, lands at a
-    /// non-finite position, the save throws <see cref="ArgumentException"/> for the link's
-    /// rectangle instead; see <see cref="TextStyle.LinkUri"/>.</para>
+    /// throws nor is reported (#532).</para>
+    /// <para>When <c>NaN</c> or negative infinity puts linked item text, or a linked nested
+    /// marker, at a non-finite position, the save throws <see cref="ArgumentException"/> for the
+    /// link's rectangle; see <see cref="TextStyle.LinkUri"/>.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from a save rather than from this property, when this value is <c>NaN</c> or negative

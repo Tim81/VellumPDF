@@ -44,7 +44,7 @@ public sealed class Document : IDisposable
     private readonly List<BandTruncationWarning> _bandTruncations = [];
 
     /// <summary>
-    /// Characters written in a Standard-14 font, by an element or a running band, that
+    /// Characters written to a page in a Standard-14 font, by anything that draws on it, that
     /// WinAnsiEncoding could not represent (each UTF-16 code unit was substituted with '?' in the
     /// saved PDF, so a character outside the Basic Multilingual Plane gives two question marks).
     /// Empty when every character rendered is in WinAnsi.
@@ -550,7 +550,8 @@ public sealed class Document : IDisposable
     /// await it. The ones <see cref="UseTrueTypeFont"/> leaves to the save are raised by
     /// the save, not the task. A <paramref name="cancellationToken"/> already cancelled when you
     /// call this cancels the task instead of faulting it, and awaiting it throws
-    /// <see cref="OperationCanceledException"/>. The token is passed only to the file read. A
+    /// <see cref="OperationCanceledException"/>. It does so whatever <paramref name="path"/>
+    /// holds, so it pre-empts the refusals above. The token is passed only to the file read. A
     /// cancellation after the read has no effect, and a font the parse accepts stays registered.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
@@ -586,7 +587,7 @@ public sealed class Document : IDisposable
     /// <see cref="UseTrueTypeFont"/>.
     /// </exception>
     /// <exception cref="OperationCanceledException">
-    /// <paramref name="cancellationToken"/> was cancelled before the file was read.
+    /// <paramref name="cancellationToken"/> was already cancelled when this method was called.
     /// </exception>
     public async Task<EmbeddedFontHandle> LoadTrueTypeFontAsync(string path, CancellationToken cancellationToken = default)
     {

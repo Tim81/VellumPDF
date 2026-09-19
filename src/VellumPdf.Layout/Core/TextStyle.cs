@@ -36,9 +36,9 @@ public sealed class TextStyle
     /// Standard-14 value the enumeration does not name makes the save throw once the font is
     /// selected on a page, which an empty table cell or list item with this style also does.
     /// <para><see cref="Standard14.Symbol"/> and <see cref="Standard14.ZapfDingbats"/> measure
-    /// every character as zero width at any finite size (#470). In either font, a paragraph is
-    /// therefore never wrapped, a centred or right-aligned line is placed as if it had no width,
-    /// and a justified line can run past the right edge. A run that follows a Symbol or
+    /// every character as zero width at any finite size (#470). A paragraph set wholly in either
+    /// font is therefore never wrapped. A centred or right-aligned line is placed as if it had no
+    /// width, and a justified line can run past the right edge. A run that follows a Symbol or
     /// ZapfDingbats run on the same line, in a different <see cref="TextStyle"/> instance, can
     /// start where that run starts and be drawn over it.</para>
     /// </remarks>
@@ -219,10 +219,10 @@ public sealed class TextStyle
     /// link (#475). In a list item the marker is linked as well as the text. The link is written
     /// untagged and without an alternate description, whatever the conformance, and no exception
     /// reports it. In a document whose <c>Conformance</c> is PDF/UA-1, the link breaks ISO
-    /// 14289-1, 7.18.5 (#550). Clause 7.18.1 exempts a link whose rectangle lies wholly outside the
-    /// page's crop box. On a justified line the link's rectangle is sized and placed as if
-    /// the line were not stretched, so the linked words can run past it, and in an embedded font
-    /// can lie away from it (#551).
+    /// 14289-1, 7.18.5 (#550). A link whose rectangle lies wholly outside the page's crop box is
+    /// exempt: clause 7.18.1 lifts the requirements of clause 7.18 for it. On a justified line
+    /// the link's rectangle is sized and placed as if the line were not stretched, so the linked
+    /// words can run past it, and in an embedded font can lie away from it (#551).
     /// <para>Do not pass a value that is not an absolute URI. A later major version will refuse
     /// one.</para>
     /// </remarks>

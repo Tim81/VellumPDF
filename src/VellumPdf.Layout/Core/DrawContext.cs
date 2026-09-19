@@ -150,10 +150,10 @@ public sealed class DrawContext
     /// <c>javascript:alert(1)</c>. Non-ASCII characters are percent-encoded as UTF-8, and an
     /// unpaired surrogate becomes U+FFFD first. The link is written untagged and without an
     /// alternate description, whatever the conformance, and no exception reports it. In a document
-    /// whose <c>Conformance</c> is PDF/UA-1, the link breaks ISO 14289-1, 7.18.5 (#550). Clause
-    /// 7.18.1 exempts a link whose rectangle lies wholly outside the page's crop box. A null
-    /// <paramref name="uri"/> writes a link annotation with no action, so the area is a link that
-    /// goes nowhere.
+    /// whose <c>Conformance</c> is PDF/UA-1, the link breaks ISO 14289-1, 7.18.5 (#550). A link
+    /// whose rectangle lies wholly outside the page's crop box is exempt: clause 7.18.1 lifts the
+    /// requirements of clause 7.18 for it. A null <paramref name="uri"/> writes a link annotation
+    /// with no action, so the area is a link that goes nowhere.
     /// <para>A non-finite coordinate in <paramref name="box"/>, or finite ones whose sum overflows,
     /// is accepted here. The save throws when it writes the annotation's rectangle.</para>
     /// <para>Do not pass a null or relative <paramref name="uri"/>. A later major version will
@@ -167,7 +167,7 @@ public sealed class DrawContext
     /// real number.
     /// </exception>
     /// <exception cref="ArgumentNullException">
-    /// This context was constructed with a null page.
+    /// Raised from this call when this context was constructed with a null page.
     /// </exception>
     public void AddUriLinkAnnotation(LayoutBox box, string uri)
     {
@@ -203,6 +203,10 @@ public sealed class DrawContext
     /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
     /// save overloads, not from this call, when <paramref name="layoutY"/>
     /// is not finite.
+    /// </exception>
+    /// <exception cref="ArgumentNullException">
+    /// Raised when the <see cref="PdfDocument"/> this context was constructed with is saved, not
+    /// from this call, when this context was constructed with a null page.
     /// </exception>
     public void AddOutlineEntry(string title, int level, double layoutY)
     {

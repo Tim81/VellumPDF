@@ -237,10 +237,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     create rows without one (#543).
   - A link from `TextStyle.LinkUri` or `DrawContext.AddUriLinkAnnotation` is written untagged
     and without an alternate description, so a PDF/UA-1 document holding one is not conformant,
-    and nothing reports it (#550). ISO 14289-1, 7.18.1 exempts a link whose rectangle lies
-    wholly outside the page's crop box. On a justified line the link rectangle keeps its unstretched
-    size and position, so the linked words can run past it, and in an embedded font it can lie
-    away from them (#551).
+    and nothing reports it (#550). A link whose rectangle lies wholly outside the page's crop
+    box is exempt: ISO 14289-1, 7.18.1 lifts the requirements of clause 7.18 for it. On a
+    justified line the link rectangle keeps its unstretched size and position, so the linked
+    words can run past it, and in an embedded font it can lie away from them (#551).
   - Text that holds an unpaired surrogate makes the save throw `ArgumentException` when it is
     measured in an embedded font. `TextStyle.MeasureString` throws the same exception itself.
     The save can throw for part of a running band's template that the band does not draw.

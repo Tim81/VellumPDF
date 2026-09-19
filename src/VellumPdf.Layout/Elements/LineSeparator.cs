@@ -49,7 +49,8 @@ public sealed class LineSeparator
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when finite values whose sum overflows to negative infinity put a later
     /// element at an infinite position that the save writes outside the content stream, such as a
-    /// heading's bookmark.
+    /// heading's bookmark or the rectangle of a link from <see cref="TextStyle.LinkUri"/>.
+    /// The message says PDF does not support NaN or Infinity as a real number.
     /// </exception>
     public double LineWidth { get; init; } = 1;
 
@@ -92,7 +93,8 @@ public sealed class LineSeparator
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when finite values whose sum overflows to negative infinity put a later
     /// element at an infinite position that the save writes outside the content stream, such as a
-    /// heading's bookmark.
+    /// heading's bookmark or the rectangle of a link from <see cref="TextStyle.LinkUri"/>.
+    /// The message says PDF does not support NaN or Infinity as a real number.
     /// </exception>
     public EdgeInsets Margins { get; init; } = new EdgeInsets(6, 0, 6, 0);
 }
