@@ -118,8 +118,8 @@ public readonly struct FontReference
     /// <paramref name="pointSize"/> is multiplied through and is not refused here.
     /// <para><see cref="VellumPdf.Fonts.Standard14.Symbol"/>,
     /// <see cref="VellumPdf.Fonts.Standard14.ZapfDingbats"/> and a Standard-14 value the
-    /// enumeration does not name measure 0 for every character, so text in them is never wrapped
-    /// (#470).</para>
+    /// enumeration does not name measure 0 for every character at any finite size (#470). Text in
+    /// them is therefore never wrapped.</para>
     /// <para>On an embedded font, every character measured that the subset does not already hold is
     /// added to it, so a string you measure but never draw can still make the embedded font
     /// larger.</para>

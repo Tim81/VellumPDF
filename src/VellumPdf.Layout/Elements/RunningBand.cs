@@ -88,8 +88,8 @@ public sealed class RunningBand
     /// <remarks>
     /// <see cref="HorizontalAlignment.Justify"/> is neither refused nor honoured. It falls through
     /// to left alignment, and so does a value the enumeration does not name. A single-line band has
-    /// nothing to justify against, so there is no meaning to give it. The band's default is
-    /// centred. Asking for justify loses the centring, and nothing reports it.
+    /// nothing to justify against. The band's default is centred. Asking for justify loses the
+    /// centring, and nothing reports it.
     /// </remarks>
     public HorizontalAlignment Alignment { get; }
 

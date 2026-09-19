@@ -490,6 +490,11 @@ public sealed class Document : IDisposable
     /// and from <see cref="Save(System.IO.Stream)"/> and the other save overloads for the outline
     /// tables.
     /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
+    /// call, when a value in the font makes a font metric non-finite, such as a
+    /// <c>unitsPerEm</c> of 0. <c>ParamName</c> is <c>value</c>.
+    /// </exception>
     public EmbeddedFontHandle UseTrueTypeFont(byte[] fontData) =>
         _pdf.UseTrueTypeFont(fontData);
 
@@ -506,6 +511,9 @@ public sealed class Document : IDisposable
     /// <exception cref="ArgumentException">
     /// <paramref name="path"/> is empty, holds a null character, or, on Windows, holds only spaces.
     /// Other characters the file system refuses raise <see cref="IOException"/>.
+    /// <see cref="Save(System.IO.Stream)"/> and the other save overloads also raise
+    /// <see cref="ArgumentException"/>, not this call, for a value in the font that makes a font
+    /// metric non-finite; see <see cref="UseTrueTypeFont"/>.
     /// </exception>
     /// <exception cref="FileNotFoundException">
     /// <paramref name="path"/> names a file that does not exist.
@@ -537,10 +545,11 @@ public sealed class Document : IDisposable
     /// returns a handle.
     /// </summary>
     /// <remarks>
-    /// Same refusals as <see cref="LoadTrueTypeFont"/>. This method does not throw them itself:
-    /// each one faults the returned task, and surfaces when you await it. A cancelled
-    /// <paramref name="cancellationToken"/> cancels the task instead, and awaiting it throws
-    /// <see cref="OperationCanceledException"/>.
+    /// Same refusals as <see cref="LoadTrueTypeFont"/>. This method does not throw the ones raised
+    /// while the file is read and parsed: each one faults the returned task, and surfaces when you
+    /// await it. The ones <see cref="UseTrueTypeFont"/> leaves to the save are raised by the save,
+    /// not the task. A cancelled <paramref name="cancellationToken"/> cancels the task instead of
+    /// faulting it, and awaiting it throws <see cref="OperationCanceledException"/>.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="path"/> is <see langword="null"/>.
@@ -548,6 +557,9 @@ public sealed class Document : IDisposable
     /// <exception cref="ArgumentException">
     /// <paramref name="path"/> is empty, holds a null character, or, on Windows, holds only spaces.
     /// Other characters the file system refuses raise <see cref="IOException"/>.
+    /// <see cref="Save(System.IO.Stream)"/> and the other save overloads also raise
+    /// <see cref="ArgumentException"/>, not the returned task, for a value in the font that makes a
+    /// font metric non-finite; see <see cref="UseTrueTypeFont"/>.
     /// </exception>
     /// <exception cref="FileNotFoundException">
     /// <paramref name="path"/> names a file that does not exist.

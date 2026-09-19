@@ -86,8 +86,9 @@ public sealed class ListItem
     /// levels, or compose separate lists, until arbitrary nesting lands (#479).</para>
     /// <para>In an <see cref="ListStyle.Unordered"/> list a child is marked with U+25E6, the
     /// white bullet. The standard-14 fonts cannot encode it, so with a standard-14 style the
-    /// child's marker is drawn as <c>?</c> and recorded in
-    /// <see cref="Document.TextEncodingWarnings"/>.</para>
+    /// child's marker is written as the character code for <c>?</c> and recorded in
+    /// <see cref="Document.TextEncodingWarnings"/>. ZapfDingbats draws that code as a different
+    /// glyph, not as <c>?</c>.</para>
     /// </remarks>
     public IReadOnlyList<ListItem>? Children => _children;
 

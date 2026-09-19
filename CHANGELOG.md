@@ -226,13 +226,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     whatever font the saving document registered under the same resource name, if any. Even when
     that is the same font file, only the characters the saving document's own text also uses
     survive (#544).
-  - `HorizontalAlignment.Justify` is drawn as left everywhere except paragraph and heading text,
-    and a line whose text is all in one `TextStyle` instance and in the standard-14 text faces
-    (every standard-14 font but Symbol and ZapfDingbats) is stretched by only half the free space
-    (#548). On a line in those faces holding text in more than one instance, each instance's text
-    is placed at its unstretched width while its spaces are stretched, and can overprint the text
-    after it. Symbol and ZapfDingbats measure every glyph as zero (#470), so a justified line
-    in either can run past the right edge.
+  - `HorizontalAlignment.Justify` is drawn as left everywhere except paragraph and heading text.
+    A justified line whose text is all in one `TextStyle` instance and in the standard-14 text
+    faces (every standard-14 font but Symbol and ZapfDingbats) is stretched by only half the free
+    space (#548). On a line in those faces holding text in more than one instance, each
+    instance's text is placed at its unstretched width while its spaces are stretched, and can
+    overprint the text after it. Symbol and ZapfDingbats measure every glyph as zero (#470), so a
+    justified line in either can run past the right edge.
   - `Row.Background` has no effect through `TableElement.AddRow` or `AddHeaderRow`, which
     create rows without one (#543).
   - A link from `TextStyle.LinkUri` or `DrawContext.AddUriLinkAnnotation` is written untagged
@@ -258,9 +258,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     is drawn as one space, and is dropped at the start and end of each line. A paragraph also
     draws the boundary between two runs as a space, so a word cannot change style part-way.
     Paragraph, heading or list-item text holding only white space other than U+00A0 is laid out
-    at the leading of `TextStyle.Default`, whatever its style. A list item's marker keeps the
-    item's own style. When the marker's line does not fit where the item lands, the item is placed
-    without its marker.
+    at the leading of `TextStyle.Default`, whatever its style. Such a list item's marker keeps the
+    item's own style, and when the marker's line does not fit where the item lands, the item is
+    placed without its marker.
   - A `Cell.RowSpan` group that starts in the table's leading header rows can be split across
     pages, and on each continuation page the data rows it covers draw their cells in its columns.
   - The last item a list draws on a page can lose a line while the space for that line stays
