@@ -236,8 +236,10 @@ public sealed class DocumentRenderer
     /// <para>A negative margin is accepted and moves that edge of the content area outward, as on
     /// <see cref="Document.Margins"/>. The origin of <paramref name="pageSize"/> is not used for
     /// layout, as on <see cref="Document.PageSize"/>.</para>
-    /// <para>Do not pass a null <paramref name="pdf"/>, a negative or <c>NaN</c> margin, or a page
-    /// rectangle not at the origin. A later major version will refuse them.</para>
+    /// <para>Do not pass a null <paramref name="pdf"/>, a page rectangle not at the origin, or a
+    /// page size so large that positions overflow. Do not pass a margin that is a finite negative
+    /// inset, <c>NaN</c> or negative infinity either. A later major version will refuse
+    /// them.</para>
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// The page width or height is not a positive finite number.

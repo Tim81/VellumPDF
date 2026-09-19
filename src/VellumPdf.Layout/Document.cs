@@ -61,7 +61,7 @@ public sealed class Document : IDisposable
     /// </summary>
     /// <remarks>
     /// Empty until a save (or signing prep) has run, and replaced by each one that succeeds. A cut
-    /// band is not an error, and this list is the only report of it.
+    /// band is not an error, and for a save or signing prep this list is the only report of it.
     /// <see cref="VellumPdf.Layout.Rendering.DocumentRenderer.BandTruncations"/> describes when a
     /// band is cut.
     /// </remarks>
@@ -69,7 +69,9 @@ public sealed class Document : IDisposable
 
     /// <summary>Document metadata (title, author, subject, keywords, etc.).</summary>
     /// <remarks>
-    /// No field on this dictionary is validated by Layout.
+    /// Layout validates no field of this dictionary. Each entry is written to <c>/Info</c> as
+    /// given. The XMP metadata can differ from it: it drops most control characters, replaces an
+    /// unpaired surrogate with U+FFFD, and can leave out an empty entry.
     /// </remarks>
     public PdfDocumentInfo Info => _pdf.Info;
 
@@ -84,8 +86,9 @@ public sealed class Document : IDisposable
     /// used for layout, which places content from (0, 0) and reads only the width and height.
     /// Relative to the page, the content therefore moves by minus that corner, and off the page
     /// once the corner's offset exceeds the margins.</para>
-    /// <para>Do not pass null, or a rectangle not at the origin. A later major version will refuse
-    /// both.</para>
+    /// <para>Do not pass null, a rectangle not at the origin, or a size so large that positions
+    /// overflow; a page 1e308 wide makes an auto-width table write <c>NaN</c>. A later major
+    /// version will refuse all three.</para>
     /// <para>Setting this after adding elements applies to what you have already
     /// added. The layout runs at save, so the size in force then is the size the whole document
     /// is laid out at, not only the part added after you set it.</para>
@@ -108,14 +111,16 @@ public sealed class Document : IDisposable
     /// Raised from a save rather than from this property, when the value is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// Raised from a save, when the margins on either axis meet or exceed this page size.
+    /// Raised from a save, when the margins on either axis meet or exceed this page size, or when a
+    /// header or footer leaves the content area no positive size; see <see cref="Margins"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Raised from a save, when the content area this size and <see cref="Margins"/> compute to
-    /// is positive but still too small for a single element to fit on one page. A document that
-    /// merely runs to several pages does not reach it. One other route reaches the same type: the
-    /// page-continuation cap, which fires when a single element needs more than 50,000 page
-    /// continuations. How many an element needs is itself a function of this size.
+    /// Raised from a save, when the content area this size and <see cref="Margins"/> compute to is
+    /// positive but still too small for a single element to fit on one page. A document that merely
+    /// runs to several pages does not reach it. Two other routes reach the same type. The
+    /// page-continuation cap fires when a single element needs more than 50,000 page continuations,
+    /// and how many an element needs is itself a function of this size. The content area can also
+    /// leave an image an extent it cannot draw; see <see cref="Margins"/>.
     /// </exception>
     public PdfRectangle PageSize
     {
@@ -151,9 +156,9 @@ public sealed class Document : IDisposable
     }
 
     /// <summary>
-    /// When true, paragraphs and headings are wrapped in marked-content sequences
-    /// and a /StructTreeRoot is written. Default is false.
-    /// Forwarded to the underlying <see cref="PdfDocument"/>.
+    /// When true, the built-in elements wrap their content in marked-content sequences (a custom
+    /// renderer does so itself; see <see cref="DrawContext.Tagged"/>) and a /StructTreeRoot is
+    /// written. Default is false. Forwarded to the underlying <see cref="PdfDocument"/>.
     /// </summary>
     /// <remarks>
     /// Reads true while <see cref="Conformance"/> is PDF/A-2a or PDF/UA-1, whatever you set. The
@@ -783,6 +788,9 @@ public sealed class Document : IDisposable
     /// left out of the file.</para>
     /// <para>The profile is not parsed, and <paramref name="componentCount"/> is not checked
     /// against it: any non-empty bytes are embedded as the profile.</para>
+    /// <para>The identifier and <paramref name="info"/> are written as Latin-1: a character outside
+    /// it becomes a best-fit Latin-1 character where there is one, such as <c>-</c> for an en dash,
+    /// and otherwise <c>?</c>, one for each UTF-16 code unit.</para>
     /// <para>Do not pass bytes that are not an ICC profile, or a count that does not match it. A
     /// later major version will refuse both.</para>
     /// </remarks>
@@ -813,7 +821,8 @@ public sealed class Document : IDisposable
     /// <remarks>
     /// Same identifier refusal as <see cref="SetPdfAOutputIntent"/>, and the same condition: the
     /// intent is written only when <see cref="Conformance"/> is not
-    /// <see cref="PdfConformance.None"/>.
+    /// <see cref="PdfConformance.None"/>. The identifier is written as Latin-1, as on
+    /// <see cref="SetPdfAOutputIntent"/>.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="outputConditionIdentifier"/> is <see langword="null"/>.

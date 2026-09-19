@@ -36,7 +36,8 @@ public sealed class LineSeparator
     /// be a non-negative number. The height the separator takes is <c>Top</c> plus the width plus
     /// <c>Bottom</c>, so a negative width shortens that height. The rule and the elements after it
     /// move up the page, and off the page once the width's magnitude is large enough.</para>
-    /// <para>Do not pass a negative width. A later major version may refuse it (#482).</para>
+    /// <para>Do not pass a negative width. Whether a negative line width is refused, and in which
+    /// release, is being decided in #482.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property,

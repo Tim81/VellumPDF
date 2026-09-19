@@ -205,10 +205,10 @@ public sealed class PieChart
     /// <summary>Horizontal placement of the chart within the content area. Defaults to
     /// centre.</summary>
     /// <remarks>
-    /// <b>Attention</b>: <see cref="HorizontalAlignment.Justify"/> is neither refused nor
-    /// honoured. It falls through to left alignment, and that costs more here than elsewhere,
-    /// because the default is <see cref="HorizontalAlignment.Center"/>: asking for justify loses
-    /// the centring you already had, and nothing reports it.
+    /// <b>Attention</b>: <see cref="HorizontalAlignment.Justify"/> is neither refused nor honoured.
+    /// It falls through to left alignment. Because the default is
+    /// <see cref="HorizontalAlignment.Center"/>, asking for justify loses the centring you already
+    /// had, and nothing reports it.
     /// </remarks>
     public HorizontalAlignment Alignment { get; init; } = HorizontalAlignment.Center;
 

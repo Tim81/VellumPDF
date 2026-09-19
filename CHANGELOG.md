@@ -227,10 +227,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     that is the same font file, only the characters the saving document's own text also uses
     survive (#544).
   - `HorizontalAlignment.Justify` is drawn as left everywhere except paragraph and heading text,
-    and a standard-14 line in one `TextStyle` instance is stretched by only half the free space
-    (#548). On a standard-14 line holding text in more than one instance, each instance's text is
-    placed at its unstretched width while its spaces are stretched, and can overprint the text
-    after it.
+    and a line whose text is all in one `TextStyle` instance and in the standard-14 text faces
+    (every standard-14 font but Symbol and ZapfDingbats) is stretched by only half the free space
+    (#548). On a line in those faces holding text in more than one instance, each instance's text
+    is placed at its unstretched width while its spaces are stretched, and can overprint the text
+    after it. Symbol and ZapfDingbats measure every glyph as zero (#470), so a justified line
+    in either can run past the right edge.
   - `Row.Background` has no effect through `TableElement.AddRow` or `AddHeaderRow`, which
     create rows without one (#543).
   - A link from `TextStyle.LinkUri` or `DrawContext.AddUriLinkAnnotation` is written untagged

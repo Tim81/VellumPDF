@@ -32,10 +32,12 @@ public sealed class RunningBand
     /// overhang can still paint a little past it. Nothing in this package sets a clip path.</para>
     /// <para><b>Attention</b>: truncation does nothing for text whose glyphs measure zero, because
     /// each character is measured at the advance of the glyph the font gives it. Every glyph of
-    /// both symbolic standard-14 faces measures zero, and so do the control characters U+0000 to
-    /// U+001F in every standard-14 font. Any length of such text fits and is drawn in full. Other
-    /// characters depend on the font: Courier measures U+007F at 600 units where Helvetica measures
-    /// it at zero, and an embedded Calibri measures U+0000 and U+000D at zero.</para>
+    /// <see cref="VellumPdf.Fonts.Standard14.Symbol"/> and
+    /// <see cref="VellumPdf.Fonts.Standard14.ZapfDingbats"/> measures zero, and so do the control
+    /// characters U+0000 to U+001F in every standard-14 font. Any length of such text fits and is
+    /// drawn in full. Courier measures U+007F at 600 units where Helvetica measures it at zero. In
+    /// an embedded font the control characters take the font's own widths: Calibri measures U+0000
+    /// and U+000D at zero, and Arial measures every C0 control at 750 units.</para>
     /// <para>You get one report per band per render, naming the page that lost the most rather
     /// than the first page cut. A <c>{page}</c> or <c>{pages}</c> token lengthens the resolved
     /// text as the number gains digits, so the worst page is the one that tells you how much
@@ -86,7 +88,8 @@ public sealed class RunningBand
     /// <remarks>
     /// <see cref="HorizontalAlignment.Justify"/> is neither refused nor honoured. It falls through
     /// to left alignment, and so does a value the enumeration does not name. A single-line band has
-    /// nothing to justify against, so there is no meaning to give it.
+    /// nothing to justify against, so there is no meaning to give it. The band's default is
+    /// centred. Asking for justify loses the centring, and nothing reports it.
     /// </remarks>
     public HorizontalAlignment Alignment { get; }
 

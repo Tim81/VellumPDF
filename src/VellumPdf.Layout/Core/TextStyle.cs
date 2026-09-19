@@ -14,7 +14,7 @@ namespace VellumPdf.Layout.Core;
 /// </remarks>
 public sealed class TextStyle
 {
-    /// <summary>Creates a style with Helvetica, 12 pt, auto leading, and black.</summary>
+    /// <summary>Creates a style with Helvetica, 12 pt, auto leading, and black text.</summary>
     /// <remarks>
     /// Same values as <see cref="Default"/>, as a new instance.
     /// </remarks>
@@ -100,9 +100,9 @@ public sealed class TextStyle
     /// the remarks), or when a finite size makes the element too tall for the content area. On a
     /// paragraph style the message names the run and the size; a
     /// <see cref="VellumPdf.Layout.Elements.Heading"/> is laid out through the same paragraph code
-    /// and reports the same way, as <c>"A paragraph run"</c>, not by the heading's own name. A
-    /// list-item style reports as <c>"A paragraph run"</c> too, because the item's marker is
-    /// checked. On a table-cell style the message names the row and cell instead.
+    /// and reports the same way, as <c>"A paragraph run"</c>, not by the heading's own name. A list
+    /// item's marker is laid out as a paragraph, so a list-item style reports as <c>"A paragraph
+    /// run"</c> too. On a table-cell style the message names the row and cell instead.
     /// <para>On a <see cref="VellumPdf.Layout.Elements.RunningBand"/> style, which message fires
     /// depends on the band and on whether
     /// <see cref="VellumPdf.Layout.Elements.RunningBand.Height"/> is set. Measured with

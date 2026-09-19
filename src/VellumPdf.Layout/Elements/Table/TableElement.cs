@@ -68,8 +68,8 @@ public sealed class TableElement
     /// gridless table, the nearest you can get is a border colour matching the page.</para>
     /// <para>A negative width is accepted and written as a negative line width, which ISO 32000-2,
     /// 8.4.3.2 does not allow; see <see cref="LineSeparator.LineWidth"/>.</para>
-    /// <para>Do not pass a negative width. A later major version may refuse it (#482), as for
-    /// <see cref="LineSeparator.LineWidth"/>.</para>
+    /// <para>Do not pass a negative width. Whether a negative line width is refused, and in which
+    /// release, is being decided in #482.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this

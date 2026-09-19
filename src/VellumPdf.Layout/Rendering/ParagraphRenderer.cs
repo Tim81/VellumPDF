@@ -36,9 +36,9 @@ public sealed class ParagraphRenderer : IRenderer
     /// <summary>Creates a renderer for the paragraph, optionally starting at <paramref name="startLine"/> for pagination.</summary>
     /// <remarks>
     /// Nothing is checked here. A null <paramref name="para"/> makes <see cref="Layout"/> throw. A
-    /// negative <paramref name="startLine"/> lays out that many lines too tall and makes
-    /// <see cref="Draw"/> throw. A start past the last line lays out as
-    /// <see cref="LayoutResult.Outcome.Nothing"/>, so a document saving it throws
+    /// negative <paramref name="startLine"/> makes <see cref="Layout"/> count that many lines more
+    /// than the text holds, and makes <see cref="Draw"/> throw. A start past the last line lays out
+    /// as <see cref="LayoutResult.Outcome.Nothing"/>, so a document saving it throws
     /// <see cref="InvalidOperationException"/> saying the element is too tall to fit. A renderer
     /// built directly ignores the paragraph's <see cref="Paragraph.Language"/>.
     /// <para>Do not pass null or a start outside the paragraph's lines. A later major version will
