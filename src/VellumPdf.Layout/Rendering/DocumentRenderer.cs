@@ -135,11 +135,12 @@ public sealed class DocumentRenderer
     /// </summary>
     /// <remarks>
     /// Empty until <see cref="Render"/> has run. A cut band is not an error, and this list is the
-    /// only report of it. The cut compares a running total of the template's character widths with
-    /// the content width. A template whose glyphs measure zero or negative width, as at a negative
-    /// font size, is not cut or reported (see <see cref="RunningBand.Template"/>), and neither is
-    /// any band when the content width is <c>NaN</c>. A template that fits exactly can still be
-    /// cut, because the running total can exceed the whole-string width by a rounding error.
+    /// only report of it. The cut compares a running total of the resolved text's character widths
+    /// with the content width. Resolved text whose glyphs measure zero or negative width, as at a
+    /// negative font size, is not cut or reported (see <see cref="RunningBand.Template"/>), and
+    /// neither is any band when the content width is <c>NaN</c>. Resolved text that fits exactly
+    /// can still be cut, because the running total can exceed the whole-string width by a rounding
+    /// error.
     /// </remarks>
     public IReadOnlyList<BandTruncationWarning> BandTruncations
     {
@@ -226,6 +227,9 @@ public sealed class DocumentRenderer
     /// exceed the page throw <see cref="ArgumentException"/>, both from this constructor. A margin
     /// of <c>NaN</c> or negative infinity passes this check, and so does positive infinity when the
     /// opposite edge on its axis holds one of those; see <see cref="Document.Margins"/>.
+    /// <para>A null <paramref name="pageSize"/> means the <see cref="PdfDocument.DefaultPageSize"/>
+    /// of <paramref name="pdf"/> at construction, and a null <paramref name="margins"/> means 72
+    /// points on every side.</para>
     /// <para>A null <paramref name="pdf"/> throws <see cref="NullReferenceException"/>: from this
     /// constructor when <paramref name="pageSize"/> is null, and from <see cref="Render"/>
     /// otherwise.</para>

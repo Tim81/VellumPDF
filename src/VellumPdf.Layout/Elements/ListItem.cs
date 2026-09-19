@@ -9,7 +9,8 @@ namespace VellumPdf.Layout.Elements;
 /// A single item in a <see cref="ListElement"/>, with optional nested children.
 /// </summary>
 /// <remarks>
-/// Nesting is one level. A grandchild is ignored; see <see cref="Children"/>.
+/// Nesting is one level. A grandchild is ignored; see <see cref="Children"/>. An item reached only
+/// as a grandchild is not measured or drawn, so nothing it holds makes the save throw.
 /// </remarks>
 public sealed class ListItem
 {

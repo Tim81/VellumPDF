@@ -40,10 +40,12 @@ public enum HorizontalAlignment
     /// before the empty one is stretched. A line with no space in it is not stretched. White space
     /// is drawn as described on <see cref="VellumPdf.Layout.Elements.Paragraph"/>. An image, a
     /// table cell, a pie chart, a running band and a barcode draw this value as <see cref="Left"/>.
-    /// <para><b>Attention</b>: on a line whose text is all in standard-14 fonts, a single run is
-    /// stretched by only half the space left on the line, so it stops short of the right edge
-    /// (#548). A line holding more than one run places each run at its unstretched width while
-    /// stretching its spaces, so a run can overprint the next one.</para>
+    /// <para><b>Attention</b>: on a line whose text is all in standard-14 fonts and in one
+    /// <see cref="VellumPdf.Layout.Core.TextStyle"/> instance, the spaces are stretched by only
+    /// half the space left on the line, so the line stops short of the right edge (#548). On a
+    /// standard-14 line holding text in more than one instance, each instance's text is placed at
+    /// its unstretched width while its spaces are stretched. That text can then overprint the text
+    /// after it, even when the two styles hold the same values.</para>
     /// </remarks>
     Justify,
 }

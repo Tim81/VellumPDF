@@ -30,9 +30,12 @@ public sealed class RunningBand
     /// was then invisible in every reader while you paid for its bytes.</para>
     /// <para>The cut bounds the advance width, <b>not</b> the ink. Side bearings and italic
     /// overhang can still paint a little past it. Nothing in this package sets a clip path.</para>
-    /// <para><b>Attention</b>: truncation does nothing for a template whose glyphs measure zero.
-    /// Control characters, the five undefined WinAnsi codes and both symbolic standard-14 faces all
-    /// measure zero width, so any length of them fits and is drawn in full.</para>
+    /// <para><b>Attention</b>: truncation does nothing for text whose glyphs measure zero, because
+    /// each character is measured at the advance of the glyph the font gives it. Every glyph of
+    /// both symbolic standard-14 faces measures zero, and so do the control characters U+0000 to
+    /// U+001F in every standard-14 font. Any length of such text fits and is drawn in full. Other
+    /// characters depend on the font: Courier measures U+007F at 600 units where Helvetica measures
+    /// it at zero, and an embedded Calibri measures U+0000 and U+000D at zero.</para>
     /// <para>You get one report per band per render, naming the page that lost the most rather
     /// than the first page cut. A <c>{page}</c> or <c>{pages}</c> token lengthens the resolved
     /// text as the number gains digits, so the worst page is the one that tells you how much

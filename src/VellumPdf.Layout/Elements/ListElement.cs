@@ -58,7 +58,7 @@ public sealed class ListElement
 
     /// <summary>Marker style used for the list (bullet or numbering scheme).</summary>
     /// <remarks>
-    /// Stored as given, including a value this enum does not name.
+    /// Stored as given, including a value <see cref="ListStyle"/> does not name.
     /// <see cref="FormatMarker"/> then uses the bullet.
     /// </remarks>
     public ListStyle Style { get; }
@@ -229,9 +229,8 @@ public sealed class ListElement
     /// <remarks>
     /// Zero and negative are not refused. For those, Decimal and Roman give the number in the
     /// current culture followed by a full stop, so <c>-1</c> gives <c>-1.</c> under <c>en-US</c>
-    /// and a U+2212 minus sign under <c>sv-SE</c>, and Alpha gives the full stop alone.
-    /// Unordered, and a style this enumeration does not name, give the bullet for every
-    /// index.
+    /// and a U+2212 minus sign under <c>sv-SE</c>, and Alpha gives the full stop alone. Unordered,
+    /// and a style <see cref="ListStyle"/> does not name, give the bullet for every index.
     /// <para>Do not pass an index below 1. A later major version will refuse one.</para>
     /// </remarks>
     public string FormatMarker(int index) => Style switch

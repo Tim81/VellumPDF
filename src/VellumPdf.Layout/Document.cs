@@ -69,7 +69,7 @@ public sealed class Document : IDisposable
 
     /// <summary>Document metadata (title, author, subject, keywords, etc.).</summary>
     /// <remarks>
-    /// Stored as given. No field on this dictionary is validated by Layout.
+    /// No field on this dictionary is validated by Layout.
     /// </remarks>
     public PdfDocumentInfo Info => _pdf.Info;
 
@@ -221,8 +221,8 @@ public sealed class Document : IDisposable
     /// the content. A header or footer on that edge starts at the inset, so part or all of it lies
     /// beyond the page. On a one-paragraph document with every inset at -72, the file is written
     /// with no invalid token in it, so nothing downstream reports the loss either. Negative insets
-    /// large enough in magnitude to overflow the position arithmetic, such as -1e308 on both sides
-    /// of an axis, reach the outcomes described below for a non-finite inset.</para>
+    /// large enough in magnitude to overflow the position arithmetic, such as -1e308 on the left or
+    /// right edge alone, reach the outcomes described below for a non-finite inset.</para>
     /// <para>A non-finite inset is checked only through the sum on its axis, and is refused only
     /// when that sum is positive infinity. <c>NaN</c> and negative infinity pass, because neither
     /// makes the sum meet or exceed the page. An inset that passes leaves a content area that is
@@ -244,7 +244,8 @@ public sealed class Document : IDisposable
     /// Raised from a save when an inset that passes the <see cref="ArgumentException"/> check
     /// leaves an element no area it can be laid out in, makes it reach the page-continuation limit,
     /// or leaves an image an extent it cannot draw, and also when a large finite inset leaves the
-    /// content area positive but too small for a single element. The measured cases are on #502.
+    /// content area positive but too small for a single element. The measured non-finite cases are
+    /// on #502.
     /// </exception>
     public EdgeInsets Margins { get; set; } = new EdgeInsets(72); // 1 inch
 
@@ -1065,11 +1066,11 @@ public sealed class Document : IDisposable
     /// <summary>
     /// Asynchronously runs the layout pass and writes the resulting PDF to the given stream.
     ///
-    /// <para> The layout pass is CPU-bound, so it runs on a thread-pool thread via
+    /// <para>The layout pass is CPU-bound, so it runs on a thread-pool thread via
     /// <see cref="Task.Run(Action)"/>; the resulting document is then written to
     /// <paramref name="destination"/> via <see cref="PdfDocument.SaveAsync"/>.
     /// <paramref name="cancellationToken"/> does not abort layout or serialisation already in
-    /// progress. </para>
+    /// progress.</para>
     /// </summary>
     /// <remarks>
     /// A document is single-use. The layout runs here, not when you add an element, so most of what

@@ -124,8 +124,8 @@ public sealed class LayoutImage
     /// from this property, when the box the edges leave is too small for the element. The message
     /// says the element is too tall to fit on a page and does not name the margins. With
     /// <see cref="Width"/> null, the width the edges leave is refused when it is under 5e-6 in
-    /// magnitude, or not finite, and so is a height derived from it that is under 5e-6. The message
-    /// then names that width or height instead.
+    /// magnitude, or not finite, and so is a height derived from it that is under 5e-6 or not
+    /// finite. The message then names that width or height instead.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not

@@ -227,9 +227,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     that is the same font file, only the characters the saving document's own text also uses
     survive (#544).
   - `HorizontalAlignment.Justify` is drawn as left everywhere except paragraph and heading text,
-    and on a line whose text is all in standard-14 fonts it stretches a single run by only half
-    the free space (#548). On such a line with more than one run, each run is placed at its
-    unstretched width, so a stretched run can overprint the next one.
+    and a standard-14 line in one `TextStyle` instance is stretched by only half the free space
+    (#548). On a standard-14 line holding text in more than one instance, each instance's text is
+    placed at its unstretched width while its spaces are stretched, and can overprint the text
+    after it.
   - `Row.Background` has no effect through `TableElement.AddRow` or `AddHeaderRow`, which
     create rows without one (#543).
   - A link from `TextStyle.LinkUri` or `DrawContext.AddUriLinkAnnotation` is written untagged
@@ -249,8 +250,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - `LayoutBox.ToString` formats in the current culture.
   - A pie chart whose slice values sum past the largest double has no area, and a very large
     `StartAngle` draws the wedges wrong (#546).
-  - A carriage return, a line feed, or a carriage return followed by a line feed starts a new
-    line in a paragraph, heading or list item. Any other sequence of white space except U+00A0
+  - A carriage return, a line feed, or a carriage return followed by a line feed breaks the line
+    in a paragraph, heading or list item; `Paragraph` says when a trailing break is dropped and
+    when one adds an empty line. Any other sequence of white space except U+00A0
     is drawn as one space, and is dropped at the start and end of each line. A paragraph also
     draws the boundary between two runs as a space, so a word cannot change style part-way.
   - A `Cell.RowSpan` group that starts in the table's leading header rows can be split across
