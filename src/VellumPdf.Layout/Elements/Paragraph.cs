@@ -21,6 +21,10 @@ namespace VellumPdf.Layout.Elements;
 /// as one space, and is dropped at the start and end of each line. The boundary between two runs is
 /// drawn as a space too, unless a line break falls on it, so a word cannot change style part-way:
 /// the run <c>Bold</c> followed by the run <c>er</c> is drawn as <c>Bold er</c>.</para>
+/// <para>A paragraph whose text holds no character other than white space, where U+00A0 NO-BREAK
+/// SPACE counts as a character other than white space, is laid out at the leading of
+/// <see cref="TextStyle.Default"/>, whatever its style: one line for each line break it holds, and
+/// one when it holds none. Its size and leading are neither used nor checked.</para>
 /// </remarks>
 public sealed class Paragraph
 {
@@ -87,8 +91,9 @@ public sealed class Paragraph
     /// which stays left-aligned, and a line that ends at a hard line break is stretched too. A line
     /// with no space in it is not stretched. White space is drawn as the type remarks describe; see
     /// <see cref="HorizontalAlignment.Justify"/> for trailing line breaks. In the standard-14 text
-    /// faces a justified line in one <see cref="TextStyle"/> instance can stop short of the right
-    /// edge, and runs with different <see cref="TextStyle"/> instances can overprint; see
+    /// faces (every standard-14 font but Symbol and ZapfDingbats) a justified line in one
+    /// <see cref="TextStyle"/> instance can stop short of the right edge, and runs with different
+    /// <see cref="TextStyle"/> instances can overprint; see
     /// <see cref="HorizontalAlignment.Justify"/>.
     /// </remarks>
     public HorizontalAlignment Alignment { get; init; } = HorizontalAlignment.Left;

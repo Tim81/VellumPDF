@@ -206,9 +206,9 @@ public sealed class PieChart
     /// centre.</summary>
     /// <remarks>
     /// <b>Attention</b>: <see cref="HorizontalAlignment.Justify"/> is neither refused nor honoured.
-    /// It falls through to left alignment. Because the default is
-    /// <see cref="HorizontalAlignment.Center"/>, asking for justify loses the centring you already
-    /// had, and nothing reports it.
+    /// It falls through to left alignment, and so does a value the enumeration does not name.
+    /// Because the default is <see cref="HorizontalAlignment.Center"/>, asking for justify loses
+    /// the centring you already had, and nothing reports it.
     /// </remarks>
     public HorizontalAlignment Alignment { get; init; } = HorizontalAlignment.Center;
 

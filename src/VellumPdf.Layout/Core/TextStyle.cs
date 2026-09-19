@@ -36,7 +36,11 @@ public sealed class TextStyle
     /// Standard-14 value the enumeration does not name makes the save throw once the font is
     /// selected on a page, which an empty table cell or list item with this style also does.
     /// <para><see cref="Standard14.Symbol"/> and <see cref="Standard14.ZapfDingbats"/> measure
-    /// every character as zero width, so a paragraph in either is never wrapped (#470).</para>
+    /// every character as zero width (#470). Every layout step that measures text treats theirs as
+    /// having no width: a paragraph in either is never wrapped, a centred or right-aligned line is
+    /// placed as if it had no width, and a justified line can run past the right edge. A run after
+    /// a Symbol or ZapfDingbats run on the same line starts where that run starts and is drawn over
+    /// it.</para>
     /// </remarks>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other

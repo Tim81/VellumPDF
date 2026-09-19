@@ -18,14 +18,16 @@ public enum HorizontalAlignment
     /// <summary>Centre content horizontally.</summary>
     /// <remarks>
     /// In paragraph, heading and table-cell text, a line wider than its area starts at the left
-    /// edge instead of overhanging both sides.
+    /// edge instead of overhanging both sides. A line's width is its measured width; see
+    /// <see cref="TextStyle.FontRef"/> for fonts that measure every character as zero.
     /// </remarks>
     Center,
 
     /// <summary>Align content to the right edge.</summary>
     /// <remarks>
     /// In paragraph, heading and table-cell text, a line wider than its area starts at the left
-    /// edge instead of overhanging it.
+    /// edge instead of overhanging it. A line's width is its measured width; see
+    /// <see cref="TextStyle.FontRef"/> for fonts that measure every character as zero.
     /// </remarks>
     Right,
 
@@ -42,11 +44,11 @@ public enum HorizontalAlignment
     /// stretched. White space is drawn as described on
     /// <see cref="VellumPdf.Layout.Elements.Paragraph"/>. An image, a table cell, a pie chart, a
     /// running band and a barcode draw this value as <see cref="Left"/>.
-    /// <para><b>Attention</b>: on a line whose text is all in the standard-14 text faces, which are
-    /// every standard-14 font but Symbol and ZapfDingbats, and in one
-    /// <see cref="VellumPdf.Layout.Core.TextStyle"/> instance, the spaces are stretched by only
-    /// half the space left on the line, so the line stops short of the right edge (#548). On a line
-    /// in those faces holding text in more than one instance, each instance's text is placed at its
+    /// <para><b>Attention</b>: on a line whose text is all in one
+    /// <see cref="VellumPdf.Layout.Core.TextStyle"/> instance and in the standard-14 text faces
+    /// (every standard-14 font but Symbol and ZapfDingbats), the spaces are stretched by only half
+    /// the space left on the line, so the line stops short of the right edge (#548). On a line in
+    /// those faces holding text in more than one instance, each instance's text is placed at its
     /// unstretched width while its spaces are stretched. That text can then overprint the text
     /// after it, even when the two styles hold the same values.
     /// <see cref="VellumPdf.Fonts.Standard14.Symbol"/> and

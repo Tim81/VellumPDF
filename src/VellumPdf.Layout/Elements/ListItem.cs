@@ -160,26 +160,26 @@ public sealed class ListItem
     /// <exception cref="NullReferenceException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this call, when <paramref name="text"/> is <see langword="null"/>.
-    /// It is not raised for an item reached only as a grandchild.
+    /// It is raised only when this item is laid out as a top-level item.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this call, when the text holds an unpaired surrogate and is measured in an embedded
     /// font; see <see cref="TextStyle.FontRef"/>.
-    /// It is not raised for an item reached only as a grandchild.
+    /// It is raised only when this item is laid out as a top-level item.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this call, when the style's size or leading is refused; see
     /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
-    /// It is not raised for an item reached only as a grandchild.
+    /// It is raised only when this item is laid out as a top-level item.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this call, when the style holds a <see cref="VellumPdf.Fonts.Standard14"/> value the
     /// enumeration does not name and the font is selected on a page; see
     /// <see cref="TextStyle.FontRef"/>.
-    /// It is not raised for an item reached only as a grandchild.
+    /// It is raised only when this item is laid out as a top-level item.
     /// </exception>
     public ListItem AddChild(string text, TextStyle? style = null)
         => AddChild(new ListItem(text, style));

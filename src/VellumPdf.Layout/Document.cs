@@ -70,8 +70,10 @@ public sealed class Document : IDisposable
     /// <summary>Document metadata (title, author, subject, keywords, etc.).</summary>
     /// <remarks>
     /// Layout validates no field of this dictionary. Each entry is written to <c>/Info</c> as
-    /// given. The XMP metadata can differ from it: it drops most control characters, replaces an
-    /// unpaired surrogate with U+FFFD, and can leave out an empty entry.
+    /// given. The XMP metadata can differ from <c>/Info</c>. The XMP copy drops the C0 control
+    /// characters other than tab, line feed and carriage return, replaces an unpaired surrogate
+    /// with U+FFFD, can leave out an empty entry, and carries <c>VellumPdf</c> as the producer when
+    /// <c>Producer</c> is null.
     /// </remarks>
     public PdfDocumentInfo Info => _pdf.Info;
 
@@ -120,7 +122,8 @@ public sealed class Document : IDisposable
     /// runs to several pages does not reach it. Two other routes reach the same type. The
     /// page-continuation cap fires when a single element needs more than 50,000 page continuations,
     /// and how many an element needs is itself a function of this size. The content area can also
-    /// leave an image an extent it cannot draw; see <see cref="Margins"/>.
+    /// leave an image a width or height at which the image cannot be drawn; see
+    /// <see cref="LayoutImage.Width"/>.
     /// </exception>
     public PdfRectangle PageSize
     {
@@ -157,8 +160,9 @@ public sealed class Document : IDisposable
 
     /// <summary>
     /// When true, the built-in elements wrap their content in marked-content sequences (a custom
-    /// renderer does so itself; see <see cref="DrawContext.Tagged"/>) and a /StructTreeRoot is
-    /// written. Default is false. Forwarded to the underlying <see cref="PdfDocument"/>.
+    /// renderer should wrap its own content; see <see cref="DrawContext.Tagged"/>) and a
+    /// /StructTreeRoot is written. Default is false. Forwarded to the underlying
+    /// <see cref="PdfDocument"/>.
     /// </summary>
     /// <remarks>
     /// Reads true while <see cref="Conformance"/> is PDF/A-2a or PDF/UA-1, whatever you set. The

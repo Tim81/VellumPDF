@@ -51,6 +51,10 @@ public enum ListStyle
 /// height is exactly what the item takes there, and rounding can leave it just short. Whether a
 /// line is lost depends on the font size, the line count and where the item falls on the page: a
 /// single two-line item at 12pt at the top of an A4 page draws only its first line.</para>
+/// <para><b>Attention</b>: an item whose text holds only white space is laid out at the leading of
+/// <see cref="TextStyle.Default"/>, as on <see cref="Paragraph"/>, while its marker is laid out in
+/// the item's own style. When the marker's line does not fit where the item lands, the item is
+/// placed without its marker, and nothing reports it.</para>
 /// </remarks>
 public sealed class ListElement
 {
