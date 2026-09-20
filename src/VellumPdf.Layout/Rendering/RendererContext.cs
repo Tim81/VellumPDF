@@ -56,11 +56,13 @@ public sealed class RendererContext
     /// registering the image.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
-    /// <paramref name="image"/> is <see langword="null"/>, or this context was constructed with a
-    /// null page. <c>ParamName</c> is <c>key</c> in both cases.
+    /// Raised from this call when <paramref name="image"/> is <see langword="null"/>, or when this
+    /// context was constructed with a null page and a non-null document. <c>ParamName</c> is
+    /// <c>key</c> in both cases.
     /// </exception>
     /// <exception cref="NullReferenceException">
-    /// This context was constructed with a null document.
+    /// Raised from this call when this context was constructed with a null document and
+    /// <paramref name="image"/> is not <see langword="null"/>.
     /// </exception>
     public string RegisterImageXObject(PdfImageXObject image)
     {
@@ -78,17 +80,17 @@ public sealed class RendererContext
     /// Idempotent: safe to call on every draw call for the same font.
     /// </summary>
     /// <remarks>
-    /// A null <paramref name="handle"/> throws <see cref="NullReferenceException"/> from this call,
-    /// and so does a context constructed with a null document. A handle from a different document
-    /// is accepted; see
+    /// A handle from a different document is accepted; see
     /// <see cref="VellumPdf.Layout.Core.FontReference.FontReference(EmbeddedFontHandle)"/>.
     /// </remarks>
     /// <exception cref="NullReferenceException">
-    /// <paramref name="handle"/> is <see langword="null"/>, or this context was constructed with a
+    /// Raised from this call when <paramref name="handle"/> is <see langword="null"/> and this
+    /// context was constructed with a non-null page, or when this context was constructed with a
     /// null document.
     /// </exception>
     /// <exception cref="ArgumentNullException">
-    /// This context was constructed with a null page. <c>ParamName</c> is <c>key</c>.
+    /// Raised from this call when this context was constructed with a null page and a non-null
+    /// document, whether or not <paramref name="handle"/> is null. <c>ParamName</c> is <c>key</c>.
     /// </exception>
     public void RegisterEmbeddedFontUsage(EmbeddedFontHandle handle) =>
         _document.RegisterEmbeddedFontUsage(_page, handle);

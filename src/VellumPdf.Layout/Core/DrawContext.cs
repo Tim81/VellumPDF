@@ -19,11 +19,13 @@ namespace VellumPdf.Layout.Core;
 /// </summary>
 /// <remarks>
 /// Coordinates are not checked. A finite Y off the page is written into outline destinations
-/// without clamping, and so is a finite box into an annotation unless X plus Width or Y plus Height
-/// overflows. The save refuses that box; see <see cref="AddUriLinkAnnotation"/>. A box with a
-/// negative width is written as an inverted rectangle. The save refuses a non-finite coordinate in
-/// an annotation or outline entry. Where a renderer draws with a converted value on the canvas, a
-/// non-finite one is written as <c>NaN</c> or <c>Infinity</c>.
+/// without clamping, and so is a finite box into an annotation. What the save refuses is the value
+/// it writes, not the value passed: a Y reaches it through the flip above, so a finite one is
+/// refused when <see cref="PageBounds"/>'s height is not finite or the subtraction overflows, and
+/// an X plus a width is refused when that sum does. See <see cref="AddUriLinkAnnotation"/> and
+/// <see cref="ToPdfY"/>. A box with a negative width is written as an inverted rectangle. Where a
+/// renderer draws with a converted value on the canvas, a non-finite one is written as <c>NaN</c>
+/// or <c>Infinity</c>.
 /// <para>A coordinate is written in plain decimal, with no exponent. A finite one beyond the 64-bit
 /// integer range therefore becomes an integer token that a 64-bit reader cannot hold. qpdf 12.4.1
 /// drops the annotation or outline item holding <b>9.3e18</b> and keeps one holding 9.2e18.</para>
@@ -61,6 +63,9 @@ public sealed class DrawContext
     /// <see cref="RegisterStructElemTree"/> and <see cref="StampStructElemPage"/> do nothing, and
     /// the document discards an element passed to <see cref="RegisterStructElem"/>.
     /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised from this getter when this context was constructed with a null document.
+    /// </exception>
     public bool Tagged => _document.Tagged;
 
     /// <summary>Creates a draw context bound to the current page, its canvas, and the owning document.</summary>
@@ -68,8 +73,12 @@ public sealed class DrawContext
     /// Nothing is checked, and every argument is stored. A null <paramref name="page"/> leaves each
     /// structure element this type registers without a page, and the save writes it without a
     /// <c>/Pg</c> entry and without an exception. Any null, the page included, can also surface
-    /// later, from the first member that uses it; see the exception tags. The document constructs
-    /// this type itself and never passes null; construct one yourself only to test a renderer.
+    /// later, from the first member that uses it; see the exception tags. A <paramref name="page"/>
+    /// that belongs to a different document is accepted. A link annotation registered on it is left
+    /// out of the saved file, so a box the save would otherwise refuse is written nowhere and
+    /// raises nothing; an outline entry is written anyway, with a null destination page. The
+    /// document constructs this type itself and never passes null; construct one yourself only to
+    /// test a renderer.
     /// <para>Do not pass null. A later major version will throw <see cref="ArgumentNullException"/>
     /// from this constructor.</para>
     /// </remarks>
@@ -79,9 +88,10 @@ public sealed class DrawContext
     /// <paramref name="rendererContext"/> or <paramref name="document"/>.
     /// </exception>
     /// <exception cref="ArgumentNullException">
-    /// Raised later, not from this constructor, when <paramref name="page"/> is null: by
-    /// <see cref="AddUriLinkAnnotation"/>, and by the document's save after
-    /// <see cref="AddOutlineEntry"/>.
+    /// Raised later, not from this constructor, when <paramref name="page"/> is null and
+    /// <paramref name="document"/> is not: by <see cref="AddUriLinkAnnotation"/>, and by the
+    /// document's save after a call to <see cref="AddOutlineEntry"/> that passed a non-null title.
+    /// <c>ParamName</c> is <c>key</c> in both cases.
     /// </exception>
     public DrawContext(PdfCanvas canvas, LayoutBox pageBounds, RendererContext rendererContext, PdfDocument document, PdfPage page)
     {
@@ -104,6 +114,9 @@ public sealed class DrawContext
     /// <see cref="Standard14"/> value and the resource this returns is selected with
     /// <see cref="PdfCanvas.SetFont"/>.
     /// </exception>
+    /// <exception cref="NullReferenceException">
+    /// Raised from this call when this context was constructed with a null document.
+    /// </exception>
     public PdfFontResource GetFont(Standard14 font) => _document.UseFont(font);
 
     /// <summary>
@@ -111,16 +124,20 @@ public sealed class DrawContext
     /// and returns its PDF resource name so the canvas can select it.
     /// </summary>
     /// <remarks>
-    /// A null handle throws <see cref="NullReferenceException"/> from this call. A handle from a
-    /// different document is accepted; <see cref="FontReference(EmbeddedFontHandle)"/> says what
-    /// the page then shows.
+    /// This context's own page and document are not read here; its
+    /// <see cref="RendererContext"/> is. A handle from a different document is accepted;
+    /// <see cref="FontReference(EmbeddedFontHandle)"/> says what the page then shows.
     /// </remarks>
     /// <exception cref="NullReferenceException">
-    /// <paramref name="handle"/> is <see langword="null"/>.
+    /// Raised from this call when this context's <see cref="RendererContext"/> is
+    /// <see langword="null"/> or was constructed with a null document, or when
+    /// <paramref name="handle"/> is null and that renderer context was constructed with a non-null
+    /// page.
     /// </exception>
     /// <exception cref="ArgumentNullException">
     /// Raised from this call when this context's <see cref="RendererContext"/> was constructed with
-    /// a null page and a non-null document.
+    /// a null page and a non-null document, whether or not <paramref name="handle"/> is null.
+    /// <c>ParamName</c> is <c>key</c>.
     /// </exception>
     public string UseEmbeddedFont(EmbeddedFontHandle handle)
     {
@@ -130,7 +147,10 @@ public sealed class DrawContext
 
     /// <summary>Converts a layout-space Y coordinate to PDF user-space Y.</summary>
     /// <remarks>
-    /// Not refused. A non-finite <paramref name="layoutY"/> yields a non-finite PDF Y.
+    /// Not refused. A non-finite <paramref name="layoutY"/> yields a non-finite PDF Y, and so does
+    /// a finite one when <see cref="PageBounds"/>'s height is not finite or the subtraction
+    /// overflows. A save refuses the Y it writes, so this is where a finite argument is refused;
+    /// see <see cref="AddOutlineEntry"/>.
     /// </remarks>
     public double ToPdfY(double layoutY) => PageBounds.Height - layoutY;
 
@@ -165,13 +185,18 @@ public sealed class DrawContext
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
-    /// save overloads, not from this call, when <paramref name="box"/> has a non-finite coordinate,
-    /// or finite ones whose sum overflows, such as an X and a width near
-    /// <see cref="double.MaxValue"/>. The message says PDF does not support NaN or Infinity as a
-    /// real number.
+    /// save overloads, not from this call, when a value written into the rectangle is not finite.
+    /// <paramref name="box"/> reaches it through <see cref="ToPdfRect"/>, so a finite box is
+    /// refused when its X plus its width overflows, or when <see cref="PageBounds"/>'s height is
+    /// not finite or an edge subtracted from it overflows. The message says PDF does not support
+    /// NaN or Infinity as a real number.
+    /// </exception>
+    /// <exception cref="NullReferenceException">
+    /// Raised from this call when this context was constructed with a null document.
     /// </exception>
     /// <exception cref="ArgumentNullException">
-    /// Raised from this call when this context was constructed with a null page.
+    /// Raised from this call when this context was constructed with a null page and a non-null
+    /// document, whether or not <paramref name="uri"/> is null. <c>ParamName</c> is <c>key</c>.
     /// </exception>
     public void AddUriLinkAnnotation(LayoutBox box, string uri)
     {
@@ -199,18 +224,21 @@ public sealed class DrawContext
     /// both from this call.</para>
     /// </remarks>
     /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
-    /// save overloads, not from this call, when <paramref name="title"/> is
-    /// <see langword="null"/>.
+    /// Raised from this call when this context was constructed with a null document. Also raised
+    /// from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other save
+    /// overloads, not from this call, when <paramref name="title"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
-    /// save overloads, not from this call, when <paramref name="layoutY"/>
-    /// is not finite.
+    /// save overloads, not from this call, when this context was constructed with a non-null page,
+    /// <paramref name="title"/> is not null, and the Y written for the destination is not finite.
+    /// <paramref name="layoutY"/> reaches it through <see cref="ToPdfY"/>, so a finite one is
+    /// refused when <see cref="PageBounds"/>'s height is not finite or the subtraction overflows.
     /// </exception>
     /// <exception cref="ArgumentNullException">
     /// Raised when the <see cref="PdfDocument"/> this context was constructed with is saved, not
-    /// from this call, when this context was constructed with a null page.
+    /// from this call, when this context was constructed with a null page and a non-null document
+    /// and <paramref name="title"/> is not null. <c>ParamName</c> is <c>key</c>.
     /// </exception>
     public void AddOutlineEntry(string title, int level, double layoutY)
     {
@@ -235,7 +263,8 @@ public sealed class DrawContext
     /// <paramref name="elem"/> throws from this call whether or not the document is tagged.
     /// </remarks>
     /// <exception cref="NullReferenceException">
-    /// <paramref name="elem"/> is <see langword="null"/>.
+    /// Raised from this call when <paramref name="elem"/> is <see langword="null"/>, or when this
+    /// context was constructed with a null document.
     /// </exception>
     public void RegisterStructElem(PdfStructElem elem)
     {
@@ -257,9 +286,11 @@ public sealed class DrawContext
     /// from this call.</para>
     /// </remarks>
     /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
-    /// save overloads, not from this call, when the document is tagged and
-    /// <paramref name="root"/> is <see langword="null"/>.
+    /// Raised from this call when this context was constructed with a null document, because
+    /// <see cref="Tagged"/> reads it. Also raised from
+    /// <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other save overloads,
+    /// not from this call, when the document is tagged and <paramref name="root"/> is
+    /// <see langword="null"/>.
     /// </exception>
     public void RegisterStructElemTree(PdfStructElem root)
     {
@@ -279,7 +310,9 @@ public sealed class DrawContext
     /// from this call.
     /// </remarks>
     /// <exception cref="NullReferenceException">
-    /// The document is tagged and <paramref name="elem"/> is <see langword="null"/>.
+    /// Raised from this call when the document is tagged and <paramref name="elem"/> is
+    /// <see langword="null"/>, or when this context was constructed with a null document, because
+    /// <see cref="Tagged"/> reads it.
     /// </exception>
     public void StampStructElemPage(PdfStructElem elem)
     {
