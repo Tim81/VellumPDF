@@ -7,9 +7,29 @@ using VellumPdf.Layout.Core;
 namespace VellumPdf.Layout.Elements;
 
 /// <summary>An image element that can be placed in document flow.</summary>
+/// <remarks>
+/// <see cref="Width"/> and <see cref="Height"/> carry the size refusals. A null
+/// <see cref="Image"/> makes the save throw. <see cref="HorizontalAlignment.Justify"/> is drawn
+/// as <see cref="HorizontalAlignment.Left"/>.
+/// </remarks>
 public sealed class LayoutImage
 {
     /// <summary>The image to draw.</summary>
+    /// <remarks>
+    /// A null value makes the save throw; see the constructor. So does an image whose own pixel
+    /// width or height is not a positive number. A JPEG that declares a zero dimension loads as
+    /// such an image.
+    /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when the image is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when the image's own pixel width or height is not a positive number; a
+    /// JPEG that declares a zero dimension loads as such an image. <c>ParamName</c> is <c>_img</c>.
+    /// It is raised before <see cref="Width"/> and <see cref="Height"/> are checked.
+    /// </exception>
     public PdfImageXObject Image { get; }
 
     /// <summary>
@@ -80,9 +100,40 @@ public sealed class LayoutImage
     public double? Height { get; init; }  // null = maintain aspect ratio
 
     /// <summary>Horizontal alignment of the image within the available width.</summary>
+    /// <remarks>
+    /// <see cref="HorizontalAlignment.Justify"/> is neither refused nor honoured. It falls through
+    /// to left alignment. An image is one box; there is nothing to justify against.
+    /// </remarks>
     public HorizontalAlignment Alignment { get; init; } = HorizontalAlignment.Left;
 
     /// <summary>Margins around the image.</summary>
+    /// <remarks>
+    /// <b>Attention</b>: no edge is checked. The top and bottom edges add to the space the image
+    /// takes on the page. The left and right edges work differently by <see cref="Width"/>: with it
+    /// set, the image keeps that width, up to the content width, and its position is clamped back
+    /// inside the content box; with it null, the image is sized to the width the edges leave. A
+    /// negative or non-finite edge, or edges wider than the area, can make the save throw an
+    /// exception about something else, write a <c>NaN</c> or <c>Infinity</c> token into the content
+    /// stream, or move, mirror or rotate the image. A negative or non-finite top or bottom edge can
+    /// also move the elements placed after this one.
+    /// <para>Do not pass a negative or non-finite edge. A later major version will refuse
+    /// both.</para>
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when the box the edges leave is too small for the element. The message
+    /// says the element is too tall to fit on a page and does not name the margins. With
+    /// <see cref="Width"/> null, the width the edges leave is refused when it is under 5e-6 in
+    /// magnitude, or not finite, and so is a height derived from it that is under 5e-6 or not
+    /// finite. The message then names that width or height instead.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when an edge leaves a later element at a non-finite position, and the
+    /// save writes that position outside the content stream, as a heading's bookmark or the
+    /// rectangle of a link from <see cref="TextStyle.LinkUri"/>. Negative infinity can do this. The
+    /// message says PDF does not support NaN or Infinity as a real number.
+    /// </exception>
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 
     /// <summary>
@@ -90,8 +141,24 @@ public sealed class LayoutImage
     /// Used as the <c>/Alt</c> entry on the Figure struct elem when tagging is enabled.
     /// If null, a generic fallback "Figure" is used.
     /// </summary>
+    /// <remarks>Null becomes <c>Figure</c> when tagged. Empty is an empty <c>/Alt</c>.</remarks>
     public string? AltText { get; init; }
 
     /// <summary>Creates a flow image element for the given image.</summary>
+    /// <remarks>
+    /// A null <paramref name="image"/> is stored, and the save throws when it lays out the image.
+    /// <para>Do not pass null. A later major version will throw
+    /// <see cref="ArgumentNullException"/> from this call.</para>
+    /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this call, when <paramref name="image"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this constructor, when the image's own pixel width or height is not a positive number;
+    /// a JPEG that declares a zero dimension loads as such an image. <c>ParamName</c> is
+    /// <c>_img</c>. It is raised before <see cref="Width"/> and <see cref="Height"/> are checked.
+    /// </exception>
     public LayoutImage(PdfImageXObject image) => Image = image;
 }
