@@ -601,10 +601,29 @@ public sealed class Document : IDisposable
 
     /// <summary>Adds a paragraph to the document content. Returns this document for chaining.</summary>
     /// <remarks>
-    /// A null paragraph throws <see cref="NullReferenceException"/> from this call.
+    /// A null paragraph throws <see cref="NullReferenceException"/> from this call. What the
+    /// paragraph holds is not checked here; the save refuses it, and the members that hold each
+    /// value say what it does.
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// <paramref name="paragraph"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
+    /// call, when the paragraph's text holds an unpaired surrogate and is measured in an embedded
+    /// font, or when linked text lands at a non-finite position; see
+    /// <see cref="TextStyle.FontRef"/> and <see cref="TextStyle.LinkUri"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
+    /// call, when a style the paragraph uses has a size or leading that is refused; see
+    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
+    /// </exception>
+    /// <exception cref="IndexOutOfRangeException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
+    /// call, when a style the paragraph uses holds a <see cref="VellumPdf.Fonts.Standard14"/> value
+    /// the enumeration does not name and the font is selected on a page; see
+    /// <see cref="TextStyle.FontRef"/>.
     /// </exception>
     public Document Add(Paragraph paragraph)
     {
@@ -621,6 +640,16 @@ public sealed class Document : IDisposable
     /// <exception cref="NullReferenceException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
     /// call, when <paramref name="separator"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
+    /// call, when the separator's width or an inset is refused, or when it is too tall for a page;
+    /// see <see cref="LineSeparator.LineWidth"/> and <see cref="LineSeparator.Margins"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
+    /// call, when the separator leaves a later element at a non-finite position that the save
+    /// writes outside the content stream; see <see cref="LineSeparator.Margins"/>.
     /// </exception>
     public Document Add(LineSeparator separator)
     {
@@ -640,6 +669,22 @@ public sealed class Document : IDisposable
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
     /// call, when <paramref name="table"/> is <see langword="null"/>.
     /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
+    /// call, when a cell's text holds an unpaired surrogate and is measured in an embedded font;
+    /// see <see cref="TextStyle.FontRef"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
+    /// call, when a style the table uses has a size or leading that is refused; see
+    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
+    /// </exception>
+    /// <exception cref="IndexOutOfRangeException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
+    /// call, when a style the table uses holds a <see cref="VellumPdf.Fonts.Standard14"/> value the
+    /// enumeration does not name and the font is selected on a page; see
+    /// <see cref="TextStyle.FontRef"/>.
+    /// </exception>
     public Document Add(TableElement table)
     {
         _content.Add(new TableRenderer(table));
@@ -655,6 +700,17 @@ public sealed class Document : IDisposable
     /// <exception cref="NullReferenceException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
     /// call, when <paramref name="image"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
+    /// call, when a drawn width or height is refused, or when the image is too tall for a page; see
+    /// <see cref="LayoutImage.Width"/> and <see cref="LayoutImage.Height"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
+    /// call, when the image's pixel dimensions are refused, or when it leaves a later element at a
+    /// non-finite position that the save writes outside the content stream; see
+    /// <see cref="LayoutImage.Margins"/>.
     /// </exception>
     public Document Add(LayoutImage image)
     {
@@ -672,6 +728,15 @@ public sealed class Document : IDisposable
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
     /// call, when <paramref name="chart"/> is <see langword="null"/>.
     /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
+    /// call, when the chart's slices or its stroke width are refused; see
+    /// <see cref="PieChart.Slices"/> and <see cref="PieChart.StrokeWidth"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
+    /// call, when the chart is too tall for a page; see <see cref="PieChart.Diameter"/>.
+    /// </exception>
     public Document Add(PieChart chart)
     {
         _content.Add(new PieChartRenderer(chart));
@@ -688,6 +753,24 @@ public sealed class Document : IDisposable
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
     /// call, when <paramref name="list"/> is <see langword="null"/>.
     /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
+    /// call, when an item's text holds an unpaired surrogate and is measured in an embedded font,
+    /// or when linked item text lands at a non-finite position; see
+    /// <see cref="TextStyle.FontRef"/> and <see cref="ListElement.Indent"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
+    /// call, when a style the list uses has a size or leading that is refused, or when a nested
+    /// list's indent reaches its own area width; see <see cref="TextStyle.FontSize"/> and
+    /// <see cref="ListElement.Indent"/>.
+    /// </exception>
+    /// <exception cref="IndexOutOfRangeException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
+    /// call, when a style the list uses holds a <see cref="VellumPdf.Fonts.Standard14"/> value the
+    /// enumeration does not name and the font is selected on a page; see
+    /// <see cref="TextStyle.FontRef"/>.
+    /// </exception>
     public Document Add(ListElement list)
     {
         _content.Add(new ListRenderer(list));
@@ -696,10 +779,29 @@ public sealed class Document : IDisposable
 
     /// <summary>Adds a heading to the document content. Returns this document for chaining.</summary>
     /// <remarks>
-    /// A null heading throws <see cref="NullReferenceException"/> from this call.
+    /// A null heading throws <see cref="NullReferenceException"/> from this call. What the heading
+    /// holds is not checked here; the save refuses it, and the members that hold each value say
+    /// what it does.
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// <paramref name="heading"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
+    /// call, when the heading's text holds an unpaired surrogate and is measured in an embedded
+    /// font, or when the heading's bookmark or linked text lands at a non-finite position; see
+    /// <see cref="TextStyle.FontRef"/> and <see cref="Heading.Margins"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
+    /// call, when a style the heading uses has a size or leading that is refused; see
+    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
+    /// </exception>
+    /// <exception cref="IndexOutOfRangeException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
+    /// call, when a style the heading uses holds a <see cref="VellumPdf.Fonts.Standard14"/> value
+    /// the enumeration does not name and the font is selected on a page; see
+    /// <see cref="TextStyle.FontRef"/>.
     /// </exception>
     public Document Add(Heading heading)
     {

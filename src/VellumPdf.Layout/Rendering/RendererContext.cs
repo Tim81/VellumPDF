@@ -49,8 +49,6 @@ public sealed class RendererContext
     /// the same object instance always gets the same name from this context.
     /// </summary>
     /// <remarks>
-    /// A null <paramref name="image"/> throws <see cref="ArgumentNullException"/> from this
-    /// call (<c>ParamName</c> is <c>key</c>).
     /// <para>The name is recorded before the image is registered with the document. If that
     /// registration throws, a second call with the same image returns the name without
     /// registering the image.</para>

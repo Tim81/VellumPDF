@@ -20,9 +20,7 @@ namespace VellumPdf.Layout.Core;
 /// <remarks>
 /// Coordinates are not checked. A finite Y off the page is written into outline destinations
 /// without clamping, and so is a finite box into an annotation. What the save refuses is the value
-/// it writes, not the value passed: a Y reaches it through the flip above, so a finite one is
-/// refused when <see cref="PageBounds"/>'s height is not finite or the subtraction overflows, and
-/// an X plus a width is refused when that sum does. See <see cref="AddUriLinkAnnotation"/> and
+/// it writes, not the value passed. See <see cref="AddUriLinkAnnotation"/> and
 /// <see cref="ToPdfY"/>. A box with a negative width is written as an inverted rectangle. Where a
 /// renderer draws with a converted value on the canvas, a non-finite one is written as <c>NaN</c>
 /// or <c>Infinity</c>.
@@ -70,15 +68,18 @@ public sealed class DrawContext
 
     /// <summary>Creates a draw context bound to the current page, its canvas, and the owning document.</summary>
     /// <remarks>
-    /// Nothing is checked, and every argument is stored. A null <paramref name="page"/> leaves each
-    /// structure element this type registers without a page, and the save writes it without a
-    /// <c>/Pg</c> entry and without an exception. Any null, the page included, can also surface
-    /// later, from the first member that uses it; see the exception tags. A <paramref name="page"/>
-    /// that belongs to a different document is accepted. A link annotation registered on it is left
-    /// out of the saved file, so a box the save would otherwise refuse is written nowhere and
-    /// raises nothing; an outline entry is written anyway, with a null destination page. The
-    /// document constructs this type itself and never passes null; construct one yourself only to
-    /// test a renderer.
+    /// Nothing is checked, and every argument is stored. A null <paramref name="page"/> leaves
+    /// each structure element <see cref="RegisterStructElem"/> registers without a page, and the
+    /// save writes it without a <c>/Pg</c> entry and without an exception.
+    /// <see cref="RegisterStructElemTree"/> sets no page, so a root registered through it keeps
+    /// the one the caller gave it, and the save writes that. Any null, the page included, can also
+    /// surface later, from the first member that uses it; see the exception tags. The document
+    /// constructs this type itself and never passes null; construct one yourself only to test a
+    /// renderer.
+    /// <para>A <paramref name="page"/> from a different document is accepted. A link annotation
+    /// registered on it is left out of the saved file, so a box the save would otherwise refuse is
+    /// written nowhere and raises nothing. An outline entry is written anyway, with a null
+    /// destination page.</para>
     /// <para>Do not pass null. A later major version will throw <see cref="ArgumentNullException"/>
     /// from this constructor.</para>
     /// </remarks>
@@ -130,9 +131,9 @@ public sealed class DrawContext
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised from this call when this context's <see cref="RendererContext"/> is
-    /// <see langword="null"/> or was constructed with a null document, or when
-    /// <paramref name="handle"/> is null and that renderer context was constructed with a non-null
-    /// page.
+    /// <see langword="null"/>. Also raised when that renderer context was constructed with a null
+    /// document, and when <paramref name="handle"/> is null and that renderer context was
+    /// constructed with a non-null page.
     /// </exception>
     /// <exception cref="ArgumentNullException">
     /// Raised from this call when this context's <see cref="RendererContext"/> was constructed with
@@ -149,8 +150,7 @@ public sealed class DrawContext
     /// <remarks>
     /// Not refused. A non-finite <paramref name="layoutY"/> yields a non-finite PDF Y, and so does
     /// a finite one when <see cref="PageBounds"/>'s height is not finite or the subtraction
-    /// overflows. A save refuses the Y it writes, so this is where a finite argument is refused;
-    /// see <see cref="AddOutlineEntry"/>.
+    /// overflows. A save refuses the Y it writes; see <see cref="AddOutlineEntry"/>.
     /// </remarks>
     public double ToPdfY(double layoutY) => PageBounds.Height - layoutY;
 
@@ -178,8 +178,8 @@ public sealed class DrawContext
     /// whose rectangle lies wholly outside the page's crop box is exempt: clause 7.18.1 lifts the
     /// requirements of clause 7.18 for it. A null <paramref name="uri"/> writes a link annotation
     /// with no action, so the area is a link that goes nowhere.
-    /// <para>A non-finite coordinate in <paramref name="box"/>, or finite ones whose sum overflows,
-    /// is accepted here. The save throws when it writes the annotation's rectangle.</para>
+    /// <para>A non-finite coordinate in <paramref name="box"/> is accepted here, and so are finite
+    /// ones whose sum overflows. The save throws when it writes the annotation's rectangle.</para>
     /// <para>Do not pass a null or relative <paramref name="uri"/>. A later major version will
     /// refuse a value that is not an absolute URI.</para>
     /// </remarks>
@@ -236,9 +236,10 @@ public sealed class DrawContext
     /// refused when <see cref="PageBounds"/>'s height is not finite or the subtraction overflows.
     /// </exception>
     /// <exception cref="ArgumentNullException">
-    /// Raised when the <see cref="PdfDocument"/> this context was constructed with is saved, not
-    /// from this call, when this context was constructed with a null page and a non-null document
-    /// and <paramref name="title"/> is not null. <c>ParamName</c> is <c>key</c>.
+    /// Raised when this context was constructed with a null page and a non-null document, and
+    /// <paramref name="title"/> is not null. It comes from the save of the
+    /// <see cref="PdfDocument"/> this context was constructed with, not from this call.
+    /// <c>ParamName</c> is <c>key</c>.
     /// </exception>
     public void AddOutlineEntry(string title, int level, double layoutY)
     {
