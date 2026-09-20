@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.3.3] - 2026-09-20
+
+This release is led by documentation. Layout's public surface now states what each member
+refuses, which call throws, and what it silently ignores, and the Kernel image loaders do the
+same. It also carries the GIF work from #490 (an encoder, and fixes to the decoder) and a fix for
+form-field numbers written with the host culture's decimal separator (#522). The one addition to
+the public API is `GifEncoder` in `VellumPdf.Kernel`; between v2.3.2 and this release no public
+API file gained a removal or a rename.
+
 ### Added
 
 - **`GifEncoder` writes single-frame GIF89a (#490).** Implemented from the same specification,

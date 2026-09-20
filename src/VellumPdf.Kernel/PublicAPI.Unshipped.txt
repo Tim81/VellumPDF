@@ -1,3 +1,1 @@
 #nullable enable
-VellumPdf.Images.GifEncoder
-static VellumPdf.Images.GifEncoder.Encode(byte[]! rgb, int width, int height, bool interlaced = false) -> byte[]!
