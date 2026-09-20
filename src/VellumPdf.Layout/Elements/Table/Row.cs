@@ -27,6 +27,10 @@ public sealed class Row
     /// An empty row among rows that have cells is not refused. A table in which no row has a cell
     /// is; see <see cref="TableElement.Rows"/>.
     /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from reading this property, when a cell is <see langword="null"/>.
+    /// </exception>
     public IReadOnlyList<Cell> Cells => _cells;
 
     /// <summary>Whether this row is a header row (may be repeated on each page).</summary>

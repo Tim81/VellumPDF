@@ -56,6 +56,11 @@ public sealed class Paragraph
     /// <remarks>
     /// Never empty: a zero-run input becomes one empty run. Null entries are kept.
     /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from reading this property, when an entry is <see langword="null"/>. See
+    /// <see cref="Paragraph(IEnumerable{TextRun})"/> for the other runs the save refuses.
+    /// </exception>
     public IReadOnlyList<TextRun> Runs => _runs;
 
     /// <summary>Margins around the paragraph.</summary>

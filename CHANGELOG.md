@@ -212,7 +212,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **The rest of Layout's public members now document their boundaries (#510):** what is
   refused and which call throws, what is accepted but should not be relied on, and what is
-  accepted and then ignored. **134** public members and the `TextRun` type carry an
+  accepted and then ignored. **137** public members and the `TextRun` type carry an
   `<exception>` tag, counted in the compiler's XML output. What a caller is most likely to act
   on:
 

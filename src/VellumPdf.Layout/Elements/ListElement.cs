@@ -72,6 +72,10 @@ public sealed class ListElement
     /// Empty is allowed. A null item is kept, and the save throws when it lays the list out;
     /// see <see cref="Add(ListItem)"/>.
     /// </remarks>
+    /// <exception cref="NullReferenceException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from reading this property, when an item is <see langword="null"/>.
+    /// </exception>
     public IReadOnlyList<ListItem> Items => _items;
 
     /// <summary>Points of indent for each list level.</summary>
