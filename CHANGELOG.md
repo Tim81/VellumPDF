@@ -52,6 +52,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   naming Apache-2.0 alone. The Liberation fonts were never affected: their licence is packed
   beside them in the Standard 14 package already.
 
+- **The boundaries Layout documents are now pinned as tests.** 45 cases in
+  `BoundaryContractTests`, taken from the probes that produced the sentences in #510: which null
+  argument decides when two are null on `DrawContext` and `RendererContext`, that a save refuses the
+  flipped value rather than the value passed, that a foreign page drops a link annotation while
+  keeping the outline entry, that every `Document.Add` overload defers its refusals to the save,
+  where a nested list's indent is refused (451.2799 saves, 451.28 throws, and the boundary moves
+  with the list's margins), how a heading's level places its bookmark, and that Symbol and
+  ZapfDingbats measure every Basic Multilingual Plane character as zero at every size probed.
+
+  Documentation goes stale silently: three of the defects #510's review rounds found were sentences
+  that had been true when they were written, and the rounds kept re-measuring partitions an earlier
+  round had already settled, because nothing held the figures. A boundary a test asserts fails
+  loudly instead. The assertions are on exception type, `ParamName` or the bytes written, never on a
+  document coming back, and the placement cases carry a control — a Helvetica line beside the
+  Symbol one, a default indent beside the infinite one — so a change that stops drawing entirely
+  cannot pass them.
+
 ### Fixed
 
 - **The GIF decoder refused a third of the files put to it and silently corrupted others
