@@ -67,11 +67,14 @@ public sealed class Heading
     /// requirement.
     /// <para><b>Attention</b>: a negative level is <b>not</b> refused, and it does not clamp the
     /// way you would expect. The mapping's catch-all sends it to <c>H6</c>, the deepest tag, where
-    /// you almost certainly meant the shallowest. The raw value also reaches the outline builder,
-    /// so your bookmark tree nests on it. A later major version will reject it.</para>
-    /// <para>Every level from 5 upward is the same <c>H6</c> tag. Assistive technology therefore
-    /// cannot tell level 5 from level 500, while the outline still nests on the number you gave.
-    /// Do not use a large level to express depth.</para>
+    /// you almost certainly meant the shallowest. A later major version will reject it.</para>
+    /// <para>The raw value also reaches the outline builder, which hangs this heading's bookmark
+    /// under the most recent earlier heading whose level is exactly one less, and puts it at the
+    /// top level when there is none; see <see cref="DrawContext.AddOutlineEntry"/>. So a level
+    /// expresses depth only where the heading above it is one shallower: after a level 0 heading,
+    /// levels 5 and 500 both land at the top level, beside it rather than under it. Every level
+    /// from 5 upward is the same <c>H6</c> tag as well, so assistive technology cannot tell them
+    /// apart either. Do not use a large level to express depth.</para>
     /// </remarks>
     public int Level { get; init; }
 
