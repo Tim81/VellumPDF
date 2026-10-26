@@ -30,7 +30,7 @@
          test host (OutputType=Exe), which a shared helper library is not. -->
     <PackageVersion Include="xunit.v3.assert" Version="4.0.1" />
     <PackageVersion Include="Verify.XunitV3" Version="33.0.2" />
-    <PackageVersion Include="CsCheck" Version="4.9.0" />
+    <PackageVersion Include="CsCheck" Version="5.0.0" />
     <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
     <!-- coverlet's native Microsoft.Testing.Platform extension, replacing the VSTest-only
          coverlet.collector (#200). Chosen over Microsoft.Testing.Extensions.CodeCoverage on
