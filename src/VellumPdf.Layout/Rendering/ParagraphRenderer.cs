@@ -218,7 +218,15 @@ public sealed class ParagraphRenderer : IRenderer
             // Count inter-word gaps in this line (gaps between fragments that end/start with space-adjacent text)
             // We count total word-tokens in the line to compute spacing.
             var wordGapCount = CountWordGaps(fragments);
-            var wordSpacing = isJustified && wordGapCount > 0 ? slack / wordGapCount : 0.0;
+
+            // The Tw path spreads the slack over SPACE CHARACTERS, not over word gaps. A gap is a
+            // pair of adjacent tokens where either is a space, so every space is counted twice by
+            // CountWordGaps, which is right for the embedded path (it adds the extra after both
+            // neighbours of a space) and wrong here: Tw applies once per space, so dividing by the
+            // gap count handed out half the slack and the line stopped short of the right edge
+            // (#548). The divisor must match what Tw draws.
+            var spaceCount = isJustified ? CountSpaces(fragments) : 0;
+            var wordSpacing = spaceCount > 0 ? slack / spaceCount : 0.0;
 
             // Baseline X for left, center, right — for Justify treat as Left (we use Tw or Tm).
             //
@@ -308,7 +316,7 @@ public sealed class ParagraphRenderer : IRenderer
             else
             {
                 // Standard-14 path (or non-justified): use Tw for word spacing.
-                if (isJustified && wordGapCount > 0)
+                if (spaceCount > 0)
                     canvas.SetWordSpacing(wordSpacing);
 
                 var linkStartX = curX;
@@ -320,18 +328,24 @@ public sealed class ParagraphRenderer : IRenderer
                     canvas.SetTextMatrix(1, 0, 0, 1, curX, linePdfY);
                     ShowText(canvas, frag.Style, frag.Text);
 
+                    // Tw widens every space the fragment holds, so the fragment is drawn that much
+                    // wider than the width it was measured at. The next fragment starts after the
+                    // drawn width, not the measured one, or it overprints the end of this one
+                    // (#555); the link rectangle covers the same drawn width. wordSpacing is zero
+                    // on a line that is not justified, so ordinary lines advance as before.
+                    var drawnWidth = frag.Width + (CountSpaces(frag.Text) * wordSpacing);
+
                     // Register link annotation for this fragment if it has a URI.
                     if (frag.Style.LinkUri is not null)
                     {
-                        var fragBox = new LayoutBox(curX, lineLayoutTop, frag.Width, leading);
+                        var fragBox = new LayoutBox(curX, lineLayoutTop, drawnWidth, leading);
                         ctx.AddUriLinkAnnotation(fragBox, frag.Style.LinkUri);
                     }
 
-                    curX += frag.Width;
-                    // Word spacing is handled by Tw operator, so advance by frag.Width only.
+                    curX += drawnWidth;
                 }
 
-                if (isJustified && wordGapCount > 0)
+                if (spaceCount > 0)
                     canvas.SetWordSpacing(0);
             }
         }
@@ -505,6 +519,25 @@ public sealed class ParagraphRenderer : IRenderer
             }
         }
         return tokens;
+    }
+
+    /// <summary>
+    /// Counts the space characters (U+0020) a line draws, which is what <c>Tw</c> acts on. Other
+    /// white space is not counted: <c>Tw</c> applies to the single-byte code 32 alone.
+    /// </summary>
+    private static int CountSpaces(LineFragment[] fragments)
+    {
+        var count = 0;
+        foreach (var frag in fragments) count += CountSpaces(frag.Text);
+        return count;
+    }
+
+    private static int CountSpaces(string text)
+    {
+        var count = 0;
+        foreach (var c in text)
+            if (c == ' ') count++;
+        return count;
     }
 
     private static bool IsWordGap(

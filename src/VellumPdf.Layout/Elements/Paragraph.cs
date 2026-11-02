@@ -97,11 +97,10 @@ public sealed class Paragraph
     /// <see cref="HorizontalAlignment.Justify"/> stretches every line except the paragraph's last,
     /// which stays left-aligned, and a line that ends at a hard line break is stretched too. A line
     /// with no space in it is not stretched. White space is drawn as the type remarks describe; see
-    /// <see cref="HorizontalAlignment.Justify"/> for trailing line breaks. In the standard-14 text
-    /// faces (every standard-14 font but Symbol and ZapfDingbats) a justified line in one
-    /// <see cref="TextStyle"/> instance can stop short of the right edge, and runs with different
-    /// <see cref="TextStyle"/> instances can overprint; see
-    /// <see cref="HorizontalAlignment.Justify"/>.
+    /// <see cref="HorizontalAlignment.Justify"/> for trailing line breaks. A justified line in the
+    /// standard-14 text faces (every standard-14 font but Symbol and ZapfDingbats) ends at the right
+    /// edge, including one holding runs with different <see cref="TextStyle"/> instances (#548,
+    /// #555); see <see cref="HorizontalAlignment.Justify"/> for Symbol and ZapfDingbats.
     /// </remarks>
     public HorizontalAlignment Alignment { get; init; } = HorizontalAlignment.Left;
 

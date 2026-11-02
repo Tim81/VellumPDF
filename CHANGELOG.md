@@ -89,6 +89,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   listed for the next major (#484), because refusing it would turn a rendering document into an
   exception.
 
+- **Justified text in a standard-14 font is stretched to the right edge, and a multi-style line
+  no longer overprints (#548, #555).** The word spacing was the slack divided by `CountWordGaps`,
+  which counts both neighbours of every space token, so each space was counted twice and half the
+  slack was handed out: on a 200pt box, `Helvetica` 12 and thirteen words the line ended at 243.37
+  instead of 250. `Tw` applies once per space character, so the divisor is now the number of spaces
+  the line draws. A line holding more than one `TextStyle` instance placed each fragment at its
+  unstretched width while its spaces were stretched, so a fragment could overprint the text after
+  it; each fragment now starts where the one before it is drawn to end, and a `LinkUri` rectangle on
+  that line starts at the drawn position and covers the drawn width. The embedded-font path was
+  already correct for the stretch and is unchanged, and its link rectangle (#551) is a separate
+  issue. A line that is not justified writes the same bytes as before.
+
 ## [2.3.3] - 2026-09-20
 
 This release is led by documentation. Layout's public surface now states what each member
