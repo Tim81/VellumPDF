@@ -8,14 +8,16 @@ namespace VellumPdf.Layout.Elements.Table;
 /// <summary>A single table cell, optionally spanning multiple columns or rows.</summary>
 /// <remarks>
 /// A <see cref="ColSpan"/> below 1 is refused at save, and a <see cref="RowSpan"/> below 1 is
-/// drawn as 1. A null <see cref="Content"/> can make the save throw; see the constructor.
+/// drawn as 1. A null text given to the constructor is stored as an empty string; see the
+/// constructor.
 /// <see cref="HorizontalAlignment.Justify"/> is drawn as <see cref="HorizontalAlignment.Left"/>.
 /// </remarks>
 public sealed class Cell
 {
     /// <summary>The text content rendered in the cell.</summary>
     /// <remarks>
-    /// An empty string draws no text. The value is never null; the constructor refuses a null (#547).
+    /// An empty string draws no text. The value is never null: the constructor stores a null as an
+    /// empty string (#547).
     /// Spaces are the only break points between words, and a word wider than the cell is broken
     /// between characters. A line feed, carriage return or tab is not a break. In a standard-14
     /// font each is written into the cell as it is; in an embedded font each is drawn as whatever
@@ -181,15 +183,13 @@ public sealed class Cell
 
     /// <summary>Creates a cell with the given text content.</summary>
     /// <remarks>
-    /// A null <paramref name="content"/> is refused here (#547). It used to be stored, and the save
-    /// threw <see cref="NullReferenceException"/> when it sized a column automatically, which it
-    /// does for a column without a positive finite width in
-    /// <see cref="TableElement.ColWidths"/>; in a table where every column had one, the cell was
-    /// drawn empty. An empty string is not null and is accepted.
+    /// A null <paramref name="content"/> is stored as an empty string, so the cell draws no text
+    /// and <see cref="Content"/> is never null (#547). A null used to be stored as it was, and the
+    /// save threw <see cref="NullReferenceException"/> when it sized a column automatically, which
+    /// it does for a column without a positive finite width in <see cref="TableElement.ColWidths"/>;
+    /// in a table where every column had one, the cell was drawn empty. Treating it as empty gives
+    /// both tables the second result, which is what the explicit-width table already did.
     /// </remarks>
-    /// <exception cref="ArgumentNullException">
-    /// <paramref name="content"/> is <see langword="null"/>.
-    /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this call, when the text holds an unpaired surrogate and is measured in an embedded
@@ -197,7 +197,6 @@ public sealed class Cell
     /// </exception>
     public Cell(string content)
     {
-        ArgumentNullException.ThrowIfNull(content);
-        Content = content;
+        Content = content ?? string.Empty;
     }
 }

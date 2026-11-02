@@ -75,8 +75,8 @@ public sealed class Row
     /// <summary>Adds a text cell to the row. Returns this row.</summary>
     /// <remarks>
     /// Creates the cell with <see cref="Cell(string)"/> and adds it, so a line break in the text is
-    /// not honoured; see <see cref="Cell.Content"/>. A null <paramref name="text"/> is refused by
-    /// that constructor (#547). It used to be stored, and the save threw
+    /// not honoured; see <see cref="Cell.Content"/>. A null <paramref name="text"/> is added as an
+    /// empty cell (#547). It used to be stored as it was, and the save threw
     /// <see cref="NullReferenceException"/> when it sized a column automatically, but not in a
     /// table where every column has a positive finite width in
     /// <see cref="TableElement.ColWidths"/>, where the cell was drawn empty. In a row that a cell
@@ -84,10 +84,6 @@ public sealed class Row
     /// in order, and a cell past the last column is not drawn, though its text is still measured
     /// (#487).
     /// </remarks>
-    /// <exception cref="ArgumentNullException">
-    /// <paramref name="text"/> is <see langword="null"/>. <c>ParamName</c> is <c>content</c>, the
-    /// name of the <see cref="Cell(string)"/> parameter.
-    /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this call, when the text holds an unpaired surrogate and is measured in an embedded

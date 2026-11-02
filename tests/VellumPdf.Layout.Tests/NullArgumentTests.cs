@@ -43,8 +43,6 @@ public sealed class NullArgumentTests
         new("ListItem.AddChild((ListItem)null)", "child", () => new ListItem("p").AddChild((ListItem)null!)),
         // #547 and #523: tables
         new("Row.AddCell((Cell)null)", "cell", () => new TableElement().AddRow().AddCell((Cell)null!)),
-        new("new Cell(null)", "content", () => _ = new Cell(null!)),
-        new("Row.AddCell((string)null)", "content", () => new TableElement().AddRow().AddCell((string)null!)),
         // #547: image, chart, band
         new("new LayoutImage(null)", "image", () => _ = new LayoutImage(null!)),
         new("new PieChart { Slices = null }", "value", () => _ = new PieChart { Slices = null! }),
@@ -118,5 +116,43 @@ public sealed class NullArgumentTests
         _ = new Cell(string.Empty);
         _ = new RunningBand(string.Empty);
         _ = new TextRun(string.Empty, Style());
+    }
+
+    // ── A null cell text is an empty cell, not a refusal ─────────────────────
+
+    [Fact]
+    public void NullCellText_isStoredAsAnEmptyString()
+    {
+        Assert.Equal(string.Empty, new Cell(null!).Content);
+
+        var row = new TableElement().AddRow().AddCell((string)null!);
+        Assert.Equal(string.Empty, Assert.Single(row.Cells).Content);
+    }
+
+    private static IReadOnlyList<ContentStreamReadback.TextPlacement> PlacementsOfThreeCellRow(string? middle, bool explicitWidths)
+    {
+        using var doc = new Document { PageSize = new PdfRectangle(0, 0, 300, 200), Margins = new EdgeInsets(10) };
+        var table = new TableElement { DefaultCellStyle = Style() };
+        if (explicitWidths) table.SetColumnWidths(60, 60, 60);
+        table.AddRow().AddCell("A").AddCell(middle!).AddCell("B");
+        doc.Add(table);
+
+        using var ms = new MemoryStream();
+        doc.Save(ms);
+        return ContentStreamReadback.TextPlacements(PdfTestUtil.DecompressAllFlatStreams(ms.ToArray()));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void TableWithANullCell_saves_andDrawsTheRowAsAnEmptyStringWould(bool explicitWidths)
+    {
+        // Before, the auto-sized table threw NullReferenceException and the explicit-width one drew
+        // the cell empty; both now do the second.
+        var withNull = PlacementsOfThreeCellRow(null, explicitWidths);
+        var withEmpty = PlacementsOfThreeCellRow(string.Empty, explicitWidths);
+
+        Assert.Equal(["A", "", "B"], withNull.Select(p => p.Text));
+        Assert.Equal(withEmpty, withNull);
     }
 }
