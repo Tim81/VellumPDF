@@ -2110,4 +2110,162 @@ public sealed class Jbig2ImageTests
         Assert.Equal(50, img.Width);
         Assert.Equal(40, img.Height);
     }
+
+    // ── First page only, and unknown-length segments (#570) ──────────────────────────────────────
+    //
+    // A PDF image is one page. A multi-page file embeds the page of its first page-information
+    // segment, with the segments that belong to no page, and drops every other page. A segment whose
+    // data length is unknown (0xFFFFFFFF) cannot be partitioned, so passthrough refuses it where it
+    // used to skip it and embed a blank image.
+
+    /// <summary>
+    /// Two pages in one file: a global symbol dictionary (page 0), then page 1 (64x48: page
+    /// information, a generic region, end-of-page), then page 2 (99x77: page information, a generic
+    /// region, a symbol dictionary, end-of-page), then end-of-file. Every segment's data is distinct.
+    /// </summary>
+    private static byte[][] TwoPages() =>
+    [
+        BuildSegment(0, type: 0, pageAssociation: 0, [0xA1, 0xA2, 0xA3, 0xA4]),
+        BuildSegment(1, type: 48, pageAssociation: 1, BuildPageInfoSegmentData(64, 48)),
+        BuildSegment(2, type: 38, pageAssociation: 1, [0xB1, 0xB2, 0xB3, 0xB4, 0xB5, 0xB6]),
+        BuildSegment(3, type: 49, pageAssociation: 1, []),
+        BuildSegment(4, type: 48, pageAssociation: 2, BuildPageInfoSegmentData(99, 77)),
+        BuildSegment(5, type: 38, pageAssociation: 2, [0xC1, 0xC2, 0xC3, 0xC4]),
+        BuildSegment(6, type: 0, pageAssociation: 2, [0xD1, 0xD2]),
+        BuildSegment(7, type: 49, pageAssociation: 2, []),
+        BuildSegment(8, type: 51, pageAssociation: 0, []),
+    ];
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Load_TwoPages_EmbedsOnlyTheFirstPage(bool sequential)
+    {
+        var pages = TwoPages();
+        var file = sequential
+            ? Sequential(0x01, [0x00, 0x00, 0x00, 0x02], pages)
+            : RandomAccess(0x00, [0x00, 0x00, 0x00, 0x02], pages);
+
+        var img = Jbig2ImageLoader.Load(file);
+        var body = ExtractStreamBody(Serialize(img));
+
+        // The first page's size, and exactly its page information and generic region: the end-of-page
+        // segment is framing, and nothing of page 2 is there.
+        Assert.Equal(64, img.Width);
+        Assert.Equal(48, img.Height);
+        Assert.Equal(pages[1].Concat(pages[2]).ToArray(), body);
+        Assert.Equal(pages[1].Length + pages[2].Length, body.Length);
+        Assert.Equal(pages[0], img.Jbig2Globals);
+        Assert.Equal(-1, FindSequence(body, [0xC1, 0xC2, 0xC3, 0xC4]));
+        Assert.Equal(-1, FindSequence(body, [0xD1, 0xD2]));
+    }
+
+    [Fact]
+    public void Load_TwoPagesInTheEmbeddedForm_EmbedsOnlyTheFirstPage()
+    {
+        var pages = TwoPages();
+
+        var img = Jbig2ImageLoader.Load(pages.SelectMany(x => x).ToArray());
+
+        Assert.Equal(64, img.Width);
+        Assert.Equal(pages[1].Concat(pages[2]).ToArray(), ExtractStreamBody(Serialize(img)));
+    }
+
+    /// <summary>The first page is the one the first page-information segment names, not page 1.</summary>
+    [Fact]
+    public void Load_FirstPageInformationNamesPageTwo_EmbedsPageTwo()
+    {
+        byte[][] pages =
+        [
+            BuildSegment(0, type: 48, pageAssociation: 2, BuildPageInfoSegmentData(99, 77)),
+            BuildSegment(1, type: 38, pageAssociation: 2, [0xC1, 0xC2, 0xC3, 0xC4]),
+            BuildSegment(2, type: 48, pageAssociation: 1, BuildPageInfoSegmentData(64, 48)),
+            BuildSegment(3, type: 38, pageAssociation: 1, [0xB1, 0xB2]),
+            BuildSegment(4, type: 51, pageAssociation: 0, []),
+        ];
+
+        var img = Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, pages));
+
+        Assert.Equal(99, img.Width);
+        Assert.Equal(77, img.Height);
+        Assert.Equal(pages[0].Concat(pages[1]).ToArray(), ExtractStreamBody(Serialize(img)));
+    }
+
+    /// <summary>
+    /// DecodeToRaster draws only the first page too: the second page holds a symbol dictionary and an
+    /// arithmetic-coded region, either of which would throw NotSupportedException if it were read.
+    /// </summary>
+    [Fact]
+    public void Load_TwoPagesDecodeToRaster_UsesOnlyTheFirstPage()
+    {
+        // Page 1: an 8x1 MMR region, one black run of 8 (horizontal mode, white run 0, black run 8).
+        var mmr = PackMsbFirst((0b001, 3), (0b00110101, 8), (0b000101, 6));
+        var region = new byte[18 + mmr.Length];
+        WriteInt32(region, 0, 8);
+        WriteInt32(region, 4, 1);
+        region[17] = 0x01;                                   // MMR
+        Array.Copy(mmr, 0, region, 18, mmr.Length);
+
+        var arithmeticRegion = new byte[18 + 2];             // grFlags 0: arithmetic coding
+        WriteInt32(arithmeticRegion, 0, 16);
+        WriteInt32(arithmeticRegion, 4, 2);
+
+        byte[][] pages =
+        [
+            BuildSegment(0, type: 48, pageAssociation: 1, BuildPageInfoSegmentData(8, 1)),
+            BuildSegment(1, type: 38, pageAssociation: 1, region),
+            BuildSegment(2, type: 49, pageAssociation: 1, []),
+            BuildSegment(3, type: 48, pageAssociation: 2, BuildPageInfoSegmentData(16, 2)),
+            BuildSegment(4, type: 0, pageAssociation: 2, [0xD1, 0xD2]),
+            BuildSegment(5, type: 38, pageAssociation: 2, arithmeticRegion),
+            BuildSegment(6, type: 49, pageAssociation: 2, []),
+            BuildSegment(7, type: 51, pageAssociation: 0, []),
+        ];
+        var opts = new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster };
+
+        var img = Jbig2ImageLoader.Load(Sequential(0x01, [0x00, 0x00, 0x00, 0x02], pages), opts);
+
+        Assert.Equal(8, img.Width);
+        Assert.Equal(1, img.Height);
+        Assert.Equal([0xFF], CcittImageTests.DecompressFlateStream(img.BuildStream()));
+    }
+
+    /// <summary>
+    /// A generic region of the first page whose data length is 0xFFFFFFFF. The sequential parser
+    /// takes it to run to the end of the data, and passthrough used to skip it, so the image was
+    /// embedded blank. The message names the segment and the length.
+    /// </summary>
+    [Theory]
+    [InlineData(true)]     // with the file header
+    [InlineData(false)]    // the embedded organisation, no file header
+    public void Load_Passthrough_SegmentWithAnUnknownDataLength_IsRefusedNamingIt(bool withFileHeader)
+    {
+        var segments = FiveSegments(64, 48);
+        for (var i = 7; i < 11; i++) segments[2][i] = 0xFF;       // segment 2: length 0xFFFFFFFF
+        var file = withFileHeader
+            ? Sequential(0x01, PageCountOne, segments)
+            : segments.SelectMany(x => x).ToArray();
+
+        var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(file));
+
+        Assert.Contains("segment 2", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("type 38", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("0xFFFFFFFF", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("unknown data length", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>An unknown-length segment on a page that is not embedded is dropped without comment.</summary>
+    [Fact]
+    public void Load_Passthrough_UnknownDataLengthOnAnotherPage_IsNotAFault()
+    {
+        var pages = TwoPages().Take(5).ToArray();                 // through page 2's page information
+        var lastRegion = BuildSegment(5, type: 38, pageAssociation: 2, [0xC1, 0xC2, 0xC3, 0xC4]);
+        for (var i = 7; i < 11; i++) lastRegion[i] = 0xFF;        // page 2's region: unknown length
+        var file = Sequential(0x01, PageCountOne, [.. pages, lastRegion]);
+
+        var img = Jbig2ImageLoader.Load(file);
+
+        Assert.Equal(64, img.Width);
+        Assert.Equal(pages[1].Concat(pages[2]).ToArray(), ExtractStreamBody(Serialize(img)));
+    }
 }

@@ -206,7 +206,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   load at the size of their reference bitmaps, and the one MMR file decodes to the reference bitmap
   pixel for pixel. That data is licensed for conformance testing only and is not in the repository,
   so the committed tests use fixtures built by hand from Annex D. Found while exporting images from a
-  PDF with the PowerShell wrapper PSVellumPDF.
+  PDF with the PowerShell wrapper PSVellumPDF. A PDF image is one page, so a file with several pages
+  embeds the first: the page named by the first page-information segment, with the segments that
+  belong to no page, under both `Passthrough` and `DecodeToRaster`, and the size is that page's.
+  A segment whose data length is unknown (0xFFFFFFFF, T.88 7.2.7) is refused under `Passthrough`
+  with `InvalidDataException` naming the segment and its type, because it cannot be partitioned into
+  the page and globals streams; the end-of-page and end-of-file segments and every segment of a page
+  that is not embedded are exempt. **Attention**: a headerless (embedded-organisation) JBIG2 stream
+  with an unknown-length page segment used to embed as a blank image, with no error, and now throws
+  `InvalidDataException`; and a file with more than one page used to embed every page's segments
+  into one image stream and now embeds only the first page.
 
 - **A paragraph no longer wraps at U+202F NARROW NO-BREAK SPACE or U+2007 FIGURE SPACE (#562).**
   `NormaliseWhitespace` kept only U+00A0 and folded every other white-space character into a plain
