@@ -163,6 +163,7 @@ public static class Jbig2ImageLoader
         // indistinguishable from a flags byte followed by more of the same, so each reading is tried in
         // turn and the first that yields a page-information segment wins (#570).
         InvalidDataException? firstFailure = null;
+        var tried = new List<string>();
         List<SegmentHeader>? segments = null;
         var dataStart = 0;
         var width = 0;
@@ -171,6 +172,7 @@ public static class Jbig2ImageLoader
 
         foreach (var (start, randomAccess) in CandidateLayouts(jbig2))
         {
+            var reading = DescribeReading(jbig2, start, randomAccess);
             try
             {
                 var candidate = jbig2.AsSpan(start);
@@ -185,11 +187,21 @@ public static class Jbig2ImageLoader
                 // Report the first reading's failure: when the file has a well-formed header it is
                 // the reading that applies, and the later ones are fallbacks for older input.
                 firstFailure ??= ex;
+                tried.Add(tried.Count == 0 ? reading : $"{reading}, which failed with: {ex.Message}");
             }
         }
 
         if (segments is null)
-            throw firstFailure!;
+        {
+            // One reading tried: its own message. Several: the first's, which is the one that applies
+            // to a well-formed header, then which readings were tried, so a broken older file is not
+            // described only in the terms of the newer random-access one.
+            throw tried.Count <= 1
+                ? firstFailure!
+                : new InvalidDataException(
+                    $"{firstFailure!.Message} The data was read as {string.Join(", then as ", tried)}.",
+                    firstFailure);
+        }
 
         var data = jbig2.AsSpan(dataStart);
 
@@ -769,6 +781,12 @@ public static class Jbig2ImageLoader
 
         return [(idLength, false)];
     }
+
+    private static string DescribeReading(byte[] jbig2, int start, bool randomAccess) =>
+        start == 0 ? "the embedded organisation, without a file header"
+        : randomAccess ? "a random-access file (T.88 D.2)"
+        : start == FileHeader.Length ? "the ID string followed directly by segments"
+        : "a sequential file (T.88 D.1)";
 
     private static bool StartsWithFileHeader(byte[] data)
     {

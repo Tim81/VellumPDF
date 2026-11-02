@@ -2463,4 +2463,278 @@ public sealed class Jbig2ImageTests
 
         Assert.Equal(segments[0], ExtractStreamBody(Serialize(img)));
     }
+
+    // ── Segment header forms (T.88 7.2) and the container edges, hand-built ─────────────────────
+
+    /// <summary>
+    /// One segment with every part of the header spelled out: the number, the flags (type, and bit 6
+    /// for a 4-byte page association), the referred-to count field with its retention bytes as given,
+    /// the referred-to numbers as given, the page association in the width the flag says, the data
+    /// length and the data.
+    /// </summary>
+    private static byte[] RawSegment(
+        int number, int type, bool fourBytePageAssociation, byte[] countField, byte[] referredTo,
+        int pageAssociation, byte[] data)
+    {
+        var header = new List<byte>();
+        header.AddRange(new byte[4]);
+        WriteInt32(header, 0, number);
+        header.Add((byte)((type & 0x3F) | (fourBytePageAssociation ? 0x40 : 0)));
+        header.AddRange(countField);
+        header.AddRange(referredTo);
+        if (fourBytePageAssociation)
+        {
+            header.AddRange(new byte[4]);
+            WriteInt32(header, header.Count - 4, pageAssociation);
+        }
+        else
+        {
+            header.Add((byte)pageAssociation);
+        }
+
+        header.AddRange(new byte[4]);
+        WriteInt32(header, header.Count - 4, data.Length);
+        header.AddRange(data);
+        return [.. header];
+    }
+
+    private static void WriteInt32(List<byte> buf, int offset, int value)
+    {
+        buf[offset] = (byte)(value >> 24);
+        buf[offset + 1] = (byte)(value >> 16);
+        buf[offset + 2] = (byte)(value >> 8);
+        buf[offset + 3] = (byte)value;
+    }
+
+    private static byte[] BodyOf(byte[] file) => ExtractStreamBody(Serialize(Jbig2ImageLoader.Load(file)));
+
+    // (a) The 4-byte page association
+
+    [Fact]
+    public void Load_SegmentsWithAFourBytePageAssociation_LoadWithTheRightSizeAndTheirOwnBytes()
+    {
+        byte[][] segments =
+        [
+            RawSegment(0, 48, true, [0x00], [], pageAssociation: 1, BuildPageInfoSegmentData(77, 55)),
+            RawSegment(1, 38, true, [0x00], [], pageAssociation: 1, [0xB1, 0xB2, 0xB3]),
+            RawSegment(2, 51, true, [0x00], [], pageAssociation: 0, []),
+        ];
+        var file = Sequential(0x01, PageCountOne, segments);
+
+        var img = Jbig2ImageLoader.Load(file);
+
+        Assert.Equal(77, img.Width);
+        Assert.Equal(55, img.Height);
+        Assert.Equal(segments[0].Concat(segments[1]).ToArray(), ExtractStreamBody(Serialize(img)));
+    }
+
+    [Fact]
+    public void Load_AHeaderCutShortInsideAFourBytePageAssociation_IsRefused()
+    {
+        var info = RawSegment(0, 48, true, [0x00], [], pageAssociation: 1, BuildPageInfoSegmentData(8, 8));
+        // Header: number(4) flags(1) count(1) = 6 bytes, then the page association: keep two of its four.
+        var cut = info[..8];
+        var file = Sequential(0x01, PageCountOne, [cut]);
+
+        var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(file));
+
+        Assert.Contains("page association", ex.Message, StringComparison.Ordinal);
+    }
+
+    // (b) The long form of the referred-to segment count
+
+    private static byte[] LongFormCount(int count)
+    {
+        // Four bytes with 7 in the top three bits and the count in the low 29, then ceil((count+1)/8)
+        // retention bytes (T.88 7.2.4).
+        var field = new List<byte>
+        {
+            (byte)(0xE0 | ((count >> 24) & 0x1F)),
+            (byte)(count >> 16),
+            (byte)(count >> 8),
+            (byte)count,
+        };
+        field.AddRange(new byte[(count + 8) / 8]);
+        return [.. field];
+    }
+
+    [Theory]
+    [InlineData(5)]     // one retention byte
+    [InlineData(7)]     // eight flags: still one byte
+    [InlineData(8)]     // nine flags: two bytes, the first count that spills over
+    [InlineData(9)]     // two retention bytes
+    [InlineData(16)]    // seventeen flags: three bytes
+    public void Load_ASegmentWithALongFormReferredToCount_LoadsAndTheNextSegmentIsFound(int count)
+    {
+        var referred = Enumerable.Range(0, count).Select(i => (byte)i).ToArray();
+        byte[][] segments =
+        [
+            BuildSegment(0, 48, 1, BuildPageInfoSegmentData(64, 48)),
+            RawSegment(40, 6, false, LongFormCount(count), referred, pageAssociation: 1, [0xC1, 0xC2]),
+            BuildSegment(41, 38, 1, [0xB1, 0xB2, 0xB3]),
+        ];
+
+        var body = BodyOf(Sequential(0x01, PageCountOne, segments));
+
+        // All three came through whole, which they only do if the long header was read to its end.
+        Assert.Equal(segments.SelectMany(x => x).ToArray(), body);
+    }
+
+    [Fact]
+    public void Load_ALongFormCountCutShortInsideItsRetentionBytes_IsRefused()
+    {
+        var long5 = RawSegment(40, 6, false, LongFormCount(5), [0, 1, 2, 3, 4], pageAssociation: 1, [0xC1]);
+        // number(4) flags(1) count(4) = 9 bytes, then one retention byte: end the file before it.
+        var cut = long5[..9];
+        byte[][] segments = [BuildSegment(0, 48, 1, BuildPageInfoSegmentData(64, 48)), cut];
+
+        var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments)));
+
+        Assert.Contains("retention", ex.Message, StringComparison.Ordinal);
+    }
+
+    // (c) The width of a referred-to segment number follows the number of the referring segment
+
+    [Theory]
+    [InlineData(255, 1)]
+    [InlineData(256, 1)]
+    [InlineData(257, 2)]
+    [InlineData(300, 2)]
+    [InlineData(65536, 2)]
+    [InlineData(65537, 4)]
+    [InlineData(70000, 4)]
+    public void Load_AReferredToNumberIsAsWideAsTheReferringSegmentNumberRequires(int segmentNumber, int entryBytes)
+    {
+        var entry = new byte[entryBytes];
+        entry[^1] = 0;                                        // refers to segment 0, the page information
+        byte[][] segments =
+        [
+            BuildSegment(0, 48, 1, BuildPageInfoSegmentData(64, 48)),
+            RawSegment(segmentNumber, 6, false, [0x20], entry, pageAssociation: 1, [0xC1, 0xC2]),
+            BuildSegment(segmentNumber + 1, 38, 1, [0xB1, 0xB2, 0xB3]),
+        ];
+
+        var body = BodyOf(Sequential(0x01, PageCountOne, segments));
+
+        Assert.Equal(segments.SelectMany(x => x).ToArray(), body);
+    }
+
+    // (d) Random-access data parts against the end of the file
+
+    [Fact]
+    public void Load_RandomAccess_DataPartsThatEndExactlyAtTheEndOfTheFile_Load()
+    {
+        var file = RandomAccess(0x00, PageCountOne, FiveSegments(64, 48));
+
+        var img = Jbig2ImageLoader.Load(file);
+
+        Assert.Equal(64, img.Width);
+    }
+
+    [Fact]
+    public void Load_RandomAccess_DataPartsOneByteShortOfTheEnd_AreRefused()
+    {
+        var file = RandomAccess(0x00, PageCountOne, FiveSegments(64, 48));
+
+        var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(file[..^1]));
+
+        Assert.Contains("exceeds buffer size", ex.Message, StringComparison.Ordinal);
+    }
+
+    // (e) A generic region of exactly 18 bytes has the whole region header and no coded data
+
+    [Fact]
+    public void Load_DecodeToRaster_AGenericRegionOfExactlyEighteenBytes_IsNotRefusedAsTooShort()
+    {
+        var region = new byte[18];
+        WriteInt32(region, 0, 8);
+        WriteInt32(region, 4, 1);
+        region[17] = 0x01;                                    // MMR, with no MMR bytes after the header
+        byte[][] segments =
+        [
+            BuildSegment(0, 48, 1, BuildPageInfoSegmentData(8, 1)),
+            BuildSegment(1, 38, 1, region),
+        ];
+        var opts = new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster };
+
+        var ex = Record.Exception(() => Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments), opts));
+
+        // Whatever the MMR decoder makes of no data, the length check let the segment through.
+        if (ex is not null)
+            Assert.DoesNotContain("data too short", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Load_DecodeToRaster_AGenericRegionOfSeventeenBytes_IsRefusedAsTooShort()
+    {
+        byte[][] segments =
+        [
+            BuildSegment(0, 48, 1, BuildPageInfoSegmentData(8, 1)),
+            BuildSegment(1, 38, 1, new byte[17]),
+        ];
+        var opts = new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster };
+
+        var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments), opts));
+
+        Assert.Contains("data too short", ex.Message, StringComparison.Ordinal);
+    }
+
+    // (f) The older reading: the ID string, then straight away a segment
+
+    /// <summary>
+    /// A segment number whose first byte has a high nibble set cannot be a flags byte, whose bits 4 to
+    /// 7 are reserved, so the file is read as the ID string followed by segments, as before.
+    /// </summary>
+    [Fact]
+    public void Load_IdStringThenASegmentWhoseFirstByteHasAHighNibble_StillLoadsAsSequential()
+    {
+        byte[][] segments =
+        [
+            BuildSegment(0x10000000, 48, 1, BuildPageInfoSegmentData(33, 22)),
+            BuildSegment(0x10000001, 38, 1, [0xB1, 0xB2]),
+            BuildSegment(0x10000002, 51, 0, []),
+        ];
+        var file = new[] { IdString }.Concat(segments).SelectMany(x => x).ToArray();
+
+        var img = Jbig2ImageLoader.Load(file);
+
+        Assert.Equal(33, img.Width);
+        Assert.Equal(22, img.Height);
+        Assert.Equal(segments[0].Concat(segments[1]).ToArray(), ExtractStreamBody(Serialize(img)));
+    }
+
+    // ── The error for a file that no reading accepts says which readings were tried ──
+
+    [Fact]
+    public void Load_AFileNoReadingAccepts_NamesTheReadingsItTried()
+    {
+        var file = Sequential(0x01, PageCountOne, [[0x00, 0x01, 0x02]]);     // a truncated segment
+
+        var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(file));
+
+        Assert.Contains("The data was read as a sequential file", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("then as the ID string followed directly by segments", ex.Message, StringComparison.Ordinal);
+        Assert.NotNull(ex.InnerException);
+    }
+
+    [Fact]
+    public void Load_ARandomAccessFileWithoutAnEndOfFileSegment_NamesBothReadings()
+    {
+        var segments = FiveSegments(64, 48).Take(4).ToArray();
+        var file = RandomAccess(0x00, PageCountOne, segments);
+
+        var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(file));
+
+        Assert.Contains("end-of-file segment", ex.Message, StringComparison.Ordinal);       // the first reading's message
+        Assert.Contains("a random-access file (T.88 D.2)", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("the ID string followed directly by segments", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Load_AFileWithOnlyOneReading_KeepsThatReadingsOwnMessage()
+    {
+        var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load([0x00, 0x01, 0x02]));
+
+        Assert.DoesNotContain("The data was read as", ex.Message, StringComparison.Ordinal);
+    }
 }

@@ -17,7 +17,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   leaves no half-written operator. **Attention**: a caller that passed a
   non-finite value to a `PdfCanvas` method used to get a file with an invalid content stream and
   now gets the exception. `AppendArc` still returns without drawing for a non-finite radius or
-  angle, as before; it refuses a non-finite centre.
+  angle, as before; it refuses a non-finite centre. **Attention**: `SetFillAlpha`,
+  `SetStrokeAlpha`, `PaintAxialGradient` and `PaintRadialGradient` already refused a non-finite
+  value, through `new PdfReal`, with `ParamName` `value`; the check is now the canvas's own and the
+  `ParamName` is null. One defect went with it: `SetFillAlpha(double.NaN)` registered a graphics
+  state name before `PdfReal` threw, so a second identical call returned that name without
+  throwing and wrote `/GSn gs` to an ExtGState that was never defined, and later names shifted. Every
+  such call now throws and registers nothing.
 
 - **A non-finite colour channel is refused at the Layout seam, naming the element (#509).** A
   `ColorRgb` with a `NaN` or infinite channel on a text style, a running band, a table cell's style
@@ -100,7 +106,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   it; each fragment now starts where the one before it is drawn to end, and a `LinkUri` rectangle on
   that line starts at the drawn position and covers the drawn width. The embedded-font path was
   already correct for the stretch and is unchanged, and its link rectangle (#551) is a separate
-  issue. A line that is not justified writes the same bytes as before.
+  issue. A line that is not justified writes the same bytes as before. A justified line that holds
+  text in `Symbol` or `ZapfDingbats` keeps the old divisor: those fonts measure every glyph as zero
+  (#470), so the slack on such a line is the whole line width, and handing all of it out per space
+  would have pushed the line twice as far past the right edge as before. They need real metrics.
 
 - **The last item a list draws on a page no longer loses a line (#556).** `ListRenderer.Draw`
   lays each item out a second time, and it offered that second layout `Bottom - y`, which for the
@@ -199,7 +208,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   threw `NotSupportedException` from the final copy, and a linearized `PdfDocument.Save` to a closed
   stream throws `ArgumentException` where it threw `ObjectDisposedException`. A non-linearized
   `Save` to such a stream already threw `ArgumentException`, with the parameter name `stream`; it is
-  now `destination`.
+  now `destination`. Because the checks come first, a few precedences change. On a disposed
+  `Document`, `ObjectDisposedException` now comes before an element or geometry error from the
+  layout. A `SaveAsync` given an already-cancelled token together with a bad destination or a
+  document in a state that cannot be saved reports the argument or state exception, not the
+  cancellation. A `Document` with no content, and a `PdfDocument` with no pages, still report "The
+  document has no pages." before a bad destination or options, as before. `DocumentRenderer.Render`
+  runs the same checks before its layout, so a failed render to an unwritable stream no longer
+  leaves pages behind for a retry to write twice.
 
 - **A failed `Save(string)` or `SaveAsync(string)` no longer destroys the file that was already
   there (#508).** Both opened the path with `FileMode.Create`, which truncates it, before the layout
@@ -221,9 +237,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reached through a link and never the link. **Attention**: the final copy is not atomic. A failure
   during it, such as a full disk, or a crash, can leave the file truncated or incomplete (a file the
   call created is deleted, one that was already there is not restored), and a file another process
-  creates between the existence check and the open is taken for one the call created. A failed save
-  through a dangling link can leave an empty file at the link's destination, because the open
-  created it. The file is held open with `FileShare.None` from before the layout until the save
+  creates between the existence check and the open is taken for one the call created, so it is
+  deleted if the save then fails. A failed save through a dangling link can leave an empty file at
+  the link's destination, because the open created it. `SaveAsync(string)` looks at its
+  cancellation token before the layout and when the serialisation is queued; a cancellation after
+  that is ignored and the save completes. On Windows the file is opened with `OpenOrCreate`, not
+  `Create`, so a hidden or system file that `FileMode.Create` refused is now overwritten. The file is held open with `FileShare.None` from before the layout until the save
   returns, which excludes other openers on Windows but is only an advisory lock on Linux and macOS.
   The PDF is built in a `MemoryStream`, so a PDF over about 2 GB cannot be saved to a path. Passing
   a `FileStream` to `Save(Stream)` avoids that, but `SaveAsync(Stream)` and a linearized
@@ -260,6 +279,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (embedded-organisation) JBIG2 stream with an unknown-length page segment used to embed as a blank
   image, with no error, and now throws `InvalidDataException`; and a file with more than one page
   used to embed every page's segments into one image stream and now embeds only the first page.
+  When no reading of the data is accepted, the `InvalidDataException` now says which readings were
+  tried (a sequential or random-access file, the ID string followed directly by segments, or the
+  embedded form) after the first reading's message, so a broken older file is not described only
+  in the terms of the random-access one.
 
 - **A paragraph no longer wraps at U+202F NARROW NO-BREAK SPACE or U+2007 FIGURE SPACE (#562).**
   `NormaliseWhitespace` kept only U+00A0 and folded every other white-space character into a plain
