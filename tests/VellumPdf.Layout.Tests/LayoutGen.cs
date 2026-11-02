@@ -39,7 +39,7 @@ internal static class LayoutGen
     /// so they reach a content stream as a bare symbol rather than as a PDF number.
     /// </summary>
     internal static Gen<double> NonFinite =>
-        Gen.OneOfConst(double.NaN, double.PositiveInfinity, double.NegativeInfinity);
+        Gen.OneOf(double.NaN, double.PositiveInfinity, double.NegativeInfinity);
 
     /// <summary>A font size a caller would plausibly ask for.</summary>
     internal static Gen<double> FontSize => Gen.Double[6.0, 24.0];
@@ -92,7 +92,7 @@ internal static class LayoutGen
     /// outside this pull request's scope; excluding the shape that reaches it keeps the property sweep testing what
     /// #480 fixed rather than failing on something else it happens to have found.
     /// </summary>
-    private static Gen<(bool Row0IsHeader, bool Row1IsHeader)> RowHeaderShape => Gen.OneOfConst(
+    private static Gen<(bool Row0IsHeader, bool Row1IsHeader)> RowHeaderShape => Gen.OneOf(
         (false, false),
         (true, false),
         (false, true));
@@ -119,13 +119,13 @@ internal static class LayoutGen
         Gen.Select(Gen.Double[0.0, 1.0], Gen.Double[0.0, 1.0], Gen.Double[0.0, 1.0],
             (r, g, b) => new ColorRgb(r, g, b));
 
-    internal static Gen<HorizontalAlignment> Alignment => Gen.OneOfConst(
+    internal static Gen<HorizontalAlignment> Alignment => Gen.OneOf(
         HorizontalAlignment.Left,
         HorizontalAlignment.Center,
         HorizontalAlignment.Right,
         HorizontalAlignment.Justify);
 
-    internal static Gen<ListStyle> Bullets => Gen.OneOfConst(
+    internal static Gen<ListStyle> Bullets => Gen.OneOf(
         ListStyle.Unordered,
         ListStyle.OrderedDecimal,
         ListStyle.OrderedAlpha,
@@ -140,7 +140,7 @@ internal static class LayoutGen
     /// across every generated alignment, page size and margin rather than the hand-picked
     /// geometries of the band suite.
     /// </summary>
-    internal static Gen<string> ShortBandTemplate => Gen.OneOfConst(
+    internal static Gen<string> ShortBandTemplate => Gen.OneOf(
         "Page {page}",
         "Page {page} of {pages}",
         "{pages}",

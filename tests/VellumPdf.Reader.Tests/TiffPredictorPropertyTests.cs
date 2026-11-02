@@ -27,7 +27,7 @@ public sealed class TiffPredictorPropertyTests
 {
     private static readonly Gen<(int Bpc, int Colors, int Columns, int Rows)> ShapeGen =
         Gen.Select(
-            Gen.OneOfConst(1, 2, 4, 8, 16), Gen.Int[1, 32], Gen.Int[1, 200], Gen.Int[1, 4],
+            Gen.OneOf(1, 2, 4, 8, 16), Gen.Int[1, 32], Gen.Int[1, 200], Gen.Int[1, 4],
             (bpc, colors, columns, rows) => (bpc, colors, columns, rows));
 
     // Each shape needs a body of exactly rowBytes * rows: too short and Filters.cs's own

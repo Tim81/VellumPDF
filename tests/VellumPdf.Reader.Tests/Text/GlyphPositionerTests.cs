@@ -650,7 +650,7 @@ public sealed class GlyphPositionerTests
     // generator drew for it.
     private static readonly Gen<(double Width, bool IsSpaceCode, int CodeLength, double? Tj)> GlyphSlotGen =
         Gen.Select(
-            Gen.Double[0.0, 1500.0], Gen.OneOfConst(true, false), Gen.OneOfConst(1, 2),
+            Gen.Double[0.0, 1500.0], Gen.OneOf(true, false), Gen.OneOf(1, 2),
             Gen.OneOf(
                 Gen.Const((double?)null),
                 Gen.Double[-2000.0, 2000.0].Select(v => (double?)v)),
