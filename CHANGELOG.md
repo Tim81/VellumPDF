@@ -161,22 +161,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   on a good stream threw "already written". Those checks now run **before** the layout, through two
   internal members on `PdfDocument` that `VellumPdf.Layout` can now reach, so a refusal leaves the
   document untouched and recoverable, and the kernel's `SaveAsync` checks the destination the same
-  way. A layout that threw after it had added pages cannot be undone, so every later save throws
-  `InvalidOperationException` asking for a new `Document`. A refused page geometry adds no pages and
-  stays recoverable. **Attention**: that last rule turns the silent wrong file into an exception for
-  code that caught a layout failure and retried the same `Document`; build a new one instead.
+  way. A save that threw after its layout had added pages cannot be undone, so every later save
+  throws `InvalidOperationException` asking for a new `Document`. That covers a layout that threw,
+  and also a step after it: a `SaveAsync` cancelled once the layout had run, or a signature
+  placeholder that failed to build. Signing also refuses encryption before the layout now, so
+  `Encrypt` with `Sign` throws `NotSupportedException` and leaves the document saveable. A refused
+  page geometry adds no pages and stays recoverable. **Attention**: that last rule turns the silent
+  wrong file into an exception for code that caught a failure after the layout and retried the same
+  `Document`; build a new one instead.
 
 - **A failed `Save(string)` or `SaveAsync(string)` no longer destroys the file that was already
   there (#508).** Both opened the path with `FileMode.Create`, which truncates it, before the layout
   ran, so a regenerated report with one bad value replaced the previous report with a zero-byte
-  file, and the exception was about layout and gave no hint a file was gone. They now write a
-  temporary file beside the target and move it into place only when the whole file has been written,
-  so a failure at layout, at writing or by cancellation leaves the previous file byte for byte,
-  deletes the temporary file, and creates nothing at a new path. The move also makes the save atomic
-  against a crash. **Attention**: this needs permission to create a file in the target's directory,
-  and the result is a new file, so an existing file's permissions, ownership and hard links are not
-  carried over and a symbolic link at the path is replaced. A directory or read-only target is still
-  refused up front. `VellumPdf.Signing` writes to a stream you pass and was not affected.
+  file, and the exception was about layout and gave no hint a file was gone. They now open the
+  target first, before anything is laid out, without emptying it, build the PDF in memory, and only
+  then empty the file and copy the bytes in. A failure at layout, at building the PDF or by
+  cancellation leaves the previous file byte for byte and creates nothing at a new path. Opening
+  first also means a lock or a permission error surfaces before the layout, while the `Document` is
+  still usable. The existing file is rewritten in place, so it keeps its permissions, owner, hard
+  links and extended attributes, a symbolic link at the path is followed, and a device file such as
+  `/dev/null` still works. **Attention**: the final copy is not atomic. A failure during it, such as
+  a full disk, or a crash, can leave the file truncated or incomplete (a file the call created is
+  deleted, one that was already there is not restored), and the file is locked against other
+  readers and writers from before the layout until the save returns. A directory or read-only
+  target is still refused up front. `VellumPdf.Signing` writes to a stream you pass and was not
+  affected.
 
 - **`Jbig2ImageLoader` reads the file header's flags byte and page count, and the random-access
   organisation (#570).** A JBIG2 file as ITU-T T.88 Annex D defines it has more after the 8-byte ID

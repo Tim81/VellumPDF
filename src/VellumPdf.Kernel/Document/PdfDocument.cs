@@ -1009,6 +1009,27 @@ public sealed class PdfDocument : IDisposable
     }
 
     /// <summary>
+    /// What <see cref="PrepareForSigning"/> refuses that does not depend on the pages: a disposed
+    /// document, a null <paramref name="options"/>, encryption, and a document already written.
+    /// Called by the layout engine ahead of layout, because layout appends pages and a refusal that
+    /// came after it left them behind (#530).
+    /// </summary>
+    internal void EnsureCanPrepareForSigning(SignaturePlaceholderOptions options)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(options);
+
+        if (_encryptionSettings is not null)
+            throw new NotSupportedException(
+                "PDF encryption and digital signatures cannot be combined. " +
+                "Remove the Encrypt() call or use Sign() without Encrypt().");
+
+        if (_written)
+            throw new InvalidOperationException(
+                "This document has already been written; create a new PdfDocument to write again.");
+    }
+
+    /// <summary>
     /// Writes this document to an in-memory buffer with AcroForm signature-field placeholders
     /// and returns the raw bytes. The returned array contains a structurally valid PDF whose
     /// <c>/ByteRange</c> and <c>/Contents</c> values are fixed-width placeholders ready for
@@ -1026,13 +1047,7 @@ public sealed class PdfDocument : IDisposable
     /// </exception>
     public byte[] PrepareForSigning(SignaturePlaceholderOptions options)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        ArgumentNullException.ThrowIfNull(options);
-
-        if (_encryptionSettings is not null)
-            throw new NotSupportedException(
-                "PDF encryption and digital signatures cannot be combined. " +
-                "Remove the Encrypt() call or use Sign() without Encrypt().");
+        EnsureCanPrepareForSigning(options);
 
         var ms = new MemoryStream();
         WriteWithSignaturePlaceholders(ms, options);
