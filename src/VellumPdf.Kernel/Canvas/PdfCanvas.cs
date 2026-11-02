@@ -17,6 +17,21 @@ namespace VellumPdf.Canvas;
 /// Coordinates are in PDF user-space (points, Y-up). The layout engine
 /// performs the Y-down→Y-up flip at a single boundary before calling here.
 /// </summary>
+/// <remarks>
+/// Every number a method writes into the content stream must be finite. <c>NaN</c> and both
+/// infinities are not PDF numbers (ISO 32000-2, 7.3.3), so a method that would write one throws
+/// <see cref="ArgumentException"/> with the message <see cref="PdfReal"/> uses, and writes nothing
+/// of that operator (#519). The check is per operand and covers the colour, graphics-state, path,
+/// font-size and text-positioning operators alike. Zero, negative and out-of-range finite values
+/// are not refused here; for a colour component that is a "shall" in ISO 32000-2, 8.6.4.3 that
+/// this class does not enforce.
+/// <para><see cref="AppendArc"/> is the one exception to "writes nothing": a non-finite radius or
+/// angle gives a sweep it skips without drawing and without throwing, as before. A non-finite
+/// centre is refused.</para>
+/// <para><b>Attention</b>: before this check a non-finite operand was written as the token
+/// <c>NaN</c> or <c>Infinity</c>, giving a content stream no reader can parse. A caller that relied
+/// on that now gets the exception.</para>
+/// </remarks>
 public sealed class PdfCanvas
 {
     private readonly MemoryStream _ops = new();
