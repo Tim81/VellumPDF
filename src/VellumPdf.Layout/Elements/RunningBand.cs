@@ -114,11 +114,8 @@ public sealed class RunningBand
     /// and so does every height from there to 697.88. At 697.89 the content area reaches exactly
     /// zero and the throw becomes <see cref="ArgumentException"/>; a header takes the same route at
     /// the same values.</para>
-    /// <para>Every case above that does throw does so before <c>Save</c> finishes writing. For
-    /// the string overloads, <see cref="Document.Save(string)"/> and
-    /// <see cref="Document.SaveAsync(string, System.Threading.CancellationToken)"/>, which open
-    /// the file before the layout runs, a throw here still leaves a zero-byte file in place of
-    /// whatever the path held (#508).</para>
+    /// <para>Every case above is raised before the save writes anything. A save to a path leaves the
+    /// file the path held as it was (#508).</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from a save rather than from this property, when a finite height is large enough on

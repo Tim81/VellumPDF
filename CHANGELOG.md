@@ -151,6 +151,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   but is unchanged, because a self-referencing item renders today with one level of nesting; it is
   closed with #483, which is what makes it reachable.
 
+- **A `Document` that failed to save no longer silently appends a second layout on the next save
+  (#530).** It behaved three ways after a failed save and two were silent. A layout that threw left
+  the pages it had appended behind, and the retry laid everything out again on top of them: one
+  paragraph that failed as too tall and was retried on a larger page saved **4** pages where a fresh
+  document saves 1, with no exception. A refusal that does not depend on the layout, `Save(null)`,
+  `UseObjectStreams` with `Encrypt`, a PDF/A conformance with `Encrypt`, came after the layout and
+  left the same pages (each retry saved 2), and an unwritable stream burned the document, so a retry
+  on a good stream threw "already written". Those checks now run **before** the layout, through two
+  internal members on `PdfDocument` that `VellumPdf.Layout` can now reach, so a refusal leaves the
+  document untouched and recoverable, and the kernel's `SaveAsync` checks the destination the same
+  way. A layout that threw after it had added pages cannot be undone, so every later save throws
+  `InvalidOperationException` asking for a new `Document`. A refused page geometry adds no pages and
+  stays recoverable. **Attention**: that last rule turns the silent wrong file into an exception for
+  code that caught a layout failure and retried the same `Document`; build a new one instead.
+
+- **A failed `Save(string)` or `SaveAsync(string)` no longer destroys the file that was already
+  there (#508).** Both opened the path with `FileMode.Create`, which truncates it, before the layout
+  ran, so a regenerated report with one bad value replaced the previous report with a zero-byte
+  file, and the exception was about layout and gave no hint a file was gone. They now write a
+  temporary file beside the target and move it into place only when the whole file has been written,
+  so a failure at layout, at writing or by cancellation leaves the previous file byte for byte,
+  deletes the temporary file, and creates nothing at a new path. The move also makes the save atomic
+  against a crash. **Attention**: this needs permission to create a file in the target's directory,
+  and the result is a new file, so an existing file's permissions, ownership and hard links are not
+  carried over and a symbolic link at the path is replaced. A directory or read-only target is still
+  refused up front. `VellumPdf.Signing` writes to a stream you pass and was not affected.
+
 ## [2.3.3] - 2026-09-20
 
 This release is led by documentation. Layout's public surface now states what each member

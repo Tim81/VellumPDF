@@ -313,7 +313,9 @@ public sealed class DocumentRenderer
     /// renderer and calls this method, so the exceptions listed on that save, other than those
     /// about the <see cref="Document"/> itself, can reach you from here, and so can anything a
     /// custom renderer or the destination raises. A second call after one that succeeded throws;
-    /// after one that threw, it can succeed and write the failed call's pages as well (#530). A
+    /// after one that threw, it can succeed and write the failed call's pages as well (#530).
+    /// <see cref="Document.Save(System.IO.Stream)"/> guards against that, by running those checks
+    /// before the layout and refusing a save after a layout that threw; this method does neither. A
     /// failure once writing has started leaves what was written so far in
     /// <paramref name="destination"/>, which can be the PDF header alone.
     /// </remarks>

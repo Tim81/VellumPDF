@@ -540,18 +540,15 @@ public sealed class PdfDocument : IDisposable
         _encryptionSettings = settings;
     }
 
-    /// <summary>Writes a complete PDF file to <paramref name="destination"/>.</summary>
-    /// <exception cref="ObjectDisposedException">The document has been disposed.</exception>
-    /// <exception cref="ArgumentNullException"><paramref name="destination"/> is <see langword="null"/>.</exception>
-    /// <exception cref="NotSupportedException"><see cref="UseObjectStreams"/> is combined with <see cref="Encrypt"/>.</exception>
-    /// <exception cref="InvalidOperationException">
-    /// A PDF/A <see cref="Conformance"/> is set together with <see cref="Encrypt"/>, or
-    /// <see cref="Conformance"/> is <see cref="PdfConformance.PdfUA1"/> together with
-    /// <see cref="Encrypt"/> settings that omit <see cref="PdfPermissions.Extract"/>, or a
-    /// registered form field's <see cref="FormFieldOptions.FontSize"/> is not finite. That
-    /// property's boundary documentation names the value and the field.
-    /// </exception>
-    public void Save(Stream destination)
+    /// <summary>
+    /// The checks every save makes before it touches the document or the destination, and the ones a
+    /// caller that lays pages out first must make before it starts: that the document is not
+    /// disposed, not already written, that there is somewhere to write and that it can be written to.
+    /// Called by the layout engine ahead of layout (#530), because layout appends pages to this
+    /// document and a refusal that came after it left the pages behind, so the next save laid
+    /// everything out a second time and wrote twice the pages.
+    /// </summary>
+    internal void EnsureCanSave(Stream destination)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(destination);
@@ -560,9 +557,21 @@ public sealed class PdfDocument : IDisposable
             throw new InvalidOperationException(
                 "This document has already been written; create a new PdfDocument to write again.");
 
-        if (_pages.Count == 0)
-            throw new InvalidOperationException("The document has no pages.");
+        // Checked here and not left to PdfWriter's constructor: that runs after _written is set, so
+        // an unusable stream used to burn the document, and a caller who caught the documented
+        // ArgumentException and retried with a good stream met a different exception that did not
+        // say why (#530).
+        if (!destination.CanWrite)
+            throw new ArgumentException("Stream must be writable.", nameof(destination));
+    }
 
+    /// <summary>
+    /// Refuses option combinations a save cannot honour. Like <see cref="EnsureCanSave"/> it is run
+    /// ahead of layout by the layout engine, so a document with a bad combination fails before any
+    /// page is appended and can be corrected and saved again (#530).
+    /// </summary>
+    internal void ValidateSaveOptions()
+    {
         if (UseObjectStreams && _encryptionSettings is not null)
             throw new NotSupportedException(
                 "UseObjectStreams cannot be combined with Encrypt(). " +
@@ -607,6 +616,27 @@ public sealed class PdfDocument : IDisposable
             throw new NotSupportedException(
                 "Linearize cannot be combined with Encrypt(). " +
                 "Linearization computes byte offsets over the cleartext layout. Remove one of these options.");
+    }
+
+    /// <summary>Writes a complete PDF file to <paramref name="destination"/>.</summary>
+    /// <exception cref="ObjectDisposedException">The document has been disposed.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="destination"/> is <see langword="null"/>.</exception>
+    /// <exception cref="NotSupportedException"><see cref="UseObjectStreams"/> is combined with <see cref="Encrypt"/>.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// A PDF/A <see cref="Conformance"/> is set together with <see cref="Encrypt"/>, or
+    /// <see cref="Conformance"/> is <see cref="PdfConformance.PdfUA1"/> together with
+    /// <see cref="Encrypt"/> settings that omit <see cref="PdfPermissions.Extract"/>, or a
+    /// registered form field's <see cref="FormFieldOptions.FontSize"/> is not finite. That
+    /// property's boundary documentation names the value and the field.
+    /// </exception>
+    public void Save(Stream destination)
+    {
+        EnsureCanSave(destination);
+
+        if (_pages.Count == 0)
+            throw new InvalidOperationException("The document has no pages.");
+
+        ValidateSaveOptions();
 
         // All preconditions passed — mark written only now, so a recoverable precondition
         // failure (no pages, incompatible options) leaves the document usable for a retry.
@@ -968,7 +998,10 @@ public sealed class PdfDocument : IDisposable
     /// </exception>
     public async Task SaveAsync(Stream destination, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(destination);
+        // The whole of the destination check, not only the null: Save runs against an in-memory
+        // buffer here, so an unwritable destination was found only after the document had been
+        // written and marked, and the output was never delivered (#530).
+        EnsureCanSave(destination);
         using var buffer = new MemoryStream();
         await Task.Run(() => Save(buffer), cancellationToken).ConfigureAwait(false);
         buffer.Position = 0;
