@@ -137,6 +137,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the text is drawn. It also refuses a null `page` or `handle` with `ArgumentNullException`. A
   null handle given to `FontReference` or `TextStyle.FontRef` still means Helvetica, as documented.
 
+- **A cycle in a structure tree, array or dictionary is refused instead of overflowing the stack
+  (#521).** `array.Add(array)`, `dictionary.Set(key, dictionary)` and `element.AddChild(element)` on a
+  tagged document each recursed with no guard until the process died with a `StackOverflowException`,
+  which no application can catch, and the structure-element form needed nothing but `Tagged = true`
+  and one `AddChild`. `PdfStructElem.AddChild` now refuses a child that is the element or holds it in
+  its own subtree, with `ArgumentException` at the call that makes the cycle, and refuses a null.
+  `PdfWriter` keeps the arrays and dictionaries on its current path, so `PdfArray.WriteTo` and
+  `PdfDictionary.WriteTo` throw `InvalidOperationException` for one that contains itself, and the
+  three structure-tree walks do the same for a graph assembled some other way. There is no depth
+  cap: a deep acyclic structure saves as before, and an object placed twice side by side, or
+  referred to through an indirect reference, is not a cycle. `ListItem.AddChild` has the same shape
+  but is unchanged, because a self-referencing item renders today with one level of nesting; it is
+  closed with #483, which is what makes it reachable.
+
 ## [2.3.3] - 2026-09-20
 
 This release is led by documentation. Layout's public surface now states what each member

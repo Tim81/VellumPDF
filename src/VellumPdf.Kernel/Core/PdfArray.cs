@@ -57,14 +57,32 @@ public sealed class PdfArray : PdfObject
     internal void SetAt(int index, PdfObject obj) => _items[index] = obj;
 
     /// <summary>Writes the serialised PDF representation to <paramref name="writer"/>.</summary>
+    /// <remarks>
+    /// An array that holds itself, directly or through other arrays and dictionaries, is refused
+    /// (#521). Writing it would recurse until the stack overflowed, which cannot be caught. A
+    /// member that is an indirect reference is written as a reference and not followed, so a cycle
+    /// through indirect objects, which PDF allows, is not affected. The same object placed twice,
+    /// side by side, is not a cycle.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// This array contains itself.
+    /// </exception>
     public override void WriteTo(PdfWriter writer)
     {
-        writer.WriteAscii("["u8);
-        for (var i = 0; i < _items.Count; i++)
+        writer.EnterContainer(this);
+        try
         {
-            if (i > 0) writer.WriteByte((byte)' ');
-            _items[i].WriteTo(writer);
+            writer.WriteAscii("["u8);
+            for (var i = 0; i < _items.Count; i++)
+            {
+                if (i > 0) writer.WriteByte((byte)' ');
+                _items[i].WriteTo(writer);
+            }
+            writer.WriteAscii("]"u8);
         }
-        writer.WriteAscii("]"u8);
+        finally
+        {
+            writer.LeaveContainer(this);
+        }
     }
 }

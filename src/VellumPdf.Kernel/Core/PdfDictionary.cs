@@ -163,16 +163,34 @@ public sealed class PdfDictionary : PdfObject
     }
 
     /// <summary>Writes the serialised PDF representation to <paramref name="writer"/>.</summary>
+    /// <remarks>
+    /// A dictionary that holds itself, directly or through other arrays and dictionaries, is refused
+    /// (#521). Writing it would recurse until the stack overflowed, which cannot be caught. A value
+    /// that is an indirect reference is written as a reference and not followed, so a cycle through
+    /// indirect objects, which PDF allows, is not affected. The same object placed in two entries,
+    /// side by side, is not a cycle.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// This dictionary contains itself.
+    /// </exception>
     public override void WriteTo(PdfWriter writer)
     {
-        writer.WriteAscii("<<"u8);
-        foreach (var kv in _entries)
+        writer.EnterContainer(this);
+        try
         {
-            writer.WriteByte((byte)'\n');
-            kv.Key.WriteTo(writer);
-            writer.WriteByte((byte)' ');
-            kv.Value.WriteTo(writer);
+            writer.WriteAscii("<<"u8);
+            foreach (var kv in _entries)
+            {
+                writer.WriteByte((byte)'\n');
+                kv.Key.WriteTo(writer);
+                writer.WriteByte((byte)' ');
+                kv.Value.WriteTo(writer);
+            }
+            writer.WriteAscii("\n>>"u8);
         }
-        writer.WriteAscii("\n>>"u8);
+        finally
+        {
+            writer.LeaveContainer(this);
+        }
     }
 }
