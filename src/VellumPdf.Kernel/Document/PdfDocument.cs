@@ -240,7 +240,7 @@ public sealed class PdfDocument : IDisposable
 
         var resourceName = $"TT{++_ttFontCounter}";
         var embedder = new TrueTypeFontEmbedder(fontData, resourceName);
-        var handle = new EmbeddedFontHandle(embedder);
+        var handle = new EmbeddedFontHandle(embedder, this);
         _embeddedFonts.Add(handle);
         _embeddedFontByHash[hash] = handle;
         return handle;
@@ -251,8 +251,32 @@ public sealed class PdfDocument : IDisposable
     /// <paramref name="handle"/>. Called by the layout engine during the draw phase
     /// so that <see cref="Save"/> can register the font reference on the correct pages.
     /// </summary>
+    /// <remarks>
+    /// The handle must have been returned by this document's <see cref="UseTrueTypeFont"/>. Usage is
+    /// recorded by resource name, and that name is a counter local to the document that issued it, so
+    /// a handle from another document would be recorded under whatever font this one registered
+    /// as <c>TT1</c>, or under none, and the page would be saved with a font its resources do not
+    /// define (#544).
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="page"/> or <paramref name="handle"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="handle"/> was returned by a different <see cref="PdfDocument"/>.
+    /// </exception>
     public void RegisterEmbeddedFontUsage(PdfPage page, EmbeddedFontHandle handle)
     {
+        ArgumentNullException.ThrowIfNull(page);
+        ArgumentNullException.ThrowIfNull(handle);
+        if (!ReferenceEquals(handle.Owner, this))
+        {
+            throw new ArgumentException(
+                $"The embedded font {handle.ResourceName} belongs to a different document. A handle " +
+                "returned by one document's UseTrueTypeFont cannot be used on another; embed the font " +
+                "again through the document that saves the page.",
+                nameof(handle));
+        }
+
         if (!_pageEmbeddedFonts.TryGetValue(page, out var set))
         {
             set = [];

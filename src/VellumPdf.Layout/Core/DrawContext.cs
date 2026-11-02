@@ -126,19 +126,22 @@ public sealed class DrawContext
     /// </summary>
     /// <remarks>
     /// This context's own page and document are not read here; its
-    /// <see cref="RendererContext"/> is. A handle from a different document is accepted;
-    /// <see cref="FontReference(EmbeddedFontHandle)"/> says what the page then shows.
+    /// <see cref="RendererContext"/> is. The handle must come from the document that saves the page;
+    /// a handle from a different document is refused (#544), as
+    /// <see cref="FontReference(EmbeddedFontHandle)"/> describes.
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised from this call when this context's <see cref="RendererContext"/> is
-    /// <see langword="null"/>. Also raised when that renderer context was constructed with a null
-    /// document, and when <paramref name="handle"/> is null and that renderer context was
-    /// constructed with a non-null page.
+    /// <see langword="null"/>, or was constructed with a null document.
     /// </exception>
     /// <exception cref="ArgumentNullException">
-    /// Raised from this call when this context's <see cref="RendererContext"/> was constructed with
-    /// a null page and a non-null document, whether or not <paramref name="handle"/> is null.
-    /// <c>ParamName</c> is <c>key</c>.
+    /// Raised from this call when <paramref name="handle"/> is null, or when this context's
+    /// <see cref="RendererContext"/> was constructed with a null page and a non-null document. The
+    /// page is checked first, so a null page names <c>page</c> whether or not the handle is null;
+    /// otherwise <c>ParamName</c> is <c>handle</c>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from this call when <paramref name="handle"/> was returned by a different document.
     /// </exception>
     public string UseEmbeddedFont(EmbeddedFontHandle handle)
     {

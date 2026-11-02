@@ -127,6 +127,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   described the old behaviour are rewritten. `PageSize`, `DrawContext`, `FontReference`,
   `LayoutResult` and `RendererContext` still store a null, and are outside these three issues.
 
+- **An embedded font handle from another `Document` is refused (#544).** A handle's resource name
+  (`TT1`) is a counter local to the document that issued it, and page usage was recorded by that
+  name without asking which document embedded the font. A handle from a different `Document`
+  therefore saved without an exception and wrote a page that used a font its resources did not
+  define, or, when the saving document had its own `TT1`, quietly used that other font. Each handle
+  now remembers the `PdfDocument` that returned it, and `PdfDocument.RegisterEmbeddedFontUsage`
+  throws `ArgumentException` (parameter `handle`) for any other document, so the save fails where
+  the text is drawn. It also refuses a null `page` or `handle` with `ArgumentNullException`. A
+  null handle given to `FontReference` or `TextStyle.FontRef` still means Helvetica, as documented.
+
 ## [2.3.3] - 2026-09-20
 
 This release is led by documentation. Layout's public surface now states what each member
