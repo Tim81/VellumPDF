@@ -178,6 +178,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   carried over and a symbolic link at the path is replaced. A directory or read-only target is still
   refused up front. `VellumPdf.Signing` writes to a stream you pass and was not affected.
 
+- **`Jbig2ImageLoader` reads the file header's flags byte and page count, and the random-access
+  organisation (#570).** A JBIG2 file as ITU-T T.88 Annex D defines it has more after the 8-byte ID
+  string than the loader read: a flags byte (bit 0 set is sequential, bit 1 set means the number of
+  pages is unknown) and, unless that bit is set, a 4-byte page count. The loader took both for the
+  start of the first segment, so every standard file failed with an error such as `segment 16777216
+  data length 12288 exceeds buffer size`; the loader's tests built files without those bytes, which
+  is why nothing caught it. It now reads the header, and also the random-access organisation (D.2),
+  where all segment headers come first, ending with the end-of-file segment, and the data parts
+  follow; a random-access file is rejoined into the embedded form a PDF stores, each header with its
+  own data. The older form, the ID string followed directly by segments, and the bare embedded form
+  still load. Checked against the ten sequential files in the ITU T.88 conformance data: all now
+  load at the size of their reference bitmaps, and the one MMR file decodes to the reference bitmap
+  pixel for pixel. That data is licensed for conformance testing only and is not in the repository,
+  so the committed tests use fixtures built by hand from Annex D. Found while exporting images from a
+  PDF with the PowerShell wrapper PSVellumPDF.
+
 ## [2.3.3] - 2026-09-20
 
 This release is led by documentation. Layout's public surface now states what each member

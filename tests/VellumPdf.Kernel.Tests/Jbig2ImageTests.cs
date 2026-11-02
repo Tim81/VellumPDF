@@ -1925,4 +1925,189 @@ public sealed class Jbig2ImageTests
         Array.Copy(eofSeg, 0, buf, pos, eofSeg.Length);
         return buf;
     }
+
+    // ── File header: flags byte, page count and the random-access organisation (#570) ──────────
+    //
+    // ITU-T T.88 Annex D. After the 8-byte ID string a file has a flags byte (bit 0 set: sequential,
+    // clear: random-access; bit 1 set: the number of pages is unknown) and, unless bit 1 is set, a
+    // 4-byte page count. The loader used to read only the ID string, so it took the flags byte and the
+    // count for the start of the first segment and refused every standard file, with an error about
+    // "segment 16777216". These fixtures are built by hand from Annex D, and the equivalence test
+    // below pins that every container form carries the same segments to the same PDF stream. A real
+    // sequential file from the ITU conformance data was also checked against its reference bitmap,
+    // pixel for pixel, but that data is licensed for conformance testing only and is not committed.
+
+    private static readonly byte[] IdString = [0x97, 0x4A, 0x42, 0x32, 0x0D, 0x0A, 0x1A, 0x0A];
+
+    private static readonly byte[] PageCountOne = [0x00, 0x00, 0x00, 0x01];
+
+    // BuildSegment writes an 11-byte header (no referred-to segments, 1-byte page association).
+    private const int PlainHeaderLength = 11;
+
+    /// <summary>
+    /// Five segments on one page: a global symbol dictionary (page 0, partitioned into the globals
+    /// stream), the page information, a generic region with recognisable data, end-of-page and
+    /// end-of-file. The data of each is distinct, so a segment given another's data shows.
+    /// </summary>
+    private static byte[][] FiveSegments(int width, int height) =>
+    [
+        BuildSegment(0, type: 0, pageAssociation: 0, [0xA1, 0xA2, 0xA3, 0xA4]),
+        BuildSegment(1, type: 48, pageAssociation: 1, BuildPageInfoSegmentData(width, height)),
+        BuildSegment(2, type: 38, pageAssociation: 1, [0xB1, 0xB2, 0xB3, 0xB4, 0xB5, 0xB6]),
+        BuildSegment(3, type: 49, pageAssociation: 1, []),
+        BuildSegment(4, type: 51, pageAssociation: 0, []),
+    ];
+
+    private static byte[] Sequential(byte flags, byte[]? pageCount, byte[][] segments) =>
+        [.. IdString, flags, .. (pageCount ?? []), .. segments.SelectMany(x => x)];
+
+    private static byte[] RandomAccess(byte flags, byte[]? pageCount, byte[][] segments) =>
+    [
+        .. IdString, flags, .. (pageCount ?? []),
+        .. segments.SelectMany(x => x.Take(PlainHeaderLength)),
+        .. segments.SelectMany(x => x.Skip(PlainHeaderLength)),
+    ];
+
+    [Theory]
+    [InlineData(0x01, true)]    // sequential, page count present
+    [InlineData(0x03, false)]   // sequential, page count unknown
+    [InlineData(0x00, true)]    // random-access, page count present
+    [InlineData(0x02, false)]   // random-access, page count unknown
+    [InlineData(0x05, true)]    // bit 2: generic regions use the 12-pixel templates; still a container
+    [InlineData(0x09, true)]    // bit 3: coloured regions; still a container
+    public void Load_StandardFileHeader_ReadsTheSegmentsAfterTheFlagsAndPageCount(int flags, bool pageCountPresent)
+    {
+        var segments = FiveSegments(321, 123);
+        var count = pageCountPresent ? PageCountOne : null;
+        var file = (flags & 1) != 0
+            ? Sequential((byte)flags, count, segments)
+            : RandomAccess((byte)flags, count, segments);
+
+        var img = Jbig2ImageLoader.Load(file);
+
+        Assert.Equal(321, img.Width);
+        Assert.Equal(123, img.Height);
+    }
+
+    /// <summary>
+    /// The same five segments in every container form give the identical PDF stream and the identical
+    /// globals stream: sequential and random-access, page count known and unknown, the older bare ID
+    /// string, and the embedded form with no file header at all.
+    /// </summary>
+    [Fact]
+    public void Load_EveryContainerForm_CarriesTheSameSegmentsToTheSamePdfStream()
+    {
+        var segments = FiveSegments(64, 48);
+        var bare = segments.SelectMany(x => x).ToArray();
+
+        byte[][] forms =
+        [
+            Sequential(0x01, PageCountOne, segments),
+            Sequential(0x03, null, segments),
+            RandomAccess(0x00, PageCountOne, segments),
+            RandomAccess(0x02, null, segments),
+            [.. IdString, .. bare],      // the older reading: the ID string, then segments
+            bare,                        // the embedded organisation
+        ];
+
+        var expectedPage = segments[1].Concat(segments[2]).ToArray();   // page info + generic region
+        var expectedGlobals = segments[0];                              // the global symbol dictionary
+
+        foreach (var form in forms)
+        {
+            var img = Jbig2ImageLoader.Load(form);
+
+            Assert.Equal(expectedPage, ExtractStreamBody(Serialize(img)));
+            Assert.Equal(expectedGlobals, img.Jbig2Globals);
+        }
+    }
+
+    /// <summary>
+    /// In the random-access organisation the data parts follow all the headers, so a segment's data
+    /// is not beside its header. Each data part has to land on its own header, which the distinct
+    /// bytes in <see cref="FiveSegments"/> show.
+    /// </summary>
+    [Fact]
+    public void Load_RandomAccess_JoinsEachHeaderToItsOwnDataPart()
+    {
+        var segments = FiveSegments(64, 48);
+
+        var img = Jbig2ImageLoader.Load(RandomAccess(0x00, PageCountOne, segments));
+        var body = ExtractStreamBody(Serialize(img));
+
+        // The generic region's header is followed by its own six bytes, not by another segment's.
+        var regionStart = segments[1].Length;
+        Assert.Equal(segments[2], body[regionStart..]);
+        Assert.Equal([0xB1, 0xB2, 0xB3, 0xB4, 0xB5, 0xB6], body[^6..]);
+    }
+
+    [Fact]
+    public void Load_RandomAccess_WithoutAnEndOfFileSegment_IsRefused()
+    {
+        var segments = FiveSegments(64, 48).Take(4).ToArray();     // no type 51
+        var file = RandomAccess(0x00, PageCountOne, segments);
+
+        var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(file));
+
+        Assert.Contains("end-of-file segment", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Load_RandomAccess_WithTruncatedDataParts_IsRefused()
+    {
+        var file = RandomAccess(0x00, PageCountOne, FiveSegments(64, 48));
+        var truncated = file[..^3];     // cut into the generic region's data part
+
+        var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(truncated));
+
+        Assert.Contains("exceeds buffer size", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Load_RandomAccess_WithAnUnknownDataLength_IsRefused()
+    {
+        var segments = FiveSegments(64, 48);
+        // Segment 2's data length field is the last four bytes of its header: set it to 0xFFFFFFFF.
+        for (var i = 7; i < 11; i++) segments[2][i] = 0xFF;
+        var file = RandomAccess(0x00, PageCountOne, segments);
+
+        var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(file));
+
+        Assert.Contains("unknown data length", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Bits 4 to 7 of the flags byte are reserved and must be zero, so a byte with one set is not a
+    /// flags byte. The loader falls back to reading the ID string followed by segments and, when that
+    /// fails too, reports an error rather than misreading.
+    /// </summary>
+    [Fact]
+    public void Load_ReservedFlagBitsSet_IsNotReadAsAStandardHeader()
+    {
+        var file = Sequential(0x11, PageCountOne, FiveSegments(64, 48));
+
+        Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(file));
+    }
+
+    /// <summary>A file that is only the ID string, or the ID string and a flags byte, is refused cleanly.</summary>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(5)]
+    public void Load_TruncatedFileHeader_IsRefusedWithInvalidData(int bytesAfterId)
+    {
+        var file = IdString.Concat(new byte[] { 0x01, 0x00, 0x00, 0x00, 0x01 }.Take(bytesAfterId)).ToArray();
+
+        Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(file));
+    }
+
+    /// <summary>The 8-byte-only form the loader always accepted still loads, so existing callers keep working.</summary>
+    [Fact]
+    public void Load_TheOlderBareIdStringForm_StillLoads()
+    {
+        var img = Jbig2ImageLoader.Load(BuildMinimalJbig2(50, 40, withFileHeader: true));
+
+        Assert.Equal(50, img.Width);
+        Assert.Equal(40, img.Height);
+    }
 }
