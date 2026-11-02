@@ -17,12 +17,22 @@ namespace VellumPdf.Layout.Elements;
 /// followed by a line feed starts a new line. One before the first word leaves an empty first line;
 /// at the end of the text the first trailing break is dropped and each further one adds an empty
 /// line. A break right after a word too wide for its line adds an empty line too, whether or not
-/// the break is the last. Any other sequence of white space, except U+00A0 NO-BREAK SPACE, is drawn
-/// as one space, and is dropped at the start and end of each line. The boundary between two runs is
+/// the break is the last. Any other sequence of white space, except the no-break spaces U+00A0,
+/// U+202F NARROW NO-BREAK SPACE and U+2007 FIGURE SPACE, is drawn as one space, and is dropped at
+/// the start and end of each line. The boundary between two runs is
 /// drawn as a space too, unless a line break falls on it, so a word cannot change style part-way:
 /// the run <c>Bold</c> followed by the run <c>er</c> is drawn as <c>Bold er</c>.</para>
-/// <para>A paragraph whose text holds no character other than white space, where U+00A0 NO-BREAK
-/// SPACE counts as a character other than white space, is laid out at the leading of
+/// <para>A line cannot wrap at a no-break space, so
+/// <c>Pourquoi ?</c> written with U+202F before the question mark does not wrap between the two
+/// (#562). These are the three white-space characters that UAX #14 puts in its GL class, and the
+/// only ones; a tab, an en or em space and a thin space still break. In a Standard-14 font
+/// U+202F and U+2007 are drawn as U+00A0, which WinAnsiEncoding has and they do not, so they show
+/// as a space of that width and report no <see cref="Document.TextEncodingWarnings"/> entry. In an
+/// embedded font they use the font's own glyph, or U+00A0's, or a plain space's, when the font
+/// lacks it. They are not stretched by <see cref="HorizontalAlignment.Justify"/>, as U+00A0 never
+/// was.</para>
+/// <para>A paragraph whose text holds no character other than white space, where the no-break
+/// spaces count as characters other than white space, is laid out at the leading of
 /// <see cref="TextStyle.Default"/>, whatever its style: one line for each line break it holds, and
 /// one when it holds none. Its size and leading are neither used nor checked.</para>
 /// </remarks>

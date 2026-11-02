@@ -43,6 +43,15 @@ public sealed class EmbeddedFontHandle
     /// Safe to call from the layout/draw phase; all registered code points are included
     /// in the subset written during <c>Save</c>.
     /// </summary>
+    /// <remarks>
+    /// A code point the font has no glyph for gives glyph 0 (.notdef), with one exception (#562):
+    /// U+202F NARROW NO-BREAK SPACE and U+2007 FIGURE SPACE, when the font lacks them, give the
+    /// glyph of U+00A0 NO-BREAK SPACE, or of U+0020 SPACE when it lacks that too. Layout keeps these
+    /// characters in a paragraph rather than turning them into a plain space, so a font that cannot
+    /// draw them must still be able to show a space. A font that has the glyph keeps it. The same
+    /// lookup measures the text, so the width of the space that is drawn is the width that was
+    /// measured.
+    /// </remarks>
     public ushort GetGlyphId(int codePoint) => Embedder.GetGlyphId(codePoint);
 
     /// <summary>

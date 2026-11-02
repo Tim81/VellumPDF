@@ -567,7 +567,9 @@ public sealed class ParagraphRenderer : IRenderer
     /// Characters that are <em>not</em> normalised (pass through unchanged):
     /// <list type="bullet">
     ///   <item><c>\n</c> — consumed as the hard-break sentinel by the caller.</item>
-    ///   <item>U+00A0 (NBSP) — non-breaking space must keep words together.</item>
+    ///   <item>The no-break spaces, which must keep words together: U+00A0 NO-BREAK SPACE,
+    ///   U+202F NARROW NO-BREAK SPACE and U+2007 FIGURE SPACE (#562). These are the white-space
+    ///   characters in UAX #14 line-breaking class GL; see <see cref="NoBreakSpaces"/>.</item>
     ///   <item>Any non-whitespace character.</item>
     /// </list>
     /// All other characters for which <see cref="char.IsWhiteSpace(char)"/> returns
@@ -576,13 +578,11 @@ public sealed class ParagraphRenderer : IRenderer
     /// </summary>
     private static string NormaliseWhitespace(string s)
     {
-        const char nbsp = ' ';
-
         // Fast path: if there is nothing but regular printable chars and plain spaces, return as-is.
         var needsNorm = false;
         foreach (var c in s)
         {
-            if (c != '\n' && c != nbsp && char.IsWhiteSpace(c))
+            if (c != '\n' && !NoBreakSpaces.IsNoBreakSpace(c) && char.IsWhiteSpace(c))
             {
                 needsNorm = true;
                 break;
@@ -593,8 +593,8 @@ public sealed class ParagraphRenderer : IRenderer
         var sb = new System.Text.StringBuilder(s.Length);
         foreach (var c in s)
         {
-            // \n is the hard-break sentinel; NBSP is a non-breaking word character.
-            if (c != '\n' && c != nbsp && char.IsWhiteSpace(c))
+            // \n is the hard-break sentinel; a no-break space is a non-breaking word character.
+            if (c != '\n' && !NoBreakSpaces.IsNoBreakSpace(c) && char.IsWhiteSpace(c))
                 sb.Append(' ');
             else
                 sb.Append(c);
@@ -611,9 +611,10 @@ public sealed class ParagraphRenderer : IRenderer
     /// </para>
     /// <para>
     /// Word splitting uses <see cref="NormaliseWhitespace"/> to convert Unicode whitespace
-    /// (tab, thin space, en/em space, etc.) to plain spaces, then splits on space. Non-breaking
-    /// space (U+00A0) is intentionally <em>not</em> a split point because it is semantically
-    /// a non-breaking join between words.
+    /// (tab, thin space, en/em space, etc.) to plain spaces, then splits on space. The no-break
+    /// spaces (U+00A0, U+202F and U+2007) are intentionally <em>not</em> split points because they
+    /// are semantically a non-breaking join between words: <c>Pourquoi ?</c> written with U+202F
+    /// before the question mark cannot wrap between the two (#562).
     /// </para>
     /// </summary>
     private static List<LineFragment[]> WordWrap(IReadOnlyList<TextRun> runs, double maxWidth)

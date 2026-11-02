@@ -630,12 +630,20 @@ public sealed class PdfCanvas
     /// cover) are written as '?' and reported via <see cref="TextEncodingWarnings"/>; use an
     /// embedded font (<see cref="SetFontByName"/> + <see cref="ShowGlyphs"/>) to render those.
     /// </summary>
+    /// <remarks>
+    /// U+202F NARROW NO-BREAK SPACE and U+2007 FIGURE SPACE are the exception (#562). WinAnsi has
+    /// neither, but it has U+00A0 NO-BREAK SPACE, so they are written as that (byte 0xA0) and
+    /// reported nowhere. They used to be written as '?' with a warning. The fallback is as wide as
+    /// U+00A0, which is wider than a real narrow space; a Standard-14 font cannot draw a narrower
+    /// one. <see cref="Fonts.Standard14Metrics"/> measures them the same way, so the width measured
+    /// for a string is the width drawn.
+    /// </remarks>
     public PdfCanvas ShowText(string text)
     {
         var bytes = new byte[text.Length];
         for (var i = 0; i < text.Length; i++)
         {
-            if (WinAnsiEncoding.TryGetByte(text[i], out var b))
+            if (WinAnsiEncoding.TryGetByteWithSpaceFallback(text[i], out var b))
             {
                 bytes[i] = b;
                 continue;

@@ -1,6 +1,7 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using VellumPdf.Fonts;
 using VellumPdf.Layout.Core;
 using VellumPdf.Layout.Elements;
 
@@ -300,26 +301,25 @@ public sealed class ListRenderer : IRenderer
     /// </summary>
     private static double WidestWord(TextStyle style, string text)
     {
-        // A non-breaking space is not a separator here, because it is not one to the wrap this
-        // bound exists to predict: ParagraphRenderer.NormaliseWhitespace excludes U+00A0 from the
-        // whitespace it collapses, with a comment calling it a word character, so a run joined by
-        // one is a single token to WordWrap. Splitting on it, which String.Split does through
+        // A no-break space is not a separator here, because it is not one to the wrap this bound
+        // exists to predict: ParagraphRenderer.NormaliseWhitespace excludes U+00A0, U+202F and
+        // U+2007 from the whitespace it collapses (#562), so a run joined by one is a single token
+        // to WordWrap. Both read the one definition, NoBreakSpaces.IsNoBreakSpace. Splitting on it, which String.Split does through
         // char.IsWhiteSpace, understates the widest token and lets the widened gutter hard-break a
         // word the caller's own indent would not have. Measured at Helvetica 10pt before this was
         // fixed: "AAAA<NBSP>AAAA" measures 56.14 whole and the bound saw 26.68, so item 38 of a
         // roman list on an 80pt page was split into "AAAA<NBSP>AAA" and "A" while the 26 items
         // whose gutter stayed at the indent, and had less room, stayed intact.
-        // Written as an escape rather than as the literal ParagraphRenderer uses, because an
-        // invisible literal inverts this predicate if any tool ever normalises it: a plain
-        // space would then be treated as non-breaking and nothing would separate a word.
-        const char nonBreakingSpace = '\u00A0';
-
+        // The set lives in code points written as escapes, in NoBreakSpaces. This method and
+        // NormaliseWhitespace used to keep a literal U+00A0 each, and an invisible literal inverts
+        // the predicate if any tool ever normalises it: a plain space would then be treated as
+        // non-breaking and nothing would separate a word.
         var widest = 0.0;
         var start = -1;
         for (var i = 0; i <= text.Length; i++)
         {
             var atBreak = i == text.Length
-                || (text[i] != nonBreakingSpace && char.IsWhiteSpace(text[i]));
+                || (!NoBreakSpaces.IsNoBreakSpace(text[i]) && char.IsWhiteSpace(text[i]));
 
             if (!atBreak)
             {

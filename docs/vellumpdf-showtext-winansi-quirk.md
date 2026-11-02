@@ -5,6 +5,11 @@
 > plaats van Latin-1, en de Standard14-breedtetabellen zijn opnieuw gegenereerd uit de Adobe
 > Core-14 AFM's op WinAnsi. AcroForm-tekstvelden renderen de 0x80–0x9F-interpunctie nu ook.
 > Tekens buiten WinAnsi worden `?` en gemeld via `TextEncodingWarnings`.
+>
+> **Uitzondering sinds #562:** U+202F (NARROW NO-BREAK SPACE) en U+2007 (FIGURE SPACE) worden niet
+> `?`. WinAnsi kent ze niet, maar wel U+00A0, dus ze worden als U+00A0 (byte 0xA0) getekend en met
+> dezelfde breedte gemeten, en leveren geen `TextEncodingWarnings` op. De breedte is die van een
+> gewone spatie; een smallere spatie bestaat niet in de Standard-14-fonts.
 
 **Datum onderzoek:** 2026-07-05 · **Getroffen versies:** VellumPdf.Kernel t/m 1.8.2 (opgelost in 1.9.0)
 **Ernst:** middel (zichtbare tekstfouten in elk document dat Standard-14 gebruikt voor

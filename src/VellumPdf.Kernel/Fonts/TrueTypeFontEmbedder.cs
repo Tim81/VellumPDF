@@ -61,7 +61,10 @@ public sealed class TrueTypeFontEmbedder
     public ushort GetGlyphId(int codePoint)
     {
         if (_unicodeToGid.TryGetValue(codePoint, out var cachedGid)) return cachedGid;
-        var gid = _cmap.GetGlyphId(codePoint);
+        // A narrow no-break or figure space the font has no glyph for is drawn as its no-break space
+        // or its space rather than as .notdef (#562). Measuring and drawing both come through here,
+        // so they agree.
+        var gid = NoBreakSpaces.ResolveGlyph(codePoint, _cmap.GetGlyphId);
         _unicodeToGid[codePoint] = gid;
         _usedGids.Add(gid);
         return gid;

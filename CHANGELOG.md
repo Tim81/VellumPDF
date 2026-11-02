@@ -194,6 +194,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   so the committed tests use fixtures built by hand from Annex D. Found while exporting images from a
   PDF with the PowerShell wrapper PSVellumPDF.
 
+- **A paragraph no longer wraps at U+202F NARROW NO-BREAK SPACE or U+2007 FIGURE SPACE (#562).**
+  `NormaliseWhitespace` kept only U+00A0 and folded every other white-space character into a plain
+  space, but these two are no-break spaces too: with U+00A0 they are the three white-space characters
+  in UAX #14's GL class (checked against `LineBreak.txt` for Unicode 15.1; U+180E is GL but not white
+  space in .NET, and U+2060 and U+FEFF are class WJ). French puts U+202F before `; ? !`, so
+  `Pourquoi ?` could wrap as `Pourquoi` and `?`. Paragraphs, headings and list items now treat all
+  three as part of a word, and `ListRenderer`'s indent bound reads the same definition, which now
+  lives in one internal place (`NoBreakSpaces`) instead of a literal in two files. Tables never
+  folded them and are unchanged in how they break. **Attention**: keeping the characters meant
+  deciding how a font draws them, because folding had hidden that. WinAnsiEncoding has U+00A0 but
+  not these two, so `PdfCanvas.ShowText` would have drawn `?` with a `TextEncodingWarning`, and
+  `Standard14Metrics` would have measured that `?`. Both now treat U+202F and U+2007 as U+00A0, so
+  Standard-14 text shows a space of that width with no warning, in paragraphs and also in table
+  cells and bands, where they used to give `?` and a warning. An embedded font that lacks the glyph
+  (the bundled Liberation Mono, used for Courier, has no U+202F) falls back to the glyph of U+00A0,
+  then of a plain space, instead of the missing-glyph box; a font that has the glyph keeps it. The
+  fallback space is as wide as U+00A0, wider than a real narrow space. Everything else is unchanged:
+  tab, en and em space and thin space still break, and a token wider than the line still hard-breaks
+  as it does for U+00A0.
+
 ## [2.3.3] - 2026-09-20
 
 This release is led by documentation. Layout's public surface now states what each member

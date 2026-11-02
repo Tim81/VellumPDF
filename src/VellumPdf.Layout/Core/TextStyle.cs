@@ -93,8 +93,8 @@ public sealed class TextStyle
     /// <see cref="VellumPdf.Layout.Elements.RunningBand"/> style takes a band-specific route
     /// instead, detailed on the exception tags below.
     /// <para>Each paragraph run, and a heading's text, is checked when it holds a character other
-    /// than white space. U+00A0 NO-BREAK SPACE counts as such a character; a tab and other white
-    /// space do not. A table cell or list item is checked whatever its text holds.</para>
+    /// than white space. The no-break spaces U+00A0, U+202F and U+2007 count as such characters; a
+    /// tab and other white space do not. A table cell or list item is checked whatever its text holds.</para>
     /// <para><b>Attention</b>: a size of zero or less is <b>not</b> refused. It reaches the content
     /// stream as a font operator that readers accept, so you still get a document. At zero the
     /// text is invisible. Below zero the glyphs are inverted. If you do not want either, check the
