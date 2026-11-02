@@ -211,6 +211,31 @@ internal static class LayoutValidation
     }
 
     /// <summary>
+    /// Rejects a list indent of <c>NaN</c> or negative infinity, the two values that reach a text
+    /// matrix as a token that is not a PDF number (#532).
+    ///
+    /// A nested child's marker takes the indent as its left inset directly, and a flat item whose
+    /// longest word will not fit beside its marker takes it as its gutter, so either path wrote
+    /// <c>1 0 0 1 -Infinity 263.6 Tm</c>. <c>NaN</c> reached the same operand on every path, because
+    /// <c>Math.Max</c> with <c>NaN</c> is <c>NaN</c>. A flat list whose words fit stayed safe for
+    /// negative infinity only because the gutter widened to the marker's own width, which is why
+    /// the flat case looked correct when this was first reported.
+    ///
+    /// Positive infinity is deliberately not checked here. It writes no invalid token, a nested list
+    /// already throws at the content-width boundary, and on a flat list it discards the item text,
+    /// which is its own defect (#476) and renders a valid file today. A finite negative indent is
+    /// likewise left alone.
+    /// </summary>
+    internal static void ValidateListIndent(double indent, string owner)
+    {
+        if (!double.IsNaN(indent) && !double.IsNegativeInfinity(indent)) return;
+
+        throw new InvalidOperationException(
+            $"{owner} has an indent of {Format(indent)}, which cannot be laid out. " +
+            "An indent must be a finite number.");
+    }
+
+    /// <summary>
     /// Rejects a document margin that is not a finite number, naming the edge.
     ///
     /// The margin check that existed compares the horizontal and vertical sums against the page, and

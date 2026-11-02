@@ -92,6 +92,10 @@ public sealed class ListRenderer : IRenderer
     /// </exception>
     public LayoutResult Layout(LayoutContext context)
     {
+        // Before the area is computed: NaN reaches an item's text matrix on every path, and negative
+        // infinity on a nested child or a word too wide to sit beside its marker (#532).
+        LayoutValidation.ValidateListIndent(_list.Indent, "A list");
+
         var area = context.Area.Deflate(_list.Margins);
         if (area.IsEmpty) return LayoutResult.Nothing();
 

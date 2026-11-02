@@ -104,30 +104,34 @@ public sealed class ListElement
     /// follows from the rules above, the override included; the measured figures are on #476, not
     /// here, because they depend on the level, on which branch the override takes and on
     /// <see cref="TextStyle.FontSize"/>. A later major version will reject a negative value.</para>
-    /// <para>Of the non-finite values only positive infinity is refused with
-    /// <see cref="InvalidOperationException"/>, and only with nested children. <c>NaN</c> and
-    /// negative infinity are accepted, and each can reach the text matrix as a token that is not a
-    /// PDF number, leaving a reader no coordinate to place the item at. For unlinked text neither
-    /// throws nor is reported (#532).</para>
-    /// <para>When <c>NaN</c> or negative infinity puts linked item text, or a linked nested
-    /// marker, at a non-finite position, the save throws <see cref="ArgumentException"/> for the
-    /// link's rectangle; see <see cref="TextStyle.LinkUri"/>. A finite negative value can do the
-    /// same when the gutter taken from it, added to the list's left edge, overflows, as a nested
-    /// list with an indent of -1e308 and a left margin of -1e308 does.</para>
+    /// <para><c>NaN</c> and negative infinity are refused, on a flat list and on a nested one, with
+    /// <see cref="InvalidOperationException"/> naming the list and the value: <c>A list has an indent
+    /// of NaN, which cannot be laid out. An indent must be a finite number.</c> They used to be
+    /// accepted, and each could reach an item's text matrix as a token that is not a PDF number: a
+    /// nested child's marker and a flat item whose longest word will not fit beside its marker take
+    /// this value directly, and <c>NaN</c> reached the operand on every path. Positive infinity is
+    /// <b>not</b> refused here, because it writes no invalid token. A nested list throws at the
+    /// area width as described above, and a flat list discards the item text (#476). A finite
+    /// negative value is not refused either (#532).</para>
+    /// <para>A finite negative value can put linked item text, or a linked nested marker, at a
+    /// non-finite position when the gutter taken from it, added to the list's left edge, overflows,
+    /// as a nested list with an indent of -1e308 and a left margin of -1e308 does. The save then
+    /// throws <see cref="ArgumentException"/> for the link's rectangle; see
+    /// <see cref="TextStyle.LinkUri"/>.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from a save rather than from this property, when linked item text, or a linked nested
-    /// marker, lands at a non-finite position. This value at <c>NaN</c> or negative infinity can
-    /// cause that, and so can a finite negative value when the gutter taken from it, added to the
-    /// list's left edge, overflows. The message says PDF does not support NaN or Infinity as a real
-    /// number.
+    /// marker, lands at a non-finite position. A finite negative value can cause that when the
+    /// gutter taken from it, added to the list's left edge, overflows. The message says PDF does not
+    /// support NaN or Infinity as a real number.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Raised from a save rather than from this property, when a list with nested children has an
-    /// indent that reaches the list's own area width, which is the page's content width narrowed by
-    /// the left and right edges of <see cref="Margins"/>. Positive infinity is included; <c>NaN</c>
-    /// and negative infinity are not, and neither is a flat list at any indent. The message reports
-    /// an element too tall to fit and names neither this property nor the list.
+    /// Raised from a save rather than from this property, when the value is <c>NaN</c> or negative
+    /// infinity, on any list. It is also raised when a list with nested children has an indent that
+    /// reaches the list's own area width, which is the page's content width narrowed by the left and
+    /// right edges of <see cref="Margins"/>, positive infinity included; a flat list at any such
+    /// indent is not refused. The first message names the list and the value. The second reports an
+    /// element too tall to fit and names neither this property nor the list.
     /// </exception>
     public double Indent { get; init; } = 20;
 

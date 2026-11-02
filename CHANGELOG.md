@@ -46,6 +46,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `ArgumentException` about the content area; it now throws `InvalidOperationException` like the
   other two. A finite height large enough to leave no content area still throws as before.
 
+- **A `NaN` or negative-infinity `ListElement.Indent` is refused (#532).** A nested child's marker,
+  and a flat item whose longest word will not fit beside its marker, take the indent as their left
+  inset directly, so negative infinity wrote `1 0 0 1 -Infinity 263.6 Tm`, and `NaN` reached the same
+  operand on every path. The save now throws `InvalidOperationException` naming the list and the
+  value. Positive infinity is deliberately unchanged, because it writes no invalid token and its
+  text loss on a flat list is tracked in #476, and a finite negative indent still renders.
+
 ## [2.3.3] - 2026-09-20
 
 This release is led by documentation. Layout's public surface now states what each member
