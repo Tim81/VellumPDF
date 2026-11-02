@@ -18,6 +18,36 @@ public sealed class PdfWriter
     private readonly Stream _stream;
     private long _position;
 
+    // The arrays and dictionaries currently being written, outermost first. A container that holds
+    // itself, directly or through others, would recurse until the stack overflowed, which cannot be
+    // caught in .NET, so entering one that is already on the path is refused instead (#521).
+    // Allocated on first use, because most writers never nest.
+    private HashSet<PdfObject>? _activeContainers;
+
+    /// <summary>
+    /// Marks <paramref name="container"/> as being written, and throws if it already is: it is then
+    /// its own ancestor and writing it would never end.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// <paramref name="container"/> holds itself, directly or through other arrays and dictionaries.
+    /// A reference through an indirect object is not a cycle here, because a reference is written
+    /// as a reference and not followed.
+    /// </exception>
+    internal void EnterContainer(PdfObject container)
+    {
+        _activeContainers ??= new HashSet<PdfObject>(ReferenceEqualityComparer.Instance);
+        if (!_activeContainers.Add(container))
+        {
+            throw new InvalidOperationException(
+                $"A PDF {(container is PdfArray ? "array" : "dictionary")} contains itself, directly or " +
+                "through other arrays and dictionaries, so it cannot be written. Break the cycle, or " +
+                "refer to the object through an indirect reference.");
+        }
+    }
+
+    /// <summary>Marks <paramref name="container"/> as written, so it may appear again elsewhere.</summary>
+    internal void LeaveContainer(PdfObject container) => _activeContainers?.Remove(container);
+
     /// <summary>
     /// When non-null, string and stream content is encrypted via this encryptor
     /// before being written. Set to null while writing the /Encrypt dictionary

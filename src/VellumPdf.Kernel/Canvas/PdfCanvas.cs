@@ -17,6 +17,21 @@ namespace VellumPdf.Canvas;
 /// Coordinates are in PDF user-space (points, Y-up). The layout engine
 /// performs the Y-down→Y-up flip at a single boundary before calling here.
 /// </summary>
+/// <remarks>
+/// Every number a method writes into the content stream must be finite. <c>NaN</c> and both
+/// infinities are not PDF numbers (ISO 32000-2, 7.3.3), so a method that would write one throws
+/// <see cref="ArgumentException"/> with the message text <see cref="PdfReal"/> uses, and writes
+/// nothing of that operator (#519). The check is per operand and covers the colour,
+/// graphics-state, path, font-size and text-positioning operators alike. Zero, negative and out-of-range finite values
+/// are not refused here; for a colour component that is a "shall" in ISO 32000-2, 8.6.4.3 that
+/// this class does not enforce.
+/// <para><see cref="AppendArc"/> is the one exception to "writes nothing": a non-finite radius or
+/// angle gives a sweep it skips without drawing and without throwing, as before. A non-finite
+/// centre is refused.</para>
+/// <para><b>Attention</b>: before this check a non-finite operand was written as the token
+/// <c>NaN</c> or <c>Infinity</c>, giving a content stream no reader can parse. A caller that relied
+/// on that now gets the exception.</para>
+/// </remarks>
 public sealed class PdfCanvas
 {
     private readonly MemoryStream _ops = new();
@@ -477,11 +492,14 @@ public sealed class PdfCanvas
     /// <summary>Selects the given font resource at the specified size, registering it for inclusion in the page resources. Emits <c>Tf</c>.</summary>
     public PdfCanvas SetFont(PdfFontResource font, double size)
     {
+        // Format the size before touching any state or writing the name, so a refused size leaves
+        // neither a half-written operator nor a changed current font behind.
+        var sizeToken = N(size);
         _usedFonts[font.ResourceName] = font;
         _currentFont = font;
         _currentFontSize = size;
         WriteEscapedName(font.ResourceName);
-        _ops.Write(Encoding.ASCII.GetBytes($" {N(size)} Tf\n"));
+        _ops.Write(Encoding.ASCII.GetBytes($" {sizeToken} Tf\n"));
         return this;
     }
 
@@ -492,9 +510,10 @@ public sealed class PdfCanvas
     /// </summary>
     public PdfCanvas SetFontByName(string resourceName, double size)
     {
+        var sizeToken = N(size);
         _currentFont = null;
         WriteEscapedName(resourceName);
-        _ops.Write(Encoding.ASCII.GetBytes($" {N(size)} Tf\n"));
+        _ops.Write(Encoding.ASCII.GetBytes($" {sizeToken} Tf\n"));
         return this;
     }
 
@@ -611,12 +630,20 @@ public sealed class PdfCanvas
     /// cover) are written as '?' and reported via <see cref="TextEncodingWarnings"/>; use an
     /// embedded font (<see cref="SetFontByName"/> + <see cref="ShowGlyphs"/>) to render those.
     /// </summary>
+    /// <remarks>
+    /// U+202F NARROW NO-BREAK SPACE and U+2007 FIGURE SPACE are the exception (#562). WinAnsi has
+    /// neither, but it has U+00A0 NO-BREAK SPACE, so they are written as that (byte 0xA0) and
+    /// reported nowhere. They used to be written as '?' with a warning. The fallback is as wide as
+    /// U+00A0, which is wider than a real narrow space; a Standard-14 font cannot draw a narrower
+    /// one. <see cref="Fonts.Standard14Metrics"/> measures them the same way, so the width measured
+    /// for a string is the width drawn.
+    /// </remarks>
     public PdfCanvas ShowText(string text)
     {
         var bytes = new byte[text.Length];
         for (var i = 0; i < text.Length; i++)
         {
-            if (WinAnsiEncoding.TryGetByte(text[i], out var b))
+            if (WinAnsiEncoding.TryGetByteWithSpaceFallback(text[i], out var b))
             {
                 bytes[i] = b;
                 continue;
@@ -703,8 +730,19 @@ public sealed class PdfCanvas
 
     // ── Private helpers ─────────────────────────────────────────────────────
 
-    // TODO(#80): Aligned to 5dp to match PdfReal.WriteTo ("0.#####").
-    private static string N(double v) => v.ToString("0.#####", CultureInfo.InvariantCulture);
+    // Formats an operand for the content stream. It matches PdfReal on both counts: the "0.#####"
+    // format string (#80) and the refusal of NaN and Infinity, which are not PDF numbers
+    // (ISO 32000-2 7.3.3). Every number the canvas writes goes through here, so an invalid token
+    // cannot be written whichever caller reaches the canvas (#519). The exception type and the
+    // message text are PdfReal's, so the object model and the content stream read alike; the
+    // ParamName differs (null here, "value" there).
+    private static string N(double v)
+    {
+        if (double.IsNaN(v) || double.IsInfinity(v))
+            throw new ArgumentException(
+                $"PDF does not support NaN or Infinity as a real number value. Got: {v}");
+        return v.ToString("0.#####", CultureInfo.InvariantCulture);
+    }
 
     // PDF delimiters that must be #XX-escaped in a name token (ISO 32000-2 §7.3.5).
     // Mirrors PdfName._delimiters so both escaping paths stay in sync.

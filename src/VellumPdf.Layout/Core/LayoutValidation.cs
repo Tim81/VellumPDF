@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using System.Globalization;
+using VellumPdf.Layout.Elements;
 using VellumPdf.Layout.Elements.Table;
 
 namespace VellumPdf.Layout.Core;
@@ -72,7 +73,48 @@ internal static class LayoutValidation
                 $"{owner} has a font size of {Format(style.FontSize)}, which cannot be laid out. " +
                 "A font size must be a finite number.");
         }
+
+        ValidateColor(style.Color, owner, "text colour");
     }
+
+    /// <summary>
+    /// Rejects a colour with a channel that is not a finite number. A channel is written straight
+    /// into an <c>rg</c> or <c>RG</c> operand, so <c>NaN</c> reached the stream as <c>NaN 0 0 rg</c>
+    /// and infinity as <c>Infinity 0 0 rg</c>, neither of which is a PDF number (#509).
+    ///
+    /// Finite is all this checks. A channel outside 0 to 1 is not a PDF number problem: the token
+    /// still parses and the file renders, so refusing it would turn a working document into an
+    /// exception. The range is documented on the colour types instead, and the refusal is deferred
+    /// to the next major (#484).
+    ///
+    /// <c>PdfCanvas</c> refuses the same values when it writes the operand, so a colour that
+    /// reaches the stream by some route this check does not cover still fails loudly. This check is
+    /// the one that can name the element the caller wrote, which the canvas cannot.
+    /// </summary>
+    /// <param name="color">The colour to check.</param>
+    /// <param name="owner">What the colour belongs to, such as <c>A line separator</c>.</param>
+    /// <param name="what">Which colour it is, such as <c>colour</c> or <c>border colour</c>.</param>
+    internal static void ValidateColor(ColorRgb color, string owner, string what)
+    {
+        var channel = !double.IsFinite(color.R) ? ("red", color.R)
+            : !double.IsFinite(color.G) ? ("green", color.G)
+            : !double.IsFinite(color.B) ? ("blue", color.B)
+            : default;
+        if (channel.Item1 is null) return;
+
+        throw new InvalidOperationException(
+            $"{owner} has a {what} whose {channel.Item1} channel is {Format(channel.Item2)}, " +
+            "which cannot be written to a content stream. Every colour channel must be a finite number.");
+    }
+
+    /// <summary>Whether every edge of the insets is a finite number.</summary>
+    internal static bool IsFinite(EdgeInsets insets) =>
+        double.IsFinite(insets.Left) && double.IsFinite(insets.Top) &&
+        double.IsFinite(insets.Right) && double.IsFinite(insets.Bottom);
+
+    /// <summary>Whether every channel of the colour is a finite number.</summary>
+    internal static bool IsFinite(ColorRgb color) =>
+        double.IsFinite(color.R) && double.IsFinite(color.G) && double.IsFinite(color.B);
 
     /// <summary>
     /// Rejects a cell that covers less than one column, or whose padding is not finite.
@@ -103,6 +145,8 @@ internal static class LayoutValidation
         }
 
         ValidateInsets(cell.Padding, $"Table row {rowIndex}, cell {cellIndex}");
+        if (cell.Background is { } background)
+            ValidateColor(background, $"Table row {rowIndex}, cell {cellIndex}", "background colour");
     }
 
     /// <summary>
@@ -141,10 +185,18 @@ internal static class LayoutValidation
     }
 
     /// <summary>
-    /// Rejects a non-finite line width, which reaches the stream as <c>NaN w</c>.
+    /// Rejects a non-finite line width, which reaches the stream as <c>NaN w</c>, and a negative
+    /// one, which reaches it as <c>-3 w</c> (#557).
+    ///
+    /// ISO 32000-2, 8.4.3.2 (Line width) says the operand "shall be a non-negative number", so a
+    /// negative width is a non-conforming operand even though it parses. That is why this refuses
+    /// it where the neighbouring out-of-range inputs, such as a colour channel above 1, are only
+    /// documented: those render a valid file, and this writes an operand the standard forbids.
     ///
     /// Zero is left alone, unlike an image extent: <c>0 w</c> is a defined operator asking for the
-    /// thinnest line the device renders, not a degenerate matrix.
+    /// thinnest line the device renders, not a degenerate matrix. The same clause says such lines
+    /// "should not be used" because the result is device-dependent, which is a caller warning
+    /// rather than a refusal and is carried by the member documentation.
     /// </summary>
     internal static void ValidateLineWidth(double width, string owner)
     {
@@ -153,6 +205,13 @@ internal static class LayoutValidation
             throw new InvalidOperationException(
                 $"{owner} has a line width of {Format(width)}, which cannot be drawn. " +
                 "A line width must be a finite number.");
+        }
+
+        if (width < 0)
+        {
+            throw new InvalidOperationException(
+                $"{owner} has a line width of {Format(width)}, which cannot be drawn. " +
+                "A line width must not be negative (ISO 32000-2, 8.4.3.2).");
         }
     }
 
@@ -169,6 +228,110 @@ internal static class LayoutValidation
             throw new InvalidOperationException(
                 $"{owner} has a non-finite inset. Every inset must be a finite number.");
         }
+    }
+
+    /// <summary>
+    /// Rejects a list indent of <c>NaN</c> or negative infinity, the two values that reach a text
+    /// matrix as a token that is not a PDF number (#532).
+    ///
+    /// A nested child's marker takes the indent as its left inset directly, and a flat item whose
+    /// longest word will not fit beside its marker takes it as its gutter, so either path wrote
+    /// <c>1 0 0 1 -Infinity 263.6 Tm</c>. <c>NaN</c> reached the same operand on every path, because
+    /// <c>Math.Max</c> with <c>NaN</c> is <c>NaN</c>. A flat list whose words fit stayed safe for
+    /// negative infinity only because the gutter widened to the marker's own width, which is why
+    /// the flat case looked correct when this was first reported.
+    ///
+    /// Positive infinity is deliberately not checked here. It writes no invalid token, a nested list
+    /// already throws at the content-width boundary, and on a flat list it discards the item text,
+    /// which is its own defect (#476) and renders a valid file today. A finite negative indent is
+    /// likewise left alone.
+    /// </summary>
+    internal static void ValidateListIndent(double indent, string owner)
+    {
+        if (!double.IsNaN(indent) && !double.IsNegativeInfinity(indent)) return;
+
+        throw new InvalidOperationException(
+            $"{owner} has an indent of {Format(indent)}, which cannot be laid out. " +
+            "An indent must be a finite number.");
+    }
+
+    /// <summary>
+    /// Rejects a document margin that is not a finite number, naming the edge.
+    ///
+    /// The margin check that existed compares the horizontal and vertical sums against the page, and
+    /// a comparison against <c>NaN</c> is false, so <c>NaN</c> passed it. Negative infinity is below
+    /// every page size and passed it too. Both then surfaced later as a message about something
+    /// else: <c>NaN</c> as an element that is too tall, negative infinity as 50,000 page
+    /// continuations, the second after the renderer had done that work. Positive infinity was
+    /// already caught by the sum, with a message that named a total rather than the edge (#502).
+    ///
+    /// Raised as <see cref="ArgumentException"/> with the parameter name <c>margins</c>, which is
+    /// what the sum check beside it throws, so a caller's existing handler for a bad margin still
+    /// catches every bad margin. A negative finite margin is not refused: it saves today, a reader
+    /// clips what lands outside the page, and refusing it would turn a rendering document into an
+    /// exception. It is documented on <c>Document.Margins</c> and left to the next major.
+    /// </summary>
+    internal static void ValidateMargins(EdgeInsets margins)
+    {
+        Check(margins.Left, "left");
+        Check(margins.Top, "top");
+        Check(margins.Right, "right");
+        Check(margins.Bottom, "bottom");
+
+        static void Check(double value, string edge)
+        {
+            if (double.IsFinite(value)) return;
+            throw new ArgumentException(
+                $"The {edge} margin is {Format(value)}, which cannot be laid out. " +
+                "A margin must be a finite number.",
+                "margins");
+        }
+    }
+
+    /// <summary>
+    /// Rejects a running band whose reserved height is not a finite number, for a header and a
+    /// footer alike, so the two cannot disagree (#520).
+    ///
+    /// They disagreed. The header height comes off the top of the content box, so a non-finite
+    /// value poisoned the Y cursor and a later check refused it. The footer height comes off the
+    /// content box's height only, so negative infinity made that height positive infinity, the body
+    /// placed normally, and the band was then drawn at <c>+inf</c> plus <c>-inf</c>: the file saved
+    /// with <c>NaN</c> in a text matrix. Positive infinity and <c>NaN</c> were refused on both, by
+    /// two different exception types across three messages.
+    ///
+    /// Only an explicit <c>Height</c> is checked. A band with no height derives one from its style,
+    /// and a style that makes that derived height unusable is refused by its own checks.
+    /// </summary>
+    internal static void ValidateBandHeight(RunningBand band, string owner)
+    {
+        if (band.Height is not { } height || double.IsFinite(height)) return;
+
+        throw new InvalidOperationException(
+            $"{owner} has a height of {Format(height)}, which cannot be laid out. " +
+            "A band height must be a finite number.");
+    }
+
+    /// <summary>
+    /// Rejects explicit column widths whose sum is not finite (#546).
+    ///
+    /// Individual non-finite entries are already read as auto, so every entry reaching the sum is
+    /// finite, but finite entries can still overflow when added. The resolver scales explicit
+    /// widths by one ratio when they overrun the room available, so an infinite sum made that ratio
+    /// zero and every column was written at width 0.
+    ///
+    /// Only the overflow is refused. A single dominant but finite entry, such as 1e200 beside 60
+    /// and 70, scales the others to nearly nothing and still renders, so refusing it would turn a
+    /// rendering document into an exception; it is documented on <c>ColWidths</c> and left for the
+    /// next major (#484).
+    /// </summary>
+    internal static void ValidateColumnWidthSum(double sum)
+    {
+        if (double.IsFinite(sum)) return;
+
+        throw new InvalidOperationException(
+            "A table's explicit column widths add up to positive infinity, so they cannot be " +
+            "scaled to fit the page and every column would be drawn at width 0. Use smaller " +
+            "column widths.");
     }
 
     /// <summary>

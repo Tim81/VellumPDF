@@ -9,20 +9,16 @@ namespace VellumPdf.Layout.Elements;
 /// An immutable run of text with a uniform style, used to compose mixed-style paragraphs.
 /// </summary>
 /// <remarks>
-/// Both arguments are stored without a check. A null text makes the save throw when it lays out the
-/// paragraph holding this run, and so does a null style on a run whose text holds a character other
-/// than white space. U+00A0 NO-BREAK SPACE counts as such a character; a tab and other white space
-/// do not. Refusals on size, leading and font are on <see cref="TextStyle"/> and are raised from
-/// the save. The boundary between this run and the next is drawn as a space unless a line break
-/// falls on it; see <see cref="Paragraph"/>.
-/// <para>Do not pass null for either argument. A later major version will throw
-/// <see cref="ArgumentNullException"/> from the constructor.</para>
+/// Neither argument may be null. The constructor throws <see cref="ArgumentNullException"/> naming
+/// <c>Text</c> or <c>Style</c> (#547). Before that both were stored without a check, and the save
+/// threw <see cref="NullReferenceException"/> when it laid out the paragraph holding the run.
+/// Refusals on size, leading and font are on <see cref="TextStyle"/> and are raised from the save.
+/// The boundary between this run and the next is drawn as a space unless a line break falls on it;
+/// see <see cref="Paragraph"/>.
 /// </remarks>
-/// <exception cref="NullReferenceException">
-/// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not from
-/// the constructor, when the text is <see langword="null"/>, or the style is null and the text
-/// holds a character other than white space. U+00A0 NO-BREAK SPACE counts as such a character; a
-/// tab and other white space do not.
+/// <exception cref="ArgumentNullException">
+/// The text or the style is <see langword="null"/>. <c>ParamName</c> is <c>Text</c> or
+/// <c>Style</c>, the names of the constructor's parameters.
 /// </exception>
 /// <exception cref="ArgumentException">
 /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not from
@@ -44,29 +40,19 @@ public sealed class TextRun(string Text, TextStyle Style)
 {
     /// <summary>The run's text.</summary>
     /// <remarks>
-    /// Any value is stored. A null value makes the save throw; see the type remarks.
+    /// Never null; the constructor refuses a null. See the type remarks.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the text is <see langword="null"/>.
-    /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when the text holds an unpaired surrogate and is measured in an embedded
     /// font; see <see cref="TextStyle.FontRef"/>.
     /// </exception>
-    public string Text { get; } = Text;
+    public string Text { get; } = Text ?? throw new ArgumentNullException(nameof(Text));
 
     /// <summary>The run's text style.</summary>
     /// <remarks>
-    /// Any value is stored. A null value makes the save throw when the run's text holds a character
-    /// other than white space; see the type remarks for which characters count.
+    /// Never null; the constructor refuses a null. See the type remarks.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the style is null and the run's text holds a character other than
-    /// white space; see the type remarks.
-    /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when the run's text holds an unpaired surrogate and is measured in an
@@ -83,5 +69,5 @@ public sealed class TextRun(string Text, TextStyle Style)
     /// the enumeration does not name and the font is selected on a page; see
     /// <see cref="TextStyle.FontRef"/>.
     /// </exception>
-    public TextStyle Style { get; } = Style;
+    public TextStyle Style { get; } = Style ?? throw new ArgumentNullException(nameof(Style));
 }

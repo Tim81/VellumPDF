@@ -31,6 +31,12 @@ public sealed class TrueTypeFontEmbedder
 
     private readonly HashSet<int> _usedGids = new() { 0 }; // always keep .notdef
     private readonly Dictionary<int, ushort> _unicodeToGid = new();
+
+    // The code points in _unicodeToGid whose glyph is a stand-in: the font's own cmap had no glyph
+    // for them and NoBreakSpaces.ResolveGlyph substituted the glyph of U+00A0 or U+0020 (#562). The
+    // ToUnicode CMap must not let such a code point speak for the glyph when a code point that owns
+    // it is in use.
+    private readonly HashSet<int> _fallbackCodePoints = new();
     private readonly Tag _cffTag = new("CFF ");
 
     // Set to true when CffSubsetter throws NotSupportedException (CID-keyed font).
@@ -61,7 +67,12 @@ public sealed class TrueTypeFontEmbedder
     public ushort GetGlyphId(int codePoint)
     {
         if (_unicodeToGid.TryGetValue(codePoint, out var cachedGid)) return cachedGid;
-        var gid = _cmap.GetGlyphId(codePoint);
+        // A narrow no-break or figure space the font has no glyph for is drawn as its no-break space
+        // or its space rather than as .notdef (#562). Measuring and drawing both come through here,
+        // so they agree.
+        var gid = NoBreakSpaces.ResolveGlyph(codePoint, _cmap.GetGlyphId);
+        if (gid != 0 && NoBreakSpaces.NeedsSpaceFallback(codePoint) && _cmap.GetGlyphId(codePoint) == 0)
+            _fallbackCodePoints.Add(codePoint);
         _unicodeToGid[codePoint] = gid;
         _usedGids.Add(gid);
         return gid;
@@ -513,7 +524,15 @@ public sealed class TrueTypeFontEmbedder
         return fontBytes;
     }
 
-    private string BuildToUnicodeCMapContent()
+    private string BuildToUnicodeCMapContent() => BuildToUnicodeCMapContent(_unicodeToGid, _fallbackCodePoints);
+
+    /// <summary>
+    /// The /ToUnicode CMap for the given code point to glyph assignments, where
+    /// <paramref name="fallbackCodePoints"/> are the ones that got a stand-in glyph. A static seam so
+    /// a test can pass assignments no bundled font produces.
+    /// </summary>
+    internal static string BuildToUnicodeCMapContent(
+        IReadOnlyDictionary<int, ushort> unicodeToGid, IReadOnlySet<int> fallbackCodePoints)
     {
         var sb = new StringBuilder();
         sb.AppendLine("/CIDInit /ProcSet findresource begin");
@@ -526,7 +545,27 @@ public sealed class TrueTypeFontEmbedder
         sb.AppendLine("<0000> <FFFF>");
         sb.AppendLine("endcodespacerange");
 
-        var pairs = _unicodeToGid
+        // A code point that got a stand-in glyph (U+202F or U+2007 in a font without it) shares that
+        // glyph with U+00A0 or U+0020. A ToUnicode CMap maps a glyph to one string, and the stand-in
+        // must not take over a glyph that ordinary spaces use, or copying a space out of the PDF
+        // gives a narrow no-break space (#562). So a stand-in is listed only when no code point that
+        // owns the glyph is in use, and when several stand-ins share it the lowest code point is
+        // listed. Glyph 0 and duplicates between code points the font really maps are left alone.
+        var owned = new HashSet<ushort>();
+        foreach (var (cp, gid) in unicodeToGid)
+            if (!fallbackCodePoints.Contains(cp)) owned.Add(gid);
+
+        var listedStandIn = new Dictionary<ushort, int>();
+        foreach (var cp in fallbackCodePoints)
+        {
+            var gid = unicodeToGid[cp];
+            if (owned.Contains(gid)) continue;
+            if (!listedStandIn.TryGetValue(gid, out var listed) || cp < listed) listedStandIn[gid] = cp;
+        }
+
+        var pairs = unicodeToGid
+            .Where(kv => !fallbackCodePoints.Contains(kv.Key)
+                || (listedStandIn.TryGetValue(kv.Value, out var listed) && listed == kv.Key))
             .Select(kv => (gid: kv.Value, cp: kv.Key))
             .OrderBy(p => p.gid)
             .ToList();

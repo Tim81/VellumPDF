@@ -389,7 +389,7 @@ public sealed class RefusalMessageTests
     }
 
     /// <summary>A 2x2 opaque RGB PNG, decoded so these tests need no fixture file.</summary>
-    private static VellumPdf.Images.PdfImageXObject TwoByTwoImage()
+    internal static VellumPdf.Images.PdfImageXObject TwoByTwoImage()
     {
         static uint Crc(byte[] d)
         {

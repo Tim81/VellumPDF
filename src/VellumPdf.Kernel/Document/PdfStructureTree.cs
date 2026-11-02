@@ -71,10 +71,52 @@ public sealed class PdfStructElem
     public PdfStructElem(string structType) => StructType = structType;
 
     /// <summary>Adds a child struct element and returns it (fluent helper).</summary>
+    /// <remarks>
+    /// An element may not be its own ancestor (#521). A child that is this element, or that already
+    /// holds this element somewhere in its own subtree, would close a cycle, and the walks that
+    /// number the tree and write it recurse over <see cref="Children"/> with nothing to stop them,
+    /// so a cycle overflowed the stack from an ordinary <c>Save</c>. That cannot be caught in .NET,
+    /// which is why it is refused here, at the call that makes it. An element reachable by two
+    /// routes without a cycle is not refused.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="child"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="child"/> is this element or holds it in its subtree, so adding it would make an
+    /// element its own ancestor.
+    /// </exception>
     public PdfStructElem AddChild(PdfStructElem child)
     {
+        ArgumentNullException.ThrowIfNull(child);
+        if (child.Contains(this))
+        {
+            throw new ArgumentException(
+                ReferenceEquals(child, this)
+                    ? "A structure element cannot be its own child."
+                    : "A structure element cannot be added below one of its own descendants; that would make it its own ancestor.",
+                nameof(child));
+        }
         _children.Add(child);
         return child;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="target"/> is this element or lies anywhere below it. Iterative, so a
+    /// deep subtree costs heap rather than stack, and each element is visited once however many
+    /// routes lead to it.
+    /// </summary>
+    private bool Contains(PdfStructElem target)
+    {
+        var seen = new HashSet<PdfStructElem>(ReferenceEqualityComparer.Instance);
+        var pending = new Stack<PdfStructElem>();
+        pending.Push(this);
+        while (pending.Count > 0)
+        {
+            var current = pending.Pop();
+            if (ReferenceEquals(current, target)) return true;
+            if (!seen.Add(current)) continue;
+            foreach (var child in current._children) pending.Push(child);
+        }
+        return false;
     }
 }
 
@@ -348,40 +390,74 @@ internal sealed class PdfStructureTree
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    private static void CollectElems(PdfStructElem parent, List<PdfStructElem> list)
+    // The three walks below recurse over Children. AddChild refuses a cycle, so none can be built
+    // through the public API, but a stack overflow cannot be caught, so each walk also keeps the
+    // elements on its current path and refuses to enter one twice (#521). Without it a graph put
+    // together some other way would crash the process rather than raise.
+    private static void EnterElement(HashSet<PdfStructElem> path, PdfStructElem element)
     {
+        if (!path.Add(element))
+            throw new InvalidOperationException(
+                "The structure tree contains a cycle: an element is its own ancestor, so the tree cannot be walked.");
+    }
+
+    private static void CollectElems(PdfStructElem parent, List<PdfStructElem> list)
+        => CollectElems(parent, list, new HashSet<PdfStructElem>(ReferenceEqualityComparer.Instance));
+
+    private static void CollectElems(PdfStructElem parent, List<PdfStructElem> list, HashSet<PdfStructElem> path)
+    {
+        EnterElement(path, parent);
         foreach (var child in parent.Children)
         {
             list.Add(child);
-            CollectElems(child, list);
+            CollectElems(child, list, path);
         }
+        path.Remove(parent);
     }
 
     private static void CollectPages(
         PdfStructElem root,
         List<PdfPage> pageOrder,
         Dictionary<PdfPage, int> pageStructParents)
+        => CollectPages(root, pageOrder, pageStructParents, new HashSet<PdfStructElem>(ReferenceEqualityComparer.Instance));
+
+    private static void CollectPages(
+        PdfStructElem root,
+        List<PdfPage> pageOrder,
+        Dictionary<PdfPage, int> pageStructParents,
+        HashSet<PdfStructElem> path)
     {
+        EnterElement(path, root);
         if (root.Page is not null && !pageStructParents.ContainsKey(root.Page))
         {
             pageStructParents[root.Page] = pageOrder.Count;
             pageOrder.Add(root.Page);
         }
         foreach (var child in root.Children)
-            CollectPages(child, pageOrder, pageStructParents);
+            CollectPages(child, pageOrder, pageStructParents, path);
+        path.Remove(root);
     }
 
     private static void CollectElemsOnPage(
         PdfStructElem parent,
         PdfPage target,
         List<PdfStructElem> result)
+        => CollectElemsOnPage(parent, target, result, new HashSet<PdfStructElem>(ReferenceEqualityComparer.Instance));
+
+    private static void CollectElemsOnPage(
+        PdfStructElem parent,
+        PdfPage target,
+        List<PdfStructElem> result,
+        HashSet<PdfStructElem> path)
     {
+        EnterElement(path, parent);
         foreach (var child in parent.Children)
         {
             if (child.Page == target && child.Mcid >= 0)
                 result.Add(child);
-            CollectElemsOnPage(child, target, result);
+            CollectElemsOnPage(child, target, result, path);
         }
+        path.Remove(parent);
     }
 
     /// <summary>

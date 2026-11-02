@@ -93,8 +93,8 @@ public sealed class TextStyle
     /// <see cref="VellumPdf.Layout.Elements.RunningBand"/> style takes a band-specific route
     /// instead, detailed on the exception tags below.
     /// <para>Each paragraph run, and a heading's text, is checked when it holds a character other
-    /// than white space. U+00A0 NO-BREAK SPACE counts as such a character; a tab and other white
-    /// space do not. A table cell or list item is checked whatever its text holds.</para>
+    /// than white space. The no-break spaces U+00A0, U+202F and U+2007 count as such characters; a
+    /// tab and other white space do not. A table cell or list item is checked whatever its text holds.</para>
     /// <para><b>Attention</b>: a size of zero or less is <b>not</b> refused. It reaches the content
     /// stream as a font operator that readers accept, so you still get a document. At zero the
     /// text is invisible. Below zero the glyphs are inverted. If you do not want either, check the
@@ -187,10 +187,12 @@ public sealed class TextStyle
 
     /// <summary>The text colour. Defaults to <see cref="ColorRgb.Black"/>.</summary>
     /// <remarks>
-    /// Stored as given. Channels are not checked or clamped. Each is written into the content
-    /// stream rounded to five decimals, and <c>NaN</c> or <c>Infinity</c> as that token; see
-    /// <see cref="ColorRgb"/>.
+    /// Stored as given. Channels are not clamped. A channel that is not finite is refused when the document is saved; see <see cref="ColorRgb"/>.
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from a save, when a channel is <c>NaN</c> or infinite. The message names the paragraph run, running band or table cell that carries the style and the
+    /// channel. A finite channel outside 0 to 1 is not refused (#509).
+    /// </exception>
     public ColorRgb Color { get; init; } = ColorRgb.Black;
 
     /// <summary>
@@ -221,17 +223,18 @@ public sealed class TextStyle
     /// untagged and without an alternate description, whatever the conformance, and no exception
     /// reports it. In a document whose <c>Conformance</c> is PDF/UA-1, the link breaks ISO
     /// 14289-1, 7.18.5 (#550). A link whose rectangle lies wholly outside the page's crop box is
-    /// exempt: clause 7.18.1 lifts the requirements of clause 7.18 for it. On a justified line
-    /// the link's rectangle is sized and placed as if the line were not stretched, so the linked
-    /// words can run past it, and in an embedded font can lie away from it (#551).
+    /// exempt: clause 7.18.1 lifts the requirements of clause 7.18 for it. On a justified line in a
+    /// standard-14 text face the link's rectangle starts where the linked text is drawn and covers
+    /// its drawn width, spaces stretched included (#555). On a justified line in an embedded font
+    /// the rectangle is still sized and placed as if the line were not stretched, so the linked
+    /// words can run past it and can lie away from it (#551).
     /// <para>Do not pass a value that is not an absolute URI. A later major version will refuse
     /// one.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when linked text is placed at a non-finite position, for example through
-    /// a non-finite margin (see <see cref="Document.Margins"/>) or a bottom of negative infinity in
-    /// a renderer's result (see <see cref="LayoutResult.Full"/>). The link's rectangle is written
+    /// a bottom of negative infinity in a renderer's result (see <see cref="LayoutResult.Full"/>). The link's rectangle is written
     /// outside the content stream, and the save refuses a non-finite coordinate there. Without a
     /// link, the same paragraph or list-item text saves. A heading placed at a non-finite height
     /// throws either way, from its bookmark; see

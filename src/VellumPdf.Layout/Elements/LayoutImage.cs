@@ -16,14 +16,10 @@ public sealed class LayoutImage
 {
     /// <summary>The image to draw.</summary>
     /// <remarks>
-    /// A null value makes the save throw; see the constructor. So does an image whose own pixel
-    /// width or height is not a positive number. A JPEG that declares a zero dimension loads as
-    /// such an image.
+    /// Never null; the constructor refuses a null (#547). An image whose own pixel width or height
+    /// is not a positive number makes the save throw. A JPEG that declares a zero dimension loads
+    /// as such an image.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the image is <see langword="null"/>.
-    /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when the image's own pixel width or height is not a positive number; a
@@ -108,31 +104,36 @@ public sealed class LayoutImage
 
     /// <summary>Margins around the image.</summary>
     /// <remarks>
-    /// <b>Attention</b>: no edge is checked. The top and bottom edges add to the space the image
-    /// takes on the page. The left and right edges work differently by <see cref="Width"/>: with it
-    /// set, the image keeps that width, up to the content width, and its position is clamped back
+    /// A non-finite edge is refused, whichever of <c>NaN</c>, positive infinity and negative infinity
+    /// it is: the save throws <see cref="InvalidOperationException"/> before the element is laid out,
+    /// with <c>An image has a non-finite inset. Every inset must be a finite number.</c> (#519).
+    /// Before that, the image was laid out in a box that could be <c>NaN</c>, and the save threw an
+    /// exception about something else or wrote <c>NaN</c> or <c>Infinity</c> into the content stream.
+    /// <para><b>Attention</b>: no other edge is checked. The top and bottom edges add to the space the
+    /// image takes on the page. The left and right edges work differently by <see cref="Width"/>: with
+    /// it set, the image keeps that width, up to the content width, and its position is clamped back
     /// inside the content box; with it null, the image is sized to the width the edges leave. A
-    /// negative or non-finite edge, or edges wider than the area, can make the save throw an
-    /// exception about something else, write a <c>NaN</c> or <c>Infinity</c> token into the content
-    /// stream, or move, mirror or rotate the image. A negative or non-finite top or bottom edge can
-    /// also move the elements placed after this one.
-    /// <para>Do not pass a negative or non-finite edge. A later major version will refuse
-    /// both.</para>
+    /// negative edge, or edges wider than the area, can make the save throw an exception about
+    /// something else, or move, mirror or rotate the image. A negative top or bottom edge can also
+    /// move the elements placed after this one.</para>
+    /// <para>Do not pass a negative edge. A later major version will refuse it.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the box the edges leave is too small for the element. The message
-    /// says the element is too tall to fit on a page and does not name the margins. With
-    /// <see cref="Width"/> null, the width the edges leave is refused when it is under 5e-6 in
-    /// magnitude, or not finite, and so is a height derived from it that is under 5e-6 or not
+    /// from this property, when an edge is not finite, in which case the message names the element
+    /// and does not name the edge, or when the box the edges leave is too small for the element, in
+    /// which case the message says the element is too tall to fit on a page and does not name the
+    /// margins. With <see cref="Width"/> null, the width the edges leave is refused when it is under
+    /// 5e-6 in magnitude, or not finite, and so is a height derived from it that is under 5e-6 or not
     /// finite. The message then names that width or height instead.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when an edge leaves a later element at a non-finite position, and the
-    /// save writes that position outside the content stream, as a heading's bookmark or the
-    /// rectangle of a link from <see cref="TextStyle.LinkUri"/>. Negative infinity can do this. The
-    /// message says PDF does not support NaN or Infinity as a real number.
+    /// from this property, when finite edges whose arithmetic overflows leave a later element at a
+    /// non-finite position, and the save writes that position outside the content stream, as a
+    /// heading's bookmark or the rectangle of a link from <see cref="TextStyle.LinkUri"/>. The
+    /// message says PDF does not support NaN or Infinity as a real number. That route was not
+    /// measured again after #519.
     /// </exception>
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 
@@ -146,13 +147,11 @@ public sealed class LayoutImage
 
     /// <summary>Creates a flow image element for the given image.</summary>
     /// <remarks>
-    /// A null <paramref name="image"/> is stored, and the save throws when it lays out the image.
-    /// <para>Do not pass null. A later major version will throw
-    /// <see cref="ArgumentNullException"/> from this call.</para>
+    /// A null <paramref name="image"/> is refused here (#547); it used to be stored, and the save
+    /// threw <see cref="NullReferenceException"/> when it laid out the image.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when <paramref name="image"/> is <see langword="null"/>.
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="image"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -160,5 +159,9 @@ public sealed class LayoutImage
     /// a JPEG that declares a zero dimension loads as such an image. <c>ParamName</c> is
     /// <c>_img</c>. It is raised before <see cref="Width"/> and <see cref="Height"/> are checked.
     /// </exception>
-    public LayoutImage(PdfImageXObject image) => Image = image;
+    public LayoutImage(PdfImageXObject image)
+    {
+        ArgumentNullException.ThrowIfNull(image);
+        Image = image;
+    }
 }

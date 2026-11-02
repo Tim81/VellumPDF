@@ -152,16 +152,17 @@ public static class Standard14Metrics
     };
 
     /// <summary>
-    /// Returns the advance width of <paramref name="c"/> in 1/1000ths of a point. A character
-    /// outside WinAnsiEncoding measures as the '?' glyph, matching the substitution
-    /// <see cref="VellumPdf.Canvas.PdfCanvas.ShowText"/> makes when rendering it, so measured
-    /// and rendered widths agree. Returns 0 for a control character (below 0x20) or when
+    /// Returns the advance width of <paramref name="c"/> in 1/1000ths of a point. U+202F and U+2007
+    /// measure as U+00A0, which is what <see cref="VellumPdf.Canvas.PdfCanvas.ShowText"/> draws for
+    /// them (#562). Any other character outside WinAnsiEncoding measures as the '?' glyph, matching
+    /// the substitution <see cref="VellumPdf.Canvas.PdfCanvas.ShowText"/> makes when rendering it, so
+    /// measured and rendered widths agree. Returns 0 for a control character (below 0x20) or when
     /// <paramref name="font"/> is not a text font (Symbol, ZapfDingbats).
     /// </summary>
     public static int GetWidth(Standard14 font, char c)
     {
         if (!_tables.TryGetValue(font, out var table)) return 0;
-        if (!WinAnsiEncoding.TryGetByte(c, out var b))
+        if (!WinAnsiEncoding.TryGetByteWithSpaceFallback(c, out var b))
             b = (byte)'?'; // ShowText substitutes '?' for chars outside WinAnsi; measure that glyph
         var idx = b - 32;
         return idx >= 0 && idx < table.Length ? table[idx] : 0;

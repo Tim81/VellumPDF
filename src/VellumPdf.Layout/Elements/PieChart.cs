@@ -31,10 +31,12 @@ public readonly record struct PieSlice
 
     /// <summary>The fill colour of the wedge.</summary>
     /// <remarks>
-    /// Stored as given. Channels are not checked or clamped. Each is written into the content
-    /// stream rounded to five decimals, and <c>NaN</c> or <c>Infinity</c> as that token; see
-    /// <see cref="ColorRgb"/>.
+    /// Stored as given. Channels are not clamped. A channel that is not finite is refused when the document is saved; see <see cref="ColorRgb"/>.
     /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// Raised from a save, when a channel is <c>NaN</c> or infinite. <see cref="ArgumentException.ParamName"/>
+    /// is <c>Slices</c>. A finite channel outside 0 to 1 is not refused (#509).
+    /// </exception>
     public ColorRgb Color { get; init; }
 
     /// <summary>
@@ -104,25 +106,35 @@ public sealed class PieChart
     /// <para><b>Attention</b>: a value of zero is accepted and contributes no angle. The slice
     /// stays in this list and is absent from the chart, and nothing reports that it was dropped.
     /// If a zero slice should be visible in your chart, give it a small positive value.</para>
-    /// <para>Finite values whose sum overflows to infinity are accepted, and every slice then has
-    /// no angle and the chart has no area: it is blank, or, with <see cref="StrokeColor"/> set,
-    /// every non-zero slice strokes the same radius, at <see cref="StartAngle"/> (#546). In a
-    /// tagged document the composed alternate text then gives every labelled slice 0%.</para>
-    /// <para>A null list makes the save throw.</para>
-    /// <para>Do not pass a null list, or values whose sum can overflow. A later major version will
-    /// refuse both.</para>
+    /// <para>Finite values whose sum overflows to infinity are refused by the same exception, with
+    /// <c>The sum of pie slice values must be finite; the slice values overflow when added.</c>
+    /// They used to be accepted: every slice then had no angle and the chart had no area, so it was
+    /// blank, or, with <see cref="StrokeColor"/> set, every non-zero slice stroked the same radius
+    /// (#546). A large sum that stays finite is unaffected, and each wedge still takes its share.</para>
+    /// <para>A null list is refused where it is set (#547). It used to be stored, and the save threw
+    /// <see cref="NullReferenceException"/> when it laid the chart out.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised while the chart is laid out, which happens inside
     /// <see cref="Document.Save(System.IO.Stream)"/>, when the list is empty, when a value is
-    /// negative or not finite, or when the values sum to zero or less. <c>ParamName</c> is this
-    /// property's name.
+    /// negative or not finite, when the values sum to zero or less, or when they sum to infinity.
+    /// <c>ParamName</c> is this property's name.
     /// </exception>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the list is <see langword="null"/>.
+    /// <exception cref="ArgumentNullException">
+    /// The list is <see langword="null"/>. <c>ParamName</c> is <c>value</c>, the name of the
+    /// <c>init</c> accessor's parameter.
     /// </exception>
-    public IReadOnlyList<PieSlice> Slices { get; init; } = [];
+    public IReadOnlyList<PieSlice> Slices
+    {
+        get => _slices;
+        init
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            _slices = value;
+        }
+    }
+
+    private IReadOnlyList<PieSlice> _slices = [];
 
     /// <summary>
     /// The chart diameter in points. Defaults to 200. When it exceeds the width available at
@@ -152,15 +164,18 @@ public sealed class PieChart
 
     /// <summary>Margins around the chart. Defaults to 6 points on all sides.</summary>
     /// <remarks>
-    /// <b>Attention</b>: no edge is checked. The top and bottom edges add to the space the chart
-    /// takes on the page. The left and right edges move the chart but do not shrink it: its
+    /// A non-finite edge is refused, whichever of <c>NaN</c>, positive infinity and negative infinity
+    /// it is: the save throws <see cref="ArgumentException"/> with the parameter name
+    /// <c>Margins</c>, as this chart's other refusals do (#519). Before that, the chart was laid out in
+    /// a box that could be <c>NaN</c>, and the save threw an exception about something else or wrote
+    /// <c>NaN</c> or <c>Infinity</c> into the content stream.
+    /// <para><b>Attention</b>: no other edge is checked. The top and bottom edges add to the space the
+    /// chart takes on the page. The left and right edges move the chart but do not shrink it: its
     /// diameter is limited by the whole content width, and its position is clamped back inside the
-    /// content box. A negative or non-finite edge can make the save throw an exception about
-    /// something else, write a <c>NaN</c> or <c>Infinity</c> token into the content stream, or move
-    /// the chart. A negative or non-finite top or bottom edge can also move the elements placed
-    /// after this one.
-    /// <para>Do not pass a negative or non-finite edge. A later major version will refuse
-    /// both.</para>
+    /// content box. A negative edge can make the save throw an exception about something else, or
+    /// move the chart. A negative top or bottom edge can also move the elements placed after
+    /// this one.</para>
+    /// <para>Do not pass a negative edge. A later major version will refuse it.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -169,10 +184,11 @@ public sealed class PieChart
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when an edge leaves a later element at a non-finite position, and the
-    /// save writes that position outside the content stream, as a heading's bookmark or the
-    /// rectangle of a link from <see cref="TextStyle.LinkUri"/>. Negative infinity can do this. The
-    /// message says PDF does not support NaN or Infinity as a real number.
+    /// from this property, when an edge is not finite. <see cref="ArgumentException.ParamName"/> is
+    /// <c>Margins</c>. It is also raised when finite edges whose arithmetic overflows leave a later
+    /// element at a non-finite position, and the save writes that position outside the content
+    /// stream; the message then says PDF does not support NaN or Infinity as a real number. That
+    /// second route was not measured again after #519.
     /// </exception>
     public EdgeInsets Margins { get; init; } = new EdgeInsets(6);
 
@@ -180,9 +196,11 @@ public sealed class PieChart
     /// Optional colour of the separator stroke drawn around each wedge.
     /// When <c>null</c> (the default) no stroke is drawn.
     /// </summary>
-    /// <remarks>Null means no stroke. A colour is stored as given. Channels are not checked or
-    /// clamped. Each is written into the content stream rounded to five decimals, and <c>NaN</c> or
-    /// <c>Infinity</c> as that token; see <see cref="ColorRgb"/>.</remarks>
+    /// <remarks>Null means no stroke. A colour is stored as given. Channels are not clamped. A channel that is not finite is refused when the document is saved; see <see cref="ColorRgb"/>.</remarks>
+    /// <exception cref="ArgumentException">
+    /// Raised from a save, when a channel is <c>NaN</c> or infinite. <see cref="ArgumentException.ParamName"/>
+    /// is <c>StrokeColor</c>. A finite channel outside 0 to 1 is not refused (#509).
+    /// </exception>
     public ColorRgb? StrokeColor { get; init; }
 
     /// <summary>Width of the separator stroke in points. Defaults to 0.5.</summary>
@@ -220,12 +238,13 @@ public sealed class PieChart
     /// <remarks>
     /// A non-finite angle is refused. Laying the chart out throws
     /// <see cref="ArgumentException"/> and names <c>StartAngle</c>.
-    /// <para>The unit is radians, not degrees. The angle is used as given, not reduced to 0 to 2π,
-    /// and each wedge's end is computed by adding its sweep to the angle before it. A large angle
-    /// draws wrong, because doubles that large are too far apart to hold a sweep exactly, and the
-    /// error grows with the angle: on a two-slice chart without a stroke colour, 1e15 already
-    /// leaves gaps or overlaps between the wedges, and at 1e17 every wedge collapses to a line with
-    /// no area (#546). Reduce the angle to 0 to 2π yourself.</para>
+    /// <para>The unit is radians, not degrees. An angle of a full turn or more is reduced to the
+    /// equivalent angle before any wedge is drawn, so you do not have to normalise one yourself
+    /// (#546). Before that, each wedge's end was computed by adding its sweep to the angle, and
+    /// doubles near 1e16 are too far apart to hold a sweep: 1e16 overlapped the wedges and 1e17
+    /// collapsed every wedge to a line with no area. An angle already within a turn is used exactly
+    /// as given, so ordinary documents write the same bytes as before. The reduction takes the
+    /// remainder, so a negative angle stays negative.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised while the chart is laid out, which happens inside

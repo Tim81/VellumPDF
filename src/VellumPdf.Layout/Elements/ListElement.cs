@@ -45,12 +45,12 @@ public enum ListStyle
 /// <remarks>
 /// Nesting is one level, via <see cref="ListItem.Children"/>. Marker formatting of zero and
 /// negative indices is on <see cref="FormatMarker"/>.
-/// <para><b>Attention</b>: the last item a list draws on a page can lose a line, while the space
-/// for that line stays reserved and nothing reports it. The draw pass lays each item out again in
-/// the height between the item and the bottom of the list's area. For the last item on a page that
-/// height is exactly what the item takes there, and rounding can leave it just short. Whether a
-/// line is lost depends on the font size, the line count and where the item falls on the page: a
-/// single two-line item at 12pt at the top of an A4 page draws only its first line.</para>
+/// <para>The last item a list draws on a page keeps all of its lines (#556). It used to lose one,
+/// while the space for that line stayed reserved and nothing reported it: the draw pass laid each
+/// item out again in a height it worked out for itself, which for the last item on a page could
+/// come out one rounding step short of the height the layout pass had offered, and a paragraph's
+/// line count is a floor of the height it is given. The draw pass now offers each item the height
+/// the layout pass did.</para>
 /// <para><b>Attention</b>: an item whose text holds only white space is laid out at the leading of
 /// <see cref="TextStyle.Default"/>, as on <see cref="Paragraph"/>, while its marker is laid out in
 /// the item's own style. When the marker's line does not fit where the item lands, the item is
@@ -69,13 +69,9 @@ public sealed class ListElement
 
     /// <summary>The items contained in this list, in render order.</summary>
     /// <remarks>
-    /// Empty is allowed. A null item is kept, and the save throws when it lays the list out;
-    /// see <see cref="Add(ListItem)"/>.
+    /// Empty is allowed. No item is null: <see cref="Add(ListItem)"/> and the constructor refuse a
+    /// null (#523).
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from reading this property, when an item is <see langword="null"/>.
-    /// </exception>
     public IReadOnlyList<ListItem> Items => _items;
 
     /// <summary>Points of indent for each list level.</summary>
@@ -104,58 +100,63 @@ public sealed class ListElement
     /// follows from the rules above, the override included; the measured figures are on #476, not
     /// here, because they depend on the level, on which branch the override takes and on
     /// <see cref="TextStyle.FontSize"/>. A later major version will reject a negative value.</para>
-    /// <para>Of the non-finite values only positive infinity is refused with
-    /// <see cref="InvalidOperationException"/>, and only with nested children. <c>NaN</c> and
-    /// negative infinity are accepted, and each can reach the text matrix as a token that is not a
-    /// PDF number, leaving a reader no coordinate to place the item at. For unlinked text neither
-    /// throws nor is reported (#532).</para>
-    /// <para>When <c>NaN</c> or negative infinity puts linked item text, or a linked nested
-    /// marker, at a non-finite position, the save throws <see cref="ArgumentException"/> for the
-    /// link's rectangle; see <see cref="TextStyle.LinkUri"/>. A finite negative value can do the
-    /// same when the gutter taken from it, added to the list's left edge, overflows, as a nested
-    /// list with an indent of -1e308 and a left margin of -1e308 does.</para>
+    /// <para><c>NaN</c> and negative infinity are refused, on a flat list and on a nested one, with
+    /// <see cref="InvalidOperationException"/> naming the list and the value: <c>A list has an indent
+    /// of NaN, which cannot be laid out. An indent must be a finite number.</c> They used to be
+    /// accepted, and each could reach an item's text matrix as a token that is not a PDF number: a
+    /// nested child's marker and a flat item whose longest word will not fit beside its marker take
+    /// this value directly, and <c>NaN</c> reached the operand on every path. Positive infinity is
+    /// <b>not</b> refused here, because it writes no invalid token. A nested list throws at the
+    /// area width as described above, and a flat list discards the item text (#476). A finite
+    /// negative value is not refused either (#532).</para>
+    /// <para>A finite negative value can put linked item text, or a linked nested marker, at a
+    /// non-finite position when the gutter taken from it, added to the list's left edge, overflows,
+    /// as a nested list with an indent of -1e308 and a left margin of -1e308 does. The save then
+    /// throws <see cref="ArgumentException"/> for the link's rectangle; see
+    /// <see cref="TextStyle.LinkUri"/>.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from a save rather than from this property, when linked item text, or a linked nested
-    /// marker, lands at a non-finite position. This value at <c>NaN</c> or negative infinity can
-    /// cause that, and so can a finite negative value when the gutter taken from it, added to the
-    /// list's left edge, overflows. The message says PDF does not support NaN or Infinity as a real
-    /// number.
+    /// marker, lands at a non-finite position. A finite negative value can cause that when the
+    /// gutter taken from it, added to the list's left edge, overflows. The message says PDF does not
+    /// support NaN or Infinity as a real number.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Raised from a save rather than from this property, when a list with nested children has an
-    /// indent that reaches the list's own area width, which is the page's content width narrowed by
-    /// the left and right edges of <see cref="Margins"/>. Positive infinity is included; <c>NaN</c>
-    /// and negative infinity are not, and neither is a flat list at any indent. The message reports
-    /// an element too tall to fit and names neither this property nor the list.
+    /// Raised from a save rather than from this property, when the value is <c>NaN</c> or negative
+    /// infinity, on any list. It is also raised when a list with nested children has an indent that
+    /// reaches the list's own area width, which is the page's content width narrowed by the left and
+    /// right edges of <see cref="Margins"/>, positive infinity included; a flat list at any such
+    /// indent is not refused. The first message names the list and the value. The second reports an
+    /// element too tall to fit and names neither this property nor the list.
     /// </exception>
     public double Indent { get; init; } = 20;
 
     /// <summary>Outer margins applied around the whole list block.</summary>
     /// <remarks>
-    /// <b>Attention</b>: no edge is checked. Each edge is taken off the area this element is given,
-    /// and the element is laid out in whatever box is left, even when that box is empty, inverted
-    /// or <c>NaN</c>. A negative or non-finite edge, or edges wider than the area, can therefore
-    /// make the save throw an exception about something else, write a <c>NaN</c> or <c>Infinity</c>
-    /// token into the content stream, re-wrap, move or mirror the content, or leave the element off
-    /// the page. The bottom edge only limits that box and adds no space before the next element. A
-    /// non-finite bottom edge can still disturb the elements placed after this one, and a negative
-    /// or non-finite top edge can move them.
-    /// <para>Do not pass a negative or non-finite edge. A later major version will refuse
-    /// both.</para>
+    /// A non-finite edge is refused, whichever of <c>NaN</c>, positive infinity and negative infinity
+    /// it is: the save throws <see cref="InvalidOperationException"/> before the element is laid out,
+    /// with <c>A list has a non-finite inset. Every inset must be a finite number.</c> (#519).
+    /// Before that, the element was laid out in a box that could be <c>NaN</c>, and the save threw an
+    /// exception about something else or wrote <c>NaN</c> or <c>Infinity</c> into the content stream.
+    /// <para><b>Attention</b>: no other edge is checked. Each finite edge is taken off the area this
+    /// element is given, and the element is laid out in whatever box is left, even when that box is
+    /// empty or inverted. A negative edge, or edges wider than the area, can therefore make the save throw an exception about something else, re-wrap, move or mirror the content, or leave the element off the page. The bottom edge only limits that box and adds no space before the next element. A negative top edge can move the elements placed after this one.</para>
+    /// <para>Do not pass a negative edge. A later major version will refuse it.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the box the edges leave is too small for the element. The message
-    /// says the element is too tall to fit on a page and does not name the margins.
+    /// from this property, when an edge is not finite, in which case the message names the element
+    /// and does not name the edge, or when the box the edges leave is too small for the element, in
+    /// which case the message says the element is too tall to fit on a page and does not name the
+    /// margins.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when an edge leaves this element or a later one at a non-finite
-    /// position, and the save writes that position outside the content stream, as a heading's
-    /// bookmark or the rectangle of a link from <see cref="TextStyle.LinkUri"/>. Negative infinity
-    /// can do this, and so can <c>NaN</c> on the left edge of linked text. The message says PDF
-    /// does not support NaN or Infinity as a real number.
+    /// from this property, when finite edges whose arithmetic overflows leave a later element at a
+    /// non-finite position, and the save writes that position outside the content stream, as a
+    /// heading's bookmark or the rectangle of a link from <see cref="TextStyle.LinkUri"/>. The
+    /// message says PDF does not support NaN or Infinity as a real number. That route was not
+    /// measured again after #519.
     /// </exception>
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 
@@ -185,44 +186,50 @@ public sealed class ListElement
 
     /// <summary>Creates a list with the given marker style and optional initial items.</summary>
     /// <remarks>
-    /// A null <paramref name="items"/> is an empty list. A null entry inside it is kept, and the
-    /// save throws when it lays the list out.
-    /// <para>Do not put null in <paramref name="items"/>. A later major version will throw
-    /// <see cref="ArgumentNullException"/> from this call.</para>
+    /// A null <paramref name="items"/> is an empty list. A null entry inside it is refused (#547);
+    /// it used to be kept, and the save threw <see cref="NullReferenceException"/> when it laid the
+    /// list out. Entries before the null one are not left behind, because the list is not returned.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when <paramref name="items"/> contains <see langword="null"/>.
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="items"/> contains <see langword="null"/>. <c>ParamName</c> is <c>items</c>.
     /// </exception>
     public ListElement(ListStyle style = ListStyle.Unordered, IEnumerable<ListItem>? items = null)
     {
         Style = style;
         if (items is not null)
-            _items.AddRange(items);
+        {
+            foreach (var item in items)
+            {
+                if (item is null)
+                    throw new ArgumentNullException(nameof(items), "An item in the sequence is null.");
+                _items.Add(item);
+            }
+        }
     }
 
     /// <summary>Appends an item to the list and returns this instance for chaining.</summary>
     /// <remarks>
-    /// A null <paramref name="item"/> is stored, and the save throws when it lays out the list.
-    /// <para>Do not pass null. A later major version will throw
-    /// <see cref="ArgumentNullException"/> from this call.</para>
+    /// A null <paramref name="item"/> is refused here (#523); it used to be stored, and the save
+    /// threw <see cref="NullReferenceException"/> when it laid out the list.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when <paramref name="item"/> is <see langword="null"/>.
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="item"/> is <see langword="null"/>.
     /// </exception>
-    public ListElement Add(ListItem item) { _items.Add(item); return this; }
+    public ListElement Add(ListItem item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        _items.Add(item);
+        return this;
+    }
 
     /// <summary>Appends a text item with an optional text style and returns this instance for chaining.</summary>
     /// <remarks>
     /// Creates the item with <see cref="ListItem(string, TextStyle?)"/> and adds it. A null
-    /// <paramref name="text"/> is stored, and the save throws when it lays out the list.
-    /// <para>Do not pass null text. A later major version will throw
-    /// <see cref="ArgumentNullException"/> from this call.</para>
+    /// <paramref name="text"/> is refused by that constructor (#547); it used to be stored, and the
+    /// save threw <see cref="NullReferenceException"/> when it laid out the list.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when <paramref name="text"/> is <see langword="null"/>.
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="text"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not

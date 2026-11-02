@@ -22,15 +22,17 @@ public sealed class PieChartRenderer : IRenderer
 
     /// <summary>Creates a renderer for the given pie chart.</summary>
     /// <remarks>
-    /// A null <paramref name="chart"/> is stored, and <see cref="Layout"/> throws.
-    /// <para>Do not pass null. A later major version will throw <see cref="ArgumentNullException"/>
-    /// from this constructor.</para>
+    /// A null <paramref name="chart"/> is refused here (#547); it used to be stored, and
+    /// <see cref="Layout"/> threw <see cref="NullReferenceException"/>.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised later from <see cref="Layout"/>, not from this constructor, when
+    /// <exception cref="ArgumentNullException">
     /// <paramref name="chart"/> is <see langword="null"/>.
     /// </exception>
-    public PieChartRenderer(PieChart chart) => _chart = chart;
+    public PieChartRenderer(PieChart chart)
+    {
+        ArgumentNullException.ThrowIfNull(chart);
+        _chart = chart;
+    }
 
     /// <summary>Validates the slices, reserves the chart diameter plus margins, and reports the occupied region.</summary>
     /// <remarks>
@@ -44,9 +46,6 @@ public sealed class PieChartRenderer : IRenderer
     /// <see cref="PieChart.Slices"/>, <see cref="PieChart.Diameter"/>,
     /// <see cref="PieChart.StartAngle"/> or <see cref="PieChart.StrokeWidth"/> is refused;
     /// <c>ParamName</c> names the property.
-    /// </exception>
-    /// <exception cref="NullReferenceException">
-    /// The chart, or its <see cref="PieChart.Slices"/>, is <see langword="null"/>.
     /// </exception>
     public LayoutResult Layout(LayoutContext ctx)
     {
@@ -65,8 +64,20 @@ public sealed class PieChartRenderer : IRenderer
                     FormattableString.Invariant(
                 $"Pie slice values must be finite and non-negative (was {slice.Value})."),
                     nameof(PieChart.Slices));
+            if (!LayoutValidation.IsFinite(slice.Color))
+                throw new ArgumentException(
+                    FormattableString.Invariant(
+                $"Pie slice colours must have finite channels (was {slice.Color.R}, {slice.Color.G}, {slice.Color.B})."),
+                    nameof(PieChart.Slices));
             total += slice.Value;
         }
+
+        // Each slice is finite, but two of 1e308 sum to +Infinity, and every wedge's sweep is then
+        // value / Infinity = 0: the chart saved with no curves at all (#546).
+        if (!double.IsFinite(total))
+            throw new ArgumentException(
+                "The sum of pie slice values must be finite; the slice values overflow when added.",
+                nameof(PieChart.Slices));
 
         if (total <= 0)
             throw new ArgumentException(
@@ -82,6 +93,14 @@ public sealed class PieChartRenderer : IRenderer
                 FormattableString.Invariant(
                 $"Pie chart start angle must be a finite number (was {_chart.StartAngle})."),
                 nameof(PieChart.StartAngle));
+        if (!LayoutValidation.IsFinite(_chart.Margins))
+            throw new ArgumentException(
+                "Pie chart margins must have finite insets.", nameof(PieChart.Margins));
+        if (_chart.StrokeColor is { } strokeColor && !LayoutValidation.IsFinite(strokeColor))
+            throw new ArgumentException(
+                FormattableString.Invariant(
+                $"Pie chart stroke colour must have finite channels (was {strokeColor.R}, {strokeColor.G}, {strokeColor.B})."),
+                nameof(PieChart.StrokeColor));
         if (!double.IsFinite(_chart.StrokeWidth) || _chart.StrokeWidth < 0)
             throw new ArgumentException(
                 FormattableString.Invariant(
@@ -209,7 +228,12 @@ public sealed class PieChartRenderer : IRenderer
         }
 
         var direction = _chart.Clockwise ? -1.0 : 1.0;
-        var angle = _chart.StartAngle;
+        // Reduced to a full turn before any sweep is added. Doubles near 1e16 are further apart than
+        // a wedge's sweep, so adding one to such an angle loses it: 1e16 overlapped the wedges and
+        // 1e17 collapsed them to nothing (#546). The remainder is exact, and an angle already
+        // within a turn is unchanged, so the default and every ordinary start angle write the same
+        // bytes as before.
+        var angle = _chart.StartAngle % (2 * Math.PI);
 
         // A lone drawable slice spans the whole circle; a 360° wedge has coincident radial
         // edges that show as a seam when stroked, so draw a seamless circle instead.

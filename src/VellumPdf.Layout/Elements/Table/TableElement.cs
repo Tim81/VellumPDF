@@ -57,7 +57,7 @@ public sealed class TableElement
 
     /// <summary>Width of the table border lines, in points.</summary>
     /// <remarks>
-    /// A non-finite width is refused. <see cref="Document.Save(System.IO.Stream)"/> throws
+    /// A non-finite width is refused, and so is a negative one. <see cref="Document.Save(System.IO.Stream)"/> throws
     /// <see cref="InvalidOperationException"/> and names the table.
     /// <para><b>Attention</b>: zero does <b>not</b> hide the borders. It asks the device for its
     /// thinnest line, so the grid is still drawn. Each border stays one device pixel while
@@ -66,48 +66,54 @@ public sealed class TableElement
     /// <para>There is at present <b>no</b> way to draw a table without a grid. Every cell is
     /// stroked unconditionally and <see cref="BorderColor"/> is not nullable. If you need a
     /// gridless table, the nearest you can get is a border colour matching the page.</para>
-    /// <para>A negative width is accepted and written as a negative line width, which ISO 32000-2,
-    /// 8.4.3.2 does not allow; see <see cref="LineSeparator.LineWidth"/>.</para>
-    /// <para>Do not pass a negative width. Whether a negative line width is refused, and in which
-    /// release, is being decided in #482.</para>
+    /// <para>A negative width is refused as well (#557). ISO 32000-2, 8.4.3.2 says a line width
+    /// "shall be a non-negative number", and a negative one was written as <c>-3 w</c>. The save
+    /// throws <see cref="InvalidOperationException"/>, naming the table, the width and the clause.
+    /// Zero stays accepted; see <see cref="LineSeparator.LineWidth"/> for why it is a caller
+    /// warning and not a refusal.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this
-    /// property, when the width is not finite. The message names the table.
+    /// property, when the width is not finite or is negative. The message names the table.
     /// </exception>
     public double BorderWidth { get; init; } = 0.5;
 
     /// <summary>Color of the table border lines.</summary>
     /// <remarks>
-    /// Stored as given. Channels are not checked or clamped. Each is written into the content
-    /// stream rounded to five decimals, and <c>NaN</c> or <c>Infinity</c> as that token; see
-    /// <see cref="ColorRgb"/>.
+    /// Stored as given. Channels are not clamped. A channel that is not finite is refused when the document is saved; see <see cref="ColorRgb"/>.
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from a save, when a channel is <c>NaN</c> or infinite. The message names the table and the
+    /// channel. A finite channel outside 0 to 1 is not refused (#509).
+    /// </exception>
     public ColorRgb BorderColor { get; init; } = ColorRgb.Black;
 
     /// <summary>Outer margins applied around the whole table.</summary>
     /// <remarks>
-    /// <b>Attention</b>: no edge is checked. Each edge is taken off the area this element is given,
-    /// and the element is laid out in whatever box is left, even when that box is empty, inverted
-    /// or <c>NaN</c>. A negative or non-finite edge, or edges wider than the area, can therefore
-    /// make the save throw an exception about something else, write a <c>NaN</c> or <c>Infinity</c>
-    /// token into the content stream, re-wrap, move or mirror the content, or leave the element off
-    /// the page. The bottom edge only limits that box: it adds no space before the next element. A
-    /// negative or non-finite top edge can also move the elements placed after this one.
-    /// <para>Do not pass a negative or non-finite edge. A later major version will refuse
-    /// both.</para>
+    /// A non-finite edge is refused, whichever of <c>NaN</c>, positive infinity and negative infinity
+    /// it is: the save throws <see cref="InvalidOperationException"/> before the element is laid out,
+    /// with <c>A table has a non-finite inset. Every inset must be a finite number.</c> (#519).
+    /// Before that, the element was laid out in a box that could be <c>NaN</c>, and the save threw an
+    /// exception about something else or wrote <c>NaN</c> or <c>Infinity</c> into the content stream.
+    /// <para><b>Attention</b>: no other edge is checked. Each finite edge is taken off the area this
+    /// element is given, and the element is laid out in whatever box is left, even when that box is
+    /// empty or inverted. A negative edge, or edges wider than the area, can therefore make the save throw an exception about something else, re-wrap, move or mirror the content, or leave the element off the page. The bottom edge only limits that box: it adds no space before the next element. A negative top edge can also move the elements placed after this one.</para>
+    /// <para>Do not pass a negative edge. A later major version will refuse it.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the box the edges leave is too small for the element. The message
-    /// says the element is too tall to fit on a page and does not name the margins.
+    /// from this property, when an edge is not finite, in which case the message names the element
+    /// and does not name the edge, or when the box the edges leave is too small for the element, in
+    /// which case the message says the element is too tall to fit on a page and does not name the
+    /// margins.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when an edge leaves a later element at a non-finite position, and the
-    /// save writes that position outside the content stream, as a heading's bookmark or the
-    /// rectangle of a link from <see cref="TextStyle.LinkUri"/>. Negative infinity can do this. The
-    /// message says PDF does not support NaN or Infinity as a real number.
+    /// from this property, when finite edges whose arithmetic overflows leave a later element at a
+    /// non-finite position, and the save writes that position outside the content stream, as a
+    /// heading's bookmark or the rectangle of a link from <see cref="TextStyle.LinkUri"/>. The
+    /// message says PDF does not support NaN or Infinity as a real number. That route was not
+    /// measured again after #519.
     /// </exception>
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 
@@ -132,21 +138,35 @@ public sealed class TableElement
     /// explicit widths exceed the width the auto columns leave them, they are all scaled by one
     /// ratio to that width, even when they fit the available width on their own. With no auto
     /// column, that width is the whole available width. So one very large entry leaves the other
-    /// explicit columns near zero, and entries whose sum overflows to infinity are all scaled to
-    /// zero (#546). When the auto columns take all of the available width or more, every column,
+    /// explicit columns near zero: <c>1e200, 60, 70</c> resolves to about 451, 0 and 0 on an A4
+    /// page with the default margins, and nothing reports it. That is a contract tightening for the next major (#484), not
+    /// a refusal in a patch, because the table still renders. Entries whose sum overflows to
+    /// infinity are different: they would all be scaled to zero and draw an empty table, so the
+    /// save refuses them with <see cref="InvalidOperationException"/>, saying the widths add up to
+    /// positive infinity (#546). When the auto columns take all of the available width or more, every column,
     /// auto ones included, is scaled by one ratio instead. A positive entry under 5e-6 is kept and
     /// written as width 0. None of this is reported.</para>
     /// <para>Do not rely on scaling to fit a table. Pass widths that fit the space you give
     /// it.</para>
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when the explicit entries add up to infinity. The message says so and
+    /// names no column.
+    /// </exception>
     public IReadOnlyList<double> ColWidths => _colWidths;
 
     /// <summary>Sets the column widths (0 = auto) and returns this instance for chaining.</summary>
     /// <remarks>
     /// Replaces every width. Called with no arguments it clears them, so every column is auto. A
     /// null array is refused only after the existing widths are cleared, so they are lost. The
-    /// entries follow the rules on <see cref="ColWidths"/>; none is refused here.
+    /// entries follow the rules on <see cref="ColWidths"/>; none is refused here, and a set whose
+    /// sum overflows to infinity is refused at the save.
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this method, when the entries add up to infinity; see <see cref="ColWidths"/>.
+    /// </exception>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="widths"/> is <see langword="null"/>. <c>ParamName</c> is <c>collection</c>,
     /// not <c>widths</c>.

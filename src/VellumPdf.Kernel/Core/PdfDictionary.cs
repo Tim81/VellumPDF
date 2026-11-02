@@ -32,7 +32,15 @@ public sealed class PdfDictionary : PdfObject
     private Dictionary<PdfName, int>? _index;
 
     /// <summary>Sets <paramref name="key"/> to <paramref name="value"/>, replacing any existing entry, and returns this dictionary.</summary>
-    /// <exception cref="ArgumentNullException"><paramref name="key"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// A null <paramref name="value"/> is refused, as a null <paramref name="key"/> always was (#523).
+    /// It used to be stored, and <c>WriteTo</c> threw <see cref="NullReferenceException"/> later,
+    /// far from this call. A dictionary entry whose value is absent is expressed by not setting the
+    /// key, or by <see cref="PdfNull"/> where a PDF null is meant.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="key"/> or <paramref name="value"/> is <see langword="null"/>.
+    /// </exception>
     public PdfDictionary Set(PdfName key, PdfObject value)
     {
         // Without this, a null key would behave differently depending on which side of
@@ -43,6 +51,10 @@ public sealed class PdfDictionary : PdfObject
         // property that comment above promises and DictionaryAtExactlyTheThreshold_isStillCorrect
         // pins.
         ArgumentNullException.ThrowIfNull(key);
+
+        // The same failure mode, for the value: a null value was stored and failed later, in
+        // WriteTo (#523).
+        ArgumentNullException.ThrowIfNull(value);
 
         if (_index is not null)
         {
@@ -151,16 +163,34 @@ public sealed class PdfDictionary : PdfObject
     }
 
     /// <summary>Writes the serialised PDF representation to <paramref name="writer"/>.</summary>
+    /// <remarks>
+    /// A dictionary that holds itself, directly or through other arrays and dictionaries, is refused
+    /// (#521). Writing it would recurse until the stack overflowed, which cannot be caught. A value
+    /// that is an indirect reference is written as a reference and not followed, so a cycle through
+    /// indirect objects, which PDF allows, is not affected. The same object placed in two entries,
+    /// side by side, is not a cycle.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// This dictionary contains itself.
+    /// </exception>
     public override void WriteTo(PdfWriter writer)
     {
-        writer.WriteAscii("<<"u8);
-        foreach (var kv in _entries)
+        writer.EnterContainer(this);
+        try
         {
-            writer.WriteByte((byte)'\n');
-            kv.Key.WriteTo(writer);
-            writer.WriteByte((byte)' ');
-            kv.Value.WriteTo(writer);
+            writer.WriteAscii("<<"u8);
+            foreach (var kv in _entries)
+            {
+                writer.WriteByte((byte)'\n');
+                kv.Key.WriteTo(writer);
+                writer.WriteByte((byte)' ');
+                kv.Value.WriteTo(writer);
+            }
+            writer.WriteAscii("\n>>"u8);
         }
-        writer.WriteAscii("\n>>"u8);
+        finally
+        {
+            writer.LeaveContainer(this);
+        }
     }
 }

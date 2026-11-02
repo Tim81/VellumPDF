@@ -44,17 +44,19 @@ public enum HorizontalAlignment
     /// stretched. White space is drawn as described on
     /// <see cref="VellumPdf.Layout.Elements.Paragraph"/>. An image, a table cell, a pie chart, a
     /// running band and a barcode draw this value as <see cref="Left"/>.
-    /// <para><b>Attention</b>: on a line whose text is all in one
-    /// <see cref="VellumPdf.Layout.Core.TextStyle"/> instance and in the standard-14 text faces
-    /// (every standard-14 font but Symbol and ZapfDingbats), the spaces are stretched by only half
-    /// the space left on the line, so the line stops short of the right edge (#548). On a line in
-    /// those faces holding text in more than one instance, each instance's text is placed at its
-    /// unstretched width while its spaces are stretched. That text can then overprint the text
-    /// after it, even when the two styles hold the same values.
-    /// <see cref="VellumPdf.Fonts.Standard14.Symbol"/> and
+    /// <para>In the standard-14 text faces (every standard-14 font but Symbol and ZapfDingbats) the
+    /// space left on the line is divided evenly over the line's space characters, and a line ends at
+    /// the right edge of its box, including a line that holds text in more than one
+    /// <see cref="VellumPdf.Layout.Core.TextStyle"/> instance, where each instance starts at the
+    /// width the one before it is drawn to (#548, #555). Before that, the divisor counted every
+    /// space twice, so the line stopped short of the right edge, and each instance was placed at its
+    /// unstretched width, so it could overprint the text after it. Only the space character
+    /// (U+0020) is stretched; a no-break space and other white space are not.</para>
+    /// <para><b>Attention</b>: <see cref="VellumPdf.Fonts.Standard14.Symbol"/> and
     /// <see cref="VellumPdf.Fonts.Standard14.ZapfDingbats"/> measure every glyph as zero (#470), so
-    /// a justified line in either is stretched by half the whole line width and can run past the
-    /// right edge.</para>
+    /// a justified line in either is stretched as though it held no text, and runs past the right
+    /// edge by the width of the text it does hold. A line that holds text in either keeps the space
+    /// divisor it had before #548, which counts every space twice, so it is no worse than it was.</para>
     /// </remarks>
     Justify,
 }

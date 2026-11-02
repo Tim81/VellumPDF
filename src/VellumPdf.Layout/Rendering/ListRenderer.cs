@@ -1,6 +1,7 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using VellumPdf.Fonts;
 using VellumPdf.Layout.Core;
 using VellumPdf.Layout.Elements;
 
@@ -32,6 +33,14 @@ public sealed class ListRenderer : IRenderer
 
     private LayoutBox _occupied;
 
+    // The height Layout offered each item, indexed by item. Draw offers the same height, because
+    // it lays the item out a second time and a paragraph's line count is a floor of the height it is
+    // given: the height Draw used to compute for itself, Bottom - y, can come out one rounding step
+    // short of the remaining height Layout tracked, so the second pass wrapped to one line fewer
+    // than the first, the line was never drawn, and the space Layout reserved for it stayed empty
+    // (#556). Null until Layout has run on this renderer or the one it was split from.
+    private double[]? _offered;
+
     /// <summary>Creates a renderer for the list, optionally starting at <paramref name="startItem"/> for pagination.</summary>
     /// <remarks>
     /// <paramref name="startItem"/> counts each child as an entry after its parent, so a start of 1
@@ -42,20 +51,22 @@ public sealed class ListRenderer : IRenderer
     /// <see cref="LayoutResult.Full"/> occupying no height. A negative start on an empty list also
     /// returns <see cref="LayoutResult.Full"/> occupying no height, and <see cref="Draw"/> then
     /// throws <see cref="ArgumentOutOfRangeException"/>.
-    /// <para>Do not pass null or a start outside the list's entries, which count each child after
-    /// its parent. A later major version will throw from this constructor.</para>
+    /// A null <paramref name="list"/> is refused here (#547); it used to be stored, and
+    /// <see cref="Layout"/> threw <see cref="NullReferenceException"/>, even for an empty area.
+    /// <para>Do not pass a start outside the list's entries, which count each child after its
+    /// parent. A later major version will throw from this constructor.</para>
     /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="list"/> is <see langword="null"/>.
+    /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// Raised from <see cref="Layout"/>, when <paramref name="startItem"/> is negative, the
     /// list has items, and the area is not empty. On an empty list it is raised from
     /// <see cref="Draw"/> instead.
     /// </exception>
-    /// <exception cref="NullReferenceException">
-    /// Raised later from <see cref="Layout"/>, not from this constructor, when
-    /// <paramref name="list"/> is <see langword="null"/>, even for an empty area.
-    /// </exception>
     public ListRenderer(ListElement list, int startItem = 0)
     {
+        ArgumentNullException.ThrowIfNull(list);
         _list = list;
         _startItem = startItem;
     }
@@ -78,13 +89,13 @@ public sealed class ListRenderer : IRenderer
     /// only from a renderer you construct with a negative start and add yourself.
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// The start item is negative, the list has items, and the area is not empty.
+    /// The start item is negative, the list has items, and the area is not empty. The parameter
+    /// name is <c>startItem</c>, the name of the constructor parameter.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// An item's <see cref="TextStyle.FontSize"/> is refused; see that member.
-    /// </exception>
-    /// <exception cref="NullReferenceException">
-    /// The list, an item, or an item's text is <see langword="null"/>.
+    /// An item's <see cref="TextStyle.FontSize"/> or <see cref="TextStyle.Color"/> is refused, or the
+    /// list's <see cref="ListElement.Indent"/> is <c>NaN</c> or negative infinity, or an edge of its
+    /// <see cref="ListElement.Margins"/> is not finite; see those members.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Text this method measures in an embedded font holds an unpaired surrogate; see
@@ -92,6 +103,11 @@ public sealed class ListRenderer : IRenderer
     /// </exception>
     public LayoutResult Layout(LayoutContext context)
     {
+        // Before the area is computed: NaN reaches an item's text matrix on every path, and negative
+        // infinity on a nested child or a word too wide to sit beside its marker (#532).
+        LayoutValidation.ValidateListIndent(_list.Indent, "A list");
+        LayoutValidation.ValidateInsets(_list.Margins, "A list");
+
         var area = context.Area.Deflate(_list.Margins);
         if (area.IsEmpty) return LayoutResult.Nothing();
 
@@ -104,12 +120,19 @@ public sealed class ListRenderer : IRenderer
             return LayoutResult.Full(_occupied);
         }
 
+        // Before anything indexes by the start: the per-item heights are an array, which would throw
+        // IndexOutOfRangeException for a negative start where this documents
+        // ArgumentOutOfRangeException (#556).
+        ArgumentOutOfRangeException.ThrowIfNegative(_startItem, "startItem");
+
         // Walk items and accumulate height, handling overflow.
         var y = area.Y;
         var remaining = area.Height;
+        var offered = new double[_items.Count];
 
         for (var i = _startItem; i < _items.Count; i++)
         {
+            offered[i] = remaining;
             var itemArea = new LayoutBox(area.X, y, area.Width, remaining);
             var itemCtx = context.WithArea(itemArea);
 
@@ -133,12 +156,14 @@ public sealed class ListRenderer : IRenderer
                 // Commit what fit so far
                 _endItem = i;
                 _occupied = area.WithHeight(area.Height - remaining);
+                _offered = offered;
                 var overflow = new ListRenderer(_list, i) { _items = _items };
                 var split = new ListRenderer(_list, _startItem, _partialContentOverrideAtStart)
                 {
                     _items = _items,
                     _endItem = i,
                     _occupied = _occupied,
+                    _offered = offered,
                 };
                 return LayoutResult.Partial(_occupied, split, overflow);
             }
@@ -155,6 +180,7 @@ public sealed class ListRenderer : IRenderer
                 _endItem = i + 1;
                 var usedH = area.Height - remaining + itemH;
                 _occupied = area.WithHeight(usedH);
+                _offered = offered;
 
                 // The overflow for item i carries the content's OverflowRenderer.
                 var contentOverflow = (ParagraphRenderer)contentResult.OverflowRenderer!;
@@ -165,6 +191,7 @@ public sealed class ListRenderer : IRenderer
                     _items = _items,
                     _endItem = i + 1,
                     _occupied = _occupied,
+                    _offered = offered,
                 };
                 return LayoutResult.Partial(_occupied, split, overflowList);
             }
@@ -175,6 +202,7 @@ public sealed class ListRenderer : IRenderer
 
         _endItem = _items.Count;
         _occupied = area.WithHeight(area.Height - remaining);
+        _offered = offered;
         return LayoutResult.Full(_occupied);
     }
 
@@ -211,8 +239,10 @@ public sealed class ListRenderer : IRenderer
             var isContinuation = i == _startItem && _partialContentOverrideAtStart is not null;
             var content = isContinuation ? _partialContentOverrideAtStart! : baseContent;
 
-            // Re-layout to get the occupied heights at the current y position
-            var itemArea = new LayoutBox(area.X, y, area.Width, area.Bottom - y);
+            // Re-layout to get the occupied heights at the current y position, offering the height
+            // Layout offered. Bottom - y is the same height up to a rounding step, and one step is
+            // enough to drop a line (#556); the fallback is for a renderer Layout never ran on.
+            var itemArea = new LayoutBox(area.X, y, area.Width, _offered is { } o ? o[i] : area.Bottom - y);
             var itemCtx = new LayoutContext(itemArea);
 
             var markerH = isContinuation ? 0 : marker.Layout(itemCtx).OccupiedArea?.Height ?? 0;
@@ -277,26 +307,25 @@ public sealed class ListRenderer : IRenderer
     /// </summary>
     private static double WidestWord(TextStyle style, string text)
     {
-        // A non-breaking space is not a separator here, because it is not one to the wrap this
-        // bound exists to predict: ParagraphRenderer.NormaliseWhitespace excludes U+00A0 from the
-        // whitespace it collapses, with a comment calling it a word character, so a run joined by
-        // one is a single token to WordWrap. Splitting on it, which String.Split does through
+        // A no-break space is not a separator here, because it is not one to the wrap this bound
+        // exists to predict: ParagraphRenderer.NormaliseWhitespace excludes U+00A0, U+202F and
+        // U+2007 from the whitespace it collapses (#562), so a run joined by one is a single token
+        // to WordWrap. Both read the one definition, NoBreakSpaces.IsNoBreakSpace. Splitting on it, which String.Split does through
         // char.IsWhiteSpace, understates the widest token and lets the widened gutter hard-break a
         // word the caller's own indent would not have. Measured at Helvetica 10pt before this was
         // fixed: "AAAA<NBSP>AAAA" measures 56.14 whole and the bound saw 26.68, so item 38 of a
         // roman list on an 80pt page was split into "AAAA<NBSP>AAA" and "A" while the 26 items
         // whose gutter stayed at the indent, and had less room, stayed intact.
-        // Written as an escape rather than as the literal ParagraphRenderer uses, because an
-        // invisible literal inverts this predicate if any tool ever normalises it: a plain
-        // space would then be treated as non-breaking and nothing would separate a word.
-        const char nonBreakingSpace = '\u00A0';
-
+        // The set lives in code points written as escapes, in NoBreakSpaces. This method and
+        // NormaliseWhitespace used to keep a literal U+00A0 each, and an invisible literal inverts
+        // the predicate if any tool ever normalises it: a plain space would then be treated as
+        // non-breaking and nothing would separate a word.
         var widest = 0.0;
         var start = -1;
         for (var i = 0; i <= text.Length; i++)
         {
             var atBreak = i == text.Length
-                || (text[i] != nonBreakingSpace && char.IsWhiteSpace(text[i]));
+                || (!NoBreakSpaces.IsNoBreakSpace(text[i]) && char.IsWhiteSpace(text[i]));
 
             if (!atBreak)
             {
@@ -356,7 +385,7 @@ public sealed class ListRenderer : IRenderer
                 Margins = EdgeInsets.Zero,
                 Alignment = HorizontalAlignment.Left,
             };
-            var markerRenderer = new ParagraphRenderer(markerPara);
+            var markerRenderer = new ParagraphRenderer(markerPara) { MarginsCheckedByOwner = true };
 
             // Content paragraph: indented by the (possibly widened) gutter from the left edge.
             var contentPara = new Paragraph(item.Text, itemStyle)
@@ -364,7 +393,7 @@ public sealed class ListRenderer : IRenderer
                 Margins = new EdgeInsets(0, 0, 0, gutter),
                 Alignment = HorizontalAlignment.Left,
             };
-            var contentRenderer = new ParagraphRenderer(contentPara) { ElementLanguage = item.Language };
+            var contentRenderer = new ParagraphRenderer(contentPara) { ElementLanguage = item.Language, MarginsCheckedByOwner = true };
 
             result.Add((markerRenderer, contentRenderer));
 
@@ -406,7 +435,7 @@ public sealed class ListRenderer : IRenderer
                         Margins = new EdgeInsets(0, 0, 0, childGutter),
                     };
 
-                    result.Add((new ParagraphRenderer(childMarkerPara), new ParagraphRenderer(childContentPara) { ElementLanguage = child.Language }));
+                    result.Add((new ParagraphRenderer(childMarkerPara) { MarginsCheckedByOwner = true }, new ParagraphRenderer(childContentPara) { ElementLanguage = child.Language, MarginsCheckedByOwner = true }));
                 }
             }
         }

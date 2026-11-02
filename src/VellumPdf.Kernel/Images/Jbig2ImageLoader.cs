@@ -8,12 +8,43 @@ namespace VellumPdf.Images;
 /// <summary>
 /// Creates a PDF Image XObject from JBIG2 bilevel image data (ITU-T T.88 / ISO/IEC 14492).
 ///
-/// <para><b>Sequential vs embedded organisation:</b> A standalone <c>.jbig2</c> file uses
-/// the <i>sequential</i> organisation with an 8-byte file header
-/// (<c>97 4A 42 32 0D 0A 1A 0A</c>) followed by segments. PDF <c>/JBIG2Decode</c> uses the
-/// <i>embedded</i> organisation: no file header; page-associated segments go in the image
-/// stream; globally-referenced segments (symbol dictionaries, pattern dictionaries, tables)
-/// go in a separate stream referenced as <c>/DecodeParms &lt;&lt; /JBIG2Globals &lt;ref&gt; &gt;&gt;</c>.</para>
+/// <para><b>File organisations:</b> A standalone <c>.jbig2</c> or <c>.jb2</c> file starts with a
+/// file header (ITU-T T.88 Annex D.4): the 8-byte ID string <c>97 4A 42 32 0D 0A 1A 0A</c>, a flags
+/// byte, and a 4-byte page count unless bit 1 of the flags says the count is unknown. Bit 0 of the
+/// flags selects the organisation. In the <i>sequential</i> organisation (D.1) each segment's header
+/// is followed by its data. In the <i>random-access</i> organisation (D.2) all the segment headers
+/// come first, the last of them the end-of-file segment, and the data parts follow in the same
+/// order. Both are read (#570). PDF <c>/JBIG2Decode</c> uses the <i>embedded</i> organisation (D.3):
+/// no file header; page-associated segments go in the image stream; globally-referenced segments
+/// (symbol dictionaries, pattern dictionaries, tables) go in a separate stream referenced as
+/// <c>/DecodeParms &lt;&lt; /JBIG2Globals &lt;ref&gt; &gt;&gt;</c>. A random-access file is written out in
+/// that embedded form, each header joined to its own data.</para>
+///
+/// <para><b>One page:</b> a PDF image is one page, so only the first page of a multi-page file is
+/// embedded (#570). The first page is the one named by the page association of the first
+/// page-information segment (type 48). Its segments are kept, with the segments that belong to no
+/// page (page association 0), and the segments of every other page are dropped, in
+/// <see cref="ImageDecodeMode.Passthrough"/> and <see cref="ImageDecodeMode.DecodeToRaster"/> alike.
+/// The width and height are the first page's. The page count in a file header is not checked
+/// against the pages the file holds.</para>
+///
+/// <para><b>Unknown segment length:</b> a segment whose data length field is 0xFFFFFFFF (ITU-T T.88
+/// 7.2.7) is not embedded. Passthrough partitions the segments into a page stream and a globals
+/// stream, which needs each segment's length, and it used to skip such a segment, so a page came
+/// out blank without a word. It now throws <see cref="InvalidDataException"/> naming the segment
+/// when the segment belongs to the page being embedded. A segment of no page (association 0), and
+/// every segment of a file whose first page-information segment selects no page, is still
+/// skipped, as it always was. The end-of-page and end-of-file segments are exempt, and so is any
+/// segment of a page other than the first.
+/// <see cref="ImageDecodeMode.DecodeToRaster"/> refuses an unknown length only on an immediate,
+/// lossless or intermediate generic region (types 36, 38 and 39), which it always refused, with
+/// the same message now; any other segment behaves as before. A sequential or embedded stream
+/// cannot be read past an unknown-length segment, which takes the rest of the data as its own, so
+/// what follows one is not seen. A random-access file cannot use an unknown length on any page,
+/// and says so without naming the segment type.</para>
+///
+/// <para>If the first page-information segment has page association 0 it names no page, and no
+/// page is selected: every segment is kept, as before pages were chosen.</para>
 ///
 /// <para>When the input has no global segments the resulting XObject carries no
 /// <c>/JBIG2Globals</c> entry and is self-contained.</para>
@@ -24,7 +55,7 @@ namespace VellumPdf.Images;
 /// </summary>
 public static class Jbig2ImageLoader
 {
-    // JBIG2 sequential-file magic header bytes (ITU-T T.88 §D.4.1).
+    // JBIG2 file ID string (ITU-T T.88 §D.4.1); the flags byte and page count follow it (§D.4.2, §D.4.3).
     private static readonly byte[] FileHeader = [0x97, 0x4A, 0x42, 0x32, 0x0D, 0x0A, 0x1A, 0x0A];
 
     /// <summary>Maximum number of segments accepted from a single JBIG2 file.</summary>
@@ -58,8 +89,11 @@ public static class Jbig2ImageLoader
     /// options (passthrough, with globals partitioned out if present).
     /// </summary>
     /// <param name="jbig2">
-    /// The JBIG2 bytes — either a standalone sequential file (with the 8-byte magic header)
-    /// or data already in embedded form (without the file header).
+    /// The JBIG2 bytes: a standalone file in either organisation of ITU-T T.88 Annex D, sequential or
+    /// random-access, with its file header (the 8-byte ID string, a flags byte, and a 4-byte page
+    /// count unless the flags say it is unknown); or data already in embedded form, without a file
+    /// header. The ID string followed directly by segments, which this loader accepted before it read
+    /// the flags byte and page count (#570), still loads.
     /// </param>
     /// <returns>
     /// A <see cref="PdfImageXObject"/> with <c>/Filter /JBIG2Decode</c>.
@@ -68,7 +102,14 @@ public static class Jbig2ImageLoader
     /// by <see cref="Document.PdfDocument"/> when the document is written.
     /// </returns>
     /// <exception cref="ArgumentException">Thrown when <paramref name="jbig2"/> is null or empty.</exception>
-    /// <exception cref="InvalidDataException">Thrown on malformed or truncated input.</exception>
+    /// <exception cref="InvalidDataException">
+    /// Thrown on malformed or truncated input. It is also thrown, in this passthrough embedding,
+    /// for a segment of the first page whose data length is unknown (0xFFFFFFFF, ITU-T T.88 7.2.7),
+    /// because the segment cannot be partitioned into the page and globals streams; the message
+    /// names the segment number. A segment of no page with an unknown length is skipped. Only the
+    /// first page of a multi-page file is embedded, unless the first page-information segment has
+    /// page association 0, which keeps every segment and refuses none for its length.
+    /// </exception>
     public static PdfImageXObject Load(byte[] jbig2)
         => Load(jbig2, ImageLoadOptions.Default);
 
@@ -76,8 +117,11 @@ public static class Jbig2ImageLoader
     /// Loads a JBIG2 image and creates a PDF Image XObject using the specified options.
     /// </summary>
     /// <param name="jbig2">
-    /// The JBIG2 bytes — either a standalone sequential file (with the 8-byte magic header)
-    /// or data already in embedded form (without the file header).
+    /// The JBIG2 bytes: a standalone file in either organisation of ITU-T T.88 Annex D, sequential or
+    /// random-access, with its file header (the 8-byte ID string, a flags byte, and a 4-byte page
+    /// count unless the flags say it is unknown); or data already in embedded form, without a file
+    /// header. The ID string followed directly by segments, which this loader accepted before it read
+    /// the flags byte and page count (#570), still loads.
     /// </param>
     /// <param name="options">
     /// Options controlling how the image is mapped into the XObject.
@@ -92,7 +136,16 @@ public static class Jbig2ImageLoader
     /// </param>
     /// <returns>A <see cref="PdfImageXObject"/> with the appropriate filter.</returns>
     /// <exception cref="ArgumentException">Thrown when <paramref name="jbig2"/> is null or empty.</exception>
-    /// <exception cref="InvalidDataException">Thrown on malformed or truncated input.</exception>
+    /// <exception cref="InvalidDataException">
+    /// Thrown on malformed or truncated input. It is also thrown for a segment whose data length is
+    /// unknown (0xFFFFFFFF, ITU-T T.88 7.2.7): under <see cref="ImageDecodeMode.Passthrough"/> for
+    /// any segment of the first page but end-of-page and end-of-file, because it cannot be
+    /// partitioned into the page and globals streams, and under
+    /// <see cref="ImageDecodeMode.DecodeToRaster"/> for a generic region, which cannot be decoded.
+    /// The message names the segment number. Only the first page of a multi-page file is embedded,
+    /// under either mode, unless the first page-information segment has page association 0, which
+    /// keeps every segment.
+    /// </exception>
     /// <exception cref="NotSupportedException">
     /// Thrown under <see cref="ImageDecodeMode.DecodeToRaster"/> when the file contains
     /// segment types that are not supported for in-process decoding (symbol dictionaries,
@@ -103,18 +156,60 @@ public static class Jbig2ImageLoader
         if (jbig2 is null || jbig2.Length == 0)
             throw new ArgumentException("JBIG2 data must be non-empty.", nameof(jbig2));
 
-        // Strip the sequential-file header if present; accept embedded-form input too.
-        var dataStart = StartsWithFileHeader(jbig2) ? FileHeader.Length : 0;
-        var data = jbig2.AsSpan(dataStart);
+        // The segments start after a file header, if there is one: the ID string, then a flags byte,
+        // then a page count unless the flags say it is unknown (T.88 D.4). Embedded-form input has no
+        // file header at all. Which of those a file is cannot be read off the bytes alone, because the
+        // form this loader used to accept, the ID string followed straight away by segments, is
+        // indistinguishable from a flags byte followed by more of the same, so each reading is tried in
+        // turn and the first that yields a page-information segment wins (#570).
+        InvalidDataException? firstFailure = null;
+        var tried = new List<string>();
+        List<SegmentHeader>? segments = null;
+        var dataStart = 0;
+        var width = 0;
+        var height = 0;
+        var firstPage = 0;
 
-        var segments = ParseSegments(data);
-        var (width, height) = ReadPageInfo(segments, data);
+        foreach (var (start, randomAccess) in CandidateLayouts(jbig2))
+        {
+            var reading = DescribeReading(jbig2, start, randomAccess);
+            try
+            {
+                var candidate = jbig2.AsSpan(start);
+                var parsed = randomAccess ? ParseRandomAccessSegments(candidate) : ParseSegments(candidate);
+                (width, height, firstPage) = ReadPageInfo(parsed, candidate);
+                segments = parsed;
+                dataStart = start;
+                break;
+            }
+            catch (InvalidDataException ex)
+            {
+                // Report the first reading's failure: when the file has a well-formed header it is
+                // the reading that applies, and the later ones are fallbacks for older input.
+                firstFailure ??= ex;
+                tried.Add(tried.Count == 0 ? reading : $"{reading}, which failed with: {ex.Message}");
+            }
+        }
+
+        if (segments is null)
+        {
+            // One reading tried: its own message. Several: the first's, which is the one that applies
+            // to a well-formed header, then which readings were tried, so a broken older file is not
+            // described only in the terms of the newer random-access one.
+            throw tried.Count <= 1
+                ? firstFailure!
+                : new InvalidDataException(
+                    $"{firstFailure!.Message} The data was read as {string.Join(", then as ", tried)}.",
+                    firstFailure);
+        }
+
+        var data = jbig2.AsSpan(dataStart);
 
         ImageLimits.ValidateDimensions("JBIG2", width, height);
 
         return options.DecodeMode == ImageDecodeMode.DecodeToRaster
-            ? DecodeToRaster(segments, data, width, height)
-            : BuildPassthrough(segments, data, width, height);
+            ? DecodeToRaster(segments, data, width, height, firstPage)
+            : BuildPassthrough(segments, data, width, height, firstPage);
     }
 
     // ── Parsed segment metadata ───────────────────────────────────────────────
@@ -129,18 +224,27 @@ public static class Jbig2ImageLoader
         public readonly int PageAssociation;
         /// <summary>Byte offset in the stripped data span where segment header begins.</summary>
         public readonly int HeaderStart;
+        /// <summary>Byte offset in the stripped data span just past the segment header.</summary>
+        /// <remarks>
+        /// Equal to <see cref="DataOffset"/> in the sequential and embedded organisations, where a
+        /// segment's data follows its header. In the random-access organisation (ITU-T T.88 D.2) all
+        /// the headers come first and the data parts after them, so the two are far apart, and a
+        /// segment cannot be copied as one contiguous range.
+        /// </remarks>
+        public readonly int HeaderEnd;
         /// <summary>Byte offset in the stripped data span where segment data begins.</summary>
         public readonly int DataOffset;
         /// <summary>Segment data length in bytes. -1 = unknown (variable-length).</summary>
         public readonly long DataLength;
 
         public SegmentHeader(int number, int type, int pageAssociation,
-            int headerStart, int dataOffset, long dataLength)
+            int headerStart, int headerEnd, int dataOffset, long dataLength)
         {
             Number = number;
             Type = type;
             PageAssociation = pageAssociation;
             HeaderStart = headerStart;
+            HeaderEnd = headerEnd;
             DataOffset = dataOffset;
             DataLength = dataLength;
         }
@@ -150,6 +254,104 @@ public static class Jbig2ImageLoader
 
     // ── Segment header parsing (ITU-T T.88 §7.2) ─────────────────────────────
 
+    /// <summary>One segment header as it is read, before it is known where the segment's data is.</summary>
+    private readonly record struct RawHeader(
+        int Number, int Type, int PageAssociation, int HeaderStart, int HeaderEnd, long DataLength);
+
+    /// <summary>
+    /// Reads one segment header (§7.2) at <paramref name="pos"/> and leaves <paramref name="pos"/> just
+    /// past it. Shared by the sequential organisation, where the data follows, and the random-access
+    /// one, where it does not (#570).
+    /// </summary>
+    private static RawHeader ReadSegmentHeader(ReadOnlySpan<byte> data, ref int pos)
+    {
+        var headerStart = pos;
+
+        // §7.2.1 Segment number — 4 bytes, big-endian.
+        if (pos + 4 > data.Length)
+            throw new InvalidDataException(
+                $"JBIG2: truncated segment number at offset {pos}.");
+        var segNumber = ReadInt32(data, pos);
+        pos += 4;
+
+        // §7.2.2 Segment header flags — 1 byte.
+        if (pos >= data.Length)
+            throw new InvalidDataException("JBIG2: truncated segment flags.");
+        var flags = data[pos];
+        var segType = flags & 0x3F;
+        var pageAssocSizeFlag = (flags >> 6) & 1; // 0 = 1-byte, 1 = 4-byte page assoc
+        pos++;
+
+        // §7.2.4 Referred-to segment count and retention flags.
+        // The count is held in the TOP 3 bits of the first byte (the low 5 bits are
+        // retention flags). When those top bits are all 1 (value 7) the field is the
+        // long form: a 4-byte big-endian value whose low 29 bits hold the count,
+        // followed by ceil((count + 1) / 8) retention-flag bytes.
+        if (pos >= data.Length)
+            throw new InvalidDataException("JBIG2: truncated referred-to segment count.");
+        var refFlagByte = data[pos];
+        int refCount = (refFlagByte >> 5) & 0x7;
+
+        if (refCount == 7)
+        {
+            // Long form: the count byte is the first of a 4-byte field.
+            if (pos + 4 > data.Length)
+                throw new InvalidDataException("JBIG2: truncated referred-to segment count (long form).");
+            refCount = (int)(ReadUInt32(data, pos) & 0x1FFF_FFFF);
+            pos += 4;
+            // Retention flags: ceil((refCount + 1) / 8) bytes.
+            var retentionBytes = (refCount + 8) / 8;
+            if (pos + retentionBytes > data.Length)
+                throw new InvalidDataException("JBIG2: truncated referred-to retention flags.");
+            pos += retentionBytes;
+        }
+        else
+        {
+            // Short form: single byte (count in top 3 bits, retention flags in low 5 bits).
+            pos++;
+        }
+
+        // §7.2.5 Referred-to segment numbers.
+        // Each entry is 1, 2, or 4 bytes depending on the current segment number.
+        int refEntryBytes = segNumber <= 256 ? 1 : segNumber <= 65536 ? 2 : 4;
+        var refSectionBytes = (long)refCount * refEntryBytes;
+        if (pos + refSectionBytes > data.Length)
+            throw new InvalidDataException("JBIG2: truncated referred-to segment numbers.");
+        pos += (int)refSectionBytes;
+
+        // §7.2.6 Segment page association.
+        int pageAssociation;
+        if (pageAssocSizeFlag == 1)
+        {
+            if (pos + 4 > data.Length)
+                throw new InvalidDataException("JBIG2: truncated page association.");
+            pageAssociation = ReadInt32(data, pos);
+            pos += 4;
+        }
+        else
+        {
+            if (pos >= data.Length)
+                throw new InvalidDataException("JBIG2: truncated page association.");
+            pageAssociation = data[pos];
+            pos++;
+        }
+
+        // §7.2.7 Segment data length — 4 bytes, big-endian.
+        // 0xFFFF_FFFF means unknown (variable-length segment).
+        if (pos + 4 > data.Length)
+            throw new InvalidDataException("JBIG2: truncated segment data length.");
+        var rawLength = ReadUInt32(data, pos);
+        pos += 4;
+
+        long dataLength = rawLength == 0xFFFF_FFFF ? -1L : (long)rawLength;
+
+        return new RawHeader(segNumber, segType, pageAssociation, headerStart, pos, dataLength);
+    }
+
+    /// <summary>
+    /// Parses the sequential and embedded organisations (§D.1, §D.3), where each segment's header is
+    /// followed by its data.
+    /// </summary>
     private static List<SegmentHeader> ParseSegments(ReadOnlySpan<byte> data)
     {
         var segments = new List<SegmentHeader>();
@@ -161,95 +363,16 @@ public static class Jbig2ImageLoader
                 throw new InvalidDataException(
                     $"JBIG2: segment count exceeds the safety limit of {MaxSegments}.");
 
-            var headerStart = pos;
-
-            // §7.2.1 Segment number — 4 bytes, big-endian.
-            if (pos + 4 > data.Length)
-                throw new InvalidDataException(
-                    $"JBIG2: truncated segment number at offset {pos}.");
-            var segNumber = ReadInt32(data, pos);
-            pos += 4;
-
-            // §7.2.2 Segment header flags — 1 byte.
-            if (pos >= data.Length)
-                throw new InvalidDataException("JBIG2: truncated segment flags.");
-            var flags = data[pos];
-            var segType = flags & 0x3F;
-            var pageAssocSizeFlag = (flags >> 6) & 1; // 0 = 1-byte, 1 = 4-byte page assoc
-            pos++;
-
-            // §7.2.4 Referred-to segment count and retention flags.
-            // The count is held in the TOP 3 bits of the first byte (the low 5 bits are
-            // retention flags). When those top bits are all 1 (value 7) the field is the
-            // long form: a 4-byte big-endian value whose low 29 bits hold the count,
-            // followed by ceil((count + 1) / 8) retention-flag bytes.
-            if (pos >= data.Length)
-                throw new InvalidDataException("JBIG2: truncated referred-to segment count.");
-            var refFlagByte = data[pos];
-            int refCount = (refFlagByte >> 5) & 0x7;
-
-            if (refCount == 7)
-            {
-                // Long form: the count byte is the first of a 4-byte field.
-                if (pos + 4 > data.Length)
-                    throw new InvalidDataException("JBIG2: truncated referred-to segment count (long form).");
-                refCount = (int)(ReadUInt32(data, pos) & 0x1FFF_FFFF);
-                pos += 4;
-                // Retention flags: ceil((refCount + 1) / 8) bytes.
-                var retentionBytes = (refCount + 8) / 8;
-                if (pos + retentionBytes > data.Length)
-                    throw new InvalidDataException("JBIG2: truncated referred-to retention flags.");
-                pos += retentionBytes;
-            }
-            else
-            {
-                // Short form: single byte (count in top 3 bits, retention flags in low 5 bits).
-                pos++;
-            }
-
-            // §7.2.5 Referred-to segment numbers.
-            // Each entry is 1, 2, or 4 bytes depending on the current segment number.
-            int refEntryBytes = segNumber <= 256 ? 1 : segNumber <= 65536 ? 2 : 4;
-            var refSectionBytes = (long)refCount * refEntryBytes;
-            if (pos + refSectionBytes > data.Length)
-                throw new InvalidDataException("JBIG2: truncated referred-to segment numbers.");
-            pos += (int)refSectionBytes;
-
-            // §7.2.6 Segment page association.
-            int pageAssociation;
-            if (pageAssocSizeFlag == 1)
-            {
-                if (pos + 4 > data.Length)
-                    throw new InvalidDataException("JBIG2: truncated page association.");
-                pageAssociation = ReadInt32(data, pos);
-                pos += 4;
-            }
-            else
-            {
-                if (pos >= data.Length)
-                    throw new InvalidDataException("JBIG2: truncated page association.");
-                pageAssociation = data[pos];
-                pos++;
-            }
-
-            // §7.2.7 Segment data length — 4 bytes, big-endian.
-            // 0xFFFF_FFFF means unknown (variable-length segment).
-            if (pos + 4 > data.Length)
-                throw new InvalidDataException("JBIG2: truncated segment data length.");
-            var rawLength = ReadUInt32(data, pos);
-            pos += 4;
-
-            long dataLength = rawLength == 0xFFFF_FFFF ? -1L : (long)rawLength;
-
+            var h = ReadSegmentHeader(data, ref pos);
             var dataOffset = pos;
 
-            if (dataLength >= 0)
+            if (h.DataLength >= 0)
             {
-                if (dataOffset + dataLength > data.Length)
+                if (dataOffset + h.DataLength > data.Length)
                     throw new InvalidDataException(
-                        $"JBIG2: segment {segNumber} data length {dataLength} " +
+                        $"JBIG2: segment {h.Number} data length {h.DataLength} " +
                         $"at offset {dataOffset} exceeds buffer size {data.Length}.");
-                pos += (int)dataLength;
+                pos += (int)h.DataLength;
             }
             else
             {
@@ -258,8 +381,71 @@ public static class Jbig2ImageLoader
             }
 
             segments.Add(new SegmentHeader(
-                segNumber, segType, pageAssociation,
-                headerStart, dataOffset, dataLength));
+                h.Number, h.Type, h.PageAssociation,
+                h.HeaderStart, h.HeaderEnd, dataOffset, h.DataLength));
+        }
+
+        return segments;
+    }
+
+    /// <summary>
+    /// Parses the random-access organisation (§D.2): a run of segment headers that ends with the
+    /// end-of-file segment's header, then the data parts of every segment in the same order. The
+    /// end-of-file segment is what tells a reader the headers are over, so a file without one cannot
+    /// be read (#570).
+    /// </summary>
+    private static List<SegmentHeader> ParseRandomAccessSegments(ReadOnlySpan<byte> data)
+    {
+        var headers = new List<RawHeader>();
+        var pos = 0;
+
+        while (true)
+        {
+            if (headers.Count >= MaxSegments)
+                throw new InvalidDataException(
+                    $"JBIG2: segment count exceeds the safety limit of {MaxSegments}.");
+            if (pos >= data.Length)
+                throw new InvalidDataException(
+                    "JBIG2: a random-access file must end its segment headers with an end-of-file segment (type 51).");
+
+            RawHeader h;
+            try
+            {
+                h = ReadSegmentHeader(data, ref pos);
+            }
+            catch (InvalidDataException ex)
+            {
+                // Without the end-of-file header a reader cannot tell where the headers stop, and runs
+                // on into the data parts and reads them as headers, so the fault it finds is a long
+                // way from the cause. Say what the file is missing.
+                throw new InvalidDataException(
+                    "JBIG2: the segment headers of a random-access file end with an end-of-file segment " +
+                    $"(type 51), and the headers here are malformed or run out before one: {ex.Message}", ex);
+            }
+
+            headers.Add(h);
+            if (h.Type == SegmentTypeEndOfFile) break;
+        }
+
+        // The data parts follow the last header, one after another in header order.
+        var segments = new List<SegmentHeader>(headers.Count);
+        var dataPos = (long)pos;
+        foreach (var h in headers)
+        {
+            // An unknown length is only meaningful where the data follows its header and the reader
+            // can scan for the end marker; here nothing says where the next data part starts.
+            if (h.DataLength < 0)
+                throw new InvalidDataException(
+                    $"JBIG2: segment {h.Number} has an unknown data length, which a random-access file cannot use.");
+            if (dataPos + h.DataLength > data.Length)
+                throw new InvalidDataException(
+                    $"JBIG2: segment {h.Number} data length {h.DataLength} " +
+                    $"at offset {dataPos} exceeds buffer size {data.Length}.");
+
+            segments.Add(new SegmentHeader(
+                h.Number, h.Type, h.PageAssociation,
+                h.HeaderStart, h.HeaderEnd, (int)dataPos, h.DataLength));
+            dataPos += h.DataLength;
         }
 
         return segments;
@@ -267,7 +453,11 @@ public static class Jbig2ImageLoader
 
     // ── Page-info segment (type 48) ───────────────────────────────────────────
 
-    private static (int width, int height) ReadPageInfo(
+    /// <summary>
+    /// Reads the first page-information segment: the page size, and the page association that names
+    /// the first page.
+    /// </summary>
+    private static (int width, int height, int page) ReadPageInfo(
         List<SegmentHeader> segments, ReadOnlySpan<byte> data)
     {
         foreach (var seg in segments)
@@ -290,17 +480,38 @@ public static class Jbig2ImageLoader
                 throw new InvalidDataException(
                     $"JBIG2: invalid page dimensions {width}×{height}.");
 
-            return (width, height);
+            return (width, height, seg.PageAssociation);
         }
 
         throw new InvalidDataException("JBIG2: no page-information segment (type 48) found.");
     }
 
+    /// <summary>
+    /// The refusal of a segment whose data length is 0xFFFFFFFF (§7.2.7). Its end is found only by
+    /// scanning the data for a marker that differs per segment type, which this loader does not do,
+    /// so it can neither be partitioned into the page and globals streams nor decoded. One message
+    /// for both modes.
+    /// </summary>
+    private static InvalidDataException UnknownLength(in SegmentHeader seg)
+        => new(
+            $"JBIG2: segment {seg.Number} (type {seg.Type}) has an unknown data length " +
+            "(0xFFFFFFFF, ITU-T T.88 7.2.7), which this loader cannot use: it can be neither " +
+            "partitioned into a page stream and a globals stream nor decoded.");
+
+    /// <summary>
+    /// Whether a segment is part of the page being embedded: it is associated with that page, or with
+    /// no page at all (association 0, the globally referenced segments). A first page-information
+    /// segment that itself has association 0 names no page, so no page is selected and every segment
+    /// is kept, as this loader always did before it chose a page.
+    /// </summary>
+    private static bool BelongsToPage(in SegmentHeader seg, int page)
+        => page == 0 || seg.PageAssociation == page || seg.PageAssociation == 0;
+
     // ── Passthrough: partition segments into page stream + globals stream ─────
 
     private static PdfImageXObject BuildPassthrough(
         List<SegmentHeader> segments, ReadOnlySpan<byte> data,
-        int width, int height)
+        int width, int height, int firstPage)
     {
         var globalBuf = new MemoryStream();
         var pageBuf = new MemoryStream();
@@ -314,15 +525,32 @@ public static class Jbig2ImageLoader
             if (seg.Type is SegmentTypeEndOfFile or SegmentTypeEndOfPage)
                 continue;
 
-            // Variable-length segments cannot be reliably partitioned; skip them.
-            if (!seg.HasKnownLength)
+            // A PDF image is one page; the rest of a multi-page file is not embedded (#570).
+            if (!BelongsToPage(seg, firstPage))
                 continue;
 
+            // A segment of unknown length (§7.2.7) cannot be partitioned: where it ends is found only
+            // by scanning its data for the end marker, which differs per segment type. Skipping it
+            // left a blank image with nothing to say why, so it is refused.
+            if (!seg.HasKnownLength)
+            {
+                // Refused only on the page being embedded. A segment of no page, such as a trailing
+                // tables or extension segment, and everything in a file that selects no page, are
+                // skipped as they always were, and the image is whole without them.
+                if (firstPage != 0 && seg.PageAssociation == firstPage)
+                    throw UnknownLength(seg);
+                continue;
+            }
+
             var segEnd = seg.DataOffset + (int)seg.DataLength;
-            if (seg.HeaderStart < 0 || segEnd > data.Length)
+            if (seg.HeaderStart < 0 || seg.HeaderEnd > data.Length || segEnd > data.Length)
                 continue; // safety guard against corrupt entries
 
-            var segBytes = data[seg.HeaderStart..segEnd].ToArray();
+            // The embedded organisation a PDF stores is header then data. In a random-access file the
+            // two are far apart, so they are joined here rather than sliced as one range (#570).
+            var segBytes = new byte[(seg.HeaderEnd - seg.HeaderStart) + (int)seg.DataLength];
+            data[seg.HeaderStart..seg.HeaderEnd].CopyTo(segBytes);
+            data.Slice(seg.DataOffset, (int)seg.DataLength).CopyTo(segBytes.AsSpan(seg.HeaderEnd - seg.HeaderStart));
 
             if (IsGlobalSegment(seg))
                 globalBuf.Write(segBytes);
@@ -367,11 +595,13 @@ public static class Jbig2ImageLoader
 
     private static PdfImageXObject DecodeToRaster(
         List<SegmentHeader> segments, ReadOnlySpan<byte> data,
-        int width, int height)
+        int width, int height, int firstPage)
     {
         // Reject segment types that require symbol/pattern/refinement decoding.
         foreach (var seg in segments)
         {
+            if (!BelongsToPage(seg, firstPage)) continue;
+
             switch (seg.Type)
             {
                 case SegmentTypeSymbolDictionary:
@@ -401,12 +631,20 @@ public static class Jbig2ImageLoader
 
         foreach (var seg in segments)
         {
+            if (!BelongsToPage(seg, firstPage)) continue;
+
             if (seg.Type != SegmentTypeImmediateGenericRegion
                 && seg.Type != SegmentTypeImmediateLosslessGenericRegion
                 && seg.Type != SegmentTypeIntermediateGenericRegion)
                 continue;
 
-            if (!seg.HasKnownLength || seg.DataLength < 18)
+            // The one place this mode already refused an unknown length, as "data too short". Every
+            // other type is as it was: an unsupported one throws NotSupportedException above, and a
+            // segment the raster does not use is ignored whatever its length.
+            if (!seg.HasKnownLength)
+                throw UnknownLength(seg);
+
+            if (seg.DataLength < 18)
                 throw new InvalidDataException(
                     $"JBIG2: generic region segment {seg.Number} data too short.");
 
@@ -511,6 +749,44 @@ public static class Jbig2ImageLoader
     }
 
     // ── Utility ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The places the segments can start, in the order they are tried, as (offset, random-access).
+    /// </summary>
+    /// <remarks>
+    /// With the ID string and a flags byte whose reserved bits 4 to 7 are zero (T.88 D.4.2), the file
+    /// header is read as the standard says: bit 0 clear is the random-access organisation, bit 1 set
+    /// means there is no 4-byte page count. The older reading, the ID string followed directly by the
+    /// first segment, is tried after it, so input written for it keeps loading. Without the ID string
+    /// the bytes are the embedded organisation.
+    /// </remarks>
+    private static (int Start, bool RandomAccess)[] CandidateLayouts(byte[] jbig2)
+    {
+        if (!StartsWithFileHeader(jbig2))
+            return [(0, false)];
+
+        var idLength = FileHeader.Length;
+        if (jbig2.Length > idLength)
+        {
+            var flags = jbig2[idLength];
+            if ((flags & 0xF0) == 0)
+            {
+                var sequential = (flags & 0x01) != 0;
+                var pageCountPresent = (flags & 0x02) == 0;
+                var start = idLength + 1 + (pageCountPresent ? 4 : 0);
+                if (start <= jbig2.Length)
+                    return [(start, !sequential), (idLength, false)];
+            }
+        }
+
+        return [(idLength, false)];
+    }
+
+    private static string DescribeReading(byte[] jbig2, int start, bool randomAccess) =>
+        start == 0 ? "the embedded organisation, without a file header"
+        : randomAccess ? "a random-access file (T.88 D.2)"
+        : start == FileHeader.Length ? "the ID string followed directly by segments"
+        : "a sequential file (T.88 D.1)";
 
     private static bool StartsWithFileHeader(byte[] data)
     {

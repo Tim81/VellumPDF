@@ -41,6 +41,26 @@ internal static class WinAnsiEncoding
         return false;
     }
 
+    /// <summary>
+    /// <see cref="TryGetByte"/>, except that the two no-break spaces WinAnsiEncoding lacks, U+202F
+    /// and U+2007, encode as the one it has, U+00A0 (0xA0), instead of failing (#562). It is what
+    /// <see cref="VellumPdf.Canvas.PdfCanvas.ShowText"/> encodes with and
+    /// <see cref="Standard14Metrics.GetWidth"/> measures with, so what is measured is what is drawn.
+    /// Every other character is encoded exactly as <see cref="TryGetByte"/> does.
+    /// </summary>
+    public static bool TryGetByteWithSpaceFallback(char c, out byte b)
+    {
+        if (TryGetByte(c, out b)) return true;
+
+        if (NoBreakSpaces.NeedsSpaceFallback(c))
+        {
+            b = (byte)NoBreakSpaces.NoBreakSpace;
+            return true;
+        }
+
+        return false;
+    }
+
     // The WinAnsi 0x80–0x9F code points whose Unicode value sits above U+00FF. Codes 0x81, 0x8D,
     // 0x8F, 0x90, and 0x9D are undefined in WinAnsiEncoding and are intentionally absent here;
     // TryGetByte returns false for their Unicode code points. Cross-checked against the byte→glyph

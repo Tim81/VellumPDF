@@ -11,7 +11,22 @@ public sealed class PdfArray : PdfObject
     /// <summary>Creates an empty array.</summary>
     public PdfArray() => _items = [];
     /// <summary>Creates an array populated with <paramref name="items"/>.</summary>
-    public PdfArray(IEnumerable<PdfObject> items) => _items = [.. items];
+    /// <remarks>
+    /// A null element is refused, as it is by <see cref="Add"/> (#523). The message names its index.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="items"/> is <see langword="null"/> or contains <see langword="null"/>.
+    /// </exception>
+    public PdfArray(IEnumerable<PdfObject> items)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+        _items = [.. items];
+        for (var i = 0; i < _items.Count; i++)
+        {
+            if (_items[i] is null)
+                throw new ArgumentNullException(nameof(items), $"The element at index {i} is null.");
+        }
+    }
 
     /// <summary>The number of items in the array.</summary>
     public int Count => _items.Count;
@@ -19,7 +34,19 @@ public sealed class PdfArray : PdfObject
     public PdfObject this[int i] => _items[i];
 
     /// <summary>Appends <paramref name="obj"/> to the array and returns this array.</summary>
-    public PdfArray Add(PdfObject obj) { _items.Add(obj); return this; }
+    /// <remarks>
+    /// A null <paramref name="obj"/> is refused (#523). It used to be added, <see cref="Count"/>
+    /// reported it, and <c>WriteTo</c> threw <see cref="NullReferenceException"/> later, far from
+    /// this call. A PDF null is <see cref="PdfNull"/>.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="obj"/> is <see langword="null"/>.</exception>
+    public PdfArray Add(PdfObject obj)
+    {
+        // A null item reported Count 1 and failed later, in WriteTo, far from this call (#523).
+        ArgumentNullException.ThrowIfNull(obj);
+        _items.Add(obj);
+        return this;
+    }
 
     /// <summary>
     /// Replaces the item at <paramref name="index"/> in place. Internal: existing callers rebuild a
@@ -30,14 +57,32 @@ public sealed class PdfArray : PdfObject
     internal void SetAt(int index, PdfObject obj) => _items[index] = obj;
 
     /// <summary>Writes the serialised PDF representation to <paramref name="writer"/>.</summary>
+    /// <remarks>
+    /// An array that holds itself, directly or through other arrays and dictionaries, is refused
+    /// (#521). Writing it would recurse until the stack overflowed, which cannot be caught. A
+    /// member that is an indirect reference is written as a reference and not followed, so a cycle
+    /// through indirect objects, which PDF allows, is not affected. The same object placed twice,
+    /// side by side, is not a cycle.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// This array contains itself.
+    /// </exception>
     public override void WriteTo(PdfWriter writer)
     {
-        writer.WriteAscii("["u8);
-        for (var i = 0; i < _items.Count; i++)
+        writer.EnterContainer(this);
+        try
         {
-            if (i > 0) writer.WriteByte((byte)' ');
-            _items[i].WriteTo(writer);
+            writer.WriteAscii("["u8);
+            for (var i = 0; i < _items.Count; i++)
+            {
+                if (i > 0) writer.WriteByte((byte)' ');
+                _items[i].WriteTo(writer);
+            }
+            writer.WriteAscii("]"u8);
         }
-        writer.WriteAscii("]"u8);
+        finally
+        {
+            writer.LeaveContainer(this);
+        }
     }
 }

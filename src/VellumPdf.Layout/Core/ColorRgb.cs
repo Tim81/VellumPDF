@@ -7,11 +7,18 @@ namespace VellumPdf.Layout.Core;
 
 /// <summary>Normalised RGB colour (0.0–1.0 per channel).</summary>
 /// <remarks>
-/// Channels are not checked or clamped. Layout writes them into the content stream rounded to five
-/// decimals, so a text colour of (<c>NaN</c>, 2, -1) is written as <c>NaN 2 -1 rg</c>. ISO 32000-2,
-/// 8.6.4.3, requires each DeviceRGB component to be a number from 0.0 to 1.0.
-/// <para>Do not pass a non-finite channel. A later major version may refuse one (#509). Keep each
-/// channel within 0 to 1, the range that clause requires.</para>
+/// Channels are stored as given, neither checked nor clamped, so the constructor and the
+/// <c>init</c> accessors never throw. What happens to a channel is decided where the colour is
+/// drawn. A channel that is <c>NaN</c> or infinite is refused: every Layout member that carries a
+/// colour throws from <c>Document.Save</c> and names the element (#509), and
+/// <see cref="VellumPdf.Canvas.PdfCanvas"/> refuses the same values for a caller that writes a
+/// colour operator itself, because neither is a PDF number (ISO 32000-2, 7.3.3).
+/// <para>A finite channel outside 0 to 1 is <b>not</b> refused. It is written as given after
+/// rounding to five decimals, so (5, 0, -1) is written as <c>5 0 -1 rg</c>. ISO 32000-2, 8.6.4.3,
+/// says each DeviceRGB component "shall" be a number from 0.0 to 1.0, so that output is not
+/// conforming even though it parses and renders.</para>
+/// <para><b>Attention</b>: keep each channel within 0 to 1. A later major version may refuse a
+/// channel outside that range (#484).</para>
 /// </remarks>
 public readonly record struct ColorRgb
 {
@@ -28,7 +35,7 @@ public readonly record struct ColorRgb
     public double B { get; init; }
 
     /// <summary>Creates a colour from the given channels.</summary>
-    /// <remarks>Nothing is refused. The three values are stored as passed.</remarks>
+    /// <remarks>Nothing is refused here. The three values are stored as passed; see the type remarks for what happens when the colour is drawn.</remarks>
     public ColorRgb(double R, double G, double B)
     {
         this.R = R;

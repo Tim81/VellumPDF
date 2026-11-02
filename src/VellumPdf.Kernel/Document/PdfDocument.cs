@@ -240,7 +240,7 @@ public sealed class PdfDocument : IDisposable
 
         var resourceName = $"TT{++_ttFontCounter}";
         var embedder = new TrueTypeFontEmbedder(fontData, resourceName);
-        var handle = new EmbeddedFontHandle(embedder);
+        var handle = new EmbeddedFontHandle(embedder, this);
         _embeddedFonts.Add(handle);
         _embeddedFontByHash[hash] = handle;
         return handle;
@@ -251,8 +251,32 @@ public sealed class PdfDocument : IDisposable
     /// <paramref name="handle"/>. Called by the layout engine during the draw phase
     /// so that <see cref="Save"/> can register the font reference on the correct pages.
     /// </summary>
+    /// <remarks>
+    /// The handle must have been returned by this document's <see cref="UseTrueTypeFont"/>. Usage is
+    /// recorded by resource name, and that name is a counter local to the document that issued it, so
+    /// a handle from another document would be recorded under whatever font this one registered
+    /// as <c>TT1</c>, or under none, and the page would be saved with a font its resources do not
+    /// define (#544).
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="page"/> or <paramref name="handle"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="handle"/> was returned by a different <see cref="PdfDocument"/>.
+    /// </exception>
     public void RegisterEmbeddedFontUsage(PdfPage page, EmbeddedFontHandle handle)
     {
+        ArgumentNullException.ThrowIfNull(page);
+        ArgumentNullException.ThrowIfNull(handle);
+        if (!ReferenceEquals(handle.Owner, this))
+        {
+            throw new ArgumentException(
+                $"The embedded font {handle.ResourceName} belongs to a different document. A handle " +
+                "returned by one document's UseTrueTypeFont cannot be used on another; embed the font " +
+                "again through the document that saves the page.",
+                nameof(handle));
+        }
+
         if (!_pageEmbeddedFonts.TryGetValue(page, out var set))
         {
             set = [];
@@ -516,18 +540,22 @@ public sealed class PdfDocument : IDisposable
         _encryptionSettings = settings;
     }
 
-    /// <summary>Writes a complete PDF file to <paramref name="destination"/>.</summary>
-    /// <exception cref="ObjectDisposedException">The document has been disposed.</exception>
-    /// <exception cref="ArgumentNullException"><paramref name="destination"/> is <see langword="null"/>.</exception>
-    /// <exception cref="NotSupportedException"><see cref="UseObjectStreams"/> is combined with <see cref="Encrypt"/>.</exception>
-    /// <exception cref="InvalidOperationException">
-    /// A PDF/A <see cref="Conformance"/> is set together with <see cref="Encrypt"/>, or
-    /// <see cref="Conformance"/> is <see cref="PdfConformance.PdfUA1"/> together with
-    /// <see cref="Encrypt"/> settings that omit <see cref="PdfPermissions.Extract"/>, or a
-    /// registered form field's <see cref="FormFieldOptions.FontSize"/> is not finite. That
-    /// property's boundary documentation names the value and the field.
-    /// </exception>
-    public void Save(Stream destination)
+    /// <summary>
+    /// The checks every save makes before it touches the document or the destination, and the ones a
+    /// caller that lays pages out first must make before it starts: that the document is not
+    /// disposed, not already written, that there is somewhere to write and that it can be written to.
+    /// Called by the layout engine ahead of layout (#530), because layout appends pages to this
+    /// document and a refusal that came after it left the pages behind, so the next save laid
+    /// everything out a second time and wrote twice the pages.
+    /// </summary>
+    /// <param name="destination">Where the PDF will be written.</param>
+    /// <param name="pagesKnown">
+    /// Whether the document's pages are already there, which is true for a document that holds its
+    /// pages and for a layout engine with nothing to lay out. Then a document with no pages is
+    /// reported ("The document has no pages.") before the destination is looked at, as
+    /// <see cref="Save"/> always did. A layout engine about to add pages passes <see langword="false"/>.
+    /// </param>
+    internal void EnsureCanSave(Stream destination, bool pagesKnown = true)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(destination);
@@ -536,9 +564,24 @@ public sealed class PdfDocument : IDisposable
             throw new InvalidOperationException(
                 "This document has already been written; create a new PdfDocument to write again.");
 
-        if (_pages.Count == 0)
+        if (pagesKnown && _pages.Count == 0)
             throw new InvalidOperationException("The document has no pages.");
 
+        // Checked here and not left to PdfWriter's constructor: that runs after _written is set, so
+        // an unusable stream used to burn the document, and a caller who caught the documented
+        // ArgumentException and retried with a good stream met a different exception that did not
+        // say why (#530).
+        if (!destination.CanWrite)
+            throw new ArgumentException("Stream must be writable.", nameof(destination));
+    }
+
+    /// <summary>
+    /// Refuses option combinations a save cannot honour. Like <see cref="EnsureCanSave"/> it is run
+    /// ahead of layout by the layout engine, so a document with a bad combination fails before any
+    /// page is appended and can be corrected and saved again (#530).
+    /// </summary>
+    internal void ValidateSaveOptions()
+    {
         if (UseObjectStreams && _encryptionSettings is not null)
             throw new NotSupportedException(
                 "UseObjectStreams cannot be combined with Encrypt(). " +
@@ -583,6 +626,32 @@ public sealed class PdfDocument : IDisposable
             throw new NotSupportedException(
                 "Linearize cannot be combined with Encrypt(). " +
                 "Linearization computes byte offsets over the cleartext layout. Remove one of these options.");
+    }
+
+    /// <summary>Writes a complete PDF file to <paramref name="destination"/>.</summary>
+    /// <exception cref="ObjectDisposedException">The document has been disposed.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="destination"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="destination"/> cannot be written to, which includes a stream that was already
+    /// closed. A linearized save to a closed stream used to throw <see cref="ObjectDisposedException"/>
+    /// after the document had been marked as written.
+    /// </exception>
+    /// <exception cref="NotSupportedException"><see cref="UseObjectStreams"/> is combined with <see cref="Encrypt"/>.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// A PDF/A <see cref="Conformance"/> is set together with <see cref="Encrypt"/>, or
+    /// <see cref="Conformance"/> is <see cref="PdfConformance.PdfUA1"/> together with
+    /// <see cref="Encrypt"/> settings that omit <see cref="PdfPermissions.Extract"/>, or a
+    /// registered form field's <see cref="FormFieldOptions.FontSize"/> is not finite. That
+    /// property's boundary documentation names the value and the field.
+    /// </exception>
+    public void Save(Stream destination)
+    {
+        EnsureCanSave(destination);
+
+        if (_pages.Count == 0)
+            throw new InvalidOperationException("The document has no pages.");
+
+        ValidateSaveOptions();
 
         // All preconditions passed — mark written only now, so a recoverable precondition
         // failure (no pages, incompatible options) leaves the document usable for a retry.
@@ -933,6 +1002,12 @@ public sealed class PdfDocument : IDisposable
     /// </summary>
     /// <exception cref="ObjectDisposedException">The document has been disposed.</exception>
     /// <exception cref="ArgumentNullException"><paramref name="destination"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="destination"/> cannot be written to, which includes a stream that was already
+    /// closed. It is checked before anything is serialised, so the document is not marked as
+    /// written. It used to be <see cref="NotSupportedException"/> from the final copy, or
+    /// <see cref="ObjectDisposedException"/> for a closed stream.
+    /// </exception>
     /// <exception cref="NotSupportedException"><see cref="UseObjectStreams"/> is combined with <see cref="Encrypt"/>.</exception>
     /// <exception cref="InvalidOperationException">
     /// A PDF/A <see cref="Conformance"/> is set together with <see cref="Encrypt"/>, or
@@ -944,11 +1019,71 @@ public sealed class PdfDocument : IDisposable
     /// </exception>
     public async Task SaveAsync(Stream destination, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(destination);
+        // The whole of the destination check, not only the null: Save runs against an in-memory
+        // buffer here, so an unwritable destination was found only after the document had been
+        // written and marked, and the output was never delivered (#530).
+        EnsureCanSave(destination);
         using var buffer = new MemoryStream();
         await Task.Run(() => Save(buffer), cancellationToken).ConfigureAwait(false);
         buffer.Position = 0;
         await buffer.CopyToAsync(destination, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// What <see cref="PrepareForSigning"/> refuses that does not depend on the pages: a disposed
+    /// document, a null <paramref name="options"/>, encryption, a document already written, and an
+    /// option value no page count could make valid (a negative
+    /// <see cref="SignaturePlaceholderOptions.SignaturePage"/>, an
+    /// <see cref="SignaturePlaceholderOptions.EstimatedSignatureSizeBytes"/> that is negative or
+    /// larger than <see cref="PdfSignatureHelper.MaxContentsPlaceholderBytes"/>, which would not fit
+    /// in a string). Called by the layout engine ahead of layout, because layout appends pages and a
+    /// refusal that came after it left them behind (#530). A page index past the last page cannot
+    /// be judged until the pages exist and is refused later. A caller that already holds the pages
+    /// (<paramref name="pagesKnown"/>) gets the document's own order of refusals: a document with
+    /// no pages throws before any option is looked at.
+    /// </summary>
+    /// <param name="options">The signing options.</param>
+    /// <param name="pagesKnown">
+    /// Whether the document's pages are already there, which is true for a caller that holds a
+    /// finished document and for a layout engine with nothing to lay out. It makes a document with
+    /// no pages throw "no pages" before any option is looked at, as the document itself does, and it
+    /// lets the message for a negative page index name the page count. When it is false, the pages
+    /// are still to come, so neither applies.
+    /// </param>
+    internal void EnsureCanPrepareForSigning(SignaturePlaceholderOptions options, bool pagesKnown = true)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(options);
+
+        if (_encryptionSettings is not null)
+            throw new NotSupportedException(
+                "PDF encryption and digital signatures cannot be combined. " +
+                "Remove the Encrypt() call or use Sign() without Encrypt().");
+
+        if (_written)
+            throw new InvalidOperationException(
+                "This document has already been written; create a new PdfDocument to write again.");
+
+        if (pagesKnown && _pages.Count == 0)
+            throw new InvalidOperationException("The document has no pages.");
+
+        if (options.SignaturePage < 0)
+            throw new ArgumentOutOfRangeException(
+                nameof(options),
+                options.SignaturePage,
+                pagesKnown
+                    ? $"SignaturePage {options.SignaturePage} is out of range; the document has {_pages.Count} page(s) (0-based index)."
+                    : $"SignaturePage {options.SignaturePage} is out of range; a page index is 0-based and cannot be negative.");
+
+        // The placeholder is 2 hex digits per byte between angle brackets. A negative size cannot be
+        // built, and one past the bound would exceed the longest string and throw
+        // OutOfMemoryException from the writer.
+        if (options.EstimatedSignatureSizeBytes is < 0 or > PdfSignatureHelper.MaxContentsPlaceholderBytes)
+            throw new ArgumentOutOfRangeException(
+                nameof(options),
+                options.EstimatedSignatureSizeBytes,
+                $"EstimatedSignatureSizeBytes {options.EstimatedSignatureSizeBytes} is out of range; it must be " +
+                $"between 0 and {PdfSignatureHelper.MaxContentsPlaceholderBytes} so that the /Contents placeholder fits in a string.");
     }
 
     /// <summary>
@@ -963,19 +1098,20 @@ public sealed class PdfDocument : IDisposable
     /// <exception cref="ObjectDisposedException">The document has been disposed.</exception>
     /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see langword="null"/>.</exception>
     /// <exception cref="NotSupportedException"><see cref="Encrypt"/> has been called; encryption and signing cannot be combined.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <see cref="SignaturePlaceholderOptions.SignaturePage"/> is negative or past the last page,
+    /// or <see cref="SignaturePlaceholderOptions.EstimatedSignatureSizeBytes"/> is negative or above
+    /// 536,870,894, the most whose placeholder fits in a string. <c>ParamName</c> is
+    /// <c>options</c> for all of them. Everything but a page index past the last page is refused
+    /// before anything is written, and before a layout engine that calls this has laid out any page.
+    /// </exception>
     /// <exception cref="InvalidOperationException">
     /// A registered form field's <see cref="FormFieldOptions.FontSize"/> is not finite. That
     /// property's boundary documentation names the value and the field.
     /// </exception>
     public byte[] PrepareForSigning(SignaturePlaceholderOptions options)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        ArgumentNullException.ThrowIfNull(options);
-
-        if (_encryptionSettings is not null)
-            throw new NotSupportedException(
-                "PDF encryption and digital signatures cannot be combined. " +
-                "Remove the Encrypt() call or use Sign() without Encrypt().");
+        EnsureCanPrepareForSigning(options);
 
         var ms = new MemoryStream();
         WriteWithSignaturePlaceholders(ms, options);

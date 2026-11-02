@@ -18,14 +18,9 @@ public sealed class ListItem
 
     /// <summary>The item's text.</summary>
     /// <remarks>
-    /// A null value makes the save throw on a top-level item or a child; see the constructor. White
-    /// space is drawn as on <see cref="Paragraph"/>.
+    /// Never null; the constructor refuses a null (#547). White space is drawn as on
+    /// <see cref="Paragraph"/>.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the text is <see langword="null"/> on a top-level item or a child;
-    /// a grandchild is ignored (see <see cref="Children"/>).
-    /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when the text holds an unpaired surrogate and is measured in an embedded
@@ -95,15 +90,12 @@ public sealed class ListItem
     /// <summary>Creates a list item with the given text and optional style.</summary>
     /// <remarks>
     /// A null <paramref name="style"/> is stored; <see cref="Style"/> says which style the item
-    /// then inherits. A null <paramref name="text"/> is stored, and the save throws when it lays
-    /// out the item as a top-level item or a child.
-    /// <para>Do not pass null text. A later major version will throw
-    /// <see cref="ArgumentNullException"/> from this call.</para>
+    /// then inherits. A null <paramref name="text"/> is refused here (#547); it used to be stored,
+    /// and the save threw <see cref="NullReferenceException"/> when it laid out the item as a
+    /// top-level item or a child. An empty string is not null and is accepted.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this constructor, when <paramref name="text"/> is <see langword="null"/>.
-    /// It is not raised for an item reached only as a grandchild.
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="text"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -126,6 +118,7 @@ public sealed class ListItem
     /// </exception>
     public ListItem(string text, TextStyle? style = null)
     {
+        ArgumentNullException.ThrowIfNull(text);
         Text = text;
         Style = style;
     }
@@ -133,18 +126,15 @@ public sealed class ListItem
     /// <summary>Adds a nested child item. Returns this item.</summary>
     /// <remarks>
     /// Children of <paramref name="child"/> are ignored; see <see cref="Children"/>. A null
-    /// <paramref name="child"/> is stored, and the save throws when this item is laid out as a
-    /// top-level item.
-    /// <para>Do not pass null. A later major version will throw
-    /// <see cref="ArgumentNullException"/> from this call.</para>
+    /// <paramref name="child"/> is refused here (#523); it used to be stored, and the save threw
+    /// <see cref="NullReferenceException"/> when this item was laid out as a top-level item.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when <paramref name="child"/> is <see langword="null"/> and this item is
-    /// laid out as a top-level item.
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="child"/> is <see langword="null"/>.
     /// </exception>
     public ListItem AddChild(ListItem child)
     {
+        ArgumentNullException.ThrowIfNull(child);
         _children ??= [];
         _children.Add(child);
         return this;
@@ -153,15 +143,11 @@ public sealed class ListItem
     /// <summary>Adds a nested child item with the given text and optional style. Returns this item.</summary>
     /// <remarks>
     /// Creates the child with <see cref="ListItem(string, TextStyle?)"/> and adds it. A null
-    /// <paramref name="text"/> is stored, and the save throws when it lays out the new child, which
-    /// happens only when this item is laid out as a top-level item.
-    /// <para>Do not pass null text. A later major version will throw
-    /// <see cref="ArgumentNullException"/> from this call.</para>
+    /// <paramref name="text"/> is refused by that constructor (#547); it used to be stored, and the
+    /// save threw <see cref="NullReferenceException"/> when it laid out the new child.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when <paramref name="text"/> is <see langword="null"/>.
-    /// It is raised only when this item is laid out as a top-level item.
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="text"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
