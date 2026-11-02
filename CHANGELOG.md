@@ -247,10 +247,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   PDF with the PowerShell wrapper PSVellumPDF. A PDF image is one page, so a file with several pages
   embeds the first: the page named by the first page-information segment, with the segments that
   belong to no page, under both `Passthrough` and `DecodeToRaster`, and the size is that page's.
-  A segment whose data length is unknown (0xFFFFFFFF, T.88 7.2.7) is refused under `Passthrough`
-  with `InvalidDataException` naming the segment and its type, because it cannot be partitioned into
-  the page and globals streams; the end-of-page and end-of-file segments and every segment of a page
-  that is not embedded are exempt. `DecodeToRaster` keeps refusing an unknown length only on a
+  A segment of the embedded page whose data length is unknown (0xFFFFFFFF, T.88 7.2.7) is refused
+  under `Passthrough` with `InvalidDataException` naming the segment and its type, because it cannot
+  be partitioned into the page and globals streams; the end-of-page and end-of-file segments, every
+  segment of a page that is not embedded, and every segment of no page (a trailing tables or
+  extension segment, say) are exempt and skipped, as they always were. `DecodeToRaster` keeps refusing an unknown length only on a
   generic region (types 36, 38 and 39), as before, now with the same message; every other segment
   behaves as it did. A sequential or embedded stream cannot be read past such a segment, so what
   follows one is not seen. A random-access file refuses an unknown length on any page, without

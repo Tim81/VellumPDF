@@ -2420,4 +2420,47 @@ public sealed class Jbig2ImageTests
 
         Assert.Contains("unknown data length", ex.Message, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// A segment of no page with an unknown length, such as a trailing tables or extension segment, is
+    /// skipped as it always was: the image is whole without it, and refusing it would turn a file
+    /// that embedded correctly into an error.
+    /// </summary>
+    [Theory]
+    [InlineData(53)]   // tables
+    [InlineData(62)]   // extension
+    public void Load_Passthrough_PageZeroSegmentWithAnUnknownDataLength_IsSkipped(int type)
+    {
+        var trailing = BuildSegment(2, type, pageAssociation: 0, [0xD1, 0xD2]);
+        for (var i = 7; i < 11; i++) trailing[i] = 0xFF;
+        byte[][] segments =
+        [
+            BuildSegment(0, type: 48, pageAssociation: 1, BuildPageInfoSegmentData(64, 48)),
+            BuildSegment(1, type: 38, pageAssociation: 1, [0xB1, 0xB2, 0xB3]),
+            trailing,
+        ];
+
+        var img = Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments));
+
+        Assert.Equal(64, img.Width);
+        Assert.Equal(segments[0].Concat(segments[1]).ToArray(), ExtractStreamBody(Serialize(img)));
+        Assert.Null(img.Jbig2Globals);
+    }
+
+    /// <summary>With no page selected (page information on association 0) nothing is refused for its length.</summary>
+    [Fact]
+    public void Load_Passthrough_UnknownDataLengthWhenNoPageIsSelected_IsSkipped()
+    {
+        var region = BuildSegment(1, type: 38, pageAssociation: 1, [0xB1, 0xB2, 0xB3]);
+        for (var i = 7; i < 11; i++) region[i] = 0xFF;
+        byte[][] segments =
+        [
+            BuildSegment(0, type: 48, pageAssociation: 0, BuildPageInfoSegmentData(64, 48)),
+            region,
+        ];
+
+        var img = Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments));
+
+        Assert.Equal(segments[0], ExtractStreamBody(Serialize(img)));
+    }
 }

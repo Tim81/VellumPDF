@@ -358,11 +358,12 @@ source is split into a page stream and a `/JBIG2Globals` stream with its
 end-of-file and end-of-page segments dropped, only the first page of a
 multi-page file is embedded (a first page-information segment with page
 association 0 names no page, and keeps every segment), and a segment of
-unknown length (0xFFFFFFFF) on the first page, or on no page, is refused with
+unknown length (0xFFFFFFFF) on the first page is refused with
 `InvalidDataException`: in passthrough for any segment except end-of-page and
-end-of-file, and under `DecodeToRaster` for a generic region. A random-access
-file refuses it on any page. A bare JPEG 2000 codestream is wrapped in a
-minimal JP2 container around the unchanged codestream.
+end-of-file (a segment of no page is skipped), and under `DecodeToRaster` for a
+generic region. A random-access file refuses it on any page. A bare JPEG 2000
+codestream is wrapped in a minimal JP2 container around the unchanged
+codestream.
 
 PNG images with an alpha channel automatically produce an `/SMask` soft-mask
 stream.

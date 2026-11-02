@@ -30,15 +30,18 @@ namespace VellumPdf.Images;
 ///
 /// <para><b>Unknown segment length:</b> a segment whose data length field is 0xFFFFFFFF (ITU-T T.88
 /// 7.2.7) is not embedded. Passthrough partitions the segments into a page stream and a globals
-/// stream, which needs each segment's length, and it used to skip such a segment, so the image
-/// came out blank without a word. It now throws <see cref="InvalidDataException"/> naming the
-/// segment. <see cref="ImageDecodeMode.DecodeToRaster"/> refuses an unknown length only on an
-/// immediate, lossless or intermediate generic region (types 36, 38 and 39), which it always
-/// refused, with the same message now; any other segment behaves as before. The end-of-page and
-/// end-of-file segments are exempt in passthrough, and so is any segment of a page other than the
-/// first. A sequential or embedded stream cannot be read past an unknown-length segment, which
-/// takes the rest of the data as its own, so what follows one is not seen. A random-access file
-/// cannot use an unknown length on any page, and says so without naming the segment type.</para>
+/// stream, which needs each segment's length, and it used to skip such a segment, so a page came
+/// out blank without a word. It now throws <see cref="InvalidDataException"/> naming the segment
+/// when the segment belongs to the page being embedded. A segment of no page (association 0), and
+/// every segment of a file whose first page-information segment selects no page, is still
+/// skipped, as it always was. The end-of-page and end-of-file segments are exempt, and so is any
+/// segment of a page other than the first.
+/// <see cref="ImageDecodeMode.DecodeToRaster"/> refuses an unknown length only on an immediate,
+/// lossless or intermediate generic region (types 36, 38 and 39), which it always refused, with
+/// the same message now; any other segment behaves as before. A sequential or embedded stream
+/// cannot be read past an unknown-length segment, which takes the rest of the data as its own, so
+/// what follows one is not seen. A random-access file cannot use an unknown length on any page,
+/// and says so without naming the segment type.</para>
 ///
 /// <para>If the first page-information segment has page association 0 it names no page, and no
 /// page is selected: every segment is kept, as before pages were chosen.</para>
@@ -101,11 +104,11 @@ public static class Jbig2ImageLoader
     /// <exception cref="ArgumentException">Thrown when <paramref name="jbig2"/> is null or empty.</exception>
     /// <exception cref="InvalidDataException">
     /// Thrown on malformed or truncated input. It is also thrown, in this passthrough embedding,
-    /// for a segment of the first page, or of no page, whose data length is unknown (0xFFFFFFFF,
-    /// ITU-T T.88 7.2.7), because the segment cannot be partitioned into the page and globals
-    /// streams; the message names the segment number. Only the first page of a multi-page file is
-    /// embedded, unless the first page-information segment has page association 0, which keeps
-    /// every segment.
+    /// for a segment of the first page whose data length is unknown (0xFFFFFFFF, ITU-T T.88 7.2.7),
+    /// because the segment cannot be partitioned into the page and globals streams; the message
+    /// names the segment number. A segment of no page with an unknown length is skipped. Only the
+    /// first page of a multi-page file is embedded, unless the first page-information segment has
+    /// page association 0, which keeps every segment and refuses none for its length.
     /// </exception>
     public static PdfImageXObject Load(byte[] jbig2)
         => Load(jbig2, ImageLoadOptions.Default);
@@ -134,10 +137,10 @@ public static class Jbig2ImageLoader
     /// <returns>A <see cref="PdfImageXObject"/> with the appropriate filter.</returns>
     /// <exception cref="ArgumentException">Thrown when <paramref name="jbig2"/> is null or empty.</exception>
     /// <exception cref="InvalidDataException">
-    /// Thrown on malformed or truncated input. It is also thrown for a segment of the first page, or
-    /// of no page, whose data length is unknown (0xFFFFFFFF, ITU-T T.88 7.2.7): under
-    /// <see cref="ImageDecodeMode.Passthrough"/> for any segment but end-of-page and end-of-file,
-    /// because it cannot be partitioned into the page and globals streams, and under
+    /// Thrown on malformed or truncated input. It is also thrown for a segment whose data length is
+    /// unknown (0xFFFFFFFF, ITU-T T.88 7.2.7): under <see cref="ImageDecodeMode.Passthrough"/> for
+    /// any segment of the first page but end-of-page and end-of-file, because it cannot be
+    /// partitioned into the page and globals streams, and under
     /// <see cref="ImageDecodeMode.DecodeToRaster"/> for a generic region, which cannot be decoded.
     /// The message names the segment number. Only the first page of a multi-page file is embedded,
     /// under either mode, unless the first page-information segment has page association 0, which
@@ -518,7 +521,14 @@ public static class Jbig2ImageLoader
             // by scanning its data for the end marker, which differs per segment type. Skipping it
             // left a blank image with nothing to say why, so it is refused.
             if (!seg.HasKnownLength)
-                throw UnknownLength(seg);
+            {
+                // Refused only on the page being embedded. A segment of no page, such as a trailing
+                // tables or extension segment, and everything in a file that selects no page, are
+                // skipped as they always were, and the image is whole without them.
+                if (firstPage != 0 && seg.PageAssociation == firstPage)
+                    throw UnknownLength(seg);
+                continue;
+            }
 
             var segEnd = seg.DataOffset + (int)seg.DataLength;
             if (seg.HeaderStart < 0 || seg.HeaderEnd > data.Length || segEnd > data.Length)
