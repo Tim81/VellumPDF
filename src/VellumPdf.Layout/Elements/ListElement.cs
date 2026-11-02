@@ -45,12 +45,12 @@ public enum ListStyle
 /// <remarks>
 /// Nesting is one level, via <see cref="ListItem.Children"/>. Marker formatting of zero and
 /// negative indices is on <see cref="FormatMarker"/>.
-/// <para><b>Attention</b>: the last item a list draws on a page can lose a line, while the space
-/// for that line stays reserved and nothing reports it. The draw pass lays each item out again in
-/// the height between the item and the bottom of the list's area. For the last item on a page that
-/// height is exactly what the item takes there, and rounding can leave it just short. Whether a
-/// line is lost depends on the font size, the line count and where the item falls on the page: a
-/// single two-line item at 12pt at the top of an A4 page draws only its first line.</para>
+/// <para>The last item a list draws on a page keeps all of its lines (#556). It used to lose one,
+/// while the space for that line stayed reserved and nothing reported it: the draw pass laid each
+/// item out again in a height it worked out for itself, which for the last item on a page could
+/// come out one rounding step short of the height the layout pass had offered, and a paragraph's
+/// line count is a floor of the height it is given. The draw pass now offers each item the height
+/// the layout pass did.</para>
 /// <para><b>Attention</b>: an item whose text holds only white space is laid out at the leading of
 /// <see cref="TextStyle.Default"/>, as on <see cref="Paragraph"/>, while its marker is laid out in
 /// the item's own style. When the marker's line does not fit where the item lands, the item is

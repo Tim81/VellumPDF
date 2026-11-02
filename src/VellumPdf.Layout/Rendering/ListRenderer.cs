@@ -32,6 +32,14 @@ public sealed class ListRenderer : IRenderer
 
     private LayoutBox _occupied;
 
+    // The height Layout offered each item, indexed by item. Draw offers the same height, because
+    // it lays the item out a second time and a paragraph's line count is a floor of the height it is
+    // given: the height Draw used to compute for itself, Bottom - y, can come out one rounding step
+    // short of the remaining height Layout tracked, so the second pass wrapped to one line fewer
+    // than the first, the line was never drawn, and the space Layout reserved for it stayed empty
+    // (#556). Null until Layout has run on this renderer or the one it was split from.
+    private double[]? _offered;
+
     /// <summary>Creates a renderer for the list, optionally starting at <paramref name="startItem"/> for pagination.</summary>
     /// <remarks>
     /// <paramref name="startItem"/> counts each child as an entry after its parent, so a start of 1
@@ -114,9 +122,11 @@ public sealed class ListRenderer : IRenderer
         // Walk items and accumulate height, handling overflow.
         var y = area.Y;
         var remaining = area.Height;
+        var offered = new double[_items.Count];
 
         for (var i = _startItem; i < _items.Count; i++)
         {
+            offered[i] = remaining;
             var itemArea = new LayoutBox(area.X, y, area.Width, remaining);
             var itemCtx = context.WithArea(itemArea);
 
@@ -140,12 +150,14 @@ public sealed class ListRenderer : IRenderer
                 // Commit what fit so far
                 _endItem = i;
                 _occupied = area.WithHeight(area.Height - remaining);
+                _offered = offered;
                 var overflow = new ListRenderer(_list, i) { _items = _items };
                 var split = new ListRenderer(_list, _startItem, _partialContentOverrideAtStart)
                 {
                     _items = _items,
                     _endItem = i,
                     _occupied = _occupied,
+                    _offered = offered,
                 };
                 return LayoutResult.Partial(_occupied, split, overflow);
             }
@@ -162,6 +174,7 @@ public sealed class ListRenderer : IRenderer
                 _endItem = i + 1;
                 var usedH = area.Height - remaining + itemH;
                 _occupied = area.WithHeight(usedH);
+                _offered = offered;
 
                 // The overflow for item i carries the content's OverflowRenderer.
                 var contentOverflow = (ParagraphRenderer)contentResult.OverflowRenderer!;
@@ -172,6 +185,7 @@ public sealed class ListRenderer : IRenderer
                     _items = _items,
                     _endItem = i + 1,
                     _occupied = _occupied,
+                    _offered = offered,
                 };
                 return LayoutResult.Partial(_occupied, split, overflowList);
             }
@@ -182,6 +196,7 @@ public sealed class ListRenderer : IRenderer
 
         _endItem = _items.Count;
         _occupied = area.WithHeight(area.Height - remaining);
+        _offered = offered;
         return LayoutResult.Full(_occupied);
     }
 
@@ -218,8 +233,10 @@ public sealed class ListRenderer : IRenderer
             var isContinuation = i == _startItem && _partialContentOverrideAtStart is not null;
             var content = isContinuation ? _partialContentOverrideAtStart! : baseContent;
 
-            // Re-layout to get the occupied heights at the current y position
-            var itemArea = new LayoutBox(area.X, y, area.Width, area.Bottom - y);
+            // Re-layout to get the occupied heights at the current y position, offering the height
+            // Layout offered. Bottom - y is the same height up to a rounding step, and one step is
+            // enough to drop a line (#556); the fallback is for a renderer Layout never ran on.
+            var itemArea = new LayoutBox(area.X, y, area.Width, _offered is { } o ? o[i] : area.Bottom - y);
             var itemCtx = new LayoutContext(itemArea);
 
             var markerH = isContinuation ? 0 : marker.Layout(itemCtx).OccupiedArea?.Height ?? 0;

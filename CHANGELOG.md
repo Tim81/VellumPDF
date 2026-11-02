@@ -101,6 +101,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   already correct for the stretch and is unchanged, and its link rectangle (#551) is a separate
   issue. A line that is not justified writes the same bytes as before.
 
+- **The last item a list draws on a page no longer loses a line (#556).** `ListRenderer.Draw`
+  lays each item out a second time, and it offered that second layout `Bottom - y`, which for the
+  last item on a page could come out one rounding step short of the remaining height the layout
+  pass had tracked. A paragraph's line count is a floor of the height it is given, so the second
+  layout wrapped to one line fewer, that line was never drawn, and the space reserved for it stayed
+  empty. A single two-line item at 12pt at the top of an A4 page drew only its first line. The
+  layout pass now records the height it offered each item and the draw pass offers the same one.
+  A test sweeps the list's start position through 1.5 line heights in 0.01pt steps at three font
+  sizes and checks that every word is drawn once: before the fix 766, 1,758 and 504 of those
+  positions lost words.
+
 ## [2.3.3] - 2026-09-20
 
 This release is led by documentation. Layout's public surface now states what each member
