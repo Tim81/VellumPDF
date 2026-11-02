@@ -89,7 +89,8 @@ public sealed class ListRenderer : IRenderer
     /// only from a renderer you construct with a negative start and add yourself.
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// The start item is negative, the list has items, and the area is not empty.
+    /// The start item is negative, the list has items, and the area is not empty. The parameter
+    /// name is <c>startItem</c>, the name of the constructor parameter.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// An item's <see cref="TextStyle.FontSize"/> or <see cref="TextStyle.Color"/> is refused, or the
@@ -118,6 +119,11 @@ public sealed class ListRenderer : IRenderer
             _occupied = area.WithHeight(0);
             return LayoutResult.Full(_occupied);
         }
+
+        // Before anything indexes by the start: the per-item heights are an array, which would throw
+        // IndexOutOfRangeException for a negative start where this documents
+        // ArgumentOutOfRangeException (#556).
+        ArgumentOutOfRangeException.ThrowIfNegative(_startItem, "startItem");
 
         // Walk items and accumulate height, handling overflow.
         var y = area.Y;
