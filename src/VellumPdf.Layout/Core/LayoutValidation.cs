@@ -72,7 +72,43 @@ internal static class LayoutValidation
                 $"{owner} has a font size of {Format(style.FontSize)}, which cannot be laid out. " +
                 "A font size must be a finite number.");
         }
+
+        ValidateColor(style.Color, owner, "text colour");
     }
+
+    /// <summary>
+    /// Rejects a colour with a channel that is not a finite number. A channel is written straight
+    /// into an <c>rg</c> or <c>RG</c> operand, so <c>NaN</c> reached the stream as <c>NaN 0 0 rg</c>
+    /// and infinity as <c>Infinity 0 0 rg</c>, neither of which is a PDF number (#509).
+    ///
+    /// Finite is all this checks. A channel outside 0 to 1 is not a PDF number problem: the token
+    /// still parses and the file renders, so refusing it would turn a working document into an
+    /// exception. The range is documented on the colour types instead, and the refusal is deferred
+    /// to the next major (#484).
+    ///
+    /// <c>PdfCanvas</c> refuses the same values when it writes the operand, so a colour that
+    /// reaches the stream by some route this check does not cover still fails loudly. This check is
+    /// the one that can name the element the caller wrote, which the canvas cannot.
+    /// </summary>
+    /// <param name="color">The colour to check.</param>
+    /// <param name="owner">What the colour belongs to, such as <c>A line separator</c>.</param>
+    /// <param name="what">Which colour it is, such as <c>colour</c> or <c>border colour</c>.</param>
+    internal static void ValidateColor(ColorRgb color, string owner, string what)
+    {
+        var channel = !double.IsFinite(color.R) ? ("red", color.R)
+            : !double.IsFinite(color.G) ? ("green", color.G)
+            : !double.IsFinite(color.B) ? ("blue", color.B)
+            : default;
+        if (channel.Item1 is null) return;
+
+        throw new InvalidOperationException(
+            $"{owner} has a {what} whose {channel.Item1} channel is {Format(channel.Item2)}, " +
+            "which cannot be written to a content stream. Every colour channel must be a finite number.");
+    }
+
+    /// <summary>Whether every channel of the colour is a finite number.</summary>
+    internal static bool IsFinite(ColorRgb color) =>
+        double.IsFinite(color.R) && double.IsFinite(color.G) && double.IsFinite(color.B);
 
     /// <summary>
     /// Rejects a cell that covers less than one column, or whose padding is not finite.
@@ -103,6 +139,8 @@ internal static class LayoutValidation
         }
 
         ValidateInsets(cell.Padding, $"Table row {rowIndex}, cell {cellIndex}");
+        if (cell.Background is { } background)
+            ValidateColor(background, $"Table row {rowIndex}, cell {cellIndex}", "background colour");
     }
 
     /// <summary>

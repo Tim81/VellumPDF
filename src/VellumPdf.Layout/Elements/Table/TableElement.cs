@@ -79,10 +79,12 @@ public sealed class TableElement
 
     /// <summary>Color of the table border lines.</summary>
     /// <remarks>
-    /// Stored as given. Channels are not checked or clamped. Each is written into the content
-    /// stream rounded to five decimals, and <c>NaN</c> or <c>Infinity</c> as that token; see
-    /// <see cref="ColorRgb"/>.
+    /// Stored as given. Channels are not clamped. A channel that is not finite is refused when the document is saved; see <see cref="ColorRgb"/>.
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from a save, when a channel is <c>NaN</c> or infinite. The message names the table and the
+    /// channel. A finite channel outside 0 to 1 is not refused (#509).
+    /// </exception>
     public ColorRgb BorderColor { get; init; } = ColorRgb.Black;
 
     /// <summary>Outer margins applied around the whole table.</summary>

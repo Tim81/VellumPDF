@@ -187,10 +187,12 @@ public sealed class TextStyle
 
     /// <summary>The text colour. Defaults to <see cref="ColorRgb.Black"/>.</summary>
     /// <remarks>
-    /// Stored as given. Channels are not checked or clamped. Each is written into the content
-    /// stream rounded to five decimals, and <c>NaN</c> or <c>Infinity</c> as that token; see
-    /// <see cref="ColorRgb"/>.
+    /// Stored as given. Channels are not clamped. A channel that is not finite is refused when the document is saved; see <see cref="ColorRgb"/>.
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from a save, when a channel is <c>NaN</c> or infinite. The message names the paragraph run, running band or table cell that carries the style and the
+    /// channel. A finite channel outside 0 to 1 is not refused (#509).
+    /// </exception>
     public ColorRgb Color { get; init; } = ColorRgb.Black;
 
     /// <summary>

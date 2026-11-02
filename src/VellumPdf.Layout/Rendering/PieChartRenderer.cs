@@ -65,6 +65,11 @@ public sealed class PieChartRenderer : IRenderer
                     FormattableString.Invariant(
                 $"Pie slice values must be finite and non-negative (was {slice.Value})."),
                     nameof(PieChart.Slices));
+            if (!LayoutValidation.IsFinite(slice.Color))
+                throw new ArgumentException(
+                    FormattableString.Invariant(
+                $"Pie slice colours must have finite channels (was {slice.Color.R}, {slice.Color.G}, {slice.Color.B})."),
+                    nameof(PieChart.Slices));
             total += slice.Value;
         }
 
@@ -82,6 +87,11 @@ public sealed class PieChartRenderer : IRenderer
                 FormattableString.Invariant(
                 $"Pie chart start angle must be a finite number (was {_chart.StartAngle})."),
                 nameof(PieChart.StartAngle));
+        if (_chart.StrokeColor is { } strokeColor && !LayoutValidation.IsFinite(strokeColor))
+            throw new ArgumentException(
+                FormattableString.Invariant(
+                $"Pie chart stroke colour must have finite channels (was {strokeColor.R}, {strokeColor.G}, {strokeColor.B})."),
+                nameof(PieChart.StrokeColor));
         if (!double.IsFinite(_chart.StrokeWidth) || _chart.StrokeWidth < 0)
             throw new ArgumentException(
                 FormattableString.Invariant(

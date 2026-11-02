@@ -155,10 +155,12 @@ public sealed class Cell
 
     /// <summary>Optional background fill color for the cell.</summary>
     /// <remarks>
-    /// Null means no fill. A colour is stored as given. Channels are not checked or clamped. Each
-    /// is written into the content stream rounded to five decimals, and <c>NaN</c> or
-    /// <c>Infinity</c> as that token; see <see cref="ColorRgb"/>.
+    /// Null means no fill. A colour is stored as given. Channels are not clamped. A channel that is not finite is refused when the document is saved; see <see cref="ColorRgb"/>.
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from a save, when a channel is <c>NaN</c> or infinite. The message names the row and the cell and the
+    /// channel. A finite channel outside 0 to 1 is not refused (#509).
+    /// </exception>
     public ColorRgb? Background { get; init; }
 
     /// <summary>Horizontal alignment of the cell content.</summary>

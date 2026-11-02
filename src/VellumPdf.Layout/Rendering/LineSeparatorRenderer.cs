@@ -44,6 +44,7 @@ public sealed class LineSeparatorRenderer : IRenderer
         // line the device renders.
         LayoutValidation.ValidateLineWidth(_sep.LineWidth, "A line separator");
         LayoutValidation.ValidateInsets(_sep.Margins, "A line separator");
+        LayoutValidation.ValidateColor(_sep.Color, "A line separator", "colour");
 
         var totalHeight = _sep.Margins.Top + _sep.LineWidth + _sep.Margins.Bottom;
         if (ctx.Area.Height < totalHeight) return LayoutResult.Nothing();

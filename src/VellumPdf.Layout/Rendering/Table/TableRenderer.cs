@@ -100,9 +100,12 @@ public sealed class TableRenderer : IRenderer
             var cells = _table.Rows[r].Cells;
             for (var c = 0; c < cells.Count; c++)
                 LayoutValidation.ValidateCell(cells[c], r, c);
+            if (_table.Rows[r].Background is { } rowBackground)
+                LayoutValidation.ValidateColor(rowBackground, $"Table row {r}", "background colour");
         }
 
         LayoutValidation.ValidateLineWidth(_table.BorderWidth, "A table");
+        LayoutValidation.ValidateColor(_table.BorderColor, "A table", "border colour");
 
         var grid = new TableGridResolver();
         grid.Resolve(_table, area.Width);

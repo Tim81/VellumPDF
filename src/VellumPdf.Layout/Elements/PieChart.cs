@@ -31,10 +31,12 @@ public readonly record struct PieSlice
 
     /// <summary>The fill colour of the wedge.</summary>
     /// <remarks>
-    /// Stored as given. Channels are not checked or clamped. Each is written into the content
-    /// stream rounded to five decimals, and <c>NaN</c> or <c>Infinity</c> as that token; see
-    /// <see cref="ColorRgb"/>.
+    /// Stored as given. Channels are not clamped. A channel that is not finite is refused when the document is saved; see <see cref="ColorRgb"/>.
     /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// Raised from a save, when a channel is <c>NaN</c> or infinite. <see cref="ArgumentException.ParamName"/>
+    /// is <c>Slices</c>. A finite channel outside 0 to 1 is not refused (#509).
+    /// </exception>
     public ColorRgb Color { get; init; }
 
     /// <summary>
@@ -180,9 +182,11 @@ public sealed class PieChart
     /// Optional colour of the separator stroke drawn around each wedge.
     /// When <c>null</c> (the default) no stroke is drawn.
     /// </summary>
-    /// <remarks>Null means no stroke. A colour is stored as given. Channels are not checked or
-    /// clamped. Each is written into the content stream rounded to five decimals, and <c>NaN</c> or
-    /// <c>Infinity</c> as that token; see <see cref="ColorRgb"/>.</remarks>
+    /// <remarks>Null means no stroke. A colour is stored as given. Channels are not clamped. A channel that is not finite is refused when the document is saved; see <see cref="ColorRgb"/>.</remarks>
+    /// <exception cref="ArgumentException">
+    /// Raised from a save, when a channel is <c>NaN</c> or infinite. <see cref="ArgumentException.ParamName"/>
+    /// is <c>StrokeColor</c>. A finite channel outside 0 to 1 is not refused (#509).
+    /// </exception>
     public ColorRgb? StrokeColor { get; init; }
 
     /// <summary>Width of the separator stroke in points. Defaults to 0.5.</summary>

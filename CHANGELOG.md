@@ -18,6 +18,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   now gets the exception. `AppendArc` still returns without drawing for a non-finite radius or
   angle, as before; it refuses a non-finite centre.
 
+- **A non-finite colour channel is refused at the Layout seam, naming the element (#509).** A
+  `ColorRgb` with a `NaN` or infinite channel on a text style, a running band, a table cell's style
+  or background, a table border, a line separator or a pie slice or stroke reached the content
+  stream as `NaN 0 0 rg`, which is not a PDF number. Each now throws from `Document.Save`:
+  `InvalidOperationException` for the same elements #478 and #481 cover, naming the element and the
+  channel, and `ArgumentException` for the pie chart, whose other refusals already use it. A finite
+  channel outside 0 to 1 is **not** refused. It renders today, a patch does not turn that into an
+  exception, and it is documented on `ColorRgb` and `ColorCmyk` with the refusal listed in #484.
+
 ## [2.3.3] - 2026-09-20
 
 This release is led by documentation. Layout's public surface now states what each member
