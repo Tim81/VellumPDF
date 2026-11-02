@@ -1410,8 +1410,7 @@ public sealed class Document : IDisposable
     /// This <see cref="Document"/> was already disposed. It derives from
     /// <see cref="InvalidOperationException"/>, so a catch written for the base type also catches
     /// it; <see cref="Document"/> implements <see cref="IDisposable"/>, so this is ordinary misuse
-    /// rather than a case this API adds. A <paramref name="destination"/> that was already closed,
-    /// or that reports it can neither read nor write, raises it too.
+    /// rather than a case this API adds.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The document has already been written, or has no pages, or an element's input cannot be laid
@@ -1423,8 +1422,12 @@ public sealed class Document : IDisposable
     /// documentation on the property you set says which values reach this.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// The margins, header and footer leave the content area no positive size, or an element
-    /// refuses its own input while being laid out. The boundary documentation on the individual
+    /// <paramref name="destination"/> cannot be written to, which includes a stream that was already
+    /// closed. That is refused before the layout runs and reports <c>destination</c>, so the
+    /// document is untouched; it used to be <see cref="NotSupportedException"/> or
+    /// <see cref="ObjectDisposedException"/> from the write. The margins, header and footer leave
+    /// the content area no positive size, or an element refuses its own input while being laid
+    /// out. The boundary documentation on the individual
     /// properties says which inputs those are. A registered font with a value that makes a font
     /// metric non-finite, such as a <c>unitsPerEm</c> of 0, raises it too; see
     /// <see cref="UseTrueTypeFont"/>. So does text that holds an unpaired surrogate and is measured
@@ -1435,9 +1438,8 @@ public sealed class Document : IDisposable
     /// <see cref="PageSize"/> has a width or height that is not a positive finite number.
     /// </exception>
     /// <exception cref="NotSupportedException">
-    /// Two unrelated conditions share this type: <paramref name="destination"/> does not support
-    /// writing, or <see cref="UseObjectStreams"/> was set and <see cref="Encrypt"/> was called,
-    /// which cannot be combined.
+    /// <see cref="UseObjectStreams"/> was set and <see cref="Encrypt"/> was called, which cannot be
+    /// combined.
     /// </exception>
     /// <exception cref="NullReferenceException">
     /// A null that a member still stores without a check: a null <see cref="PageSize"/>. A custom

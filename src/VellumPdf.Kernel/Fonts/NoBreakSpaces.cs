@@ -19,8 +19,8 @@ namespace VellumPdf.Fonts;
 /// them was drawn correctly if breakable at the wrong places. Keeping them would have drawn
 /// <c>?</c> in the Standard-14 fonts and the missing-glyph box in a font without the glyph, so the
 /// two places that encode and measure text fall back to U+00A0, and for an embedded font then to
-/// U+0020, which every font has. The fallback is wider than a narrow space, which is the best a
-/// font without the character can do.</para>
+/// U+0020. A font with no space glyph at all ends the chain at .notdef (glyph 0). The fallback is
+/// wider than a narrow space, which is the best a font without the character can do.</para>
 ///
 /// <para>There is one definition of the set so that Layout's line breaking, the Standard-14 encoder
 /// and the embedded-font glyph lookup cannot drift apart.</para>

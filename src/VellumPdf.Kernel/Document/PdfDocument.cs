@@ -621,6 +621,11 @@ public sealed class PdfDocument : IDisposable
     /// <summary>Writes a complete PDF file to <paramref name="destination"/>.</summary>
     /// <exception cref="ObjectDisposedException">The document has been disposed.</exception>
     /// <exception cref="ArgumentNullException"><paramref name="destination"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="destination"/> cannot be written to, which includes a stream that was already
+    /// closed. A linearized save to a closed stream used to throw <see cref="ObjectDisposedException"/>
+    /// after the document had been marked as written.
+    /// </exception>
     /// <exception cref="NotSupportedException"><see cref="UseObjectStreams"/> is combined with <see cref="Encrypt"/>.</exception>
     /// <exception cref="InvalidOperationException">
     /// A PDF/A <see cref="Conformance"/> is set together with <see cref="Encrypt"/>, or
@@ -987,6 +992,12 @@ public sealed class PdfDocument : IDisposable
     /// </summary>
     /// <exception cref="ObjectDisposedException">The document has been disposed.</exception>
     /// <exception cref="ArgumentNullException"><paramref name="destination"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="destination"/> cannot be written to, which includes a stream that was already
+    /// closed. It is checked before anything is serialised, so the document is not marked as
+    /// written. It used to be <see cref="NotSupportedException"/> from the final copy, or
+    /// <see cref="ObjectDisposedException"/> for a closed stream.
+    /// </exception>
     /// <exception cref="NotSupportedException"><see cref="UseObjectStreams"/> is combined with <see cref="Encrypt"/>.</exception>
     /// <exception cref="InvalidOperationException">
     /// A PDF/A <see cref="Conformance"/> is set together with <see cref="Encrypt"/>, or

@@ -11,9 +11,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`PdfCanvas` refuses NaN and infinity in every operand it writes (#519).** The canvas has one
   number formatter, behind 24 content-stream operators, and it copied `PdfReal`'s format string
   without `PdfReal`'s check, so `SetFillColorRgb(double.NaN, 0, 0)` wrote `NaN 0 0 rg`, which is
-  not a PDF number (ISO 32000-2 7.3.3). It now throws the same `ArgumentException`, with the same
-  message, as `PdfReal`, and `SetFont` and `SetFontByName` format the size before writing the font
-  name so a refused size leaves no half-written operator. **Attention**: a caller that passed a
+  not a PDF number (ISO 32000-2 7.3.3). It now throws an `ArgumentException` with the same message
+  text as `PdfReal` (the `ParamName` differs: `PdfReal` reports `value`, the canvas none), and
+  `SetFont` and `SetFontByName` format the size before writing the font name so a refused size
+  leaves no half-written operator. **Attention**: a caller that passed a
   non-finite value to a `PdfCanvas` method used to get a file with an invalid content stream and
   now gets the exception. `AppendArc` still returns without drawing for a non-finite radius or
   angle, as before; it refuses a non-finite centre.
@@ -163,7 +164,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   document saves 1, with no exception. A refusal that does not depend on the layout, `Save(null)`,
   `UseObjectStreams` with `Encrypt`, a PDF/A conformance with `Encrypt`, came after the layout and
   left the same pages (each retry saved 2), and an unwritable stream burned the document, so a retry
-  on a good stream threw "already written". Those checks now run **before** the layout, through two
+  on a good stream threw "already written". Those checks now run **before** the layout, through
   internal members on `PdfDocument` that `VellumPdf.Layout` can now reach, so a refusal leaves the
   document untouched and recoverable, and the kernel's `SaveAsync` checks the destination the same
   way. A save that threw after its layout had added pages cannot be undone, so every later save
@@ -173,7 +174,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `Encrypt` with `Sign` throws `NotSupportedException` and leaves the document saveable. A refused
   page geometry adds no pages and stays recoverable. **Attention**: that last rule turns the silent
   wrong file into an exception for code that caught a failure after the layout and retried the same
-  `Document`; build a new one instead.
+  `Document`; build a new one instead. **Attention**: two exception types change because the
+  destination is now checked up front. `PdfDocument.SaveAsync` (and `Document.SaveAsync`) given a
+  stream that cannot be written to now throws `ArgumentException` (parameter `destination`) where it
+  threw `NotSupportedException` from the final copy, and a linearized `PdfDocument.Save` to a closed
+  stream throws `ArgumentException` where it threw `ObjectDisposedException`. A non-linearized
+  `Save` to such a stream already threw `ArgumentException`, with the parameter name `stream`; it is
+  now `destination`.
 
 - **A failed `Save(string)` or `SaveAsync(string)` no longer destroys the file that was already
   there (#508).** Both opened the path with `FileMode.Create`, which truncates it, before the layout

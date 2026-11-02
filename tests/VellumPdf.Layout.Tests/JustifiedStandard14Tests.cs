@@ -132,6 +132,21 @@ public sealed class JustifiedStandard14Tests
         Assert.Equal(2, tmsOnLineOne);
         Assert.True(tw > 0);
         Assert.NotEmpty(xs);
+
+        // The line ends where its last fragment is drawn to end: it starts at its Tm, runs for its
+        // measured width in the style that draws it, and is stretched by one Tw per space. That has
+        // to be the right edge of the box. The fragments of line one are the placements on the first
+        // baseline; the second is the bold one.
+        var placements = ContentStreamReadback.TextPlacements(stream);
+        var lineOne = placements.Where(p => p.Y == placements[0].Y).ToList();
+        Assert.Equal(2, lineOne.Count);
+        Assert.Equal(a, lineOne[0].Text);
+
+        var last = lineOne[^1];
+        var spaces = last.Text.Count(c => c == ' ');
+        Assert.True(spaces > 0);
+        var rightEdge = last.X + Bold().MeasureString(last.Text) + (spaces * tw);
+        Assert.Equal(ContentLeft + ContentWidth, rightEdge, 0.01);
     }
 
     /// <summary>A line that is not justified advances exactly as before, with no Tw at all.</summary>

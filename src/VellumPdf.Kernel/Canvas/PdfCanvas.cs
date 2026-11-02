@@ -20,9 +20,9 @@ namespace VellumPdf.Canvas;
 /// <remarks>
 /// Every number a method writes into the content stream must be finite. <c>NaN</c> and both
 /// infinities are not PDF numbers (ISO 32000-2, 7.3.3), so a method that would write one throws
-/// <see cref="ArgumentException"/> with the message <see cref="PdfReal"/> uses, and writes nothing
-/// of that operator (#519). The check is per operand and covers the colour, graphics-state, path,
-/// font-size and text-positioning operators alike. Zero, negative and out-of-range finite values
+/// <see cref="ArgumentException"/> with the message text <see cref="PdfReal"/> uses, and writes
+/// nothing of that operator (#519). The check is per operand and covers the colour,
+/// graphics-state, path, font-size and text-positioning operators alike. Zero, negative and out-of-range finite values
 /// are not refused here; for a colour component that is a "shall" in ISO 32000-2, 8.6.4.3 that
 /// this class does not enforce.
 /// <para><see cref="AppendArc"/> is the one exception to "writes nothing": a non-finite radius or
@@ -733,8 +733,9 @@ public sealed class PdfCanvas
     // Formats an operand for the content stream. It matches PdfReal on both counts: the "0.#####"
     // format string (#80) and the refusal of NaN and Infinity, which are not PDF numbers
     // (ISO 32000-2 7.3.3). Every number the canvas writes goes through here, so an invalid token
-    // cannot be written whichever caller reaches the canvas (#519). The message and the exception
-    // type are PdfReal's, so the object model and the content stream read alike.
+    // cannot be written whichever caller reaches the canvas (#519). The exception type and the
+    // message text are PdfReal's, so the object model and the content stream read alike; the
+    // ParamName differs (null here, "value" there).
     private static string N(double v)
     {
         if (double.IsNaN(v) || double.IsInfinity(v))
