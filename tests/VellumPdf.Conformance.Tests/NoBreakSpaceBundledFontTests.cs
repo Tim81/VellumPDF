@@ -148,4 +148,59 @@ public sealed class NoBreakSpaceBundledFontTests
 
         Assert.Contains((narrow, NarrowNoBreakSpace), entries);
     }
+
+    /// <summary>
+    /// Characters the font lacks that are not one of the two spaces get no stand-in, so each keeps its
+    /// own glyph-0 entry in the CMap, as it always did. Dropping stand-ins must not touch them.
+    /// </summary>
+    [Fact]
+    public void LiberationMono_toUnicode_missingCharactersThatAreNotSpacesKeepTheirNotdefEntries()
+    {
+        using var doc = new PdfDocument();
+        var courier = doc.EmbedStandard14Font(Standard14.Courier);
+        Assert.Equal(0, courier.GetGlyphId(0x4E00));
+        Assert.Equal(0, courier.GetGlyphId(0x4E01));
+
+        var entries = ToUnicodeEntries(courier);
+
+        Assert.Contains((0, 0x4E00), entries);
+        Assert.Contains((0, 0x4E01), entries);
+    }
+
+    // ── A handle belongs to the document that embedded it (#544) ─────────────
+
+    [Fact]
+    public void RegisterEmbeddedFontUsage_withAHandleFromAnotherDocument_isRefusedNamingTheHandle()
+    {
+        using var owner = new PdfDocument();
+        var foreign = owner.EmbedStandard14Font(Standard14.Courier);
+        using var pdf = new PdfDocument();
+        var page = pdf.AddPage();
+
+        var ex = Assert.Throws<ArgumentException>(() => pdf.RegisterEmbeddedFontUsage(page, foreign));
+
+        Assert.Equal("handle", ex.ParamName);
+        Assert.Contains("belongs to a different document", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RegisterEmbeddedFontUsage_withItsOwnHandle_isAccepted()
+    {
+        using var pdf = new PdfDocument();
+        var own = pdf.EmbedStandard14Font(Standard14.Courier);
+        var page = pdf.AddPage();
+
+        pdf.RegisterEmbeddedFontUsage(page, own);
+    }
+
+    [Fact]
+    public void RegisterEmbeddedFontUsage_withNullArguments_namesThem()
+    {
+        using var pdf = new PdfDocument();
+        var own = pdf.EmbedStandard14Font(Standard14.Courier);
+        var page = pdf.AddPage();
+
+        Assert.Equal("page", Assert.Throws<ArgumentNullException>(() => pdf.RegisterEmbeddedFontUsage(null!, own)).ParamName);
+        Assert.Equal("handle", Assert.Throws<ArgumentNullException>(() => pdf.RegisterEmbeddedFontUsage(page, null!)).ParamName);
+    }
 }

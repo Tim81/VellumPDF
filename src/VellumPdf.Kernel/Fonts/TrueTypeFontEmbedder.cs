@@ -524,7 +524,15 @@ public sealed class TrueTypeFontEmbedder
         return fontBytes;
     }
 
-    private string BuildToUnicodeCMapContent()
+    private string BuildToUnicodeCMapContent() => BuildToUnicodeCMapContent(_unicodeToGid, _fallbackCodePoints);
+
+    /// <summary>
+    /// The /ToUnicode CMap for the given code point to glyph assignments, where
+    /// <paramref name="fallbackCodePoints"/> are the ones that got a stand-in glyph. A static seam so
+    /// a test can pass assignments no bundled font produces.
+    /// </summary>
+    internal static string BuildToUnicodeCMapContent(
+        IReadOnlyDictionary<int, ushort> unicodeToGid, IReadOnlySet<int> fallbackCodePoints)
     {
         var sb = new StringBuilder();
         sb.AppendLine("/CIDInit /ProcSet findresource begin");
@@ -544,19 +552,19 @@ public sealed class TrueTypeFontEmbedder
         // owns the glyph is in use, and when several stand-ins share it the lowest code point is
         // listed. Glyph 0 and duplicates between code points the font really maps are left alone.
         var owned = new HashSet<ushort>();
-        foreach (var (cp, gid) in _unicodeToGid)
-            if (!_fallbackCodePoints.Contains(cp)) owned.Add(gid);
+        foreach (var (cp, gid) in unicodeToGid)
+            if (!fallbackCodePoints.Contains(cp)) owned.Add(gid);
 
         var listedStandIn = new Dictionary<ushort, int>();
-        foreach (var cp in _fallbackCodePoints)
+        foreach (var cp in fallbackCodePoints)
         {
-            var gid = _unicodeToGid[cp];
+            var gid = unicodeToGid[cp];
             if (owned.Contains(gid)) continue;
             if (!listedStandIn.TryGetValue(gid, out var listed) || cp < listed) listedStandIn[gid] = cp;
         }
 
-        var pairs = _unicodeToGid
-            .Where(kv => !_fallbackCodePoints.Contains(kv.Key)
+        var pairs = unicodeToGid
+            .Where(kv => !fallbackCodePoints.Contains(kv.Key)
                 || (listedStandIn.TryGetValue(kv.Value, out var listed) && listed == kv.Key))
             .Select(kv => (gid: kv.Value, cp: kv.Key))
             .OrderBy(p => p.gid)

@@ -1006,4 +1006,277 @@ public sealed class SaveLifecycleTests
         doc.Add(new Paragraph("Hello", Style()));
         Assert.Equal(1, Pages(Save(doc)));
     }
+
+    // ── The lifecycle checks of the path overloads, one by one ───────────────
+
+    private static byte[] OldReport(string path)
+    {
+        using var good = Good();
+        good.Add(new Paragraph("Old report", Style()));
+        good.Save(path);
+        return File.ReadAllBytes(path);
+    }
+
+    [Fact]
+    public void SaveToAPath_afterALayoutThatThrew_isRefused_andCreatesNothing()
+    {
+        using var dir = new TempDir();
+        var second = Path.Combine(dir.Path, "second.pdf");
+        using var doc = TooTall();
+        Assert.Throws<InvalidOperationException>(() => Save(doc));
+        doc.PageSize = new PdfRectangle(0, 0, 600, 800);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => doc.Save(second));
+
+        Assert.Contains("cannot be saved again", ex.Message, StringComparison.Ordinal);
+        Assert.False(File.Exists(second));
+    }
+
+    [Fact]
+    public async Task SaveAsyncToAPath_afterALayoutThatThrew_isRefused_andCreatesNothing()
+    {
+        using var dir = new TempDir();
+        var second = Path.Combine(dir.Path, "second.pdf");
+        using var doc = TooTall();
+        Assert.Throws<InvalidOperationException>(() => Save(doc));
+        doc.PageSize = new PdfRectangle(0, 0, 600, 800);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => doc.SaveAsync(second, TestContext.Current.CancellationToken));
+
+        Assert.Contains("cannot be saved again", ex.Message, StringComparison.Ordinal);
+        Assert.False(File.Exists(second));
+    }
+
+    [Fact]
+    public void SaveToAnExistingPath_afterALayoutThatThrew_leavesTheFileAlone()
+    {
+        using var dir = new TempDir();
+        var path = Path.Combine(dir.Path, "report.pdf");
+        var before = OldReport(path);
+        using var doc = TooTall();
+        Assert.Throws<InvalidOperationException>(() => Save(doc));
+        doc.PageSize = new PdfRectangle(0, 0, 600, 800);
+
+        Assert.Throws<InvalidOperationException>(() => doc.Save(path));
+
+        Assert.Equal(before, File.ReadAllBytes(path));
+    }
+
+    [Fact]
+    public void Sign_afterALayoutThatThrew_isRefusedInsteadOfLayingOutAgain()
+    {
+        using var cert = SelfSigned();
+        using var doc = TooTall();
+        Assert.Throws<InvalidOperationException>(() => Save(doc));
+        doc.PageSize = new PdfRectangle(0, 0, 600, 800);
+
+        using var signed = new MemoryStream();
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            doc.Sign(signed, new PdfSignatureSettings { Certificate = cert, SignerName = "Tester", Reason = "Test" }));
+
+        Assert.Contains("cannot be saved again", ex.Message, StringComparison.Ordinal);
+        Assert.Equal(0, signed.Length);
+    }
+
+    // ── The diagnostics are collected by the path overloads too ──────────────
+
+    [Fact]
+    public void SaveToAPath_populatesTheTextEncodingWarnings()
+    {
+        using var dir = new TempDir();
+        using var doc = Good();
+        doc.Add(new Paragraph("Black star: \u2605", Style()));
+
+        doc.Save(Path.Combine(dir.Path, "star.pdf"));
+
+        var warning = Assert.Single(doc.TextEncodingWarnings);
+        Assert.Equal(new System.Text.Rune(0x2605), warning.Character);
+    }
+
+    [Fact]
+    public async Task SaveAsyncToAPath_populatesTheTextEncodingWarnings()
+    {
+        using var dir = new TempDir();
+        using var doc = Good();
+        doc.Add(new Paragraph("Black star: \u2605", Style()));
+
+        await doc.SaveAsync(Path.Combine(dir.Path, "star.pdf"), TestContext.Current.CancellationToken);
+
+        var warning = Assert.Single(doc.TextEncodingWarnings);
+        Assert.Equal(new System.Text.Rune(0x2605), warning.Character);
+    }
+
+    // ── Refusals that need no layout leave a file at the path alone (#508) ───
+
+    [Fact]
+    public void SaveToAPath_ofADisposedDocument_leavesTheExistingFileByteForByte()
+    {
+        using var dir = new TempDir();
+        var path = Path.Combine(dir.Path, "report.pdf");
+        var before = OldReport(path);
+        var doc = Good();
+        doc.Add(new Paragraph("New", Style()));
+        doc.Dispose();
+
+        Assert.Throws<ObjectDisposedException>(() => doc.Save(path));
+
+        Assert.Equal(before, File.ReadAllBytes(path));
+    }
+
+    [Fact]
+    public void SaveToAPath_ofADocumentAlreadyWritten_leavesTheFileByteForByte()
+    {
+        using var dir = new TempDir();
+        var path = Path.Combine(dir.Path, "report.pdf");
+        using var doc = Good();
+        doc.Add(new Paragraph("Once", Style()));
+        doc.Save(path);
+        var before = File.ReadAllBytes(path);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => doc.Save(path));
+
+        Assert.Contains("already been written", ex.Message, StringComparison.Ordinal);
+        Assert.Equal(before, File.ReadAllBytes(path));
+    }
+
+    [Fact]
+    public async Task SaveAsyncToAPath_ofADocumentAlreadyWritten_leavesTheFileByteForByte()
+    {
+        using var dir = new TempDir();
+        var path = Path.Combine(dir.Path, "report.pdf");
+        using var doc = Good();
+        doc.Add(new Paragraph("Once", Style()));
+        await doc.SaveAsync(path, TestContext.Current.CancellationToken);
+        var before = await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => doc.SaveAsync(path, TestContext.Current.CancellationToken));
+
+        Assert.Equal(before, await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public void SaveToAPath_withOptionsThatCannotBeHonoured_leavesTheFileByteForByte_andANewPathEmpty()
+    {
+        using var dir = new TempDir();
+        var existing = Path.Combine(dir.Path, "report.pdf");
+        var fresh = Path.Combine(dir.Path, "fresh.pdf");
+        var before = OldReport(existing);
+        using var doc = Good();
+        doc.Add(new Paragraph("New", Style()));
+        doc.UseObjectStreams = true;
+        doc.Encrypt(new PdfEncryptionSettings { UserPassword = "pw" });
+
+        Assert.Throws<NotSupportedException>(() => doc.Save(existing));
+        Assert.Throws<NotSupportedException>(() => doc.Save(fresh));
+
+        Assert.Equal(before, File.ReadAllBytes(existing));
+        Assert.False(File.Exists(fresh));
+
+        doc.UseObjectStreams = false;
+        doc.Conformance = PdfConformance.PdfA2b;
+        Assert.Throws<InvalidOperationException>(() => doc.Save(existing));
+        Assert.Equal(before, File.ReadAllBytes(existing));
+    }
+
+    [Fact]
+    public async Task SaveAsyncToAPath_withOptionsThatCannotBeHonoured_leavesTheFileByteForByte()
+    {
+        using var dir = new TempDir();
+        var existing = Path.Combine(dir.Path, "report.pdf");
+        var before = OldReport(existing);
+        using var doc = Good();
+        doc.Add(new Paragraph("New", Style()));
+        doc.UseObjectStreams = true;
+        doc.Encrypt(new PdfEncryptionSettings { UserPassword = "pw" });
+
+        await Assert.ThrowsAsync<NotSupportedException>(() => doc.SaveAsync(existing, TestContext.Current.CancellationToken));
+
+        Assert.Equal(before, await File.ReadAllBytesAsync(existing, TestContext.Current.CancellationToken));
+    }
+
+    // ── An empty Document saved to a path ────────────────────────────────────
+
+    [Fact]
+    public void SaveAnEmptyDocumentToANewPath_reportsNoPages_andLeavesNoFile()
+    {
+        using var dir = new TempDir();
+        var path = Path.Combine(dir.Path, "empty.pdf");
+        using var doc = Good();
+
+        var ex = Assert.Throws<InvalidOperationException>(() => doc.Save(path));
+
+        Assert.Contains("no pages", ex.Message, StringComparison.Ordinal);
+        Assert.False(File.Exists(path));
+        Assert.Empty(Directory.GetFiles(dir.Path));
+    }
+
+    [Fact]
+    public async Task SaveAsyncAnEmptyDocumentToANewPath_reportsNoPages_andLeavesNoFile()
+    {
+        using var dir = new TempDir();
+        var path = Path.Combine(dir.Path, "empty.pdf");
+        using var doc = Good();
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => doc.SaveAsync(path, TestContext.Current.CancellationToken));
+
+        Assert.Contains("no pages", ex.Message, StringComparison.Ordinal);
+        Assert.False(File.Exists(path));
+    }
+
+    [Fact]
+    public void SaveAnEmptyDocumentOverAnExistingFile_leavesTheFileByteForByte()
+    {
+        using var dir = new TempDir();
+        var path = Path.Combine(dir.Path, "report.pdf");
+        var before = OldReport(path);
+        using var doc = Good();
+
+        Assert.Throws<InvalidOperationException>(() => doc.Save(path));
+
+        Assert.Equal(before, File.ReadAllBytes(path));
+    }
+
+    // ── A failure while the PDF is built, after the layout, keeps the old file ──
+
+    /// <summary>
+    /// Registers an annotation rectangle that is not a number. The layout accepts it; writing the PDF
+    /// is where it is refused, after the pages are laid out and the document is marked written.
+    /// </summary>
+    private sealed class BadLinkRectangleRenderer : IRenderer
+    {
+        public LayoutResult Layout(LayoutContext context) =>
+            LayoutResult.Full(context.Area.WithHeight(0));
+
+        public void Draw(DrawContext context) =>
+            context.AddUriLinkAnnotation(new LayoutBox(double.NaN, 0, 10, 10), "https://example.com");
+    }
+
+    [Fact]
+    public void SyncSaveToAPath_thatFailsWhileTheFileIsBuilt_keepsTheOldFile()
+    {
+        using var dir = new TempDir();
+        var path = Path.Combine(dir.Path, "report.pdf");
+        var before = OldReport(path);
+        using var doc = Good();
+        doc.Add(new Paragraph("New", Style()));
+        doc.Add(new BadLinkRectangleRenderer());
+
+        Assert.Throws<ArgumentException>(() => doc.Save(path));
+
+        Assert.Equal(before, File.ReadAllBytes(path));
+    }
+
+    [Fact]
+    public void SyncSaveToANewPath_thatFailsWhileTheFileIsBuilt_leavesNoFile()
+    {
+        using var dir = new TempDir();
+        var path = Path.Combine(dir.Path, "fresh.pdf");
+        using var doc = Good();
+        doc.Add(new Paragraph("New", Style()));
+        doc.Add(new BadLinkRectangleRenderer());
+
+        Assert.Throws<ArgumentException>(() => doc.Save(path));
+
+        Assert.False(File.Exists(path));
+    }
 }
