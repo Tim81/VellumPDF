@@ -2268,4 +2268,112 @@ public sealed class Jbig2ImageTests
         Assert.Equal(64, img.Width);
         Assert.Equal(pages[1].Concat(pages[2]).ToArray(), ExtractStreamBody(Serialize(img)));
     }
+
+    // ── Round two: page association 0 on page information, unknown length under DecodeToRaster ──
+
+    /// <summary>
+    /// Page information belongs to a page, so association 0 is malformed. It used to leave the first
+    /// page defined as page 0, which nothing but globals match, and the image came out blank.
+    /// </summary>
+    [Fact]
+    public void Load_PageInformationWithPageAssociationZero_IsRefused()
+    {
+        byte[][] segments =
+        [
+            BuildSegment(0, type: 48, pageAssociation: 0, BuildPageInfoSegmentData(64, 48)),
+            BuildSegment(1, type: 38, pageAssociation: 1, [0xB1, 0xB2]),
+            BuildSegment(2, type: 51, pageAssociation: 0, []),
+        ];
+
+        var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments)));
+
+        Assert.Contains("page association 0", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("segment 0", ex.Message, StringComparison.Ordinal);
+    }
+
+    private static byte[] MmrRegionData()
+    {
+        var mmr = PackMsbFirst((0b001, 3), (0b00110101, 8), (0b000101, 6));   // an 8-pixel black run
+        var region = new byte[18 + mmr.Length];
+        WriteInt32(region, 0, 8);
+        WriteInt32(region, 4, 1);
+        region[17] = 0x01;                                                      // MMR
+        Array.Copy(mmr, 0, region, 18, mmr.Length);
+        return region;
+    }
+
+    /// <summary>
+    /// DecodeToRaster used to read an unknown-length region as "data too short", or, for any other
+    /// type, ignore it, and the sequential parse had swallowed what followed, so the raster came out
+    /// partial or blank. It is refused with the message passthrough uses.
+    /// </summary>
+    [Theory]
+    [InlineData(38)]   // an immediate generic region
+    [InlineData(6)]    // an immediate text region, which the raster decoder would reject as unsupported
+    [InlineData(50)]   // an end-of-stripe segment
+    public void Load_DecodeToRaster_SegmentOfTheFirstPageWithAnUnknownDataLength_IsRefusedNamingIt(int type)
+    {
+        var region = BuildSegment(1, type, pageAssociation: 1, MmrRegionData());
+        for (var i = 7; i < 11; i++) region[i] = 0xFF;
+        byte[][] segments =
+        [
+            BuildSegment(0, type: 48, pageAssociation: 1, BuildPageInfoSegmentData(8, 1)),
+            region,
+        ];
+        var opts = new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster };
+
+        var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments), opts));
+
+        Assert.Contains($"segment 1 (type {type})", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("0xFFFFFFFF", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Load_DecodeToRaster_UnknownDataLengthOnAnotherPage_IsNotAFault()
+    {
+        var lastRegion = BuildSegment(3, type: 38, pageAssociation: 2, [0xC1, 0xC2]);
+        for (var i = 7; i < 11; i++) lastRegion[i] = 0xFF;
+        byte[][] segments =
+        [
+            BuildSegment(0, type: 48, pageAssociation: 1, BuildPageInfoSegmentData(8, 1)),
+            BuildSegment(1, type: 38, pageAssociation: 1, MmrRegionData()),
+            BuildSegment(2, type: 48, pageAssociation: 2, BuildPageInfoSegmentData(16, 2)),
+            lastRegion,
+        ];
+        var opts = new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster };
+
+        var img = Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments), opts);
+
+        Assert.Equal([0xFF], CcittImageTests.DecompressFlateStream(img.BuildStream()));
+    }
+
+    /// <summary>The end-of-page segment is framing and stays exempt under DecodeToRaster too.</summary>
+    [Fact]
+    public void Load_DecodeToRaster_EndOfPageWithAnUnknownDataLength_IsExempt()
+    {
+        var endOfPage = BuildSegment(2, type: 49, pageAssociation: 1, []);
+        for (var i = 7; i < 11; i++) endOfPage[i] = 0xFF;
+        byte[][] segments =
+        [
+            BuildSegment(0, type: 48, pageAssociation: 1, BuildPageInfoSegmentData(8, 1)),
+            BuildSegment(1, type: 38, pageAssociation: 1, MmrRegionData()),
+            endOfPage,
+        ];
+        var opts = new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster };
+
+        var img = Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments), opts);
+
+        Assert.Equal([0xFF], CcittImageTests.DecompressFlateStream(img.BuildStream()));
+    }
+
+    [Fact]
+    public void Load_RandomAccess_UnknownDataLengthOnAnyPage_IsRefused()
+    {
+        var pages = TwoPages();
+        for (var i = 7; i < 11; i++) pages[5][i] = 0xFF;      // page 2's generic region
+
+        var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(RandomAccess(0x00, PageCountOne, pages)));
+
+        Assert.Contains("unknown data length", ex.Message, StringComparison.Ordinal);
+    }
 }

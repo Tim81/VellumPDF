@@ -236,7 +236,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   A segment whose data length is unknown (0xFFFFFFFF, T.88 7.2.7) is refused under `Passthrough`
   with `InvalidDataException` naming the segment and its type, because it cannot be partitioned into
   the page and globals streams; the end-of-page and end-of-file segments and every segment of a page
-  that is not embedded are exempt. **Attention**: a headerless (embedded-organisation) JBIG2 stream
+  that is not embedded are exempt; `DecodeToRaster` refuses the same segments with the same
+  message, where the raster used to come out partial or blank. A sequential or embedded stream
+  cannot be read past such a segment, so what follows one is not seen. A random-access file
+  refuses an unknown length on any page, without naming the segment type. A first page-information
+  segment with page association 0 is refused, where it used to give a blank image. **Attention**: a headerless (embedded-organisation) JBIG2 stream
   with an unknown-length page segment used to embed as a blank image, with no error, and now throws
   `InvalidDataException`; and a file with more than one page used to embed every page's segments
   into one image stream and now embeds only the first page.
