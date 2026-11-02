@@ -312,6 +312,29 @@ internal static class LayoutValidation
     }
 
     /// <summary>
+    /// Rejects explicit column widths whose sum is not finite (#546).
+    ///
+    /// Individual non-finite entries are already read as auto, so every entry reaching the sum is
+    /// finite, but finite entries can still overflow when added. The resolver scales explicit
+    /// widths by one ratio when they overrun the room available, so an infinite sum made that ratio
+    /// zero and every column was written at width 0.
+    ///
+    /// Only the overflow is refused. A single dominant but finite entry, such as 1e200 beside 60
+    /// and 70, scales the others to nearly nothing and still renders, so refusing it would turn a
+    /// rendering document into an exception; it is documented on <c>ColWidths</c> and left for the
+    /// next major (#484).
+    /// </summary>
+    internal static void ValidateColumnWidthSum(double sum)
+    {
+        if (double.IsFinite(sum)) return;
+
+        throw new InvalidOperationException(
+            "A table's explicit column widths add up to positive infinity, so they cannot be " +
+            "scaled to fit the page and every column would be drawn at width 0. Use smaller " +
+            "column widths.");
+    }
+
+    /// <summary>
     /// Rejects a table that resolves to no columns. This is the third refusal #481 names, and the
     /// one route to it that no span check covers: a table with no rows, or whose rows hold no
     /// cells, reaches a column count of zero without any bad <c>ColSpan</c>.

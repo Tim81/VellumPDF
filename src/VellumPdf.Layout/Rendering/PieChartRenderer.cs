@@ -73,6 +73,13 @@ public sealed class PieChartRenderer : IRenderer
             total += slice.Value;
         }
 
+        // Each slice is finite, but two of 1e308 sum to +Infinity, and every wedge's sweep is then
+        // value / Infinity = 0: the chart saved with no curves at all (#546).
+        if (!double.IsFinite(total))
+            throw new ArgumentException(
+                "The sum of pie slice values must be finite; the slice values overflow when added.",
+                nameof(PieChart.Slices));
+
         if (total <= 0)
             throw new ArgumentException(
                 "The sum of pie slice values must be positive.", nameof(PieChart.Slices));
@@ -222,7 +229,12 @@ public sealed class PieChartRenderer : IRenderer
         }
 
         var direction = _chart.Clockwise ? -1.0 : 1.0;
-        var angle = _chart.StartAngle;
+        // Reduced to a full turn before any sweep is added. Doubles near 1e16 are further apart than
+        // a wedge's sweep, so adding one to such an angle loses it: 1e16 overlapped the wedges and
+        // 1e17 collapsed them to nothing (#546). The remainder is exact, and an angle already
+        // within a turn is unchanged, so the default and every ordinary start angle write the same
+        // bytes as before.
+        var angle = _chart.StartAngle % (2 * Math.PI);
 
         // A lone drawable slice spans the whole circle; a 360° wedge has coincident radial
         // edges that show as a seam when stroked, so draw a seamless circle instead.

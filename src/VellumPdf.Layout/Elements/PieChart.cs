@@ -106,19 +106,19 @@ public sealed class PieChart
     /// <para><b>Attention</b>: a value of zero is accepted and contributes no angle. The slice
     /// stays in this list and is absent from the chart, and nothing reports that it was dropped.
     /// If a zero slice should be visible in your chart, give it a small positive value.</para>
-    /// <para>Finite values whose sum overflows to infinity are accepted, and every slice then has
-    /// no angle and the chart has no area: it is blank, or, with <see cref="StrokeColor"/> set,
-    /// every non-zero slice strokes the same radius, at <see cref="StartAngle"/> (#546). In a
-    /// tagged document the composed alternate text then gives every labelled slice 0%.</para>
+    /// <para>Finite values whose sum overflows to infinity are refused by the same exception, with
+    /// <c>The sum of pie slice values must be finite; the slice values overflow when added.</c>
+    /// They used to be accepted: every slice then had no angle and the chart had no area, so it was
+    /// blank, or, with <see cref="StrokeColor"/> set, every non-zero slice stroked the same radius
+    /// (#546). A large sum that stays finite is unaffected, and each wedge still takes its share.</para>
     /// <para>A null list makes the save throw.</para>
-    /// <para>Do not pass a null list, or values whose sum can overflow. A later major version will
-    /// refuse both.</para>
+    /// <para>Do not pass a null list. A later major version will refuse it.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised while the chart is laid out, which happens inside
     /// <see cref="Document.Save(System.IO.Stream)"/>, when the list is empty, when a value is
-    /// negative or not finite, or when the values sum to zero or less. <c>ParamName</c> is this
-    /// property's name.
+    /// negative or not finite, when the values sum to zero or less, or when they sum to infinity.
+    /// <c>ParamName</c> is this property's name.
     /// </exception>
     /// <exception cref="NullReferenceException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -228,12 +228,13 @@ public sealed class PieChart
     /// <remarks>
     /// A non-finite angle is refused. Laying the chart out throws
     /// <see cref="ArgumentException"/> and names <c>StartAngle</c>.
-    /// <para>The unit is radians, not degrees. The angle is used as given, not reduced to 0 to 2π,
-    /// and each wedge's end is computed by adding its sweep to the angle before it. A large angle
-    /// draws wrong, because doubles that large are too far apart to hold a sweep exactly, and the
-    /// error grows with the angle: on a two-slice chart without a stroke colour, 1e15 already
-    /// leaves gaps or overlaps between the wedges, and at 1e17 every wedge collapses to a line with
-    /// no area (#546). Reduce the angle to 0 to 2π yourself.</para>
+    /// <para>The unit is radians, not degrees. An angle of a full turn or more is reduced to the
+    /// equivalent angle before any wedge is drawn, so you do not have to normalise one yourself
+    /// (#546). Before that, each wedge's end was computed by adding its sweep to the angle, and
+    /// doubles near 1e16 are too far apart to hold a sweep: 1e16 overlapped the wedges and 1e17
+    /// collapsed every wedge to a line with no area. An angle already within a turn is used exactly
+    /// as given, so ordinary documents write the same bytes as before. The reduction takes the
+    /// remainder, so a negative angle stays negative.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised while the chart is laid out, which happens inside

@@ -76,6 +76,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   documentation carries the clause's advice that zero-width lines should not be used, because the
   result is device-dependent. `PieChart.StrokeWidth` already refused a negative value.
 
+- **Pie slice totals, pie start angles and explicit table widths no longer overflow into empty or
+  wrong output (#546).** Three inputs were each valid on their own and wrong together. Two pie
+  slices of `1e308` summed to infinity, every wedge's sweep became zero and the chart saved with no
+  curves; the save now throws `ArgumentException` with the parameter name `Slices`. A `StartAngle`
+  near `1e16` is further from its neighbours than a wedge's sweep, so `1e16` overlapped the wedges
+  and `1e17` collapsed them; the angle is now reduced to a turn with an exact remainder before any
+  sweep is added, and an angle already within a turn is unchanged, so ordinary documents write the
+  same bytes. Explicit column widths such as `1e308, 1e308, 1e308` summed to infinity, scaled every
+  column to zero and drew an empty table; the save now throws `InvalidOperationException`. A single
+  dominant finite width (`1e200, 60, 70`) still renders, is documented on `ColWidths`, and is
+  listed for the next major (#484), because refusing it would turn a rendering document into an
+  exception.
+
 ## [2.3.3] - 2026-09-20
 
 This release is led by documentation. Layout's public surface now states what each member

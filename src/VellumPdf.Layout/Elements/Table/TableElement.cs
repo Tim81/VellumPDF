@@ -138,21 +138,35 @@ public sealed class TableElement
     /// explicit widths exceed the width the auto columns leave them, they are all scaled by one
     /// ratio to that width, even when they fit the available width on their own. With no auto
     /// column, that width is the whole available width. So one very large entry leaves the other
-    /// explicit columns near zero, and entries whose sum overflows to infinity are all scaled to
-    /// zero (#546). When the auto columns take all of the available width or more, every column,
+    /// explicit columns near zero: <c>1e200, 60, 70</c> resolves to about 451, 0 and 0 on an A4
+    /// page with the default margins, and nothing reports it. That is a contract tightening for the next major (#484), not
+    /// a refusal in a patch, because the table still renders. Entries whose sum overflows to
+    /// infinity are different: they would all be scaled to zero and draw an empty table, so the
+    /// save refuses them with <see cref="InvalidOperationException"/>, saying the widths add up to
+    /// positive infinity (#546). When the auto columns take all of the available width or more, every column,
     /// auto ones included, is scaled by one ratio instead. A positive entry under 5e-6 is kept and
     /// written as width 0. None of this is reported.</para>
     /// <para>Do not rely on scaling to fit a table. Pass widths that fit the space you give
     /// it.</para>
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when the explicit entries add up to infinity. The message says so and
+    /// names no column.
+    /// </exception>
     public IReadOnlyList<double> ColWidths => _colWidths;
 
     /// <summary>Sets the column widths (0 = auto) and returns this instance for chaining.</summary>
     /// <remarks>
     /// Replaces every width. Called with no arguments it clears them, so every column is auto. A
     /// null array is refused only after the existing widths are cleared, so they are lost. The
-    /// entries follow the rules on <see cref="ColWidths"/>; none is refused here.
+    /// entries follow the rules on <see cref="ColWidths"/>; none is refused here, and a set whose
+    /// sum overflows to infinity is refused at the save.
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this method, when the entries add up to infinity; see <see cref="ColWidths"/>.
+    /// </exception>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="widths"/> is <see langword="null"/>. <c>ParamName</c> is <c>collection</c>,
     /// not <c>widths</c>.
