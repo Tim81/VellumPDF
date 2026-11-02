@@ -109,6 +109,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   layout wrapped to one line fewer, that line was never drawn, and the space reserved for it stayed
   empty. A single two-line item at 12pt at the top of an A4 page drew only its first line. The
   layout pass now records the height it offered each item and the draw pass offers the same one.
+  The record is an array, so `ListRenderer.Layout` checks the start item first and a negative one
+  still throws `ArgumentOutOfRangeException`; its `ParamName` is now `startItem`, where it was
+  `index`.
   A test sweeps the list's start position through 1.5 line heights in 0.01pt steps at three font
   sizes and checks that every word is drawn once: before the fix 766, 1,758 and 504 of those
   positions lost words.
@@ -171,7 +174,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   throws `InvalidOperationException` asking for a new `Document`. That covers a layout that threw,
   and also a step after it: a `SaveAsync` cancelled once the layout had run, or a signature
   placeholder that failed to build. Signing also refuses encryption before the layout now, so
-  `Encrypt` with `Sign` throws `NotSupportedException` and leaves the document saveable. A refused
+  `Encrypt` with `Sign` throws `NotSupportedException` and leaves the document saveable, and so do
+  a negative `SignaturePage` and a negative or oversized `EstimatedSignatureSizeBytes`, which throw
+  `ArgumentOutOfRangeException` before any page is added; a page index past the last page can only
+  be judged after the layout. A `SaveAsync` cancelled at any checkpoint ends with
+  `TaskCanceledException`, as documented. With a header or footer set, the counting pass refuses a
+  too-tall element before any page is added, so that one case can still be corrected and saved
+  again. A refused
   page geometry adds no pages and stays recoverable. **Attention**: that last rule turns the silent
   wrong file into an exception for code that caught a failure after the layout and retried the same
   `Document`; build a new one instead. **Attention**: two exception types change because the
@@ -180,7 +189,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   threw `NotSupportedException` from the final copy, and a linearized `PdfDocument.Save` to a closed
   stream throws `ArgumentException` where it threw `ObjectDisposedException`. A non-linearized
   `Save` to such a stream already threw `ArgumentException`, with the parameter name `stream`; it is
-  now `destination`.
+  now `destination`. The `ParamName` of a negative `ListRenderer` start item also changes: the
+  `ArgumentOutOfRangeException` still comes from `Layout`, but names `startItem` where it named
+  `index` (see #556).
 
 - **A failed `Save(string)` or `SaveAsync(string)` no longer destroys the file that was already
   there (#508).** Both opened the path with `FileMode.Create`, which truncates it, before the layout
@@ -191,13 +202,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   cancellation leaves the previous file byte for byte and creates nothing at a new path. Opening
   first also means a lock or a permission error surfaces before the layout, while the `Document` is
   still usable. The existing file is rewritten in place, so it keeps its permissions, owner, hard
-  links and extended attributes, a symbolic link at the path is followed, and a device file such as
-  `/dev/null` still works. **Attention**: the final copy is not atomic. A failure during it, such as
-  a full disk, or a crash, can leave the file truncated or incomplete (a file the call created is
-  deleted, one that was already there is not restored), and the file is locked against other
-  readers and writers from before the layout until the save returns. A directory or read-only
-  target is still refused up front. `VellumPdf.Signing` writes to a stream you pass and was not
-  affected.
+  links and extended attributes, a symbolic link at the path (a chain of them, or a link whose
+  target does not exist yet) is followed and never deleted or replaced, and a device file such as
+  `/dev/null` still works. Nothing is checked before the open: the operating system decides whether
+  the path can be written, so a directory still throws `UnauthorizedAccessException`, now before
+  the layout, and root or a supplementary-group user can overwrite a file whose mode bits say
+  read-only, as before. **Attention**: the final copy is not atomic. A failure during it, such as a
+  full disk, or a crash, can leave the file truncated or incomplete (a file the call created is
+  deleted, one that was already there is not restored), and a file another process creates between
+  the existence check and the open is taken for one the call created. The file is held open with
+  `FileShare.None` from before the layout until the save returns, which excludes other openers on
+  Windows but is only an advisory lock on Linux and macOS. The PDF is built in a `MemoryStream`, so
+  a PDF over about 2 GB cannot be saved to a path; pass a `FileStream` to `Save(Stream)` for that.
+  `VellumPdf.Signing` writes to a stream you pass and was not affected.
 
 - **`Jbig2ImageLoader` reads the file header's flags byte and page count, and the random-access
   organisation (#570).** A JBIG2 file as ITU-T T.88 Annex D defines it has more after the 8-byte ID

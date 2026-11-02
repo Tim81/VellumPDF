@@ -1021,11 +1021,20 @@ public sealed class PdfDocument : IDisposable
 
     /// <summary>
     /// What <see cref="PrepareForSigning"/> refuses that does not depend on the pages: a disposed
-    /// document, a null <paramref name="options"/>, encryption, and a document already written.
-    /// Called by the layout engine ahead of layout, because layout appends pages and a refusal that
-    /// came after it left them behind (#530).
+    /// document, a null <paramref name="options"/>, encryption, a document already written, and an
+    /// option value no page count could make valid (a negative
+    /// <see cref="SignaturePlaceholderOptions.SignaturePage"/>, an
+    /// <see cref="SignaturePlaceholderOptions.EstimatedSignatureSizeBytes"/> that is negative or too
+    /// large to size the placeholder). Called by the layout engine ahead of layout, because layout
+    /// appends pages and a refusal that came after it left them behind (#530). A page index past the
+    /// last page cannot be judged until the pages exist and is refused later.
     /// </summary>
-    internal void EnsureCanPrepareForSigning(SignaturePlaceholderOptions options)
+    /// <param name="options">The signing options.</param>
+    /// <param name="pagesKnown">
+    /// Whether the pages have been laid out yet; it only decides whether the message can name the
+    /// page count.
+    /// </param>
+    internal void EnsureCanPrepareForSigning(SignaturePlaceholderOptions options, bool pagesKnown = true)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(options);
@@ -1038,6 +1047,20 @@ public sealed class PdfDocument : IDisposable
         if (_written)
             throw new InvalidOperationException(
                 "This document has already been written; create a new PdfDocument to write again.");
+
+        if (options.SignaturePage < 0)
+            throw new ArgumentOutOfRangeException(
+                nameof(options),
+                options.SignaturePage,
+                pagesKnown
+                    ? $"SignaturePage {options.SignaturePage} is out of range; the document has {_pages.Count} page(s) (0-based index)."
+                    : $"SignaturePage {options.SignaturePage} is out of range; a page index is 0-based and cannot be negative.");
+
+        // The placeholder is 2 hex digits per byte, sized by a string constructor that refuses a
+        // negative count, which is also what a size past int.MaxValue / 2 wraps to. Build it here
+        // and the refusal is that constructor's, as it was when it came from the writer.
+        if (options.EstimatedSignatureSizeBytes < 0 || options.EstimatedSignatureSizeBytes >= 1 << 30)
+            _ = PdfSignatureHelper.GetContentsPlaceholder(options.EstimatedSignatureSizeBytes);
     }
 
     /// <summary>
@@ -1052,6 +1075,12 @@ public sealed class PdfDocument : IDisposable
     /// <exception cref="ObjectDisposedException">The document has been disposed.</exception>
     /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see langword="null"/>.</exception>
     /// <exception cref="NotSupportedException"><see cref="Encrypt"/> has been called; encryption and signing cannot be combined.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <see cref="SignaturePlaceholderOptions.SignaturePage"/> is negative or past the last page,
+    /// or <see cref="SignaturePlaceholderOptions.EstimatedSignatureSizeBytes"/> is negative or too
+    /// large to size the placeholder. Everything but a page index past the last page is refused
+    /// before anything is written, and before a layout engine that calls this has laid out any page.
+    /// </exception>
     /// <exception cref="InvalidOperationException">
     /// A registered form field's <see cref="FormFieldOptions.FontSize"/> is not finite. That
     /// property's boundary documentation names the value and the field.

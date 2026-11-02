@@ -296,7 +296,7 @@ public sealed class SaveLifecycleTests
     }
 
     [Fact]
-    public void SaveToAPath_stillRefusesTheTargetsItAlwaysRefused()
+    public void SaveToAPath_stillRefusesWhatTheOpenAlwaysRefused()
     {
         using var dir = new TempDir();
         using var doc = Good();
@@ -304,19 +304,77 @@ public sealed class SaveLifecycleTests
 
         Assert.Throws<ArgumentNullException>(() => doc.Save((string)null!));
         Assert.Throws<ArgumentException>(() => doc.Save(string.Empty));
-        Assert.Throws<UnauthorizedAccessException>(() => doc.Save(dir.Path));                  // a directory
         Assert.Throws<DirectoryNotFoundException>(() => doc.Save(Path.Combine(dir.Path, "missing", "x.pdf")));
 
-        var readOnly = Path.Combine(dir.Path, "ro.pdf");
-        File.WriteAllText(readOnly, "keep");
-        File.SetAttributes(readOnly, FileAttributes.ReadOnly);
-        Assert.Throws<UnauthorizedAccessException>(() => doc.Save(readOnly));
-        Assert.Equal("keep", File.ReadAllText(readOnly));
+        // A directory is refused by the open, as on main, not by a check of ours: the exception is
+        // the operating system's UnauthorizedAccessException and nothing was created or removed.
+        var ex = Assert.Throws<UnauthorizedAccessException>(() => doc.Save(dir.Path));
+        Assert.Contains(dir.Path, ex.Message, StringComparison.Ordinal);
+        Assert.True(Directory.Exists(dir.Path));
 
         // None of those refusals touched the document, so it still saves.
         var ok = Path.Combine(dir.Path, "ok.pdf");
         doc.Save(ok);
         Assert.Equal(1, Pages(File.ReadAllBytes(ok)));
+    }
+
+    [Fact]
+    public async Task SaveAsyncToADirectory_isRefusedByTheOpen_andTheDocumentIsStillUsable()
+    {
+        using var dir = new TempDir();
+        using var doc = Good();
+        doc.Add(new Paragraph("Hello", Style()));
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => doc.SaveAsync(dir.Path, TestContext.Current.CancellationToken));
+
+        var ok = Path.Combine(dir.Path, "ok.pdf");
+        await doc.SaveAsync(ok, TestContext.Current.CancellationToken);
+        Assert.Equal(1, Pages(await File.ReadAllBytesAsync(ok, TestContext.Current.CancellationToken)));
+    }
+
+    /// <summary>
+    /// A read-only file is refused if, and only if, the operating system refuses to open it for
+    /// writing. .NET reads a Unix file's read-only attribute from its mode bits, which ignore root, so
+    /// the test asks the open instead of assuming: as root the save overwrites the file, as main did,
+    /// and there is nothing to assert about a refusal.
+    /// </summary>
+    [Fact]
+    public void SaveToAReadOnlyFile_isRefusedExactlyWhenTheOpenRefusesIt()
+    {
+        using var dir = new TempDir();
+        var readOnly = Path.Combine(dir.Path, "ro.pdf");
+        File.WriteAllText(readOnly, "keep");
+        File.SetAttributes(readOnly, FileAttributes.ReadOnly);
+
+        bool openRefused;
+        try
+        {
+            using var probe = new FileStream(readOnly, FileMode.OpenOrCreate, FileAccess.Write, FileShare.None);
+            openRefused = false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            openRefused = true;
+        }
+
+        using var doc = Good();
+        doc.Add(new Paragraph("Hello", Style()));
+
+        if (openRefused)
+        {
+            Assert.Throws<UnauthorizedAccessException>(() => doc.Save(readOnly));
+            Assert.Equal("keep", File.ReadAllText(readOnly));
+
+            // Refused by the open, before the layout, so the document is untouched.
+            var ok = Path.Combine(dir.Path, "ok.pdf");
+            doc.Save(ok);
+            Assert.Equal(1, Pages(File.ReadAllBytes(ok)));
+        }
+        else
+        {
+            doc.Save(readOnly);
+            Assert.Equal(1, Pages(File.ReadAllBytes(readOnly)));
+        }
     }
 
     [Fact]
@@ -485,7 +543,7 @@ public sealed class SaveLifecycleTests
         using var doc = CancelsDuringLayout(cts);
 
         using var first = new MemoryStream();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => doc.SaveAsync(first, cts.Token));
+        await Assert.ThrowsAsync<TaskCanceledException>(() => doc.SaveAsync(first, cts.Token));
         Assert.Equal(0, first.Length);
 
         using var second = new MemoryStream();
@@ -505,7 +563,7 @@ public sealed class SaveLifecycleTests
         using var cts = new CancellationTokenSource();
         using var doc = CancelsDuringLayout(cts);
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => doc.SaveAsync(target, cts.Token));
+        await Assert.ThrowsAsync<TaskCanceledException>(() => doc.SaveAsync(target, cts.Token));
         Assert.Equal("old contents", await File.ReadAllTextAsync(target, TestContext.Current.CancellationToken));
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => doc.SaveAsync(target, TestContext.Current.CancellationToken));
@@ -547,5 +605,196 @@ public sealed class SaveLifecycleTests
 
         // The refusal came before the layout, so the pages were not added twice.
         Assert.Equal(1, Pages(Save(doc)));    // used to be 2
+    }
+
+    // ── Cancellation is a TaskCanceledException at every checkpoint ───────────
+
+    [Fact]
+    public async Task AsyncSaveToAStreamWithATokenCancelledBeforeLayout_throwsTaskCanceledException()
+    {
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+        using var doc = Good();
+        doc.Add(new Paragraph("Hello", Style()));
+        using var ms = new MemoryStream();
+
+        await Assert.ThrowsAsync<TaskCanceledException>(() => doc.SaveAsync(ms, cts.Token));
+
+        // Nothing was laid out, so nothing is lost: the document saves with a live token.
+        await doc.SaveAsync(ms, TestContext.Current.CancellationToken);
+        Assert.Equal(1, Pages(ms.ToArray()));
+    }
+
+    [Fact]
+    public async Task AsyncSaveToAPathWithATokenCancelledBeforeLayout_throwsTaskCanceledException_andCreatesNothing()
+    {
+        using var dir = new TempDir();
+        var target = Path.Combine(dir.Path, "never.pdf");
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+        using var doc = Good();
+        doc.Add(new Paragraph("Hello", Style()));
+
+        await Assert.ThrowsAsync<TaskCanceledException>(() => doc.SaveAsync(target, cts.Token));
+
+        Assert.False(File.Exists(target));
+        await doc.SaveAsync(target, TestContext.Current.CancellationToken);
+        Assert.Equal(1, Pages(await File.ReadAllBytesAsync(target, TestContext.Current.CancellationToken)));
+    }
+
+    // ── A symbolic link is followed before anything is created or deleted ─────
+
+    [Fact]
+    public void FailedSaveThroughADanglingLink_keepsTheLink_andCreatesNothingBehindIt()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Creating a symbolic link needs a privilege on Windows.");
+
+        using var dir = new TempDir();
+        var real = Path.Combine(dir.Path, "real.pdf");
+        var link = Path.Combine(dir.Path, "link.pdf");
+        File.CreateSymbolicLink(link, real);        // the target does not exist
+
+        using var bad = TooTall();
+        Assert.Throws<InvalidOperationException>(() => bad.Save(link));
+
+        Assert.NotNull(new FileInfo(link).LinkTarget);      // the link survived: it was not deleted
+        Assert.False(File.Exists(real));                    // and nothing was left behind it
+    }
+
+    [Fact]
+    public async Task FailedAsyncSaveThroughADanglingLink_keepsTheLink_andCreatesNothingBehindIt()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Creating a symbolic link needs a privilege on Windows.");
+
+        using var dir = new TempDir();
+        var real = Path.Combine(dir.Path, "real.pdf");
+        var link = Path.Combine(dir.Path, "link.pdf");
+        File.CreateSymbolicLink(link, real);
+
+        using var bad = TooTall();
+        await Assert.ThrowsAsync<InvalidOperationException>(() => bad.SaveAsync(link, TestContext.Current.CancellationToken));
+
+        Assert.NotNull(new FileInfo(link).LinkTarget);
+        Assert.False(File.Exists(real));
+    }
+
+    [Fact]
+    public void SaveThroughADanglingLink_createsTheTarget_andKeepsTheLink()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Creating a symbolic link needs a privilege on Windows.");
+
+        using var dir = new TempDir();
+        var real = Path.Combine(dir.Path, "real.pdf");
+        var link = Path.Combine(dir.Path, "link.pdf");
+        File.CreateSymbolicLink(link, real);
+
+        using var doc = Good();
+        doc.Add(new Paragraph("Hello", Style()));
+        doc.Save(link);
+
+        Assert.NotNull(new FileInfo(link).LinkTarget);
+        Assert.Equal(1, Pages(File.ReadAllBytes(real)));
+    }
+
+    [Fact]
+    public async Task AsyncSaveThroughADanglingLink_createsTheTarget_andKeepsTheLink()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Creating a symbolic link needs a privilege on Windows.");
+
+        using var dir = new TempDir();
+        var real = Path.Combine(dir.Path, "real.pdf");
+        var link = Path.Combine(dir.Path, "link.pdf");
+        File.CreateSymbolicLink(link, real);
+
+        using var doc = Good();
+        doc.Add(new Paragraph("Hello", Style()));
+        await doc.SaveAsync(link, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(new FileInfo(link).LinkTarget);
+        Assert.Equal(1, Pages(await File.ReadAllBytesAsync(real, TestContext.Current.CancellationToken)));
+    }
+
+    [Fact]
+    public void FailedSaveThroughAChainOfLinks_leavesTheExistingFinalFileAndBothLinks()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Creating a symbolic link needs a privilege on Windows.");
+
+        using var dir = new TempDir();
+        var real = Path.Combine(dir.Path, "real.pdf");
+        var middle = Path.Combine(dir.Path, "middle.pdf");
+        var outer = Path.Combine(dir.Path, "outer.pdf");
+        File.WriteAllText(real, "old contents");
+        File.CreateSymbolicLink(middle, real);
+        File.CreateSymbolicLink(outer, middle);
+
+        using var bad = TooTall();
+        Assert.Throws<InvalidOperationException>(() => bad.Save(outer));
+
+        Assert.Equal("old contents", File.ReadAllText(real));
+        Assert.NotNull(new FileInfo(outer).LinkTarget);
+        Assert.NotNull(new FileInfo(middle).LinkTarget);
+    }
+
+    // ── With a header or footer, a too-tall element is refused before any page is added ──
+
+    [Fact]
+    public void TooTallElementWithAHeader_isRefusedByTheCountingPass_soTheRetryIsAllowed()
+    {
+        // 150pt text needs a 180pt line; the 300x200 page with a 20pt header leaves 160pt.
+        using var doc = Good();
+        doc.Add(new Paragraph("Hello", Style(150)));
+        doc.Header = new RunningBand("h", Style()) { Height = 20 };
+        Assert.Throws<InvalidOperationException>(() => Save(doc));
+
+        doc.PageSize = new PdfRectangle(0, 0, 600, 800);
+        var recovered = Save(doc);
+
+        // One page, as a fresh document makes it: nothing of the failed attempt was left behind.
+        Assert.Equal(1, Pages(recovered));
+    }
+
+    // ── Signing refuses what no page count can make valid before the layout ──
+
+    private static X509Certificate2 SelfSigned()
+    {
+        using var rsa = RSA.Create(2048);
+        var req = new CertificateRequest("CN=VellumPdf Test", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        return req.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(1));
+    }
+
+    [Theory]
+    [InlineData(-1, 8192)]       // a negative signature page
+    [InlineData(0, -1)]          // a negative placeholder size
+    public void SignWithAnOptionNoPageCountCouldMakeValid_isRefusedBeforeLayout_soTheDocumentStillSaves(
+        int signaturePage, int estimatedSize)
+    {
+        using var cert = SelfSigned();
+        using var doc = Good();
+        doc.Add(new Paragraph("Hello", Style()));
+
+        using var signed = new MemoryStream();
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            doc.Sign(signed, new PdfSignatureSettings
+            {
+                Certificate = cert,
+                SignaturePage = signaturePage,
+                EstimatedSignatureSizeBytes = estimatedSize,
+            }));
+        Assert.Equal(0, signed.Length);
+
+        Assert.Equal(1, Pages(Save(doc)));    // used to be 2: the layout had run before the refusal
+    }
+
+    [Fact]
+    public void SignWithAPageIndexPastTheLastPage_isStillRefusedAfterLayout()
+    {
+        using var cert = SelfSigned();
+        using var doc = Good();
+        doc.Add(new Paragraph("Hello", Style()));
+
+        using var signed = new MemoryStream();
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() =>
+            doc.Sign(signed, new PdfSignatureSettings { Certificate = cert, SignaturePage = 5 }));
+        Assert.Contains("1 page(s)", ex.Message, StringComparison.Ordinal);
     }
 }

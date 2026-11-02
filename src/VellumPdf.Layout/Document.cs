@@ -990,7 +990,7 @@ public sealed class Document : IDisposable
         if (_layoutFailed)
         {
             throw new InvalidOperationException(
-                "This document cannot be saved again: an earlier save failed while laying it out, after " +
+                "This document cannot be saved again: an earlier save stopped after laying it out, once " +
                 "pages had already been added to it, and those pages cannot be taken back. " +
                 "Create a new Document and add the content again.");
         }
@@ -1025,8 +1025,13 @@ public sealed class Document : IDisposable
     // none of those. The price is that the final copy is not atomic against a crash.
 
     /// <summary>
-    /// Resolves the target path and refuses up front what opening it for writing used to refuse, so
-    /// the causes that need no layout still fail before any work is done.
+    /// Resolves the path the PDF is written to: the full path, and, when that is a symbolic link, the
+    /// file at the end of the chain, a link whose target does not exist yet included. The file is
+    /// opened, created and, on failure, deleted there, never at the link (#508). Nothing else is
+    /// refused here. Whether the path is a directory, read-only or otherwise unwritable is for the
+    /// operating system to say when the file is opened, as it always was: .NET reads a Unix file's
+    /// read-only attribute from its mode bits alone, which ignores root, supplementary groups and
+    /// access-control lists, so a check made here refused files the open would have written.
     /// </summary>
     private static string ResolveSaveTarget(string path)
     {
@@ -1036,10 +1041,19 @@ public sealed class Document : IDisposable
         // PathTooLongException (an IOException) for an over-long one, as opening the file did.
         var full = Path.GetFullPath(path);
 
-        if (Directory.Exists(full))
-            throw new UnauthorizedAccessException($"Access to the path '{full}' is denied: it is a directory.");
-        if (File.Exists(full) && (File.GetAttributes(full) & FileAttributes.ReadOnly) != 0)
-            throw new UnauthorizedAccessException($"Access to the path '{full}' is denied: the file is read-only.");
+        try
+        {
+            if (new FileInfo(full).LinkTarget is not null
+                && File.ResolveLinkTarget(full, returnFinalTarget: true) is { } finalTarget)
+            {
+                return finalTarget.FullName;
+            }
+        }
+        catch (IOException)
+        {
+            // A chain that cannot be followed, such as a loop: open the path itself and let the
+            // operating system report it.
+        }
 
         return full;
     }
@@ -1169,7 +1183,9 @@ public sealed class Document : IDisposable
     /// page is added and is just as recoverable. A save that threw <b>after</b> its layout had
     /// added pages cannot be undone, whether the layout itself threw, such as for an element too
     /// tall for the page, or a later step did, such as building the PDF or a cancellation seen once
-    /// the layout has run: every later save then
+    /// the layout has run. (With a <see cref="Header"/> or <see cref="Footer"/> set, a counting pass
+    /// runs first, and it refuses a too-tall element before any page is added, so that case can be
+    /// corrected and saved again.) Every later save after one that did add pages then
     /// throws <see cref="InvalidOperationException"/> telling you to create a new
     /// <see cref="Document"/>. Before this, the retry laid everything out again on top of the first
     /// attempt's pages and wrote a file with several times the pages you asked for, with no
@@ -1261,14 +1277,31 @@ public sealed class Document : IDisposable
     /// did not exist. It used to open the path with truncation first, so a layout failure left a
     /// zero-byte file in place of the previous report.</para>
     /// <para>The existing file is rewritten in place, so it keeps its permissions, owner, hard links
-    /// and extended attributes, and a symbolic link at the path is followed, not replaced. A device
-    /// file such as <c>/dev/null</c>, which cannot be truncated, is written to as it is.</para>
+    /// and extended attributes. A symbolic link at the path is followed, not replaced, and so is a
+    /// chain of them: the file is opened, created and, if the save fails, deleted at the end of the
+    /// chain, and the link itself is never removed. A link whose target does not exist yet is
+    /// followed too, so the save creates the target and keeps the link. A device file such as
+    /// <c>/dev/null</c>, which cannot be truncated, is written to as it is.</para>
+    /// <para>Whether the path can be written is decided when the file is opened, which is before the
+    /// layout. A path that names a directory, a read-only file, or any file the operating system
+    /// will not open for writing throws <see cref="UnauthorizedAccessException"/> then, with the
+    /// document untouched. Nothing is checked beforehand, because .NET reads a Unix file's read-only
+    /// attribute from its mode bits alone, which ignores root, supplementary groups and
+    /// access-control lists.</para>
     /// <para><b>Attention</b>: the final copy is not atomic. A failure during it, such as a full
     /// disk, or a crash, can leave the file at the path truncated or incomplete. A file this call
-    /// created is deleted then; a file that was already there is not restored. The file stays open,
-    /// and locked against other readers and writers, from before the layout until the save returns.
-    /// A path that names a directory, or a read-only file, is refused before any work is
-    /// done.</para>
+    /// created is deleted then; a file that was already there is not restored. A file that another
+    /// process creates at the path between this call's check that it exists and its open is taken
+    /// for one this call created, and is deleted if the save fails.</para>
+    /// <para><b>Attention</b>: the file is held open with <see cref="FileShare.None"/> from before
+    /// the layout until the save returns. On Windows that excludes every other opener. On Linux and
+    /// macOS it is an advisory lock, which other .NET code honours but a process that does not ask
+    /// for the lock, <c>cp</c> or a text editor, can ignore.</para>
+    /// <para><b>Attention</b>: the whole PDF is built in memory before any of it is written, in a
+    /// <see cref="MemoryStream"/>, whose capacity is limited to about 2 GB. A larger PDF fails with
+    /// <see cref="IOException"/> or <see cref="OutOfMemoryException"/>. To save one, open a
+    /// <see cref="FileStream"/> yourself and pass it to <see cref="Save(System.IO.Stream)"/>, which
+    /// writes to it as it goes.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="path"/> is
     /// <see langword="null"/>.</exception>
@@ -1294,7 +1327,8 @@ public sealed class Document : IDisposable
     /// A file at <paramref name="path"/> is already open elsewhere with no sharing allowed, which is
     /// found before the layout runs, or <paramref name="path"/> is otherwise invalid for the file
     /// system, being over-long or holding a character the file system refuses, such as
-    /// <c>&lt;</c> or <c>|</c>. It is also raised when writing the file fails.
+    /// <c>&lt;</c> or <c>|</c>. It is also raised when writing the file fails, or when the PDF is
+    /// too large for the memory buffer it is built in.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The document has already been written, or has no pages, or an element's input cannot be laid
@@ -1339,25 +1373,36 @@ public sealed class Document : IDisposable
         // does not truncate; the file is emptied only once the whole PDF is in memory.
         var fs = new FileStream(target, FileMode.OpenOrCreate, FileAccess.Write, FileShare.None);
         var succeeded = false;
+        DocumentRenderer renderer;
         try
         {
-            BeginSave(fs);
-            var renderer = CreateRenderer();
-            using var buffer = new MemoryStream();
-            LayOutThen(renderer, () => _pdf.Save(buffer));
+            try
+            {
+                BeginSave(fs);
+                renderer = CreateRenderer();
+                using var buffer = new MemoryStream();
+                LayOutThen(renderer, () => _pdf.Save(buffer));
 
-            EmptyTarget(fs);
+                EmptyTarget(fs);
 
-            fs.Write(buffer.GetBuffer(), 0, (int)buffer.Length);
-            fs.Flush();
+                fs.Write(buffer.GetBuffer(), 0, (int)buffer.Length);
+                fs.Flush();
+            }
+            finally
+            {
+                // Inside its own try, so a Dispose that throws (the flush of a full disk) still
+                // reaches the delete below.
+                fs.Dispose();
+            }
+
             succeeded = true;
-            CollectDiagnostics(renderer);
         }
         finally
         {
-            fs.Dispose();
             if (!succeeded && !existed) TryDelete(target);
         }
+
+        CollectDiagnostics(renderer);
     }
 
     /// <summary>
@@ -1394,7 +1439,9 @@ public sealed class Document : IDisposable
     /// page is added and is just as recoverable. A save that threw <b>after</b> its layout had
     /// added pages cannot be undone, whether the layout itself threw, such as for an element too
     /// tall for the page, or a later step did, such as building the PDF or a cancellation seen once
-    /// the layout has run: every later save then
+    /// the layout has run. (With a <see cref="Header"/> or <see cref="Footer"/> set, a counting pass
+    /// runs first, and it refuses a too-tall element before any page is added, so that case can be
+    /// corrected and saved again.) Every later save after one that did add pages then
     /// throws <see cref="InvalidOperationException"/> telling you to create a new
     /// <see cref="Document"/>. Before this, the retry laid everything out again on top of the first
     /// attempt's pages and wrote a file with several times the pages you asked for, with no
@@ -1507,8 +1554,9 @@ public sealed class Document : IDisposable
     /// <para>The file is opened first and emptied only once the PDF is built in memory, as on
     /// <see cref="Save(string)"/> (#508). A save that fails, at layout, at building the PDF or by
     /// cancellation, therefore leaves whatever the path held exactly as it was, byte for byte, and
-    /// creates nothing at a path that did not exist. The same costs apply: the final copy is not
-    /// atomic, and the file is locked from before the layout until the task completes.</para>
+    /// creates nothing at a path that did not exist. Everything <see cref="Save(string)"/> says
+    /// about symbolic links, permissions, the advisory lock, the memory limit of about 2 GB and the
+    /// final copy not being atomic applies here too.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="path"/> is
     /// <see langword="null"/>.</exception>
@@ -1535,7 +1583,8 @@ public sealed class Document : IDisposable
     /// A file at <paramref name="path"/> is already open elsewhere with no sharing allowed, which is
     /// found before the layout runs, or <paramref name="path"/> is otherwise invalid for the file
     /// system, being over-long or holding a character the file system refuses, such as
-    /// <c>&lt;</c> or <c>|</c>. It is also raised when writing the file fails.
+    /// <c>&lt;</c> or <c>|</c>. It is also raised when writing the file fails, or when the PDF is
+    /// too large for the memory buffer it is built in.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The document has already been written, or has no pages, or an element's input cannot be laid
@@ -1592,39 +1641,50 @@ public sealed class Document : IDisposable
             target, FileMode.OpenOrCreate, FileAccess.Write, FileShare.None,
             bufferSize: 4096, FileOptions.Asynchronous | FileOptions.SequentialScan);
         var succeeded = false;
+        DocumentRenderer renderer;
         try
         {
-            BeginSave(fs);
-            var renderer = CreateRenderer();
-            using var buffer = new MemoryStream();
-            var pagesBefore = _pdf.Pages.Count;
-            await Task.Run(() => LayOut(renderer), cancellationToken).ConfigureAwait(false);
             try
             {
-                await Task.Run(() => _pdf.Save(buffer), cancellationToken).ConfigureAwait(false);
+                BeginSave(fs);
+                renderer = CreateRenderer();
+                using var buffer = new MemoryStream();
+                var pagesBefore = _pdf.Pages.Count;
+                await Task.Run(() => LayOut(renderer), cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await Task.Run(() => _pdf.Save(buffer), cancellationToken).ConfigureAwait(false);
 
-                // The last point where the token is looked at. Past it the copy runs to the end, since
-                // stopping halfway would leave a truncated file over a good one.
-                cancellationToken.ThrowIfCancellationRequested();
+                    // The last point where the token is looked at. Past it the copy runs to the end,
+                    // since stopping halfway would leave a truncated file over a good one. A task
+                    // that was cancelled throws TaskCanceledException, as the other points do.
+                    if (cancellationToken.IsCancellationRequested)
+                        await Task.FromCanceled(cancellationToken).ConfigureAwait(false);
+                }
+                catch
+                {
+                    MarkFailedIfPagesAdded(pagesBefore);
+                    throw;
+                }
+
+                EmptyTarget(fs);
+
+                await fs.WriteAsync(buffer.GetBuffer().AsMemory(0, (int)buffer.Length), CancellationToken.None).ConfigureAwait(false);
+                await fs.FlushAsync(CancellationToken.None).ConfigureAwait(false);
             }
-            catch
+            finally
             {
-                MarkFailedIfPagesAdded(pagesBefore);
-                throw;
+                await fs.DisposeAsync().ConfigureAwait(false);
             }
 
-            EmptyTarget(fs);
-
-            await fs.WriteAsync(buffer.GetBuffer().AsMemory(0, (int)buffer.Length), CancellationToken.None).ConfigureAwait(false);
-            await fs.FlushAsync(CancellationToken.None).ConfigureAwait(false);
             succeeded = true;
-            CollectDiagnostics(renderer);
         }
         finally
         {
-            await fs.DisposeAsync().ConfigureAwait(false);
             if (!succeeded && !existed) TryDelete(target);
         }
+
+        CollectDiagnostics(renderer);
     }
 
     // ── Signing seam (VellumPdf.Signing only) ────────────────────────────────
@@ -1640,7 +1700,7 @@ public sealed class Document : IDisposable
         // Everything PdfDocument.PrepareForSigning refuses without looking at the pages, and the
         // encryption refusal among it, comes before the layout: after it, the pages stay behind and
         // the next save lays out a second time on top of them (#530).
-        _pdf.EnsureCanPrepareForSigning(options);
+        _pdf.EnsureCanPrepareForSigning(options, pagesKnown: false);
         ThrowIfLayoutFailed();
 
         var renderer = CreateRenderer();
