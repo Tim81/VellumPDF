@@ -477,11 +477,14 @@ public sealed class PdfCanvas
     /// <summary>Selects the given font resource at the specified size, registering it for inclusion in the page resources. Emits <c>Tf</c>.</summary>
     public PdfCanvas SetFont(PdfFontResource font, double size)
     {
+        // Format the size before touching any state or writing the name, so a refused size leaves
+        // neither a half-written operator nor a changed current font behind.
+        var sizeToken = N(size);
         _usedFonts[font.ResourceName] = font;
         _currentFont = font;
         _currentFontSize = size;
         WriteEscapedName(font.ResourceName);
-        _ops.Write(Encoding.ASCII.GetBytes($" {N(size)} Tf\n"));
+        _ops.Write(Encoding.ASCII.GetBytes($" {sizeToken} Tf\n"));
         return this;
     }
 
@@ -492,9 +495,10 @@ public sealed class PdfCanvas
     /// </summary>
     public PdfCanvas SetFontByName(string resourceName, double size)
     {
+        var sizeToken = N(size);
         _currentFont = null;
         WriteEscapedName(resourceName);
-        _ops.Write(Encoding.ASCII.GetBytes($" {N(size)} Tf\n"));
+        _ops.Write(Encoding.ASCII.GetBytes($" {sizeToken} Tf\n"));
         return this;
     }
 
@@ -703,8 +707,18 @@ public sealed class PdfCanvas
 
     // ── Private helpers ─────────────────────────────────────────────────────
 
-    // TODO(#80): Aligned to 5dp to match PdfReal.WriteTo ("0.#####").
-    private static string N(double v) => v.ToString("0.#####", CultureInfo.InvariantCulture);
+    // Formats an operand for the content stream. It matches PdfReal on both counts: the "0.#####"
+    // format string (#80) and the refusal of NaN and Infinity, which are not PDF numbers
+    // (ISO 32000-2 7.3.3). Every number the canvas writes goes through here, so an invalid token
+    // cannot be written whichever caller reaches the canvas (#519). The message and the exception
+    // type are PdfReal's, so the object model and the content stream read alike.
+    private static string N(double v)
+    {
+        if (double.IsNaN(v) || double.IsInfinity(v))
+            throw new ArgumentException(
+                $"PDF does not support NaN or Infinity as a real number value. Got: {v}");
+        return v.ToString("0.#####", CultureInfo.InvariantCulture);
+    }
 
     // PDF delimiters that must be #XX-escaped in a name token (ISO 32000-2 §7.3.5).
     // Mirrors PdfName._delimiters so both escaping paths stay in sync.

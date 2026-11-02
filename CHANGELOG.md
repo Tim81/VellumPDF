@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`PdfCanvas` refuses NaN and infinity in every operand it writes (#519).** The canvas has one
+  number formatter, behind 24 content-stream operators, and it copied `PdfReal`'s format string
+  without `PdfReal`'s check, so `SetFillColorRgb(double.NaN, 0, 0)` wrote `NaN 0 0 rg`, which is
+  not a PDF number (ISO 32000-2 7.3.3). It now throws the same `ArgumentException`, with the same
+  message, as `PdfReal`, and `SetFont` and `SetFontByName` format the size before writing the font
+  name so a refused size leaves no half-written operator. **Attention**: a caller that passed a
+  non-finite value to a `PdfCanvas` method used to get a file with an invalid content stream and
+  now gets the exception. `AppendArc` still returns without drawing for a non-finite radius or
+  angle, as before; it refuses a non-finite centre.
+
 ## [2.3.3] - 2026-09-20
 
 This release is led by documentation. Layout's public surface now states what each member
