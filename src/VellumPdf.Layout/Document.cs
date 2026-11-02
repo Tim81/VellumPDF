@@ -1025,13 +1025,16 @@ public sealed class Document : IDisposable
     // none of those. The price is that the final copy is not atomic against a crash.
 
     /// <summary>
-    /// Resolves the path the PDF is written to: the full path, and, when that is a symbolic link, the
-    /// file at the end of the chain, a link whose target does not exist yet included. The file is
-    /// opened, created and, on failure, deleted there, never at the link (#508). Nothing else is
-    /// refused here. Whether the path is a directory, read-only or otherwise unwritable is for the
-    /// operating system to say when the file is opened, as it always was: .NET reads a Unix file's
-    /// read-only attribute from its mode bits alone, which ignores root, supplementary groups and
-    /// access-control lists, so a check made here refused files the open would have written.
+    /// Makes the path absolute and nothing more. The file is opened exactly as given, so the operating
+    /// system follows any symbolic link, a chain or a link into another directory included, and
+    /// resolves a relative link target against the link's own directory, as the open always did
+    /// (#508). Whether the path is a directory, read-only or otherwise unwritable is also for the
+    /// operating system to say when the file is opened: .NET reads a Unix file's read-only attribute
+    /// from its mode bits alone, which ignores root, supplementary groups and access-control lists,
+    /// so a check made here refused files the open would have written. Following links here by
+    /// string rules instead got both wrong, for a link to a device such as <c>/dev/stdout</c>, which
+    /// ends at <c>pipe:[N]</c>, and for a relative target containing <c>..</c> below a symbolic
+    /// link to a directory.
     /// </summary>
     private static string ResolveSaveTarget(string path)
     {
@@ -1039,23 +1042,27 @@ public sealed class Document : IDisposable
 
         // Throws ArgumentException for an empty path or one holding a null character, and
         // PathTooLongException (an IOException) for an over-long one, as opening the file did.
-        var full = Path.GetFullPath(path);
+        return Path.GetFullPath(path);
+    }
+
+    /// <summary>
+    /// Whether something is already at the path, which decides whether a failed save may delete what
+    /// the open created. A symbolic link counts as something, a dangling one included, so a failed
+    /// save never deletes a file it reached through a link and never touches the link. A link that
+    /// cannot be read counts too: not deleting is the safe answer.
+    /// </summary>
+    private static bool SomethingExistsAt(string path)
+    {
+        if (File.Exists(path)) return true;
 
         try
         {
-            if (new FileInfo(full).LinkTarget is not null
-                && File.ResolveLinkTarget(full, returnFinalTarget: true) is { } finalTarget)
-            {
-                return finalTarget.FullName;
-            }
+            return new FileInfo(path).LinkTarget is not null;
         }
-        catch (IOException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // A chain that cannot be followed, such as a loop: open the path itself and let the
-            // operating system report it.
+            return true;
         }
-
-        return full;
     }
 
     // Empties the file the PDF is about to be copied into. Skipped when there is nothing to remove,
@@ -1277,11 +1284,16 @@ public sealed class Document : IDisposable
     /// did not exist. It used to open the path with truncation first, so a layout failure left a
     /// zero-byte file in place of the previous report.</para>
     /// <para>The existing file is rewritten in place, so it keeps its permissions, owner, hard links
-    /// and extended attributes. A symbolic link at the path is followed, not replaced, and so is a
-    /// chain of them: the file is opened, created and, if the save fails, deleted at the end of the
-    /// chain, and the link itself is never removed. A link whose target does not exist yet is
-    /// followed too, so the save creates the target and keeps the link. A device file such as
-    /// <c>/dev/null</c>, which cannot be truncated, is written to as it is.</para>
+    /// and extended attributes. The path is opened as given, so the operating system follows a
+    /// symbolic link, a chain of them included, and the file at the end is rewritten while the link
+    /// stays. A link whose target does not exist yet is followed too, so the save creates the
+    /// target and keeps the link. A device or pipe such as <c>/dev/null</c> or <c>/dev/stdout</c>,
+    /// which cannot be truncated, is written to as it is.</para>
+    /// <para>A failed save deletes a file only if nothing was at the path when it started, and a
+    /// symbolic link, a dangling one included, counts as something. So it never deletes a file it
+    /// reached through a link, and never the link. <b>Attention</b>: the accepted gap is a failed
+    /// save through a dangling link, which can leave an empty file at the link's destination,
+    /// because the open created it and the save then could not tell that this call had.</para>
     /// <para>Whether the path can be written is decided when the file is opened, which is before the
     /// layout. A path that names a directory, a read-only file, or any file the operating system
     /// will not open for writing throws <see cref="UnauthorizedAccessException"/> then, with the
@@ -1301,7 +1313,9 @@ public sealed class Document : IDisposable
     /// <see cref="MemoryStream"/>, whose capacity is limited to about 2 GB. A larger PDF fails with
     /// <see cref="IOException"/> or <see cref="OutOfMemoryException"/>. To save one, open a
     /// <see cref="FileStream"/> yourself and pass it to <see cref="Save(System.IO.Stream)"/>, which
-    /// writes to it as it goes.</para>
+    /// writes to it as it goes. (A linearized save, which this class does not offer, buffers the
+    /// whole file as well.) <see cref="SaveAsync(System.IO.Stream, System.Threading.CancellationToken)"/>
+    /// builds the PDF in memory too, so it does not avoid the limit.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="path"/> is
     /// <see langword="null"/>.</exception>
@@ -1366,7 +1380,7 @@ public sealed class Document : IDisposable
     public void Save(string path)
     {
         var target = ResolveSaveTarget(path);
-        var existed = File.Exists(target);
+        var existed = SomethingExistsAt(target);
 
         // Opened before the layout, so a lock or a permission error surfaces while the document is
         // still usable, and every check BeginSave runs sees the stream the PDF will go to. Opening
@@ -1514,7 +1528,7 @@ public sealed class Document : IDisposable
     /// serialisation has finished. A cancellation seen at one of those points ends the task with a
     /// <see cref="TaskCanceledException"/> before anything is written. A failure that comes first
     /// is reported instead, such as a refused page geometry, an exception from an element, a null
-    /// destination, or, after serialisation, a closed or non-writable destination. During the
+    /// destination, or a closed or non-writable one, which is refused before the layout. During the
     /// write, <paramref name="destination"/> receives the token and decides what to raise.
     /// </exception>
     /// <exception cref="IOException">
@@ -1620,21 +1634,22 @@ public sealed class Document : IDisposable
     /// too large to allocate.
     /// </exception>
     /// <exception cref="OperationCanceledException">
-    /// The token is looked at three times: before the layout starts, once it has finished, and once
-    /// serialisation has finished. A cancellation seen at one of those points ends the task with a
+    /// The token is looked at twice: before the layout starts, and once it has finished, when the
+    /// serialisation is queued. A cancellation seen at either point ends the task with a
     /// <see cref="TaskCanceledException"/> before the file is emptied, so the file that was there is
     /// untouched; see the remarks. A failure that comes first, such as a refused page geometry or
-    /// an exception from an element, is reported instead. Once the copy into the file has begun the
-    /// token is no longer looked at, because stopping halfway would leave a truncated file. A
-    /// cancellation after the layout has run also means this <see cref="Document"/> cannot be
-    /// saved again; see <see cref="SaveAsync(System.IO.Stream, System.Threading.CancellationToken)"/>.
+    /// an exception from an element, is reported instead. Once the serialisation is under way the
+    /// token is no longer looked at, and neither is the copy into the file, because stopping
+    /// halfway would leave a truncated file. A cancellation after the layout has run also means this
+    /// <see cref="Document"/> cannot be saved again; see
+    /// <see cref="SaveAsync(System.IO.Stream, System.Threading.CancellationToken)"/>.
     /// </exception>
 #pragma warning disable RS0026
     public async Task SaveAsync(string path, CancellationToken cancellationToken = default)
 #pragma warning restore RS0026
     {
         var target = ResolveSaveTarget(path);
-        var existed = File.Exists(target);
+        var existed = SomethingExistsAt(target);
 
         // See Save(string): opened before the layout, emptied only once the PDF is in memory.
         var fs = new FileStream(
@@ -1653,13 +1668,11 @@ public sealed class Document : IDisposable
                 await Task.Run(() => LayOut(renderer), cancellationToken).ConfigureAwait(false);
                 try
                 {
+                    // The last point where the token is looked at, when the serialisation is queued.
+                    // Past it the PDF is built and copied to the end, since stopping halfway would
+                    // leave a truncated file over a good one. A cancelled queue throws
+                    // TaskCanceledException, as the point before the layout does.
                     await Task.Run(() => _pdf.Save(buffer), cancellationToken).ConfigureAwait(false);
-
-                    // The last point where the token is looked at. Past it the copy runs to the end,
-                    // since stopping halfway would leave a truncated file over a good one. A task
-                    // that was cancelled throws TaskCanceledException, as the other points do.
-                    if (cancellationToken.IsCancellationRequested)
-                        await Task.FromCanceled(cancellationToken).ConfigureAwait(false);
                 }
                 catch
                 {

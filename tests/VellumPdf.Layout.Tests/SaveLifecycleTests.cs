@@ -346,6 +346,8 @@ public sealed class SaveLifecycleTests
         File.WriteAllText(readOnly, "keep");
         File.SetAttributes(readOnly, FileAttributes.ReadOnly);
 
+        // On non-root CI the open is refused, so this takes the first branch below. Only a run as
+        // root (a container, say) reaches the overwrite branch.
         bool openRefused;
         try
         {
@@ -644,8 +646,14 @@ public sealed class SaveLifecycleTests
 
     // ── A symbolic link is followed before anything is created or deleted ─────
 
+    /// <summary>
+    /// A symbolic link counts as something at the path, a dangling one included, so a failed save
+    /// never deletes the link. The open follows the link and creates its destination, and the save
+    /// cannot tell that this call did, so the accepted gap is an empty file there. The test records
+    /// that state rather than hiding it.
+    /// </summary>
     [Fact]
-    public void FailedSaveThroughADanglingLink_keepsTheLink_andCreatesNothingBehindIt()
+    public void FailedSaveThroughADanglingLink_keepsTheLink_andLeavesTheEmptyFileTheOpenCreated()
     {
         Assert.SkipWhen(OperatingSystem.IsWindows(), "Creating a symbolic link needs a privilege on Windows.");
 
@@ -658,11 +666,12 @@ public sealed class SaveLifecycleTests
         Assert.Throws<InvalidOperationException>(() => bad.Save(link));
 
         Assert.NotNull(new FileInfo(link).LinkTarget);      // the link survived: it was not deleted
-        Assert.False(File.Exists(real));                    // and nothing was left behind it
+        Assert.True(File.Exists(real));                     // the open created the destination
+        Assert.Equal(0, new FileInfo(real).Length);         // and nothing was written to it
     }
 
     [Fact]
-    public async Task FailedAsyncSaveThroughADanglingLink_keepsTheLink_andCreatesNothingBehindIt()
+    public async Task FailedAsyncSaveThroughADanglingLink_keepsTheLink_andLeavesTheEmptyFileTheOpenCreated()
     {
         Assert.SkipWhen(OperatingSystem.IsWindows(), "Creating a symbolic link needs a privilege on Windows.");
 
@@ -675,7 +684,8 @@ public sealed class SaveLifecycleTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => bad.SaveAsync(link, TestContext.Current.CancellationToken));
 
         Assert.NotNull(new FileInfo(link).LinkTarget);
-        Assert.False(File.Exists(real));
+        Assert.True(File.Exists(real));
+        Assert.Equal(0, new FileInfo(real).Length);
     }
 
     [Fact]
@@ -712,6 +722,108 @@ public sealed class SaveLifecycleTests
 
         Assert.NotNull(new FileInfo(link).LinkTarget);
         Assert.Equal(1, Pages(await File.ReadAllBytesAsync(real, TestContext.Current.CancellationToken)));
+    }
+
+    /// <summary>
+    /// A relative link target is resolved by the operating system against the directory the link
+    /// really lives in, so <c>../out.pdf</c> below a symbolic link to a directory is that directory's
+    /// parent, not the parent of the path the caller wrote. Collapsing the <c>..</c> by string rules
+    /// writes a different file.
+    /// </summary>
+    [Fact]
+    public void SaveThroughARelativeLinkWithDotDotBelowASymlinkedDirectory_writesTheFileTheOperatingSystemResolves()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Creating a symbolic link needs a privilege on Windows.");
+
+        using var dir = new TempDir();
+        var deep = Path.Combine(dir.Path, "a", "b");
+        Directory.CreateDirectory(deep);
+        var linkedDir = Path.Combine(dir.Path, "linkdir");
+        File.CreateSymbolicLink(linkedDir, deep);                         // absolute link to a directory
+        var link = Path.Combine(linkedDir, "link.pdf");                   // really a/b/link.pdf
+        File.CreateSymbolicLink(link, Path.Combine("..", "out.pdf"));     // relative: a/out.pdf
+
+        using var doc = Good();
+        doc.Add(new Paragraph("Hello", Style()));
+        doc.Save(link);
+
+        Assert.Equal(1, Pages(File.ReadAllBytes(Path.Combine(dir.Path, "a", "out.pdf"))));
+        Assert.False(File.Exists(Path.Combine(dir.Path, "out.pdf")));     // where the string rules point
+        Assert.NotNull(new FileInfo(link).LinkTarget);
+    }
+
+    [Fact]
+    public async Task AsyncSaveThroughARelativeLinkWithDotDotBelowASymlinkedDirectory_writesTheFileTheOperatingSystemResolves()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Creating a symbolic link needs a privilege on Windows.");
+
+        using var dir = new TempDir();
+        var deep = Path.Combine(dir.Path, "a", "b");
+        Directory.CreateDirectory(deep);
+        var linkedDir = Path.Combine(dir.Path, "linkdir");
+        File.CreateSymbolicLink(linkedDir, deep);
+        var link = Path.Combine(linkedDir, "link.pdf");
+        File.CreateSymbolicLink(link, Path.Combine("..", "out.pdf"));
+
+        using var doc = Good();
+        doc.Add(new Paragraph("Hello", Style()));
+        await doc.SaveAsync(link, TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, Pages(await File.ReadAllBytesAsync(Path.Combine(dir.Path, "a", "out.pdf"), TestContext.Current.CancellationToken)));
+        Assert.False(File.Exists(Path.Combine(dir.Path, "out.pdf")));
+    }
+
+    /// <summary>
+    /// A path that is a pipe is written into, as on main: a link to <c>/dev/stdout</c> ends at
+    /// <c>pipe:[N]</c>, which is not a file name. A named pipe stands in for it, with a reader that
+    /// drains it and a guard that unblocks the reader if the save never opens the pipe.
+    /// </summary>
+    [Fact]
+    public async Task SaveToANamedPipe_writesTheWholePdfIntoIt()
+    {
+        Assert.SkipWhen(!OperatingSystem.IsLinux(), "mkfifo is needed.");
+
+        using var dir = new TempDir();
+        var fifo = Path.Combine(dir.Path, "pipe");
+        try
+        {
+            using var mkfifo = System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo("mkfifo", fifo) { RedirectStandardError = true });
+            await mkfifo!.WaitForExitAsync(TestContext.Current.CancellationToken);
+            Assert.SkipWhen(mkfifo.ExitCode != 0, "mkfifo failed.");
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            Assert.Skip("mkfifo is not available.");
+        }
+
+        // Opening a pipe blocks until the other end is open, so the reader is a separate process.
+        // It is cat rather than a FileStream because .NET takes an advisory lock on every file it
+        // opens, and a reader in this process would conflict with the writer's.
+        using var cat = System.Diagnostics.Process.Start(
+            new System.Diagnostics.ProcessStartInfo("cat", fifo) { RedirectStandardOutput = true });
+        Assert.NotNull(cat);
+        var received = new MemoryStream();
+        var reader = cat.StandardOutput.BaseStream.CopyToAsync(received, TestContext.Current.CancellationToken);
+
+        try
+        {
+            using var doc = Good();
+            doc.Add(new Paragraph("Hello", Style()));
+            doc.Save(fifo);
+
+            await reader.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+            await cat.WaitForExitAsync(TestContext.Current.CancellationToken);
+
+            var bytes = received.ToArray();
+            Assert.StartsWith("%PDF-", System.Text.Encoding.Latin1.GetString(bytes), StringComparison.Ordinal);
+            Assert.Equal(1, Pages(bytes));
+        }
+        finally
+        {
+            // If the save failed before opening the pipe, cat is still waiting for a writer.
+            if (!cat.HasExited) cat.Kill();
+        }
     }
 
     [Fact]
@@ -765,6 +877,7 @@ public sealed class SaveLifecycleTests
     [Theory]
     [InlineData(-1, 8192)]       // a negative signature page
     [InlineData(0, -1)]          // a negative placeholder size
+    [InlineData(0, 536_870_895)] // one more than a placeholder can hold: used to be OutOfMemory after layout
     public void SignWithAnOptionNoPageCountCouldMakeValid_isRefusedBeforeLayout_soTheDocumentStillSaves(
         int signaturePage, int estimatedSize)
     {
