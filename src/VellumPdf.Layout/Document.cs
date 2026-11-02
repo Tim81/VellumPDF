@@ -268,16 +268,12 @@ public sealed class Document : IDisposable
     /// Supports {page} and {pages} tokens.
     /// </summary>
     /// <remarks>
-    /// A band whose <see cref="RunningBand.Template"/> is null makes the save throw (#531). The
-    /// band's height and style carry refusals of their own; see <see cref="RunningBand.Height"/>,
+    /// A band's <see cref="RunningBand.Template"/> is never null, because the
+    /// <see cref="RunningBand"/> constructor refuses one (#531). The band's height and style carry
+    /// refusals of their own; see <see cref="RunningBand.Height"/>,
     /// <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/> and
     /// <see cref="TextStyle.FontRef"/>.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
-    /// property, when the band's <see cref="RunningBand.Template"/> is <see langword="null"/>
-    /// (#531).
-    /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
     /// band's height leaves the content area no positive size, or when <c>Height</c> is null and
@@ -305,16 +301,12 @@ public sealed class Document : IDisposable
     /// Supports {page} and {pages} tokens.
     /// </summary>
     /// <remarks>
-    /// A band whose <see cref="RunningBand.Template"/> is null makes the save throw (#531). The
-    /// band's height and style carry refusals of their own; see <see cref="RunningBand.Height"/>,
+    /// A band's <see cref="RunningBand.Template"/> is never null, because the
+    /// <see cref="RunningBand"/> constructor refuses one (#531). The band's height and style carry
+    /// refusals of their own; see <see cref="RunningBand.Height"/>,
     /// <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/> and
     /// <see cref="TextStyle.FontRef"/>.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
-    /// property, when the band's <see cref="RunningBand.Template"/> is <see langword="null"/>
-    /// (#531).
-    /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
     /// band's height leaves the content area no positive size, or when <c>Height</c> is null and
@@ -371,23 +363,20 @@ public sealed class Document : IDisposable
 
     /// <summary>Sets a header band with optional style and alignment. Returns this document for chaining.</summary>
     /// <remarks>
-    /// A null <paramref name="template"/> is accepted here and throws during the save. The
-    /// parameter is non-nullable, but that is a compiler diagnostic rather than a check: how loudly
-    /// your build complains depends on your own nullable settings, and <c>null!</c> silences it
-    /// entirely. This method builds a <see cref="RunningBand"/>, whose constructor does not check
-    /// the template, so the band resolves it during layout and the failure surfaces as a
-    /// <see cref="NullReferenceException"/> from a call you did not make. Pass an empty string for
-    /// a band that draws no text (#531). Assigning to <see cref="Header"/> directly reaches the
-    /// same throw.
+    /// A null <paramref name="template"/> is refused here (#531). The parameter is non-nullable, but
+    /// that is a compiler diagnostic rather than a check, and <c>null!</c> silences it. This method
+    /// builds a <see cref="RunningBand"/>, whose constructor throws, so the failure now lands on
+    /// this call. It used to surface as a <see cref="NullReferenceException"/> from the save, a
+    /// call you did not make. Pass an empty string for a band that draws no text. A null band
+    /// assigned to <see cref="Header"/> directly is a different case and means no band.
     /// <para>The band's height and <paramref name="style"/> carry refusals of their own; see
     /// <see cref="RunningBand.Height"/>, <see cref="TextStyle.FontSize"/>,
     /// <see cref="TextStyle.Leading"/> and <see cref="TextStyle.FontRef"/>.
     /// <see cref="HorizontalAlignment.Justify"/> and values the enumeration does not name are drawn
     /// left-aligned; see <see cref="RunningBand.Alignment"/>.</para>
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
-    /// method, when the band's <see cref="RunningBand.Template"/> is <see langword="null"/> (#531).
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="template"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
@@ -416,23 +405,20 @@ public sealed class Document : IDisposable
 
     /// <summary>Sets a footer band with optional style and alignment. Returns this document for chaining.</summary>
     /// <remarks>
-    /// A null <paramref name="template"/> is accepted here and throws during the save. The
-    /// parameter is non-nullable, but that is a compiler diagnostic rather than a check: how loudly
-    /// your build complains depends on your own nullable settings, and <c>null!</c> silences it
-    /// entirely. This method builds a <see cref="RunningBand"/>, whose constructor does not check
-    /// the template, so the band resolves it during layout and the failure surfaces as a
-    /// <see cref="NullReferenceException"/> from a call you did not make. Pass an empty string for
-    /// a band that draws no text (#531). Assigning to <see cref="Footer"/> directly reaches the
-    /// same throw.
+    /// A null <paramref name="template"/> is refused here (#531). The parameter is non-nullable, but
+    /// that is a compiler diagnostic rather than a check, and <c>null!</c> silences it. This method
+    /// builds a <see cref="RunningBand"/>, whose constructor throws, so the failure now lands on
+    /// this call. It used to surface as a <see cref="NullReferenceException"/> from the save, a
+    /// call you did not make. Pass an empty string for a band that draws no text. A null band
+    /// assigned to <see cref="Footer"/> directly is a different case and means no band.
     /// <para>The band's height and <paramref name="style"/> carry refusals of their own; see
     /// <see cref="RunningBand.Height"/>, <see cref="TextStyle.FontSize"/>,
     /// <see cref="TextStyle.Leading"/> and <see cref="TextStyle.FontRef"/>.
     /// <see cref="HorizontalAlignment.Justify"/> and values the enumeration does not name are drawn
     /// left-aligned; see <see cref="RunningBand.Alignment"/>.</para>
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
-    /// method, when the band's <see cref="RunningBand.Template"/> is <see langword="null"/> (#531).
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="template"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
@@ -603,11 +589,11 @@ public sealed class Document : IDisposable
 
     /// <summary>Adds a paragraph to the document content. Returns this document for chaining.</summary>
     /// <remarks>
-    /// A null paragraph throws <see cref="NullReferenceException"/> from this call. What the
+    /// A null paragraph throws <see cref="ArgumentNullException"/> from this call. What the
     /// paragraph holds is not checked here; the save refuses it, and the members that hold each
     /// value say what it does.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
+    /// <exception cref="ArgumentNullException">
     /// <paramref name="paragraph"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
@@ -629,19 +615,18 @@ public sealed class Document : IDisposable
     /// </exception>
     public Document Add(Paragraph paragraph)
     {
+        ArgumentNullException.ThrowIfNull(paragraph);
         _content.Add(new ParagraphRenderer(paragraph) { ElementLanguage = paragraph.Language });
         return this;
     }
 
     /// <summary>Adds a horizontal line separator to the document content. Returns this document for chaining.</summary>
     /// <remarks>
-    /// A null separator is stored, and the save throws when it lays the element out.
-    /// <para>Do not pass null. A later major version will throw
-    /// <see cref="ArgumentNullException"/> from this call.</para>
+    /// A null separator is refused here (#547); it used to be stored, and the save threw
+    /// <see cref="NullReferenceException"/> when it laid the element out.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
-    /// call, when <paramref name="separator"/> is <see langword="null"/>.
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="separator"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
@@ -655,21 +640,20 @@ public sealed class Document : IDisposable
     /// </exception>
     public Document Add(LineSeparator separator)
     {
+        ArgumentNullException.ThrowIfNull(separator);
         _content.Add(new LineSeparatorRenderer(separator));
         return this;
     }
 
     /// <summary>Adds a table to the document content. Returns this document for chaining.</summary>
     /// <remarks>
-    /// A null table is stored, and the save throws when it lays the element out. A table's own
+    /// A null table is refused here (#547); it used to be stored, and the save threw
+    /// <see cref="NullReferenceException"/> when it laid the element out. A table's own
     /// refusals are on <see cref="TableElement"/>, among them a table that needs more than 50,000
     /// page continuations.
-    /// <para>Do not pass null. A later major version will throw
-    /// <see cref="ArgumentNullException"/> from this call.</para>
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
-    /// call, when <paramref name="table"/> is <see langword="null"/>.
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="table"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
@@ -689,19 +673,18 @@ public sealed class Document : IDisposable
     /// </exception>
     public Document Add(TableElement table)
     {
+        ArgumentNullException.ThrowIfNull(table);
         _content.Add(new TableRenderer(table));
         return this;
     }
 
     /// <summary>Adds an image to the document content. Returns this document for chaining.</summary>
     /// <remarks>
-    /// A null image is stored, and the save throws when it lays the element out.
-    /// <para>Do not pass null. A later major version will throw
-    /// <see cref="ArgumentNullException"/> from this call.</para>
+    /// A null image is refused here (#547); it used to be stored, and the save threw
+    /// <see cref="NullReferenceException"/> when it laid the element out.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
-    /// call, when <paramref name="image"/> is <see langword="null"/>.
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="image"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
@@ -716,19 +699,18 @@ public sealed class Document : IDisposable
     /// </exception>
     public Document Add(LayoutImage image)
     {
+        ArgumentNullException.ThrowIfNull(image);
         _content.Add(new LayoutImageRenderer(image));
         return this;
     }
 
     /// <summary>Adds a pie chart to the document content. Returns this document for chaining.</summary>
     /// <remarks>
-    /// A null chart is stored, and the save throws when it lays the element out.
-    /// <para>Do not pass null. A later major version will throw
-    /// <see cref="ArgumentNullException"/> from this call.</para>
+    /// A null chart is refused here (#547); it used to be stored, and the save threw
+    /// <see cref="NullReferenceException"/> when it laid the element out.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
-    /// call, when <paramref name="chart"/> is <see langword="null"/>.
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="chart"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
@@ -741,19 +723,18 @@ public sealed class Document : IDisposable
     /// </exception>
     public Document Add(PieChart chart)
     {
+        ArgumentNullException.ThrowIfNull(chart);
         _content.Add(new PieChartRenderer(chart));
         return this;
     }
 
     /// <summary>Adds a bulleted or numbered list to the document content. Returns this document for chaining.</summary>
     /// <remarks>
-    /// A null list is stored, and the save throws when it lays the element out.
-    /// <para>Do not pass null. A later major version will throw
-    /// <see cref="ArgumentNullException"/> from this call.</para>
+    /// A null list is refused here (#547); it used to be stored, and the save threw
+    /// <see cref="NullReferenceException"/> when it laid the element out.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
-    /// call, when <paramref name="list"/> is <see langword="null"/>.
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="list"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
@@ -775,17 +756,18 @@ public sealed class Document : IDisposable
     /// </exception>
     public Document Add(ListElement list)
     {
+        ArgumentNullException.ThrowIfNull(list);
         _content.Add(new ListRenderer(list));
         return this;
     }
 
     /// <summary>Adds a heading to the document content. Returns this document for chaining.</summary>
     /// <remarks>
-    /// A null heading throws <see cref="NullReferenceException"/> from this call. What the heading
+    /// A null heading throws <see cref="ArgumentNullException"/> from this call. What the heading
     /// holds is not checked here; the save refuses it, and the members that hold each value say
     /// what it does.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
+    /// <exception cref="ArgumentNullException">
     /// <paramref name="heading"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
@@ -807,6 +789,7 @@ public sealed class Document : IDisposable
     /// </exception>
     public Document Add(Heading heading)
     {
+        ArgumentNullException.ThrowIfNull(heading);
         _content.Add(new HeadingRenderer(heading));
         return this;
     }
@@ -815,14 +798,11 @@ public sealed class Document : IDisposable
     /// <remarks>
     /// With <paramref name="style"/> null, the paragraph takes the style from the most recent
     /// <see cref="SetDefaultFont"/> call made before this one.
-    /// A null <paramref name="text"/> is stored, and the save throws when it lays the paragraph
-    /// out.
-    /// <para>Do not pass null text. A later major version will throw
-    /// <see cref="ArgumentNullException"/> from this call.</para>
+    /// A null <paramref name="text"/> is refused here (#547); it used to be stored, and the save
+    /// threw <see cref="NullReferenceException"/> when it laid the paragraph out.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
-    /// call, when <paramref name="text"/> is <see langword="null"/>.
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="text"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
@@ -1083,10 +1063,10 @@ public sealed class Document : IDisposable
     /// cannot be combined.
     /// </exception>
     /// <exception cref="NullReferenceException">
-    /// A null that a member stored without a check: a band's <see cref="RunningBand.Template"/>
-    /// (#531), an element or text passed to an <c>Add</c> overload that stores it, a null
-    /// <see cref="PageSize"/>, or a null inside an element. A custom renderer that returns a null
-    /// result, or a null renderer inside one, raises it too; see <see cref="IRenderer.Layout"/>.
+    /// A null that a member still stores without a check: a null <see cref="PageSize"/>. A custom
+    /// renderer that returns a null result, or a null renderer inside one, raises it too; see
+    /// <see cref="IRenderer.Layout"/>. A band template and an element, text or item passed to an
+    /// <c>Add</c> overload are refused where they are passed instead (#523, #531, #547).
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// A <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name is selected
@@ -1172,10 +1152,10 @@ public sealed class Document : IDisposable
     /// <see cref="UseObjectStreams"/> was set and <see cref="Encrypt"/> was called.
     /// </exception>
     /// <exception cref="NullReferenceException">
-    /// A null that a member stored without a check: a band's <see cref="RunningBand.Template"/>
-    /// (#531), an element or text passed to an <c>Add</c> overload that stores it, a null
-    /// <see cref="PageSize"/>, or a null inside an element. A custom renderer that returns a null
-    /// result, or a null renderer inside one, raises it too; see <see cref="IRenderer.Layout"/>.
+    /// A null that a member still stores without a check: a null <see cref="PageSize"/>. A custom
+    /// renderer that returns a null result, or a null renderer inside one, raises it too; see
+    /// <see cref="IRenderer.Layout"/>. A band template and an element, text or item passed to an
+    /// <c>Add</c> overload are refused where they are passed instead (#523, #531, #547).
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// A <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name is selected
@@ -1264,10 +1244,10 @@ public sealed class Document : IDisposable
     /// which cannot be combined.
     /// </exception>
     /// <exception cref="NullReferenceException">
-    /// A null that a member stored without a check: a band's <see cref="RunningBand.Template"/>
-    /// (#531), an element or text passed to an <c>Add</c> overload that stores it, a null
-    /// <see cref="PageSize"/>, or a null inside an element. A custom renderer that returns a null
-    /// result, or a null renderer inside one, raises it too; see <see cref="IRenderer.Layout"/>.
+    /// A null that a member still stores without a check: a null <see cref="PageSize"/>. A custom
+    /// renderer that returns a null result, or a null renderer inside one, raises it too; see
+    /// <see cref="IRenderer.Layout"/>. A band template and an element, text or item passed to an
+    /// <c>Add</c> overload are refused where they are passed instead (#523, #531, #547).
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// A <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name is selected
@@ -1369,10 +1349,10 @@ public sealed class Document : IDisposable
     /// <see cref="UseObjectStreams"/> was set and <see cref="Encrypt"/> was called.
     /// </exception>
     /// <exception cref="NullReferenceException">
-    /// A null that a member stored without a check: a band's <see cref="RunningBand.Template"/>
-    /// (#531), an element or text passed to an <c>Add</c> overload that stores it, a null
-    /// <see cref="PageSize"/>, or a null inside an element. A custom renderer that returns a null
-    /// result, or a null renderer inside one, raises it too; see <see cref="IRenderer.Layout"/>.
+    /// A null that a member still stores without a check: a null <see cref="PageSize"/>. A custom
+    /// renderer that returns a null result, or a null renderer inside one, raises it too; see
+    /// <see cref="IRenderer.Layout"/>. A band template and an element, text or item passed to an
+    /// <c>Add</c> overload are refused where they are passed instead (#523, #531, #547).
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// A <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name is selected

@@ -18,15 +18,11 @@ public sealed class Heading
 {
     /// <summary>Heading text (also used as the bookmark title unless <see cref="BookmarkTitle"/> is set).</summary>
     /// <remarks>
-    /// A null value makes the save throw; see the constructor. White space is drawn as on
+    /// Never null; the constructor refuses a null (#547). White space is drawn as on
     /// <see cref="Paragraph"/>. An empty string draws no text, but the heading still adds a
     /// bookmark, titled by <see cref="BookmarkTitle"/> or else empty, and, in a tagged document,
     /// its structure element.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the text is <see langword="null"/>.
-    /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when the text holds an unpaired surrogate and is measured in an embedded
@@ -135,13 +131,12 @@ public sealed class Heading
     /// <summary>Creates a heading with the given text and optional style (defaults to 14pt).</summary>
     /// <remarks>
     /// A null <paramref name="style"/> becomes 14pt Helvetica. A null <paramref name="text"/> is
-    /// stored, and the save throws when it lays out the heading.
-    /// <para>Do not pass null text. A later major version will throw
-    /// <see cref="ArgumentNullException"/> from this call.</para>
+    /// refused here (#547); it used to be stored, and the save threw
+    /// <see cref="NullReferenceException"/> when it laid out the heading. An empty string is not
+    /// null and is accepted.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this constructor, when <paramref name="text"/> is <see langword="null"/>.
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="text"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -161,6 +156,7 @@ public sealed class Heading
     /// </exception>
     public Heading(string text, TextStyle? style = null)
     {
+        ArgumentNullException.ThrowIfNull(text);
         Text = text;
         Style = style ?? new TextStyle { FontSize = 14 };
     }

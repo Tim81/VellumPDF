@@ -271,16 +271,19 @@ public sealed class DocumentRenderer
 
     /// <summary>Appends a renderer to the document flow and returns this instance for chaining.</summary>
     /// <remarks>
-    /// Nothing is checked here. A null <paramref name="renderer"/> is stored, and
-    /// <see cref="Render"/> throws when it reaches it. The page-continuation limit on
-    /// <see cref="IRenderer.Layout"/> applies from <see cref="Render"/>.
-    /// <para>Do not pass null. A later major version will throw <see cref="ArgumentNullException"/>
-    /// from this call.</para>
+    /// A null <paramref name="renderer"/> is refused here (#523), as <see cref="Document"/> refuses
+    /// one passed to its own <c>Add</c>. It used to be stored, and <see cref="Render"/> threw
+    /// <see cref="NullReferenceException"/> when it reached it. What the renderer holds is not
+    /// checked here. The page-continuation limit on <see cref="IRenderer.Layout"/> applies from
+    /// <see cref="Render"/>.
     /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="renderer"/> is <see langword="null"/>.
+    /// </exception>
     /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Render"/>, not from this call, when <paramref name="renderer"/> is
-    /// <see langword="null"/>, or returns a null result from <see cref="IRenderer.Layout"/> or a
-    /// <see cref="LayoutResult.Partial"/> with a null renderer.
+    /// Raised from <see cref="Render"/>, not from this call, when <paramref name="renderer"/> returns
+    /// a null result from <see cref="IRenderer.Layout"/> or a <see cref="LayoutResult.Partial"/>
+    /// with a null renderer.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Render"/>, not from this call, when <paramref name="renderer"/>, or
@@ -292,7 +295,14 @@ public sealed class DocumentRenderer
     /// returns a result whose non-finite bottom leaves a later element at a position
     /// <see cref="Render"/> writes outside the content stream; see <see cref="LayoutResult.Full"/>.
     /// </exception>
-    public DocumentRenderer Add(IRenderer renderer) { _renderers.Add(renderer); return this; }
+    public DocumentRenderer Add(IRenderer renderer)
+    {
+        // Document.Add(IRenderer) already refused a null; this is the same operation by the other
+        // door, and it accepted the null and failed later, in Render (#523).
+        ArgumentNullException.ThrowIfNull(renderer);
+        _renderers.Add(renderer);
+        return this;
+    }
 
     /// <summary>Lays out all added renderers and saves the resulting PDF to <paramref name="destination"/>.</summary>
     /// <remarks>

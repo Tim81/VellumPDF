@@ -25,12 +25,9 @@ public sealed class Row
     /// <summary>The cells in this row, in column order.</summary>
     /// <remarks>
     /// An empty row among rows that have cells is not refused. A table in which no row has a cell
-    /// is; see <see cref="TableElement.Rows"/>.
+    /// is; see <see cref="TableElement.Rows"/>. No cell is null: <see cref="AddCell(Cell)"/> refuses
+    /// a null (#523).
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from reading this property, when a cell is <see langword="null"/>.
-    /// </exception>
     public IReadOnlyList<Cell> Cells => _cells;
 
     /// <summary>Whether this row is a header row (may be repeated on each page).</summary>
@@ -59,35 +56,37 @@ public sealed class Row
 
     /// <summary>Adds a cell to the row. Returns this row.</summary>
     /// <remarks>
-    /// A null <paramref name="cell"/> is stored, and the save throws when it lays out the table. In
-    /// a row that a cell above covers through <see cref="Cell.RowSpan"/>, the row's cells fill the
-    /// columns left over, in order, and a cell past the last column is not drawn, though its text
-    /// is still measured (#487).
-    /// <para>Do not pass null. A later major version will throw
-    /// <see cref="ArgumentNullException"/> from this call.</para>
+    /// A null <paramref name="cell"/> is refused here (#523); it used to be stored, and the save
+    /// threw <see cref="NullReferenceException"/> when it laid out the table. In a row that a cell
+    /// above covers through <see cref="Cell.RowSpan"/>, the row's cells fill the columns left over,
+    /// in order, and a cell past the last column is not drawn, though its text is still measured
+    /// (#487).
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when <paramref name="cell"/> is <see langword="null"/>.
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="cell"/> is <see langword="null"/>.
     /// </exception>
-    public Row AddCell(Cell cell) { _cells.Add(cell); return this; }
+    public Row AddCell(Cell cell)
+    {
+        ArgumentNullException.ThrowIfNull(cell);
+        _cells.Add(cell);
+        return this;
+    }
 
     /// <summary>Adds a text cell to the row. Returns this row.</summary>
     /// <remarks>
     /// Creates the cell with <see cref="Cell(string)"/> and adds it, so a line break in the text is
-    /// not honoured; see <see cref="Cell.Content"/>. A null <paramref name="text"/> is stored. The
-    /// save throws when it sizes a column automatically, which it does for a column without a
-    /// positive finite width in <see cref="TableElement.ColWidths"/>. In a table where every column
-    /// has a positive finite width, the cell is drawn empty. In a row that a cell above covers
-    /// through <see cref="Cell.RowSpan"/>, the row's cells fill the columns left over, in order,
-    /// and a cell past the last column is not drawn, though its text is still measured (#487).
-    /// <para>Do not pass null. A later major version will throw
-    /// <see cref="ArgumentNullException"/> from this call.</para>
+    /// not honoured; see <see cref="Cell.Content"/>. A null <paramref name="text"/> is refused by
+    /// that constructor (#547). It used to be stored, and the save threw
+    /// <see cref="NullReferenceException"/> when it sized a column automatically, but not in a
+    /// table where every column has a positive finite width in
+    /// <see cref="TableElement.ColWidths"/>, where the cell was drawn empty. In a row that a cell
+    /// above covers through <see cref="Cell.RowSpan"/>, the row's cells fill the columns left over,
+    /// in order, and a cell past the last column is not drawn, though its text is still measured
+    /// (#487).
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when <paramref name="text"/> is <see langword="null"/> and the table sizes a
-    /// column automatically; see <see cref="TableElement.ColWidths"/>.
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="text"/> is <see langword="null"/>. <c>ParamName</c> is <c>content</c>, the
+    /// name of the <see cref="Cell(string)"/> parameter.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not

@@ -112,6 +112,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   sizes and checks that every word is drawn once: before the fix 766, 1,758 and 504 of those
   positions lost words.
 
+- **A null argument is refused by the call that took it, with `ArgumentNullException` (#523, #531,
+  #547).** Across the Kernel object model and Layout's element types a null was stored without a
+  check and surfaced as `NullReferenceException` from a later call the caller did not make, usually
+  `Document.Save`, with a stack naming the writer or a renderer. `PdfArray.Add`, `PdfArray`'s
+  constructor, `PdfDictionary.Set`'s value, `DocumentRenderer.Add`, `RunningBand`'s template,
+  `Paragraph`, `Paragraph.Add`, `Heading`, `TextRun`, `ListItem`, `ListItem.AddChild`,
+  `ListElement`'s constructor and `Add`, `Row.AddCell`, `Cell`, `LayoutImage`, `PieChart.Slices`,
+  every `Document.Add` overload, and the public renderer constructors now throw from the call, naming
+  the parameter. A null inside a sequence names its index. An empty string is not null and is
+  accepted. **Attention**: code that passed a null and caught the later `NullReferenceException`
+  now gets `ArgumentNullException` earlier; nothing that reached `Save` with a null could have
+  rendered. The `<exception>` tags and the "a later major version will throw" paragraphs that
+  described the old behaviour are rewritten. `PageSize`, `DrawContext`, `FontReference`,
+  `LayoutResult` and `RendererContext` still store a null, and are outside these three issues.
+
 ## [2.3.3] - 2026-09-20
 
 This release is led by documentation. Layout's public surface now states what each member

@@ -35,17 +35,17 @@ public sealed class ParagraphRenderer : IRenderer
 
     /// <summary>Creates a renderer for the paragraph, optionally starting at <paramref name="startLine"/> for pagination.</summary>
     /// <remarks>
-    /// Nothing is checked here. A null <paramref name="para"/> makes <see cref="Layout"/> throw. A
+    /// A null <paramref name="para"/> is refused here (#547); it used to be stored, and
+    /// <see cref="Layout"/> threw <see cref="NullReferenceException"/>. Nothing else is checked. A
     /// negative <paramref name="startLine"/> makes <see cref="Layout"/> count that many lines more
     /// than the text holds, and makes <see cref="Draw"/> throw. A start past the last line lays out
     /// as <see cref="LayoutResult.Outcome.Nothing"/>, so a document saving it throws
     /// <see cref="InvalidOperationException"/> saying the element is too tall to fit. A renderer
     /// built directly ignores the paragraph's <see cref="Paragraph.Language"/>.
-    /// <para>Do not pass null or a start outside the paragraph's lines. A later major version will
-    /// throw from this call.</para>
+    /// <para>Do not pass a start outside the paragraph's lines. A later major version will throw
+    /// from this call.</para>
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised later from <see cref="Layout"/>, not from this constructor, when
+    /// <exception cref="ArgumentNullException">
     /// <paramref name="para"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
@@ -54,6 +54,7 @@ public sealed class ParagraphRenderer : IRenderer
     /// </exception>
     public ParagraphRenderer(Paragraph para, int startLine = 0)
     {
+        ArgumentNullException.ThrowIfNull(para);
         _para = para;
         _startLine = startLine;
     }
@@ -72,11 +73,6 @@ public sealed class ParagraphRenderer : IRenderer
     /// <exception cref="InvalidOperationException">
     /// A run's <see cref="TextStyle.FontSize"/> or <see cref="TextStyle.Color"/> is refused, or an
     /// edge of <see cref="Paragraph.Margins"/> is not finite; see those members.
-    /// </exception>
-    /// <exception cref="NullReferenceException">
-    /// The paragraph, one of its runs, or a run's text is <see langword="null"/>, or a run has a
-    /// null style and its text holds a character other than white space. U+00A0 NO-BREAK SPACE
-    /// counts as such a character; a tab and other white space do not.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Text this method measures in an embedded font holds an unpaired surrogate; see

@@ -18,7 +18,8 @@ public sealed class RunningBand
 {
     /// <summary>Text template — may contain {page} and/or {pages}.</summary>
     /// <remarks>
-    /// A template that does not fit the content box is truncated, not refused;
+    /// Never null: the constructor refuses a null template (#531). A template that does not fit the
+    /// content box is truncated, not refused;
     /// <see cref="VellumPdf.Layout.Rendering.DocumentRenderer.BandTruncations"/> says when it
     /// counts as not fitting. The cut is reported through <c>Document.BandTruncations</c> and
     /// <c>DocumentRenderer.BandTruncations</c>, so read one of those if you need to know it
@@ -43,11 +44,6 @@ public sealed class RunningBand
     /// text as the number gains digits, so the worst page is the one that tells you how much
     /// shorter the template has to be.</para>
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from a save rather than from the constructor, when the template is
-    /// <see langword="null"/>. The type is wrong for a null argument and the throw lands far from
-    /// the constructor that accepted it; both are tracked as #531.
-    /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when the band measures text that holds an unpaired surrogate in an
@@ -138,15 +134,13 @@ public sealed class RunningBand
     /// <summary>Creates a running band from a text template, with optional style and alignment (defaults to centered).</summary>
     /// <remarks>
     /// A null <paramref name="style"/> becomes <see cref="TextStyle.Default"/>. A null
-    /// <paramref name="template"/> is stored, and <see cref="Resolve"/> throws when the save calls
-    /// it (#531).
-    /// <para>Do not pass a null template. A later major version will throw
-    /// <see cref="ArgumentNullException"/> from this call.</para>
+    /// <paramref name="template"/> is refused here (#531). It used to be stored, and
+    /// <see cref="Resolve"/> threw <see cref="NullReferenceException"/> from deep inside the
+    /// renderer when any of the four save overloads laid the band out, a long way from the
+    /// constructor that took the null. An empty template is not null and is accepted.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this constructor, when <paramref name="template"/> is <see langword="null"/> and the
-    /// band is attached to a document.
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="template"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -170,6 +164,7 @@ public sealed class RunningBand
     /// </exception>
     public RunningBand(string template, TextStyle? style = null, HorizontalAlignment alignment = HorizontalAlignment.Center)
     {
+        ArgumentNullException.ThrowIfNull(template);
         Template = template;
         Style = style ?? TextStyle.Default;
         Alignment = alignment;
@@ -184,12 +179,9 @@ public sealed class RunningBand
 
     /// <summary>Substitutes <c>{page}</c> and <c>{pages}</c> in <see cref="Template"/>.</summary>
     /// <remarks>
-    /// Any other brace text is left as given. A null template throws
-    /// <see cref="NullReferenceException"/> from this call (#531).
+    /// Any other brace text is left as given. <see cref="Template"/> is never null (#531), so this
+    /// does not throw for it.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// <see cref="Template"/> is <see langword="null"/>.
-    /// </exception>
     public string Resolve(int pageNumber, int totalPages) =>
         Template
             .Replace("{page}", pageNumber.ToString(System.Globalization.CultureInfo.InvariantCulture),

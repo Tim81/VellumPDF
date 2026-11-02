@@ -32,7 +32,15 @@ public sealed class PdfDictionary : PdfObject
     private Dictionary<PdfName, int>? _index;
 
     /// <summary>Sets <paramref name="key"/> to <paramref name="value"/>, replacing any existing entry, and returns this dictionary.</summary>
-    /// <exception cref="ArgumentNullException"><paramref name="key"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// A null <paramref name="value"/> is refused, as a null <paramref name="key"/> always was (#523).
+    /// It used to be stored, and <c>WriteTo</c> threw <see cref="NullReferenceException"/> later,
+    /// far from this call. A dictionary entry whose value is absent is expressed by not setting the
+    /// key, or by <see cref="PdfNull"/> where a PDF null is meant.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="key"/> or <paramref name="value"/> is <see langword="null"/>.
+    /// </exception>
     public PdfDictionary Set(PdfName key, PdfObject value)
     {
         // Without this, a null key would behave differently depending on which side of
@@ -43,6 +51,10 @@ public sealed class PdfDictionary : PdfObject
         // property that comment above promises and DictionaryAtExactlyTheThreshold_isStillCorrect
         // pins.
         ArgumentNullException.ThrowIfNull(key);
+
+        // The same failure mode, for the value: a null value was stored and failed later, in
+        // WriteTo (#523).
+        ArgumentNullException.ThrowIfNull(value);
 
         if (_index is not null)
         {

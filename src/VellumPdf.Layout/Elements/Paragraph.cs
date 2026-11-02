@@ -11,8 +11,8 @@ namespace VellumPdf.Layout.Elements;
 /// </summary>
 /// <remarks>
 /// Refusals on size, leading and font are on <see cref="TextStyle"/> and are raised from the save.
-/// Null text and null runs are stored and make the save throw; see the constructors and
-/// <see cref="Add"/>.
+/// Null text and a null run are refused where they are passed, with
+/// <see cref="ArgumentNullException"/>; see the constructors and <see cref="Add"/> (#547).
 /// <para>Text is laid out word by word. A carriage return, a line feed, or a carriage return
 /// followed by a line feed starts a new line. One before the first word leaves an empty first line;
 /// at the end of the text the first trailing break is dropped and each further one adds an empty
@@ -35,32 +35,22 @@ public sealed class Paragraph
     /// <summary>The text of every run, concatenated in order.</summary>
     /// <remarks>
     /// On a single-run paragraph this is that run's text. This is the text as stored; the type
-    /// remarks say how its white space and run boundaries are drawn. A null run in the sequence
-    /// given to <see cref="Paragraph(IEnumerable{TextRun})"/> makes this getter throw.
+    /// remarks say how its white space and run boundaries are drawn. It never throws: no run can be
+    /// null, because the constructor and <see cref="Add"/> refuse one.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// A run in <see cref="Runs"/> is <see langword="null"/>.
-    /// </exception>
     public string Text => _runs.Count == 1 ? _runs[0].Text : string.Concat(_runs.Select(r => r.Text));
 
     /// <summary>The style of the first (or only) run.</summary>
     /// <remarks>
-    /// Reads the first run only. A null first run makes this getter throw.
+    /// Reads the first run only. It never throws, for the reason given on <see cref="Text"/>.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// The first run in <see cref="Runs"/> is <see langword="null"/>.
-    /// </exception>
     public TextStyle Style => _runs.Count > 0 ? _runs[0].Style : TextStyle.Default;
 
     /// <summary>All inline text runs in this paragraph (always at least one entry).</summary>
     /// <remarks>
-    /// Never empty: a zero-run input becomes one empty run. Null entries are kept.
+    /// Never empty: a zero-run input becomes one empty run. No entry is null; a null run is refused
+    /// by the constructor (#547).
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from reading this property, when an entry is <see langword="null"/>. See
-    /// <see cref="Paragraph(IEnumerable{TextRun})"/> for the other runs the save refuses.
-    /// </exception>
     public IReadOnlyList<TextRun> Runs => _runs;
 
     /// <summary>Margins around the paragraph.</summary>
@@ -123,13 +113,12 @@ public sealed class Paragraph
     /// <summary>Creates a single-run paragraph with uniform style.</summary>
     /// <remarks>
     /// A null <paramref name="style"/> becomes <see cref="TextStyle.Default"/>. A null
-    /// <paramref name="text"/> is stored, and the save throws when it lays out the paragraph.
-    /// <para>Do not pass null text. A later major version will throw
-    /// <see cref="ArgumentNullException"/> from this call.</para>
+    /// <paramref name="text"/> is refused here (#547). It used to be stored, and the save threw
+    /// <see cref="NullReferenceException"/> when it laid out the paragraph. An empty string is not
+    /// null and is accepted.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this constructor, when <paramref name="text"/> is <see langword="null"/>.
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="text"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -149,28 +138,20 @@ public sealed class Paragraph
     /// </exception>
     public Paragraph(string text, TextStyle? style = null)
     {
+        ArgumentNullException.ThrowIfNull(text);
         _runs = [new TextRun(text, style ?? TextStyle.Default)];
     }
 
     /// <summary>Creates a mixed-style paragraph from a sequence of runs.</summary>
     /// <remarks>
     /// An empty sequence becomes one empty run at <see cref="TextStyle.Default"/>. A null sequence
-    /// throws <see cref="ArgumentNullException"/>. A null run inside the sequence is kept.
-    /// <see cref="Text"/> then throws, and so does <see cref="Style"/> when the null run is the
-    /// first. The save throws for a null run anywhere in the sequence, and <see cref="Add"/>
-    /// without a style throws when the null run is the first.
-    /// <para>Do not put null in the sequence. A later major version will throw
-    /// <see cref="ArgumentNullException"/> from this call.</para>
+    /// throws <see cref="ArgumentNullException"/>, and so does a null run inside it (#547). A null
+    /// run used to be kept, which made <see cref="Text"/> and <see cref="Style"/> throw and the
+    /// save throw <see cref="NullReferenceException"/>.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
-    /// <paramref name="runs"/> is <see langword="null"/>.
-    /// </exception>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this constructor, when <paramref name="runs"/> contains <see langword="null"/>, a run
-    /// whose text is null, or a run whose style is null and whose text holds a character other than
-    /// white space. U+00A0 NO-BREAK SPACE counts as such a character; a tab and other white space
-    /// do not.
+    /// <paramref name="runs"/> is <see langword="null"/> or contains <see langword="null"/>; the
+    /// message names the index of the run. <c>ParamName</c> is <c>runs</c>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -190,7 +171,13 @@ public sealed class Paragraph
     /// </exception>
     public Paragraph(IEnumerable<TextRun> runs)
     {
+        ArgumentNullException.ThrowIfNull(runs);
         _runs = [.. runs];
+        for (var i = 0; i < _runs.Count; i++)
+        {
+            if (_runs[i] is null)
+                throw new ArgumentNullException(nameof(runs), $"The run at index {i} is null.");
+        }
         if (_runs.Count == 0)
             _runs = [new TextRun(string.Empty, TextStyle.Default)];
     }
@@ -199,21 +186,12 @@ public sealed class Paragraph
 
     /// <summary>Appends a run with the given text and optional style. Returns this paragraph.</summary>
     /// <remarks>
-    /// A null <paramref name="style"/> uses the first run's style, <see cref="Style"/>, which is
-    /// itself null when the first run was built with a null style; the run added then has a null
-    /// style too, with the consequences described on <see cref="TextRun"/>. Reading
-    /// <see cref="Style"/> throws when the first run is null, so this call then throws
-    /// <see cref="NullReferenceException"/> itself. A null <paramref name="text"/> is stored, and
-    /// the save throws when it lays out the paragraph.
-    /// <para>Do not pass null text. A later major version will throw
-    /// <see cref="ArgumentNullException"/> from this call.</para>
+    /// A null <paramref name="style"/> uses the first run's style, <see cref="Style"/>. A null
+    /// <paramref name="text"/> is refused here (#547). It used to be stored, and the save threw
+    /// <see cref="NullReferenceException"/> when it laid out the paragraph.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when <paramref name="text"/> is <see langword="null"/>, or when
-    /// <paramref name="style"/> and the first run's style are both null and <paramref name="text"/>
-    /// holds a character other than white space; see <see cref="TextRun"/>. It is raised from this
-    /// call instead when <paramref name="style"/> is null and the first run is null.
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="text"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -233,6 +211,7 @@ public sealed class Paragraph
     /// </exception>
     public Paragraph Add(string text, TextStyle? style = null)
     {
+        ArgumentNullException.ThrowIfNull(text);
         _runs.Add(new TextRun(text, style ?? Style));
         return this;
     }

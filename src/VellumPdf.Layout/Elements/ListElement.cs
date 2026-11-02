@@ -69,13 +69,9 @@ public sealed class ListElement
 
     /// <summary>The items contained in this list, in render order.</summary>
     /// <remarks>
-    /// Empty is allowed. A null item is kept, and the save throws when it lays the list out;
-    /// see <see cref="Add(ListItem)"/>.
+    /// Empty is allowed. No item is null: <see cref="Add(ListItem)"/> and the constructor refuse a
+    /// null (#523).
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from reading this property, when an item is <see langword="null"/>.
-    /// </exception>
     public IReadOnlyList<ListItem> Items => _items;
 
     /// <summary>Points of indent for each list level.</summary>
@@ -190,44 +186,50 @@ public sealed class ListElement
 
     /// <summary>Creates a list with the given marker style and optional initial items.</summary>
     /// <remarks>
-    /// A null <paramref name="items"/> is an empty list. A null entry inside it is kept, and the
-    /// save throws when it lays the list out.
-    /// <para>Do not put null in <paramref name="items"/>. A later major version will throw
-    /// <see cref="ArgumentNullException"/> from this call.</para>
+    /// A null <paramref name="items"/> is an empty list. A null entry inside it is refused (#547);
+    /// it used to be kept, and the save threw <see cref="NullReferenceException"/> when it laid the
+    /// list out. Entries before the null one are not left behind, because the list is not returned.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when <paramref name="items"/> contains <see langword="null"/>.
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="items"/> contains <see langword="null"/>. <c>ParamName</c> is <c>items</c>.
     /// </exception>
     public ListElement(ListStyle style = ListStyle.Unordered, IEnumerable<ListItem>? items = null)
     {
         Style = style;
         if (items is not null)
-            _items.AddRange(items);
+        {
+            foreach (var item in items)
+            {
+                if (item is null)
+                    throw new ArgumentNullException(nameof(items), "An item in the sequence is null.");
+                _items.Add(item);
+            }
+        }
     }
 
     /// <summary>Appends an item to the list and returns this instance for chaining.</summary>
     /// <remarks>
-    /// A null <paramref name="item"/> is stored, and the save throws when it lays out the list.
-    /// <para>Do not pass null. A later major version will throw
-    /// <see cref="ArgumentNullException"/> from this call.</para>
+    /// A null <paramref name="item"/> is refused here (#523); it used to be stored, and the save
+    /// threw <see cref="NullReferenceException"/> when it laid out the list.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when <paramref name="item"/> is <see langword="null"/>.
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="item"/> is <see langword="null"/>.
     /// </exception>
-    public ListElement Add(ListItem item) { _items.Add(item); return this; }
+    public ListElement Add(ListItem item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        _items.Add(item);
+        return this;
+    }
 
     /// <summary>Appends a text item with an optional text style and returns this instance for chaining.</summary>
     /// <remarks>
     /// Creates the item with <see cref="ListItem(string, TextStyle?)"/> and adds it. A null
-    /// <paramref name="text"/> is stored, and the save throws when it lays out the list.
-    /// <para>Do not pass null text. A later major version will throw
-    /// <see cref="ArgumentNullException"/> from this call.</para>
+    /// <paramref name="text"/> is refused by that constructor (#547); it used to be stored, and the
+    /// save threw <see cref="NullReferenceException"/> when it laid out the list.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when <paramref name="text"/> is <see langword="null"/>.
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="text"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not

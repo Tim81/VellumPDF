@@ -111,8 +111,8 @@ public sealed class PieChart
     /// They used to be accepted: every slice then had no angle and the chart had no area, so it was
     /// blank, or, with <see cref="StrokeColor"/> set, every non-zero slice stroked the same radius
     /// (#546). A large sum that stays finite is unaffected, and each wedge still takes its share.</para>
-    /// <para>A null list makes the save throw.</para>
-    /// <para>Do not pass a null list. A later major version will refuse it.</para>
+    /// <para>A null list is refused where it is set (#547). It used to be stored, and the save threw
+    /// <see cref="NullReferenceException"/> when it laid the chart out.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised while the chart is laid out, which happens inside
@@ -120,11 +120,21 @@ public sealed class PieChart
     /// negative or not finite, when the values sum to zero or less, or when they sum to infinity.
     /// <c>ParamName</c> is this property's name.
     /// </exception>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the list is <see langword="null"/>.
+    /// <exception cref="ArgumentNullException">
+    /// The list is <see langword="null"/>. <c>ParamName</c> is <c>value</c>, the name of the
+    /// <c>init</c> accessor's parameter.
     /// </exception>
-    public IReadOnlyList<PieSlice> Slices { get; init; } = [];
+    public IReadOnlyList<PieSlice> Slices
+    {
+        get => _slices;
+        init
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            _slices = value;
+        }
+    }
+
+    private IReadOnlyList<PieSlice> _slices = [];
 
     /// <summary>
     /// The chart diameter in points. Defaults to 200. When it exceeds the width available at

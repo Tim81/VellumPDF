@@ -16,14 +16,10 @@ public sealed class LayoutImage
 {
     /// <summary>The image to draw.</summary>
     /// <remarks>
-    /// A null value makes the save throw; see the constructor. So does an image whose own pixel
-    /// width or height is not a positive number. A JPEG that declares a zero dimension loads as
-    /// such an image.
+    /// Never null; the constructor refuses a null (#547). An image whose own pixel width or height
+    /// is not a positive number makes the save throw. A JPEG that declares a zero dimension loads
+    /// as such an image.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the image is <see langword="null"/>.
-    /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when the image's own pixel width or height is not a positive number; a
@@ -151,13 +147,11 @@ public sealed class LayoutImage
 
     /// <summary>Creates a flow image element for the given image.</summary>
     /// <remarks>
-    /// A null <paramref name="image"/> is stored, and the save throws when it lays out the image.
-    /// <para>Do not pass null. A later major version will throw
-    /// <see cref="ArgumentNullException"/> from this call.</para>
+    /// A null <paramref name="image"/> is refused here (#547); it used to be stored, and the save
+    /// threw <see cref="NullReferenceException"/> when it laid out the image.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when <paramref name="image"/> is <see langword="null"/>.
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="image"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -165,5 +159,9 @@ public sealed class LayoutImage
     /// a JPEG that declares a zero dimension loads as such an image. <c>ParamName</c> is
     /// <c>_img</c>. It is raised before <see cref="Width"/> and <see cref="Height"/> are checked.
     /// </exception>
-    public LayoutImage(PdfImageXObject image) => Image = image;
+    public LayoutImage(PdfImageXObject image)
+    {
+        ArgumentNullException.ThrowIfNull(image);
+        Image = image;
+    }
 }

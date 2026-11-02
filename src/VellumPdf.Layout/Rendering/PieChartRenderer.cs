@@ -22,15 +22,17 @@ public sealed class PieChartRenderer : IRenderer
 
     /// <summary>Creates a renderer for the given pie chart.</summary>
     /// <remarks>
-    /// A null <paramref name="chart"/> is stored, and <see cref="Layout"/> throws.
-    /// <para>Do not pass null. A later major version will throw <see cref="ArgumentNullException"/>
-    /// from this constructor.</para>
+    /// A null <paramref name="chart"/> is refused here (#547); it used to be stored, and
+    /// <see cref="Layout"/> threw <see cref="NullReferenceException"/>.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised later from <see cref="Layout"/>, not from this constructor, when
+    /// <exception cref="ArgumentNullException">
     /// <paramref name="chart"/> is <see langword="null"/>.
     /// </exception>
-    public PieChartRenderer(PieChart chart) => _chart = chart;
+    public PieChartRenderer(PieChart chart)
+    {
+        ArgumentNullException.ThrowIfNull(chart);
+        _chart = chart;
+    }
 
     /// <summary>Validates the slices, reserves the chart diameter plus margins, and reports the occupied region.</summary>
     /// <remarks>
@@ -44,9 +46,6 @@ public sealed class PieChartRenderer : IRenderer
     /// <see cref="PieChart.Slices"/>, <see cref="PieChart.Diameter"/>,
     /// <see cref="PieChart.StartAngle"/> or <see cref="PieChart.StrokeWidth"/> is refused;
     /// <c>ParamName</c> names the property.
-    /// </exception>
-    /// <exception cref="NullReferenceException">
-    /// The chart, or its <see cref="PieChart.Slices"/>, is <see langword="null"/>.
     /// </exception>
     public LayoutResult Layout(LayoutContext ctx)
     {

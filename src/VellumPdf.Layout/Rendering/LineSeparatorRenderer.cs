@@ -15,15 +15,17 @@ public sealed class LineSeparatorRenderer : IRenderer
 
     /// <summary>Creates a renderer for the given line separator.</summary>
     /// <remarks>
-    /// A null <paramref name="sep"/> is stored, and <see cref="Layout"/> throws.
-    /// <para>Do not pass null. A later major version will throw <see cref="ArgumentNullException"/>
-    /// from this constructor.</para>
+    /// A null <paramref name="sep"/> is refused here (#547); it used to be stored, and
+    /// <see cref="Layout"/> threw <see cref="NullReferenceException"/>.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised later from <see cref="Layout"/>, not from this constructor, when
+    /// <exception cref="ArgumentNullException">
     /// <paramref name="sep"/> is <see langword="null"/>.
     /// </exception>
-    public LineSeparatorRenderer(LineSeparator sep) => _sep = sep;
+    public LineSeparatorRenderer(LineSeparator sep)
+    {
+        ArgumentNullException.ThrowIfNull(sep);
+        _sep = sep;
+    }
 
     /// <summary>Reserves the separator's line width plus margins and reports the occupied region.</summary>
     /// <remarks>
@@ -33,9 +35,6 @@ public sealed class LineSeparatorRenderer : IRenderer
     /// <exception cref="InvalidOperationException">
     /// <see cref="LineSeparator.LineWidth"/> or an edge of <see cref="LineSeparator.Margins"/> is
     /// not finite.
-    /// </exception>
-    /// <exception cref="NullReferenceException">
-    /// The separator is <see langword="null"/>.
     /// </exception>
     public LayoutResult Layout(LayoutContext ctx)
     {

@@ -48,16 +48,17 @@ public sealed class TableRenderer : IRenderer
     /// <paramref name="startRow"/> on, so a start below zero or inside the header run draws every
     /// row. A start past the last row lays out as <see cref="LayoutResult.Outcome.Nothing"/>, so a
     /// document saving it throws <see cref="InvalidOperationException"/> saying the element is too
-    /// tall to fit. A null <paramref name="table"/> makes <see cref="Layout"/> throw.
-    /// <para>Do not pass null or a start outside the table's rows. A later major version will
-    /// throw from this call.</para>
+    /// tall to fit. A null <paramref name="table"/> is refused here (#547); it used to be stored, and
+    /// <see cref="Layout"/> threw <see cref="NullReferenceException"/>.
+    /// <para>Do not pass a start outside the table's rows. A later major version will throw from
+    /// this call.</para>
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised later from <see cref="Layout"/>, not from this constructor, when
+    /// <exception cref="ArgumentNullException">
     /// <paramref name="table"/> is <see langword="null"/>.
     /// </exception>
     public TableRenderer(TableElement table, int startRow = 0)
     {
+        ArgumentNullException.ThrowIfNull(table);
         _table = table;
         _startRow = startRow;
     }
@@ -74,10 +75,6 @@ public sealed class TableRenderer : IRenderer
     /// <see cref="TableElement.Rows"/>, <see cref="Cell.ColSpan"/>, <see cref="Cell.Padding"/>,
     /// <see cref="Cell.Background"/>, <see cref="TableElement.BorderWidth"/>,
     /// <see cref="TableElement.BorderColor"/> and <see cref="TableElement.Margins"/>.
-    /// </exception>
-    /// <exception cref="NullReferenceException">
-    /// The table or a cell is <see langword="null"/>, or a cell's content is null in a table with
-    /// an automatically sized column.
     /// </exception>
     /// <exception cref="OverflowException">
     /// A row's column spans sum past <see cref="int.MaxValue"/>; see <see cref="Cell.ColSpan"/>.

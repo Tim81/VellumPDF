@@ -50,20 +50,22 @@ public sealed class ListRenderer : IRenderer
     /// <see cref="LayoutResult.Full"/> occupying no height. A negative start on an empty list also
     /// returns <see cref="LayoutResult.Full"/> occupying no height, and <see cref="Draw"/> then
     /// throws <see cref="ArgumentOutOfRangeException"/>.
-    /// <para>Do not pass null or a start outside the list's entries, which count each child after
-    /// its parent. A later major version will throw from this constructor.</para>
+    /// A null <paramref name="list"/> is refused here (#547); it used to be stored, and
+    /// <see cref="Layout"/> threw <see cref="NullReferenceException"/>, even for an empty area.
+    /// <para>Do not pass a start outside the list's entries, which count each child after its
+    /// parent. A later major version will throw from this constructor.</para>
     /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="list"/> is <see langword="null"/>.
+    /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// Raised from <see cref="Layout"/>, when <paramref name="startItem"/> is negative, the
     /// list has items, and the area is not empty. On an empty list it is raised from
     /// <see cref="Draw"/> instead.
     /// </exception>
-    /// <exception cref="NullReferenceException">
-    /// Raised later from <see cref="Layout"/>, not from this constructor, when
-    /// <paramref name="list"/> is <see langword="null"/>, even for an empty area.
-    /// </exception>
     public ListRenderer(ListElement list, int startItem = 0)
     {
+        ArgumentNullException.ThrowIfNull(list);
         _list = list;
         _startItem = startItem;
     }
@@ -92,9 +94,6 @@ public sealed class ListRenderer : IRenderer
     /// An item's <see cref="TextStyle.FontSize"/> or <see cref="TextStyle.Color"/> is refused, or the
     /// list's <see cref="ListElement.Indent"/> is <c>NaN</c> or negative infinity, or an edge of its
     /// <see cref="ListElement.Margins"/> is not finite; see those members.
-    /// </exception>
-    /// <exception cref="NullReferenceException">
-    /// The list, an item, or an item's text is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Text this method measures in an embedded font holds an unpaired surrogate; see
