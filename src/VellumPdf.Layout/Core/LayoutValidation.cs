@@ -185,10 +185,18 @@ internal static class LayoutValidation
     }
 
     /// <summary>
-    /// Rejects a non-finite line width, which reaches the stream as <c>NaN w</c>.
+    /// Rejects a non-finite line width, which reaches the stream as <c>NaN w</c>, and a negative
+    /// one, which reaches it as <c>-3 w</c> (#557).
+    ///
+    /// ISO 32000-2, 8.4.3.2 (Line width) says the operand "shall be a non-negative number", so a
+    /// negative width is a non-conforming operand even though it parses. That is why this refuses
+    /// it where the neighbouring out-of-range inputs, such as a colour channel above 1, are only
+    /// documented: those render a valid file, and this writes an operand the standard forbids.
     ///
     /// Zero is left alone, unlike an image extent: <c>0 w</c> is a defined operator asking for the
-    /// thinnest line the device renders, not a degenerate matrix.
+    /// thinnest line the device renders, not a degenerate matrix. The same clause says such lines
+    /// "should not be used" because the result is device-dependent, which is a caller warning
+    /// rather than a refusal and is carried by the member documentation.
     /// </summary>
     internal static void ValidateLineWidth(double width, string owner)
     {
@@ -197,6 +205,13 @@ internal static class LayoutValidation
             throw new InvalidOperationException(
                 $"{owner} has a line width of {Format(width)}, which cannot be drawn. " +
                 "A line width must be a finite number.");
+        }
+
+        if (width < 0)
+        {
+            throw new InvalidOperationException(
+                $"{owner} has a line width of {Format(width)}, which cannot be drawn. " +
+                "A line width must not be negative (ISO 32000-2, 8.4.3.2).");
         }
     }
 

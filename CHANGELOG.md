@@ -68,6 +68,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Individual non-finite explicit table column widths were already treated as auto (#477), so they
   needed no change. A finite negative margin still renders and is documented as a boundary.
 
+- **A negative line width is refused (#557).** ISO 32000-2, 8.4.3.2 says a line width "shall be a
+  non-negative number", and `LineSeparator.LineWidth` and `TableElement.BorderWidth` wrote a
+  negative one as `-3 w`. `LayoutValidation.ValidateLineWidth` now refuses it with an
+  `InvalidOperationException` naming the element, the width and the clause, in the same shape as the
+  non-finite refusal. Zero stays accepted, since `0 w` is a defined operator; the member
+  documentation carries the clause's advice that zero-width lines should not be used, because the
+  result is device-dependent. `PieChart.StrokeWidth` already refused a negative value.
+
 ## [2.3.3] - 2026-09-20
 
 This release is led by documentation. Layout's public surface now states what each member

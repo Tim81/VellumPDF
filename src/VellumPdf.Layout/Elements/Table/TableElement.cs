@@ -57,7 +57,7 @@ public sealed class TableElement
 
     /// <summary>Width of the table border lines, in points.</summary>
     /// <remarks>
-    /// A non-finite width is refused. <see cref="Document.Save(System.IO.Stream)"/> throws
+    /// A non-finite width is refused, and so is a negative one. <see cref="Document.Save(System.IO.Stream)"/> throws
     /// <see cref="InvalidOperationException"/> and names the table.
     /// <para><b>Attention</b>: zero does <b>not</b> hide the borders. It asks the device for its
     /// thinnest line, so the grid is still drawn. Each border stays one device pixel while
@@ -66,14 +66,15 @@ public sealed class TableElement
     /// <para>There is at present <b>no</b> way to draw a table without a grid. Every cell is
     /// stroked unconditionally and <see cref="BorderColor"/> is not nullable. If you need a
     /// gridless table, the nearest you can get is a border colour matching the page.</para>
-    /// <para>A negative width is accepted and written as a negative line width, which ISO 32000-2,
-    /// 8.4.3.2 does not allow; see <see cref="LineSeparator.LineWidth"/>.</para>
-    /// <para>Do not pass a negative width. Whether a negative line width is refused, and in which
-    /// release, is being decided in #482.</para>
+    /// <para>A negative width is refused as well (#557). ISO 32000-2, 8.4.3.2 says a line width
+    /// "shall be a non-negative number", and a negative one was written as <c>-3 w</c>. The save
+    /// throws <see cref="InvalidOperationException"/>, naming the table, the width and the clause.
+    /// Zero stays accepted; see <see cref="LineSeparator.LineWidth"/> for why it is a caller
+    /// warning and not a refusal.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this
-    /// property, when the width is not finite. The message names the table.
+    /// property, when the width is not finite or is negative. The message names the table.
     /// </exception>
     public double BorderWidth { get; init; } = 0.5;
 

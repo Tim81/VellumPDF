@@ -20,7 +20,7 @@ public sealed class LineSeparator
 
     /// <summary>Stroke width of the rule in points.</summary>
     /// <remarks>
-    /// A non-finite width is refused. <see cref="Document.Save(System.IO.Stream)"/> throws
+    /// A non-finite width is refused, and so is a negative one. <see cref="Document.Save(System.IO.Stream)"/> throws
     /// <see cref="InvalidOperationException"/> and names the width. The number would otherwise
     /// reach the content stream as a token that no reader can parse. A finite width is not refused
     /// when its sum with <c>Top</c> and <c>Bottom</c> overflows; see <see cref="Margins"/>.
@@ -32,17 +32,16 @@ public sealed class LineSeparator
     /// Zoom is a separate matter: the line stays one device pixel while everything around it
     /// shrinks, so it reads as proportionally heavier the further the page is scaled down. If you
     /// want no rule, leave the element out.</para>
-    /// <para>A negative width is not refused, though ISO 32000-2, 8.4.3.2 requires a line width to
-    /// be a non-negative number. The height the separator takes is <c>Top</c> plus the width plus
-    /// <c>Bottom</c>, so a negative width shortens that height. The rule and the elements after it
-    /// move up the page, and off the page once the width's magnitude is large enough.</para>
-    /// <para>Do not pass a negative width. Whether a negative line width is refused, and in which
-    /// release, is being decided in #482.</para>
+    /// <para>A negative width is refused as well (#557). ISO 32000-2, 8.4.3.2 says a line width
+    /// "shall be a non-negative number", and a negative one was written as <c>-3 w</c>, an operand
+    /// the standard forbids. <see cref="Document.Save(System.IO.Stream)"/> throws
+    /// <see cref="InvalidOperationException"/>, naming the separator, the width and the clause.
+    /// Zero stays accepted.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property,
-    /// when the width is not finite. The message names the separator. It is also raised when the
-    /// width is large enough that the separator does not fit on a page, with a message saying the
+    /// when the width is not finite or is negative. The message names the separator and the width.
+    /// It is also raised when the width is large enough that the separator does not fit on a page, with a message saying the
     /// element is too tall to fit.
     /// </exception>
     /// <exception cref="ArgumentException">
