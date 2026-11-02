@@ -24,7 +24,7 @@
          gone rather than bumped (#200). Assert and the meta-package must move together:
          xunit.v3.mtp-v2 requires xunit.v3.assert at the same version, so a lone assert bump
          is NU1608 under TreatWarningsAsErrors. -->
-    <PackageVersion Include="xunit.v3" Version="4.0.1" />
+    <PackageVersion Include="xunit.v3" Version="4.0.2" />
     <!-- VellumPdf.TestSupport needs only Assert (Assert.Skip/Assert.Fail), not the full v3
          runner the "xunit.v3" meta-package pulls in — that package requires an executable
          test host (OutputType=Exe), which a shared helper library is not. -->
