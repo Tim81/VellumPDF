@@ -55,7 +55,8 @@ public enum HorizontalAlignment
     /// <para><b>Attention</b>: <see cref="VellumPdf.Fonts.Standard14.Symbol"/> and
     /// <see cref="VellumPdf.Fonts.Standard14.ZapfDingbats"/> measure every glyph as zero (#470), so
     /// a justified line in either is stretched as though it held no text, and runs past the right
-    /// edge by the width of the text it does hold.</para>
+    /// edge by the width of the text it does hold. A line that holds text in either keeps the space
+    /// divisor it had before #548, which counts every space twice, so it is no worse than it was.</para>
     /// </remarks>
     Justify,
 }

@@ -1004,7 +1004,12 @@ public sealed class Document : IDisposable
     /// </summary>
     private void BeginSave(Stream destination)
     {
-        _pdf.EnsureCanSave(destination);
+        // A document with nothing in it lays out no pages, so its pages are already known: none. It
+        // gets the order a save always had: the page geometry and the bands (the layout of nothing
+        // checks them and adds nothing), then "no pages", before the destination and the options,
+        // instead of whichever of those comes first (#530).
+        if (_content.Count == 0) CreateRenderer().RunLayout();
+        _pdf.EnsureCanSave(destination, pagesKnown: _content.Count == 0);
         ThrowIfLayoutFailed();
         _pdf.ValidateSaveOptions();
     }

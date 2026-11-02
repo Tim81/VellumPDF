@@ -306,17 +306,18 @@ public sealed class DocumentRenderer
 
     /// <summary>Lays out all added renderers and saves the resulting PDF to <paramref name="destination"/>.</summary>
     /// <remarks>
-    /// The layout runs first and adds pages to the kernel document; the checks on
-    /// <paramref name="destination"/> and on the document's options run after it, just before
-    /// writing. That write is <see cref="PdfDocument.Save(System.IO.Stream)"/>, so every exception
-    /// it documents can reach you from here. <see cref="Document.Save(System.IO.Stream)"/> builds a
+    /// The checks on <paramref name="destination"/> and on the kernel document's options run first,
+    /// before the layout adds any page to it, so a refusal leaves the document as it was and a
+    /// retry cannot write the pages twice (#530). The write is
+    /// <see cref="PdfDocument.Save(System.IO.Stream)"/>, so every exception it documents can reach
+    /// you from here. <see cref="Document.Save(System.IO.Stream)"/> builds a
     /// renderer and calls this method, so the exceptions listed on that save, other than those
     /// about the <see cref="Document"/> itself, can reach you from here, and so can anything a
     /// custom renderer or the destination raises. A second call after one that succeeded throws;
-    /// after one that threw, it can succeed and write the failed call's pages as well (#530).
-    /// <see cref="Document.Save(System.IO.Stream)"/> guards against that, by running those checks
-    /// before the layout and refusing a save after a layout that threw; this method does neither. A
-    /// failure once writing has started leaves what was written so far in
+    /// after a layout that threw, it can succeed and write the failed call's pages as well (#530).
+    /// <see cref="Document.Save(System.IO.Stream)"/> guards against that by refusing a save after a
+    /// layout that threw; this method does not. A failure once writing has started leaves what was
+    /// written so far in
     /// <paramref name="destination"/>, which can be the PDF header alone.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
@@ -327,13 +328,14 @@ public sealed class DocumentRenderer
     /// </exception>
     /// <exception cref="ArgumentException">
     /// The margins, header and footer together leave the content area no positive size, or an
-    /// element refuses its own input, or <paramref name="destination"/> is not writable and the
-    /// kernel document is not linearized, or a registered font has a value that makes a font metric
+    /// element refuses its own input, or <paramref name="destination"/> is not writable or is closed
+    /// (the parameter name is <c>destination</c>, and it is raised before the layout), or a
+    /// registered font has a value that makes a font metric
     /// non-finite, or text measured in an embedded font holds an unpaired surrogate, or a
     /// non-finite position is written outside the content stream, such as a link rectangle.
     /// </exception>
     /// <exception cref="ArgumentNullException">
-    /// <paramref name="destination"/> is <see langword="null"/>, checked after the layout has run.
+    /// <paramref name="destination"/> is <see langword="null"/>, checked before the layout runs.
     /// </exception>
     /// <exception cref="NullReferenceException">
     /// An added renderer is <see langword="null"/>, returns a null result, or returns a
@@ -361,16 +363,26 @@ public sealed class DocumentRenderer
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// The kernel document combines options it cannot write together, such as object streams with
-    /// encryption, or linearization with either. A linearized kernel document raises this type, not
-    /// <see cref="ArgumentException"/>, for an open <paramref name="destination"/> that is not
-    /// writable.
+    /// encryption, or linearization with either.
     /// </exception>
     /// <exception cref="ObjectDisposedException">
-    /// The kernel document was disposed, or, for a linearized kernel document,
-    /// <paramref name="destination"/> is closed.
+    /// The kernel document was disposed. A closed <paramref name="destination"/> is an
+    /// <see cref="ArgumentException"/>, linearized or not.
     /// </exception>
     public void Render(Stream destination)
     {
+        // What the save would refuse without looking at the pages comes first. Layout appends pages
+        // to the kernel document, and a refusal after it, such as an unwritable destination, left
+        // them there with the document not marked as written, so a retry laid out again on top of
+        // them and wrote every page twice (#530). The kernel document marks itself written once
+        // these checks have passed, and a failure after that burns it; so after this point a failure
+        // either added no pages or leaves the document unable to be written again.
+        // With nothing added the layout only checks the page geometry and the bands and adds no page,
+        // so it runs first and "no pages" follows, as it always did.
+        if (_renderers.Count == 0) RunLayout();
+        _pdf.EnsureCanSave(destination, pagesKnown: _renderers.Count == 0);
+        _pdf.ValidateSaveOptions();
+
         RunLayout();
         _pdf.Save(destination);
     }

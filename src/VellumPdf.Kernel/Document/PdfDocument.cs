@@ -548,7 +548,14 @@ public sealed class PdfDocument : IDisposable
     /// document and a refusal that came after it left the pages behind, so the next save laid
     /// everything out a second time and wrote twice the pages.
     /// </summary>
-    internal void EnsureCanSave(Stream destination)
+    /// <param name="destination">Where the PDF will be written.</param>
+    /// <param name="pagesKnown">
+    /// Whether the document's pages are already there, which is true for a document that holds its
+    /// pages and for a layout engine with nothing to lay out. Then a document with no pages is
+    /// reported ("The document has no pages.") before the destination is looked at, as
+    /// <see cref="Save"/> always did. A layout engine about to add pages passes <see langword="false"/>.
+    /// </param>
+    internal void EnsureCanSave(Stream destination, bool pagesKnown = true)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(destination);
@@ -556,6 +563,9 @@ public sealed class PdfDocument : IDisposable
         if (_written)
             throw new InvalidOperationException(
                 "This document has already been written; create a new PdfDocument to write again.");
+
+        if (pagesKnown && _pages.Count == 0)
+            throw new InvalidOperationException("The document has no pages.");
 
         // Checked here and not left to PdfWriter's constructor: that runs after _written is set, so
         // an unusable stream used to burn the document, and a caller who caught the documented

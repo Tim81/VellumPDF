@@ -221,8 +221,16 @@ public sealed class ParagraphRenderer : IRenderer
             // neighbours of a space) and wrong here: Tw applies once per space, so dividing by the
             // gap count handed out half the slack and the line stopped short of the right edge
             // (#548). The divisor must match what Tw draws.
+            //
+            // Symbol and ZapfDingbats measure every glyph as zero (#470), so the slack on a line that
+            // holds either is the whole line width, not the room the text leaves. Handing all of it
+            // out per space, as above, pushed such a line twice as far past the right edge as the old
+            // divisor did. There is no right answer without metrics, so these lines keep the divisor
+            // they always had and are no worse than before. Real metrics would fix both.
+            var zeroMeasured = isJustified && HoldsZeroMeasuredFont(fragments);
             var spaceCount = isJustified ? CountSpaces(fragments) : 0;
-            var wordSpacing = spaceCount > 0 ? slack / spaceCount : 0.0;
+            var divisor = zeroMeasured ? wordGapCount : spaceCount;
+            var wordSpacing = divisor > 0 ? slack / divisor : 0.0;
 
             // Baseline X for left, center, right — for Justify treat as Left (we use Tw or Tm).
             //
@@ -515,6 +523,22 @@ public sealed class ParagraphRenderer : IRenderer
             }
         }
         return tokens;
+    }
+
+    /// <summary>
+    /// Whether a fragment of the line is set in Symbol or ZapfDingbats, which have no width metrics
+    /// and measure as zero (#470).
+    /// </summary>
+    private static bool HoldsZeroMeasuredFont(LineFragment[] fragments)
+    {
+        foreach (var frag in fragments)
+        {
+            var font = frag.Style.FontRef;
+            if (!font.IsEmbedded && font.Standard14 is Standard14.Symbol or Standard14.ZapfDingbats)
+                return true;
+        }
+
+        return false;
     }
 
     /// <summary>
