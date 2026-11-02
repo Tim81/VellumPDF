@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using System.Globalization;
+using VellumPdf.Layout.Elements;
 using VellumPdf.Layout.Elements.Table;
 
 namespace VellumPdf.Layout.Core;
@@ -207,6 +208,62 @@ internal static class LayoutValidation
             throw new InvalidOperationException(
                 $"{owner} has a non-finite inset. Every inset must be a finite number.");
         }
+    }
+
+    /// <summary>
+    /// Rejects a document margin that is not a finite number, naming the edge.
+    ///
+    /// The margin check that existed compares the horizontal and vertical sums against the page, and
+    /// a comparison against <c>NaN</c> is false, so <c>NaN</c> passed it. Negative infinity is below
+    /// every page size and passed it too. Both then surfaced later as a message about something
+    /// else: <c>NaN</c> as an element that is too tall, negative infinity as 50,000 page
+    /// continuations, the second after the renderer had done that work. Positive infinity was
+    /// already caught by the sum, with a message that named a total rather than the edge (#502).
+    ///
+    /// Raised as <see cref="ArgumentException"/> with the parameter name <c>margins</c>, which is
+    /// what the sum check beside it throws, so a caller's existing handler for a bad margin still
+    /// catches every bad margin. A negative finite margin is not refused: it saves today, a reader
+    /// clips what lands outside the page, and refusing it would turn a rendering document into an
+    /// exception. It is documented on <c>Document.Margins</c> and left to the next major.
+    /// </summary>
+    internal static void ValidateMargins(EdgeInsets margins)
+    {
+        Check(margins.Left, "left");
+        Check(margins.Top, "top");
+        Check(margins.Right, "right");
+        Check(margins.Bottom, "bottom");
+
+        static void Check(double value, string edge)
+        {
+            if (double.IsFinite(value)) return;
+            throw new ArgumentException(
+                $"The {edge} margin is {Format(value)}, which cannot be laid out. " +
+                "A margin must be a finite number.",
+                "margins");
+        }
+    }
+
+    /// <summary>
+    /// Rejects a running band whose reserved height is not a finite number, for a header and a
+    /// footer alike, so the two cannot disagree (#520).
+    ///
+    /// They disagreed. The header height comes off the top of the content box, so a non-finite
+    /// value poisoned the Y cursor and a later check refused it. The footer height comes off the
+    /// content box's height only, so negative infinity made that height positive infinity, the body
+    /// placed normally, and the band was then drawn at <c>+inf</c> plus <c>-inf</c>: the file saved
+    /// with <c>NaN</c> in a text matrix. Positive infinity and <c>NaN</c> were refused on both, by
+    /// two different exception types across three messages.
+    ///
+    /// Only an explicit <c>Height</c> is checked. A band with no height derives one from its style,
+    /// and a style that makes that derived height unusable is refused by its own checks.
+    /// </summary>
+    internal static void ValidateBandHeight(RunningBand band, string owner)
+    {
+        if (band.Height is not { } height || double.IsFinite(height)) return;
+
+        throw new InvalidOperationException(
+            $"{owner} has a height of {Format(height)}, which cannot be laid out. " +
+            "A band height must be a finite number.");
     }
 
     /// <summary>

@@ -232,8 +232,7 @@ public sealed class TextStyle
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when linked text is placed at a non-finite position, for example through
-    /// a non-finite margin (see <see cref="Document.Margins"/>) or a bottom of negative infinity in
-    /// a renderer's result (see <see cref="LayoutResult.Full"/>). The link's rectangle is written
+    /// a bottom of negative infinity in a renderer's result (see <see cref="LayoutResult.Full"/>). The link's rectangle is written
     /// outside the content stream, and the save refuses a non-finite coordinate there. Without a
     /// link, the same paragraph or list-item text saves. A heading placed at a non-finite height
     /// throws either way, from its bookmark; see

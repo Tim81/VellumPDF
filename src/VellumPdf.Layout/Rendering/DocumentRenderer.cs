@@ -224,9 +224,9 @@ public sealed class DocumentRenderer
     /// <remarks>
     /// The page size and margins are checked here. A page width or height that is not a positive
     /// finite number throws <see cref="ArgumentOutOfRangeException"/>, and margins that meet or
-    /// exceed the page throw <see cref="ArgumentException"/>, both from this constructor. A margin
-    /// of <c>NaN</c> or negative infinity passes this check, and so does positive infinity when the
-    /// opposite edge on its axis holds one of those; see <see cref="Document.Margins"/>.
+    /// exceed the page throw <see cref="ArgumentException"/>, both from this constructor. So does a
+    /// margin that is not a finite number, whichever of <c>NaN</c>, positive infinity and negative
+    /// infinity it is; the message names the edge (#502), and see <see cref="Document.Margins"/>.
     /// <para>A null <paramref name="pageSize"/> means the <see cref="PdfDocument.DefaultPageSize"/>
     /// of <paramref name="pdf"/> at construction, and a null <paramref name="margins"/> means 72
     /// points on every side.</para>
@@ -238,14 +238,14 @@ public sealed class DocumentRenderer
     /// layout, as on <see cref="Document.PageSize"/>.</para>
     /// <para>Do not pass a null <paramref name="pdf"/>, a page rectangle not at the origin, or a
     /// page size so large that positions overflow. Do not pass a margin that is a finite negative
-    /// inset, <c>NaN</c> or negative infinity either. A later major version will refuse
-    /// them.</para>
+    /// inset either. A later major version will refuse it.</para>
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// The page width or height is not a positive finite number.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// The margins meet or exceed the page on either axis. It is also raised from
+    /// A margin is <c>NaN</c> or infinite, or the margins meet or exceed the page on either axis. It
+    /// is also raised from
     /// <see cref="Render"/>, not from this constructor, when margins that pass this check leave no
     /// positive content area once a header or footer is taken off, or put a position written
     /// outside the content stream at a non-finite value; see <see cref="Document.Margins"/>.
@@ -370,6 +370,10 @@ public sealed class DocumentRenderer
     /// </summary>
     internal void RunLayout()
     {
+        // Both bands, before the content area is computed from them (#520).
+        if (Header is not null) LayoutValidation.ValidateBandHeight(Header, "The header band");
+        if (Footer is not null) LayoutValidation.ValidateBandHeight(Footer, "The footer band");
+
         var contentArea = ContentArea;
         if (contentArea.Width <= 0 || contentArea.Height <= 0)
             throw new ArgumentException(
@@ -827,6 +831,10 @@ public sealed class DocumentRenderer
             throw new ArgumentOutOfRangeException(nameof(pageSize),
                 FormattableString.Invariant(
                     $"Page height must be a positive finite number (was {pageSize.Height})."));
+
+        // Before the sums below: a comparison against NaN is false, so a NaN margin passed both
+        // of them, and so did a negative-infinity one (#502).
+        LayoutValidation.ValidateMargins(margins);
 
         if (margins.Horizontal >= pageSize.Width)
             throw new ArgumentException(

@@ -233,30 +233,32 @@ public sealed class Document : IDisposable
     /// beyond the page. On a one-paragraph document with every inset at -72, the file is written
     /// with no invalid token in it, so nothing downstream reports the loss either. Negative insets
     /// large enough in magnitude to overflow the position arithmetic, such as -1e308 on the left or
-    /// right edge alone, reach the outcomes described below for a non-finite inset.</para>
-    /// <para>A non-finite inset is checked only through the sum on its axis, and is refused only
-    /// when that sum is positive infinity. <c>NaN</c> and negative infinity pass, because neither
-    /// makes the sum meet or exceed the page. An inset that passes leaves a content area that is
-    /// not finite, and what follows depends on the elements laid out in it. The save can throw an
-    /// exception about an element rather than the margin, or it can succeed with <c>NaN</c> or
-    /// <c>Infinity</c> in the content stream or content off the page (#502).</para>
-    /// <para>Do not pass a finite negative inset, <c>NaN</c> or negative infinity. A later major
-    /// version will reject all three.</para>
+    /// right edge alone, are finite and so pass the check below. They were not measured again after
+    /// #502, and what they do depends on the elements laid out.</para>
+    /// <para>An inset that is not a finite number is refused, whichever edge holds it and whichever
+    /// of <c>NaN</c>, positive infinity and negative infinity it is. The save throws
+    /// <see cref="ArgumentException"/> with the parameter name <c>margins</c> before anything is laid
+    /// out, naming the edge and the value, such as <c>The top margin is NaN, which cannot be laid
+    /// out. A margin must be a finite number.</c> Before #502 only a positive-infinity sum was
+    /// caught, and <c>NaN</c> and negative infinity surfaced later as a message about an element,
+    /// or saved with <c>NaN</c> or <c>Infinity</c> in the content stream.</para>
+    /// <para><b>Attention</b>: do not pass a finite negative inset. A later major version will
+    /// reject it.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
-    /// Raised from a save rather than from this property, when the margins on either axis meet or
-    /// exceed the page, or when they leave the content area no positive size once the header and
-    /// footer are taken off. An axis whose inset sum is positive infinity is refused by this check.
-    /// The exception is also raised, with a message saying PDF does not support NaN or Infinity as
-    /// a real number, when an inset that passes the check puts a position the save writes outside
-    /// the content stream, such as a link rectangle, at a non-finite value.
+    /// Raised from a save rather than from this property, when an inset is <c>NaN</c> or infinite,
+    /// when the margins on either axis meet or exceed the page, or when they leave the content area
+    /// no positive size once the header and footer are taken off. The message for a non-finite
+    /// inset names the edge. The exception is also raised, with a message saying PDF does not
+    /// support NaN or Infinity as a real number, when finite insets whose arithmetic overflows put
+    /// a position the save writes outside the content stream, such as a link rectangle, at a
+    /// non-finite value.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from a save when an inset that passes the <see cref="ArgumentException"/> check
-    /// leaves an element no area it can be laid out in, makes it reach the page-continuation limit,
-    /// or leaves an image an extent it cannot draw, and also when a large finite inset leaves the
-    /// content area positive but too small for a single element. The measured non-finite cases are
-    /// on #502.
+    /// leaves an element no area it can be laid out in, or leaves an image an extent it cannot
+    /// draw, and also when a large finite inset leaves the content area positive but too small for
+    /// a single element.
     /// </exception>
     public EdgeInsets Margins { get; set; } = new EdgeInsets(72); // 1 inch
 

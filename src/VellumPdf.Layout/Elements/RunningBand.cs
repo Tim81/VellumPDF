@@ -104,26 +104,20 @@ public sealed class RunningBand
     /// <para><b>Attention</b>: zero and negative values are not refused, and neither is useful. The
     /// height comes off the page's content box, so both leave the band no room while it is still
     /// drawn, over your content. A later major version will reject them.</para>
-    /// <para><c>NaN</c> and positive infinity are refused on both bands; each was measured on its
-    /// own, because the two take different routes. Positive infinity gives
-    /// <see cref="ArgumentException"/> about the content area having no positive size, and names
-    /// the margins as the parameter. <c>NaN</c> gives <see cref="InvalidOperationException"/>
-    /// about an element being too tall to fit, and that one does report the height, as
-    /// <c>NaNpt of running bands</c>. Negative infinity is refused the same way, but only on a
-    /// header, where it gives that same <see cref="InvalidOperationException"/> for a different
-    /// reason, the page-continuation cap, and names nothing about the band. A finite height large
-    /// enough shares the type again: measured on a footer, 684 already throws it while the
-    /// content area is still a positive 13.9pt, and so does every height from there to 697.88.
-    /// At 697.89 the content area reaches exactly zero and the throw becomes
-    /// <see cref="ArgumentException"/>; a header takes the same route at the same values.</para>
-    /// <para>On a footer, negative infinity is not refused at all (#520). <c>Save</c> succeeds
-    /// and writes a file that stays well formed, though its content stream stops conforming. The
-    /// footer's vertical position is the page height minus the margin minus the band's own
-    /// height. With that height at negative infinity the position becomes positive infinity.
-    /// Adding it back to the band height then computes infinity plus negative infinity, which
-    /// IEEE 754 gives as <c>NaN</c>. That is the literal token that lands in the footer's
-    /// <c>Tm</c> operator where a coordinate belongs: <c>qpdf --check</c> exits 0 on the result,
-    /// while <c>pdftotext</c> reports a syntax error and drops the footer text with it.</para>
+    /// <para>A height that is not a finite number is refused, on a header and on a footer alike, and
+    /// <c>NaN</c>, positive infinity and negative infinity all give the same
+    /// <see cref="InvalidOperationException"/>, naming the band and the value: <c>The footer band has
+    /// a height of negative infinity, which cannot be laid out. A band height must be a finite
+    /// number.</c> The check runs before any page is laid out, so nothing is written. Before #520
+    /// the three values took different routes, by two exception types across three messages, and a
+    /// footer at negative infinity saved a file with <c>NaN</c> in its <c>Tm</c> operator, where a
+    /// coordinate belongs.</para>
+    /// <para>A finite height large enough to leave the content area no room is a separate case, and
+    /// shares the type again: measured on a footer, 684 already throws
+    /// <see cref="InvalidOperationException"/> while the content area is still a positive 13.9pt,
+    /// and so does every height from there to 697.88. At 697.89 the content area reaches exactly
+    /// zero and the throw becomes <see cref="ArgumentException"/>; a header takes the same route at
+    /// the same values.</para>
     /// <para>Every case above that does throw does so before <c>Save</c> finishes writing. For
     /// the string overloads, <see cref="Document.Save(string)"/> and
     /// <see cref="Document.SaveAsync(string, System.Threading.CancellationToken)"/>, which open
@@ -131,15 +125,13 @@ public sealed class RunningBand
     /// whatever the path held (#508).</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
-    /// Raised from a save rather than from this property, when the height is positive infinity,
-    /// or any finite value large enough on its own that the content area is left with no
-    /// positive size.
+    /// Raised from a save rather than from this property, when a finite height is large enough on
+    /// its own that the content area is left with no positive size.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Raised from a save, when the height is <c>NaN</c> on either band, negative infinity on a
-    /// header, or a finite value large enough on its own that the content area is left positive
-    /// but too small for the element. The messages differ for each cause, described above. A
-    /// footer's negative infinity does not raise at all (#520).
+    /// Raised from a save, when the height is <c>NaN</c>, positive infinity or negative infinity on
+    /// either band, or a finite value large enough on its own that the content area is left
+    /// positive but too small for the element. The messages differ for each cause, described above.
     /// </exception>
     public double? Height { get; init; }
 

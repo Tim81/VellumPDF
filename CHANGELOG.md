@@ -27,6 +27,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   channel outside 0 to 1 is **not** refused. It renders today, a patch does not turn that into an
   exception, and it is documented on `ColorRgb` and `ColorCmyk` with the refusal listed in #484.
 
+- **A non-finite `Document.Margins` inset is refused, naming the edge (#502).** The only margin
+  check compared the axis sums against the page, and a comparison against `NaN` is false, so `NaN`
+  and negative infinity passed it. They then surfaced as a message about something else: `NaN` as an
+  element that is too tall, negative infinity as 50,000 page continuations after the renderer had
+  done that work, or a document that saved with `NaN` in its content stream. Every inset is now
+  checked before layout, and the save throws `ArgumentException` with the parameter name `margins`,
+  the same type the sum check uses, such as `The top margin is NaN, which cannot be laid out. A
+  margin must be a finite number.` A finite negative inset is not refused. It saves today, and that
+  is documented as a boundary for the next major.
+
+- **A running band's height is validated at one seam, so a footer at negative infinity no longer
+  saves invalid output (#520).** A footer with `Height = double.NegativeInfinity` saved a file with
+  `NaN` in a text matrix, because the footer's height comes off the content box's height only and
+  the band was then positioned at infinity minus infinity. `NaN`, positive infinity and negative
+  infinity now give the same `InvalidOperationException` on a header and on a footer, naming the
+  band and the value, before any page is laid out. **Attention**: positive infinity used to throw
+  `ArgumentException` about the content area; it now throws `InvalidOperationException` like the
+  other two. A finite height large enough to leave no content area still throws as before.
+
 ## [2.3.3] - 2026-09-20
 
 This release is led by documentation. Layout's public surface now states what each member
