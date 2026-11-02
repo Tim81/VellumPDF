@@ -2269,26 +2269,33 @@ public sealed class Jbig2ImageTests
         Assert.Equal(pages[1].Concat(pages[2]).ToArray(), ExtractStreamBody(Serialize(img)));
     }
 
-    // ── Round two: page association 0 on page information, unknown length under DecodeToRaster ──
+    // ── Page association 0 on the first page information, unknown length under DecodeToRaster ──
 
     /// <summary>
-    /// Page information belongs to a page, so association 0 is malformed. It used to leave the first
-    /// page defined as page 0, which nothing but globals match, and the image came out blank.
+    /// A first page-information segment with page association 0 names no page, so no page is chosen
+    /// and every segment is kept, as the loader did before it chose a page: DecodeToRaster, which had
+    /// no page filter, decodes the region of a page the information does not name, and passthrough
+    /// embeds every segment.
     /// </summary>
     [Fact]
-    public void Load_PageInformationWithPageAssociationZero_IsRefused()
+    public void Load_PageInformationWithPageAssociationZero_KeepsEverySegment()
     {
         byte[][] segments =
         [
-            BuildSegment(0, type: 48, pageAssociation: 0, BuildPageInfoSegmentData(64, 48)),
-            BuildSegment(1, type: 38, pageAssociation: 1, [0xB1, 0xB2]),
-            BuildSegment(2, type: 51, pageAssociation: 0, []),
+            BuildSegment(0, type: 48, pageAssociation: 0, BuildPageInfoSegmentData(8, 1)),
+            BuildSegment(1, type: 38, pageAssociation: 1, MmrRegionData()),
+            BuildSegment(2, type: 62, pageAssociation: 2, [0xC1, 0xC2]),
+            BuildSegment(3, type: 51, pageAssociation: 0, []),
         ];
+        var file = Sequential(0x01, PageCountOne, segments);
 
-        var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments)));
+        var passthrough = Jbig2ImageLoader.Load(file);
+        var raster = Jbig2ImageLoader.Load(file, new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster });
 
-        Assert.Contains("page association 0", ex.Message, StringComparison.Ordinal);
-        Assert.Contains("segment 0", ex.Message, StringComparison.Ordinal);
+        Assert.Equal(8, passthrough.Width);
+        Assert.Equal(1, passthrough.Height);
+        Assert.Equal(segments[0].Concat(segments[1]).Concat(segments[2]).ToArray(), ExtractStreamBody(Serialize(passthrough)));
+        Assert.Equal([0xFF], CcittImageTests.DecompressFlateStream(raster.BuildStream()));
     }
 
     private static byte[] MmrRegionData()
@@ -2303,15 +2310,14 @@ public sealed class Jbig2ImageTests
     }
 
     /// <summary>
-    /// DecodeToRaster used to read an unknown-length region as "data too short", or, for any other
-    /// type, ignore it, and the sequential parse had swallowed what followed, so the raster came out
-    /// partial or blank. It is refused with the message passthrough uses.
+    /// DecodeToRaster refuses an unknown length only where it always did, on a generic region, which
+    /// used to be reported as "data too short"; the message now names the segment and the length.
     /// </summary>
     [Theory]
+    [InlineData(36)]   // an intermediate generic region
     [InlineData(38)]   // an immediate generic region
-    [InlineData(6)]    // an immediate text region, which the raster decoder would reject as unsupported
-    [InlineData(50)]   // an end-of-stripe segment
-    public void Load_DecodeToRaster_SegmentOfTheFirstPageWithAnUnknownDataLength_IsRefusedNamingIt(int type)
+    [InlineData(39)]   // an immediate lossless generic region
+    public void Load_DecodeToRaster_GenericRegionWithAnUnknownDataLength_IsRefusedNamingIt(int type)
     {
         var region = BuildSegment(1, type, pageAssociation: 1, MmrRegionData());
         for (var i = 7; i < 11; i++) region[i] = 0xFF;
@@ -2326,6 +2332,44 @@ public sealed class Jbig2ImageTests
 
         Assert.Contains($"segment 1 (type {type})", ex.Message, StringComparison.Ordinal);
         Assert.Contains("0xFFFFFFFF", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>An unsupported type is still NotSupportedException, whatever its length.</summary>
+    [Fact]
+    public void Load_DecodeToRaster_TextRegionWithAnUnknownDataLength_IsStillNotSupported()
+    {
+        var text = BuildSegment(1, type: 6, pageAssociation: 1, MmrRegionData());
+        for (var i = 7; i < 11; i++) text[i] = 0xFF;
+        byte[][] segments =
+        [
+            BuildSegment(0, type: 48, pageAssociation: 1, BuildPageInfoSegmentData(8, 1)),
+            text,
+        ];
+        var opts = new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster };
+
+        Assert.Throws<NotSupportedException>(() => Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments), opts));
+    }
+
+    /// <summary>A trailing segment the raster does not use is ignored, whatever its length.</summary>
+    [Theory]
+    [InlineData(50)]   // end of stripe
+    [InlineData(52)]   // profiles
+    [InlineData(62)]   // extension
+    public void Load_DecodeToRaster_TrailingSegmentWithAnUnknownDataLength_IsIgnored(int type)
+    {
+        var trailing = BuildSegment(2, type, pageAssociation: 1, [0xD1, 0xD2]);
+        for (var i = 7; i < 11; i++) trailing[i] = 0xFF;
+        byte[][] segments =
+        [
+            BuildSegment(0, type: 48, pageAssociation: 1, BuildPageInfoSegmentData(8, 1)),
+            BuildSegment(1, type: 38, pageAssociation: 1, MmrRegionData()),
+            trailing,
+        ];
+        var opts = new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster };
+
+        var img = Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments), opts);
+
+        Assert.Equal([0xFF], CcittImageTests.DecompressFlateStream(img.BuildStream()));
     }
 
     [Fact]

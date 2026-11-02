@@ -32,15 +32,16 @@ namespace VellumPdf.Images;
 /// 7.2.7) is not embedded. Passthrough partitions the segments into a page stream and a globals
 /// stream, which needs each segment's length, and it used to skip such a segment, so the image
 /// came out blank without a word. It now throws <see cref="InvalidDataException"/> naming the
-/// segment. <see cref="ImageDecodeMode.DecodeToRaster"/> refuses it too, where the raster used to
-/// come out partial or blank. The end-of-page and end-of-file segments are exempt, and so is any
-/// segment of a page other than the first. A sequential or embedded stream cannot be read past an
-/// unknown-length segment, which takes the rest of the data as its own, so what follows one is not
-/// seen. A random-access file cannot use an unknown length on any page, and says so without
-/// naming the segment type.</para>
+/// segment. <see cref="ImageDecodeMode.DecodeToRaster"/> refuses an unknown length only on an
+/// immediate, lossless or intermediate generic region (types 36, 38 and 39), which it always
+/// refused, with the same message now; any other segment behaves as before. The end-of-page and
+/// end-of-file segments are exempt in passthrough, and so is any segment of a page other than the
+/// first. A sequential or embedded stream cannot be read past an unknown-length segment, which
+/// takes the rest of the data as its own, so what follows one is not seen. A random-access file
+/// cannot use an unknown length on any page, and says so without naming the segment type.</para>
 ///
-/// <para>A page-information segment with page association 0 is refused: it must belong to a
-/// page.</para>
+/// <para>If the first page-information segment has page association 0 it names no page, and no
+/// page is selected: every segment is kept, as before pages were chosen.</para>
 ///
 /// <para>When the input has no global segments the resulting XObject carries no
 /// <c>/JBIG2Globals</c> entry and is self-contained.</para>
@@ -102,8 +103,9 @@ public static class Jbig2ImageLoader
     /// Thrown on malformed or truncated input. It is also thrown, in this passthrough embedding,
     /// for a segment of the first page, or of no page, whose data length is unknown (0xFFFFFFFF,
     /// ITU-T T.88 7.2.7), because the segment cannot be partitioned into the page and globals
-    /// streams; the message names the segment number. It is thrown for a first page-information
-    /// segment whose page association is 0. Only the first page of a multi-page file is embedded.
+    /// streams; the message names the segment number. Only the first page of a multi-page file is
+    /// embedded, unless the first page-information segment has page association 0, which keeps
+    /// every segment.
     /// </exception>
     public static PdfImageXObject Load(byte[] jbig2)
         => Load(jbig2, ImageLoadOptions.Default);
@@ -132,12 +134,14 @@ public static class Jbig2ImageLoader
     /// <returns>A <see cref="PdfImageXObject"/> with the appropriate filter.</returns>
     /// <exception cref="ArgumentException">Thrown when <paramref name="jbig2"/> is null or empty.</exception>
     /// <exception cref="InvalidDataException">
-    /// Thrown on malformed or truncated input. It is also thrown, under either mode, for a segment of
-    /// the first page, or of no page, whose data length is unknown (0xFFFFFFFF, ITU-T T.88 7.2.7),
-    /// because the segment can be neither partitioned into the page and globals streams nor
-    /// decoded; the message names the segment number. It is thrown for a first page-information
-    /// segment whose page association is 0. Only the first page of a multi-page file is embedded,
-    /// under either mode.
+    /// Thrown on malformed or truncated input. It is also thrown for a segment of the first page, or
+    /// of no page, whose data length is unknown (0xFFFFFFFF, ITU-T T.88 7.2.7): under
+    /// <see cref="ImageDecodeMode.Passthrough"/> for any segment but end-of-page and end-of-file,
+    /// because it cannot be partitioned into the page and globals streams, and under
+    /// <see cref="ImageDecodeMode.DecodeToRaster"/> for a generic region, which cannot be decoded.
+    /// The message names the segment number. Only the first page of a multi-page file is embedded,
+    /// under either mode, unless the first page-information segment has page association 0, which
+    /// keeps every segment.
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// Thrown under <see cref="ImageDecodeMode.DecodeToRaster"/> when the file contains
@@ -461,14 +465,6 @@ public static class Jbig2ImageLoader
                 throw new InvalidDataException(
                     $"JBIG2: invalid page dimensions {width}×{height}.");
 
-            // Page information describes a page, so it must belong to one. Association 0 means "no
-            // page" (§7.2.6), which leaves the first page undefined: nothing but globals would match
-            // it and the image came out blank.
-            if (seg.PageAssociation == 0)
-                throw new InvalidDataException(
-                    $"JBIG2: page-information segment {seg.Number} has page association 0, but page " +
-                    "information must belong to a page (ITU-T T.88 7.2.6, 7.4.8).");
-
             return (width, height, seg.PageAssociation);
         }
 
@@ -489,10 +485,12 @@ public static class Jbig2ImageLoader
 
     /// <summary>
     /// Whether a segment is part of the page being embedded: it is associated with that page, or with
-    /// no page at all (association 0, the globally referenced segments).
+    /// no page at all (association 0, the globally referenced segments). A first page-information
+    /// segment that itself has association 0 names no page, so no page is selected and every segment
+    /// is kept, as this loader always did before it chose a page.
     /// </summary>
     private static bool BelongsToPage(in SegmentHeader seg, int page)
-        => seg.PageAssociation == page || seg.PageAssociation == 0;
+        => page == 0 || seg.PageAssociation == page || seg.PageAssociation == 0;
 
     // ── Passthrough: partition segments into page stream + globals stream ─────
 
@@ -582,10 +580,6 @@ public static class Jbig2ImageLoader
         {
             if (!BelongsToPage(seg, firstPage)) continue;
 
-            // As in passthrough, the end-of-page and end-of-file segments are exempt.
-            if (!seg.HasKnownLength && seg.Type is not (SegmentTypeEndOfFile or SegmentTypeEndOfPage))
-                throw UnknownLength(seg);
-
             switch (seg.Type)
             {
                 case SegmentTypeSymbolDictionary:
@@ -622,7 +616,13 @@ public static class Jbig2ImageLoader
                 && seg.Type != SegmentTypeIntermediateGenericRegion)
                 continue;
 
-            if (!seg.HasKnownLength || seg.DataLength < 18)
+            // The one place this mode already refused an unknown length, as "data too short". Every
+            // other type is as it was: an unsupported one throws NotSupportedException above, and a
+            // segment the raster does not use is ignored whatever its length.
+            if (!seg.HasKnownLength)
+                throw UnknownLength(seg);
+
+            if (seg.DataLength < 18)
                 throw new InvalidDataException(
                     $"JBIG2: generic region segment {seg.Number} data too short.");
 

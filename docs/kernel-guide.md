@@ -355,12 +355,13 @@ for JPEG strips, which pass through either way.
 
 `JBIG2Decode` and `JPXDecode` are passthrough but not byte-for-byte: a JBIG2
 source is split into a page stream and a `/JBIG2Globals` stream with its
-end-of-file segments dropped, only the first page of a multi-page file is
-embedded, a segment of unknown length (0xFFFFFFFF) on the first page, or on
-no page, is refused with `InvalidDataException` under both modes (a
-random-access file refuses it on any page, and a first page-information
-segment with page association 0 is refused too), and a bare JPEG 2000
-codestream is wrapped in a
+end-of-file and end-of-page segments dropped, only the first page of a
+multi-page file is embedded (a first page-information segment with page
+association 0 names no page, and keeps every segment), and a segment of
+unknown length (0xFFFFFFFF) on the first page, or on no page, is refused with
+`InvalidDataException`: in passthrough for any segment except end-of-page and
+end-of-file, and under `DecodeToRaster` for a generic region. A random-access
+file refuses it on any page. A bare JPEG 2000 codestream is wrapped in a
 minimal JP2 container around the unchanged codestream.
 
 PNG images with an alpha channel automatically produce an `/SMask` soft-mask
