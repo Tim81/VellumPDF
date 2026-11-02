@@ -107,6 +107,11 @@ internal static class LayoutValidation
             "which cannot be written to a content stream. Every colour channel must be a finite number.");
     }
 
+    /// <summary>Whether every edge of the insets is a finite number.</summary>
+    internal static bool IsFinite(EdgeInsets insets) =>
+        double.IsFinite(insets.Left) && double.IsFinite(insets.Top) &&
+        double.IsFinite(insets.Right) && double.IsFinite(insets.Bottom);
+
     /// <summary>Whether every channel of the colour is a finite number.</summary>
     internal static bool IsFinite(ColorRgb color) =>
         double.IsFinite(color.R) && double.IsFinite(color.G) && double.IsFinite(color.B);

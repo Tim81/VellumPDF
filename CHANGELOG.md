@@ -53,6 +53,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   value. Positive infinity is deliberately unchanged, because it writes no invalid token and its
   text loss on a flat list is tracked in #476, and a finite negative indent still renders.
 
+- **Layout sweep for the comparison-shaped clamps behind #519: element margins are refused when
+  they are not finite.** The sweep read all 24 `Math.Max`, `Math.Min` and `Math.Clamp` sites in
+  `VellumPdf.Layout`. Twenty-one take values that are derived, integer, or already checked by an
+  earlier refusal in this release (font size, colour, indent, document margins, band height, line
+  width, cell padding, image extent). One is `ColorCmyk.FromRgb`, a pure conversion that is
+  documented rather than refused. The two that read a raw caller value without a check were the
+  list gutter, fixed in #532, and the element `Margins`. A `Paragraph`, `Heading`, `ListElement`,
+  `TableElement`, `LayoutImage` or `PieChart` with a `NaN` or infinite edge was laid out in a box
+  that could be `NaN`, and reached the content stream, or an unrelated "too tall" message, or the
+  canvas guard from #519 with no element named. Each now throws before layout, naming the element:
+  `InvalidOperationException` for the same elements #478 and #481 cover, and `ArgumentException`
+  with the parameter name `Margins` for the pie chart, whose other refusals already use it.
+  Individual non-finite explicit table column widths were already treated as auto (#477), so they
+  needed no change. A finite negative margin still renders and is documented as a boundary.
+
 ## [2.3.3] - 2026-09-20
 
 This release is led by documentation. Layout's public surface now states what each member

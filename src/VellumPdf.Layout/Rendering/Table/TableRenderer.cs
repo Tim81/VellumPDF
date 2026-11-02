@@ -69,9 +69,11 @@ public sealed class TableRenderer : IRenderer
     /// calls this method, the exceptions it lists reach you from the save.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
-    /// The table resolves to no columns, or a cell's span, padding or style, or the table's
-    /// border width, is refused; see <see cref="TableElement.Rows"/>, <see cref="Cell.ColSpan"/>,
-    /// <see cref="Cell.Padding"/> and <see cref="TableElement.BorderWidth"/>.
+    /// The table resolves to no columns, or a cell's span, padding, background or style, or the
+    /// table's border width, border colour or margins, is refused; see
+    /// <see cref="TableElement.Rows"/>, <see cref="Cell.ColSpan"/>, <see cref="Cell.Padding"/>,
+    /// <see cref="Cell.Background"/>, <see cref="TableElement.BorderWidth"/>,
+    /// <see cref="TableElement.BorderColor"/> and <see cref="TableElement.Margins"/>.
     /// </exception>
     /// <exception cref="NullReferenceException">
     /// The table or a cell is <see langword="null"/>, or a cell's content is null in a table with
@@ -89,6 +91,8 @@ public sealed class TableRenderer : IRenderer
     /// </exception>
     public LayoutResult Layout(LayoutContext context)
     {
+        LayoutValidation.ValidateInsets(_table.Margins, "A table");
+
         var area = context.Area.Deflate(_table.Margins);
         if (area.Width <= 0) return LayoutResult.Nothing();
 

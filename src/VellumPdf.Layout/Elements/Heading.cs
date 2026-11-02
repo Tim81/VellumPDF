@@ -86,28 +86,30 @@ public sealed class Heading
 
     /// <summary>Margins around the heading.</summary>
     /// <remarks>
-    /// <b>Attention</b>: no edge is checked. Each edge is taken off the area this element is given,
-    /// and the element is laid out in whatever box is left, even when that box is empty, inverted
-    /// or <c>NaN</c>. A negative or non-finite edge, or edges wider than the area, can therefore
-    /// make the save throw an exception about something else, write a <c>NaN</c> or <c>Infinity</c>
-    /// token into the content stream, re-wrap, move or mirror the content, or leave the element off
-    /// the page. The bottom edge only limits that box: it adds no space before the next element. A
-    /// negative or non-finite top edge can also move the elements placed after this one.
-    /// <para>Do not pass a negative or non-finite edge. A later major version will refuse
-    /// both.</para>
+    /// A non-finite edge is refused, whichever of <c>NaN</c>, positive infinity and negative infinity
+    /// it is: the save throws <see cref="InvalidOperationException"/> before the element is laid out,
+    /// with <c>A paragraph or heading has a non-finite inset. Every inset must be a finite number.</c> (#519).
+    /// Before that, the element was laid out in a box that could be <c>NaN</c>, and the save threw an
+    /// exception about something else or wrote <c>NaN</c> or <c>Infinity</c> into the content stream.
+    /// <para><b>Attention</b>: no other edge is checked. Each finite edge is taken off the area this
+    /// element is given, and the element is laid out in whatever box is left, even when that box is
+    /// empty or inverted. A negative edge, or edges wider than the area, can therefore make the save throw an exception about something else, re-wrap, move or mirror the content, or leave the element off the page. The bottom edge only limits that box: it adds no space before the next element. A negative top edge can also move the elements placed after this one.</para>
+    /// <para>Do not pass a negative edge. A later major version will refuse it.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the box the edges leave is too small for the element. The message
-    /// says the element is too tall to fit on a page and does not name the margins.
+    /// from this property, when an edge is not finite, in which case the message names the element
+    /// and does not name the edge, or when the box the edges leave is too small for the element, in
+    /// which case the message says the element is too tall to fit on a page and does not name the
+    /// margins.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when an edge leaves this element or a later one at a non-finite
-    /// position, and the save writes that position outside the content stream, as a heading's
-    /// bookmark or the rectangle of a link from <see cref="TextStyle.LinkUri"/>. Negative infinity
-    /// can do this, and so can <c>NaN</c> on the left edge of linked text. The message says PDF
-    /// does not support NaN or Infinity as a real number.
+    /// from this property, when finite edges whose arithmetic overflows leave a later element at a
+    /// non-finite position, and the save writes that position outside the content stream, as a
+    /// heading's bookmark or the rectangle of a link from <see cref="TextStyle.LinkUri"/>. The
+    /// message says PDF does not support NaN or Infinity as a real number. That route was not
+    /// measured again after #519.
     /// </exception>
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 

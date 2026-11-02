@@ -87,6 +87,9 @@ public sealed class PieChartRenderer : IRenderer
                 FormattableString.Invariant(
                 $"Pie chart start angle must be a finite number (was {_chart.StartAngle})."),
                 nameof(PieChart.StartAngle));
+        if (!LayoutValidation.IsFinite(_chart.Margins))
+            throw new ArgumentException(
+                "Pie chart margins must have finite insets.", nameof(PieChart.Margins));
         if (_chart.StrokeColor is { } strokeColor && !LayoutValidation.IsFinite(strokeColor))
             throw new ArgumentException(
                 FormattableString.Invariant(

@@ -81,7 +81,9 @@ public sealed class ListRenderer : IRenderer
     /// The start item is negative, the list has items, and the area is not empty.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// An item's <see cref="TextStyle.FontSize"/> is refused; see that member.
+    /// An item's <see cref="TextStyle.FontSize"/> or <see cref="TextStyle.Color"/> is refused, or the
+    /// list's <see cref="ListElement.Indent"/> is <c>NaN</c> or negative infinity, or an edge of its
+    /// <see cref="ListElement.Margins"/> is not finite; see those members.
     /// </exception>
     /// <exception cref="NullReferenceException">
     /// The list, an item, or an item's text is <see langword="null"/>.
@@ -95,6 +97,7 @@ public sealed class ListRenderer : IRenderer
         // Before the area is computed: NaN reaches an item's text matrix on every path, and negative
         // infinity on a nested child or a word too wide to sit beside its marker (#532).
         LayoutValidation.ValidateListIndent(_list.Indent, "A list");
+        LayoutValidation.ValidateInsets(_list.Margins, "A list");
 
         var area = context.Area.Deflate(_list.Margins);
         if (area.IsEmpty) return LayoutResult.Nothing();
@@ -360,7 +363,7 @@ public sealed class ListRenderer : IRenderer
                 Margins = EdgeInsets.Zero,
                 Alignment = HorizontalAlignment.Left,
             };
-            var markerRenderer = new ParagraphRenderer(markerPara);
+            var markerRenderer = new ParagraphRenderer(markerPara) { MarginsCheckedByOwner = true };
 
             // Content paragraph: indented by the (possibly widened) gutter from the left edge.
             var contentPara = new Paragraph(item.Text, itemStyle)
@@ -368,7 +371,7 @@ public sealed class ListRenderer : IRenderer
                 Margins = new EdgeInsets(0, 0, 0, gutter),
                 Alignment = HorizontalAlignment.Left,
             };
-            var contentRenderer = new ParagraphRenderer(contentPara) { ElementLanguage = item.Language };
+            var contentRenderer = new ParagraphRenderer(contentPara) { ElementLanguage = item.Language, MarginsCheckedByOwner = true };
 
             result.Add((markerRenderer, contentRenderer));
 
@@ -410,7 +413,7 @@ public sealed class ListRenderer : IRenderer
                         Margins = new EdgeInsets(0, 0, 0, childGutter),
                     };
 
-                    result.Add((new ParagraphRenderer(childMarkerPara), new ParagraphRenderer(childContentPara) { ElementLanguage = child.Language }));
+                    result.Add((new ParagraphRenderer(childMarkerPara) { MarginsCheckedByOwner = true }, new ParagraphRenderer(childContentPara) { ElementLanguage = child.Language, MarginsCheckedByOwner = true }));
                 }
             }
         }

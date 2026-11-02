@@ -154,15 +154,18 @@ public sealed class PieChart
 
     /// <summary>Margins around the chart. Defaults to 6 points on all sides.</summary>
     /// <remarks>
-    /// <b>Attention</b>: no edge is checked. The top and bottom edges add to the space the chart
-    /// takes on the page. The left and right edges move the chart but do not shrink it: its
+    /// A non-finite edge is refused, whichever of <c>NaN</c>, positive infinity and negative infinity
+    /// it is: the save throws <see cref="ArgumentException"/> with the parameter name
+    /// <c>Margins</c>, as this chart's other refusals do (#519). Before that, the chart was laid out in
+    /// a box that could be <c>NaN</c>, and the save threw an exception about something else or wrote
+    /// <c>NaN</c> or <c>Infinity</c> into the content stream.
+    /// <para><b>Attention</b>: no other edge is checked. The top and bottom edges add to the space the
+    /// chart takes on the page. The left and right edges move the chart but do not shrink it: its
     /// diameter is limited by the whole content width, and its position is clamped back inside the
-    /// content box. A negative or non-finite edge can make the save throw an exception about
-    /// something else, write a <c>NaN</c> or <c>Infinity</c> token into the content stream, or move
-    /// the chart. A negative or non-finite top or bottom edge can also move the elements placed
-    /// after this one.
-    /// <para>Do not pass a negative or non-finite edge. A later major version will refuse
-    /// both.</para>
+    /// content box. A negative edge can make the save throw an exception about something else, or
+    /// move the chart. A negative top or bottom edge can also move the elements placed after
+    /// this one.</para>
+    /// <para>Do not pass a negative edge. A later major version will refuse it.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -171,10 +174,11 @@ public sealed class PieChart
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when an edge leaves a later element at a non-finite position, and the
-    /// save writes that position outside the content stream, as a heading's bookmark or the
-    /// rectangle of a link from <see cref="TextStyle.LinkUri"/>. Negative infinity can do this. The
-    /// message says PDF does not support NaN or Infinity as a real number.
+    /// from this property, when an edge is not finite. <see cref="ArgumentException.ParamName"/> is
+    /// <c>Margins</c>. It is also raised when finite edges whose arithmetic overflows leave a later
+    /// element at a non-finite position, and the save writes that position outside the content
+    /// stream; the message then says PDF does not support NaN or Infinity as a real number. That
+    /// second route was not measured again after #519.
     /// </exception>
     public EdgeInsets Margins { get; init; } = new EdgeInsets(6);
 
