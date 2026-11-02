@@ -318,7 +318,7 @@ public sealed class PropertyTests
     public void FormatMarker_orderedStyles_areDistinctAcrossConsecutiveIndices()
     {
         Gen.Select(
-            Gen.OneOfConst(ListStyle.OrderedDecimal, ListStyle.OrderedAlpha, ListStyle.OrderedRoman),
+            Gen.OneOf(ListStyle.OrderedDecimal, ListStyle.OrderedAlpha, ListStyle.OrderedRoman),
             Gen.Int[1, 2000]).Sample(pair =>
         {
             var (style, index) = pair;
