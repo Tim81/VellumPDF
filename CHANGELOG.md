@@ -233,7 +233,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   cells and bands, where they used to give `?` and a warning. An embedded font that lacks the glyph
   (the bundled Liberation Mono, used for Courier, has no U+202F) falls back to the glyph of U+00A0,
   then of a plain space, instead of the missing-glyph box; a font that has the glyph keeps it. The
-  fallback space is as wide as U+00A0, wider than a real narrow space. Everything else is unchanged:
+  fallback space is as wide as U+00A0, wider than a real narrow space. The font's `/ToUnicode` CMap
+  does not name the stand-in as the text of that glyph while a code point the font really maps to it
+  is in use, so copying an ordinary space or U+00A0 out of the PDF still gives that character and
+  not U+202F; a stand-in alone on its glyph is still listed. Everything else is unchanged:
   tab, en and em space and thin space still break, and a token wider than the line still hard-breaks
   as it does for U+00A0.
 
