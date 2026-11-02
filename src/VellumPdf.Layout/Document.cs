@@ -1047,9 +1047,13 @@ public sealed class Document : IDisposable
 
     /// <summary>
     /// Whether something is already at the path, which decides whether a failed save may delete what
-    /// the open created. A symbolic link counts as something, a dangling one included, so a failed
-    /// save never deletes a file it reached through a link and never touches the link. A link that
-    /// cannot be read counts too: not deleting is the safe answer.
+    /// the open created. A file there counts. Failing that, a symbolic link counts, a dangling one
+    /// included, so a failed save never deletes a file it reached through a link and never touches
+    /// the link; the link is looked for by reading its target. If that read says nothing is there
+    /// (<see cref="FileNotFoundException"/> or <see cref="DirectoryNotFoundException"/>, which
+    /// Windows can raise for a path that does not exist) the answer is no. Any other
+    /// <see cref="IOException"/> or <see cref="UnauthorizedAccessException"/> from it means the link
+    /// cannot be read, and that counts as something there: not deleting is the safe answer.
     /// </summary>
     private static bool SomethingExistsAt(string path)
     {
@@ -1058,6 +1062,10 @@ public sealed class Document : IDisposable
         try
         {
             return new FileInfo(path).LinkTarget is not null;
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return false;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -1564,7 +1572,9 @@ public sealed class Document : IDisposable
     /// <summary>Asynchronously runs the layout pass and writes the resulting PDF to a file at the given path.</summary>
     /// <remarks>
     /// Everything on <see cref="SaveAsync(System.IO.Stream, System.Threading.CancellationToken)"/>
-    /// applies, and one thing more.
+    /// applies, and one thing more, except the points where the token is looked at, which differ
+    /// because the PDF goes into a file rather than a caller's stream: the
+    /// <see cref="OperationCanceledException"/> tag below lists them.
     /// <para>The file is opened first and emptied only once the PDF is built in memory, as on
     /// <see cref="Save(string)"/> (#508). A save that fails, at layout, at building the PDF or by
     /// cancellation, therefore leaves whatever the path held exactly as it was, byte for byte, and
@@ -1713,7 +1723,11 @@ public sealed class Document : IDisposable
         // Everything PdfDocument.PrepareForSigning refuses without looking at the pages, and the
         // encryption refusal among it, comes before the layout: after it, the pages stay behind and
         // the next save lays out a second time on top of them (#530).
-        _pdf.EnsureCanPrepareForSigning(options, pagesKnown: false);
+        //
+        // A document with nothing in it lays out no pages, so its pages are already known: none. It
+        // gets the document's own order, which reports "no pages" before looking at the options, as
+        // it did before the pre-check existed, and nothing is laid out or marked as failed.
+        _pdf.EnsureCanPrepareForSigning(options, pagesKnown: _content.Count == 0);
         ThrowIfLayoutFailed();
 
         var renderer = CreateRenderer();

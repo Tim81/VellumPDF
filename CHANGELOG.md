@@ -184,10 +184,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   too-tall element before any page is added, so that one case can still be corrected and saved
   again. A refused page geometry adds no pages and stays recoverable. Through `Document`, where the
   pages are not known yet, the message for a negative `SignaturePage` says the index cannot be
-  negative instead of naming the page count; a `PdfDocument` caller gets the old message, and a
-  document with no pages still reports that first. **Attention**: that last rule turns the silent
-  wrong file into an exception for code that caught a failure after the layout and retried the same
-  `Document`; build a new one instead. **Attention**: two exception types change because the
+  negative instead of naming the page count; a `PdfDocument` caller gets the old message. A
+  `PdfDocument` with no pages, and a `Document` with no content, still report "The document has no
+  pages." first, whatever the options, and are left unchanged. **Attention**: the `ParamName` of the
+  `EstimatedSignatureSizeBytes` refusal changes. On a negative size, or one of 2^30 or more, the BCL
+  `ArgumentOutOfRangeException` from `new string(...)` used to come from the writer with `ParamName`
+  `count`; it is now a refusal with its own message and `ParamName` `options`, raised before the
+  layout. A size between 536,870,895 and 2^30 - 1 used to throw `OutOfMemoryException` after the
+  layout and is now that same `ArgumentOutOfRangeException`. **Attention**: refusing a retry after
+  a failed layout turns the silent wrong file into an exception for code that caught a failure
+  after the layout and retried the same `Document`; build a new one instead. **Attention**: two exception types change because the
   destination is now checked up front. `PdfDocument.SaveAsync` (and `Document.SaveAsync`) given a
   stream that cannot be written to now throws `ArgumentException` (parameter `destination`) where it
   threw `NotSupportedException` from the final copy, and a linearized `PdfDocument.Save` to a closed

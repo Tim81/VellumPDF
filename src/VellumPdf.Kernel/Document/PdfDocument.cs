@@ -1034,8 +1034,11 @@ public sealed class PdfDocument : IDisposable
     /// </summary>
     /// <param name="options">The signing options.</param>
     /// <param name="pagesKnown">
-    /// Whether the pages have been laid out yet; it only decides whether the message can name the
-    /// page count.
+    /// Whether the document's pages are already there, which is true for a caller that holds a
+    /// finished document and for a layout engine with nothing to lay out. It makes a document with
+    /// no pages throw "no pages" before any option is looked at, as the document itself does, and it
+    /// lets the message for a negative page index name the page count. When it is false, the pages
+    /// are still to come, so neither applies.
     /// </param>
     internal void EnsureCanPrepareForSigning(SignaturePlaceholderOptions options, bool pagesKnown = true)
     {

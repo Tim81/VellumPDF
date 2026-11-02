@@ -773,10 +773,23 @@ public sealed class SaveLifecycleTests
         Assert.False(File.Exists(Path.Combine(dir.Path, "out.pdf")));
     }
 
+    private static System.Diagnostics.Process? StartCat(string fifo)
+    {
+        try
+        {
+            return System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo("cat", fifo) { RedirectStandardOutput = true });
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            return null;
+        }
+    }
+
     /// <summary>
-    /// A path that is a pipe is written into, as on main: a link to <c>/dev/stdout</c> ends at
-    /// <c>pipe:[N]</c>, which is not a file name. A named pipe stands in for it, with a reader that
-    /// drains it and a guard that unblocks the reader if the save never opens the pipe.
+    /// A path that is a pipe is written into, as on main. A named pipe stands in for a link to
+    /// <c>/dev/stdout</c>; see the next test for the link itself. The save runs on its own task with a
+    /// timeout, because opening a pipe for writing blocks until a reader is there.
     /// </summary>
     [Fact]
     public async Task SaveToANamedPipe_writesTheWholePdfIntoIt()
@@ -800,17 +813,30 @@ public sealed class SaveLifecycleTests
         // Opening a pipe blocks until the other end is open, so the reader is a separate process.
         // It is cat rather than a FileStream because .NET takes an advisory lock on every file it
         // opens, and a reader in this process would conflict with the writer's.
-        using var cat = System.Diagnostics.Process.Start(
-            new System.Diagnostics.ProcessStartInfo("cat", fifo) { RedirectStandardOutput = true });
-        Assert.NotNull(cat);
+        using var cat = StartCat(fifo);
+        Assert.SkipWhen(cat is null, "cat is not available.");
         var received = new MemoryStream();
-        var reader = cat.StandardOutput.BaseStream.CopyToAsync(received, TestContext.Current.CancellationToken);
+        var reader = cat!.StandardOutput.BaseStream.CopyToAsync(received, TestContext.Current.CancellationToken);
+        System.Diagnostics.Process? rescue = null;
 
         try
         {
             using var doc = Good();
             doc.Add(new Paragraph("Hello", Style()));
-            doc.Save(fifo);
+            var save = Task.Run(() => doc.Save(fifo), TestContext.Current.CancellationToken);
+
+            try
+            {
+                await save.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+            }
+            catch (TimeoutException)
+            {
+                // The writer is stuck opening the pipe: give it a reader so the task ends, then fail.
+                rescue = StartCat(fifo);
+                if (rescue is not null) _ = rescue.StandardOutput.BaseStream.CopyToAsync(Stream.Null, TestContext.Current.CancellationToken);
+                await Task.WhenAny(save, Task.Delay(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+                Assert.Fail("Save to a named pipe did not finish within 30 seconds.");
+            }
 
             await reader.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
             await cat.WaitForExitAsync(TestContext.Current.CancellationToken);
@@ -823,7 +849,50 @@ public sealed class SaveLifecycleTests
         {
             // If the save failed before opening the pipe, cat is still waiting for a writer.
             if (!cat.HasExited) cat.Kill();
+            if (rescue is { HasExited: false }) rescue.Kill();
+            rescue?.Dispose();
         }
+    }
+
+    /// <summary>
+    /// <c>/dev/stdout</c> is a link to <c>/proc/self/fd/1</c>, a magic link whose target reads
+    /// <c>pipe:[N]</c> and is not a file name. Resolving such a link by string rules joined that to
+    /// the link's directory and failed to open it; the operating system opens it. The test builds the
+    /// same chain: a symbolic link, in a temporary directory, to <c>/proc/self/fd/N</c> for the write
+    /// end of an anonymous pipe, then saves through it and reads the PDF from the read end.
+    /// </summary>
+    [Fact]
+    public async Task SaveThroughALinkToAProcFdPipe_writesTheWholePdfIntoThePipe()
+    {
+        Assert.SkipWhen(!OperatingSystem.IsLinux(), "/proc/self/fd is Linux-specific.");
+        Assert.SkipWhen(!Directory.Exists("/proc/self/fd"), "/proc is not mounted.");
+
+        using var dir = new TempDir();
+        using var server = new System.IO.Pipes.AnonymousPipeServerStream(
+            System.IO.Pipes.PipeDirection.Out, HandleInheritability.None);
+        using var client = new System.IO.Pipes.AnonymousPipeClientStream(
+            System.IO.Pipes.PipeDirection.In, server.ClientSafePipeHandle);
+
+        var fd = (int)server.SafePipeHandle.DangerousGetHandle();
+        var link = Path.Combine(dir.Path, "stdout");
+        File.CreateSymbolicLink(link, $"/proc/self/fd/{fd}");
+
+        var received = new MemoryStream();
+        var reader = client.CopyToAsync(received, TestContext.Current.CancellationToken);
+
+        using var doc = Good();
+        doc.Add(new Paragraph("Hello", Style()));
+        var save = Task.Run(() => doc.Save(link), TestContext.Current.CancellationToken);
+        await save.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+
+        // The save closed its own descriptor; closing the server's end is what gives the reader EOF.
+        server.Dispose();
+        await reader.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+
+        var bytes = received.ToArray();
+        Assert.StartsWith("%PDF-", System.Text.Encoding.Latin1.GetString(bytes), StringComparison.Ordinal);
+        Assert.Equal(1, Pages(bytes));
+        Assert.NotNull(new FileInfo(link).LinkTarget);      // the link is still the link
     }
 
     [Fact]
@@ -909,5 +978,32 @@ public sealed class SaveLifecycleTests
         var ex = Assert.Throws<ArgumentOutOfRangeException>(() =>
             doc.Sign(signed, new PdfSignatureSettings { Certificate = cert, SignaturePage = 5 }));
         Assert.Contains("1 page(s)", ex.Message, StringComparison.Ordinal);
+    }
+
+    // ── An empty document keeps main's refusal when it is signed ──────────────
+
+    [Theory]
+    [InlineData(-1, 8192)]       // a bad signature page
+    [InlineData(0, -1)]          // a bad placeholder size
+    [InlineData(0, 8192)]        // good options
+    public void SignAnEmptyDocument_reportsNoPages_whateverTheOptions_andStaysUsable(int signaturePage, int estimatedSize)
+    {
+        using var cert = SelfSigned();
+        using var doc = Good();      // nothing added
+
+        using var signed = new MemoryStream();
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            doc.Sign(signed, new PdfSignatureSettings
+            {
+                Certificate = cert,
+                SignaturePage = signaturePage,
+                EstimatedSignatureSizeBytes = estimatedSize,
+            }));
+        Assert.Contains("no pages", ex.Message, StringComparison.Ordinal);
+        Assert.Equal(0, signed.Length);
+
+        // Nothing was laid out and nothing marked as failed: with content added, it saves one page.
+        doc.Add(new Paragraph("Hello", Style()));
+        Assert.Equal(1, Pages(Save(doc)));
     }
 }
