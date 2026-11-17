@@ -20,9 +20,10 @@ namespace VellumPdf.Layout.Tests;
 /// figures. A sentence in a doc comment is only as good as the last run that checked it, so these tests
 /// are that check: a future round reads a failing assertion instead of re-measuring from zero.
 ///
-/// Every case here comes from a probe that produced the sentence it pins. A refusal is asserted by
-/// exception type, <c>ParamName</c> or a fragment of the message, an acceptance by the save
-/// completing, and a placement by the bytes written. Non-finite inputs are listed value by value:
+/// Every assertion that pins a sentence comes from the probe that produced it; the controls pin no
+/// sentence. A refusal is asserted by exception type, <c>ParamName</c> or a fragment of the
+/// message, an acceptance by the save completing or the call returning, and a placement by the
+/// bytes written. Non-finite inputs are listed value by value:
 /// NaN, positive infinity and negative infinity can take three different branches, and during #542 a
 /// measurement of one of them was twice promoted to a claim about all three.
 ///
@@ -67,9 +68,11 @@ public sealed class BoundaryContractTests
 
     /// <summary>
     /// <see cref="DrawContext.UseEmbeddedFont"/> reads only its <see cref="RendererContext"/>. A
-    /// null handle raises <see cref="NullReferenceException"/> — but not when that context was
-    /// built without a page, because the kernel looks the page up before it reads the handle, and
-    /// answers <see cref="ArgumentNullException"/> with <c>ParamName</c> <c>key</c> instead.
+    /// null handle raises <see cref="NullReferenceException"/> when the context has a document,
+    /// but not when it was built without a page: the kernel looks the page up before it reads the
+    /// handle, and answers <see cref="ArgumentNullException"/> with <c>ParamName</c> <c>key</c>
+    /// instead. With no document at all, the document is read first and the call raises
+    /// <see cref="NullReferenceException"/> whatever else is null.
     ///
     /// This overlap is why the member's two tags carry their conditions: an earlier version claimed
     /// the NullReferenceException for a null handle unconditionally, which is false for one of the
@@ -139,7 +142,7 @@ public sealed class BoundaryContractTests
     /// The constructor's remarks say a null page costs a structure element its <c>/Pg</c> entry.
     /// That holds for <see cref="DrawContext.RegisterStructElem"/>, which stamps the page onto the
     /// element, and not for <see cref="DrawContext.RegisterStructElemTree"/>, which never touches
-    /// it — the root keeps the page its caller set, and the save writes it. Round 21 found the
+    /// it: the root keeps the page its caller set, and the save writes it. Round 21 found the
     /// sentence claiming both.
     /// </summary>
     [Theory]
@@ -190,7 +193,7 @@ public sealed class BoundaryContractTests
     /// <summary>
     /// A page from another document is accepted, and the two members answer it differently: the
     /// save visits its own pages only, so a link annotation registered on a foreign page is left
-    /// out of the file — with its coordinates never checked — while an outline entry is still
+    /// out of the file, with its coordinates never checked, while an outline entry is still
     /// written, pointing at a null destination.
     /// </summary>
     [Fact]
@@ -220,9 +223,10 @@ public sealed class BoundaryContractTests
     /// <summary>
     /// None of the five overloads below checks the style it is given, so a style the layout refuses
     /// surfaces at the save. A null element is a different matter and is not covered here: some
-    /// overloads refuse it from the call itself. Round 9 gave
-    /// <see cref="LayoutDocument.Add(string, TextStyle)"/> these tags and stopped; round 21 found
-    /// the siblings that reach the same code still tagging only the null case.
+    /// overloads refuse it from the call itself. Round 7 gave
+    /// <see cref="LayoutDocument.Add(string, TextStyle)"/> these tags, round 9's sweep of the
+    /// style-taking members did not reach the four sibling <c>Add</c> overloads, and round 21 found
+    /// them still tagging only the null case.
     /// </summary>
     [Theory]
     [MemberData(nameof(StyleBearingElementsAtEachNonFiniteSize))]
@@ -293,9 +297,10 @@ public sealed class BoundaryContractTests
     // ── Heading.Level: what the outline nests on ────────────────────────────────────────────────
 
     /// <summary>
-    /// The outline builder hangs an entry under the most recent earlier entry at exactly
-    /// <c>Level - 1</c>, and puts it at the top level when there is none. So consecutive levels
-    /// nest and a jump does not: after a level 0 heading, level 5 and level 500 both land beside it.
+    /// Level 0 is always a top-level entry. Any other level hangs under the most recent earlier
+    /// entry at exactly <c>Level - 1</c>, or at the top level when there is none. So consecutive
+    /// levels nest and a jump does not: after a level 0 heading, level 5 and level 500 both land
+    /// beside it.
     /// <see cref="Heading.Level"/> claimed the outline "still nests on the number you gave" until
     /// round 21 measured it.
     /// </summary>
@@ -304,7 +309,8 @@ public sealed class BoundaryContractTests
     [InlineData(new[] { 0, 5, 500 }, 1)] // all at the root: one parent
     [InlineData(new[] { 0, 6 }, 1)]
     [InlineData(new[] { 0, 1, 500 }, 2)] // the jump falls back to the root the level 0 entry uses
-    [InlineData(new[] { -4, -3 }, 2)] // negative levels nest on the same rule
+    [InlineData(new[] { -4, -3 }, 2)] // a negative level hangs under the entry one below it
+    [InlineData(new[] { -1, 0 }, 1)] // level 0 is a root entry even when a level -1 entry precedes it
     public void HeadingLevel_nestsOnTheLevelBelowIt_notOnTheNumber(int[] levels, int distinctParents)
     {
         using var doc = new LayoutDocument();
@@ -326,8 +332,8 @@ public sealed class BoundaryContractTests
 
     /// <summary>
     /// A nested list is refused when its indent reaches the list's own area width, inclusively, and
-    /// the boundary moves with the list's margins. The documentation quotes these figures, so they
-    /// are pinned either side of the edge rather than sampled.
+    /// the boundary moves with the list's margins. The documentation states the rule; these rows are
+    /// the measured values either side of the edge, at default and at narrowed margins.
     /// </summary>
     [Theory]
     [InlineData(0, 0, 451.2799, false)]
@@ -354,9 +360,9 @@ public sealed class BoundaryContractTests
     }
 
     /// <summary>
-    /// A flat list with unlinked text is refused at no indent at all — the marker paragraph is laid
-    /// out with zero margins, so the indent can never drive its area to nothing. Every
-    /// value in the rows below, including the three non-finite ones separately. Linked text
+    /// A flat list with unlinked text is never refused, at any indent: the marker paragraph is laid
+    /// out with zero margins, so the indent can never drive its area to nothing. The rows below
+    /// cover finite values and the three non-finite ones separately. Linked text
     /// is a different case: a linked run at NaN throws <see cref="ArgumentException"/>, per
     /// <see cref="ListElement.Indent"/>.
     /// </summary>
@@ -402,7 +408,7 @@ public sealed class BoundaryContractTests
     /// The finite-negative route the member documents: a nested list with linked item text, an
     /// indent of -1e308 and a left margin of -1e308, whose gutter overflows into a link rectangle
     /// the save cannot write. The same indent without the margin, and the same pair on a flat list,
-    /// both save — which is why the sentence carries its example.
+    /// both save, which is why the sentence carries its example.
     /// </summary>
     [Theory]
     [InlineData(true, -1e308, true)]
@@ -486,9 +492,10 @@ public sealed class BoundaryContractTests
     /// <summary>
     /// The unit is the line, not the paragraph. A line holding a Symbol run followed by a Helvetica
     /// run is centred on the Helvetica run's width alone. The Helvetica run starts where the Symbol
-    /// run does and is drawn over it, the Symbol run being drawn first. Run order and the font of
-    /// the space between the runs change the result: with a Helvetica run followed by a Symbol
-    /// run, the Symbol run starts after the Helvetica one (x 262.63 and 332.65 measured).
+    /// run does and is drawn over it, the Symbol run being drawn first. Run order changes
+    /// the result, because the space between runs is measured in the earlier run's font: with a
+    /// Helvetica run followed by a Symbol run, the Symbol run starts after the Helvetica one
+    /// (x 262.63 and 332.65 measured).
     /// Round 20 changed <see cref="TextStyle.FontRef"/> to say "set wholly in either font", which
     /// scopes the zero-width placement to lines set wholly in one of the two fonts.
     /// </summary>
