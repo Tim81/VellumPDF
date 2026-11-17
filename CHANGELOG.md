@@ -8,22 +8,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- **The boundaries Layout documents are now pinned as tests.** 45 cases in
-  `BoundaryContractTests`, taken from the probes that produced the sentences in #510: which null
-  argument decides when two are null on `DrawContext` and `RendererContext`, that a save refuses the
-  flipped value rather than the value passed, that a foreign page drops a link annotation while
-  keeping the outline entry, that every `Document.Add` overload defers its refusals to the save,
-  where a nested list's indent is refused (451.2799 saves, 451.28 throws, and the boundary moves
-  with the list's margins), how a heading's level places its bookmark, and that Symbol and
-  ZapfDingbats measure every Basic Multilingual Plane character as zero at every size probed.
+- **The boundaries Layout documents are now pinned as tests.** `BoundaryContractTests` holds 55
+  cases (4 facts and 51 theory rows), taken from the probes that produced the sentences in #542:
+  which null argument decides when two are null on `DrawContext` and `RendererContext`, that a save
+  refuses the flipped value rather than the value passed, that a foreign page drops a link
+  annotation while keeping the outline entry, that the five `Document.Add` overloads that carry a
+  `TextStyle` defer that style's refusals to the save, where a nested list's indent is refused
+  (451.2799 saves, 451.28 throws, and the boundary moves with the list's margins), how a heading's
+  level places its bookmark, and that Symbol and ZapfDingbats measure every non-surrogate Basic
+  Multilingual Plane character as zero at every size probed.
 
-  Documentation goes stale silently: three of the defects #510's review rounds found were sentences
-  that had been true when they were written, and the rounds kept re-measuring partitions an earlier
+  Documentation goes stale silently: #542's review rounds kept re-measuring partitions an earlier
   round had already settled, because nothing held the figures. A boundary a test asserts fails
-  loudly instead. The assertions are on exception type, `ParamName` or the bytes written, never on a
-  document coming back, and the placement cases carry a control — a Helvetica line beside the
-  Symbol one, a default indent beside the infinite one — so a change that stops drawing entirely
-  cannot pass them.
+  loudly instead. A refusal is asserted by exception type, `ParamName` or a fragment of the
+  message, an acceptance by the save completing, and a placement by the bytes written. The
+  placement cases carry a control, a Helvetica line beside the Symbol one and a default indent
+  beside the infinite one, so a change that stops drawing entirely cannot pass them.
 
 ## [2.3.3] - 2026-09-20
 

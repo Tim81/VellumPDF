@@ -15,17 +15,16 @@ namespace VellumPdf.Layout.Tests;
 /// <summary>
 /// The boundaries the Layout XML documentation states, pinned as known answers.
 ///
-/// #510 documented the package's public surface by measuring it: 21 review rounds, each one
+/// PR #542 documented the package's public surface by measuring it: 21 review rounds, each one
 /// re-deriving partitions an earlier round had already measured, because nothing held the figures.
-/// A sentence in a doc comment is only as good as the last run that checked it, and three of the
-/// defects those rounds found were sentences that had been true when written. These tests are that
-/// check, so a future round reads a failing assertion instead of re-measuring from zero.
+/// A sentence in a doc comment is only as good as the last run that checked it, so these tests
+/// are that check: a future round reads a failing assertion instead of re-measuring from zero.
 ///
-/// Every case here comes from a probe that produced the sentence it pins, and the assertions are on
-/// the exception type, its <c>ParamName</c>, or the bytes written — never on "a document came
-/// back", because a PDF is never empty. Non-finite inputs are listed value by value: NaN, positive
-/// infinity and negative infinity take three different branches, and on this PR a measurement of
-/// one of them was twice promoted to a claim about all three.
+/// Every case here comes from a probe that produced the sentence it pins. A refusal is asserted by
+/// exception type, <c>ParamName</c> or a fragment of the message, an acceptance by the save
+/// completing, and a placement by the bytes written. Non-finite inputs are listed value by value:
+/// NaN, positive infinity and negative infinity take three different branches, and during #542 a
+/// measurement of one of them was twice promoted to a claim about all three.
 ///
 /// A failure here means the library moved, not that the test is stale. Fix the code or fix the
 /// sentence the case names, and do both in the same commit.
@@ -76,20 +75,21 @@ public sealed class BoundaryContractTests
     /// four rows below.
     /// </summary>
     [Theory]
-    [InlineData(true, true, "ArgumentNullException")]   // page null, handle null  -> the page wins
-    [InlineData(true, false, "ArgumentNullException")]  // page null, handle given
+    [InlineData(true, true, "ArgumentNullException")] // page null, handle null: the page wins
+    [InlineData(true, false, "ArgumentNullException")] // page null, handle given
     [InlineData(false, true, "NullReferenceException")] // page given, handle null
-    [InlineData(false, false, null)]                    // neither null
+    [InlineData(false, false, null)] // neither null
     public void UseEmbeddedFont_nullPageOutranksNullHandle(bool pageNull, bool handleNull, string? expected)
     {
-        var fontPath = PdfTestUtil.FindPlatformFont();
-        if (fontPath is null) return; // no TrueType face on this machine; the rows need a real handle
+        // Only the rows with a real handle need a font file; the null-handle rows run everywhere.
+        var fontPath = handleNull ? null : PdfTestUtil.FindPlatformFont();
+        if (!handleNull && fontPath is null) Assert.Skip("no platform TrueType font found");
 
         using var pdf = new PdfDocument();
         var page = pdf.AddPage();
         var rc = new RendererContext(pageNull ? null! : page, pdf);
         var ctx = Context(pdf, page, rc);
-        var handle = handleNull ? null! : pdf.UseTrueTypeFont(File.ReadAllBytes(fontPath));
+        var handle = handleNull ? null! : pdf.UseTrueTypeFont(File.ReadAllBytes(fontPath!));
 
         if (expected is null)
         {
@@ -98,13 +98,15 @@ public sealed class BoundaryContractTests
         }
 
         var ex = Record.Exception(() => ctx.UseEmbeddedFont(handle));
-        Assert.Equal(expected, ex!.GetType().Name);
+        Assert.NotNull(ex);
+        Assert.Equal(expected, ex.GetType().Name);
         if (ex is ArgumentNullException ane) Assert.Equal("key", ane.ParamName);
     }
 
     /// <summary>
     /// <see cref="RendererContext.RegisterImageXObject"/> reads its own argument first, which is the
-    /// opposite order, so the two members of one type cannot share a rule. A null image answers
+    /// opposite order, so <see cref="DrawContext.UseEmbeddedFont"/> and this member cannot share a
+    /// rule. A null image answers
     /// <see cref="ArgumentNullException"/> even when the context has no document, while a sound
     /// image on a document-less context raises <see cref="NullReferenceException"/>.
     /// </summary>
@@ -128,7 +130,8 @@ public sealed class BoundaryContractTests
         }
 
         var ex = Record.Exception(() => rc.RegisterImageXObject(image));
-        Assert.Equal(expected, ex!.GetType().Name);
+        Assert.NotNull(ex);
+        Assert.Equal(expected, ex.GetType().Name);
         if (ex is ArgumentNullException ane) Assert.Equal("key", ane.ParamName);
     }
 
@@ -140,8 +143,8 @@ public sealed class BoundaryContractTests
     /// sentence claiming both.
     /// </summary>
     [Theory]
-    [InlineData(false, false)] // RegisterStructElem:     page erased, no /Pg
-    [InlineData(true, true)]   // RegisterStructElemTree: page kept,   /Pg written
+    [InlineData(false, false)] // RegisterStructElem: page erased, no /Pg
+    [InlineData(true, true)] // RegisterStructElemTree: page kept, /Pg written
     public void NullContextPage_erasesThePage_onlyForTheStampingCall(bool viaTree, bool expectPg)
     {
         using var pdf = new PdfDocument { Tagged = true };
@@ -212,13 +215,14 @@ public sealed class BoundaryContractTests
         Assert.Contains("/Dest [null", bytes, StringComparison.Ordinal);
     }
 
-    // ── Document.Add: every element overload defers its refusals to the save ────────────────────
+    // ── Document.Add: the overloads that carry a TextStyle defer its refusals to the save ───────
 
     /// <summary>
-    /// <c>Add</c> stores the element and checks nothing, so a style the layout refuses surfaces at
-    /// the save for every overload that can carry one. Round 9 gave
+    /// None of the five overloads below checks the style it is given, so a style the layout refuses
+    /// surfaces at the save. A null element is a different matter and is not covered here: some
+    /// overloads refuse it from the call itself. Round 9 gave
     /// <see cref="LayoutDocument.Add(string, TextStyle)"/> these tags and stopped; round 21 found
-    /// the six siblings that reach the same code still tagging only the null case.
+    /// the siblings that reach the same code still tagging only the null case.
     /// </summary>
     [Theory]
     [MemberData(nameof(StyleBearingElements))]
@@ -228,7 +232,8 @@ public sealed class BoundaryContractTests
         using var doc = new LayoutDocument();
         add(doc, new TextStyle { FontSize = double.NaN });
 
-        Assert.Throws<InvalidOperationException>(() => Render(doc));
+        var ex = Assert.Throws<InvalidOperationException>(() => Render(doc));
+        Assert.Contains("a font size of NaN", ex.Message, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -273,11 +278,11 @@ public sealed class BoundaryContractTests
     /// round 21 measured it.
     /// </summary>
     [Theory]
-    [InlineData(new[] { 0, 1, 2 }, 3)]   // a chain: three distinct parents
+    [InlineData(new[] { 0, 1, 2 }, 3)] // a chain: three distinct parents
     [InlineData(new[] { 0, 5, 500 }, 1)] // all at the root: one parent
     [InlineData(new[] { 0, 6 }, 1)]
     [InlineData(new[] { 0, 1, 500 }, 2)] // the jump falls back to the root the level 0 entry uses
-    [InlineData(new[] { -4, -3 }, 2)]    // negative levels nest on the same rule
+    [InlineData(new[] { -4, -3 }, 2)] // negative levels nest on the same rule
     public void HeadingLevel_nestsOnTheLevelBelowIt_notOnTheNumber(int[] levels, int distinctParents)
     {
         using var doc = new LayoutDocument();
@@ -315,14 +320,23 @@ public sealed class BoundaryContractTests
         item.AddChild("child");
         doc.Add(new ListElement { Indent = indent, Margins = new EdgeInsets(0, right, 0, left) }.Add(item));
 
-        if (refused) Assert.Throws<InvalidOperationException>(() => Render(doc));
-        else Assert.NotEmpty(Render(doc));
+        if (refused)
+        {
+            var ex = Assert.Throws<InvalidOperationException>(() => Render(doc));
+            Assert.Contains("too tall to fit on a single page", ex.Message, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.NotEmpty(Render(doc));
+        }
     }
 
     /// <summary>
-    /// A flat list is refused at no indent at all — the marker paragraph is laid out with zero
-    /// margins, so the indent can never drive its area to nothing. Every value the member's tag
-    /// names as accepted, including the three non-finite ones separately.
+    /// A flat list with unlinked text is refused at no indent at all — the marker paragraph is laid
+    /// out with zero margins, so the indent can never drive its area to nothing. Every value the
+    /// member's tag names as accepted, including the three non-finite ones separately. Linked text
+    /// is a different case: a linked run at NaN throws <see cref="ArgumentException"/>, per
+    /// <see cref="ListElement.Indent"/>.
     /// </summary>
     [Theory]
     [InlineData(-1e308)]
@@ -332,7 +346,7 @@ public sealed class BoundaryContractTests
     [InlineData(double.NaN)]
     [InlineData(double.PositiveInfinity)]
     [InlineData(double.NegativeInfinity)]
-    public void FlatListIndent_isNeverRefused(double indent)
+    public void FlatListIndent_withUnlinkedText_isNeverRefused(double indent)
     {
         using var doc = new LayoutDocument();
         doc.Add(new ListElement { Indent = indent }.Add(new ListItem("flat")));
@@ -403,9 +417,9 @@ public sealed class BoundaryContractTests
     // ── Symbol and ZapfDingbats measure zero (#470) ──────────────────────────────────────────────
 
     /// <summary>
-    /// Both faces measure every character as zero width, at every finite size. Sampled across the
-    /// Basic Multilingual Plane rather than at a handful of code points, because the documentation
-    /// says "every character" and a quantifier needs its boundary.
+    /// Both faces measure every character as zero width, at every size probed. Checked across every
+    /// non-surrogate Basic Multilingual Plane code point rather than at a handful, because the
+    /// documentation says "every character" and a quantifier needs its boundary.
     /// </summary>
     [Theory]
     [InlineData(Standard14.Symbol)]
@@ -429,12 +443,15 @@ public sealed class BoundaryContractTests
     /// default A4 page. A Helvetica control shows the same line placed on its measured width.
     /// </summary>
     [Theory]
-    [InlineData(HorizontalAlignment.Center, "297.64")]
-    [InlineData(HorizontalAlignment.Right, "523.28")]
-    public void SymbolLine_isPlacedAsIfItHadNoWidth(HorizontalAlignment alignment, string expectedX)
+    [InlineData(Standard14.Symbol, HorizontalAlignment.Center, "297.64")]
+    [InlineData(Standard14.Symbol, HorizontalAlignment.Right, "523.28")]
+    [InlineData(Standard14.Helvetica, HorizontalAlignment.Center, "257.296")]
+    [InlineData(Standard14.Helvetica, HorizontalAlignment.Right, "442.592")]
+    public void SymbolLine_isPlacedAsIfItHadNoWidth(
+        Standard14 font, HorizontalAlignment alignment, string expectedX)
     {
         using var doc = new LayoutDocument();
-        doc.Add(new Paragraph("SYMBOLTEXT", new TextStyle { FontRef = Standard14.Symbol, FontSize = 12 })
+        doc.Add(new Paragraph("SYMBOLTEXT", new TextStyle { FontRef = font, FontSize = 12 })
         {
             Alignment = alignment,
         });
@@ -458,13 +475,14 @@ public sealed class BoundaryContractTests
         p.Add("HELVETICA", new TextStyle { FontRef = Standard14.Helvetica, FontSize = 12 });
         doc.Add(p);
 
+        var stream = Stream(doc);
         var xs = System.Text.RegularExpressions.Regex
-            .Matches(Stream(doc), @"1 0 0 1 (\d+\.?\d*) \d")
+            .Matches(stream, @"1 0 0 1 (\d+\.?\d*) \d")
             .Select(m => m.Groups[1].Value)
-            .Distinct()
             .ToList();
 
-        Assert.Equal(["264.298"], xs);
+        Assert.Equal(["264.298", "264.298"], xs);
+        Assert.Contains("(SYM", stream, StringComparison.Ordinal);
     }
 
     /// <summary>
