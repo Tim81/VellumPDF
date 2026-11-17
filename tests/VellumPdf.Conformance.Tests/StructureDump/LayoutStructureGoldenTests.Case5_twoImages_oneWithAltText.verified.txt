@@ -1,0 +1,22 @@
+﻿known defects: A11Y-07
+Lang: "nl-NL"
+MarkInfo: {Marked=true}
+DisplayDocTitle: true
+Pages: 1
+ParentTreeNextKey: 1 (exceeds every key: yes)
+== structure
+StructTreeRoot
+  Document
+    Figure Alt="Een gradient"
+      mcid 0 p1
+    Figure Alt="Figure"
+      mcid 1 p1
+== page 1 content
+BDC /Figure {MCID=0}
+  image 2x2
+BDC /Figure {MCID=1}
+  image 2x2
+== page 1 annotations
+(none)
+== checks
+0 problem line(s)

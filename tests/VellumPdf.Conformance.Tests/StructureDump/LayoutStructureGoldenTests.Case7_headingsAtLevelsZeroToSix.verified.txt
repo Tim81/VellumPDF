@@ -1,0 +1,42 @@
+﻿known defects: A11Y-14
+Lang: "nl-NL"
+MarkInfo: {Marked=true}
+DisplayDocTitle: true
+Pages: 1
+ParentTreeNextKey: 1 (exceeds every key: yes)
+== structure
+StructTreeRoot
+  Document
+    H1
+      mcid 0 p1
+    H2
+      mcid 1 p1
+    H3
+      mcid 2 p1
+    H4
+      mcid 3 p1
+    H5
+      mcid 4 p1
+    H6
+      mcid 5 p1
+    H6
+      mcid 6 p1
+== page 1 content
+BDC /H1 {MCID=0}
+  show "Kop 0"
+BDC /H2 {MCID=1}
+  show "Kop 1"
+BDC /H3 {MCID=2}
+  show "Kop 2"
+BDC /H4 {MCID=3}
+  show "Kop 3"
+BDC /H5 {MCID=4}
+  show "Kop 4"
+BDC /H6 {MCID=5}
+  show "Kop 5"
+BDC /H6 {MCID=6}
+  show "Kop 6"
+== page 1 annotations
+(none)
+== checks
+0 problem line(s)

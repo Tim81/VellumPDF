@@ -1,0 +1,45 @@
+﻿known defects: A11Y-08
+Lang: "nl-NL"
+MarkInfo: {Marked=true}
+DisplayDocTitle: true
+Pages: 1
+ParentTreeNextKey: 1 (exceeds every key: yes)
+== structure
+StructTreeRoot
+  Document
+    P
+      mcid 0 p1
+    P Lang="en"
+      mcid 1 p1
+    L
+      LI
+        Lbl
+          P
+            mcid 2 p1
+        LBody
+          P
+            mcid 3 p1
+      LI
+        Lbl
+          P
+            mcid 4 p1
+        LBody
+          P Lang="fr"
+            mcid 5 p1
+== page 1 content
+BDC /P {MCID=0}
+  show "Dit is Nederlands."
+BDC /P {MCID=1}
+  show "This is English."
+BDC /P {MCID=2}
+  show "•"
+BDC /P {MCID=3}
+  show "Een Nederlands punt"
+BDC /P {MCID=4}
+  show "•"
+BDC /P {MCID=5}
+  show "Un point en francais"
+== page 1 annotations
+(none)
+== checks
+0 problem line(s)
