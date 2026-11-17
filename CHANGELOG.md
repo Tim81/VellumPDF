@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **CI's oracles move to veraPDF 1.30.4 and qpdf 12.4.2.** `VERAPDF_TAG` was v1.30.2 and
+  `QPDF_VERSION` was 12.4.1 (#230); the qpdf checksum moves with it. The veraPDF release notes
+  for 1.30.3 and 1.30.4 list changes that can move a verdict here: a fix to AES-256 revision 6
+  password hashing that could reject valid passwords, the PDF 1.7 table-header-scope algorithm
+  restored for PDF/UA-1, a PDF/UA-1 rule 7.18.1-3 now limited to Widget annotations tied to form
+  fields, a fix to the missing-parent-element rule, and a new PDF/UA-2 and WTPDF rule requiring
+  PDF version 2.0. The qpdf 12.4.2 notes say linearized output may differ for some rare files.
+  A local Release run against both new versions with `REQUIRE_ORACLES=1` (veraPDF 1.30.4,
+  qpdf 12.4.2, poppler from `C:\msys64\mingw64`) failed no test: Conformance 1325 of 1325,
+  Kernel 1525 of 1525, Layout 412 of 412, Barcodes 1051 of 1051, Cli 908 of 908, TestSupport 17
+  of 17, and Reader 1857 passed with 12 skipped, the same 12 as under veraPDF 1.30.2 and qpdf
+  12.4.1. Statements elsewhere
+  that a behaviour was measured on veraPDF 1.30.2 or qpdf 12.4.1 are left as written, since they
+  record what was measured then.
+
 ## [2.3.3] - 2026-09-20
 
 This release is led by documentation. Layout's public surface now states what each member

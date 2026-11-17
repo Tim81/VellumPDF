@@ -14,9 +14,9 @@ build, test, and submit changes to VellumPdf.
 - **qpdf** and **poppler-utils** — needed to run the structural-validator,
   text-extraction, signature, and barcode-rasterization oracle tests locally
   (`qpdf`, `pdftotext`, `pdfsig`, `pdftoppm`). CI pins these (#230) rather than taking whatever
-  the runner image ships, so matching CI locally means matching its versions: qpdf 12.4.1
+  the runner image ships, so matching CI locally means matching its versions: qpdf 12.4.2
   (installed in CI from the [official release
-  artifact](https://github.com/qpdf/qpdf/releases/tag/v12.4.1), since apt's qpdf on
+  artifact](https://github.com/qpdf/qpdf/releases/tag/v12.4.2), since apt's qpdf on
   `ubuntu-24.04` is 11.9.0 and `--check`'s output has changed across qpdf majors), poppler-utils
   24.02.0-1ubuntu9.9, fonts-dejavu-core 2.37-8, and fonts-texgyre 20180621-6. On Debian/Ubuntu,
   install qpdf from the same release artifact and pin the rest with
@@ -52,8 +52,8 @@ build, test, and submit changes to VellumPdf.
   the directory holding the executable directly, its parent with a `bin`
   subdirectory under it, or its grandparent with a `Library\bin` subdirectory
   under it (the shape a Windows poppler build installed via winget uses) — so
-  `QPDF_HOME` can name either `...\qpdf-12.4.1-msvc64` or
-  `...\qpdf-12.4.1-msvc64\bin`, and `POPPLER_HOME` can name either the
+  `QPDF_HOME` can name either `...\qpdf-12.4.2-msvc64` or
+  `...\qpdf-12.4.2-msvc64\bin`, and `POPPLER_HOME` can name either the
   poppler install root or its `Library\bin` folder directly. A `*_HOME` that
   is set but does not resolve through any of these is reported as a
   misconfiguration (the same skip-locally/fail-on-CI outcome a wrong-tool
