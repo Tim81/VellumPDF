@@ -15,13 +15,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   restored for PDF/UA-1, a PDF/UA-1 rule 7.18.1-3 now limited to Widget annotations tied to form
   fields, a fix to the missing-parent-element rule, and a new PDF/UA-2 and WTPDF rule requiring
   PDF version 2.0. The qpdf 12.4.2 notes say linearized output may differ for some rare files.
-  A local Release run against both new versions with `REQUIRE_ORACLES=1` (veraPDF 1.30.4,
-  qpdf 12.4.2, poppler from `C:\msys64\mingw64`) failed no test: Conformance 1325 of 1325,
-  Kernel 1525 of 1525, Layout 412 of 412, Barcodes 1051 of 1051, Cli 908 of 908, TestSupport 17
-  of 17, and Reader 1857 passed with 12 skipped, the same 12 as under veraPDF 1.30.2 and qpdf
-  12.4.1. Statements elsewhere
-  that a behaviour was measured on veraPDF 1.30.2 or qpdf 12.4.1 are left as written, since they
-  record what was measured then.
+  A local Release run with `REQUIRE_ORACLES=1` against veraPDF 1.30.4 and qpdf 12.4.2 had
+  no failures: Conformance 1325 of 1325, Kernel 1525 of 1525, Layout 412 of 412, Barcodes 1051 of
+  1051, Cli 908 of 908, TestSupport 17 of 17, and Reader 1857 passed with 12 skipped, the same 12
+  as under veraPDF 1.30.2 and qpdf 12.4.1. Statements elsewhere that a behaviour was measured on
+  veraPDF 1.30.2 or qpdf 12.4.1 are left as written, since they record what was measured then,
+  except two that were re-measured on 1.30.4 and came out the same: the language-tag table in
+  `docs/conformance-divergences.md` and the profile clause counts in `eng/clause-coverage.py`.
 
 ## [2.3.3] - 2026-09-20
 
