@@ -8,22 +8,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- **The boundaries Layout documents are now pinned as tests.** `BoundaryContractTests` holds 55
-  cases (4 facts and 51 theory rows), taken from the probes that produced the sentences in #542:
+- **The boundaries Layout documents are now pinned as tests.** `BoundaryContractTests` holds 66
+  cases (5 facts and 61 theory rows), taken from the probes that produced the sentences in #542:
   which null argument decides when two are null on `DrawContext` and `RendererContext`, that a save
   refuses the flipped value rather than the value passed, that a foreign page drops a link
   annotation while keeping the outline entry, that the five `Document.Add` overloads that carry a
-  `TextStyle` defer that style's refusals to the save, where a nested list's indent is refused
-  (451.2799 saves, 451.28 throws, and the boundary moves with the list's margins), how a heading's
-  level places its bookmark, and that Symbol and ZapfDingbats measure every non-surrogate Basic
-  Multilingual Plane character as zero at every size probed.
+  `TextStyle` defer a non-finite font size (NaN, positive and negative infinity) and an unnamed
+  `Standard14` value to the save, where a nested list's indent is refused (451.2799 saves, 451.28
+  throws, and the boundary moves with the list's margins), how a heading's level places its
+  bookmark, and that Symbol and ZapfDingbats measure every non-surrogate Basic Multilingual Plane
+  character as zero at every size probed.
 
   Documentation goes stale silently: #542's review rounds kept re-measuring partitions an earlier
   round had already settled, because nothing held the figures. A boundary a test asserts fails
   loudly instead. A refusal is asserted by exception type, `ParamName` or a fragment of the
   message, an acceptance by the save completing, and a placement by the bytes written. The
-  placement cases carry a control, a Helvetica line beside the Symbol one and a default indent
-  beside the infinite one, so a change that stops drawing entirely cannot pass them.
+  placement cases carry controls: a Helvetica line beside the Symbol one, and a default indent
+  beside the infinite one. They catch a change that always places the line at the Symbol position
+  or always drops the item text.
 
 ## [2.3.3] - 2026-09-20
 

@@ -15,15 +15,15 @@ namespace VellumPdf.Layout.Tests;
 /// <summary>
 /// The boundaries the Layout XML documentation states, pinned as known answers.
 ///
-/// PR #542 documented the package's public surface by measuring it: 21 review rounds, each one
-/// re-deriving partitions an earlier round had already measured, because nothing held the figures.
-/// A sentence in a doc comment is only as good as the last run that checked it, so these tests
+/// PR #542 documented the package's public surface by measuring it over 21 review rounds, and later
+/// rounds re-derived partitions an earlier round had already measured, because nothing held the
+/// figures. A sentence in a doc comment is only as good as the last run that checked it, so these tests
 /// are that check: a future round reads a failing assertion instead of re-measuring from zero.
 ///
 /// Every case here comes from a probe that produced the sentence it pins. A refusal is asserted by
 /// exception type, <c>ParamName</c> or a fragment of the message, an acceptance by the save
 /// completing, and a placement by the bytes written. Non-finite inputs are listed value by value:
-/// NaN, positive infinity and negative infinity take three different branches, and during #542 a
+/// NaN, positive infinity and negative infinity can take three different branches, and during #542 a
 /// measurement of one of them was twice promoted to a claim about all three.
 ///
 /// A failure here means the library moved, not that the test is stale. Fix the code or fix the
@@ -44,12 +44,13 @@ public sealed class BoundaryContractTests
     // ── The default page, which several boundaries below are expressed against ──────────────────
 
     /// <summary>
-    /// A4 with 72pt margins leaves a content area 451.28pt wide, and the figures in
-    /// <see cref="ListElement.Indent"/> and <see cref="TextStyle.FontRef"/> are written against it.
-    /// Pinned first, because every boundary below moves if the default page does.
+    /// A4 with 72pt margins leaves a content area 451.28pt wide. The figures below (451.28, 451.2799,
+    /// 297.64, 523.28) are what #542's probes measured for the rules
+    /// <see cref="ListElement.Indent"/> and <see cref="TextStyle.FontRef"/> state, not numbers the
+    /// documentation quotes. Pinned first, because every boundary below moves if the default page does.
     /// </summary>
     [Fact]
-    public void DefaultPage_contentArea_isTheWidthTheDocsQuote()
+    public void DefaultPage_contentArea_is451_28Wide()
     {
         using var doc = new LayoutDocument();
 
@@ -104,14 +105,13 @@ public sealed class BoundaryContractTests
     }
 
     /// <summary>
-    /// <see cref="RendererContext.RegisterImageXObject"/> reads its own argument first, which is the
-    /// opposite order, so <see cref="DrawContext.UseEmbeddedFont"/> and this member cannot share a
-    /// rule. A null image answers
-    /// <see cref="ArgumentNullException"/> even when the context has no document, while a sound
-    /// image on a document-less context raises <see cref="NullReferenceException"/>.
+    /// <see cref="RendererContext.RegisterImageXObject"/> reads its own argument first, the opposite
+    /// order to <see cref="DrawContext.UseEmbeddedFont"/>, so the two cannot share a rule. A null
+    /// image answers <see cref="ArgumentNullException"/> even when the context has no document,
+    /// while a sound image on a document-less context raises <see cref="NullReferenceException"/>.
     /// </summary>
     [Theory]
-    [InlineData(true, true, "ArgumentNullException")]  // both null: the image is read first
+    [InlineData(true, true, "ArgumentNullException")] // both null: the image is read first
     [InlineData(true, false, "ArgumentNullException")]
     [InlineData(false, true, "NullReferenceException")] // sound image, no document
     [InlineData(false, false, null)]
@@ -145,7 +145,7 @@ public sealed class BoundaryContractTests
     [Theory]
     [InlineData(false, false)] // RegisterStructElem: page erased, no /Pg
     [InlineData(true, true)] // RegisterStructElemTree: page kept, /Pg written
-    public void NullContextPage_erasesThePage_onlyForTheStampingCall(bool viaTree, bool expectPg)
+    public void NullContextPage_erasesThePage_forRegisterStructElem_notForTheTree(bool viaTree, bool expectPg)
     {
         using var pdf = new PdfDocument { Tagged = true };
         var page = pdf.AddPage();
@@ -164,8 +164,8 @@ public sealed class BoundaryContractTests
     }
 
     /// <summary>
-    /// What a save refuses is the value it writes, not the value passed. Both members flip the Y
-    /// through <see cref="DrawContext.PageBounds"/>, so a finite argument is refused when that
+    /// What a save refuses is the value it writes, not the value passed. <c>AddOutlineEntry</c> flips
+    /// the Y through <see cref="DrawContext.PageBounds"/>, so a finite argument is refused when that
     /// height is not finite or the subtraction overflows. The tags blamed the caller's argument
     /// until round 21.
     /// </summary>
@@ -225,15 +225,32 @@ public sealed class BoundaryContractTests
     /// the siblings that reach the same code still tagging only the null case.
     /// </summary>
     [Theory]
-    [MemberData(nameof(StyleBearingElements))]
-    public void Add_styleRefusedByTheLayout_throwsFromSaveNotFromAdd(
-        string _, Action<LayoutDocument, TextStyle> add)
+    [MemberData(nameof(StyleBearingElementsAtEachNonFiniteSize))]
+    public void Add_nonFiniteFontSize_throwsFromSaveNotFromAdd(
+        string _, Action<LayoutDocument, TextStyle> add, double size, string fragment)
     {
         using var doc = new LayoutDocument();
-        add(doc, new TextStyle { FontSize = double.NaN });
+        add(doc, new TextStyle { FontSize = size });
 
         var ex = Assert.Throws<InvalidOperationException>(() => Render(doc));
-        Assert.Contains("a font size of NaN", ex.Message, StringComparison.Ordinal);
+        Assert.Contains(fragment, ex.Message, StringComparison.Ordinal);
+    }
+
+    public static TheoryData<string, Action<LayoutDocument, TextStyle>, double, string>
+        StyleBearingElementsAtEachNonFiniteSize()
+    {
+        var data = new TheoryData<string, Action<LayoutDocument, TextStyle>, double, string>();
+        var sizes = new (double Size, string Fragment)[]
+        {
+            (double.NaN, "a font size of NaN"),
+            (double.PositiveInfinity, "a font size of positive infinity"),
+            (double.NegativeInfinity, "a font size of negative infinity"),
+        };
+        foreach (var (name, add) in StyleBearingOverloads)
+        {
+            foreach (var (size, fragment) in sizes) data.Add(name, add, size, fragment);
+        }
+        return data;
     }
 
     /// <summary>
@@ -252,21 +269,26 @@ public sealed class BoundaryContractTests
         Assert.Throws<IndexOutOfRangeException>(() => Render(doc));
     }
 
-    public static TheoryData<string, Action<LayoutDocument, TextStyle>> StyleBearingElements() => new()
-    {
-        { "Add(string, style)", (d, s) => d.Add("x", s) },
-        { "Add(Paragraph)", (d, s) => d.Add(new Paragraph("x", s)) },
-        { "Add(Heading)", (d, s) => d.Add(new Heading("x", s)) },
-        { "Add(ListElement)", (d, s) => d.Add(new ListElement().Add("x", s)) },
+    private static readonly (string Name, Action<LayoutDocument, TextStyle> Add)[] StyleBearingOverloads =
+    [
+        ("Add(string, style)", (d, s) => d.Add("x", s)),
+        ("Add(Paragraph)", (d, s) => d.Add(new Paragraph("x", s))),
+        ("Add(Heading)", (d, s) => d.Add(new Heading("x", s))),
+        ("Add(ListElement)", (d, s) => d.Add(new ListElement().Add("x", s))),
+        ("Add(TableElement)", (d, s) =>
         {
-            "Add(TableElement)", (d, s) =>
-            {
-                var t = new TableElement();
-                t.AddRow().AddCell(new Cell("x") { Style = s });
-                d.Add(t);
-            }
-        },
-    };
+            var t = new TableElement();
+            t.AddRow().AddCell(new Cell("x") { Style = s });
+            d.Add(t);
+        }),
+    ];
+
+    public static TheoryData<string, Action<LayoutDocument, TextStyle>> StyleBearingElements()
+    {
+        var data = new TheoryData<string, Action<LayoutDocument, TextStyle>>();
+        foreach (var (name, add) in StyleBearingOverloads) data.Add(name, add);
+        return data;
+    }
 
     // ── Heading.Level: what the outline nests on ────────────────────────────────────────────────
 
@@ -333,8 +355,8 @@ public sealed class BoundaryContractTests
 
     /// <summary>
     /// A flat list with unlinked text is refused at no indent at all — the marker paragraph is laid
-    /// out with zero margins, so the indent can never drive its area to nothing. Every value the
-    /// member's tag names as accepted, including the three non-finite ones separately. Linked text
+    /// out with zero margins, so the indent can never drive its area to nothing. Every
+    /// value in the rows below, including the three non-finite ones separately. Linked text
     /// is a different case: a linked run at NaN throws <see cref="ArgumentException"/>, per
     /// <see cref="ListElement.Indent"/>.
     /// </summary>
@@ -355,7 +377,8 @@ public sealed class BoundaryContractTests
     }
 
     /// <summary>
-    /// At positive infinity a flat list draws its marker and discards the item text: one show
+    /// At positive infinity a flat list draws its marker and discards the item text (a behaviour
+    /// #476 intends to change): one show
     /// operator in the content stream, and the item's own text nowhere in it. A default indent
     /// draws both, which is what makes the first assertion discriminating rather than a count of
     /// whatever happened to be emitted.
@@ -438,9 +461,10 @@ public sealed class BoundaryContractTests
     }
 
     /// <summary>
-    /// Because the width is zero, a centred line is placed at the exact centre of the content area
-    /// and a right-aligned one at its exact right edge — the figures the member quotes on the
-    /// default A4 page. A Helvetica control shows the same line placed on its measured width.
+    /// Because the width is zero, a centred Symbol line is placed at the exact centre of the content
+    /// area and a right-aligned one at its exact right edge. 297.64 and 523.28 are the values
+    /// #542's probes measured for that rule on the default A4 page, not figures the documentation
+    /// quotes. A Helvetica control shows the same line placed on its measured width.
     /// </summary>
     [Theory]
     [InlineData(Standard14.Symbol, HorizontalAlignment.Center, "297.64")]
@@ -460,9 +484,13 @@ public sealed class BoundaryContractTests
     }
 
     /// <summary>
-    /// The unit is the line, not the paragraph: a line holding a Symbol run and a Helvetica run is
-    /// centred on the Helvetica run's width alone, and both runs start at the same x, so the Symbol
-    /// run is drawn over the other. Round 20 corrected a sentence that scoped this to the paragraph.
+    /// The unit is the line, not the paragraph. A line holding a Symbol run followed by a Helvetica
+    /// run is centred on the Helvetica run's width alone. The Helvetica run starts where the Symbol
+    /// run does and is drawn over it, the Symbol run being drawn first. Run order and the font of
+    /// the space between the runs change the result: with a Helvetica run followed by a Symbol
+    /// run, the Symbol run starts after the Helvetica one (x 262.63 and 332.65 measured).
+    /// Round 20 changed <see cref="TextStyle.FontRef"/> to say "set wholly in either font", which
+    /// scopes the zero-width placement to lines set wholly in one of the two fonts.
     /// </summary>
     [Fact]
     public void MixedLine_isCentredOnTheMeasuredRunAlone()
@@ -486,7 +514,36 @@ public sealed class BoundaryContractTests
     }
 
     /// <summary>
-    /// A paragraph set wholly in either face is never wrapped, however long it is: 660 characters
+    /// The same rule per line. In a paragraph that wraps, the first line holds only Helvetica text
+    /// and is centred on its measured width. The second holds Helvetica text, a Symbol run and a
+    /// Helvetica run, and is centred on the Helvetica text alone: the Symbol run and the Helvetica
+    /// run after it start at the same x, so the Helvetica run is drawn over the Symbol run.
+    /// </summary>
+    [Fact]
+    public void MixedLine_afterAWrappedLine_isCentredPerLine()
+    {
+        using var doc = new LayoutDocument();
+        var p = new Paragraph(string.Concat(Enumerable.Repeat("abcdefghij ", 8)),
+            new TextStyle { FontRef = Standard14.Helvetica, FontSize = 12 })
+        {
+            Alignment = HorizontalAlignment.Center,
+        };
+        p.Add("SYM", new TextStyle { FontRef = Standard14.Symbol, FontSize = 12 });
+        p.Add("HELVETICA", new TextStyle { FontRef = Standard14.Helvetica, FontSize = 12 });
+        doc.Add(p);
+
+        var stream = Stream(doc);
+        var xs = System.Text.RegularExpressions.Regex
+            .Matches(stream, @"1 0 0 1 (\d+\.?\d*) \d+\.?\d* Tm")
+            .Select(m => m.Groups[1].Value)
+            .ToList();
+
+        Assert.Equal(["96.196", "235.282", "293.314", "293.314"], xs);
+        Assert.Contains("(SYM ) Tj", stream, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A paragraph set wholly in Symbol is never wrapped, however long it is: 660 characters
     /// draw as one line, where the same text in Helvetica wraps to nine.
     /// </summary>
     [Fact]
