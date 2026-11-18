@@ -16,7 +16,9 @@ namespace VellumPdf.Kernel.Tests;
 ///
 /// All inputs are synthesised in-memory. Parsers are reached directly via InternalsVisibleTo.
 /// Tests that exercise a denial-of-service guard (the cmap segment budget and the PNG zlib-bomb
-/// cap) are expected to return promptly; completing at all is the proof.
+/// cap) assert the guard's own refusal message, and the PNG cases also bound the bytes allocated
+/// on the calling thread (#400). No test here measures elapsed time: a clock read after the call
+/// returns cannot end a hang, so the remaining <c>Timeout</c> values are 300 s hang guards only.
 /// </summary>
 public sealed class MalformedInputTests
 {
@@ -52,16 +54,17 @@ public sealed class MalformedInputTests
 
     // ── Fonts: cmap format-4 denial-of-service ───────────────────────────────
 
-    // Assert.Throws alone proves the budget check rejects this input; it does not prove the
-    // budget check runs before the multi-billion-iteration path the class doc describes, since a
-    // reordering that let the loop run to exhaustion first and only threw afterward would also
-    // pass. Its own name promises the bound Timeout provides, so it stays under the same
-    // pragma-kept pattern as the #208/#193 pins rather than joining the guards this migration
-    // dropped Timeout from. xUnit1069 wants TestContext.Current.CancellationToken threaded
-    // through so the Timeout can end the test promptly; CmapTable.Parse takes no
-    // CancellationToken, and there is nothing to thread it into.
+    // The pin is the budget's own message: without the budget this fixture (~196k iterations)
+    // finishes without throwing, so the assertion fails. It does NOT prove the budget is checked
+    // before the segment loop runs to completion: a check moved after each segment's inner loop
+    // still throws here after ~3 x 65,535 iterations, milliseconds either way (#400). Only a
+    // fixture with enough segments to make that reordering take minutes would separate them, and
+    // then only the Timeout below ends it, as a hang guard (300 s), not as the pin.
+    // xUnit1069 wants TestContext.Current.CancellationToken threaded through so the Timeout can end
+    // the test promptly; CmapTable.Parse takes no CancellationToken, and there is nothing to
+    // thread it into.
 #pragma warning disable xUnit1069
-    [Fact(Timeout = 10_000)]
+    [Fact(Timeout = 300_000)]
     public void CmapFormat4_overlappingWideSegments_throwsAndDoesNotHang()
     {
         // Three segments each covering the whole BMP (0x0000-0xFFFE) sum to ~196k iterations,
@@ -75,7 +78,8 @@ public sealed class MalformedInputTests
             (0xFFFF, 0xFFFF, 1, 0), // required final sentinel segment
         ]);
         var font = SfntFont.Parse(BuildFont(("cmap", cmap)));
-        Assert.Throws<InvalidDataException>(() => CmapTable.Parse(font));
+        var ex = Assert.Throws<InvalidDataException>(() => CmapTable.Parse(font));
+        Assert.Contains("cmap format-4 subtable describes more code points than the BMP allows", ex.Message);
     }
 #pragma warning restore xUnit1069
 
@@ -126,17 +130,20 @@ public sealed class MalformedInputTests
         Assert.Throws<InvalidDataException>(() => PngImageLoader.Load(png));
     }
 
-    // Same reasoning as CmapFormat4_overlappingWideSegments_throwsAndDoesNotHang above:
-    // Assert.Throws proves the cap rejects the bomb, not that the cap fires before the ~4 MB
-    // decompression it exists to cut off. Kept under Timeout accordingly.
+    // The cap throws on the first 81,920-byte read, before the ~4 MB result is buffered. Assert.Throws
+    // alone cannot see that (a cap checked after the loop throws too), so the pin is the bytes
+    // allocated on this thread: a fixed buffer plus zlib state when the cap fires early, 4 MB and a
+    // doubling MemoryStream when it does not. It does not discriminate a CPU-only defect; there is
+    // none to catch here, since the early exit saves memory first and time as a side effect.
+    // The Timeout is a 300 s hang guard only (#400).
 #pragma warning disable xUnit1069
-    [Fact(Timeout = 10_000)]
+    [Fact(Timeout = 300_000)]
     public void Png_zlibBomb_throwsAndDoesNotExhaustMemory()
     {
         // A 1×1 image whose IDAT decompresses to ~4 MB — far beyond the dimensions' expected size.
         var bomb = ZlibCompress(new byte[4_000_000]);
         var png = BuildPng(1, 1, bitDepth: 8, colorType: 2, idat: bomb);
-        Assert.Throws<InvalidDataException>(() => PngImageLoader.Load(png));
+        AssertCapRefusesWithinAllocation(png);
     }
 #pragma warning restore xUnit1069
 
@@ -522,19 +529,43 @@ public sealed class MalformedInputTests
     /// An Adam7-interlaced PNG whose IDAT decompresses to far more bytes than the 7-pass
     /// expected total. The zlib-bomb cap (Inflate's cap guard) must throw InvalidDataException.
     /// </summary>
-    // Same reasoning as the other two DoesNot* guards above: Assert.Throws proves the cap fires,
-    // not that it fires before the decompression it exists to cut off. Kept under Timeout.
+    // Same reasoning as Png_zlibBomb_throwsAndDoesNotExhaustMemory above: the pin is the thread's
+    // allocation, the Timeout a 300 s hang guard (#400).
 #pragma warning disable xUnit1069
-    [Fact(Timeout = 10_000)]
+    [Fact(Timeout = 300_000)]
     public void Png_interlaced_zlibBomb_throwsAndDoesNotExhaustMemory()
     {
         // 1×1 interlaced PNG: Adam7 pass 1 produces exactly 1 pixel, so expectedRaw is tiny.
         // IDAT expands to ~4 MB — far over the cap.
         var bomb = ZlibCompress(new byte[4_000_000]);
         var png = BuildInterlacedPng(1, 1, bitDepth: 8, colorType: 2, idat: bomb);
-        Assert.Throws<InvalidDataException>(() => PngImageLoader.Load(png));
+        AssertCapRefusesWithinAllocation(png);
     }
 #pragma warning restore xUnit1069
+
+    /// <summary>
+    /// Loads a zlib-bomb PNG and asserts the cap's own message plus a bound on the bytes allocated
+    /// on the calling thread. The first call is a warm-up so one-time JIT and static-initialiser
+    /// allocations are not charged to the measured one. Measured per thread, not process-wide, for
+    /// the reason <c>ContentInterpreterTests</c> gives: parallel classes allocate at the same time.
+    /// </summary>
+    private static void AssertCapRefusesWithinAllocation(byte[] png)
+    {
+        Assert.Throws<InvalidDataException>(() => PngImageLoader.Load(png));
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        var ex = Assert.Throws<InvalidDataException>(() => PngImageLoader.Load(png));
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Contains("decompresses to more bytes than its declared dimensions allow", ex.Message);
+        Assert.True(
+            allocated < PngBombAllocationBound,
+            $"expected under {PngBombAllocationBound} bytes allocated before the cap fired; measured {allocated}.");
+    }
+
+    // 1 MiB. See the measured values next to the use in the PR; the uncapped path inflates the whole
+    // 4,000,000 bytes into a growing MemoryStream, which alone is several times this.
+    private const long PngBombAllocationBound = 1024 * 1024;
 
     // ── Interlaced PNG builder helpers ────────────────────────────────────────
 

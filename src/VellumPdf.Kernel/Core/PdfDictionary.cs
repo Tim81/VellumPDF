@@ -133,6 +133,14 @@ public sealed class PdfDictionary : PdfObject
     internal IReadOnlyList<KeyValuePair<PdfName, PdfObject>> Entries => _entries;
 
     /// <summary>
+    /// Whether lookups on this dictionary go through the hash index rather than the linear scan.
+    /// Exists so tests can pin "an index was built, and <see cref="ShallowCopy"/> carried it" as a
+    /// state check instead of timing a 140,000-key build (#400). It says an index exists, not that
+    /// <see cref="TryGet"/> uses it.
+    /// </summary>
+    internal bool IsIndexed => _index is not null;
+
+    /// <summary>
     /// Returns a new <see cref="PdfDictionary"/> with a shallow copy of all entries.
     /// Used by stream <c>WriteTo</c> overrides to add serialisation-only entries
     /// (e.g. <c>/Length</c>, <c>/Filter</c>) without mutating the shared dictionary.

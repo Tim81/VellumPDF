@@ -13,8 +13,8 @@ namespace VellumPdf.Kernel.Tests;
 /// is checked, on a file anyone can send, but the fix lives entirely in <see cref="PdfDictionary"/>,
 /// so it is tested here rather than only through the reader.
 ///
-/// Before this fix, building a 140,000-key dictionary directly took two to three times this test's
-/// 10s budget, measured on the development machine (Release build);
+/// Before this fix, building a 140,000-key dictionary directly took two to three times a 10s
+/// budget, measured on the development machine (Release build);
 /// <see cref="VellumPdf.Reader.Tests.EncryptDictionaryDenialOfServiceTests"/>
 /// pins the same defect reached the way #208 actually cares about — through a hostile
 /// <c>/Encrypt</c> dictionary, before <c>PdfReader.Open</c> checks any password.
@@ -30,21 +30,35 @@ public sealed class PdfDictionaryIndexTests
 
     /// <summary>
     /// 140,000 keys, well past the point where a linear scan would still finish in time: two to three
-    /// times this test's 10s budget before this fix, measured on the development machine. Every key
-    /// is read back afterwards to confirm the index (not just the build) is correct, not merely fast.
+    /// times the old 10s budget before the #208 fix, measured on the development machine. The pin is
+    /// <see cref="PdfDictionary.IsIndexed"/>, checked 100 keys into the build and again before the read-back
+    /// loop, so a dictionary that never builds its index fails here by name instead of by a cancelled
+    /// test. Every key is read back afterwards to confirm the index (not just the build) is correct.
+    ///
+    /// This does not catch an index that is built but never consulted by <c>TryGet</c>; that defect
+    /// is CPU-only and only the hang guard below would end it.
     /// </summary>
     // xUnit1069 wants TestContext.Current.CancellationToken threaded through so the Timeout can end
     // the test promptly; PdfDictionary.Set/TryGet take no CancellationToken, and there is nothing to
-    // thread it into. The Timeout itself is the #208 regression pin — see the class doc — so it
-    // stays rather than being dropped.
+    // thread it into. The Timeout is only a hang guard (#400): the #208 pin is IsIndexed above.
 #pragma warning disable xUnit1069
-    [Fact(Timeout = 10_000)]
-    public void LargeDictionary_buildsAndLooksUp_underTimeout()
+    [Fact(Timeout = 300_000)]
+    public void LargeDictionary_buildsAndLooksUp_viaTheIndex()
     {
         const int count = 140_000;
         var dict = new PdfDictionary();
         for (var i = 0; i < count; i++)
+        {
             dict.Set(new PdfName("K" + i), new PdfInteger(i));
+
+            // Checked early, 100 keys in and well past the 16-key threshold, so a dictionary that
+            // never builds its index fails here by name instead of grinding through a quadratic
+            // 140,000-key build first.
+            if (i == 99)
+                Assert.True(dict.IsIndexed, "a dictionary past the index threshold must have built its hash index (#208).");
+        }
+
+        Assert.True(dict.IsIndexed);
 
         for (var i = 0; i < count; i += 997) // a sparse, non-sequential sample across the whole range
         {
@@ -148,24 +162,31 @@ public sealed class PdfDictionaryIndexTests
 
     /// <summary>
     /// <see cref="PdfDictionary.ShallowCopy"/> must carry the index across, or the copy silently
-    /// falls back to a linear scan on every lookup. A sparse sample cannot show that: a stride wide
-    /// enough to keep even a linear scan fast would not separate "index carried over" from "index
-    /// dropped" within the time budget either way, so this reads back all 140,000 keys. Without the
-    /// carry-over that is on the order of 140,000² comparisons — tens of seconds; with it, well under
-    /// a second.
+    /// falls back to a linear scan on every lookup. A sparse sample cannot show that, so this asserts
+    /// <see cref="PdfDictionary.IsIndexed"/> on the copy before reading back all 140,000 keys. Without
+    /// the carry-over that read-back is on the order of 140,000² comparisons; the state check fails
+    /// first, by name, instead of the hang guard cancelling the test.
     /// </summary>
-    // See LargeDictionary_buildsAndLooksUp_underTimeout above: same #208 pin, same reason the
-    // CancellationToken xUnit1069 wants has nowhere to go.
+    // See LargeDictionary_buildsAndLooksUp_viaTheIndex above: same reason the CancellationToken
+    // xUnit1069 wants has nowhere to go, and the Timeout is only a hang guard (#400).
 #pragma warning disable xUnit1069
-    [Fact(Timeout = 10_000)]
+    [Fact(Timeout = 300_000)]
     public void ShallowCopy_pastTheThreshold_carriesTheIndex()
     {
         const int count = 140_000;
         var source = new PdfDictionary();
         for (var i = 0; i < count; i++)
+        {
             source.Set(new PdfName("K" + i), new PdfInteger(i));
 
+            // Early, for the reason given in LargeDictionary_buildsAndLooksUp_viaTheIndex: this test
+            // is about the copy, so a source that never indexed must not cost a quadratic build first.
+            if (i == 99)
+                Assert.True(source.IsIndexed, "the source must be indexed before its copy can carry the index.");
+        }
+
         var copy = source.ShallowCopy();
+        Assert.True(copy.IsIndexed, "ShallowCopy must carry the hash index across (#208).");
 
         for (var i = 0; i < count; i++)
         {
