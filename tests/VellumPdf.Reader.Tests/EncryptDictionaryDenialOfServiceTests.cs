@@ -78,8 +78,8 @@ namespace VellumPdf.Reader.Tests;
 /// One consequence of the larger fixture is worth knowing before diagnosing a red build. .NET cannot
 /// abort a synchronous test body, so xUnit reports <c>failed (canceled)</c> at the budget and the
 /// work carries on to completion. A genuine regression now orphans minutes of a pegged core rather
-/// than seconds of one, in the same process as the ten-second budget in <c>PdfObjectParserTests</c>.
-/// Expect a cluster of timeouts rather than one clean failure, and read this test as the cause.
+/// than seconds of one, in the same process as the rest of the Reader suite, which it slows while it
+/// runs. Read this test as the cause.
 /// </para>
 /// </summary>
 public sealed class EncryptDictionaryDenialOfServiceTests
@@ -114,6 +114,13 @@ public sealed class EncryptDictionaryDenialOfServiceTests
     // it into. The Timeout is the regression pin, and what it pins against is the broken cost the
     // class doc puts near eight minutes at this key count, not the half second the fixed path takes.
     // The class doc has both margins and why neither makes this a coin toss. So it stays.
+    //
+    // This is the one [Fact(Timeout)] left in the test projects that is a regression pin and not a
+    // 300 s hang guard (#400). It was sized in #456, after #400 was opened, and measured against
+    // the real defect: with IndexThreshold raised to int.MaxValue it was cancelled at 120.2 s.
+    // Nothing deterministic replaces it: what it pins is that no step between parsing /Encrypt and
+    // authenticating is quadratic, which is CPU cost with no state to check. Asserting IsIndexed on
+    // the parsed dictionary (reachable via reader.Trailer) would only repeat PdfDictionaryIndexTests.
 #pragma warning disable xUnit1069
     [Fact(Timeout = 120_000)]
     public void HugeEncryptDictionary_opensWellInsideTheBudget()
@@ -124,7 +131,9 @@ public sealed class EncryptDictionaryDenialOfServiceTests
         // which a mis-edit of the builder above would do silently. It checks the bytes and not the
         // parsed document, so it does not catch a reader that later starts discarding entries; that
         // would still return fast with both assertions below intact. Catching it needs an assertion
-        // on what the open produced, and the /Encrypt dictionary is not reachable from here.
+        // on what the open produced, and this test does not inspect the parsed /Encrypt dictionary
+        // (it is reachable via reader.Trailer, but checking its index would only repeat
+        // PdfDictionaryIndexTests).
         Assert.Contains(
             $"/Junk{FillerKeyCount - 1} {FillerKeyCount - 1}",
             Encoding.Latin1.GetString(bytes),

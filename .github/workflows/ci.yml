@@ -30,9 +30,9 @@ jobs:
     env:
       # Every pinned oracle version in one place, referenced by both the install steps and the
       # version-assert step below, so bumping one means editing one line rather than two.
-      VERAPDF_TAG: v1.30.2
-      QPDF_VERSION: '12.4.1'
-      QPDF_SHA256: 'db9122e88ec00c76ac6a14e09ffb92406db1773d47b968911ff6e69f28c09bf9'
+      VERAPDF_TAG: v1.30.4
+      QPDF_VERSION: '12.4.2'
+      QPDF_SHA256: 'db367d897829f22c4198ce1094143c9d467bd6ee7dfabc44ba6f02056b24f8b1'
       POPPLER_VERSION: '24.02.0-1ubuntu9.9'
       FONTS_DEJAVU_VERSION: '2.37-8'
       FONTS_TEXGYRE_VERSION: '20180621-6'
