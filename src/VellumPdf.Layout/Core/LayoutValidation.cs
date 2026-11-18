@@ -60,6 +60,18 @@ internal static class LayoutValidation
     /// </summary>
     internal static void ValidateStyle(TextStyle style, string owner)
     {
+        ValidateFontSize(style, owner);
+        ValidateColor(style.Color, owner, "text colour");
+    }
+
+    /// <summary>
+    /// The font-size half of <see cref="ValidateStyle"/>, for the callers that decide where a colour is
+    /// checked themselves: a running band and a table cell. 1c61fa6 refused a non-finite size there
+    /// and wrote no colour for text that is never drawn, so the size is checked before the layout and
+    /// the colour only where it is written.
+    /// </summary>
+    internal static void ValidateFontSize(TextStyle style, string owner)
+    {
         // Non-finite only, deliberately. A font size of zero or less renders today and reaches the
         // stream verbatim -- "/F1 0 Tf" at zero, "/F1 -12 Tf" at -12 -- a valid operator either
         // way, so refusing it would turn a working document into an exception. Deferred.
@@ -74,8 +86,6 @@ internal static class LayoutValidation
                 $"{owner} has a font size of {Format(style.FontSize)}, which cannot be laid out. " +
                 "A font size must be a finite number.");
         }
-
-        ValidateColor(style.Color, owner, "text colour");
     }
 
     /// <summary>

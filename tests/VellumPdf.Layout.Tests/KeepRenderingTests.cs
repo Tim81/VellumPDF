@@ -414,4 +414,43 @@ public sealed class KeepRenderingTests
 
         Assert.StartsWith("PDF does not support NaN or Infinity as a real number value", ex.Message, StringComparison.Ordinal);
     }
+
+    // ── A table cell's text colour is written only where the cell is drawn ───
+
+    private static Document TableUnder(string setup, TextStyle? cellStyle, TextStyle? defaultStyle)
+    {
+        var doc = new Document();
+        switch (setup)
+        {
+            case "document top -inf": doc.Margins = new EdgeInsets(double.NegativeInfinity, 72, 72, 72); break;
+            case "empty header -inf": doc.Header = new RunningBand(string.Empty) { Height = double.NegativeInfinity }; break;
+            default: doc.Add(new Paragraph(string.Empty) { Margins = new EdgeInsets(double.NegativeInfinity, 0, 0, 0) }); break;
+        }
+
+        var table = new TableElement { DefaultCellStyle = defaultStyle };
+        table.AddRow().AddCell(new Cell("a") { Style = cellStyle });
+        doc.Add(table);
+        return doc;
+    }
+
+    /// <summary>
+    /// 1c61fa6 saved these documents, a blank page, because the table never reaches the page and its
+    /// cell colour is never written. The colour was checked in Layout, so they were refused; it is
+    /// checked where it is written now.
+    /// </summary>
+    [Theory]
+    [InlineData("document top -inf", true)]
+    [InlineData("document top -inf", false)]
+    [InlineData("empty header -inf", true)]
+    [InlineData("empty header -inf", false)]
+    [InlineData("empty paragraph top -inf", true)]
+    [InlineData("empty paragraph top -inf", false)]
+    public void TableCellTextColour_nan_savesWhenTheTableIsNotDrawn_asOn1c61fa6(string setup, bool onTheCell)
+    {
+        var nan = new TextStyle { Color = _nan };
+        using var doc = TableUnder(setup, onTheCell ? nan : null, onTheCell ? null : nan);
+        using var plain = TableUnder(setup, null, null);
+
+        Assert.Equal(Summary(plain), Summary(doc));
+    }
 }

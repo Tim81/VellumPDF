@@ -80,11 +80,6 @@ public sealed class ParagraphRenderer : IRenderer
     /// </exception>
     public LayoutResult Layout(LayoutContext context)
     {
-        // A heading builds a paragraph with its own margins, so this covers both (#519). The
-        // paragraphs a list builds are the exception: their left inset is the list's indent or
-        // gutter, which the list has already checked and names, so a message here would blame a
-        // paragraph the caller never wrote.
-
         var area = context.Area.Deflate(_para.Margins);
         if (area.Width <= 0)
             return LayoutResult.Nothing();
@@ -124,7 +119,7 @@ public sealed class ParagraphRenderer : IRenderer
         _endLine = _startLine + maxLines;
         _occupied = area.WithHeight(maxLines * _lineHeight);
 
-        var overflow = new ParagraphRenderer(_para, _endLine) { _lines = _lines, StructType = StructType, ParentStructElem = ParentStructElem, ElementLanguage = ElementLanguage, MarginsCheckedByOwner = MarginsCheckedByOwner };
+        var overflow = new ParagraphRenderer(_para, _endLine) { _lines = _lines, StructType = StructType, ParentStructElem = ParentStructElem, ElementLanguage = ElementLanguage };
         var split = new ParagraphRenderer(_para, _startLine)
         {
             _lines = _lines,
@@ -134,7 +129,6 @@ public sealed class ParagraphRenderer : IRenderer
             StructType = StructType,
             ParentStructElem = ParentStructElem,
             ElementLanguage = ElementLanguage,
-            MarginsCheckedByOwner = MarginsCheckedByOwner,
         };
         return LayoutResult.Partial(_occupied, split, overflow);
     }
@@ -160,14 +154,6 @@ public sealed class ParagraphRenderer : IRenderer
     /// Written as <c>/Lang</c> on the struct element when non-null.
     /// </summary>
     internal string? ElementLanguage { get; set; }
-
-    /// <summary>
-    /// True when the renderer that built this paragraph has already checked its margins, so
-    /// <see cref="Layout"/> does not check them again under a name that is not the caller's.
-    /// <see cref="ListRenderer"/> sets it, because the left inset of its paragraphs is the list's
-    /// indent or gutter.
-    /// </summary>
-    internal bool MarginsCheckedByOwner { get; init; }
 
     /// <summary>Emits the wrapped lines as PDF text operators, applying alignment, justification, links and tagging.</summary>
     /// <remarks>See <see cref="IRenderer.Draw"/>.</remarks>

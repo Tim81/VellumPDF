@@ -92,21 +92,23 @@ public sealed class RefusalMessageTests
     /// It had no test at all, in any suite.
     /// </summary>
     [Theory]
-    [InlineData(true, "header")]
-    [InlineData(false, "footer")]
-    public void Band_nonFiniteFontSize_namesTheBand(bool header, string named)
+    [InlineData(true, "header", double.NaN, "NaN")]
+    [InlineData(false, "footer", double.NaN, "NaN")]
+    [InlineData(true, "header", double.PositiveInfinity, "positive infinity")]
+    [InlineData(false, "footer", double.PositiveInfinity, "positive infinity")]
+    [InlineData(true, "header", double.NegativeInfinity, "negative infinity")]
+    [InlineData(false, "footer", double.NegativeInfinity, "negative infinity")]
+    public void Band_nonFiniteFontSize_namesTheBand(bool header, string named, double size, string rendered)
     {
         using var doc = Page();
-        var band = new RunningBand("page {page}", Style(double.NaN)) { Height = 20 };
+        var band = new RunningBand("page {page}", Style(size)) { Height = 20 };
         if (header) doc.Header = band; else doc.Footer = band;
         doc.Add(new Paragraph("body", Style()));
 
-        // A band is not checked before it is drawn: 1c61fa6 wrote "/F1 NaN Tf" for it, and PdfCanvas
-        // now refuses that, with PdfReal's message.
-        using var ms = new MemoryStream();
-        var ex = Assert.Throws<ArgumentException>(() => doc.Save(ms));
-        Assert.StartsWith("PDF does not support NaN or Infinity as a real number value", ex.Message, StringComparison.Ordinal);
-        Assert.Equal(header ? "header" : "footer", named);
+        Assert.Equal(
+            $"The {named} band has a font size of {rendered}, which cannot be laid out. " +
+            "A font size must be a finite number.",
+            Refused(doc).Message);
     }
 
     /// <summary>

@@ -130,7 +130,7 @@ public sealed class TableRenderer : IRenderer
                 var cs = cell.Style ?? style;
                 // The authoring index, not col: the two diverge as soon as an earlier cell spans
                 // more than one column, and naming the column points at a cell nobody wrote.
-                LayoutValidation.ValidateStyle(cs, $"Table row {r}, cell {cellIndex}");
+                LayoutValidation.ValidateFontSize(cs, $"Table row {r}, cell {cellIndex}");
                 var colW = ColSpanWidth(col, cell.ColSpan);
                 var innerW = colW - cell.Padding.Horizontal;
                 var lines = WordWrapCount(cell.Content, cs, Math.Max(1, innerW));
@@ -344,7 +344,7 @@ public sealed class TableRenderer : IRenderer
             {
                 // Normal single-row cell — draw immediately
                 DrawCell(ctx, cell, row, col, colXPositions[col], rowY, colW, h, style, trElem,
-                    rowSpan, colSpan);
+                    rowSpan, colSpan, rowIdx, cellIdx - 1);
             }
             else
             {
@@ -355,7 +355,7 @@ public sealed class TableRenderer : IRenderer
                     totalSpanH += _rowHeights[sr];
 
                 DrawCell(ctx, cell, row, col, colXPositions[col], rowY, colW, totalSpanH, style,
-                    trElem, rowSpan, colSpan);
+                    trElem, rowSpan, colSpan, rowIdx, cellIdx - 1);
 
                 for (var sr = rowIdx + 1; sr < rowIdx + rowSpan; sr++)
                     for (var sc = col; sc < col + colSpan; sc++)
@@ -398,7 +398,8 @@ public sealed class TableRenderer : IRenderer
 
     private void DrawCell(DrawContext ctx, Cell cell, Row row, int colIdx,
         double cellX, double cellY, double colW, double h,
-        TextStyle style, PdfStructElem? trElem, int rowSpan, int colSpan)
+        TextStyle style, PdfStructElem? trElem, int rowSpan, int colSpan,
+        int rowIndex, int cellIndex)
     {
         var cs = cell.Style ?? style;
 
@@ -452,6 +453,9 @@ public sealed class TableRenderer : IRenderer
             canvas.SetFont(cf, cs.FontSize);
         }
 
+        // Where the text colour is written, so a cell that is never drawn is not refused for it; 1c61fa6
+        // saved those with any colour. The font size is checked in Layout.
+        LayoutValidation.ValidateColor(cs.Color, $"Table row {rowIndex}, cell {cellIndex}", "text colour");
         canvas.SetFillColorRgb(cs.Color.R, cs.Color.G, cs.Color.B);
 
         var lineHeight = cs.EffectiveLeading;

@@ -388,7 +388,7 @@ public sealed class ListRenderer : IRenderer
                 Margins = EdgeInsets.Zero,
                 Alignment = HorizontalAlignment.Left,
             };
-            var markerRenderer = new ParagraphRenderer(markerPara) { MarginsCheckedByOwner = true };
+            var markerRenderer = new ParagraphRenderer(markerPara);
 
             // Content paragraph: indented by the (possibly widened) gutter from the left edge.
             var contentPara = new Paragraph(item.Text, itemStyle)
@@ -396,7 +396,7 @@ public sealed class ListRenderer : IRenderer
                 Margins = new EdgeInsets(0, 0, 0, gutter),
                 Alignment = HorizontalAlignment.Left,
             };
-            var contentRenderer = new ParagraphRenderer(contentPara) { ElementLanguage = item.Language, MarginsCheckedByOwner = true };
+            var contentRenderer = new ParagraphRenderer(contentPara) { ElementLanguage = item.Language };
 
             result.Add((markerRenderer, contentRenderer));
 
@@ -445,7 +445,7 @@ public sealed class ListRenderer : IRenderer
                         Margins = new EdgeInsets(0, 0, 0, childGutter),
                     };
 
-                    result.Add((new ParagraphRenderer(childMarkerPara) { MarginsCheckedByOwner = true }, new ParagraphRenderer(childContentPara) { ElementLanguage = child.Language, MarginsCheckedByOwner = true }));
+                    result.Add((new ParagraphRenderer(childMarkerPara), new ParagraphRenderer(childContentPara) { ElementLanguage = child.Language }));
                 }
             }
         }
