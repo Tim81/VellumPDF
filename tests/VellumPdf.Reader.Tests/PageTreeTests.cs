@@ -1,7 +1,6 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
-using System.Diagnostics;
 using System.Reflection;
 using System.Text;
 using VellumPdf.Core;
@@ -268,18 +267,20 @@ public sealed class PageTreeTests
             (2, "<< /Type /Pages /Kids 9 0 R /Count 1 >>"),
             (9, "[ << /Type /Pages /Kids 9 0 R >> << /Type /Pages /Kids 9 0 R >> ]"));
 
-        var stopwatch = Stopwatch.StartNew();
         using var reader = Open(bytes);
         var pageCount = reader.PageCount;
-        stopwatch.Stop();
 
-        Assert.True(
-            stopwatch.Elapsed < TimeSpan.FromSeconds(2),
-            $"Walking the shared-/Kids-array fixture took {stopwatch.Elapsed}, expected well under 2s.");
         Assert.Equal(0, pageCount);
         Assert.Contains(
             reader.Diagnostics,
             d => d.Code == PdfReaderDiagnosticCode.PageTreeCycle && d.Severity == PdfReaderDiagnosticSeverity.Warning);
+
+        // "Before exhausting any budget" is what the test name promises, and it is observable
+        // without a clock (#400): a walk that keys its cycle guard only on node objects would run
+        // until the /Kids-examined budget or the depth cap stopped it, and say so with these two
+        // codes. The cycle diagnosis above ends the walk first.
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.PageTreeNodeLimitExceeded);
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.PageTreeDepthExceeded);
     }
 
     // ── 6c. Pure node-count budget (no object ever repeats) ──────────────────────────────────────
@@ -1620,16 +1621,13 @@ public sealed class PageTreeTests
         // for every leaf would report each ancestor's defect once PER LEAF, costing depth times
         // leaves candidate checks per attribute; this asserts it is reported once PER NODE instead
         // (ComputeEffectiveAttributes collects all three attribute failures on one node into one
-        // PageAttributeInvalid Report call, naming all three, rather than one call each), and that
-        // the walk stays fast doing it.
+        // PageAttributeInvalid Report call, naming all three, rather than one call each).
         const int nodeDepth = 200;
         const int leafCount = 5_000;
         var bytes = BuildDeepMalformedAttributeChainPdf(nodeDepth, leafCount, out var nodeObjectNumbers);
 
-        var stopwatch = Stopwatch.StartNew();
         using var reader = Open(bytes);
         var pageCount = reader.PageCount;
-        stopwatch.Stop();
 
         Assert.Equal(leafCount, pageCount);
         Assert.All(reader.Pages, p => AssertRectangle(0, 0, 612, 792, p.MediaBox));
@@ -1645,12 +1643,11 @@ public sealed class PageTreeTests
         foreach (var objectNumber in nodeObjectNumbers)
             Assert.Equal(1, invalid.Count(d => d.ObjectNumber == objectNumber));
 
-        // Not a hard budget assertion (machine-dependent); a generous ceiling that fails loudly if
-        // attribute resolution regresses to rescanning the ancestor chain per leaf.
-        Assert.True(
-            stopwatch.Elapsed < TimeSpan.FromSeconds(5),
-            $"Walking {nodeDepth} malformed ancestors over {leafCount} leaves took {stopwatch.Elapsed}, "
-            + "expected well under 5s.");
+        // Deliberately no clock here (#400). The reports-per-node count above is what catches a
+        // re-report per leaf, but a per-leaf rescan that stays quiet (computing the same answer
+        // again without reporting) is O(nodes x leaves) CPU and nothing observable: the walker's
+        // attribute resolution is a private static, and neither a diagnostic nor an allocation
+        // changes. No deterministic pin of that exists without a src hook, so none is claimed.
     }
 
     /// <summary>

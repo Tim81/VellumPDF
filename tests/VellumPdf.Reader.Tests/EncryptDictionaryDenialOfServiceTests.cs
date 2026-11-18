@@ -114,6 +114,12 @@ public sealed class EncryptDictionaryDenialOfServiceTests
     // it into. The Timeout is the regression pin, and what it pins against is the broken cost the
     // class doc puts near eight minutes at this key count, not the half second the fixed path takes.
     // The class doc has both margins and why neither makes this a coin toss. So it stays.
+    //
+    // This is the one [Fact(Timeout)] left in the test projects that is a regression pin and not a
+    // 300 s hang guard (#400). It was sized in #456, after #400 was opened, and measured against
+    // the real defect: with IndexThreshold raised to int.MaxValue it was cancelled at 120.2 s. Nothing deterministic
+    // can replace it at this level, because the defect is CPU-only and PdfDictionary's index is
+    // private; the state check that stands in for it lives in PdfDictionaryIndexTests (IsIndexed).
 #pragma warning disable xUnit1069
     [Fact(Timeout = 120_000)]
     public void HugeEncryptDictionary_opensWellInsideTheBudget()

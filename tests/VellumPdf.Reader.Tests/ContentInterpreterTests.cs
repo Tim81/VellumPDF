@@ -3641,7 +3641,7 @@ public sealed class ContentInterpreterTests
         // is the one exception allowed to). One try block covering all three would make a Run-time
         // InvalidDataException indistinguishable from an open-time one, silently accepting a
         // regression in that promise as just another "acceptable outcome".
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
         PdfDocumentReader? reader = null;
         PdfReadPage? page = null;
         try
@@ -3665,7 +3665,7 @@ public sealed class ContentInterpreterTests
             try
             {
                 var interpreter = new ContentInterpreter(reader!);
-                interpreter.Run(page, new RecordingVisitor());
+                interpreter.Run(page, new DiscardingVisitor());
             }
             catch (UnsupportedPdfFeatureException)
             {
@@ -3674,10 +3674,50 @@ public sealed class ContentInterpreterTests
         }
 
         reader?.Dispose();
+
+        // Per-sample allocation ceiling (#400), not a clock: a Stopwatch read after Run returns
+        // cannot end a hang and failed on a loaded runner. Per thread, for the reason the
+        // HugeFlatArrayOperand test above gives; Open, GetPage and Run are all synchronous. The
+        // ceiling is a fixed slack plus a per-byte factor on this sample's length:
+        //   - Slack: ReaderLimits.MinMaxDecodedBytes (1 MiB), the decoded-stream cap in force
+        //     above, the one buffer a sample may legitimately make Open allocate on top of its own
+        //     size. A cold first call (Open, GetPage, Run) measured 18,088 bytes.
+        //   - Factor: 1,024 B per input byte. Hostile 1 MiB content bodies allocated 178 B/byte at
+        //     worst (a run of 'q', which pushes graphics state), 74 for '/X1 Do' and 45 for inline
+        //     images whose EI candidates are probed. The shape that spends MaxProbeBytesPerRun
+        //     (false EI candidates each followed by an unterminated string) consumed the full
+        //     16,777,216 probe bytes on a 1 MiB body and allocated 2.1 MB in Run, so the probe
+        //     lexes without allocating per byte and its budget needs no term of its own. At 1 KiB
+        //     the same 'q' run measured 179.5 B/byte. 1,024 is 5.7x the worst of these. Debug and
+        //     Release measured identical bytes for every one of these shapes.
+        // This visitor discards what it is handed. The retaining RecordingVisitor this helper used
+        // before would charge the test's own list growth to the interpreter.
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - allocatedBefore;
+        var ceiling = ReaderLimits.MinMaxDecodedBytes + FuzzAllocationBytesPerInputByte * bytes.Length;
         Assert.True(
-            stopwatch.Elapsed <= TimeSpan.FromSeconds(4),
-            $"content interpretation took {stopwatch.Elapsed} on a {bytes.Length}-byte input.");
+            allocated <= ceiling,
+            $"content interpretation allocated {allocated} bytes on a {bytes.Length}-byte input, "
+            + $"past the {ceiling}-byte ceiling.");
         return reachedRun;
+    }
+
+    private const long FuzzAllocationBytesPerInputByte = 1_024;
+
+    private sealed class DiscardingVisitor : IContentVisitor
+    {
+        public void OnOperator(string operatorName, IReadOnlyList<PdfObject> operands, int offset) { }
+
+        public void OnInlineImage(PdfDictionary dictionary, ReadOnlyMemory<byte> data, int offset) { }
+
+        public void OnFormBegin(
+            PdfDictionary formDictionary, Matrix formMatrix, PdfRectangle? boundingBox, int objectNumber,
+            int offset)
+        {
+        }
+
+        public void OnFormEnd(int objectNumber) { }
+
+        public void OnImageXObject(ParsedStream stream, int offset) { }
     }
 
     // ── #98: OnImageXObject, CurrentResources, RunFormXObject ───────────────────────────────────

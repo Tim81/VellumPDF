@@ -1,7 +1,6 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
-using System.Diagnostics;
 using System.IO.Compression;
 using System.Reflection;
 using System.Text;
@@ -738,22 +737,20 @@ public sealed class EncryptedReconstructionTests
     // decompressing each one before ever reaching Filters' own 512 MiB per-decode cap. The fix
     // bounds and charges that decode work, so a run of Flate bombs trips the fail-closed cost
     // budget instead of running for minutes.
-    private static byte[] BuildFlateBombInflatingPastTheDecodeCap()
+    private static byte[] BuildFlateBombInflatingPastTheDecodeCap(long inflatedBytes)
     {
-        // 600 MiB of zero bytes deflates to roughly 600 KB (measured) — small enough to embed
-        // many copies in an in-memory fixture, and past the 512 MiB ReaderLimits.MaxDecodedBytes
-        // default cap a single decode call already enforces, so this targets the COST of getting
+        // Zero bytes deflate roughly 1000:1 (a 600 MiB run came to about 600 KB), small enough to
+        // embed many copies in an in-memory fixture. The caller picks a size past the decode cap
+        // it passes in PdfReaderOptions.MaxDecodedStreamBytes, so this targets the COST of getting
         // there across several candidates, not whether any one of them eventually fails.
-        const long InflatedBytes = 600L * 1024 * 1024;
-
         var compressed = new MemoryStream();
         using (var deflate = new ZLibStream(compressed, CompressionLevel.Optimal, leaveOpen: true))
         {
             var zeros = new byte[1024 * 1024];
             long written = 0;
-            while (written < InflatedBytes)
+            while (written < inflatedBytes)
             {
-                var chunkLength = (int)Math.Min(zeros.Length, InflatedBytes - written);
+                var chunkLength = (int)Math.Min(zeros.Length, inflatedBytes - written);
                 deflate.Write(zeros, 0, chunkLength);
                 written += chunkLength;
             }
@@ -766,9 +763,9 @@ public sealed class EncryptedReconstructionTests
     // candidates. Each declares a small, DIRECT /Length equal to the bomb's own compressed size,
     // so extent resolution never has to search for 'endstream' — the cost under test is entirely
     // A4 attempting to inflate each candidate's body, not locating it.
-    private static byte[] BuildEncryptedDocumentPaddedWithXrefStreamFlateBombs(int bombCount)
+    private static byte[] BuildEncryptedDocumentPaddedWithXrefStreamFlateBombs(int bombCount, long inflatedBytes)
     {
-        var flateBomb = BuildFlateBombInflatingPastTheDecodeCap();
+        var flateBomb = BuildFlateBombInflatingPastTheDecodeCap(inflatedBytes);
         var id = Convert.ToHexStringLower(HandBuiltEncryptedDocuments.Id0);
 
         var ms = new MemoryStream();
@@ -803,32 +800,55 @@ public sealed class EncryptedReconstructionTests
     }
 
     /// <summary>
-    /// The DoS proof is the STOPWATCH, not just the exception type: a budget that eventually
-    /// refuses after minutes of decompression is still a defect, just a slower one. 20 candidates
-    /// each inflating to 600 MiB is 12 GiB of decompression work if none of it is charged; bounded
-    /// and charged, refusal has to land in a small fraction of that.
+    /// A4 pre-charges each candidate decode at its worst case, so the first bomb exhausts the
+    /// reconstruction budget and the run fails closed instead of decoding all twenty. Two
+    /// deterministic pins, neither a clock (#400): the A4 refusal's own message, which a
+    /// reconstruction that merely failed some other way would not carry, and the bytes allocated on
+    /// this thread, because every candidate decode that does run inflates into a growable buffer up
+    /// to the decode cap. Twenty decodes allocate about twenty times what one does.
+    ///
+    /// The allocation pin does not discriminate a CPU-only defect, one that burned time without
+    /// allocating; no such mutation is known to exist here, since inflate and buffer growth are
+    /// the same work. The fixture inflates 4 MiB per bomb against a 1 MiB
+    /// <see cref="PdfReaderOptions.MaxDecodedStreamBytes"/> (the smallest the option accepts), the
+    /// same shape as the original 600 MiB against the 512 MiB default without the 600 MiB build.
     /// </summary>
     [Fact]
     public void FindingHigh_A4FlateBombPadding_refusesQuickly_viaCostBudget()
     {
         const int BombCount = 20;
-        var original = BuildEncryptedDocumentPaddedWithXrefStreamFlateBombs(BombCount);
+        const long DecodeCap = 1L * 1024 * 1024;
+        var original = BuildEncryptedDocumentPaddedWithXrefStreamFlateBombs(BombCount, inflatedBytes: 4L * DecodeCap);
 
         var (start, length) = XrefReconstructionTests.FindLastStartxrefDigits(original);
         Assert.True(length > 0);
         Assert.True(XrefReconstructionTests.CanApplyM1(original, length));
         var damaged = XrefReconstructionTests.ApplyM1_OutOfRangeStartxref(original, start, length);
+        var options = new PdfReaderOptions { AllowReconstruction = true, MaxDecodedStreamBytes = DecodeCap };
 
-        var stopwatch = Stopwatch.StartNew();
+        // One throwaway run so one-time JIT and static-initialiser allocations are not charged to
+        // the measured one. Per thread, not process-wide, for the reason ContentInterpreterTests
+        // gives: parallel classes allocate at the same time.
+        Assert.Throws<InvalidDataException>(() => PdfReader.Open(damaged, options));
+
         PdfDocumentReader? reader = null;
-        Assert.Throws<InvalidDataException>(() =>
-            reader = PdfReader.Open(damaged, new PdfReaderOptions { AllowReconstruction = true }));
-        stopwatch.Stop();
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        var ex = Assert.Throws<InvalidDataException>(() => reader = PdfReader.Open(damaged, options));
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
         Assert.Null(reader);
-        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(10),
-            $"expected the cost budget to refuse quickly; took {stopwatch.Elapsed}.");
+        Assert.Contains("could not verify this document's cross-reference streams within its cost budget", ex.Message);
+        Assert.True(
+            allocated < A4AllocationBound,
+            $"expected under {A4AllocationBound} bytes allocated before the cost budget refused; measured {allocated}.");
     }
+
+    // 8 MiB. With the first bomb's decode charged, Open allocated 2,153,352 to 2,153,888 bytes across
+    // Debug, Release and Release with tiered compilation off; with the charge made after the loop,
+    // so all twenty decodes ran and the message was unchanged, it allocated 42.1 million (Debug
+    // and Release). 8 MiB sits 3.9x above the first and 5.0x below the second. The bound is tied to this fixture: it scales with DecodeCap (one decode's
+    // growable buffer) and with the bomb count, so changing either means re-measuring.
+    private const long A4AllocationBound = 8L * 1024 * 1024;
 
     // ── Review finding (MEDIUM): a public-key dict inside a walk-swallowed region ───────────────
 

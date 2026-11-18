@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Cost-bound tests no longer assert on elapsed time (#400, #456).** A `Stopwatch` checked after a
+  call returns cannot end a hang, and a `Timeout` of 10 s was cancelled on a loaded CI runner (the
+  main run for 1c61fa6 failed `FindingHigh_A4FlateBombPadding_refusesQuickly_viaCostBudget` at
+  11.79 s). Each site now pins something the code decides, or a bound on bytes allocated on the
+  calling thread. A4 flate-bomb padding checks the budget's own message and an 8 MiB allocation
+  bound (2.15 MB measured when the budget works, 42.1 MB when it is charged after the loop), using
+  a 4 MiB bomb against a 1 MiB decode cap instead of 600 MiB. PNG zlib bombs bound `Load` at 1 MiB
+  (91,224 bytes measured, 10.5 MB when the cap is checked after the loop). `PdfDictionary` gains an
+  internal `IsIndexed`, so the #208 tests assert that the index exists and that `ShallowCopy`
+  carries it. The `ManyStreamsWithNoEol` parser test ends with one well-formed stream, so a scan
+  that skips EOL-less terminators returns a wrong body. The `ParserFuzzTests` and
+  `ContentInterpreterTests` fuzz targets check a per-sample allocation ceiling that scales with
+  input length, so CsCheck's seed still prints. The Layout cap tests use renderers that fail by
+  name after 200,004 `Layout` calls. Remaining `Timeout` values are 300 s hang guards, except the
+  `EncryptDictionaryDenialOfServiceTests` pin sized in #456. No public API changes.
+
 ## [2.3.3] - 2026-09-20
 
 This release is led by documentation. Layout's public surface now states what each member
