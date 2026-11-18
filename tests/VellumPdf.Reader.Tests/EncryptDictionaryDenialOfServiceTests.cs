@@ -131,7 +131,9 @@ public sealed class EncryptDictionaryDenialOfServiceTests
         // which a mis-edit of the builder above would do silently. It checks the bytes and not the
         // parsed document, so it does not catch a reader that later starts discarding entries; that
         // would still return fast with both assertions below intact. Catching it needs an assertion
-        // on what the open produced, and the /Encrypt dictionary is not reachable from here.
+        // on what the open produced, and this test does not inspect the parsed /Encrypt dictionary
+        // (it is reachable via reader.Trailer, but checking its index would only repeat
+        // PdfDictionaryIndexTests).
         Assert.Contains(
             $"/Junk{FillerKeyCount - 1} {FillerKeyCount - 1}",
             Encoding.Latin1.GetString(bytes),

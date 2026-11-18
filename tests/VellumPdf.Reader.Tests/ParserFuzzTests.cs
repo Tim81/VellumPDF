@@ -53,8 +53,8 @@ namespace VellumPdf.Reader.Tests;
 /// CsCheck's printed seed and do not depend on the machine. Neither
 /// bound discriminates a defect that burns CPU without allocating or emitting tokens. The
 /// <c>Timeout</c> on each case is a 300 s hang guard and nothing else: the nightly run
-/// (44078641870, <c>VELLUMPDF_FUZZ_ITER=200000</c>) passed all five tests of this class in 14 s 992 ms,
-/// a twentieth of the guard. Local Release runs of the class at 1,000,000 iterations per case took
+/// (44078641870, <c>VELLUMPDF_FUZZ_ITER=200000</c>) passed all five tests of this class in
+/// 14 s 992 ms, a twentieth of the guard. Local Release runs of the class at 1,000,000 iterations per case took
 /// 28.8 s to 89 s on this machine (2026-11-18).
 /// </para>
 /// <para>
