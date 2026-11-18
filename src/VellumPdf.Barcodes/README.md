@@ -3,7 +3,7 @@
 [![NuGet](https://img.shields.io/nuget/v/VellumPdf.Barcodes.svg)](https://www.nuget.org/packages/VellumPdf.Barcodes)
 [![CI](https://github.com/Tim81/VellumPDF/actions/workflows/ci.yml/badge.svg)](https://github.com/Tim81/VellumPDF/actions/workflows/ci.yml)
 
-The barcode add-on for **[VellumPdf](https://github.com/Tim81/VellumPDF)**, a dependency-free PDF library for .NET 10. Eleven symbologies rendered as vector rectangles (never a raster image), so they stay crisp at any zoom and print resolution.
+The barcode add-on for **[VellumPdf](https://github.com/Tim81/VellumPDF)**, a dependency-free PDF library for .NET 10 and .NET 11. Eleven symbologies rendered as vector rectangles (never a raster image), so they stay crisp at any zoom and print resolution.
 
 - QR (including Micro QR M1–M4 and GS1-mode QR with GS1 Digital Link), PDF417, Code 128 (plain and GS1-128), Code 39 (including Full ASCII), EAN-13/EAN-8/UPC-A/UPC-E with EAN-2/EAN-5 add-ons, ITF-14, Data Matrix (including GS1 Data Matrix), and Aztec Code.
 - QR chooses version, data mask, and error-correction level automatically, and supports an Auto / Latin-1 / UTF-8 / UTF-8+ECI charset policy; PDF417 compacts text, byte, and numeric content automatically.

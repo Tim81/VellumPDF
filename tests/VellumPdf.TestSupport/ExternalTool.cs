@@ -864,7 +864,11 @@ public static class ExternalTool
         // own process (Barcodes.Tests, Kernel.Tests, Layout.Tests, ...): File.AppendAllText's
         // internal lock only serializes writers within one process, so several processes
         // appending to one shared path would still interleave or truncate each other's writes.
-        var path = $"{basePath}.{Environment.ProcessId}";
+        // The target framework goes in front of the id because every test project now runs once
+        // per TFM and ci.yml asserts a floor per TFM: with the id alone the floor step could not
+        // tell which TFM wrote a file, so one TFM's logs would satisfy the floor for a TFM whose
+        // runs logged nothing.
+        var path = $"{basePath}.{TargetFrameworkLabel()}.{Environment.ProcessId}";
 
         // Create the parent directory and prove the path is actually writable once, here, at
         // type-init — not on the first real LogInvocation call, which is reached from deep
@@ -891,6 +895,31 @@ public static class ExternalTool
         }
 
         return path;
+    }
+
+    // The label comes from AppContext.TargetFrameworkName, which is the framework the test
+    // executable was built for (".NETCoreApp,Version=v10.0" becomes "net10.0"). Environment.Version
+    // would name the runtime that is actually running, and that differs from the build target
+    // whenever the host rolls a net10.0 build forward onto a newer runtime. Anything that is not a
+    // .NETCoreApp name is kept, with the characters a file name or a shell glob would treat
+    // specially replaced, so the label can never split the path into extra segments.
+    private static string TargetFrameworkLabel()
+    {
+        const string Prefix = ".NETCoreApp,Version=v";
+        var name = AppContext.TargetFrameworkName;
+        if (string.IsNullOrEmpty(name))
+            return "unknown";
+        if (name.StartsWith(Prefix, StringComparison.Ordinal))
+            return "net" + name[Prefix.Length..];
+
+        var chars = name.ToCharArray();
+        for (var i = 0; i < chars.Length; i++)
+        {
+            if (!char.IsAsciiLetterOrDigit(chars[i]) && chars[i] != '.')
+                chars[i] = '_';
+        }
+
+        return new string(chars);
     }
 
     private static void LogInvocation(string tool, IReadOnlyList<string> arguments)

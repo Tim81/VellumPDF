@@ -22,9 +22,11 @@ jobs:
     runs-on: ubuntu-24.04
     # A hung test (a real one, or a DoesNotHang-named guard whose own assertion turned out not to
     # bound it) would otherwise run to GitHub's 360-minute default and burn the runner quietly
-    # instead of failing loudly. A full run currently takes under 16 minutes; 30 leaves headroom
-    # for oracle/network variance without masking a genuine hang for hours.
-    timeout-minutes: 30
+    # instead of failing loudly. Every test project runs once per target framework (net10.0 and
+    # net11.0). The first CI run on both (build job 29m0s, Test step 23m22s, 14,214 tests) put 60
+    # at about twice the job time, which leaves room for a slow runner without letting a hang run
+    # on for hours.
+    timeout-minutes: 60
     env:
       # Every pinned oracle version in one place, referenced by both the install steps and the
       # version-assert step below, so bumping one means editing one line rather than two.
@@ -51,9 +53,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      # global.json pins the SDK (11.0.1xx). The test projects also run on net10.0, and a net10.0
+      # test
+      # host needs the net10.0 runtime, which the 11.0 SDK does not carry. setup-dotnet installs
+      # both lists, so naming 10.0.x here makes that requirement explicit instead of relying on
+      # the runner image happening to ship it.
       - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
+          dotnet-version: 10.0.x
 
       - run: dotnet --version
 
@@ -231,8 +239,8 @@ jobs:
         # gate matches on the bare dependency name rather than the calling suite, for the GIF
         # oracle's python dependency too (OracleGate.cs). ORACLE_INVOCATION_LOG
         # makes ExternalTool.RunProcess append one line per successful, non-probe oracle launch to a
-        # file suffixed with its own process id, so the step below can assert the oracles didn't
-        # just resolve — they actually ran (#228).
+        # file suffixed with its target framework and process id, so the step below can assert the
+        # oracles didn't just resolve — they actually ran (#228).
         env:
           REQUIRE_VERAPDF: '1'
           REQUIRE_BARCODE_ORACLE: '1'
@@ -268,10 +276,11 @@ jobs:
           # runners are ephemeral and would not carry one over on their own (#228 review). The
           # coverage directory gets the same treatment for the same reason: a stale report left
           # over from an earlier run on a reused runner could otherwise be counted alongside this
-          # run's own seven, hiding a report this run genuinely failed to produce.
+          # run's own fourteen (seven test projects, two target frameworks), hiding a report this
+          # run genuinely failed to produce.
           rm -f "${{ runner.temp }}/oracle-invocations".*
           rm -rf "${{ runner.temp }}/coverage"
-          dotnet test VellumPdf.slnx -c Release --no-build --results-directory ${{ runner.temp }}/coverage -- --coverlet
+          dotnet test VellumPdf.slnx -c Release --no-build --results-directory-layout per-module --results-directory ${{ runner.temp }}/coverage -- --coverlet
 
       - name: Assert oracle invocation floors
         # #227 made a missing oracle tool fail loudly instead of passing vacuously; it says nothing
@@ -281,21 +290,30 @@ jobs:
         # to happen here, workflow-side, rather than as an in-process assertion: each test project
         # above runs as its own process, and nothing guarantees which one finishes last. Each
         # process appended its own '<tool><TAB><first argument>' lines to a file suffixed with its
-        # process id (see ORACLE_INVOCATION_LOG on the Test step) for every successful, non-probe
+        # target framework and process id (see ORACLE_INVOCATION_LOG on the Test step; the file is
+        # named <base>.<tfm>.<pid>) for every successful, non-probe
         # launch — an identity probe (ExternalTool.CheckIdentity) and a launch that never started
         # are both excluded, so neither can pad a tool's count without the tool having actually
-        # validated anything; this step concatenates those files and sums a count per tool.
+        # validated anything; this step concatenates each target framework's files and sums a count
+        # per tool, per framework. Every test project runs on both net10.0 and net11.0, so a
+        # framework whose runs logged nothing is a framework whose oracles never engaged: the loop
+        # below walks an explicit framework list, and a framework with no log files counts zero
+        # and fails, rather than passing because the other framework's files were found.
         # python3 is folded into python's count: both ZxingDecodeOracleTests and
         # GifPillowOracleTests fall back from "python" to "python3" and log whichever name
         # actually launched, so each pair is one oracle under two possible names, not two oracles.
         #
-        # Floors are 90% of a full local run with every oracle enabled (REQUIRE_ORACLES=1, QPDF_HOME
-        # / POPPLER_HOME / VERAPDF_HOME all pointed at real installs), rounded down, measured
-        # against this same commit: verapdf 304, pdftoppm 135, python 137, qpdf 40, pdftotext 8,
-        # pdfsig 2. qpdf moved from 29 with #99's third-party SaveDecrypted round-trip oracle
+        # Floors are 90% of a full run with every oracle enabled, rounded down. They apply to each
+        # target framework separately. The first CI run on both frameworks (ubuntu-24.04, veraPDF
+        # 1.30.2, qpdf 12.4.1, poppler 24.02.0) logged the same counts under net10.0 and under
+        # net11.0: verapdf 311, pdftoppm 135, python 137, qpdf 57, pdftotext 8, pdfsig 2. A Windows
+        # run the same day logged identical counts. The floors below are 90% of those, and verapdf
+        # (was 273) and qpdf (was 36) were re-baselined to them: the old values came from earlier
+        # measurements of 304 and 40, and 36 had fallen to 63% of the current qpdf count. qpdf rose
+        # from 29 with #99's third-party SaveDecrypted round-trip oracle
         # (SaveDecryptedThirdPartyQpdfOracleTests, 11 fixtures each running one `qpdf --check`).
-        # verapdf moved from 298 with #138's UaEncryptionPermissionsVeraPdfTests: 4 test methods,
-        # 6 verapdf launches total (two of the four call both Validate and Report). python moved
+        # verapdf rose from 298 with #138's UaEncryptionPermissionsVeraPdfTests: 4 test methods,
+        # 6 verapdf launches total (two of the four call both Validate and Report). python rose
         # from 135 with #490's GifPillowOracleTests: 2 test methods, each launching python once
         # for eng/gif-oracle.py; pdftoppm is untouched since that oracle never rasterizes a PDF.
         # 90% tolerates ordinary run-to-run variance (a data-driven theory whose case
@@ -312,33 +330,36 @@ jobs:
 
           log_prefix="${{ runner.temp }}/oracle-invocations"
           shopt -s nullglob
-          files=("$log_prefix".*)
-          if [ ${#files[@]} -eq 0 ]; then
-            echo "::error::No oracle invocation log files found matching $log_prefix.*"
-            exit 1
-          fi
-          echo "Invocation log files: ${files[*]}"
 
           declare -A floors=(
-            [verapdf]=273
+            [verapdf]=279
             [pdftoppm]=121
             [python]=123
-            [qpdf]=36
+            [qpdf]=51
             [pdftotext]=7
             [pdfsig]=1
           )
 
           failed=0
-          printf '%-10s %8s %8s\n' tool count floor
-          for tool in verapdf pdftoppm python qpdf pdftotext pdfsig; do
-            # python3 counts toward python's total: see the step comment above.
-            count=$(awk -F'\t' -v t="$tool" '$1 == t || (t == "python" && $1 == "python3") { c++ } END { print c + 0 }' "${files[@]}")
-            floor=${floors[$tool]}
-            printf '%-10s %8d %8d\n' "$tool" "$count" "$floor"
-            if [ "$count" -lt "$floor" ]; then
-              echo "::error::$tool was invoked $count times, below the floor of $floor — an oracle that should have run may not have"
+          for tfm in net10.0 net11.0; do
+            files=("$log_prefix.$tfm".*)
+            if [ ${#files[@]} -eq 0 ]; then
+              echo "::error::No oracle invocation log files found matching $log_prefix.$tfm.*: the $tfm test runs logged nothing"
               failed=1
+              continue
             fi
+            echo "Invocation log files ($tfm): ${files[*]}"
+            printf '%-8s %-10s %8s %8s\n' tfm tool count floor
+            for tool in verapdf pdftoppm python qpdf pdftotext pdfsig; do
+              # python3 counts toward python's total: see the step comment above.
+              count=$(awk -F'\t' -v t="$tool" '$1 == t || (t == "python" && $1 == "python3") { c++ } END { print c + 0 }' "${files[@]}")
+              floor=${floors[$tool]}
+              printf '%-8s %-10s %8d %8d\n' "$tfm" "$tool" "$count" "$floor"
+              if [ "$count" -lt "$floor" ]; then
+                echo "::error::$tool was invoked $count times under $tfm, below the floor of $floor — an oracle that should have run may not have"
+                failed=1
+              fi
+            done
           done
 
           if [ "$failed" -ne 0 ]; then
@@ -353,18 +374,22 @@ jobs:
           import xml.etree.ElementTree as ET, glob, os, sys
 
           cov_dir = os.path.join(os.environ["RUNNER_TEMP"], "coverage")
-          # coverlet.MTP (#200) names its own report coverage.cobertura.<timestamp>.xml, with the
-          # timestamp coverlet stamps at the moment it writes the file rather than VSTest's fixed
-          # coverage.cobertura.xml under a per-run guid folder, so the glob matches the timestamp
-          # segment instead of a guid directory.
-          files = glob.glob(os.path.join(cov_dir, "**", "coverage.cobertura.*.xml"), recursive=True)
-          if not files:
-              print("::error::No coverage.cobertura.*.xml files found under", cov_dir)
-              sys.exit(1)
 
-          THRESHOLD = 84
-          PER_ASSEMBLY_FLOOR = 40
-          MIN_TOTAL_LINES = 29000
+          # Every test project runs once per target framework, and the Test step passes
+          # `--results-directory-layout per-module`, which writes each run's report under
+          # <cov_dir>/<project>/<tfm>_<arch>/. That layout is what makes a report attributable:
+          # coverlet.MTP
+          # names a report only by the millisecond it was written, so the flat layout gives no way
+          # to say
+          # which project or framework produced a file, and two runs finishing in the same
+          # millisecond would
+          # overwrite each other. The checks below therefore walk the EXPECTED set of (project,
+          # tfm) pairs and
+          # require exactly one report in each directory, rather than discovering whatever happens
+          # to be on
+          # disk, so a run that never wrote its report is a failure by name instead of a smaller
+          # input.
+          TFMS = ("net10.0", "net11.0")
 
           # coverlet.testconfig.json scopes instrumentation to these eight (#200; #229 under
           # the old coverlet.collector runsettings). Cobertura's <package name> is the compiled
@@ -381,27 +406,121 @@ jobs:
               "vellum-preflight",
           })
 
-          # One report per test project — Barcodes, Cli, Conformance, Kernel, Layout, Reader and
-          # TestSupport.Tests. Checked further down, after the assembly-name check: three of the seven
-          # (Kernel.Tests, Layout.Tests, Reader.Tests) happen to instrument an identical assembly set
-          # (Kernel, Layout, Reader, Signing), so losing one of them costs no assembly its name and the
-          # name check alone would miss it silently. Update alongside EXPECTED_ASSEMBLIES when a test
-          # project is added or removed.
-          EXPECTED_REPORT_COUNT = 7
+          # The assemblies each test project's own report must carry. Three projects (Kernel.Tests,
+          # Layout.Tests, Reader.Tests) instrument an identical set, so once reports are merged,
+          # one of them
+          # losing every package but a single one costs no assembly its name and leaves every
+          # merged line
+          # covered by the other two. Checking each report against its own set is what catches that.
+          # VellumPdf.TestSupport.Tests only exercises VellumPdf.TestSupport, which the include
+          # filter
+          # removes from instrumentation, so its report is expected to be empty; it is the one
+          # report
+          # that is allowed to be.
+          EXPECTED_BY_PROJECT = {
+              "VellumPdf.Barcodes.Tests": frozenset({
+                  "VellumPdf.Barcodes", "VellumPdf.Kernel", "VellumPdf.Layout",
+              }),
+              "VellumPdf.Cli.Tests": frozenset({
+                  "VellumPdf.Conformance", "VellumPdf.Fonts.Standard14", "VellumPdf.Kernel",
+                  "VellumPdf.Layout", "VellumPdf.Reader", "VellumPdf.Signing", "vellum-preflight",
+              }),
+              "VellumPdf.Conformance.Tests": frozenset({
+                  "VellumPdf.Conformance", "VellumPdf.Fonts.Standard14", "VellumPdf.Kernel",
+                  "VellumPdf.Layout", "VellumPdf.Reader", "VellumPdf.Signing",
+              }),
+              "VellumPdf.Kernel.Tests": frozenset({
+                  "VellumPdf.Kernel", "VellumPdf.Layout", "VellumPdf.Reader", "VellumPdf.Signing",
+              }),
+              "VellumPdf.Layout.Tests": frozenset({
+                  "VellumPdf.Kernel", "VellumPdf.Layout", "VellumPdf.Reader", "VellumPdf.Signing",
+              }),
+              "VellumPdf.Reader.Tests": frozenset({
+                  "VellumPdf.Kernel", "VellumPdf.Layout", "VellumPdf.Reader", "VellumPdf.Signing",
+              }),
+              "VellumPdf.TestSupport.Tests": frozenset(),
+          }
 
-          # Each test project emits one cobertura report instrumenting the same shared
-          # assemblies, so a source line appears in several reports. Merge per (file, line):
-          # count each line once, covered if any report covered it. Summing the per-report
-          # totals would multiply the shared surface by the number of test projects.
-          merged = {}
-          empty_report_count = 0
-          for f in sorted(files):
-              root = ET.parse(f).getroot()
-              file_lines = {}
+          THRESHOLD = 84
+          PER_ASSEMBLY_FLOOR = 40
+          MIN_TOTAL_LINES = 29000
+
+          # A per-assembly floor so a new subsystem landing at ~0% coverage can't hide behind the
+          # other seven assemblies' average (#229) — a whole new module moves the combined figure
+          # by well under a point. This is a floor, not a target: set comfortably below every
+          # assembly's measured rate so it only fires on a real regression.
+          #
+          # The floor alone doesn't stop the #229 defect one level down: an assembly whose instrumentation
+          # collapses to a single covered line reports 100% and clears it, while its real multi-thousand-
+          # line denominator vanishes from the merge — the same shape as a missing report, just contained
+          # to one assembly instead of all of them. MIN_VALID_LINES pins each assembly's valid-line count
+          # to roughly 75% of what it measured when this gate was re-baselined (#229), so a collapsed
+          # denominator fails even though its (tiny) numerator still divides out to 100%. Re-measured
+          # for the coverlet.MTP migration (#200) once instrumentation was scoped through
+          # coverlet.testconfig.json rather than command-line filters (see the Test step): every
+          # assembly's valid-line count matched its pre-migration measurement at the time (several
+          # have since grown as unrelated PRs added code, Reader more than fourfold; the comments
+          # below
+          # give the 2026-11-18 measurement), so these floors carry over unchanged rather than
+          # re-baselined
+          # lower. They apply to each target framework's merge and to the merge across both.
+          MIN_VALID_LINES = {
+              # Comments give the valid lines measured on 2026-11-18 (Windows, Release, net10.0 and
+              # net11.0 alike unless noted); the gate's own output is the current measurement.
+              "VellumPdf.Barcodes": 3800,        # 5064
+              "VellumPdf.Conformance": 7750,     # 10396
+              "VellumPdf.Fonts.Standard14": 20,  # 29: a 29-line assembly needs more slack
+              "VellumPdf.Kernel": 5800,          # 7834
+              "VellumPdf.Layout": 1000,          # 1707
+              "VellumPdf.Reader": 1900,          # 11518
+              "VellumPdf.Signing": 800,          # 1109
+              "vellum-preflight": 2300,          # 3092 net10.0, 2640 net11.0
+          }
+
+          # coverlet.MTP (#200) names its own report coverage.cobertura.<timestamp>.xml, with the
+          # timestamp coverlet stamps at the moment it writes the file rather than VSTest's fixed
+          # coverage.cobertura.xml under a per-run guid folder, so the glob matches the timestamp
+          # segment.
+          all_reports = sorted(glob.glob(os.path.join(cov_dir, "**", "coverage.cobertura.*.xml"), recursive=True))
+          if not all_reports:
+              print("::error::No coverage.cobertura.*.xml files found under", cov_dir)
+              sys.exit(1)
+
+          errors = []
+          expected_reports = {}
+          for project in EXPECTED_BY_PROJECT:
+              for tfm in TFMS:
+                  found = sorted(glob.glob(os.path.join(cov_dir, project, tfm + "_*", "coverage.cobertura.*.xml")))
+                  if len(found) != 1:
+                      errors.append(f"{project} {tfm}: found {len(found)} coverage reports under "
+                                    f"{os.path.join(cov_dir, project, tfm + '_*')}, expected exactly 1.")
+                  else:
+                      expected_reports[(project, tfm)] = found[0]
+
+          # Anything outside the expected directories is a failure too. It is also what a Test step
+          # that
+          # silently ignored --results-directory-layout looks like: every report in one flat
+          # directory,
+          # none of them where the loop above looks.
+          stray = sorted(set(all_reports) - set(expected_reports.values()))
+          for f in stray:
+              errors.append(f"Unexpected coverage report {os.path.relpath(f, cov_dir)}: it is not the single "
+                            "report of any expected (test project, target framework) pair.")
+          if errors:
+              for e in errors:
+                  print("::error::" + e)
+              sys.exit(1)
+
+
+          def read_report(path):
+              root = ET.parse(path).getroot()
+              lines = {}
+              packages = set()
               # Key by (assembly, file, line) so same-named files in different assemblies
               # (e.g. AssemblyInfo.cs) do not collide.
               for pkg in root.iter("package"):
                   pkgname = pkg.get("name", "")
+                  packages.add(pkgname)
                   for cls in pkg.iter("class"):
                       fn = cls.get("filename", "").replace("\\", "/")
                       # A deterministic build can embed a source path either rooted at its own project
@@ -433,133 +552,157 @@ jobs:
                                   break
                       for ln in cls.iter("line"):
                           key = (pkgname, fn, ln.get("number"))
-                          file_lines[key] = file_lines.get(key, False) or int(ln.get("hits", 0)) > 0
-              fc = sum(1 for v in file_lines.values() if v)
-              fv = len(file_lines)
-              print(f"  {os.path.relpath(f, cov_dir)}: covered={fc}, valid={fv}, line-rate={fc/fv if fv else 0:.4f}")
-              if fv == 0:
-                  empty_report_count += 1
-              for key, v in file_lines.items():
+                          lines[key] = lines.get(key, False) or int(ln.get("hits", 0)) > 0
+              return lines, packages
+
+
+          # A hand-written source file is one physical file in both target frameworks, so a line
+          # keeps one
+          # key across them. A generated file is not: the System.Text.Json source generator writes
+          # VellumPdf.Cli's CliJsonContext.*.g.cs under obj/Release/<tfm>/, a different path per
+          # framework, and its output differs in size (a 2026-11-18 local run measured
+          # vellum-preflight at
+          # 3092 valid lines under net10.0 and 2640 under net11.0, against 4971 merged; every other
+          # assembly's count was identical in all three). The merge therefore counts those
+          # generated lines
+          # once per framework, so vellum-preflight's merged denominator (4971) is larger than
+          # either
+          # framework's own, and its merged rate falls between the two (84.0% net10.0, 81.3%
+          # net11.0,
+          # 83.0% merged, same run). The combined figure was 91.3% merged against 91.7% for each
+          # framework. The generated code is counted twice, not lost, which is why the
+          # per-framework and
+          # merged valid-line counts are both printed below.
+          per_tfm = {tfm: {} for tfm in TFMS}
+          for (project, tfm), path in sorted(expected_reports.items()):
+              lines, packages = read_report(path)
+              fc = sum(1 for v in lines.values() if v)
+              fv = len(lines)
+              print(f"  {os.path.relpath(path, cov_dir)}: covered={fc}, valid={fv}, line-rate={fc/fv if fv else 0:.4f}")
+              expected = EXPECTED_BY_PROJECT[project]
+              # A crashed or partial run still writes a coverage.cobertura.xml (#229), and a
+              # report's
+              # exclusive lines leaving the denominator along with the numerator can make the
+              # percentage RISE
+              # while actual coverage falls. Failing by project, framework and assembly name makes
+              # that
+              # actionable instead of an arithmetic side effect.
+              if not expected:
+                  if fv != 0:
+                      errors.append(f"{project} {tfm}: expected an empty report, found {fv} valid lines. "
+                                    "VellumPdf.TestSupport is excluded from instrumentation, so something "
+                                    "has changed in coverlet.testconfig.json.")
+              else:
+                  if fv == 0:
+                      errors.append(f"{project} {tfm}: the report is empty (covered=0, valid=0). Only "
+                                    "VellumPdf.TestSupport.Tests may be.")
+                  missing = expected - packages
+                  if missing:
+                      errors.append(f"{project} {tfm}: no coverage data for {', '.join(sorted(missing))}. "
+                                    "The report is missing those packages or was truncated.")
+                  unexpected = packages - EXPECTED_ASSEMBLIES
+                  if unexpected:
+                      display = sorted(a if a else "(unnamed package)" for a in unexpected)
+                      errors.append(f"{project} {tfm}: unexpected assemblies in coverage data: "
+                                    f"{', '.join(display)}. Add them to EXPECTED_ASSEMBLIES if this is a new "
+                                    "shipping package, or fix coverlet.testconfig.json if a test assembly "
+                                    "is leaking through the include filter.")
+              for key, v in lines.items():
+                  per_tfm[tfm][key] = per_tfm[tfm].get(key, False) or v
+          if errors:
+              for e in errors:
+                  print("::error::" + e)
+              sys.exit(1)
+
+          merged = {}
+          for tfm in TFMS:
+              for key, v in per_tfm[tfm].items():
                   merged[key] = merged.get(key, False) or v
 
-          # A crashed or partial run still writes a coverage.cobertura.xml (#229): the file-count
-          # check further down can't tell that apart from a healthy one, and a report's exclusive lines
-          # leaving the denominator along with the numerator can make the percentage RISE while
-          # actual coverage falls. Checking which assembly NAMES survived the merge catches both
-          # a report that never got written and one that got written empty — either way the
-          # assembly has no keys in `merged` — and fails by name instead of by an arithmetic side
-          # effect. This runs before the count/empty checks below so a report with an assembly
-          # exclusive to it still fails by naming that assembly, which is the more actionable message
-          # when it applies.
-          found_assemblies = frozenset(asm for asm, _, _ in merged)
-          missing = EXPECTED_ASSEMBLIES - found_assemblies
-          if missing:
-              print(f"::error::No coverage data for: {', '.join(sorted(missing))}. "
-                    "A report is missing, or the matching test project's report was written empty.")
-              sys.exit(1)
-          unexpected = found_assemblies - EXPECTED_ASSEMBLIES
-          if unexpected:
-              # An empty <package name=""> would otherwise join this list as a literal empty string,
-              # printing a bare "." with nothing readable in front of it.
-              display = sorted(asm if asm else "(unnamed package)" for asm in unexpected)
-              print(f"::error::Unexpected assemblies in coverage data: {', '.join(display)}. "
-                    "Add them to EXPECTED_ASSEMBLIES if this is a new shipping package, or fix "
-                    "coverlet.testconfig.json if a test assembly is leaking through the "
-                    "exclude filter.")
-              sys.exit(1)
 
-          # The name check above can't see a report whose whole assembly set is shared with other
-          # surviving reports (Kernel.Tests, Layout.Tests, Reader.Tests all instrument
-          # Kernel+Layout+Reader+Signing identically) — losing one of those costs no assembly its name.
-          # Catch that by counting reports instead.
-          if len(files) != EXPECTED_REPORT_COUNT:
-              print(f"::error::Found {len(files)} coverage.cobertura.*.xml files under {cov_dir}, "
-                    f"expected {EXPECTED_REPORT_COUNT}.")
-              sys.exit(1)
+          def by_assembly(lines):
+              out = {}
+              for (asm, _fn, _ln), v in lines.items():
+                  c, t = out.get(asm, (0, 0))
+                  out[asm] = (c + (1 if v else 0), t + 1)
+              return out
 
-          # VellumPdf.TestSupport.Tests only exercises VellumPdf.TestSupport, which the exclude filter
-          # above removes from instrumentation, so its own report is expected to carry zero packages and
-          # zero valid lines — the one report this tolerates. coverlet.MTP writes every project's report
-          # flat into the shared --results-directory, named only by its own write timestamp, with
-          # nothing in the file name or content saying which test project produced it, so this counts
-          # empty reports rather than matching one by name: a second empty report means something
-          # besides VellumPdf.TestSupport.Tests was written empty by a crashed or partial run — the same
-          # identical-assembly-set gap the count check above closes, but for a report emptied in place
-          # rather than deleted.
-          ALLOWED_EMPTY_REPORTS = 1
-          if empty_report_count > ALLOWED_EMPTY_REPORTS:
-              print(f"::error::{empty_report_count} coverage reports were empty (covered=0, valid=0); "
-                    f"expected at most {ALLOWED_EMPTY_REPORTS} (VellumPdf.TestSupport.Tests's own report).")
-              sys.exit(1)
 
-          # A per-assembly floor so a new subsystem landing at ~0% coverage can't hide behind the
-          # other seven assemblies' average (#229) — a whole new module moves the combined figure
-          # by well under a point. This is a floor, not a target: set comfortably below every
-          # assembly's measured rate so it only fires on a real regression.
-          #
-          # The floor alone doesn't stop the #229 defect one level down: an assembly whose instrumentation
-          # collapses to a single covered line reports 100% and clears it, while its real multi-thousand-
-          # line denominator vanishes from the merge — the same shape as a missing report, just contained
-          # to one assembly instead of all of them. MIN_VALID_LINES pins each assembly's valid-line count
-          # to roughly 75% of what it measured when this gate was re-baselined (#229), so a collapsed
-          # denominator fails even though its (tiny) numerator still divides out to 100%. Re-measured
-          # for the coverlet.MTP migration (#200) once instrumentation was scoped through
-          # coverlet.testconfig.json rather than command-line filters (see the Test step): every
-          # assembly's valid-line count matched its pre-migration measurement at the time (three
-          # have since grown a little as unrelated PRs added code; the numbers below track the
-          # current measurement), so these floors carry over unchanged rather than re-baselined
-          # lower.
-          MIN_VALID_LINES = {
-              "VellumPdf.Barcodes": 3800,        # measured 5064
-              "VellumPdf.Conformance": 7750,     # measured 10348
-              "VellumPdf.Fonts.Standard14": 20,  # measured 29 — a 29-line assembly needs more slack
-              "VellumPdf.Kernel": 5800,          # measured 7773
-              "VellumPdf.Layout": 1000,          # measured 1393
-              "VellumPdf.Reader": 1900,          # measured 2608
-              "VellumPdf.Signing": 800,          # measured 1109
-              "vellum-preflight": 2300,          # measured 3077
-          }
+          def check(label, lines):
+              """Per-assembly checks on one merge (one target framework's, or both)."""
+              found = frozenset(asm for asm, _, _ in lines)
+              problems = []
+              missing = EXPECTED_ASSEMBLIES - found
+              if missing:
+                  problems.append(f"{label}: no coverage data for: {', '.join(sorted(missing))}. "
+                                  "A report is missing, or the matching test project's report was written empty.")
+              unexpected = found - EXPECTED_ASSEMBLIES
+              if unexpected:
+                  display = sorted(asm if asm else "(unnamed package)" for asm in unexpected)
+                  problems.append(f"{label}: unexpected assemblies in coverage data: {', '.join(display)}.")
+              stats = by_assembly(lines)
+              print(f"Per-assembly line coverage ({label}):")
+              for asm in sorted(stats):
+                  c, t = stats[asm]
+                  rate = c / t * 100 if t else 0
+                  print(f"  {asm}: covered={c}, valid={t}, line-rate={rate:.2f}%")
+                  if rate < PER_ASSEMBLY_FLOOR:
+                      problems.append(f"{label}: {asm} line coverage {rate:.2f}% (covered={c}, valid={t}) "
+                                      f"is below the {PER_ASSEMBLY_FLOOR}% per-assembly floor.")
+                  min_valid = MIN_VALID_LINES.get(asm, 0)
+                  if t < min_valid:
+                      problems.append(f"{label}: {asm} instrumented only {t} valid lines, below the "
+                                      f"{min_valid}-line minimum — its coverage denominator likely collapsed "
+                                      "(fewer sequence points recorded, not necessarily lower coverage).")
+              return problems
 
-          per_asm = {}
-          for (asm, fn, ln), v in merged.items():
-              c, t = per_asm.get(asm, (0, 0))
-              per_asm[asm] = (c + (1 if v else 0), t + 1)
 
-          print("Per-assembly line coverage:")
-          below_floor = []
-          collapsed = []
-          for asm in sorted(per_asm):
-              c, t = per_asm[asm]
-              rate = c / t * 100 if t else 0
-              print(f"  {asm}: covered={c}, valid={t}, line-rate={rate:.2f}%")
-              if rate < PER_ASSEMBLY_FLOOR:
-                  below_floor.append((asm, c, t, rate))
-              min_valid = MIN_VALID_LINES.get(asm, 0)
-              if t < min_valid:
-                  collapsed.append((asm, t, min_valid))
-          if below_floor:
-              for asm, c, t, rate in below_floor:
-                  print(f"::error::{asm} line coverage {rate:.2f}% (covered={c}, valid={t}) "
-                        f"is below the {PER_ASSEMBLY_FLOOR}% per-assembly floor.")
-              sys.exit(1)
-          if collapsed:
-              for asm, t, min_valid in collapsed:
-                  print(f"::error::{asm} instrumented only {t} valid lines, below the {min_valid}-line "
-                        "minimum — its coverage denominator likely collapsed (fewer sequence points "
-                        "recorded, not necessarily lower coverage).")
-              sys.exit(1)
+          problems = []
+          for tfm in TFMS:
+              problems += check(tfm, per_tfm[tfm])
+          problems += check("merged across target frameworks", merged)
+
+          # Valid lines per assembly, side by side. Merged equals each framework's count when both
+          # build the
+          # same source files; a difference is a file that exists under one framework only, or a
+          # path that
+          # one framework spells differently, and is worth reading rather than rounding away.
+          print("Valid lines per assembly:")
+          stats = {tfm: by_assembly(per_tfm[tfm]) for tfm in TFMS}
+          mstats = by_assembly(merged)
+          for asm in sorted(mstats):
+              cells = "  ".join(f"{tfm}={stats[tfm].get(asm, (0, 0))[1]}" for tfm in TFMS)
+              print(f"  {asm}: {cells}  merged={mstats[asm][1]}")
+
+          # The threshold also applies to each framework on its own, so a drop confined to one
+          # framework is not masked by the merge, which counts a line covered if either framework
+          # covered it. Every figure is printed and every failure collected before the single exit
+          # below, so one run reports both frameworks and the merge instead of stopping at the
+          # first.
+          for tfm in TFMS:
+              tc = sum(1 for v in per_tfm[tfm].values() if v)
+              tpct = tc / len(per_tfm[tfm]) * 100 if per_tfm[tfm] else 0
+              print(f"{tfm}: {tpct:.1f}% over {len(per_tfm[tfm])} unique lines (threshold: {THRESHOLD}%)")
+              if tpct < THRESHOLD:
+                  problems.append(f"{tfm} line coverage {tpct:.1f}% is below the required threshold "
+                                  f"of {THRESHOLD}%.")
 
           total_valid = len(merged)
           total_covered = sum(1 for v in merged.values() if v)
           combined = total_covered / total_valid if total_valid else 0
           pct = combined * 100
-          print(f"Combined (merged) line coverage: {pct:.1f}% over {total_valid} unique lines (threshold: {THRESHOLD}%)")
+          print(f"Combined (merged) line coverage: {pct:.1f}% over {total_valid} unique lines "
+                f"(threshold: {THRESHOLD}%)")
           if total_valid < MIN_TOTAL_LINES:
-              print(f"::error::Merged coverage covers only {total_valid} lines, below the "
-                    f"{MIN_TOTAL_LINES}-line minimum expected across all reports (measured 31,401).")
-              sys.exit(1)
+              problems.append(f"Merged coverage covers only {total_valid} lines, below the "
+                              f"{MIN_TOTAL_LINES}-line minimum expected across all reports.")
           if pct < THRESHOLD:
-              print(f"::error::Line coverage {pct:.1f}% is below the required threshold of {THRESHOLD}%.")
+              problems.append(f"Merged line coverage {pct:.1f}% is below the required threshold "
+                              f"of {THRESHOLD}%.")
+
+          if problems:
+              for p in problems:
+                  print("::error::" + p)
               sys.exit(1)
           print("Coverage gate passed.")
           EOF
@@ -569,6 +712,57 @@ jobs:
 
       - name: Pack
         run: dotnet pack VellumPdf.slnx -c Release --no-build -o ${{ runner.temp }}/packages
+
+      - name: Check Pkcs per target framework
+        # Directory.Packages.props pins System.Security.Cryptography.Pkcs per target framework. If a
+        # tool rewrote both entries to one version, the net10.0 group would silently take the 11.0
+        # package and its System.Formats.Asn1 11 dependency, so this reads the packed Signing nuspec
+        # and requires 10.x in the net10.0 group and 11.x in the net11.0 group.
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'EOF'
+          import glob, os, sys, zipfile
+          import xml.etree.ElementTree as ET
+
+          pkgs = glob.glob(os.path.join(os.environ["RUNNER_TEMP"], "packages",
+                                        "VellumPdf.Signing.*.nupkg"))
+          if len(pkgs) != 1:
+              print(f"::error::Expected one VellumPdf.Signing nupkg, found {len(pkgs)}.")
+              sys.exit(1)
+          with zipfile.ZipFile(pkgs[0]) as z:
+              root = ET.fromstring(z.read(next(n for n in z.namelist() if n.endswith(".nuspec"))))
+
+
+          def local(tag):
+              # The nuspec carries a versioned namespace, which changes between NuGet releases.
+              return tag.rsplit("}", 1)[-1]
+
+
+          groups = {el.get("targetFramework"): el for el in root.iter() if local(el.tag) == "group"}
+          failed = False
+          for tfm, prefix in {"net10.0": "10.", "net11.0": "11."}.items():
+              group = groups.get(tfm)
+              if group is None:
+                  print(f"::error::The Signing nuspec has no {tfm} dependency group.")
+                  failed = True
+                  continue
+              dep = next((d for d in group if local(d.tag) == "dependency"
+                          and (d.get("id") or "").lower() == "system.security.cryptography.pkcs"), None)
+              if dep is None:
+                  print(f"::error::The {tfm} group of the Signing nuspec has no Pkcs dependency.")
+                  failed = True
+                  continue
+              raw = dep.get("version") or ""
+              # A NuGet range such as "[10.0.14, )" is judged by its lower bound.
+              lower = raw.strip().lstrip("[(").rstrip("])").split(",")[0].strip()
+              print(f"{tfm}: Pkcs {raw}")
+              if not lower.startswith(prefix):
+                  print(f"::error::The {tfm} group names Pkcs {raw}, expected {prefix}x.")
+                  failed = True
+          if failed:
+              sys.exit(1)
+          EOF
 
   aot-smoke:
     # Deliberately left on the floating ubuntu-latest label: this job carries no apt version

@@ -9,7 +9,9 @@
   -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <!-- One TFM on purpose: a throughput harness compares runs against each other, and a single
+         runtime keeps the numbers comparable across history. net10.0 is the LTS. -->
+    <TargetFrameworks>net10.0</TargetFrameworks>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
