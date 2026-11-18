@@ -28,8 +28,8 @@ namespace VellumPdf.Conformance.Tests.StructureDump;
 /// <c>Conformance = PdfUA1</c>, a title, <c>Language = "nl-NL"</c>, an A4 page and an explicit
 /// <see cref="TextStyle"/> on every element, because an element left on the default style takes the
 /// default Helvetica, which the embedded-font rule of PDF/UA rejects. The "emphasis" runs in case 6
-/// differ from their neighbours by colour, because only the regular DejaVu Sans is embedded in this
-/// test project; what the case pins is that the writer splits a word where the style changes, not how
+/// differ from their neighbours by colour, because no bold face is embedded in this test project;
+/// what the case pins is that the writer splits a word where the style changes, not how
 /// it draws bold.
 /// </remarks>
 public sealed class LayoutStructureGoldenTests
@@ -66,9 +66,10 @@ public sealed class LayoutStructureGoldenTests
         return (pdf, reader.PageCount);
     }
 
-    // Two builds in one process must give equal dumps. That rules out a dump that depends on object
-    // numbering or call order within a run; whether it also holds across processes and platforms is
-    // what the Verify comparison on the next run, and CI, check.
+    // Two builds in one process must give equal dumps. That rules out nondeterminism within a run
+    // (ordering of unordered collections, timestamps); object numbers are excluded from the dump by
+    // design, not by this check. Whether it also holds across processes and platforms is what the
+    // Verify comparison on the next run, and CI, check.
     private static string DumpOf(int expectedPages, string[] knownDefects, Action<LayoutDocument, TextStyle> fill)
     {
         var (pdf, pages) = Build(fill);
@@ -99,7 +100,7 @@ public sealed class LayoutStructureGoldenTests
     [Fact]
     public async Task Case2_tableOverThreePages_withHeaderRow()
     {
-        var dump = DumpOf(3, ["A11Y-02", "A11Y-04", "A11Y-05"], (doc, style) =>
+        var dump = DumpOf(3, ["A11Y-02", "A11Y-04", "A11Y-05", "A11Y-16"], (doc, style) =>
         {
             var cellStyle = new TextStyle { FontRef = style.FontRef, FontSize = 14 };
             var padding = new EdgeInsets(50, 10);
@@ -151,7 +152,7 @@ public sealed class LayoutStructureGoldenTests
     [Fact]
     public async Task Case4_headerAndFooterBands()
     {
-        var dump = DumpOf(2, ["A11Y-02"], (doc, style) =>
+        var dump = DumpOf(2, ["A11Y-02", "A11Y-04", "A11Y-17"], (doc, style) =>
         {
             var band = new TextStyle { FontRef = style.FontRef, FontSize = 10 };
             doc.SetHeader("Kop {page}", band);
@@ -230,7 +231,7 @@ public sealed class LayoutStructureGoldenTests
     [Fact]
     public async Task Case8_tableWithAnEmptyCell()
     {
-        var dump = DumpOf(1, ["A11Y-02", "A11Y-18"], (doc, style) =>
+        var dump = DumpOf(1, ["A11Y-02", "A11Y-16", "A11Y-18"], (doc, style) =>
         {
             var cellStyle = new TextStyle { FontRef = style.FontRef, FontSize = 14 };
             var table = new TableElement { BorderWidth = 1, BorderColor = ColorRgb.Black, DefaultCellStyle = cellStyle };
@@ -270,7 +271,7 @@ public sealed class LayoutStructureGoldenTests
     [Fact]
     public async Task Case10_singleListItemSplitOverPageBreak()
     {
-        var dump = DumpOf(2, ["A11Y-04", "A11Y-15"], (doc, style) =>
+        var dump = DumpOf(2, ["A11Y-04", "A11Y-09", "A11Y-15", "A11Y-17"], (doc, style) =>
         {
             var text = string.Join(' ', Enumerable.Range(1, 40).Select(i => $"Zin {i} van het punt."));
             var list = new ListElement(ListStyle.OrderedDecimal) { DefaultStyle = style };

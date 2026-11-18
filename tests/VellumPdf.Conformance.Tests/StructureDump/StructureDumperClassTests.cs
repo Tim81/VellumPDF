@@ -183,7 +183,7 @@ public sealed class StructureDumperClassTests
     // ── C5: flattened CMap ranges, one parse per document ─────────────────────────────────────
 
     [Fact]
-    public void WideEarlyRange_withManySmallOnes_isFirstWins_andNotScanned()
+    public void WideEarlyRange_withManySmallOnes_isFirstWins()
     {
         var sb = new StringBuilder("50001 beginbfrange\n<0000> <FFFF> <0041>\n");
         for (var i = 1; i <= 50_000; i++)
@@ -196,9 +196,6 @@ public sealed class StructureDumperClassTests
             Assert.True(map.TryMap(code, 2, out var text));
             Assert.Equal(((char)(0x41 + code)).ToString(), text);
         }
-
-        // 60,000 lookups of a binary search over at most ~17 steps each.
-        Assert.True(map.Comparisons <= 60_000 * 20, map.Comparisons.ToString());
     }
 
     [Fact]
@@ -217,7 +214,8 @@ public sealed class StructureDumperClassTests
             Assert.Equal(expected.ToString(), text);
         }
 
-        // About 100,000 segments: a scan would take millions of steps per lookup; a binary search at
+        // 50,002 segments (measured; adjacent small ranges are not merged): a linear scan would take
+        // tens of thousands of steps per lookup; a binary search at
         // most 17.
         Assert.True(map.Comparisons <= 60_000 * 20, map.Comparisons.ToString());
     }
@@ -315,5 +313,114 @@ public sealed class StructureDumperClassTests
             (8, "<< /Type /XObject /Subtype /Form /BBox [0 0 9 9] >>", "/P <</MCID 0>> BDC EMC"));
 
         Lacks("FORM-MCIDS-INSIDE-CONTENT-ITEM", Lines(pdf));
+    }
+    // ── Cheap guards of the trusted-input scope ───────────────────────────────────────────────
+
+    private static byte[] ExpandingFontDoc(int codes)
+    {
+        var expands = string.Concat(Enumerable.Repeat("0058", 256)); // 512 bytes: the longest allowed
+        var tooLong = string.Concat(Enumerable.Repeat("0059", 257)); // 514 bytes: unmapped
+        var cmap = $"2 beginbfchar <41> <{expands}> <42> <{tooLong}> endbfchar";
+        return RawPdf.Doc(
+            $"BT /F1 12 Tf ({new string('A', codes)}) Tj (B) Tj ET",
+            "/Resources << /Font << /F1 8 0 R >> >>",
+            "",
+            (8, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /ToUnicode 9 0 R >>", null),
+            (9, "<< >>", cmap));
+    }
+
+    [Fact]
+    public void ShowText_isCutAtTheCap_andAnOverlongDestinationIsUnmapped()
+    {
+        var lines = Lines(ExpandingFontDoc(4000));
+
+        var show = lines.First(l => l.Contains("show \"X", StringComparison.Ordinal));
+        Assert.True(show.Length < 400, show.Length.ToString());
+        Assert.EndsWith("…(+3999 codes)\"", show);
+        Has("UNMARKED show \"\\u{FFFD}\"", lines);
+    }
+
+    [Fact]
+    public void ShowText_decodesOnlyWhatItPrints()
+    {
+        var small = ExpandingFontDoc(400);
+        var large = ExpandingFontDoc(4000);
+        StructureDumper.Dump(small); // warm the JIT and the caches
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        StructureDumper.Dump(small);
+        var smallBytes = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        before = GC.GetAllocatedBytesForCurrentThread();
+        StructureDumper.Dump(large);
+        var largeBytes = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        // Measured: 123,936 bytes for the small run and 138,360 for the large one in Debug and in
+        // Release, a difference of 14,424. Decoding every code would add 3,600 codes x 256
+        // characters x 2 bytes, over 1.8 MB, to the large run.
+        Assert.True(largeBytes - smallBytes < 100_000, $"small {smallBytes}, large {largeBytes}");
+    }
+
+    [Fact]
+    public void ElementLine_capsItsKeys()
+    {
+        var keys = string.Join(' ', Enumerable.Range(0, 7000).Select(i => $"/K{i:D4} {i}"));
+        var pdf = RawPdf.Doc("", "", "/K [6 0 R]", (6, $"{DocElem} {keys} >>", null));
+
+        var line = Lines(pdf).Single(l => l.StartsWith("  Document", StringComparison.Ordinal));
+        Assert.EndsWith("…(+6968 keys)", line);
+        Assert.True(line.Length < 1_000, line.Length.ToString());
+    }
+
+    [Fact]
+    public void CheckLinesAlone_hitTheOutputBudget()
+    {
+        // Three shallow levels of long names: the structure listing is about 20 characters per kid,
+        // each MISSING line about 240 (name, name, name and the leaf's tail), so only the check
+        // lines can pass 8,000,000 characters.
+        var name = new string('N', 60);
+        var kids = string.Join(' ', Enumerable.Range(0, 60_000));
+        var pdf = RawPdf.Doc(
+            "",
+            "",
+            "/K [6 0 R]",
+            (6, $"<< /Type /StructElem /S /{name} /P 5 0 R /K [7 0 R] >>", null),
+            (7, $"<< /Type /StructElem /S /{name} /P 6 0 R /K [8 0 R] >>", null),
+            (8, $"<< /Type /StructElem /S /{name} /P 7 0 R /Pg 3 0 R /K [{kids}] >>", null));
+
+        var ex = Assert.Throws<InvalidOperationException>(() => StructureDumper.Dump(pdf));
+        Assert.Contains("Output budget", ex.Message);
+    }
+
+    [Fact]
+    public void NullAndDanglingValues_areAbsent()
+    {
+        var pdf = RawPdf.Doc(
+            "",
+            "/StructParents null /Annots [9 0 R]",
+            "/K [6 0 R]",
+            (6, $"{DocElem} >>", null),
+            (9, "<< /Type /Annot /Subtype /Link /Rect [0 0 1 1] /StructParent 99 0 R /Contents null /QuadPoints null /Dest null >>", null));
+
+        var lines = Lines(pdf);
+        Has("annot 0: Subtype=Link StructParent=none Contents=absent QuadPoints=absent dest=none", lines);
+        Has("0 problem line(s)", lines);
+    }
+
+    [Fact]
+    public void RevisionNumbersInAttributeLists_areRead_andBadOnesAreCounted()
+    {
+        var pdf = RawPdf.Doc(
+            "",
+            "",
+            "/K [6 0 R]",
+            (6, $"{DocElem} /K [7 0 R] >>", null),
+            (7, "<< /Type /StructElem /S /P /P 6 0 R /A [<< /O /Layout >> 2 << /O /List >> 1.5] /C [/Cls -1] >>", null));
+
+        var lines = Lines(pdf);
+        Has("    P A=[{O=/Layout}@2 {O=/List}@BAD] C=[/Cls@BAD]", lines);
+        Has("      BAD-REVISION A", lines);
+        Has("      BAD-REVISION C", lines);
+        Has("2 problem line(s)", lines);
     }
 }

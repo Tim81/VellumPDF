@@ -1,4 +1,4 @@
-﻿known defects: A11Y-02, A11Y-04, A11Y-05
+﻿known defects: A11Y-02, A11Y-04, A11Y-05, A11Y-16
 Lang: "nl-NL"
 MarkInfo: {Marked=true}
 DisplayDocTitle: true

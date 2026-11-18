@@ -15,15 +15,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `UNMARKED`, `NO-OBJR`, and others) instead of skipping; the last line counts them as they are
   emitted. Problem lines report structural inconsistencies, not PDF/UA findings: a golden can show
   a defect with 0 problem lines. It walks `/K` and `/ParentTree` itself rather than through
-  `StructureTree`, which collapses MCID, MCR and OBJR kids into a flag, and it decodes shown text through `/ToUnicode`, because the Reader's
-  text extraction has no marked-content awareness. It refuses oversized input with an
-  `InvalidOperationException` naming the cap. Each of ten Layout documents (a split paragraph, a
-  table over three pages, a nested list, header and footer bands, images, runs split inside a word,
-  headings, an empty cell, language overrides, a list item split over a page break) is recorded as a
-  Verify golden whose first line lists the audit findings it still shows, so the pull request that
-  fixes one changes the golden in the same diff. The dumper's own tests build PDFs by hand for what
-  the writer cannot yet produce: MCR and OBJR kids, attribute arrays with revision numbers, a form
-  with its own MCIDs, a wrong parent tree.
+  `StructureTree`, which collapses MCID, MCR and OBJR kids into a flag, and it decodes shown text
+  through `/ToUnicode`, because the Reader's text extraction has no marked-content awareness. It
+  reads trusted test data: it terminates on any input, bounds its output with a character budget
+  and a per-line cap, and throws `InvalidOperationException` naming the limit when structure is
+  deeper or larger than its caps, but the cost of pathological input is not bounded. Each of ten
+  Layout documents (a split paragraph, a table over three pages, a nested list, header and footer
+  bands, images, runs split inside a word, headings, an empty cell, language overrides, a list item
+  split over a page break) is recorded as a Verify golden whose first line lists the audit findings
+  it still shows, so the pull request that fixes one changes the golden in the same diff. The
+  dumper's own tests build PDFs by hand for what the writer cannot yet produce: MCR and OBJR kids,
+  attribute arrays with revision numbers, a form with its own MCIDs, a wrong parent tree.
 
 ## [2.3.3] - 2026-09-20
 

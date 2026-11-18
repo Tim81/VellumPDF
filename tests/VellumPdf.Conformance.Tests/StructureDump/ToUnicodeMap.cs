@@ -23,7 +23,12 @@ namespace VellumPdf.Conformance.Tests.StructureDump;
 /// <b>Not bounded by a count of its own.</b> The entry count is at most the number of tokens in the
 /// stream, and the stream is the decoded <c>/ToUnicode</c> body the Reader already capped. A
 /// <c>bfrange</c> is stored as one range and never expanded, so a range over four-byte codes costs
-/// one entry, not 2^32; the first lookup flattens them into disjoint segments, and each lookup is a binary search over those.
+/// one entry, not 2^32; the first lookup flattens them into disjoint segments, and each lookup is a
+/// binary search over those. A destination longer than 512 bytes (ISO 32000-2 9.10.3: "dstString may
+/// be a string of up to 512 bytes") is treated as unmapped, so a code never expands to more than 256
+/// characters. Flattening is not bounded beyond termination: ranges that each cover everything the
+/// ones before them left open, in descending order, make it quadratic in their number. The input is
+/// trusted test data, see <see cref="StructureDumper"/>.
 /// </para>
 /// <para>
 /// <b>Do not rely on which of two overlapping definitions wins.</b> ISO 32000-2 does not say. Here a
@@ -36,7 +41,7 @@ internal sealed class ToUnicodeMap
     private readonly Dictionary<(int Length, uint Code), string> _chars = [];
     private readonly List<RangeEntry> _ranges = [];
 
-    private readonly record struct RangeEntry(int Length, uint Lo, uint Hi, string Dst, string[]? Array, int Order);
+    private readonly record struct RangeEntry(int Length, uint Lo, uint Hi, string Dst, string?[]? Array, int Order);
 
     /// <summary>How many CMaps this thread has parsed: a test reads it to show a font is parsed once per document.</summary>
     [ThreadStatic]
@@ -57,7 +62,8 @@ internal sealed class ToUnicodeMap
                 while (i + 1 < tokens.Count && IsHex(tokens[i]) && IsHex(tokens[i + 1]))
                 {
                     if (TryCode(tokens[i], out var code, out var len))
-                        map._chars[(len, code)] = Utf16(tokens[i + 1]);
+                        if (Utf16(tokens[i + 1]) is { } dst)
+                            map._chars[(len, code)] = dst;
                     i += 2;
                 }
             }
@@ -69,13 +75,13 @@ internal sealed class ToUnicodeMap
                     var order = map._ranges.Count;
                     if (IsHex(tokens[i + 2]))
                     {
-                        if (ok && lo <= hi)
-                            map._ranges.Add(new RangeEntry(len, lo, hi, Utf16(tokens[i + 2]), null, order));
+                        if (ok && lo <= hi && Utf16(tokens[i + 2]) is { } dst)
+                            map._ranges.Add(new RangeEntry(len, lo, hi, dst, null, order));
                         i += 3;
                     }
                     else if (tokens[i + 2] == "[")
                     {
-                        var items = new List<string>();
+                        var items = new List<string?>();
                         var j = i + 3;
                         while (j < tokens.Count && IsHex(tokens[j]))
                             items.Add(Utf16(tokens[j++]));
@@ -135,9 +141,20 @@ internal sealed class ToUnicodeMap
             {
                 var r = _ranges[segments[at].Range];
                 var offset = (long)code - r.Lo;
-                text = r.Array is not null
-                    ? r.Array[offset]
-                    : r.Dst[..^1] + (char)((r.Dst[^1] + offset) & 0xFFFF);
+                if (r.Array is not null)
+                {
+                    // An entry too long for ISO 32000-2 9.10.3 was stored as null: unmapped.
+                    text = r.Array[offset] ?? "";
+                    return r.Array[offset] is not null;
+                }
+
+                // One allocation: the destination with its last UTF-16 unit advanced by the offset.
+                var last = (char)((r.Dst[^1] + offset) & 0xFFFF);
+                text = string.Create(r.Dst.Length, (r.Dst, last), static (span, state) =>
+                {
+                    state.Dst.AsSpan(0, state.Dst.Length - 1).CopyTo(span);
+                    span[^1] = state.last;
+                });
                 return true;
             }
         }
@@ -218,9 +235,15 @@ internal sealed class ToUnicodeMap
         return true;
     }
 
-    private static string Utf16(string hexToken)
+    // ISO 32000-2 9.10.3: "dstString may be a string of up to 512 bytes". A longer one is unmapped
+    // (null), so one code can never expand to more than 256 characters.
+    private const int MaxDstBytes = 512;
+
+    private static string? Utf16(string hexToken)
     {
         var bytes = HexBytes(hexToken);
+        if (bytes.Length > MaxDstBytes)
+            return null;
         var sb = new StringBuilder(bytes.Length / 2 + 1);
         for (var i = 0; i + 1 < bytes.Length; i += 2)
             sb.Append((char)((bytes[i] << 8) | bytes[i + 1]));

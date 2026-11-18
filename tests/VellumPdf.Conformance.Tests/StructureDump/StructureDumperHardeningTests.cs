@@ -50,7 +50,8 @@ public sealed class StructureDumperHardeningTests
             (15, "<< /D [3 0 R /XYZ 0 0 0] >>", null),
             annot(12, "/Dest (chapter1)"),
             annot(13, "/A << /S /GoTo /D /Intro >>"),
-            annot(14, "/Dest 99 0 R"),
+            annot(14, "/Dest 19 0 R"),
+            (19, "5", null),
             annot(16, "/Dest 17 0 R"),
             (17, "<< /D 18 0 R >>", null),
             (18, "<< /D [3 0 R /Fit] >>", null));
@@ -128,6 +129,7 @@ public sealed class StructureDumperHardeningTests
 
         var lines = Lines(pdf);
         Has("MULTI-DO p1 form1 with MCIDs (invoked 2 times)", lines);
+        Assert.Equal(1, lines.Count(l => l.StartsWith("MULTI-DO", StringComparison.Ordinal)));
         Lacks("DUP-MCID", lines);
     }
 
@@ -197,7 +199,7 @@ public sealed class StructureDumperHardeningTests
         var lines = Lines(pdf);
         Has("UNMARKED inline-image 2x3", lines);
         Has("UNMARKED path shade", lines);
-        Assert.Contains(lines, l => l.StartsWith("DIAG ", StringComparison.Ordinal));
+        Has("DIAG ResourceMissing", lines);
     }
 
     [Fact]
@@ -289,7 +291,7 @@ public sealed class StructureDumperHardeningTests
     {
         var pdf = RawPdf.Doc(
             "",
-            "/Annots 99 0 R",
+            "/Annots 5",
             "/K [6 0 R] /ParentTree 9 0 R",
             (6, $"{DocElem} /Pg 2 0 R /K [11 0 R << /Type /MCR /MCID 0 /Stm 5 /Pg 3 0 R >> 5 0 R 6 0 R] >>", null),
             (9, "<< /Kids [10 0 R 10 0 R 12 0 R 13 0 R] >>", null),
@@ -329,7 +331,6 @@ public sealed class StructureDumperHardeningTests
             "PARENTTREE MISMATCH OBJR target Form in Document/Figure[0]: parent tree has nothing, element holding the OBJR is Document/Figure[0]",
             Lines(Build("2")));
     }
-
 
     [Fact]
     public void McrWhoseStmIsAnAppearanceStream_isStmNotRunNotMissing()
@@ -435,7 +436,7 @@ public sealed class StructureDumperHardeningTests
         var map = ToUnicodeMap.Parse(Encoding.Latin1.GetBytes("1 beginbfrange <00000000> <FFFFFFFF> <0041> endbfrange"));
 
         Assert.True(map.TryMap(0x80000001, 4, out var text));
-        Assert.Single(text);
+        Assert.Equal("B", text); // 'A' advanced by the low 16 bits of the offset
         Assert.True(map.TryMap(0xFFFFFFFF, 4, out _));
         Assert.False(map.TryMap(0x41, 2, out _));
     }
