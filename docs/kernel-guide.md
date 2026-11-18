@@ -357,11 +357,13 @@ for JPEG strips, which pass through either way.
 source is split into a page stream and a `/JBIG2Globals` stream with its
 end-of-file and end-of-page segments dropped, only the first page of a
 multi-page file is embedded (a first page-information segment with page
-association 0 names no page, and keeps every segment), and a segment of
-unknown length (0xFFFFFFFF) on the first page is refused with
-`InvalidDataException`: in passthrough for any segment except end-of-page and
-end-of-file (a segment of no page is skipped), and under `DecodeToRaster` for a
-generic region. A random-access file refuses it on any page. A bare JPEG 2000
+association 0 names no page, and keeps every segment). A segment of unknown
+length (0xFFFFFFFF) is dropped under passthrough, as 2.3.3 did, and that can
+leave the image blank; `DecodeToRaster` refuses it on a generic region with
+`InvalidDataException`. A file with the flags byte and page count of T.88
+Annex D, which 2.3.3 could not read, is the exception: a segment of unknown
+length on any page, or on none, throws `InvalidDataException` under both
+modes. A random-access file refuses it on any page. A bare JPEG 2000
 codestream is wrapped in a minimal JP2 container around the unchanged
 codestream.
 

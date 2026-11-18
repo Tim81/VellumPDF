@@ -2275,19 +2275,22 @@ public sealed class Jbig2ImageTests
         Assert.Contains("does not scan the data for the end marker", ex.Message, StringComparison.Ordinal);
     }
 
-    /// <summary>An unknown-length segment on a page that is not embedded is dropped without comment.</summary>
+    /// <summary>
+    /// In a file with an Annex D header every segment of unknown length is refused, whatever its page:
+    /// 1c61fa6 threw for the whole file, T.88 7.2.7 allows the length only on an immediate generic
+    /// region, and this loader cannot place where such a segment ends.
+    /// </summary>
     [Fact]
-    public void Load_Passthrough_UnknownDataLengthOnAnotherPage_IsNotAFault()
+    public void Load_Passthrough_UnknownDataLengthOnAnotherPage_inAnAnnexDFile_IsRefused()
     {
         var pages = TwoPages().Take(5).ToArray();                 // through page 2's page information
         var lastRegion = BuildSegment(5, type: 38, pageAssociation: 2, [0xC1, 0xC2, 0xC3, 0xC4]);
         for (var i = 7; i < 11; i++) lastRegion[i] = 0xFF;        // page 2's region: unknown length
         var file = Sequential(0x01, PageCountOne, [.. pages, lastRegion]);
 
-        var img = Jbig2ImageLoader.Load(file);
+        var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(file));
 
-        Assert.Equal(64, img.Width);
-        Assert.Equal(pages[1].Concat(pages[2]).ToArray(), ExtractStreamBody(Serialize(img)));
+        Assert.Contains("segment 5", ex.Message, StringComparison.Ordinal);
     }
 
     // ── Page association 0 on the first page information, unknown length under DecodeToRaster ──
@@ -2368,7 +2371,8 @@ public sealed class Jbig2ImageTests
         ];
         var opts = new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster };
 
-        Assert.Throws<NotSupportedException>(() => Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments), opts));
+        // No file header: with an Annex D header the unknown length is refused first, as InvalidDataException.
+        Assert.Throws<NotSupportedException>(() => Jbig2ImageLoader.Load(segments.SelectMany(x => x).ToArray(), opts));
     }
 
     /// <summary>A trailing segment the raster does not use is ignored, whatever its length.</summary>
@@ -2388,7 +2392,7 @@ public sealed class Jbig2ImageTests
         ];
         var opts = new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster };
 
-        var img = Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments), opts);
+        var img = Jbig2ImageLoader.Load(Embedded(segments), opts);
 
         Assert.Equal([0xFF], CcittImageTests.DecompressFlateStream(img.BuildStream()));
     }
@@ -2407,7 +2411,7 @@ public sealed class Jbig2ImageTests
         ];
         var opts = new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster };
 
-        var img = Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments), opts);
+        var img = Jbig2ImageLoader.Load(Embedded(segments), opts);
 
         Assert.Equal([0xFF], CcittImageTests.DecompressFlateStream(img.BuildStream()));
     }
@@ -2426,7 +2430,7 @@ public sealed class Jbig2ImageTests
         ];
         var opts = new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster };
 
-        var img = Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments), opts);
+        var img = Jbig2ImageLoader.Load(Embedded(segments), opts);
 
         Assert.Equal([0xFF], CcittImageTests.DecompressFlateStream(img.BuildStream()));
     }
@@ -2444,45 +2448,94 @@ public sealed class Jbig2ImageTests
 
     /// <summary>
     /// A segment of no page with an unknown length, such as a trailing tables or extension segment, is
-    /// skipped as it always was: the image is whole without it, and refusing it would turn a file
-    /// that embedded correctly into an error.
+    /// skipped as it always was in a file 1c61fa6 could read, which has no Annex D header: the image is
+    /// whole without it.
     /// </summary>
     [Theory]
     [InlineData(53)]   // tables
     [InlineData(62)]   // extension
     public void Load_Passthrough_PageZeroSegmentWithAnUnknownDataLength_IsSkipped(int type)
     {
-        var trailing = BuildSegment(2, type, pageAssociation: 0, [0xD1, 0xD2]);
-        for (var i = 7; i < 11; i++) trailing[i] = 0xFF;
-        byte[][] segments =
-        [
-            BuildSegment(0, type: 48, pageAssociation: 1, BuildPageInfoSegmentData(64, 48)),
-            BuildSegment(1, type: 38, pageAssociation: 1, [0xB1, 0xB2, 0xB3]),
-            trailing,
-        ];
+        var segments = PageZeroTrailingSegments(type);
 
-        var img = Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments));
+        var img = Jbig2ImageLoader.Load(Embedded(segments));
 
         Assert.Equal(64, img.Width);
         Assert.Equal(segments[0].Concat(segments[1]).ToArray(), ExtractStreamBody(Serialize(img)));
         Assert.Null(img.Jbig2Globals);
     }
 
-    /// <summary>With no page selected (page information on association 0) nothing is refused for its length.</summary>
+    /// <summary>
+    /// The same segments in an Annex D file are refused, in both modes. 1c61fa6 threw for any such
+    /// header, and T.88 7.2.7 allows an unknown length only on an immediate generic region, so a tables
+    /// or extension segment with one is not compliant.
+    /// </summary>
+    [Theory]
+    [InlineData(53, false)]
+    [InlineData(62, false)]
+    [InlineData(53, true)]
+    [InlineData(62, true)]
+    public void Load_PageZeroSegmentWithAnUnknownDataLength_inAnAnnexDFile_IsRefused(int type, bool raster)
+    {
+        var file = Sequential(0x01, PageCountOne, PageZeroTrailingSegments(type));
+        var opts = new ImageLoadOptions { DecodeMode = raster ? ImageDecodeMode.DecodeToRaster : ImageDecodeMode.Passthrough };
+
+        var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(file, opts));
+
+        Assert.Contains($"segment 2 (type {type})", ex.Message, StringComparison.Ordinal);
+    }
+
+    private static byte[][] PageZeroTrailingSegments(int type)
+    {
+        var trailing = BuildSegment(2, type, pageAssociation: 0, [0xD1, 0xD2]);
+        for (var i = 7; i < 11; i++) trailing[i] = 0xFF;
+        return
+        [
+            BuildSegment(0, type: 48, pageAssociation: 1, BuildPageInfoSegmentData(64, 48)),
+            BuildSegment(1, type: 38, pageAssociation: 1, [0xB1, 0xB2, 0xB3]),
+            trailing,
+        ];
+    }
+
+    private static byte[] Embedded(byte[][] segments) => segments.SelectMany(x => x).ToArray();
+
+    /// <summary>With no page selected (page information on association 0) the length is not looked at in a file 1c61fa6 could read.</summary>
     [Fact]
     public void Load_Passthrough_UnknownDataLengthWhenNoPageIsSelected_IsSkipped()
     {
+        var segments = NoPageSelectedSegments();
+
+        var img = Jbig2ImageLoader.Load(Embedded(segments));
+
+        Assert.Equal(segments[0], ExtractStreamBody(Serialize(img)));
+    }
+
+    /// <summary>
+    /// In an Annex D file the same input is refused, in both modes: no page is selected, so the loader
+    /// would embed an image with no region, and 1c61fa6 threw for the header.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Load_UnknownDataLengthWhenNoPageIsSelected_inAnAnnexDFile_IsRefused(bool raster)
+    {
+        var file = Sequential(0x01, PageCountOne, NoPageSelectedSegments());
+        var opts = new ImageLoadOptions { DecodeMode = raster ? ImageDecodeMode.DecodeToRaster : ImageDecodeMode.Passthrough };
+
+        var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(file, opts));
+
+        Assert.Contains("segment 1 (type 38)", ex.Message, StringComparison.Ordinal);
+    }
+
+    private static byte[][] NoPageSelectedSegments()
+    {
         var region = BuildSegment(1, type: 38, pageAssociation: 1, [0xB1, 0xB2, 0xB3]);
         for (var i = 7; i < 11; i++) region[i] = 0xFF;
-        byte[][] segments =
+        return
         [
             BuildSegment(0, type: 48, pageAssociation: 0, BuildPageInfoSegmentData(64, 48)),
             region,
         ];
-
-        var img = Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments));
-
-        Assert.Equal(segments[0], ExtractStreamBody(Serialize(img)));
     }
 
     // ── Segment header forms (T.88 7.2) and the container edges, hand-built ─────────────────────
@@ -2724,6 +2777,27 @@ public sealed class Jbig2ImageTests
         Assert.Equal(segments[0].Concat(segments[1]).ToArray(), ExtractStreamBody(Serialize(img)));
     }
 
+    /// <summary>
+    /// An ID string followed directly by segments, the form 1c61fa6 read, whose first segment is a tables
+    /// segment numbered 0x01000002: the byte after the ID string is 0x01, which also reads as the flags
+    /// byte of an Annex D header. Read that way, the file yields a page-information segment of its own
+    /// and the globals differ. 1c61fa6 read the file as it is, so it must still load as it did.
+    /// </summary>
+    [Fact]
+    public void Load_IdStringThenSegmentsWhoseFirstNumberLooksLikeAFlagsByte_IsReadAsBefore()
+    {
+        var file = Convert.FromHexString(
+            "974a42320d0a1a0a010000023500000000000500000000000100000330000100000013000000080000000100000000000000000000000100000426000100000016000000080000000100000000000000000001800800800100000531000100000000");
+        // Segment 0x01000002: type 0x35 (tables), page association 0, five bytes of data.
+        var tables = file[8..(8 + 4 + 1 + 1 + 1 + 4 + 5)];
+
+        var image = Jbig2ImageLoader.Load(file);
+
+        Assert.Equal(8, image.Width);
+        Assert.Equal(1, image.Height);
+        Assert.Equal(tables, image.Jbig2Globals);
+    }
+
     // ── The error for a file that no reading accepts says which readings were tried ──
 
     [Fact]
@@ -2733,8 +2807,9 @@ public sealed class Jbig2ImageTests
 
         var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(file));
 
-        Assert.Contains("The data was read as a sequential file", ex.Message, StringComparison.Ordinal);
-        Assert.Contains("then as the ID string followed directly by segments", ex.Message, StringComparison.Ordinal);
+        // 1c61fa6's reading is tried first and fails first; the header reading is last and leads the message.
+        Assert.Contains("The data was read as the ID string followed directly by segments, which failed with:", ex.Message, StringComparison.Ordinal);
+        Assert.EndsWith(", then as a sequential file (T.88 D.1).", ex.Message, StringComparison.Ordinal);
         Assert.NotNull(ex.InnerException);
     }
 
@@ -2746,7 +2821,7 @@ public sealed class Jbig2ImageTests
 
         var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(file));
 
-        Assert.Contains("end-of-file segment", ex.Message, StringComparison.Ordinal);       // the first reading's message
+        Assert.Contains("end-of-file segment", ex.Message, StringComparison.Ordinal);       // the header reading's message, which leads
         Assert.Contains("a random-access file (T.88 D.2)", ex.Message, StringComparison.Ordinal);
         Assert.Contains("the ID string followed directly by segments", ex.Message, StringComparison.Ordinal);
     }

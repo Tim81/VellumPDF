@@ -409,7 +409,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   where all segment headers come first, ending with the end-of-file segment, and the data parts
   follow; a random-access file is rejoined into the embedded form a PDF stores, each header with its
   own data. The older form, the ID string followed directly by segments, and the bare embedded form
-  still load. Checked against the ten sequential files in the ITU T.88 conformance data: all now
+  still load. The older form is tried first, so a file in it is read as 2.3.3 read it even when the
+  byte after the ID string could also be a flags byte; the header reading is tried only when that
+  fails. Checked against the ten sequential files in the ITU T.88 conformance data: all now
   load at the size of their reference bitmaps, and the one MMR file decodes to the reference bitmap
   pixel for pixel. That data is licensed for conformance testing only and is not in the repository,
   so the committed tests use fixtures built by hand from Annex D. Found while exporting images from a
@@ -424,9 +426,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   same image with a known length embeds 62 bytes, and `pdftoppm` draws the first all white and the
   second with dark pixels. Four inputs were compared against 2.3.3 and give the same image stream:
   type 38 and type 53 segments, each in the headerless embedded organisation and after the ID
-  string. A file with the Annex D flags byte and page count and such a segment is refused with
-  `InvalidDataException` naming the segment, as 2.3.3 refused it, reading the flags as the start of
-  a segment. Nothing reports the dropped segment yet (#607), and 3.0
+  string. A file with the Annex D flags byte and page count and such a segment, of any type and
+  on any page or none, is refused with `InvalidDataException` naming the segment, under both modes,
+  as 2.3.3 refused every such file, reading the flags as the start of a segment. Nothing reports the dropped segment yet (#607), and 3.0
   refuses it. `DecodeToRaster` keeps refusing an unknown length
   on a generic region (types 36, 38 and 39), as before, now with a message naming the segment, and
   every other segment behaves as it did. A random-access file refuses an unknown length on any page,
@@ -437,8 +439,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   used to embed every page's segments into one image stream and now embeds only the first page.
   When no reading of the data is accepted, the `InvalidDataException` says which readings were
   tried (a sequential or random-access file, the ID string followed directly by segments, or the
-  embedded form) after the first reading's message, so a broken older file is not described only
-  in the terms of the random-access one.
+  embedded form) after the last reading's message, so a broken older file is not described only
+  in the terms of the header reading.
 
 - **A paragraph no longer wraps at U+202F NARROW NO-BREAK SPACE or U+2007 FIGURE SPACE (#562).**
   `NormaliseWhitespace` kept only U+00A0 and folded every other white-space character into a plain
@@ -465,7 +467,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Cost-bound tests no longer assert on elapsed time (#400, #456).** A `Stopwatch` checked after a
   call returns cannot end a hang, and a 10 s bound fails on a loaded runner: the main CI run for
-  2.3.3 failed `FindingHigh_A4FlateBombPadding_refusesQuickly_viaCostBudget` at 11.79 s, and #400
+  1c61fa6 failed `FindingHigh_A4FlateBombPadding_refusesQuickly_viaCostBudget` at 11.79 s, and #400
   records two 10 s `Timeout` cancellations of the #208 encrypt-dictionary pin. Most sites now pin
   something the code decides, or a bound on bytes allocated on the calling thread.
   `PageTreeTests`' deep malformed-ancestor walk drops its clock without a replacement, because a
