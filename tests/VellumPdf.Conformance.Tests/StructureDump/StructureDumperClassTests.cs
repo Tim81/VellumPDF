@@ -314,6 +314,7 @@ public sealed class StructureDumperClassTests
 
         Lacks("FORM-MCIDS-INSIDE-CONTENT-ITEM", Lines(pdf));
     }
+
     // ── Cheap guards of the trusted-input scope ───────────────────────────────────────────────
 
     private static byte[] ExpandingFontDoc(int codes)
@@ -391,7 +392,7 @@ public sealed class StructureDumperClassTests
     public void CheckLinesAlone_hitTheOutputBudget()
     {
         // Three shallow levels of long names: the structure listing is about 20 characters per kid,
-        // each MISSING line about 240 (name, name, name and the leaf's tail), so only the check
+        // each MISSING line about 210 (three names and their indexes), so only the check
         // lines can pass 8,000,000 characters.
         var name = new string('N', 60);
         var kids = string.Join(' ', Enumerable.Range(0, 60_000));
@@ -412,13 +413,16 @@ public sealed class StructureDumperClassTests
     {
         var pdf = RawPdf.Doc(
             "",
-            "/StructParents null /Annots [9 0 R]",
+            "/StructParents null /Tabs null /Annots [9 0 R 10 0 R]",
             "/K [6 0 R]",
             (6, $"{DocElem} >>", null),
-            (9, "<< /Type /Annot /Subtype /Link /Rect [0 0 1 1] /StructParent 99 0 R /Contents null /QuadPoints null /Dest null >>", null));
+            (9, "<< /Type /Annot /Subtype /Link /Rect [0 0 1 1] /StructParent 99 0 R /Contents null /QuadPoints null /Dest null >>", null),
+            (10, "<< /Type /Annot /Subtype /Link /Rect [0 0 1 1] /A << /S /GoTo /D null >> >>", null));
 
         var lines = Lines(pdf);
         Has("annot 0: Subtype=Link StructParent=none Contents=absent QuadPoints=absent dest=none", lines);
+        Has("annot 1: Subtype=Link StructParent=none Contents=absent QuadPoints=absent dest=GoTo none", lines);
+        Has("Tabs: absent", lines);
         Has("0 problem line(s)", lines);
     }
 

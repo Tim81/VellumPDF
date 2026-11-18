@@ -48,8 +48,9 @@ namespace VellumPdf.Conformance.Tests.StructureDump;
 /// <para>
 /// <b>Input is trusted test data.</b> The dumper reads PDFs that this repository's tests generate and
 /// bytes they write by hand, not arbitrary files. What it guarantees on any input is that it
-/// terminates with either a dump or an exception naming the limit it hit, that its output is bounded,
-/// and that no single line or printed value is unbounded. The cost of pathological input is not
+/// terminates, with a dump, an <see cref="InvalidOperationException"/> naming the cap it hit, or an
+/// exception from the Reader; that its output is bounded; and that no single line or printed value
+/// is unbounded. The cost of pathological input is not
 /// bounded beyond termination, and is out of scope: ranges in a <c>/ToUnicode</c> CMap that each
 /// cover what the ones before them left open, in descending order, make flattening quadratic in their
 /// number; a property list is sorted again for every <c>BDC</c> that names it; the CMap tokenizer
@@ -68,14 +69,16 @@ namespace VellumPdf.Conformance.Tests.StructureDump;
 /// characters is cut there, so the output is bounded by the budget whatever the input.
 /// </para>
 /// <para>
-/// <b>Printed values are capped, and escaping can lengthen them.</b> A string, a name or a
-/// dictionary key is cut at 200 characters, an element's <c>/S</c> at 64, a shown text after the code
-/// that takes it past 200 decoded characters (a code adds at most 256) and raw codes after 100 bytes,
-/// and an element line at 32 keys; each says so with <c>…(+N)</c>. The cut is
-/// made on the source text, before escaping, and an escaped character is up to eight characters long
-/// (<c>\u{XXXX}</c>), so a capped value prints in at most 1,600 characters before its suffix, and a name in a path in
-/// at most 512. A path is cut to its last 200 characters (<c>…/LBody[1]/P[0]</c>); its leaf segment
-/// is kept, and cut itself at 200. An attribute object reached through an indirect reference is
+/// <b>Printed values are capped, and escaping can lengthen them.</b> A string, a dictionary key and a name printed as a value are cut at 200 characters; a name that
+/// labels something (an element's <c>/S</c> and its role-map target, an annotation's
+/// <c>/Subtype</c>, an action's <c>/S</c>, a destination's name or fit type, an OBJR target's type)
+/// at 64; a shown text after the code that takes it to 200 decoded characters (a code adds at most
+/// 256); raw codes after 100 bytes; and an element line at 32 keys. Each says so with
+/// <c>…(+N)</c>. The cut is made on the source text, before escaping, and one UTF-16 unit escapes to
+/// at most eight characters (<c>\u{XXXX}</c>), so a string, key or name prints in at most 1,600
+/// characters before its suffix and a shown text in at most 3,640 (199 decoded characters and one
+/// code of 256). A path keeps its last segments up to 200 characters (<c>…/LBody[1]/P[0]</c>); its
+/// leaf segment is always kept and cut at 200, so a path prints in at most 203. An attribute object reached through an indirect reference is
 /// expanded where it is first met, and printed as <c>&lt;same as path&gt;</c> afterwards. Memory is
 /// not bounded by the budget alone: the structure tree is held in full (at most
 /// <see cref="MaxNodes"/> nodes), and a page's content is bounded only by the Reader's own
@@ -122,7 +125,8 @@ namespace VellumPdf.Conformance.Tests.StructureDump;
 /// structure in two ways: drawn by a <c>Do</c> inside a marked-content sequence that is a content
 /// item, in which case "the form XObject shall not, in turn, contain any marked-content sequences
 /// associated with this or other structure elements"; or holding such sequences itself, in which
-/// case no <c>Do</c> that paints it "shall be part of a logical structure content item". A form
+/// case "any Do operator that paints the form XObject shall not be part of a logical structure
+/// content item". A form
 /// that has an MCID-carrying sequence and is painted inside one is reported as
 /// <c>FORM-MCIDS-INSIDE-CONTENT-ITEM</c>. The same clause says a form painted with several
 /// <c>Do</c> operators "shall be incorporated into the document's logical structure only by the
@@ -350,7 +354,7 @@ internal static class StructureDumper
             for (var i = 0; i < pages.Count; i++)
             {
                 L($"== page {Inv(i + 1)} content");
-                L("Tabs: " + (Res(pages[i].Dictionary.Get(new PdfName("Tabs"))) is { } tabs ? Fmt(tabs, 0) : "absent"));
+                L("Tabs: " + (Opt(pages[i].Dictionary, new PdfName("Tabs")) is { } tabs ? Fmt(Res(tabs), 0) : "absent"));
                 lines.AddRange(_sections[i].Lines);
                 L($"== page {Inv(i + 1)} annotations");
                 if (annotLines[i].Count == 0)
@@ -374,10 +378,10 @@ internal static class StructureDumper
         private void WriteHeader(LineSink l, int pageCount)
         {
             var cat = _reader.Catalog;
-            l("Lang: " + (Res(cat.Get(new PdfName("Lang"))) is { } lang ? Fmt(lang, 0) : "absent"));
-            l("MarkInfo: " + (Res(cat.Get(new PdfName("MarkInfo"))) is { } mi ? Fmt(mi, 0) : "absent"));
+            l("Lang: " + (Opt(cat, new PdfName("Lang")) is { } lang ? Fmt(Res(lang), 0) : "absent"));
+            l("MarkInfo: " + (Opt(cat, new PdfName("MarkInfo")) is { } mi ? Fmt(Res(mi), 0) : "absent"));
             var vp = Res(cat.Get(new PdfName("ViewerPreferences"))) as PdfDictionary;
-            l("DisplayDocTitle: " + (vp is not null && Res(vp.Get(new PdfName("DisplayDocTitle"))) is { } dd ? Fmt(dd, 0) : "absent"));
+            l("DisplayDocTitle: " + (vp is not null && Opt(vp, new PdfName("DisplayDocTitle")) is { } dd ? Fmt(Res(dd), 0) : "absent"));
             l("Pages: " + Inv(pageCount));
             if (_structRoot is null)
             {
@@ -401,7 +405,8 @@ internal static class StructureDumper
         }
 
         // A key whose value is the null object, or a reference to nothing, is absent (ISO 32000-2
-        // 7.3.9 and 7.3.10), whichever way it is spelled. Presence checks go through here.
+        // 7.3.9 and 7.3.10), whichever way it is spelled. Presence checks go through here; a printed
+        // dictionary still shows a null-valued key as =null.
         private PdfObject? Opt(PdfDictionary d, PdfName key)
         {
             var raw = d.Get(key);
@@ -674,7 +679,8 @@ internal static class StructureDumper
                     break;
                 }
 
-                // No line grows past MaxLineChars while it is being built.
+                // Keys stop once the line is past MaxLineChars; one key's value can still take it further, and
+                // Note cuts the line there.
                 if (sb.Length > MaxLineChars)
                 {
                     sb.Append(" …(line cut)");
@@ -879,7 +885,7 @@ internal static class StructureDumper
                 var s = Res(action.Get(KeyS)) is PdfName sn ? sn.Value : "?";
                 return s switch
                 {
-                    "GoTo" => action.Get(new PdfName("D")) is { } d ? DestFrom(d, 0) : "GoTo none",
+                    "GoTo" => Opt(action, new PdfName("D")) is { } d ? DestFrom(d, 0) : "GoTo none",
                     "URI" => "URI",
                     _ => "action " + Safe(s, MaxNameChars),
                 };
@@ -888,9 +894,11 @@ internal static class StructureDumper
             return "none";
         }
 
-        // A destination is an array, a name or a string; a dictionary form wraps one of those in /D
-        // (ISO 32000-2 12.3.2.4 for named destinations). One hop is followed: a dictionary whose /D is another dictionary
-        // is a CYCLE, whether or not it points back, because the specification allows no such nesting.
+        // A destination is an array, a name or a string. ISO 32000-2 12.3.2.4 also lets a named
+        // destination's value be a dictionary whose /D is the destination array; one such hop is
+        // followed, and a name or string found in /D is printed too. A dictionary whose /D is another
+        // dictionary is reported as CYCLE, whether or not it points back, because the specification
+        // allows no such nesting.
         private string DestFrom(PdfObject dest, int hop)
         {
             var r = Res(dest);
@@ -960,10 +968,11 @@ internal static class StructureDumper
 
             // The Reader sets CurrentResources only around image callbacks, so the resource
             // dictionary in force is tracked here: the page's, then each form's own (or, when it has
-            // none, the invoker's. ISO 32000-2 7.8.3 says a form's omitted resources come from the page
+            // none, the invoker's). ISO 32000-2 7.8.3 says a form's omitted resources come from the page
             // on which it is used; this follows the Reader's interpreter instead, which falls back to
             // the invoking stream's, so the fonts and property lists resolved here are the ones the
-            // Reader would resolve. The two differ only for a form nested in a form with no /Resources.
+            // Reader would resolve. They differ only for a form without /Resources drawn, at any depth, inside a form that has
+            // its own.
             private readonly Stack<PdfDictionary?> _resources = new([pageResources]);
             private int _depthTotal;
             private int _mcidOpen;
@@ -1559,7 +1568,9 @@ internal static class StructureDumper
                         sb.Append(' ');
                     if (item is PdfInteger or PdfReal)
                     {
-                        // A revision number is a non-negative integer (Table 355 /A and /C).
+                        // A revision number is an integer (Table 355 /A and /C). A negative one is reported because it
+                        // is set from the element's /R (14.7.6.3, NOTE 4), which Table 355 requires to be
+                        // non-negative.
                         if (ReadInt(item, out var revision) == IntRead.Ok)
                         {
                             sb.Append('@').Append(Inv(revision));
