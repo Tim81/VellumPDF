@@ -202,6 +202,27 @@ public sealed class StructureDumperClassTests
     }
 
     [Fact]
+    public void ManySmallEarlyRanges_underAWideLateOne_areFlattenedAndBinarySearched()
+    {
+        var sb = new StringBuilder("50001 beginbfrange\n");
+        for (var i = 1; i <= 50_000; i++)
+            sb.Append($"<{i:X4}> <{i:X4}> <{0x4E00 + (i % 1000):X4}>\n");
+        sb.Append("<0000> <FFFF> <0041>\nendbfrange");
+        var map = ToUnicodeMap.Parse(Encoding.Latin1.GetBytes(sb.ToString()));
+
+        for (var code = 0u; code < 60_000; code++)
+        {
+            Assert.True(map.TryMap(code, 2, out var text));
+            var expected = code is >= 1 and <= 50_000 ? (char)(0x4E00 + (code % 1000)) : (char)(0x41 + code);
+            Assert.Equal(expected.ToString(), text);
+        }
+
+        // About 100,000 segments: a scan would take millions of steps per lookup; a binary search at
+        // most 17.
+        Assert.True(map.Comparisons <= 60_000 * 20, map.Comparisons.ToString());
+    }
+
+    [Fact]
     public void NarrowEarlyRange_beatsAWideLaterOne_insideItsOwnBounds()
     {
         var map = ToUnicodeMap.Parse(Encoding.Latin1.GetBytes(
