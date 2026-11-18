@@ -1,8 +1,10 @@
 {
   "sdk": {
-    "version": "10.0.403",
-    // Required for CI to pick up 10.0.4xx patch releases; removing it pins CI to
-    // exactly 10.0.403 and drops patch servicing.
+    "version": "11.0.100",
+    // Required for CI to pick up 11.0.1xx patch releases; removing it pins CI to
+    // exactly 11.0.100 and drops patch servicing. The SDK is 11 while the libraries also target
+    // net10.0 (see Directory.Build.props): an SDK builds older TFMs, and the net10.0 runtime
+    // is installed alongside it so the net10.0 test assemblies can run.
     "rollForward": "latestPatch"
   },
   // xunit.v3 4.0.0 pulls in Microsoft.Testing.Platform, which the .NET 10 SDK no longer lets

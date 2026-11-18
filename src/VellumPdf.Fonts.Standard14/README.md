@@ -3,7 +3,7 @@
 [![NuGet](https://img.shields.io/nuget/v/VellumPdf.Fonts.Standard14.svg)](https://www.nuget.org/packages/VellumPdf.Fonts.Standard14)
 [![CI](https://github.com/Tim81/VellumPDF/actions/workflows/ci.yml/badge.svg)](https://github.com/Tim81/VellumPDF/actions/workflows/ci.yml)
 
-Embeddable, metric-compatible substitutes for the PDF standard-14 fonts, an add-on for **[VellumPdf](https://github.com/Tim81/VellumPDF)** (a dependency-free PDF library for .NET 10).
+Embeddable, metric-compatible substitutes for the PDF standard-14 fonts, an add-on for **[VellumPdf](https://github.com/Tim81/VellumPDF)** (a dependency-free PDF library for .NET 10 and .NET 11).
 
 The built-in `Standard14` faces are not embedded, which is fine for ordinary PDFs but disallowed by PDF/A's font-embedding rule. This package bundles the Liberation fonts (Sans/Serif/Mono, SIL OFL 1.1), which cover the Helvetica, Times, and Courier families, and adds a `doc.EmbedStandard14Font(...)` extension that registers a subset, embedded substitute. So standard-14-style text becomes PDF/A-conformant without a caller-supplied font program. (Symbol and ZapfDingbats are not covered.)
 

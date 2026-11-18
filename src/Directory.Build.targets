@@ -11,9 +11,16 @@
     Directory.Build.props but before Directory.Build.targets. Updating the existing item
     (rather than Include-ing a second one) avoids a duplicate-item error; the root fallback
     lives outside the project directory, so it is not globbed and is added with Include.
+
+    With more than one target framework the pack runs in the outer build, which has no
+    default-item globs (measured with `dotnet msbuild -getItem:None`: the outer evaluation holds
+    only NOTICE, the inner one holds README.md, PublicAPI.*.txt and the rest), so an Update there
+    matches nothing and the package fails with NU5039. Remove-then-Include behaves the same in
+    both evaluations: it drops the globbed item when there is one and adds the file either way.
   -->
   <ItemGroup Condition="Exists('$(MSBuildProjectDirectory)/README.md')">
-    <None Update="README.md" Pack="true" PackagePath="\" />
+    <None Remove="README.md" />
+    <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
   <ItemGroup Condition="!Exists('$(MSBuildProjectDirectory)/README.md') And Exists('$(MSBuildThisFileDirectory)../README.md')">
     <None Include="$(MSBuildThisFileDirectory)../README.md" Pack="true" PackagePath="\" Visible="false" />

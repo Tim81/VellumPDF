@@ -8,6 +8,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Every package now targets `net10.0` and `net11.0`, built with the .NET 11 SDK (`global.json`
+  pins 11.0.100, latest patch).** The seven library nupkgs carry `lib/net10.0` and `lib/net11.0`;
+  the `VellumPdf.Cli` tool package carries `tools/net10.0/any` and `tools/net11.0/any`. The public
+  API files are shared by both frameworks and no source file branches on the target framework. The
+  language version is now pinned to C# 14 rather than following the SDK. Both runtimes reach end of
+  support on 2028-11-14, and VellumPdf keeps both targets until that date. `VellumPdf.Signing` takes
+  `System.Security.Cryptography.Pkcs` 10.0.14 on `net10.0` and 11.0.0 on `net11.0`, so a `net10.0`
+  consumer does not pick up the 11.0.0 package's `System.Formats.Asn1` 11 dependency. Contributors
+  need the .NET 10 runtime installed beside the 11.0 SDK to run the `net10.0` test assemblies.
+- **The native `vellum-preflight` binaries on the GitHub Release are published from `net10.0`.**
+  Publishing a multi-targeted executable needs an explicit `-f`, and the LTS target is the one
+  chosen.
+- **CI gates run per target framework.** Each test project runs on both frameworks and writes its
+  coverage report to `<project>/<tfm>_<arch>/` (`--results-directory-layout per-module`). The
+  coverage gate requires exactly one report in each of the 14 expected directories, checks every
+  report against the assemblies its project must instrument, applies the assembly-name,
+  per-assembly-floor, valid-line and 84% threshold checks to each framework and the assembly-name,
+  per-assembly-floor, valid-line, 84% threshold and total-line checks to the merge, and fails on a
+  report anywhere else. The oracle invocation floors are checked per framework, and a framework
+  whose runs logged nothing fails; the verapdf and qpdf floors are now 279 and 51, 90% of the
+  counts the first Linux CI run measured. A new Pack-time check fails the build if the `net10.0`
+  package group of `VellumPdf.Signing` names a Pkcs version outside 10.x. The job timeout stays at
+  60 minutes: the first CI run on both frameworks took 29 minutes, 23 of them in the Test step.
+  The per-package README is now attached
+  with remove-then-include, because an update matches nothing in the outer build that packs a
+  multi-targeted project.
+
 - **CI's oracles move to veraPDF 1.30.4 and qpdf 12.4.2.** `VERAPDF_TAG` was v1.30.2 and
   `QPDF_VERSION` was 12.4.1 (#230); the qpdf checksum moves with it. The veraPDF release notes
   for 1.30.3 and 1.30.4 list changes that can move a verdict on the PDF/A-2a, 2b, 2u and PDF/UA-1

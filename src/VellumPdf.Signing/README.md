@@ -3,7 +3,7 @@
 [![NuGet](https://img.shields.io/nuget/v/VellumPdf.Signing.svg)](https://www.nuget.org/packages/VellumPdf.Signing)
 [![CI](https://github.com/Tim81/VellumPDF/actions/workflows/ci.yml/badge.svg)](https://github.com/Tim81/VellumPDF/actions/workflows/ci.yml)
 
-The digital-signature add-on for **[VellumPdf](https://github.com/Tim81/VellumPDF)**, a dependency-free PDF library for .NET 10 implemented clean-room from ISO 32000. It applies PAdES / PKCS#7 detached CMS signatures to a `VellumPdf.Kernel.PdfDocument` or a `VellumPdf.Layout.Document`.
+The digital-signature add-on for **[VellumPdf](https://github.com/Tim81/VellumPDF)**, a dependency-free PDF library for .NET 10 and .NET 11 implemented clean-room from ISO 32000. It applies PAdES / PKCS#7 detached CMS signatures to a `VellumPdf.Kernel.PdfDocument` or a `VellumPdf.Layout.Document`.
 
 - PAdES levels B-B, B-T (RFC-3161 signature timestamp), B-LT (embedded OCSP/CRL in a `/DSS`), and B-LTA (archive document timestamp).
 - Pluggable timestamp (`ITimestampClient`) and revocation (`IRevocationClient`) clients, with HTTP implementations included.
