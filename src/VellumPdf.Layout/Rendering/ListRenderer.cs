@@ -55,7 +55,7 @@ public sealed class ListRenderer : IRenderer
     /// A null <paramref name="list"/> is refused here (#547); it used to be stored, and
     /// <see cref="Layout"/> threw <see cref="NullReferenceException"/>, even for an empty area.
     /// <para>Do not pass a start outside the list's entries, which count each child after its
-    /// parent. A later major version will throw from this constructor.</para>
+    /// parent. 3.0 will throw from this constructor.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="list"/> is <see langword="null"/>.
@@ -94,13 +94,17 @@ public sealed class ListRenderer : IRenderer
     /// name is <c>startItem</c>, the name of the constructor parameter.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// An item's <see cref="TextStyle.FontSize"/> or <see cref="TextStyle.Color"/> is refused, or the
-    /// list's <see cref="ListElement.Indent"/> is <c>NaN</c> or negative infinity, or an edge of its
-    /// <see cref="ListElement.Margins"/> is not finite; see those members.
+    /// An item's <see cref="TextStyle.FontSize"/> or <see cref="TextStyle.Color"/> is refused; see
+    /// those members.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Text this method measures in an embedded font holds an unpaired surrogate; see
-    /// <see cref="TextStyle.FontRef"/>.
+    /// <see cref="TextStyle.FontRef"/>. It is also raised, by <see cref="VellumPdf.Canvas.PdfCanvas"/>,
+    /// when a <c>NaN</c> or negative-infinity <see cref="ListElement.Indent"/> or a non-finite edge of
+    /// <see cref="ListElement.Margins"/> would be written; see <see cref="Document"/>.
+    /// </exception>
+    /// <exception cref="ArgumentNullException">
+    /// An item has a null child or a null text where it is drawn; see <see cref="ListItem"/>.
     /// </exception>
     public LayoutResult Layout(LayoutContext context)
     {
@@ -309,8 +313,8 @@ public sealed class ListRenderer : IRenderer
         // A no-break space is not a separator here, because it is not one to the wrap this bound
         // exists to predict: ParagraphRenderer.NormaliseWhitespace excludes U+00A0, U+202F and
         // U+2007 from the whitespace it collapses (#562), so a run joined by one is a single token
-        // to WordWrap. Both read the one definition, NoBreakSpaces.IsNoBreakSpace. Splitting on it, which String.Split does through
-        // char.IsWhiteSpace, understates the widest token and lets the widened gutter hard-break a
+        // to WordWrap. Both read the one definition, NoBreakSpaces.IsNoBreakSpace. Splitting on it,
+        // which String.Split does through char.IsWhiteSpace, understates the widest token and lets the widened gutter hard-break a
         // word the caller's own indent would not have. Measured at Helvetica 10pt before this was
         // fixed: "AAAA<NBSP>AAAA" measures 56.14 whole and the bound saw 26.68, so item 38 of a
         // roman list on an 80pt page was split into "AAAA<NBSP>AAA" and "A" while the 26 items

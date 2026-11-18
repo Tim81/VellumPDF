@@ -68,7 +68,7 @@ public sealed class ListIndentNonFiniteTests
 
         // 1c61fa6 wrote the token; PdfCanvas now refuses it, naming PdfReal's message.
         Assert.StartsWith("PDF does not support NaN or Infinity as a real number value", ex.Message, StringComparison.Ordinal);
-        Assert.Equal(double.IsNaN(indent), rendered == "NaN");
+        Assert.EndsWith("Got: " + (rendered == "NaN" ? "NaN" : rendered == "positive infinity" ? "Infinity" : "-Infinity"), ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]

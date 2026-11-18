@@ -29,19 +29,18 @@ namespace VellumPdf.Images;
 /// against the pages the file holds.</para>
 ///
 /// <para><b>Unknown segment length:</b> a segment whose data length field is 0xFFFFFFFF (ITU-T T.88
-/// 7.2.7) is not embedded. Passthrough partitions the segments into a page stream and a globals
-/// stream, which needs each segment's length, and it used to skip such a segment, so a page came
-/// out blank without a word. It now throws <see cref="InvalidDataException"/> naming the segment
-/// when the segment belongs to the page being embedded. A segment of no page (association 0), and
-/// every segment of a file whose first page-information segment selects no page, is still
-/// skipped, as it always was. The end-of-page and end-of-file segments are exempt, and so is any
-/// segment of a page other than the first.
-/// <see cref="ImageDecodeMode.DecodeToRaster"/> refuses an unknown length only on an immediate,
-/// lossless or intermediate generic region (types 36, 38 and 39), which it always refused, with
-/// the same message now; any other segment behaves as before. A sequential or embedded stream
-/// cannot be read past an unknown-length segment, which takes the rest of the data as its own, so
-/// what follows one is not seen. A random-access file cannot use an unknown length on any page,
-/// and says so without naming the segment type.</para>
+/// 7.2.7) is not embedded. This loader does not scan the data for the end marker that clause
+/// describes, so it cannot say where such a segment ends. <see cref="ImageDecodeMode.Passthrough"/>
+/// drops it, as 2.3.3 did, which can leave a page blank without a word; <b>do not pass</b> such a
+/// segment, because 3.0 refuses it and the diagnostics channel (#607) will report it before then. The
+/// one exception is a file with the flags byte and page count of T.88 Annex D, which 2.3.3 could not
+/// read: there, a segment of the page being embedded is refused with <see cref="InvalidDataException"/>
+/// naming it. <see cref="ImageDecodeMode.DecodeToRaster"/> refuses an unknown length on an immediate,
+/// lossless or intermediate generic region (types 36, 38 and 39), as it always did, with a message
+/// naming the segment. Because this loader does not scan, a sequential or embedded stream takes the
+/// rest of the data as an unknown-length segment's own, so what follows one is not seen. A
+/// random-access file cannot use an unknown length on any page, because its data parts cannot be
+/// located without it, and says so without naming the segment type.</para>
 ///
 /// <para>If the first page-information segment has page association 0 it names no page, and no
 /// page is selected: every segment is kept, as before pages were chosen.</para>
@@ -104,10 +103,13 @@ public static class Jbig2ImageLoader
     /// <exception cref="ArgumentException">Thrown when <paramref name="jbig2"/> is null or empty.</exception>
     /// <exception cref="InvalidDataException">
     /// Thrown on malformed or truncated input. A segment whose data length is unknown (0xFFFFFFFF,
-    /// ITU-T T.88 7.2.7) is not refused in this passthrough embedding: it is dropped, as on 1c61fa6,
+    /// ITU-T T.88 7.2.7) is not refused in this passthrough embedding: it is dropped, as on 2.3.3,
     /// because this loader does not scan for the end marker 7.2.7 describes and so cannot say where
     /// the segment ends. <b>Do not pass</b> such a segment. The image is embedded without it, which
-    /// can leave no region and a blank image, and nothing reports it yet; 3.0 refuses it. Only the
+    /// can leave no region and a blank image, and nothing reports it yet; 3.0 refuses it. A file with
+    /// the flags byte and page count of T.88 Annex D, which 2.3.3 could not read, is the exception:
+    /// the segment is refused with <see cref="InvalidDataException"/> naming it, because this loader
+    /// does not scan for the end marker. Only the
     /// first page of a multi-page file is embedded, unless the first page-information segment has
     /// page association 0, which keeps every segment.
     /// </exception>
@@ -141,7 +143,7 @@ public static class Jbig2ImageLoader
     /// Thrown on malformed or truncated input. Under <see cref="ImageDecodeMode.DecodeToRaster"/> it
     /// is also thrown for a generic region whose data length is unknown (0xFFFFFFFF, ITU-T T.88
     /// 7.2.7), which this loader cannot decode; the message names the segment number. Under
-    /// <see cref="ImageDecodeMode.Passthrough"/> such a segment is dropped, as on 1c61fa6; see
+    /// <see cref="ImageDecodeMode.Passthrough"/> such a segment is dropped, as on 2.3.3; see
     /// <see cref="Load(byte[])"/>. Only the first page of a multi-page file is embedded, under either
     /// mode, unless the first page-information segment has page association 0, which keeps every
     /// segment.
@@ -531,7 +533,7 @@ public static class Jbig2ImageLoader
             if (!BelongsToPage(seg, firstPage))
                 continue;
 
-            // A segment of unknown length (§7.2.7) is dropped, as it was on 1c61fa6 (#484). This loader
+            // A segment of unknown length (§7.2.7) is dropped, as it was on 2.3.3 (#484). This loader
             // does not scan for the end marker 7.2.7 describes (0xFF 0xAC for arithmetic coding,
             // 0x00 0x00 for MMR, each followed by a row count; only an immediate generic region may
             // have one), so it cannot say where the segment ends. Dropping it can leave an image with
@@ -539,9 +541,9 @@ public static class Jbig2ImageLoader
             // refuses it.
             if (!seg.HasKnownLength)
             {
-                // A file with a T.88 Annex D header threw on 1c61fa6, which could not read the header,
+                // A file with a T.88 Annex D header threw on 2.3.3, which could not read the header,
                 // and dropping the segment would leave an image with no region: this loader cannot
-                // handle it correctly, so it stays refused. A file without that header, which 1c61fa6
+                // handle it correctly, so it stays refused. A file without that header, which 2.3.3
                 // read, keeps its output.
                 if (annexDHeader && firstPage != 0 && seg.PageAssociation == firstPage)
                     throw UnknownLength(seg);

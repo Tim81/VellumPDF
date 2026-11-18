@@ -26,19 +26,25 @@ namespace VellumPdf.Layout;
 /// <remarks>
 /// Most refusals fire from the save, not from the member you set, and each member says which call
 /// throws. A save before any element is added throws; see the constructor.
-/// <para><b>A non-finite number is not checked before the layout.</b> An inset, indent, colour
-/// channel or band height that is <c>NaN</c> or infinite is accepted by the member that holds it,
-/// with two exceptions that threw for every value on 1c61fa6: a line separator's margins and a table
-/// cell's padding are refused by name before the layout. The layout then runs as it did on 1c61fa6,
-/// and the save throws only where it would write the value. <see cref="PdfCanvas"/>, and the
-/// <c>PdfReal</c> constructor for a bookmark or a link rectangle, throw
-/// <see cref="ArgumentException"/> saying PDF does not support NaN or Infinity as a real number.
-/// Everything else depends on the content: the kind of element, its alignment, whether anything is
-/// drawn, the running bands. The file may save with the content drawn, wrapped after every word,
-/// placed off the page or not drawn at all, or the layout may refuse it as too tall, exactly as it
-/// did on 1c61fa6. A <c>NaN</c> right margin on a left-aligned paragraph wraps it after every word
-/// and saves; on centred or right-aligned text it writes <c>NaN</c> and the canvas refuses it. An
-/// infinite top margin on a table saves a page with the table not drawn.</para>
+/// <para><b>A non-finite number is mostly not checked before the layout.</b> An inset, indent, colour
+/// channel or band height that is <c>NaN</c> or infinite is accepted by the member that holds it. The
+/// layout then runs as it did on 2.3.3, and the save throws only where it would write the value.
+/// <see cref="PdfCanvas"/>, and the <c>PdfReal</c> constructor for a bookmark or a link rectangle,
+/// throw <see cref="ArgumentException"/> saying PDF does not support NaN or Infinity as a real
+/// number. Everything else depends on the content: the kind of element, its alignment, whether
+/// anything is drawn, the running bands. The file may save with the content drawn, wrapped after
+/// every word, placed off the page or not drawn at all, or the layout may refuse it as too tall or
+/// after 50,000 page continuations, exactly as it did on 2.3.3. A <c>NaN</c> right margin on a
+/// left-aligned paragraph wraps it after every word and saves; on centred or right-aligned text it
+/// writes <c>NaN</c> and the canvas refuses it. An infinite top margin on a table saves a page with
+/// the table not drawn.</para>
+/// <para>A few checks do run before the layout and name the element, each for input that made 2.3.3
+/// throw or write an invalid token in every shape measured: the size or colour of text that is
+/// drawn (paragraph runs, headings, list items, table cells), a band's font size, a line
+/// separator's margins and colour, a table cell's padding, a negative line width, an image extent
+/// that is zero or not finite, and a <c>ColSpan</c> below one. A caller that catches
+/// <see cref="ArgumentException"/> around a save does not see those, which are
+/// <see cref="InvalidOperationException"/>.</para>
 /// <para><b>Do not pass</b> a non-finite number to any of these members. The saved cases are not
 /// reported yet, because there is no diagnostics channel (#607), and 3.0 refuses every non-finite
 /// value at the member that holds it. Each member that takes one gives an example and refers here.</para>
@@ -249,15 +255,16 @@ public sealed class Document : IDisposable
     /// beyond the page. On a one-paragraph document with every inset at -72, the file is written
     /// with no invalid token in it, so nothing downstream reports the loss either. Negative insets
     /// large enough in magnitude to overflow the position arithmetic, such as -1e308 on the left or
-    /// right edge alone, are finite and so pass the check below. They were not measured again after
-    /// #502, and what they do depends on the elements laid out.</para>
+    /// right edge alone, are finite and so pass the check below. What they do depends on the elements laid
+    /// out.</para>
     /// <para>An inset that is not a finite number is not checked before the layout; see
     /// <see cref="Document"/>. A positive-infinity inset meets the page and is refused with
     /// <see cref="ArgumentException"/> (parameter name <c>margins</c>), as the sum check did before
-    /// #502. <c>NaN</c> and negative infinity pass that check, as they did on 1c61fa6, and then give
+    /// #502. <c>NaN</c> and negative infinity pass that check, as they did on 2.3.3, and then give
     /// whatever the layout gives: a NaN bottom margin saves a table, and a negative-infinity top margin
     /// saves a page with the table not drawn, while a NaN left margin with a table reaches the canvas
-    /// and is refused. <b>Do not pass</b> a non-finite inset: 3.0 refuses it.</para>
+    /// and is refused. A negative-infinity top margin with a paragraph is refused after 50,000 page
+    /// continuations, as on 2.3.3. <b>Do not pass</b> a non-finite inset: 3.0 refuses it.</para>
     /// <para><b>Attention</b>: do not pass a finite negative inset. 3.0 will reject it.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
@@ -273,7 +280,8 @@ public sealed class Document : IDisposable
     /// Raised from a save when an inset that passes the <see cref="ArgumentException"/> check
     /// leaves an element no area it can be laid out in, or leaves an image an extent it cannot
     /// draw, and also when a large finite inset leaves the content area positive but too small for
-    /// a single element.
+    /// a single element, or when a single element needs more than 50,000 page continuations, which a
+    /// negative-infinity top inset gives a paragraph.
     /// </exception>
     public EdgeInsets Margins { get; set; } = new EdgeInsets(72); // 1 inch
 
@@ -283,8 +291,8 @@ public sealed class Document : IDisposable
     /// Supports {page} and {pages} tokens.
     /// </summary>
     /// <remarks>
-    /// A band's <see cref="RunningBand.Template"/> is never null, because the
-    /// <see cref="RunningBand"/> constructor refuses one (#531). The band's height and style carry
+    /// A band whose <see cref="RunningBand.Template"/> is null is refused when the band is drawn,
+    /// not when it is assigned (#531). The band's height and style carry
     /// refusals of their own; see <see cref="RunningBand.Height"/>,
     /// <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/> and
     /// <see cref="TextStyle.FontRef"/>.
@@ -316,8 +324,8 @@ public sealed class Document : IDisposable
     /// Supports {page} and {pages} tokens.
     /// </summary>
     /// <remarks>
-    /// A band's <see cref="RunningBand.Template"/> is never null, because the
-    /// <see cref="RunningBand"/> constructor refuses one (#531). The band's height and style carry
+    /// A band whose <see cref="RunningBand.Template"/> is null is refused when the band is drawn,
+    /// not when it is assigned (#531). The band's height and style carry
     /// refusals of their own; see <see cref="RunningBand.Height"/>,
     /// <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/> and
     /// <see cref="TextStyle.FontRef"/>.
@@ -1238,6 +1246,13 @@ public sealed class Document : IDisposable
     /// <exception cref="ArgumentNullException">
     /// <paramref name="destination"/> is <see langword="null"/>. This is checked before the layout
     /// runs, so the document is untouched and can be saved again; see the remarks.
+    /// It is also raised, from the layout and not from the call that stored the null, for a null an
+    /// element holds that is refused where it is used: a <see cref="TextRun"/> style that yields a
+    /// word (<c>ParamName</c> <c>Style</c>), a <see cref="Cell"/> text in a table with an
+    /// automatically sized column (<c>content</c>), a <see cref="ListItem"/> child or text on a
+    /// top-level item or its child (<c>child</c>, <c>text</c>), and a <see cref="RunningBand"/>
+    /// template that is drawn (<c>template</c>). The layout had started, so the document cannot be
+    /// saved again.
     /// </exception>
     /// <exception cref="ObjectDisposedException">
     /// This <see cref="Document"/> was already disposed. It derives from
@@ -1502,6 +1517,13 @@ public sealed class Document : IDisposable
     /// <exception cref="ArgumentNullException">
     /// <paramref name="destination"/> is <see langword="null"/>. This is checked before the layout
     /// runs, so the document is untouched and can be saved again; see the remarks.
+    /// It is also raised, from the layout and not from the call that stored the null, for a null an
+    /// element holds that is refused where it is used: a <see cref="TextRun"/> style that yields a
+    /// word (<c>ParamName</c> <c>Style</c>), a <see cref="Cell"/> text in a table with an
+    /// automatically sized column (<c>content</c>), a <see cref="ListItem"/> child or text on a
+    /// top-level item or its child (<c>child</c>, <c>text</c>), and a <see cref="RunningBand"/>
+    /// template that is drawn (<c>template</c>). The layout had started, so the document cannot be
+    /// saved again.
     /// </exception>
     /// <exception cref="ObjectDisposedException">
     /// This <see cref="Document"/> was already disposed. It derives from

@@ -56,7 +56,7 @@ public sealed class PdfDictionary : PdfObject
         // pins.
         ArgumentNullException.ThrowIfNull(key);
 
-        // A null value is stored and refused in WriteTo, where 1c61fa6 failed: a sequence that sets the
+        // A null value is stored and refused in WriteTo, where 2.3.3 failed: a sequence that sets the
         // key again before the dictionary is written saved a valid file there.
         if (_index is not null)
         {

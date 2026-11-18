@@ -21,7 +21,7 @@ namespace VellumPdf.Layout.Core;
 /// positive infinity and negative infinity take three different branches here, and an earlier draft
 /// of this file measured one of them and asserted all three.
 ///
-/// A check is made before the layout only where no content on 1c61fa6 produced a valid file with the
+/// A check is made before the layout only where no content on 2.3.3 produced a valid file with the
 /// input, the rule the <c>Document</c> remarks state: a font size on text that is drawn, a
 /// <c>ColSpan</c> below one, a line separator's margins and colour, a table cell's padding, a
 /// negative line width, an image extent that is zero or not finite. The other non-finite insets,
@@ -66,7 +66,7 @@ internal static class LayoutValidation
 
     /// <summary>
     /// The font-size half of <see cref="ValidateStyle"/>, for the callers that decide where a colour is
-    /// checked themselves: a running band and a table cell. 1c61fa6 refused a non-finite size there
+    /// checked themselves: a running band and a table cell. 2.3.3 refused a non-finite size there
     /// and wrote no colour for text that is never drawn, so the size is checked before the layout and
     /// the colour only where it is written.
     /// </summary>
@@ -224,7 +224,7 @@ internal static class LayoutValidation
 
     /// <summary>
     /// Rejects insets that are not finite, for the two elements where no content saved a valid file
-    /// on 1c61fa6 with one: a line separator's margins and a table cell's padding. Each threw for
+    /// on 2.3.3 with one: a line separator's margins and a table cell's padding. Each threw for
     /// every edge and every one of <c>NaN</c>, positive and negative infinity, where it was measured.
     /// Every other inset is not checked here. Layout runs as it did on that version, and
     /// <c>PdfCanvas</c> refuses a value that would be written as <c>NaN</c> or <c>Infinity</c>.

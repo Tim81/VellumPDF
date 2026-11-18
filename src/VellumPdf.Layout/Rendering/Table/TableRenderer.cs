@@ -70,11 +70,19 @@ public sealed class TableRenderer : IRenderer
     /// calls this method, the exceptions it lists reach you from the save.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
-    /// The table resolves to no columns, or a cell's span, padding, background or style, or the
-    /// table's border width, border colour or margins, is refused; see
-    /// <see cref="TableElement.Rows"/>, <see cref="Cell.ColSpan"/>, <see cref="Cell.Padding"/>,
-    /// <see cref="Cell.Background"/>, <see cref="TableElement.BorderWidth"/>,
-    /// <see cref="TableElement.BorderColor"/> and <see cref="TableElement.Margins"/>.
+    /// The table resolves to no columns, or a cell's span, padding or font size, or the table's border
+    /// width, is refused; see <see cref="TableElement.Rows"/>, <see cref="Cell.ColSpan"/>,
+    /// <see cref="Cell.Padding"/>, <see cref="TableElement.BorderWidth"/>. A cell's text colour is
+    /// refused the same way where the cell is drawn.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// <see cref="VellumPdf.Canvas.PdfCanvas"/> refuses a non-finite <see cref="Cell.Background"/> or
+    /// <see cref="TableElement.BorderColor"/> channel, or a non-finite edge of
+    /// <see cref="TableElement.Margins"/>, where it would be written; see <see cref="Document"/>.
+    /// </exception>
+    /// <exception cref="ArgumentNullException">
+    /// A cell's text is null and a column is sized automatically; <c>ParamName</c> is <c>content</c>.
+    /// See <see cref="Cell"/>.
     /// </exception>
     /// <exception cref="OverflowException">
     /// A row's column spans sum past <see cref="int.MaxValue"/>; see <see cref="Cell.ColSpan"/>.
@@ -453,7 +461,7 @@ public sealed class TableRenderer : IRenderer
             canvas.SetFont(cf, cs.FontSize);
         }
 
-        // Where the text colour is written, so a cell that is never drawn is not refused for it; 1c61fa6
+        // Where the text colour is written, so a cell that is never drawn is not refused for it; 2.3.3
         // saved those with any colour. The font size is checked in Layout.
         LayoutValidation.ValidateColor(cs.Color, $"Table row {rowIndex}, cell {cellIndex}", "text colour");
         canvas.SetFillColorRgb(cs.Color.R, cs.Color.G, cs.Color.B);

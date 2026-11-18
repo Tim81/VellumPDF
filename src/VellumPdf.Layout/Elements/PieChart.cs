@@ -33,7 +33,7 @@ public readonly record struct PieSlice
     /// <remarks>
     /// Stored as given. Channels are not clamped. A channel that is not finite is refused where it is
     /// written; see <see cref="Document"/>. A slice whose <see cref="Value"/> is zero draws no wedge,
-    /// so a non-finite channel on it is not refused: that saved a valid file on 1c61fa6 and still
+    /// so a non-finite channel on it is not refused: that saved a valid file on 2.3.3 and still
     /// does. <b>Do not pass</b> a non-finite channel on any slice: 3.0 refuses it.
     /// </remarks>
     /// <exception cref="ArgumentException">
@@ -115,7 +115,7 @@ public sealed class PieChart
     /// <see cref="StrokeColor"/> set, every non-zero slice strokes the same radius (#546). A large
     /// sum that stays finite is unaffected, and each wedge still takes its share.</para>
     /// <para><b>Do not pass</b> values whose sum overflows to infinity. The file is valid and it
-    /// saved on 1c61fa6, so it is not refused in a patch. 3.0 will throw
+    /// saved on 2.3.3, so it is not refused in a patch. 3.0 will throw
     /// <see cref="ArgumentException"/> with <c>ParamName</c> <c>Slices</c>.</para>
     /// <para>A null list is refused where it is set (#547). It used to be stored, and the save threw
     /// <see cref="NullReferenceException"/> when it laid the chart out.</para>
@@ -171,7 +171,7 @@ public sealed class PieChart
     /// <summary>Margins around the chart. Defaults to 6 points on all sides.</summary>
     /// <remarks>
     /// A non-finite edge is not checked before the layout; see <see cref="Document"/>. The layout runs
-    /// as it did on 1c61fa6, and the save throws <see cref="ArgumentException"/> from
+    /// as it did on 2.3.3, and the save throws <see cref="ArgumentException"/> from
     /// <see cref="VellumPdf.Canvas.PdfCanvas"/> only where it would write the value (#519).
     /// <para>For example, an infinite right edge saves the chart drawn. <b>Do not pass</b> a
     /// non-finite edge: 3.0 refuses it.</para>

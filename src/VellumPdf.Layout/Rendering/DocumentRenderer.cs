@@ -584,7 +584,7 @@ public sealed class DocumentRenderer
         // validation either: a non-finite band font size saved a document containing "/F1 NaN Tf"
         // and "1 0 0 1 NaN NaN Tm". The note further down about geometry validation asked for this.
         // The size only: a colour is written only when text is drawn, and a band that draws nothing
-        // saved with any colour on 1c61fa6.
+        // saved with any colour on 2.3.3.
         LayoutValidation.ValidateFontSize(style, $"The {kind.ToString().ToLowerInvariant()} band");
 
         var contentWidth = _pageSize.Width - _margins.Horizontal;

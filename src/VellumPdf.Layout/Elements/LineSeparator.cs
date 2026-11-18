@@ -41,7 +41,8 @@ public sealed class LineSeparator
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property,
     /// when the width is not finite or is negative. The message names the separator and the width.
-    /// It is also raised when the width is large enough that the separator does not fit on a page, with a message saying the
+    /// It is also raised when the width is large enough that the separator does not fit on a page, with a message
+    /// saying the
     /// element is too tall to fit.
     /// </exception>
     /// <exception cref="ArgumentException">
@@ -56,8 +57,8 @@ public sealed class LineSeparator
     /// <summary>Stroke color of the rule.</summary>
     /// <remarks>
     /// Stored as given. Channels are not clamped. A channel that is not finite is refused before
-    /// the layout, naming the separator, because a separator is always drawn and threw for every
-    /// value on 1c61fa6; see <see cref="Document"/> and <see cref="ColorRgb"/>.
+    /// the layout, naming the separator, because a separator is always drawn and 2.3.3 wrote
+    /// <c>NaN 0 0 RG</c> for it; see <see cref="Document"/> and <see cref="ColorRgb"/>.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from a save, when a channel is <c>NaN</c> or infinite. The message names the line separator and the

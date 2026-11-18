@@ -60,7 +60,7 @@ public sealed class RunningBand
     /// <para>A non-finite channel in <see cref="TextStyle.Color"/> is refused where it is written; see
     /// <see cref="Document"/>. A band that draws nothing, because its template is empty or no part of
     /// it fits the content width, writes no colour, so the channel is not refused there: that saved a
-    /// valid file on 1c61fa6 and still does. <b>Do not pass</b> a non-finite channel: 3.0 refuses
+    /// valid file on 2.3.3 and still does. <b>Do not pass</b> a non-finite channel: 3.0 refuses
     /// it.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
@@ -106,10 +106,12 @@ public sealed class RunningBand
     /// height comes off the page's content box, so both leave the band no room while it is still
     /// drawn, over your content. 3.0 will reject them.</para>
     /// <para>A height that is not a finite number is not checked before the layout; see
-    /// <see cref="Document"/>. The layout runs as it did on 1c61fa6. A <c>NaN</c> height is refused as
-    /// too tall, positive infinity as a content area with no size, and negative infinity as too many
-    /// page continuations on a header, but on a footer it writes <c>NaN</c> into the text matrix, which
-    /// <see cref="VellumPdf.Canvas.PdfCanvas"/> refuses. A band with an empty template draws nothing,
+    /// <see cref="Document"/>. The layout runs as it did on 2.3.3. With a one-paragraph body, a
+    /// <c>NaN</c> height is refused as too tall, positive infinity as a content area with no size, and
+    /// negative infinity as too many page continuations on a header, but on a footer it writes
+    /// <c>NaN</c> into the text matrix, which <see cref="VellumPdf.Canvas.PdfCanvas"/> refuses. Other
+    /// bodies give other outcomes: a <c>NaN</c> height above a table is refused by the canvas where
+    /// the table is drawn. A band with an empty template draws nothing,
     /// so a negative-infinity footer height there saves when the body fits. <b>Do not pass</b> a
     /// non-finite height: 3.0 refuses it.</para>
     /// <para>A finite height large enough to leave the content area no room is a separate case, and
@@ -124,8 +126,9 @@ public sealed class RunningBand
     /// <exception cref="ArgumentException">
     /// Raised from a save rather than from this property, when a finite height is large enough on
     /// its own that the content area is left with no positive size, or the height is positive
-    /// infinity, or negative infinity on a footer that draws text and writes <c>NaN</c> into a text
-    /// matrix, which the canvas refuses.
+    /// infinity, or <c>NaN</c> or negative infinity where the layout writes the height into an
+    /// operand, which the canvas refuses: a footer that draws text with a negative-infinity height,
+    /// or a <c>NaN</c> height above a table, for example.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from a save, when the height is <c>NaN</c>, or negative infinity on a header, or a finite
@@ -139,7 +142,7 @@ public sealed class RunningBand
     /// A null <paramref name="style"/> becomes <see cref="TextStyle.Default"/>. A null
     /// <paramref name="template"/> is stored, and <see cref="Resolve"/> refuses it where the band is
     /// drawn, with <see cref="ArgumentNullException"/> (#531). It is not refused earlier, because a band
-    /// that is replaced before the save never reaches <see cref="Resolve"/>, and 1c61fa6 saved that,
+    /// that is replaced before the save never reaches <see cref="Resolve"/>, and 2.3.3 saved that,
     /// throwing <see cref="NullReferenceException"/> only for a band that stayed. <b>Do not pass</b> a
     /// null template: 3.0 refuses it here. An empty template is not null and is accepted.
     /// </remarks>

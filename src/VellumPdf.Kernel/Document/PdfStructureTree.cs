@@ -78,7 +78,7 @@ public sealed class PdfStructElem
     /// so a cycle overflowed the stack from an ordinary <c>Save</c>. That cannot be caught in .NET,
     /// which is why it is refused here, at the call that makes it. An element reachable by two
     /// routes without a cycle is not refused.
-    /// <para>A null <paramref name="child"/> is stored, as on 1c61fa6, and refused where the structure
+    /// <para>A null <paramref name="child"/> is stored, as on 2.3.3, and refused where the structure
     /// tree is built: a document that is not tagged never builds it, so such a document saves. It is
     /// not refused at this call. <b>Do not pass</b> a null child: 3.0 refuses it here.</para>
     /// </remarks>
@@ -92,7 +92,7 @@ public sealed class PdfStructElem
     /// </exception>
     public PdfStructElem AddChild(PdfStructElem child)
     {
-        // A null child is stored and refused where the tree is built, as on 1c61fa6, which saved an
+        // A null child is stored and refused where the tree is built, as on 2.3.3, which saved an
         // untagged document whose elements held one.
         if (child is not null && child.Contains(this))
         {

@@ -35,7 +35,8 @@ public readonly record struct ColorRgb
     public double B { get; init; }
 
     /// <summary>Creates a colour from the given channels.</summary>
-    /// <remarks>Nothing is refused here. The three values are stored as passed; see the type remarks for what happens when the colour is drawn.</remarks>
+    /// <remarks>Nothing is refused here. The three values are stored as passed; see the type remarks for what happens
+    /// when the colour is drawn.</remarks>
     public ColorRgb(double R, double G, double B)
     {
         this.R = R;

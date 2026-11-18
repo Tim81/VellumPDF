@@ -916,9 +916,10 @@ public sealed class SaveLifecycleTests
     // ── A layout that started cannot be repeated, even before it added a page ──
 
     // A renderer caches its wrap at the width it was first laid out at. A retry after a PageSize
-    // change would reuse that wrap: probed against a fresh document with "Hello" at 150pt, the
-    // retry hard-broke it as (Hell)/(o) where the fresh one wrote (Hello). So the document refuses
-    // the retry, and the way to recover is a new Document.
+    // change would reuse that wrap. Probed on 2.3.3 with one "Hello" paragraph in 150pt Helvetica,
+    // 10pt margins and a 20pt header, first on a 300x200pt page and retried on 600x800pt, the retry
+    // hard-broke it as (Hell)/(o) where a fresh 600x800pt document wrote (Hello). So the document
+    // refuses the retry, and the way to recover is a new Document.
     [Fact]
     public void TooTallElementWithAHeader_isRefusedByTheCountingPass_andTheRetryIsRefusedToo()
     {

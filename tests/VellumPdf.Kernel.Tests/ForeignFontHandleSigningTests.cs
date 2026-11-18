@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using VellumPdf.Document;
 using VellumPdf.Signing;
+using VellumPdf.TestSupport;
 
 namespace VellumPdf.Kernel.Tests;
 
@@ -51,7 +52,7 @@ public sealed class ForeignFontHandleSigningTests
     [InlineData(true)]
     public void ForeignHandle_drawnText_getsTheSameWidthsAsTheOwnHandleWould(bool signing)
     {
-        if (!File.Exists(FontPath)) Assert.Skip("DejaVu Sans is copied beside the test assembly by the project file.");
+        if (!File.Exists(FontPath)) OracleGate.Unavailable("DejaVuSans.ttf", "DejaVu Sans is copied beside the test assembly by the project file.");
 
         var own = WidthsOf(Build(viaForeign: false, signing));
         var viaForeign = WidthsOf(Build(viaForeign: true, signing));

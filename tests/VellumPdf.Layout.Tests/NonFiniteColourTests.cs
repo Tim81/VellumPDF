@@ -86,7 +86,7 @@ public sealed class NonFiniteColourTests
 
         var ex = Assert.Throws<ArgumentException>(() => Render(doc));
         Assert.StartsWith("PDF does not support NaN or Infinity as a real number value", ex.Message, StringComparison.Ordinal);
-        Assert.Equal(double.IsNaN(value), rendered == "NaN");
+        Assert.EndsWith("Got: " + (rendered == "NaN" ? "NaN" : rendered == "positive infinity" ? "Infinity" : "-Infinity"), ex.Message, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -111,7 +111,7 @@ public sealed class NonFiniteColourTests
 
         var ex = Assert.Throws<ArgumentException>(() => Render(doc));
         Assert.StartsWith("PDF does not support NaN or Infinity as a real number value", ex.Message, StringComparison.Ordinal);
-        Assert.Equal(double.IsNaN(value), rendered == "NaN");
+        Assert.EndsWith("Got: " + (rendered == "NaN" ? "NaN" : rendered == "positive infinity" ? "Infinity" : "-Infinity"), ex.Message, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -125,7 +125,7 @@ public sealed class NonFiniteColourTests
 
         var ex = Assert.Throws<ArgumentException>(() => Render(doc));
         Assert.StartsWith("PDF does not support NaN or Infinity as a real number value", ex.Message, StringComparison.Ordinal);
-        Assert.Equal(double.IsNaN(value), rendered == "NaN");
+        Assert.EndsWith("Got: " + (rendered == "NaN" ? "NaN" : rendered == "positive infinity" ? "Infinity" : "-Infinity"), ex.Message, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -150,7 +150,7 @@ public sealed class NonFiniteColourTests
 
         var ex = Assert.Throws<ArgumentException>(() => Render(doc));
         Assert.StartsWith("PDF does not support NaN or Infinity as a real number value", ex.Message, StringComparison.Ordinal);
-        Assert.Equal(double.IsNaN(value), rendered == "NaN");
+        Assert.EndsWith("Got: " + (rendered == "NaN" ? "NaN" : rendered == "positive infinity" ? "Infinity" : "-Infinity"), ex.Message, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -166,7 +166,7 @@ public sealed class NonFiniteColourTests
 
         var ex = Assert.Throws<ArgumentException>(() => Render(doc));
         Assert.StartsWith("PDF does not support NaN or Infinity as a real number value", ex.Message, StringComparison.Ordinal);
-        Assert.Equal(double.IsNaN(value), rendered == "NaN");
+        Assert.EndsWith("Got: " + (rendered == "NaN" ? "NaN" : rendered == "positive infinity" ? "Infinity" : "-Infinity"), ex.Message, StringComparison.Ordinal);
     }
 
     /// <summary>

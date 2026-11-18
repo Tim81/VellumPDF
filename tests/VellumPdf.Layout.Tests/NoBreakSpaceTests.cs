@@ -7,6 +7,7 @@ using VellumPdf.Fonts;
 using VellumPdf.Layout.Core;
 using VellumPdf.Layout.Elements;
 using VellumPdf.Layout.Elements.Table;
+using VellumPdf.TestSupport;
 
 namespace VellumPdf.Layout.Tests;
 
@@ -259,7 +260,7 @@ public sealed class NoBreakSpaceTests
     public void Embedded_aNoBreakSpaceBreaksTheLineWhereU00A0Does_andOrdinaryWhiteSpaceDoesNot(char space)
     {
         if (!File.Exists(DejaVu))
-            Assert.Skip("DejaVu Sans is needed for an embedded font.");
+            OracleGate.Unavailable("DejaVuSans.ttf", "DejaVu Sans is needed for an embedded font.");
         var font = File.ReadAllBytes(DejaVu);
 
         // Wide enough for the token with whichever no-break space it carries, since the font gives

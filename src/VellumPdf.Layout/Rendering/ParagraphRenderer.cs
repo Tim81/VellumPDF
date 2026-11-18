@@ -71,12 +71,18 @@ public sealed class ParagraphRenderer : IRenderer
     /// save.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
-    /// A run's <see cref="TextStyle.FontSize"/> or <see cref="TextStyle.Color"/> is refused, or an
-    /// edge of <see cref="Paragraph.Margins"/> is not finite; see those members.
+    /// A run that yields text has a <see cref="TextStyle.FontSize"/> or <see cref="TextStyle.Color"/>
+    /// that is refused; see those members.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Text this method measures in an embedded font holds an unpaired surrogate; see
-    /// <see cref="TextStyle.FontRef"/>.
+    /// <see cref="TextStyle.FontRef"/>. It is also raised, by <see cref="VellumPdf.Canvas.PdfCanvas"/>,
+    /// when a non-finite edge of <see cref="Paragraph.Margins"/> would be written; see
+    /// <see cref="Document"/>.
+    /// </exception>
+    /// <exception cref="ArgumentNullException">
+    /// A run that yields text has a null style; <c>ParamName</c> is <c>Style</c>. See
+    /// <see cref="TextRun"/>.
     /// </exception>
     public LayoutResult Layout(LayoutContext context)
     {
@@ -650,7 +656,7 @@ public sealed class ParagraphRenderer : IRenderer
                 var isFirstWord = true;
                 foreach (var w in words)
                 {
-                    // 1c61fa6 dereferenced the style for the first word of a run and for nothing else, so a
+                    // 2.3.3 dereferenced the style for the first word of a run and for nothing else, so a
                     // run of empty text, white space or line breaks alone saved with a null style.
                     if (run.Style is null)
                         throw new ArgumentNullException("Style", "A paragraph run with text has a null style.");

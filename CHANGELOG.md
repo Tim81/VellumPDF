@@ -71,20 +71,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   throwing and wrote `/GSn gs` to an ExtGState that was never defined, and later names shifted. Every
   such call now throws and registers nothing.
 
-- **A non-finite number is not checked before the layout, except where no content ever saved.** An
-  inset, indent, colour channel or band height of `NaN` or infinity is accepted by the member that
-  holds it, with two exceptions: a line separator's margins and a table cell's padding, which threw
-  for every value on 1c61fa6 and are refused by name before the layout. The layout then runs as it
-  did on 1c61fa6, and the save throws only where it would write the value: `PdfCanvas`, and `PdfReal`
-  for a bookmark or a link rectangle, throw `ArgumentException` ("PDF does not support NaN or
-  Infinity as a real number"). Everything else depends on the content. The file may save with the
-  content drawn, wrapped after every word, placed off the page or not drawn at all, or the layout
-  may refuse it as too tall, exactly as on 1c61fa6. A `NaN` right margin on a left-aligned paragraph
-  wraps it after every word and saves, and on centred or right-aligned text writes `NaN` and is
-  refused; an infinite top margin on a table saves a page with the table not drawn. A saved file
-  that lost content this way is kept, because 1c61fa6 saved it (#484); the XML doc of each member
-  says not to pass such a value and that 3.0 refuses it, and the diagnostics channel (#607) will
-  report it. `KeepRenderingTests` and `NonFiniteGeometryTests` pin what 1c61fa6 did, row by row.
+- **A non-finite number is mostly not checked before the layout.** An inset, indent, colour channel
+  or band height of `NaN` or infinity is accepted by the member that holds it. The layout then runs
+  as it did on 2.3.3, and the save throws only where it would write the value: `PdfCanvas`, and
+  `PdfReal` for a bookmark or a link rectangle, throw `ArgumentException` ("PDF does not support
+  NaN or Infinity as a real number"). Everything else depends on the content. The file may save
+  with the content drawn, wrapped after every word, placed off the page or not drawn at all, or the
+  layout may refuse it as too tall or after 50,000 page continuations, exactly as on 2.3.3. A
+  `NaN` right margin on a left-aligned paragraph wraps it after every word and saves, and on
+  centred or right-aligned text writes `NaN` and is refused; an infinite top margin on a table saves
+  a page with the table not drawn; a negative-infinity top document margin with a paragraph is
+  refused after 50,000 page continuations. A saved file that lost content this way is kept, because
+  2.3.3 saved it (#484); the XML doc of each member says not to pass such a value and that 3.0
+  refuses it, and the diagnostics channel (#607) will report it. A few checks do run before the
+  layout and name the element, each for input that made 2.3.3 throw or write an invalid token in
+  every shape measured: the size or colour of text that is drawn (paragraph runs, headings, list
+  items, table cells), a band's font size, a line separator's margins and colour, a table cell's
+  padding, a negative line width, an image extent that is zero or not finite, and a `ColSpan` below
+  one. Those raise `InvalidOperationException`, which a caller that catches `ArgumentException`
+  around a save does not see. `KeepRenderingTests`, `NonFiniteGeometryTests` and
+  `NullDeferralTests` pin what 2.3.3 did, row by row.
 
 - **A non-finite colour channel no longer reaches the content stream (#509).** A `ColorRgb` with a
   `NaN` or infinite channel on a text style, a running band, a table cell's style or background, a
@@ -95,9 +101,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `PdfCanvas` with `ArgumentException`. A finite channel outside 0 to 1 is **not** refused. It
   renders today, a patch does not turn that into an exception, and it is documented on `ColorRgb`
   and `ColorCmyk` with the refusal listed in #484. A colour that is not written saves, as on
-  1c61fa6: a `NaN` colour on a zero-value pie slice, on a running band whose template is empty, or
+  2.3.3: a `NaN` colour on a zero-value pie slice, on a running band whose template is empty, or
   on a table cell that a span from an earlier row pushes past the last column. A table cell's empty
-  or white-space text with a `NaN` style colour wrote `NaN 0 0 rg` on 1c61fa6 and is refused.
+  or white-space text with a `NaN` style colour wrote `NaN 0 0 rg` on 2.3.3 and is refused.
 
 - **A `NaN` or negative-infinity `Document.Margins` inset is no longer written as a token (#502).**
   The only margin check compared the axis sums against the page, and a comparison against `NaN` is
@@ -107,7 +113,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   sum check is unchanged and still refuses positive infinity with `ArgumentException` (parameter
   `margins`). `NaN` and negative infinity pass it as before and give whatever the layout gives:
   where the layout would write the value the canvas refuses it, with `ArgumentException`, and
-  otherwise the document saves, as on 1c61fa6. Measured with a one-row table on an A4 page, a `NaN`
+  otherwise the document saves, as on 2.3.3. Measured with a one-row table on an A4 page, a `NaN`
   bottom margin saves the table, a negative-infinity top margin saves a page with the table not
   drawn, and a `NaN` left margin is refused by the canvas. A finite negative inset is not refused;
   that is documented as a boundary for the next major.
@@ -116,7 +122,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `Height = double.NegativeInfinity` saved a file with `NaN` in a text matrix, because the footer's
   height comes off the content box's height only and the band was then positioned at infinity minus
   infinity. `PdfCanvas` now refuses that token with `ArgumentException`. The other heights give what
-  they gave on 1c61fa6 (measured with a one-paragraph body): `NaN` is refused as too tall, positive
+  they gave on 2.3.3 (measured with a one-paragraph body): `NaN` is refused as too tall, positive
   infinity with the content-area `ArgumentException`, and negative infinity on a header as 50,000
   page continuations. A band with an empty template draws nothing, so negative infinity on its
   footer saves when the body fits, and still does.
@@ -125,7 +131,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   nested child's marker, and a flat item whose longest word will not fit beside its marker, take the
   indent as their left inset directly, so negative infinity wrote `1 0 0 1 -Infinity 263.6 Tm` and
   `NaN` wrote the same operand with `NaN`. `PdfCanvas` now refuses both with `ArgumentException`. A
-  flat list whose words fit saved with no invalid token on 1c61fa6 under negative infinity, because
+  flat list whose words fit saved with no invalid token on 2.3.3 under negative infinity, because
   the gutter widens to the marker's own width, and it keeps saving; so does a list with no items,
   which writes nothing. Positive infinity is deliberately unchanged, because it writes no invalid
   token and its text loss on a flat list is tracked in #476, and a finite negative indent still
@@ -134,18 +140,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Layout sweep for the comparison-shaped clamps behind #519: an element margin that would be
   written as `NaN` or Infinity is refused by `PdfCanvas`.** The sweep read all 24 `Math.Max`,
   `Math.Min` and `Math.Clamp` sites in `VellumPdf.Layout`. Twenty-one take values that are derived,
-  integer, or already checked by an earlier refusal in this release (font size, colour, document
-  margins, line width, cell padding, image extent). One is `ColorCmyk.FromRgb`, a pure conversion
+  integer, or a value whose non-finite case `PdfCanvas` now refuses where it is written (colour,
+  document margins, band height), or one with its own check (font size, line width, cell padding,
+  image extent). One is `ColorCmyk.FromRgb`, a pure conversion
   that is documented rather than refused. The two that read a raw caller value without a check were
   the list gutter, fixed in #532, and the element `Margins`. A `Paragraph`, `Heading`,
   `ListElement`, `TableElement`, `LayoutImage` or `PieChart` with a `NaN` or infinite edge was laid
   out in a box that could be `NaN`, and reached the content stream, or an unrelated "too tall"
   message. The canvas guard from #519 now refuses what would be written, with `ArgumentException`.
-  The layout is otherwise as it was on 1c61fa6, so an edge that is not written saves: a paragraph
+  The layout is otherwise as it was on 2.3.3, so an edge that is not written saves: a paragraph
   with a `NaN` right edge, a table with an infinite top edge (not drawn), a pie chart with an
   infinite right edge, an image with a `NaN` right edge and a list with no items and a `NaN` left
   edge all saved with no invalid token and still do. A line separator's margins and a table cell's
-  padding threw for every non-finite edge on 1c61fa6 (measured with a separator after a paragraph
+  padding threw for every non-finite edge on 2.3.3 (measured with a separator after a paragraph
   and a one-cell table) and are refused by name before the layout. Individual non-finite explicit
   table column widths were already treated as auto (#477), so they needed no change. A finite
   negative margin still renders and is documented as a boundary.
@@ -157,20 +164,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   non-finite refusal. Zero stays accepted, since `0 w` is a defined operator; the member
   documentation carries the clause's advice that zero-width lines should not be used, because the
   result is device-dependent. `PieChart.StrokeWidth` already refused a negative value. Both
-  `LineWidth = -3` and `BorderWidth = -3` saved on 1c61fa6; they are refused now because the
-  operand breaks the clause. **Attention**: a negative `LineWidth` or `BorderWidth` saved on 1c61fa6
+  `LineWidth = -3` and `BorderWidth = -3` saved on 2.3.3; they are refused now because the
+  operand breaks the clause. **Attention**: a negative `LineWidth` or `BorderWidth` saved on 2.3.3
   and now throws.
 
 - **Pie slice totals, pie start angles and explicit table widths no longer overflow into empty or
   wrong output (#546).** Three inputs were each valid on their own and wrong together. Two pie
   slices of `1e308` summed to infinity, every wedge's sweep became zero and the chart saved with no
-  curves, which saved with no invalid token on 1c61fa6 and keeps saving; `PieChart.Slices` says not to
+  curves, which saved with no invalid token on 2.3.3 and keeps saving; `PieChart.Slices` says not to
   pass it. A `StartAngle`
   near `1e16` is further from its neighbours than a wedge's sweep, so `1e16` overlapped the wedges
   and `1e17` collapsed them; the angle is now reduced to a turn with an exact remainder before any
   sweep is added, and an angle already within a turn is unchanged, so ordinary documents write the
   same bytes. Explicit column widths such as `1e308, 1e308, 1e308` sum to infinity, scale every
-  column to zero and draw an empty table. That saved with no invalid token on 1c61fa6 and keeps
+  column to zero and draw an empty table. That saved with no invalid token on 2.3.3 and keeps
   saving, so it is documented on `ColWidths` and listed for the next major (#484), as is a single
   dominant finite width (`1e200, 60, 70`).
 
@@ -208,42 +215,48 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   #547).** Across the Kernel object model and Layout's element types a null was stored without a
   check and surfaced as `NullReferenceException` from a later call the caller did not make, usually
   `Document.Save`, with a stack naming the writer or a renderer. `PdfArray.Add`, `PdfArray`'s
-  constructor, `PdfDictionary.Set`'s value, `DocumentRenderer.Add`, `RunningBand`'s template,
-  `Paragraph`, `Paragraph.Add`, `Heading`, `TextRun`'s text,
+  constructor, `DocumentRenderer.Add`, `Paragraph`, `Paragraph.Add`, `Heading`, `TextRun`'s text,
   `ListElement.Add(string)`, `ListElement`'s constructor and `Add`, `Row.AddCell(Cell)`,
   `LayoutImage`, `PieChart.Slices`,
   every `Document.Add` overload, and the public renderer constructors now throw from the call, naming
   the parameter. A null inside a sequence names its index. `new
-  Paragraph((IEnumerable<TextRun>)null)` already threw `ArgumentNullException` on 1c61fa6, with
+  Paragraph((IEnumerable<TextRun>)null)` already threw `ArgumentNullException` on 2.3.3, with
   `ParamName` `source`; it is now `runs`. `new DocumentRenderer(null)` threw
   `NullReferenceException` and now throws `ArgumentNullException` naming `pdf`. An empty string is
   not null and is
-  accepted. A null cell text is accepted: `new Cell(null)` and `Row.AddCell((string)null)` store
-  an empty string, so the cell draws no text. That is what a table with explicit column widths
-  already drew, and the auto-sized table now agrees with it instead of throwing at save.
-  **Attention**: code that passed a null and caught the later `NullReferenceException` now gets
-  `ArgumentNullException` earlier. Four nulls are not refused from the call, because each saved on
-  1c61fa6 and a release before 3.0 may not turn a document that saves into an exception (#484): a
-  null cell text; a `TextRun` with a null style; a null `ListItem` passed to `ListItem.AddChild`; and
-  a null text given to `new ListItem` or `ListItem.AddChild(string)`. A `TextRun` with a null style
-  stores `TextStyle.Default` and draws in it; on 1c61fa6 a null style saved only when the run's text
-  was empty or white space, and threw `NullReferenceException` for any other text. The two
-  `ListItem` cases are deferred. A null child is not stored, and a null text is stored as an empty
-  string with the item marked. Neither throws from the call. On a grandchild, an item that is itself
-  another item's child, the list renders as before. On a top-level item, or a child of one, the save
-  throws `ArgumentNullException` naming `child` or `text`, where it threw `NullReferenceException`;
-  `ListElement.Add(string)` always makes a top-level item, so it still throws from the call. None
-  is reported, because there is no diagnostics channel yet, and each XML doc says not to pass it
-  and that 3.0 throws from the call. The `<exception>` tags and the "3.0 will throw" paragraphs
-  that described the old behaviour are rewritten. `PageSize`, `DrawContext`, `FontReference`,
-  `LayoutResult` and `RendererContext` still store a null, and are outside these three issues.
+  accepted. **Attention**: code that passed a null and caught the later `NullReferenceException`
+  now gets `ArgumentNullException`, from the call where 2.3.3 failed at the call or where no
+  sequence that reaches a saved document survived it. Where 2.3.3 stored the null and failed only
+  when it was used, the null is stored again and refused at the same place, with
+  `ArgumentNullException` naming the parameter, and a shape that saved still saves (#484):
+  - a `TextRun` with a null style is refused by the layout of the paragraph when the run yields a
+    word (a non-white-space character, U+00A0 included), and saves for empty text, white space, a
+    tab or line breaks alone;
+  - a `Cell` with a null text is refused when the table has a column without a positive finite
+    width, for every cell of the table, and draws the cell empty when every column has one;
+  - `PdfDictionary.Set(key, null)` is refused by `WriteTo`, naming the key, so setting the key
+    again before the write replaces the null;
+  - a `RunningBand` with a null template is refused by `Resolve` when the band is drawn, so a band
+    that is replaced before the save never fails;
+  - a `PdfStructElem.AddChild(null)` is refused where the structure tree is built, so an untagged
+    document saves;
+  - a `ListItem` null child or null text, which `ListItem.AddChild` and the constructor store, is
+    refused only for a top-level item or a child of one, and an item that is itself another item's
+    child, a grandchild, is never read.
+  Each of these says not to pass the null, and that 3.0 refuses it at the call. Every other null in
+  the list above is refused at the call, because 2.3.3 failed at the call too, or because it
+  went into a collection that has no remove or replace member, so no document that held it saved
+  there. The `<exception>` tags and the
+  "3.0 will throw" paragraphs that described the old behaviour are rewritten. `PageSize`,
+  `DrawContext`, `FontReference`, `LayoutResult` and `RendererContext` still store a null, and are
+  outside these three issues.
 
-- **What this release refuses although 1c61fa6 saved a file.** The criterion is that 1c61fa6 wrote
+- **What this release refuses although 2.3.3 saved a file.** The criterion is that 2.3.3 wrote
   a PDF for the input. Measured against that version, three refusals are of such an input. A second
   `Save` of a `Document` whose layout had started and threw now throws `InvalidOperationException`.
   The maintainer decided on 2026-11-18 to keep it: it refuses only a second `Save` after one that
-  threw once its layout had started, and the first `Save` already threw on 1c61fa6, so no document
-  that saved there now throws (#484). 1c61fa6 wrote the second call with pages doubled or with the
+  threw once its layout had started, and the first `Save` already threw on 2.3.3, so no document
+  that saved there now throws (#484). 2.3.3 wrote the second call with pages doubled or with the
   line breaks of the first attempt's width. Build a fresh `Document` to retry. A foreign font
   handle whose font program the saving document did not embed under the same name wrote a page that
   named a font its resources did not define, an invalid file. A negative line width saved as
@@ -262,7 +275,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `PdfDocument.RegisterEmbeddedFontUsage` throws `ArgumentException` (parameter `handle`) for a
   handle from another document, so the save fails where the text is drawn, except when the saving
   document embedded the same font program and the resource names match, using the saving
-  document's own embedding. That case saved on 1c61fa6, but its subset held only the glyphs the
+  document's own embedding. That case saved on 2.3.3, but its subset held only the glyphs the
   saving document had registered itself, so text drawn through the foreign handle extracted as other
   characters and veraPDF's PDF/A-2b profile failed. The glyphs the foreign handle registered are now
   added to the subset at save, and the same file passes PDF/A-2b. Measured with
@@ -313,8 +326,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `TaskCanceledException`, as documented. With a header or footer set, the counting pass refuses a
   too-tall element before any page is added, but the document still cannot be saved again:
   an element keeps the line breaks it measured at the first page width, so a retry after changing
-  `PageSize` reused them and wrote a different page from a fresh document's (a 150 pt "Hello" was
-  hard-broken into `(Hell)` and `(o)` where a fresh document wrote `(Hello)`). **Attention**: that
+  `PageSize` reused them and wrote a different page from a fresh document's (a 150 pt Helvetica
+  "Hello" with 10 pt margins and a 20 pt header, first on a 300 by 200 pt page and retried on 600 by
+  800 pt, was hard-broken into `(Hell)` and `(o)` where a fresh 600 by 800 pt document wrote
+  `(Hello)`). **Attention**: that
   retry used to save with the wrong wrap and now throws `InvalidOperationException` asking for a
   new `Document`, as every save after a layout that started does. A refused page geometry is
   raised before the layout starts, adds no pages and stays recoverable. Through `Document`, where the
@@ -328,7 +343,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   layout. A size between 536,870,895 and 2^30 - 1 used to throw `OutOfMemoryException` after the
   layout and is now that same `ArgumentOutOfRangeException`. **Attention**: refusing a retry after
   a failed layout turns the silent wrong file into an exception for code that caught a failure
-  after the layout and retried the same `Document`; build a new one instead. **Attention**: two exception types change because the
+  after the layout and retried the same `Document`; build a new one instead. **Attention**: two exception types change
+  because the
   destination is now checked up front. `PdfDocument.SaveAsync` (and `Document.SaveAsync`) given a
   stream that cannot be written to now throws `ArgumentException` (parameter `destination`) where it
   threw `NotSupportedException` from the final copy, and a linearized `PdfDocument.Save` to a closed
@@ -340,7 +356,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   document in a state that cannot be saved reports the argument or state exception, not the
   cancellation. A `Document` with no content, and a `PdfDocument` with no pages, still report "The
   document has no pages." before a bad destination or options, as before. Two precedences were
-  measured against 1c61fa6 and differ. `PdfDocument.Save` on a document with pages and an unwritable
+  measured against 2.3.3 and differ. `PdfDocument.Save` on a document with pages and an unwritable
   stream now throws `ArgumentException` (parameter `destination`) before an incompatible option such
   as `UseObjectStreams` with `Encrypt`, which threw `NotSupportedException` first. Signing a
   `Document` with no content, through `VellumPdf.Signing`, now reports "The document has no
@@ -374,7 +390,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the link's destination, because the open created it. `SaveAsync(string)` looks at its
   cancellation token before the layout and when the serialisation is queued; a cancellation after
   that is ignored and the save completes. On Windows the file is opened with `OpenOrCreate`, not
-  `Create`, so a hidden or system file that `FileMode.Create` refused is now overwritten. The file is held open with `FileShare.None` from before the layout until the save
+  `Create`, so a hidden or system file that `FileMode.Create` refused is now overwritten. The file is held open with
+  `FileShare.None` from before the layout until the save
   returns, which excludes other openers on Windows but is only an advisory lock on Linux and macOS.
   The PDF is built in a `MemoryStream`, so a PDF over about 2 GB cannot be saved to a path. Passing
   a `FileStream` to `Save(Stream)` avoids that, but `SaveAsync(Stream)` and a linearized
@@ -386,7 +403,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   string than the loader read: a flags byte (bit 0 set is sequential, bit 1 set means the number of
   pages is unknown) and, unless that bit is set, a 4-byte page count. The loader took both for the
   start of the first segment, so every standard file failed with an error such as `JBIG2: segment
-  16777216 data length 12288 at offset 11 exceeds buffer size 35.` on a 35-byte file; the loader's
+  16777216 data length 12288 at offset 11 exceeds buffer size 35.` on a 43-byte file (35 bytes after the 8-byte ID
+  string); the loader's
   tests built files without those bytes, which
   is why nothing caught it. It now reads the header, and also the random-access organisation (D.2),
   where all segment headers come first, ending with the end-of-file segment, and the data parts
@@ -400,14 +418,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   embeds the first: the page named by the first page-information segment, with the segments that
   belong to no page, under both `Passthrough` and `DecodeToRaster`, and the size is that page's.
   A segment whose data length is unknown (0xFFFFFFFF, T.88 7.2.7) is dropped under `Passthrough`, as
-  on 1c61fa6, because this loader does not scan for the end marker T.88 7.2.7 describes and so
+  on 2.3.3, because this loader does not scan for the end marker T.88 7.2.7 describes and so
   cannot say where the segment ends. The image is embedded without it, which can leave it blank:
-  for an 8 by 1 immediate generic region (type 38, MMR, end marker and row count present), 1c61fa6
+  for an 8 by 1 immediate generic region (type 38, MMR, end marker and row count present), 2.3.3
   and this loader both embed a 30-byte stream holding only the page-information segment, where the
   same image with a known length embeds 62 bytes, and `pdftoppm` draws the first all white and the
-  second with dark pixels. Four inputs were compared against 1c61fa6 and give the same PDF: types 38
+  second with dark pixels. Four inputs were compared against 2.3.3 and give the same PDF: types 38
   and 53 in the headerless embedded organisation, and type 38 after the ID string. A file header
-  with such a segment now loads, where 1c61fa6 could not read the header. Nothing reports the
+  with such a segment now loads, where 2.3.3 could not read the header. Nothing reports the
   dropped segment yet (#607), and 3.0 refuses it. `DecodeToRaster` keeps refusing an unknown length
   on a generic region (types 36, 38 and 39), as before, now with a message naming the segment, and
   every other segment behaves as it did. A random-access file refuses an unknown length on any page,
@@ -447,7 +465,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Cost-bound tests no longer assert on elapsed time (#400, #456).** A `Stopwatch` checked after a
   call returns cannot end a hang, and a 10 s bound fails on a loaded runner: the main CI run for
-  1c61fa6 failed `FindingHigh_A4FlateBombPadding_refusesQuickly_viaCostBudget` at 11.79 s, and #400
+  2.3.3 failed `FindingHigh_A4FlateBombPadding_refusesQuickly_viaCostBudget` at 11.79 s, and #400
   records two 10 s `Timeout` cancellations of the #208 encrypt-dictionary pin. Most sites now pin
   something the code decides, or a bound on bytes allocated on the calling thread.
   `PageTreeTests`' deep malformed-ancestor walk drops its clock without a replacement, because a

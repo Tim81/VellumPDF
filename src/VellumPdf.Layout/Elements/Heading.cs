@@ -83,14 +83,17 @@ public sealed class Heading
     /// <summary>Margins around the heading.</summary>
     /// <remarks>
     /// A non-finite edge is not checked before the layout; see <see cref="Document"/>. The layout runs
-    /// as it did on 1c61fa6, and the save throws <see cref="ArgumentException"/> from
+    /// as it did on 2.3.3, and the save throws <see cref="ArgumentException"/> from
     /// <see cref="VellumPdf.Canvas.PdfCanvas"/> only where it would write the value (#519).
     /// <para>For example, a <c>NaN</c> right edge wraps a left-aligned heading after every word,
     /// and on centred or right-aligned text writes <c>NaN</c> and is refused. <b>Do not pass</b> a
     /// non-finite edge: 3.0 refuses it.</para>
     /// <para><b>Attention</b>: no other edge is checked. Each finite edge is taken off the area this
     /// element is given, and the element is laid out in whatever box is left, even when that box is
-    /// empty or inverted. A negative edge, or edges wider than the area, can therefore make the save throw an exception about something else, re-wrap, move or mirror the content, or leave the element off the page. The bottom edge only limits that box: it adds no space before the next element. A negative top edge can also move the elements placed after this one.</para>
+    /// empty or inverted. A negative edge, or edges wider than the area, can therefore make the save throw an exception
+    /// about something else, re-wrap, move or mirror the content, or leave the element off the page. The bottom edge
+    /// only limits that box: it adds no space before the next element. A negative top edge can also move the elements
+    /// placed after this one.</para>
     /// <para>Do not pass a negative edge. 3.0 will refuse it.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
@@ -105,8 +108,7 @@ public sealed class Heading
     /// value the save writes at <c>NaN</c> or infinity, or leave a later element at a
     /// non-finite position, and the save writes that position outside the content stream, as a
     /// heading's bookmark or the rectangle of a link from <see cref="TextStyle.LinkUri"/>. The
-    /// message says PDF does not support NaN or Infinity as a real number. That route was not
-    /// measured again after #519.
+    /// message says PDF does not support NaN or Infinity as a real number.
     /// </exception>
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 

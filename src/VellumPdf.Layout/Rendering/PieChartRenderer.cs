@@ -69,7 +69,7 @@ public sealed class PieChartRenderer : IRenderer
 
         // Each slice is finite, but two of 1e308 sum to +Infinity, and every wedge's sweep is then
         // value / Infinity = 0: the chart has no curves (#546). That is not refused: the file is
-        // valid and it saved on 1c61fa6 with no invalid token, so refusing it would turn a document
+        // valid and it saved on 2.3.3 with no invalid token, so refusing it would turn a document
         // that saves into an exception (#484). PieChart.Slices says not to pass it.
 
         if (total <= 0)

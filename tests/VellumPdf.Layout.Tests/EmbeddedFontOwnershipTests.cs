@@ -4,6 +4,7 @@
 using VellumPdf.Document;
 using VellumPdf.Layout.Core;
 using VellumPdf.Layout.Elements;
+using VellumPdf.TestSupport;
 
 namespace VellumPdf.Layout.Tests;
 
@@ -25,7 +26,7 @@ public sealed class EmbeddedFontOwnershipTests
     private static (byte[] First, byte[] Second) TwoDifferentFonts()
     {
         if (!File.Exists(Sans) || !File.Exists(Bold))
-            Assert.Skip("Liberation Sans Regular and Bold are both needed to give two documents different fonts under one resource name.");
+            OracleGate.Unavailable("LiberationSans fonts", "Liberation Sans Regular and Bold are both needed to give two documents different fonts under one resource name.");
         return (File.ReadAllBytes(Sans), File.ReadAllBytes(Bold));
     }
 

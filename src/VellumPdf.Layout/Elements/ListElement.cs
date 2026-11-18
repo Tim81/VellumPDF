@@ -117,8 +117,10 @@ public sealed class ListElement
     /// <see cref="TextStyle.LinkUri"/>.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
-    /// Raised from a save rather than from this property, when linked item text, or a linked nested
-    /// marker, lands at a non-finite position. A finite negative value can cause that when the
+    /// Raised from a save rather than from this property, by <see cref="VellumPdf.Canvas.PdfCanvas"/>,
+    /// when a <c>NaN</c> or negative-infinity indent is written as an item's left inset. It is also
+    /// raised when linked item text, or a linked nested marker, lands at a non-finite position. A finite negative value
+    /// can cause that when the
     /// gutter taken from it, added to the list's left edge, overflows. The message says PDF does not
     /// support NaN or Infinity as a real number.
     /// </exception>
@@ -134,14 +136,17 @@ public sealed class ListElement
     /// <summary>Outer margins applied around the whole list block.</summary>
     /// <remarks>
     /// A non-finite edge is not checked before the layout; see <see cref="Document"/>. The layout runs
-    /// as it did on 1c61fa6, and the save throws <see cref="ArgumentException"/> from
+    /// as it did on 2.3.3, and the save throws <see cref="ArgumentException"/> from
     /// <see cref="VellumPdf.Canvas.PdfCanvas"/> only where it would write the value (#519).
     /// <para>For example, a <c>NaN</c> right edge saves a list with its items drawn, and a
     /// <c>NaN</c> left edge on a list with no items saves. <b>Do not pass</b> a non-finite edge:
     /// 3.0 refuses it.</para>
     /// <para><b>Attention</b>: no other edge is checked. Each finite edge is taken off the area this
     /// element is given, and the element is laid out in whatever box is left, even when that box is
-    /// empty or inverted. A negative edge, or edges wider than the area, can therefore make the save throw an exception about something else, re-wrap, move or mirror the content, or leave the element off the page. The bottom edge only limits that box and adds no space before the next element. A negative top edge can move the elements placed after this one.</para>
+    /// empty or inverted. A negative edge, or edges wider than the area, can therefore make the save throw an exception
+    /// about something else, re-wrap, move or mirror the content, or leave the element off the page. The bottom edge
+    /// only limits that box and adds no space before the next element. A negative top edge can move the elements placed
+    /// after this one.</para>
     /// <para>Do not pass a negative edge. 3.0 will refuse it.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
@@ -156,8 +161,7 @@ public sealed class ListElement
     /// value the save writes at <c>NaN</c> or infinity, or leave a later element at a
     /// non-finite position, and the save writes that position outside the content stream, as a
     /// heading's bookmark or the rectangle of a link from <see cref="TextStyle.LinkUri"/>. The
-    /// message says PDF does not support NaN or Infinity as a real number. That route was not
-    /// measured again after #519.
+    /// message says PDF does not support NaN or Infinity as a real number.
     /// </exception>
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 

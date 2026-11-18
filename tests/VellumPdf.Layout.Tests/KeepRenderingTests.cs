@@ -12,9 +12,9 @@ namespace VellumPdf.Layout.Tests;
 
 /// <summary>
 /// A release before 3.0 may not turn a document that saved a valid file on 1c61fa6 into an exception
-/// (#484). A non-finite inset, indent, colour or band height is not checked before the layout, with
-/// two exceptions that threw for every value there; the layout runs as it did and <c>PdfCanvas</c>
-/// refuses what would be written as <c>NaN</c> or <c>Infinity</c>. See <see cref="Document"/>.
+/// (#484). A non-finite inset, indent, colour or band height is mostly not checked before the layout;
+/// the layout runs as it did and <c>PdfCanvas</c> refuses what would be written as <c>NaN</c> or
+/// <c>Infinity</c>. The few checks that do run first are listed in <see cref="Document"/>.
 /// Every expected outcome in this class was measured on 1c61fa6 and pins its output: the drawn text,
 /// the rectangle, image and curve counts, or the exception type. Where that output lost content, such
 /// as a table that is not drawn or text that wraps after every word, the test pins a known defect that
@@ -328,7 +328,7 @@ public sealed class KeepRenderingTests
     }
 
     /// <summary>
-    /// U+00A0 counts as drawable text: 1c61fa6 wrote <c>1 0 0 1 NaN 743.49 Tm</c> for it, so the
+    /// U+00A0 counts as drawable text: 1c61fa6 wrote <c>1 0 0 1 NaN 757.89 Tm</c> for this shape, so the
     /// canvas refuses it, where plain white space draws nothing and saves.
     /// </summary>
     [Theory]

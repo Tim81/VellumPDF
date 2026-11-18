@@ -105,9 +105,10 @@ public sealed class LayoutImage
     /// <summary>Margins around the image.</summary>
     /// <remarks>
     /// A non-finite edge is not checked before the layout; see <see cref="Document"/>. The layout runs
-    /// as it did on 1c61fa6, and the save throws <see cref="ArgumentException"/> from
+    /// as it did on 2.3.3, and the save throws <see cref="ArgumentException"/> from
     /// <see cref="VellumPdf.Canvas.PdfCanvas"/> only where it would write the value (#519).
-    /// <para>For example, a <c>NaN</c> right edge saves the image drawn. <b>Do not pass</b> a
+    /// <para>For example, a <c>NaN</c> right edge saves the image drawn when <see cref="Width"/> is set. <b>Do not
+    /// pass</b> a
     /// non-finite edge: 3.0 refuses it.</para>
     /// <para><b>Attention</b>: no other edge is checked. The top and bottom edges add to the space the
     /// image takes on the page. The left and right edges work differently by <see cref="Width"/>: with
@@ -132,8 +133,7 @@ public sealed class LayoutImage
     /// value the save writes at <c>NaN</c> or infinity, or leave a later element at a
     /// non-finite position, and the save writes that position outside the content stream, as a
     /// heading's bookmark or the rectangle of a link from <see cref="TextStyle.LinkUri"/>. The
-    /// message says PDF does not support NaN or Infinity as a real number. That route was not
-    /// measured again after #519.
+    /// message says PDF does not support NaN or Infinity as a real number.
     /// </exception>
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 

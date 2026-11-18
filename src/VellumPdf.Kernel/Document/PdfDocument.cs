@@ -270,7 +270,7 @@ public sealed class PdfDocument : IDisposable
     /// page would be saved with a font its resources do not define (#544). When this document has
     /// embedded the same font program under that name, the foreign handle is resolved to this
     /// document's own embedding, and the glyphs the foreign handle registered are added to its
-    /// subset at save. On 1c61fa6 that case saved a file whose subset held only the glyphs this
+    /// subset at save. On 2.3.3 that case saved a file whose subset held only the glyphs this
     /// document had registered itself, so the text drawn through the foreign handle extracted as
     /// other characters and veraPDF's PDF/A-2b profile failed.
     /// <para><b>Do not pass</b> a handle from another document. It works only when this document
@@ -293,7 +293,7 @@ public sealed class PdfDocument : IDisposable
         {
             // Same font program embedded here under the same resource name: the content stream names
             // the foreign handle's resource, and this document's own embedding defines that name, so
-            // the page is correct. That saved on 1c61fa6, though with a subset that lacked the foreign
+            // the page is correct. That saved on 2.3.3, though with a subset that lacked the foreign
             // glyphs, and it is kept (#484). The same program under another name is not: the stream
             // would name a resource that is undefined here, or is another font.
             if (_embeddedFontByHash.TryGetValue(handle.FontHash, out var own) &&
@@ -673,7 +673,8 @@ public sealed class PdfDocument : IDisposable
     /// closed. A linearized save to a closed stream used to throw <see cref="ObjectDisposedException"/>
     /// after the document had been marked as written.
     /// </exception>
-    /// <exception cref="NotSupportedException"><see cref="UseObjectStreams"/> is combined with <see cref="Encrypt"/>.</exception>
+    /// <exception cref="NotSupportedException"><see cref="UseObjectStreams"/> is combined with
+    /// <see cref="Encrypt"/>.</exception>
     /// <exception cref="InvalidOperationException">
     /// A PDF/A <see cref="Conformance"/> is set together with <see cref="Encrypt"/>, or
     /// <see cref="Conformance"/> is <see cref="PdfConformance.PdfUA1"/> together with

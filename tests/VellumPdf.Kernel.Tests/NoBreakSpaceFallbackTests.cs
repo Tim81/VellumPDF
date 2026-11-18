@@ -5,6 +5,7 @@ using System.Text;
 using VellumPdf.Canvas;
 using VellumPdf.Document;
 using VellumPdf.Fonts;
+using VellumPdf.TestSupport;
 
 namespace VellumPdf.Kernel.Tests;
 
@@ -196,7 +197,7 @@ public sealed class NoBreakSpaceFallbackTests
     public void EmbeddedFont_thatHasTheGlyphs_drawsTheirOwn()
     {
         if (!File.Exists(DejaVu))
-            Assert.Skip("DejaVu Sans is needed for an embedded font.");
+            OracleGate.Unavailable("DejaVuSans.ttf", "DejaVu Sans is needed for an embedded font.");
         using var doc = new PdfDocument();
         var handle = doc.UseTrueTypeFont(File.ReadAllBytes(DejaVu));
 

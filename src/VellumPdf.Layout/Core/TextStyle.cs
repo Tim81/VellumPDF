@@ -189,15 +189,16 @@ public sealed class TextStyle
     /// <summary>The text colour. Defaults to <see cref="ColorRgb.Black"/>.</summary>
     /// <remarks>
     /// Stored as given. Channels are not clamped. A channel that is not finite is refused where it is
-    /// written; see <see cref="Document"/> and <see cref="ColorRgb"/>. In a paragraph run or a table
-    /// cell that draws text the element's own check names it. On a running band, and on a band that
+    /// written; see <see cref="Document"/> and <see cref="ColorRgb"/>. In a paragraph run, a heading, a list
+    /// item or a table cell that draws text the element's own check names it. On a running band, and on a band that
     /// draws nothing, <see cref="VellumPdf.Canvas.PdfCanvas"/> decides: it refuses the value when the
     /// band is drawn, and an empty template writes no colour. <b>Do not pass</b> a non-finite channel:
     /// 3.0 refuses it.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
-    /// Raised from a save, when a channel is <c>NaN</c> or infinite on a paragraph run or table cell
-    /// that draws text. The message names the element and the channel. A finite channel outside 0 to 1
+    /// Raised from a save, when a channel is <c>NaN</c> or infinite on a paragraph run, heading, list
+    /// item or table cell that draws text. The message names the element and the channel. A finite channel outside 0 to
+    /// 1
     /// is not refused (#509).
     /// </exception>
     /// <exception cref="ArgumentException">
@@ -245,7 +246,8 @@ public sealed class TextStyle
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when linked text is placed at a non-finite position, for example through
-    /// a bottom of negative infinity in a renderer's result (see <see cref="LayoutResult.Full"/>). The link's rectangle is written
+    /// a bottom of negative infinity in a renderer's result (see <see cref="LayoutResult.Full"/>). The link's rectangle
+    /// is written
     /// outside the content stream, and the save refuses a non-finite coordinate there. Without a
     /// link, the same paragraph or list-item text saves. A heading placed at a non-finite height
     /// throws either way, from its bookmark; see
