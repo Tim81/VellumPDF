@@ -10,15 +10,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **CI's oracles move to veraPDF 1.30.4 and qpdf 12.4.2.** `VERAPDF_TAG` was v1.30.2 and
   `QPDF_VERSION` was 12.4.1 (#230); the qpdf checksum moves with it. The veraPDF release notes
-  for 1.30.3 and 1.30.4 list changes that can move a verdict here: a fix to AES-256 revision 6
-  password hashing that could reject valid passwords, the PDF 1.7 table-header-scope algorithm
-  restored for PDF/UA-1, a PDF/UA-1 rule 7.18.1-3 now limited to Widget annotations tied to form
-  fields, a fix to the missing-parent-element rule, and a new PDF/UA-2 and WTPDF rule requiring
-  PDF version 2.0. The qpdf 12.4.2 notes say linearized output may differ for some rare files.
-  A local Release run with `REQUIRE_ORACLES=1` against veraPDF 1.30.4 and qpdf 12.4.2 had
-  no failures: Conformance 1325 of 1325, Kernel 1525 of 1525, Layout 412 of 412, Barcodes 1051 of
-  1051, Cli 908 of 908, TestSupport 17 of 17, and Reader 1857 passed with 12 skipped, the same 12
-  as under veraPDF 1.30.2 and qpdf 12.4.1. Statements elsewhere that a behaviour was measured on
+  for 1.30.3 and 1.30.4 list changes that can move a verdict on the PDF/A-2a, 2b, 2u and PDF/UA-1
+  flavours this suite runs: a fix to AES-256 revision 6 password hashing that could reject valid
+  passwords, the PDF 1.7 table-header-scope algorithm restored for PDF/UA-1, PDF/UA-1 rule 7.18.1-3
+  now limited to Widget annotations tied to form fields, and a fix to the missing-parent-element
+  rule. The qpdf 12.4.2 notes say linearized output may differ for some rare files. A local Release
+  run on Windows, using the Windows builds of veraPDF 1.30.4 and qpdf 12.4.2 with
+  `REQUIRE_ORACLES=1`, had no failures: Conformance 1325 of 1325, Kernel 1525 of 1525, Layout 412
+  of 412, Barcodes 1051 of 1051, Cli 908 of 908, TestSupport 17 of 17, and Reader 1857 passed
+  with 12 skipped, the same count as under veraPDF 1.30.2 and qpdf 12.4.1. The R6 fix means the
+  comments and `Assets/README.md` that describe veraPDF refusing about one in ten freshly built R6
+  files now attribute that to 1.30.2. Statements elsewhere that a behaviour was measured on
   veraPDF 1.30.2 or qpdf 12.4.1 are left as written, since they record what was measured then,
   except two that were re-measured on 1.30.4 and came out the same: the language-tag table in
   `docs/conformance-divergences.md` and the profile clause counts in `eng/clause-coverage.py`.
