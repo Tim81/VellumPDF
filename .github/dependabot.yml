@@ -19,10 +19,12 @@ updates:
           - "System.Security.Cryptography.Pkcs"
     ignore:
       # Directory.Packages.props pins Pkcs per target framework: 10.0.x for net10.0 and 11.0.x for
-      # net11.0. Dependabot reads both entries and, for the net10.0 one, proposes the next major,
-      # which would put System.Formats.Asn1 11 into a net10.0 consumer. Minor and patch bumps of
-      # each line still arrive. A move of the net11.0 line to 12.x is therefore a manual edit,
-      # made when net12.0 is added.
+      # net11.0. Without this rule Dependabot can propose 11.x for the net10.0 entry, which would
+      # put System.Formats.Asn1 11 into a net10.0 consumer. How it treats two conditional entries
+      # for one package has not yet been observed, so read the first Pkcs PR against this file to
+      # confirm it changes only one line before merging. A move of the net11.0 line to 12.x is a
+      # manual edit, made when net12.0 is added. ci.yml's "Check Pkcs per target framework" step
+      # fails the build if the net10.0 package group ever names a Pkcs version outside 10.x.
       - dependency-name: "System.Security.Cryptography.Pkcs"
         update-types: ["version-update:semver-major"]
 

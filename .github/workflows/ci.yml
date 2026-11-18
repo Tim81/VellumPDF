@@ -23,8 +23,9 @@ jobs:
     # A hung test (a real one, or a DoesNotHang-named guard whose own assertion turned out not to
     # bound it) would otherwise run to GitHub's 360-minute default and burn the runner quietly
     # instead of failing loudly. INTERIM: every test project now runs once per target framework
-    # (net10.0 and net11.0), so the suite does roughly twice the work it did at 30 minutes. This is
-    # deliberately generous until a first CI run measures the Test step; the final value follows it.
+    # (net10.0 and net11.0), so the Test step does roughly twice the work it did under the old
+    # 30-minute limit. This is deliberately generous until a first CI run measures the Test step; the
+    # final value follows it.
     timeout-minutes: 60
     env:
       # Every pinned oracle version in one place, referenced by both the install steps and the
@@ -52,7 +53,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      # global.json pins the SDK (11.0.x). The test projects also run on net10.0, and a net10.0 test
+      # global.json pins the SDK (11.0.1xx). The test projects also run on net10.0, and a net10.0 test
       # host needs the net10.0 runtime, which the 11.0 SDK does not carry. setup-dotnet installs
       # both lists, so naming 10.0.x here makes that requirement explicit instead of relying on
       # the runner image happening to ship it.
@@ -237,7 +238,7 @@ jobs:
         # gate matches on the bare dependency name rather than the calling suite, for the GIF
         # oracle's python dependency too (OracleGate.cs). ORACLE_INVOCATION_LOG
         # makes ExternalTool.RunProcess append one line per successful, non-probe oracle launch to a
-        # file suffixed with its own process id, so the step below can assert the oracles didn't
+        # file suffixed with its target framework and process id, so the step below can assert the oracles didn't
         # just resolve — they actually ran (#228).
         env:
           REQUIRE_VERAPDF: '1'
@@ -303,8 +304,8 @@ jobs:
         #
         # Floors are 90% of a full local run with every oracle enabled (REQUIRE_ORACLES=1, QPDF_HOME
         # / POPPLER_HOME / VERAPDF_HOME all pointed at real installs), rounded down, measured
-        # against this same commit: verapdf 304, pdftoppm 135, python 137, qpdf 40, pdftotext 8,
-        # pdfsig 2. They apply to each target framework separately and were not changed when
+        # against the commit that set them: verapdf 304, pdftoppm 135, python 137, qpdf 40, pdftotext 8,
+        # pdfsig 2 (the qpdf figure is stale: see the 2026-11-18 measurement just below). They apply to each target framework separately and were not changed when
         # net11.0 was added. A Windows run on 2026-11-18 (veraPDF 1.30.2, qpdf 12.4.1, poppler from
         # MSYS2) logged the same counts under net10.0 and under net11.0: verapdf 311, pdftoppm 135,
         # python 137, qpdf 57, pdftotext 8, pdfsig 2. Every floor sits below those counts, and they
@@ -343,7 +344,7 @@ jobs:
           for tfm in net10.0 net11.0; do
             files=("$log_prefix.$tfm".*)
             if [ ${#files[@]} -eq 0 ]; then
-              echo "::error::No oracle invocation log files found matching $log_prefix.$tfm.* — the $tfm test runs logged nothing"
+              echo "::error::No oracle invocation log files found matching $log_prefix.$tfm.*: the $tfm test runs logged nothing"
               failed=1
               continue
             fi
@@ -403,8 +404,9 @@ jobs:
           # Layout.Tests, Reader.Tests) instrument an identical set, so once reports are merged, one of them
           # losing every package but a single one costs no assembly its name and leaves every merged line
           # covered by the other two. Checking each report against its own set is what catches that.
-          # VellumPdf.TestSupport.Tests only exercises VellumPdf.TestSupport, which the include filter removes from instrumentation, so
-          # its report is expected to be empty; it is the one report that is allowed to be.
+          # VellumPdf.TestSupport.Tests only exercises VellumPdf.TestSupport, which the include filter
+          # removes from instrumentation, so its report is expected to be empty; it is the one report
+          # that is allowed to be.
           EXPECTED_BY_PROJECT = {
               "VellumPdf.Barcodes.Tests": frozenset({"VellumPdf.Barcodes", "VellumPdf.Kernel", "VellumPdf.Layout"}),
               "VellumPdf.Cli.Tests": frozenset({"VellumPdf.Conformance", "VellumPdf.Fonts.Standard14", "VellumPdf.Kernel", "VellumPdf.Layout", "VellumPdf.Reader", "VellumPdf.Signing", "vellum-preflight"}),
@@ -437,14 +439,16 @@ jobs:
           # current measurement), so these floors carry over unchanged rather than re-baselined
           # lower. They apply to each target framework's merge and to the merge across both.
           MIN_VALID_LINES = {
-              "VellumPdf.Barcodes": 3800,        # measured 5064
-              "VellumPdf.Conformance": 7750,     # measured 10348
-              "VellumPdf.Fonts.Standard14": 20,  # measured 29 — a 29-line assembly needs more slack
-              "VellumPdf.Kernel": 5800,          # measured 7773
-              "VellumPdf.Layout": 1000,          # measured 1393
-              "VellumPdf.Reader": 1900,          # measured 2608
-              "VellumPdf.Signing": 800,          # measured 1109
-              "vellum-preflight": 2300,          # measured 3077
+              # Comments give the valid lines measured on 2026-11-18 (Windows, Release, net10.0 and
+              # net11.0 alike unless noted); the gate's own output is the current measurement.
+              "VellumPdf.Barcodes": 3800,        # 5064
+              "VellumPdf.Conformance": 7750,     # 10396
+              "VellumPdf.Fonts.Standard14": 20,  # 29: a 29-line assembly needs more slack
+              "VellumPdf.Kernel": 5800,          # 7834
+              "VellumPdf.Layout": 1000,          # 1707
+              "VellumPdf.Reader": 1900,          # 11518
+              "VellumPdf.Signing": 800,          # 1109
+              "vellum-preflight": 2300,          # 3092 net10.0, 2640 net11.0
           }
 
           # coverlet.MTP (#200) names its own report coverage.cobertura.<timestamp>.xml, with the
@@ -529,10 +533,11 @@ jobs:
           # framework, and its output differs in size (a 2026-11-18 local run measured vellum-preflight at
           # 3092 valid lines under net10.0 and 2640 under net11.0, against 4971 merged; every other
           # assembly's count was identical in all three). The merge therefore counts those generated lines
-          # once per framework, so vellum-preflight's merged denominator is larger than either framework's
-          # own and the merged percentage sits a little below the per-framework ones. That is a property of
-          # how the merge keys generated files, not lost or duplicated coverage, and it is why the
-          # per-framework and merged valid-line counts are both printed below.
+          # once per framework, so vellum-preflight's merged denominator (4971) is larger than either
+          # framework's own, and its merged rate falls between the two (84.0% net10.0, 81.3% net11.0,
+          # 83.0% merged, same run). The combined figure was 91.3% merged against 91.7% for each
+          # framework. The generated code is counted twice, not lost, which is why the per-framework and
+          # merged valid-line counts are both printed below.
           per_tfm = {tfm: {} for tfm in TFMS}
           for (project, tfm), path in sorted(expected_reports.items()):
               lines, packages = read_report(path)
@@ -634,9 +639,15 @@ jobs:
                   print("::error::" + p)
               sys.exit(1)
 
+          # The threshold also applies to each framework on its own, so a coverage drop confined to one
+          # framework is not averaged away by the other.
           for tfm in TFMS:
               tc = sum(1 for v in per_tfm[tfm].values() if v)
-              print(f"{tfm}: {tc / len(per_tfm[tfm]) * 100:.1f}% over {len(per_tfm[tfm])} unique lines (informational)")
+              tpct = tc / len(per_tfm[tfm]) * 100 if per_tfm[tfm] else 0
+              print(f"{tfm}: {tpct:.1f}% over {len(per_tfm[tfm])} unique lines (threshold: {THRESHOLD}%)")
+              if tpct < THRESHOLD:
+                  print(f"::error::{tfm} line coverage {tpct:.1f}% is below the required threshold of {THRESHOLD}%.")
+                  sys.exit(1)
 
           total_valid = len(merged)
           total_covered = sum(1 for v in merged.values() if v)
@@ -658,6 +669,37 @@ jobs:
 
       - name: Pack
         run: dotnet pack VellumPdf.slnx -c Release --no-build -o ${{ runner.temp }}/packages
+
+      - name: Check Pkcs per target framework
+        # Directory.Packages.props pins System.Security.Cryptography.Pkcs per target framework. If a
+        # tool rewrote both entries to one version, the net10.0 group would silently take the 11.0
+        # package and its System.Formats.Asn1 11 dependency, so this reads the packed Signing nuspec
+        # and requires 10.x in the net10.0 group and 11.x in the net11.0 group.
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'EOF'
+          import glob, os, re, sys, zipfile
+
+          pkgs = glob.glob(os.path.join(os.environ["RUNNER_TEMP"], "packages", "VellumPdf.Signing.*.nupkg"))
+          if len(pkgs) != 1:
+              print(f"::error::Expected one VellumPdf.Signing nupkg, found {len(pkgs)}.")
+              sys.exit(1)
+          with zipfile.ZipFile(pkgs[0]) as z:
+              nuspec = z.read(next(n for n in z.namelist() if n.endswith(".nuspec"))).decode("utf-8")
+          expected = {"net10.0": "10.", "net11.0": "11."}
+          for tfm, prefix in expected.items():
+              group = re.search(r'<group targetFramework="' + re.escape(tfm) + r'"[^>]*>(.*?)</group>', nuspec, re.S)
+              version = re.search(r'<dependency id="System\.Security\.Cryptography\.Pkcs" version="([^"]+)"',
+                                  group.group(1)) if group else None
+              if version is None:
+                  print(f"::error::The {tfm} group of the Signing nuspec has no Pkcs dependency.")
+                  sys.exit(1)
+              print(f"{tfm}: Pkcs {version.group(1)}")
+              if not version.group(1).startswith(prefix):
+                  print(f"::error::The {tfm} group names Pkcs {version.group(1)}, expected {prefix}x.")
+                  sys.exit(1)
+          EOF
 
   aot-smoke:
     # Deliberately left on the floating ubuntu-latest label: this job carries no apt version

@@ -865,8 +865,9 @@ public static class ExternalTool
         // internal lock only serializes writers within one process, so several processes
         // appending to one shared path would still interleave or truncate each other's writes.
         // The target framework goes in front of the id because every test project now runs once
-        // per TFM and ci.yml asserts a floor per TFM: with the id alone, a TFM whose runs logged
-        // nothing would be indistinguishable from one that never ran.
+        // per TFM and ci.yml asserts a floor per TFM: with the id alone the floor step could not
+        // tell which TFM wrote a file, so one TFM's logs would satisfy the floor for a TFM whose
+        // runs logged nothing.
         var path = $"{basePath}.{TargetFrameworkLabel()}.{Environment.ProcessId}";
 
         // Create the parent directory and prove the path is actually writable once, here, at

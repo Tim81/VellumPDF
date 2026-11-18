@@ -27,9 +27,9 @@ permissions:
 jobs:
   fuzz:
     runs-on: ubuntu-24.04
-    # A budget two orders of magnitude past ci.yml's own needs far more headroom than that
-    # workflow's 30-minute job — this one runs alone on a schedule, not alongside CI's other gates,
-    # so there is no shared budget to protect.
+    # A budget two orders of magnitude past ci.yml's own needs far more headroom than ci.yml's job
+    # timeout. This one runs alone on a schedule, not alongside CI's other gates, so there is no
+    # shared budget to protect.
     timeout-minutes: 180
     env:
       VELLUMPDF_FUZZ_ITER: ${{ inputs.iterations || '200000' }}
@@ -37,9 +37,10 @@ jobs:
       - uses: actions/checkout@v7
 
       # The Reader test project now targets net10.0 and net11.0. The nightly budget stays on the
-      # LTS target (-f net10.0 below): the parser under fuzz is the same source for both, so running
-      # both would double a 180-minute budget for the same inputs. global.json pins SDK 11, whose
-      # install does not carry the net10.0 runtime, hence the explicit dotnet-version.
+      # LTS target (-f net10.0 below): the parser under fuzz is the same source for both frameworks,
+      # so a second framework would add random inputs against the same code at twice the run time
+      # inside the 180-minute timeout. global.json pins SDK 11, whose install does not carry the
+      # net10.0 runtime, hence the explicit dotnet-version.
       - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
