@@ -47,7 +47,6 @@ public sealed class NullArgumentTests
         new("new LayoutImage(null)", "image", () => _ = new LayoutImage(null!)),
         new("new PieChart { Slices = null }", "value", () => _ = new PieChart { Slices = null! }),
         // #531
-        new("new RunningBand(null)", "template", () => _ = new RunningBand(null!)),
         // #523
         new("new DocumentRenderer(null)", "pdf", () => _ = new DocumentRenderer(null!)),
         new("new DocumentRenderer(null, pageSize)", "pdf", () => _ = new DocumentRenderer(null!, new PdfRectangle(0, 0, 400, 400))),
@@ -68,8 +67,6 @@ public sealed class NullArgumentTests
         new("Document.Add((ListElement)null)", "list", () => new Document().Add((ListElement)null!)),
         new("Document.Add((Heading)null)", "heading", () => new Document().Add((Heading)null!)),
         new("Document.Add((string)null)", "text", () => new Document().Add((string)null!)),
-        new("Document.SetHeader(null)", "template", () => new Document().SetHeader(null!)),
-        new("Document.SetFooter(null)", "template", () => new Document().SetFooter(null!)),
     ];
 
     public static TheoryData<string> Names()
@@ -120,42 +117,45 @@ public sealed class NullArgumentTests
         _ = new TextRun(string.Empty, Style());
     }
 
-    // ── A null cell text is an empty cell, not a refusal ─────────────────────
+    // ── A null cell text: stored, and refused where a column is sized automatically ──
 
     [Fact]
-    public void NullCellText_isStoredAsAnEmptyString()
+    public void NullCellText_isStoredAsGiven_asOn1c61fa6()
     {
-        Assert.Equal(string.Empty, new Cell(null!).Content);
-
-        var row = new TableElement().AddRow().AddCell((string)null!);
-        Assert.Equal(string.Empty, Assert.Single(row.Cells).Content);
+        Assert.Null(new Cell(null!).Content);
+        Assert.Null(Assert.Single(new TableElement().AddRow().AddCell((string)null!).Cells).Content);
     }
 
-    private static IReadOnlyList<ContentStreamReadback.TextPlacement> PlacementsOfThreeCellRow(string? middle, bool explicitWidths)
+    private static Document ThreeCellRow(bool explicitWidths)
     {
-        using var doc = new Document { PageSize = new PdfRectangle(0, 0, 300, 200), Margins = new EdgeInsets(10) };
+        var doc = new Document { PageSize = new PdfRectangle(0, 0, 300, 200), Margins = new EdgeInsets(10) };
         var table = new TableElement { DefaultCellStyle = Style() };
         if (explicitWidths) table.SetColumnWidths(60, 60, 60);
-        table.AddRow().AddCell("A").AddCell(middle!).AddCell("B");
+        table.AddRow().AddCell("A").AddCell((string)null!).AddCell("B");
         doc.Add(table);
-
-        using var ms = new MemoryStream();
-        doc.Save(ms);
-        return ContentStreamReadback.TextPlacements(PdfTestUtil.DecompressAllFlatStreams(ms.ToArray()));
+        return doc;
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void TableWithANullCell_saves_andDrawsTheRowAsAnEmptyStringWould(bool explicitWidths)
+    [Fact]
+    public void TableWithANullCell_andEveryColumnWidthSet_draws_theCellEmpty()
     {
-        // Before, the auto-sized table threw NullReferenceException and the explicit-width one drew
-        // the cell empty; both now do the second.
-        var withNull = PlacementsOfThreeCellRow(null, explicitWidths);
-        var withEmpty = PlacementsOfThreeCellRow(string.Empty, explicitWidths);
+        using var doc = ThreeCellRow(explicitWidths: true);
+        using var ms = new MemoryStream();
+        doc.Save(ms);
 
-        Assert.Equal(["A", "", "B"], withNull.Select(p => p.Text));
-        Assert.Equal(withEmpty, withNull);
+        var placements = ContentStreamReadback.TextPlacements(PdfTestUtil.DecompressAllFlatStreams(ms.ToArray()));
+        Assert.Equal(["A", "", "B"], placements.Select(p => p.Text));
+    }
+
+    [Fact]
+    public void TableWithANullCell_andAnAutoSizedColumn_isRefusedNamingTheContent()
+    {
+        using var doc = ThreeCellRow(explicitWidths: false);
+        using var ms = new MemoryStream();
+
+        var ex = Assert.Throws<ArgumentNullException>(() => doc.Save(ms));
+
+        Assert.Equal("content", ex.ParamName);
     }
 
     // ── Nulls that keep rendering ────────────────────────────────────────
@@ -168,35 +168,35 @@ public sealed class NullArgumentTests
     }
 
     [Fact]
-    public void TextRun_withANullStyle_storesTheDefaultStyle_andDrawsAtItsSize()
+    public void TextRun_withANullStyle_isStored_asOn1c61fa6()
     {
-        var run = new TextRun("b", null!);
-
-        Assert.Same(TextStyle.Default, run.Style);
-
-        // The neighbour is Courier 10 pt and TextStyle.Default is Helvetica 12 pt. The font has to
-        // differ: ParagraphRenderer.SwitchFont emits Tf only when the font changes, not the size, so
-        // two Helvetica runs of different sizes both read back at the first size.
-        using var doc = new Document();
-        doc.Add(new Paragraph(new[] { new TextRun("a", new TextStyle { FontRef = new FontReference(Standard14.Courier), FontSize = 10 }), run }));
-        var placements = Placements(doc);
-
-        // "a " carries the space drawn at the boundary between two runs; see Paragraph.
-        Assert.Equal(["a ", "b"], placements.Select(p => p.Text));
-        Assert.Equal([10d, 12d], placements.Select(p => p.FontSize));
+        Assert.Null(new TextRun("b", null!).Style);
     }
 
-    [Fact]
-    public void TextRun_withANullStyle_drawsExactlyWhatTheDefaultStyleDraws()
+    [Theory]
+    [InlineData("b", true)]
+    [InlineData("\u00A0", true)]
+    [InlineData("a\nb", true)]
+    [InlineData("", false)]
+    [InlineData("   ", false)]
+    [InlineData("\t", false)]
+    [InlineData("\n", false)]
+    public void TextRun_withANullStyle_isRefusedOnlyWhenItYieldsAWord(string text, bool refused)
     {
-        IReadOnlyList<ContentStreamReadback.TextPlacement> Draw(TextStyle? style)
-        {
-            using var doc = new Document();
-            doc.Add(new Paragraph(new[] { new TextRun("a", Style()), new TextRun(" ", style!), new TextRun("b", style!) }));
-            return Placements(doc);
-        }
+        using var doc = new Document();
+        doc.Add(new Paragraph(new[] { new TextRun("a", Style()), new TextRun(text, null!) }));
+        using var ms = new MemoryStream();
 
-        Assert.Equal(Draw(TextStyle.Default), Draw(null));
+        if (refused)
+        {
+            var ex = Assert.Throws<ArgumentNullException>(() => doc.Save(ms));
+            Assert.Equal("Style", ex.ParamName);
+        }
+        else
+        {
+            doc.Save(ms);
+            Assert.True(ms.Length > 0);
+        }
     }
 
     [Fact]

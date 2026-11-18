@@ -209,7 +209,7 @@ public static class Jbig2ImageLoader
 
         return options.DecodeMode == ImageDecodeMode.DecodeToRaster
             ? DecodeToRaster(segments, data, width, height, firstPage)
-            : BuildPassthrough(segments, data, width, height, firstPage);
+            : BuildPassthrough(segments, data, width, height, firstPage, annexDHeader: dataStart > FileHeader.Length);
     }
 
     // ── Parsed segment metadata ───────────────────────────────────────────────
@@ -496,8 +496,9 @@ public static class Jbig2ImageLoader
     private static InvalidDataException UnknownLength(in SegmentHeader seg)
         => new(
             $"JBIG2: segment {seg.Number} (type {seg.Type}) has an unknown data length " +
-            "(0xFFFFFFFF, ITU-T T.88 7.2.7), which this loader cannot use: it can be neither " +
-            "partitioned into a page stream and a globals stream nor decoded.");
+            "(0xFFFFFFFF, ITU-T T.88 7.2.7), which this loader cannot use: it does not scan the data " +
+            "for the end marker that clause describes, so it can neither partition the segment into " +
+            "a page stream and a globals stream nor decode it.");
 
     /// <summary>
     /// Whether a segment is part of the page being embedded: it is associated with that page, or with
@@ -512,7 +513,7 @@ public static class Jbig2ImageLoader
 
     private static PdfImageXObject BuildPassthrough(
         List<SegmentHeader> segments, ReadOnlySpan<byte> data,
-        int width, int height, int firstPage)
+        int width, int height, int firstPage, bool annexDHeader)
     {
         var globalBuf = new MemoryStream();
         var pageBuf = new MemoryStream();
@@ -537,7 +538,15 @@ public static class Jbig2ImageLoader
             // no region, which a reader draws blank. The file is valid, so it is not refused; 3.0
             // refuses it.
             if (!seg.HasKnownLength)
+            {
+                // A file with a T.88 Annex D header threw on 1c61fa6, which could not read the header,
+                // and dropping the segment would leave an image with no region: this loader cannot
+                // handle it correctly, so it stays refused. A file without that header, which 1c61fa6
+                // read, keeps its output.
+                if (annexDHeader && firstPage != 0 && seg.PageAssociation == firstPage)
+                    throw UnknownLength(seg);
                 continue;
+            }
 
             var segEnd = seg.DataOffset + (int)seg.DataLength;
             if (seg.HeaderStart < 0 || seg.HeaderEnd > data.Length || segEnd > data.Length)

@@ -2231,22 +2231,21 @@ public sealed class Jbig2ImageTests
     }
 
     /// <summary>
-    /// A generic region of the first page whose data length is 0xFFFFFFFF. The sequential parser takes
-    /// it to run to the end of the data, and passthrough drops it, as 1c61fa6 did, so the image is
-    /// embedded with the page information and no region. The file is valid, so it is not refused
-    /// (#484); the image can be blank, which this test pins as a known defect kept until 3.0, when the
-    /// diagnostics channel (#607) will report it.
+    /// A generic region of the first page whose data length is 0xFFFFFFFF, in a file 1c61fa6 could read.
+    /// The sequential parser takes it to run to the end of the data, and passthrough drops it, as
+    /// 1c61fa6 did, so the image is embedded with the page information and no region. The file is
+    /// valid, so it is not refused (#484); the image can be blank, which this test pins as a known
+    /// defect kept until 3.0, when the diagnostics channel (#607) will report it.
     /// </summary>
     [Theory]
-    [InlineData(true)]     // with the file header
     [InlineData(false)]    // the embedded organisation, no file header
-    public void Load_Passthrough_SegmentWithAnUnknownDataLength_IsDropped_asOn1c61fa6(bool withFileHeader)
+    [InlineData(true)]     // the ID string followed directly by segments
+    public void Load_Passthrough_SegmentWithAnUnknownDataLength_IsDropped_asOn1c61fa6(bool withIdString)
     {
         var segments = FiveSegments(64, 48);
         for (var i = 7; i < 11; i++) segments[2][i] = 0xFF;       // segment 2: length 0xFFFFFFFF
-        var file = withFileHeader
-            ? Sequential(0x01, PageCountOne, segments)
-            : segments.SelectMany(x => x).ToArray();
+        var body = segments.SelectMany(x => x).ToArray();
+        var file = withIdString ? [.. IdString, .. body] : body;
 
         var image = Jbig2ImageLoader.Load(file);
 
@@ -2255,6 +2254,25 @@ public sealed class Jbig2ImageTests
         // The page stream holds the page information alone, and the globals the symbol dictionary.
         Assert.Equal(segments[1], ExtractStreamBody(Serialize(image)));
         Assert.Equal(segments[0], image.Jbig2Globals);
+    }
+
+    /// <summary>
+    /// The same segment in a file with the flags byte and page count of T.88 Annex D. 1c61fa6 threw for
+    /// any such header, because it read the flags as the start of a segment, so what it refused stays
+    /// refused: dropping the segment would leave an image with no region, which this loader does not
+    /// handle correctly, since it does not scan for the end marker 7.2.7 describes.
+    /// </summary>
+    [Fact]
+    public void Load_Passthrough_SegmentWithAnUnknownDataLength_inAnAnnexDFile_IsRefusedNamingIt()
+    {
+        var segments = FiveSegments(64, 48);
+        for (var i = 7; i < 11; i++) segments[2][i] = 0xFF;
+
+        var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments)));
+
+        Assert.Contains("segment 2", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("type 38", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("does not scan the data for the end marker", ex.Message, StringComparison.Ordinal);
     }
 
     /// <summary>An unknown-length segment on a page that is not embedded is dropped without comment.</summary>

@@ -48,10 +48,23 @@ public sealed class CycleGuardTests
     }
 
     [Fact]
-    public void StructElem_AddChild_nullChild_isRefused()
+    public void StructElem_AddChild_nullChild_isStored_andRefusedWhereTheTreeIsBuilt()
     {
-        var ex = Assert.Throws<ArgumentNullException>(() => new PdfStructElem("Div").AddChild(null!));
+        // 1c61fa6 stored it: an untagged document never builds the tree and saved.
+        using var untagged = new PdfDocument();
+        untagged.AddPage();
+        var element = new PdfStructElem("Div");
+        element.AddChild(null!);
+        untagged.RegisterStructElem(element);
+        using (var ms = new MemoryStream()) untagged.Save(ms);
 
+        using var tagged = new PdfDocument { Tagged = true };
+        tagged.AddPage();
+        var tree = new PdfStructElem("Div");
+        tree.AddChild(null!);
+        tagged.RegisterStructElem(tree);
+
+        var ex = Assert.Throws<ArgumentNullException>(() => tagged.Save(new MemoryStream()));
         Assert.Equal("child", ex.ParamName);
     }
 

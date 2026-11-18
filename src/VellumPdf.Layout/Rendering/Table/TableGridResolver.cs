@@ -291,6 +291,8 @@ internal sealed class TableGridResolver
             {
                 if (col >= cols) break;
                 var cellStyle = cell.Style ?? style;
+                if (cell.Content is null)
+                    throw new ArgumentNullException("content", "A table cell has a null text and a column is sized automatically.");
                 var words = cell.Content.Split(' ');
                 var longest = words.Max(w => cellStyle.FontRef.MeasureString(w, cellStyle.FontSize));
                 var full = cellStyle.FontRef.MeasureString(cell.Content, cellStyle.FontSize)

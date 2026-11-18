@@ -137,13 +137,16 @@ public sealed class RunningBand
     /// <summary>Creates a running band from a text template, with optional style and alignment (defaults to centered).</summary>
     /// <remarks>
     /// A null <paramref name="style"/> becomes <see cref="TextStyle.Default"/>. A null
-    /// <paramref name="template"/> is refused here (#531). It used to be stored, and
-    /// <see cref="Resolve"/> threw <see cref="NullReferenceException"/> from deep inside the
-    /// renderer when any of the four save overloads laid the band out, a long way from the
-    /// constructor that took the null. An empty template is not null and is accepted.
+    /// <paramref name="template"/> is stored, and <see cref="Resolve"/> refuses it where the band is
+    /// drawn, with <see cref="ArgumentNullException"/> (#531). It is not refused earlier, because a band
+    /// that is replaced before the save never reaches <see cref="Resolve"/>, and 1c61fa6 saved that,
+    /// throwing <see cref="NullReferenceException"/> only for a band that stayed. <b>Do not pass</b> a
+    /// null template: 3.0 refuses it here. An empty template is not null and is accepted.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
-    /// <paramref name="template"/> is <see langword="null"/>.
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not from
+    /// this constructor, when <paramref name="template"/> is <see langword="null"/> and the band is
+    /// drawn. <c>ParamName</c> is <c>template</c>. The document cannot be saved again.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -167,7 +170,6 @@ public sealed class RunningBand
     /// </exception>
     public RunningBand(string template, TextStyle? style = null, HorizontalAlignment alignment = HorizontalAlignment.Center)
     {
-        ArgumentNullException.ThrowIfNull(template);
         Template = template;
         Style = style ?? TextStyle.Default;
         Alignment = alignment;
@@ -182,11 +184,14 @@ public sealed class RunningBand
 
     /// <summary>Substitutes <c>{page}</c> and <c>{pages}</c> in <see cref="Template"/>.</summary>
     /// <remarks>
-    /// Any other brace text is left as given. <see cref="Template"/> is never null (#531), so this
-    /// does not throw for it.
+    /// Any other brace text is left as given. A null template is refused here, where the band is
+    /// drawn, with <see cref="ArgumentNullException"/> (#531).
     /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <see cref="Template"/> is <see langword="null"/>. <c>ParamName</c> is <c>template</c>.
+    /// </exception>
     public string Resolve(int pageNumber, int totalPages) =>
-        Template
+        (Template ?? throw new ArgumentNullException("template", "The band's template is null."))
             .Replace("{page}", pageNumber.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 StringComparison.Ordinal)
             .Replace("{pages}", totalPages.ToString(System.Globalization.CultureInfo.InvariantCulture),

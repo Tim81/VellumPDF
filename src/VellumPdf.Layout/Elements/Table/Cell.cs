@@ -8,16 +8,17 @@ namespace VellumPdf.Layout.Elements.Table;
 /// <summary>A single table cell, optionally spanning multiple columns or rows.</summary>
 /// <remarks>
 /// A <see cref="ColSpan"/> below 1 is refused at save, and a <see cref="RowSpan"/> below 1 is
-/// drawn as 1. A null text given to the constructor is stored as an empty string; see the
-/// constructor.
+/// drawn as 1. A null text given to the constructor is stored, and refused where a column is
+/// sized automatically; see the constructor.
 /// <see cref="HorizontalAlignment.Justify"/> is drawn as <see cref="HorizontalAlignment.Left"/>.
 /// </remarks>
 public sealed class Cell
 {
     /// <summary>The text content rendered in the cell.</summary>
     /// <remarks>
-    /// An empty string draws no text. The value is never null: the constructor stores a null as an
-    /// empty string (#547).
+    /// An empty string draws no text. The value is null when the constructor was given a null (#547);
+    /// the cell then draws no text, and the save refuses it only where a column is sized
+    /// automatically, as the constructor describes.
     /// Spaces are the only break points between words, and a word wider than the cell is broken
     /// between characters. A line feed, carriage return or tab is not a break. In a standard-14
     /// font each is written into the cell as it is; in an embedded font each is drawn as whatever
@@ -188,13 +189,19 @@ public sealed class Cell
 
     /// <summary>Creates a cell with the given text content.</summary>
     /// <remarks>
-    /// A null <paramref name="content"/> is stored as an empty string, so the cell draws no text
-    /// and <see cref="Content"/> is never null (#547). A null used to be stored as it was, and the
-    /// save threw <see cref="NullReferenceException"/> when it sized a column automatically, which
-    /// it does for a column without a positive finite width in <see cref="TableElement.ColWidths"/>;
-    /// in a table where every column had one, the cell was drawn empty. Treating it as empty gives
-    /// both tables the second result, which is what the explicit-width table already did.
+    /// A null <paramref name="content"/> is stored, and the cell draws no text. The save refuses it with
+    /// <see cref="ArgumentNullException"/> (<c>ParamName</c> <c>content</c>) when it sizes a column
+    /// automatically, which it does for a column without a positive finite width in
+    /// <see cref="TableElement.ColWidths"/>, and then for every cell of the table; a table where every
+    /// column has such a width draws the cell empty. That is the split 1c61fa6 had, with
+    /// <see cref="NullReferenceException"/> for the first case. <b>Do not pass</b> a null: 3.0 refuses
+    /// it here.
     /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not from
+    /// this call, when <paramref name="content"/> is <see langword="null"/> and a column is sized
+    /// automatically. The document cannot be saved again.
+    /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this call, when the text holds an unpaired surrogate and is measured in an embedded
@@ -202,6 +209,6 @@ public sealed class Cell
     /// </exception>
     public Cell(string content)
     {
-        Content = content ?? string.Empty;
+        Content = content;
     }
 }

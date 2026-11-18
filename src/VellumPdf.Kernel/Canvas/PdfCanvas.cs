@@ -868,7 +868,7 @@ public sealed class PdfCanvas
     {
         if (double.IsNaN(v) || double.IsInfinity(v))
             throw new ArgumentException(
-                $"PDF does not support NaN or Infinity as a real number value. Got: {v}");
+                $"PDF does not support NaN or Infinity as a real number value. Got: {v.ToString(CultureInfo.InvariantCulture)}");
         return v.ToString("0.#####", CultureInfo.InvariantCulture);
     }
 

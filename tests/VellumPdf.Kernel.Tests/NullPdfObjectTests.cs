@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using VellumPdf.Core;
+using VellumPdf.IO;
 
 namespace VellumPdf.Kernel.Tests;
 
@@ -34,29 +35,48 @@ public sealed class NullPdfObjectTests
         Assert.Contains("index 1", ex.Message, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void PdfDictionary_Set_nullValue_isRefused_andStoresNothing()
+    private static string Write(PdfObject obj)
     {
-        var dict = new PdfDictionary();
-
-        var ex = Assert.Throws<ArgumentNullException>(() => dict.Set(new PdfName("A"), (PdfObject)null!));
-
-        Assert.Equal("value", ex.ParamName);
-        Assert.False(dict.TryGet(new PdfName("A"), out _));
+        using var ms = new MemoryStream();
+        obj.WriteTo(new PdfWriter(ms));
+        return System.Text.Encoding.ASCII.GetString(ms.ToArray());
     }
 
     [Fact]
-    public void PdfDictionary_Set_nullValue_isRefusedAboveTheIndexThresholdToo()
+    public void PdfDictionary_Set_nullValue_isStored_andRefusedByWriteToNamingTheKey()
     {
-        // The dictionary switches to an index past a size threshold, and the null key it already
-        // refused had to behave the same on both sides. The value does as well.
+        var dict = new PdfDictionary();
+        dict.Set(new PdfName("A"), (PdfObject)null!);
+
+        Assert.True(dict.TryGet(new PdfName("A"), out var stored));
+        Assert.Null(stored);
+        var ex = Assert.Throws<ArgumentNullException>(() => Write(dict));
+        Assert.Equal("value", ex.ParamName);
+        Assert.Contains("A", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PdfDictionary_Set_nullValueThenARealOne_writesTheRealOne_asOn1c61fa6()
+    {
+        var dict = new PdfDictionary();
+        dict.Set(new PdfName("K"), (PdfObject)null!);
+        dict.Set(new PdfName("K"), new PdfInteger(1));
+
+        Assert.Contains("/K 1", Write(dict), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PdfDictionary_Set_nullValue_aboveTheIndexThreshold_behavesTheSame()
+    {
         var dict = new PdfDictionary();
         for (var i = 0; i < 64; i++) dict.Set(new PdfName($"K{i}"), new PdfInteger(i));
 
-        Assert.Throws<ArgumentNullException>(() => dict.Set(new PdfName("K3"), (PdfObject)null!));
-        Assert.Throws<ArgumentNullException>(() => dict.Set(new PdfName("New"), (PdfObject)null!));
-        Assert.False(dict.TryGet(new PdfName("New"), out _));
-        Assert.Equal(3, ((PdfInteger)dict.Get(new PdfName("K3"))!).Value);
+        dict.Set(new PdfName("New"), (PdfObject)null!);
+        dict.Set(new PdfName("K3"), (PdfObject)null!);
+
+        Assert.True(dict.TryGet(new PdfName("New"), out var stored));
+        Assert.Null(stored);
+        Assert.Throws<ArgumentNullException>(() => Write(dict));
     }
 
     [Fact]

@@ -78,16 +78,23 @@ public sealed class PdfStructElem
     /// so a cycle overflowed the stack from an ordinary <c>Save</c>. That cannot be caught in .NET,
     /// which is why it is refused here, at the call that makes it. An element reachable by two
     /// routes without a cycle is not refused.
+    /// <para>A null <paramref name="child"/> is stored, as on 1c61fa6, and refused where the structure
+    /// tree is built: a document that is not tagged never builds it, so such a document saves. It is
+    /// not refused at this call. <b>Do not pass</b> a null child: 3.0 refuses it here.</para>
     /// </remarks>
-    /// <exception cref="ArgumentNullException"><paramref name="child"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException">
+    /// Raised from <c>Save</c>, not from this call, when the document is tagged and the element is
+    /// reachable from the structure tree and holds a null child. <c>ParamName</c> is <c>child</c>.
+    /// </exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="child"/> is this element or holds it in its subtree, so adding it would make an
     /// element its own ancestor.
     /// </exception>
     public PdfStructElem AddChild(PdfStructElem child)
     {
-        ArgumentNullException.ThrowIfNull(child);
-        if (child.Contains(this))
+        // A null child is stored and refused where the tree is built, as on 1c61fa6, which saved an
+        // untagged document whose elements held one.
+        if (child is not null && child.Contains(this))
         {
             throw new ArgumentException(
                 ReferenceEquals(child, this)
@@ -95,8 +102,8 @@ public sealed class PdfStructElem
                     : "A structure element cannot be added below one of its own descendants; that would make it its own ancestor.",
                 nameof(child));
         }
-        _children.Add(child);
-        return child;
+        _children.Add(child!);
+        return child!;
     }
 
     /// <summary>
@@ -112,6 +119,7 @@ public sealed class PdfStructElem
         while (pending.Count > 0)
         {
             var current = pending.Pop();
+            if (current is null) continue;   // a stored null child; refused where the tree is built
             if (ReferenceEquals(current, target)) return true;
             if (!seen.Add(current)) continue;
             foreach (var child in current._children) pending.Push(child);
@@ -430,6 +438,8 @@ internal sealed class PdfStructureTree
         Dictionary<PdfPage, int> pageStructParents,
         HashSet<PdfStructElem> path)
     {
+        if (root is null)
+            throw new ArgumentNullException("child", "A structure element has a null child.");
         EnterElement(path, root);
         if (root.Page is not null && !pageStructParents.ContainsKey(root.Page))
         {

@@ -33,13 +33,17 @@ public sealed class PdfDictionary : PdfObject
 
     /// <summary>Sets <paramref name="key"/> to <paramref name="value"/>, replacing any existing entry, and returns this dictionary.</summary>
     /// <remarks>
-    /// A null <paramref name="value"/> is refused, as a null <paramref name="key"/> always was (#523).
-    /// It used to be stored, and <c>WriteTo</c> threw <see cref="NullReferenceException"/> later,
-    /// far from this call. A dictionary entry whose value is absent is expressed by not setting the
-    /// key, or by <see cref="PdfNull"/> where a PDF null is meant.
+    /// A null <paramref name="key"/> is refused here. A null <paramref name="value"/> is stored and
+    /// refused where <see cref="WriteTo"/> reaches it, with <see cref="ArgumentNullException"/> naming
+    /// the key (#523). It used to throw <see cref="NullReferenceException"/> there, and it still does
+    /// not throw earlier: setting the key again replaces the null, and a dictionary that is never
+    /// written never fails. <b>Do not pass</b> a null value: 3.0 refuses it here. A dictionary entry
+    /// whose value is absent is expressed by not setting the key, or by <see cref="PdfNull"/> where a
+    /// PDF null is meant.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
-    /// <paramref name="key"/> or <paramref name="value"/> is <see langword="null"/>.
+    /// <paramref name="key"/> is <see langword="null"/>. A null <paramref name="value"/> is raised from
+    /// <see cref="WriteTo"/>, not from this call.
     /// </exception>
     public PdfDictionary Set(PdfName key, PdfObject value)
     {
@@ -52,10 +56,8 @@ public sealed class PdfDictionary : PdfObject
         // pins.
         ArgumentNullException.ThrowIfNull(key);
 
-        // The same failure mode, for the value: a null value was stored and failed later, in
-        // WriteTo (#523).
-        ArgumentNullException.ThrowIfNull(value);
-
+        // A null value is stored and refused in WriteTo, where 1c61fa6 failed: a sequence that sets the
+        // key again before the dictionary is written saved a valid file there.
         if (_index is not null)
         {
             if (_index.TryGetValue(key, out var i))
@@ -181,6 +183,9 @@ public sealed class PdfDictionary : PdfObject
     /// <exception cref="InvalidOperationException">
     /// This dictionary contains itself.
     /// </exception>
+    /// <exception cref="ArgumentNullException">
+    /// An entry's value is <see langword="null"/>; see <see cref="Set(PdfName, PdfObject)"/>.
+    /// </exception>
     public override void WriteTo(PdfWriter writer)
     {
         writer.EnterContainer(this);
@@ -192,6 +197,8 @@ public sealed class PdfDictionary : PdfObject
                 writer.WriteByte((byte)'\n');
                 kv.Key.WriteTo(writer);
                 writer.WriteByte((byte)' ');
+                if (kv.Value is null)
+                    throw new ArgumentNullException("value", $"The value of dictionary key {kv.Key.Value} is null.");
                 kv.Value.WriteTo(writer);
             }
             writer.WriteAscii("\n>>"u8);

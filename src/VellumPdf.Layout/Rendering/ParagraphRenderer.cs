@@ -650,6 +650,10 @@ public sealed class ParagraphRenderer : IRenderer
                 var isFirstWord = true;
                 foreach (var w in words)
                 {
+                    // 1c61fa6 dereferenced the style for the first word of a run and for nothing else, so a
+                    // run of empty text, white space or line breaks alone saved with a null style.
+                    if (run.Style is null)
+                        throw new ArgumentNullException("Style", "A paragraph run with text has a null style.");
                     tokens.Add((w, run.Style, !isFirstHardLine && isFirstWord));
                     isFirstWord = false;
                 }

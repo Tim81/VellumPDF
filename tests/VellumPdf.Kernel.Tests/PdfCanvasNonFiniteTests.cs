@@ -132,4 +132,29 @@ public sealed class PdfCanvasNonFiniteTests
         Assert.Contains("2.5 w", content, StringComparison.Ordinal);
         Assert.Contains("10 20 m", content, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// The message formats the value with the invariant culture, so it reads the same on every machine:
+    /// under sv-SE and en-US-POSIX-style cultures <c>double.PositiveInfinity.ToString()</c> is not
+    /// "Infinity".
+    /// </summary>
+    [Fact]
+    public void RefusalMessage_formatsTheValueInvariantly()
+    {
+        var previous = System.Globalization.CultureInfo.CurrentCulture;
+        try
+        {
+            System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("sv-SE");
+            var canvas = new PdfCanvas(new PdfDocument().AddPage());
+            var fromCanvas = Assert.Throws<ArgumentException>(() => canvas.SetLineWidth(double.PositiveInfinity));
+            var fromReal = Assert.Throws<ArgumentException>(() => new VellumPdf.Core.PdfReal(double.NegativeInfinity));
+
+            Assert.EndsWith("Got: Infinity", fromCanvas.Message, StringComparison.Ordinal);
+            Assert.Contains("Got: -Infinity", fromReal.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            System.Globalization.CultureInfo.CurrentCulture = previous;
+        }
+    }
 }
