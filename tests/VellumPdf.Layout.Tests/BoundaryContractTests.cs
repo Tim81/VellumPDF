@@ -28,7 +28,7 @@ namespace VellumPdf.Layout.Tests;
 /// measurement of one of them was twice promoted to a claim about all three.
 ///
 /// A failure here means the library moved, not that the test is stale. Fix the code or fix the
-/// sentence the case names, and do both in the same commit.
+/// sentence the case pins, and do both in the same commit.
 /// </summary>
 public sealed class BoundaryContractTests
 {
@@ -72,7 +72,8 @@ public sealed class BoundaryContractTests
     /// but not when it was built without a page: the kernel looks the page up before it reads the
     /// handle, and answers <see cref="ArgumentNullException"/> with <c>ParamName</c> <c>key</c>
     /// instead. With no document at all, the document is read first and the call raises
-    /// <see cref="NullReferenceException"/> whatever else is null.
+    /// <see cref="NullReferenceException"/> whatever else is null (read from source; no row nulls
+    /// the document).
     ///
     /// This overlap is why the member's two tags carry their conditions: an earlier version claimed
     /// the NullReferenceException for a null handle unconditionally, which is false for one of the
@@ -167,8 +168,8 @@ public sealed class BoundaryContractTests
     }
 
     /// <summary>
-    /// What a save refuses is the value it writes, not the value passed. <c>AddOutlineEntry</c> flips
-    /// the Y through <see cref="DrawContext.PageBounds"/>, so a finite argument is refused when that
+    /// What the save refuses for an outline entry is the Y it writes, not the layoutY passed.
+    /// <c>AddOutlineEntry</c> flips the Y through <see cref="DrawContext.PageBounds"/>, so a finite argument is refused when that
     /// height is not finite or the subtraction overflows. The tags blamed the caller's argument
     /// until round 21.
     /// </summary>
@@ -297,10 +298,11 @@ public sealed class BoundaryContractTests
     // ── Heading.Level: what the outline nests on ────────────────────────────────────────────────
 
     /// <summary>
-    /// Level 0 is always a top-level entry. Any other level hangs under the most recent earlier
-    /// entry at exactly <c>Level - 1</c>, or at the top level when there is none. So consecutive
-    /// levels nest and a jump does not: after a level 0 heading, level 5 and level 500 both land
-    /// beside it.
+    /// A heading registers its outline entry through <see cref="DrawContext.AddOutlineEntry"/>, and
+    /// the outline builder places it by level. Level 0 is always a top-level entry. Any other level
+    /// hangs under the most recent earlier entry at exactly <c>Level - 1</c>, or at the top level
+    /// when there is none. So consecutive levels nest and a jump does not: after a level 0
+    /// heading, level 5 and level 500 both land beside it.
     /// <see cref="Heading.Level"/> claimed the outline "still nests on the number you gave" until
     /// round 21 measured it.
     /// </summary>
@@ -448,7 +450,8 @@ public sealed class BoundaryContractTests
     /// <summary>
     /// Both faces measure every character as zero width, at every size probed. Checked across every
     /// non-surrogate Basic Multilingual Plane code point rather than at a handful, because the
-    /// documentation says "every character" and a quantifier needs its boundary.
+    /// documentation says "every character" and a quantifier needs its boundary. The sentence is
+    /// in <see cref="TextStyle.FontRef"/>.
     /// </summary>
     [Theory]
     [InlineData(Standard14.Symbol)]
@@ -470,7 +473,8 @@ public sealed class BoundaryContractTests
     /// Because the width is zero, a centred Symbol line is placed at the exact centre of the content
     /// area and a right-aligned one at its exact right edge. 297.64 and 523.28 are the values
     /// #542's probes measured for that rule on the default A4 page, not figures the documentation
-    /// quotes. A Helvetica control shows the same line placed on its measured width.
+    /// quotes. A Helvetica control shows the same line placed on its measured width. The sentence
+    /// is in <see cref="TextStyle.FontRef"/>.
     /// </summary>
     [Theory]
     [InlineData(Standard14.Symbol, HorizontalAlignment.Center, "297.64")]
@@ -493,8 +497,10 @@ public sealed class BoundaryContractTests
     /// The unit is the line, not the paragraph. A line holding a Symbol run followed by a Helvetica
     /// run is centred on the Helvetica run's width alone. The Helvetica run starts where the Symbol
     /// run does and is drawn over it, the Symbol run being drawn first. Run order changes
-    /// the result, because the space between runs is measured in the earlier run's font: with a
-    /// Helvetica run followed by a Symbol run, the Symbol run starts after the Helvetica one
+    /// the result, because each run is placed after the measured width of the runs before it, and
+    /// a Symbol run measures zero. The space between two runs belongs to the earlier run and is
+    /// measured in its font, so it adds nothing after a Symbol run: with a Helvetica run followed
+    /// by a Symbol run, the Symbol run starts after the Helvetica run and its space
     /// (x 262.63 and 332.65 measured).
     /// Round 20 changed <see cref="TextStyle.FontRef"/> to say "set wholly in either font", which
     /// scopes the zero-width placement to lines set wholly in one of the two fonts.
@@ -524,7 +530,8 @@ public sealed class BoundaryContractTests
     /// The same rule per line. In a paragraph that wraps, the first line holds only Helvetica text
     /// and is centred on its measured width. The second holds Helvetica text, a Symbol run and a
     /// Helvetica run, and is centred on the Helvetica text alone: the Symbol run and the Helvetica
-    /// run after it start at the same x, so the Helvetica run is drawn over the Symbol run.
+    /// run after it start at the same x, so the Helvetica run is drawn over the Symbol run. The
+    /// sentence is in <see cref="TextStyle.FontRef"/>.
     /// </summary>
     [Fact]
     public void MixedLine_afterAWrappedLine_isCentredPerLine()
@@ -551,7 +558,8 @@ public sealed class BoundaryContractTests
 
     /// <summary>
     /// A paragraph set wholly in Symbol is never wrapped, however long it is: 660 characters
-    /// draw as one line, where the same text in Helvetica wraps to nine.
+    /// draw as one line, where the same text in Helvetica wraps to nine. The sentence is in
+    /// <see cref="TextStyle.FontRef"/>.
     /// </summary>
     [Fact]
     public void SymbolParagraph_isNeverWrapped()

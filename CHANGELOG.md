@@ -10,15 +10,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **The boundaries Layout documents are now pinned as tests.** `BoundaryContractTests` holds 67
   cases (5 facts and 62 theory rows), taken from the probes that produced the sentences in #542:
-  which null argument decides when two are null on `DrawContext` and `RendererContext`, that a save
-  refuses the flipped value rather than the value passed, that a foreign page drops a link
-  annotation while keeping the outline entry, that the five `Document.Add` overloads that carry a
-  `TextStyle` defer a non-finite font size (NaN, positive and negative infinity) and an unnamed
-  `Standard14` value to the save, where a nested list's indent is refused (451.2799 saves, 451.28
-  throws, and the boundary moves with the list's margins), how a heading's level places its bookmark
-  (level 0 is always a top-level entry, and any other level hangs under the most recent earlier
-  entry at exactly one level below it), and that Symbol and ZapfDingbats measure every non-surrogate
-  Basic Multilingual Plane character as zero at every size probed.
+  which null argument decides when two are null on `DrawContext` and `RendererContext`, that an
+  outline entry's save refuses the flipped Y, that a foreign page drops a link annotation while
+  keeping the outline entry, that the five `Document.Add` overloads that carry a `TextStyle` defer a
+  non-finite font size (NaN, positive and negative infinity) and an unnamed `Standard14` value to
+  the save, where a nested list's indent is refused (451.2799 saves, 451.28 throws, and the boundary
+  moves with the list's margins), how a heading's level places its bookmark (level 0 is always a
+  top-level entry, and any other level hangs under the most recent earlier entry at exactly one
+  level below it, or at the top level when there is none), and that Symbol and ZapfDingbats measure
+  every non-surrogate Basic Multilingual Plane character as zero at every size probed.
 
   Documentation goes stale silently: #542's review rounds kept re-measuring partitions an earlier
   round had already settled, because nothing held the figures. A boundary a test asserts fails
