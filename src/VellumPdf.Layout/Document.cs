@@ -1293,8 +1293,8 @@ public sealed class Document : IDisposable
     /// <exception cref="NullReferenceException">
     /// A null that a member still stores without a check: a null <see cref="PageSize"/>. A custom
     /// renderer that returns a null result, or a null renderer inside one, raises it too; see
-    /// <see cref="IRenderer.Layout"/>. A band template and an element, text or item passed to an
-    /// <c>Add</c> overload are refused where they are passed instead (#523, #531, #547).
+    /// <see cref="IRenderer.Layout"/>. An element, text or item passed to an
+    /// <c>Add</c> overload is refused where it is passed instead (#523, #531, #547).
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// A <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name is selected
@@ -1410,8 +1410,8 @@ public sealed class Document : IDisposable
     /// <exception cref="NullReferenceException">
     /// A null that a member still stores without a check: a null <see cref="PageSize"/>. A custom
     /// renderer that returns a null result, or a null renderer inside one, raises it too; see
-    /// <see cref="IRenderer.Layout"/>. A band template and an element, text or item passed to an
-    /// <c>Add</c> overload are refused where they are passed instead (#523, #531, #547).
+    /// <see cref="IRenderer.Layout"/>. An element, text or item passed to an
+    /// <c>Add</c> overload is refused where it is passed instead (#523, #531, #547).
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// A <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name is selected
@@ -1563,8 +1563,8 @@ public sealed class Document : IDisposable
     /// <exception cref="NullReferenceException">
     /// A null that a member still stores without a check: a null <see cref="PageSize"/>. A custom
     /// renderer that returns a null result, or a null renderer inside one, raises it too; see
-    /// <see cref="IRenderer.Layout"/>. A band template and an element, text or item passed to an
-    /// <c>Add</c> overload are refused where they are passed instead (#523, #531, #547).
+    /// <see cref="IRenderer.Layout"/>. An element, text or item passed to an
+    /// <c>Add</c> overload is refused where it is passed instead (#523, #531, #547).
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// A <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name is selected
@@ -1676,8 +1676,8 @@ public sealed class Document : IDisposable
     /// <exception cref="NullReferenceException">
     /// A null that a member still stores without a check: a null <see cref="PageSize"/>. A custom
     /// renderer that returns a null result, or a null renderer inside one, raises it too; see
-    /// <see cref="IRenderer.Layout"/>. A band template and an element, text or item passed to an
-    /// <c>Add</c> overload are refused where they are passed instead (#523, #531, #547).
+    /// <see cref="IRenderer.Layout"/>. An element, text or item passed to an
+    /// <c>Add</c> overload is refused where it is passed instead (#523, #531, #547).
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// A <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name is selected
