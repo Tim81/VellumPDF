@@ -21,11 +21,12 @@ namespace VellumPdf.Layout.Core;
 /// positive infinity and negative infinity take three different branches here, and an earlier draft
 /// of this file measured one of them and asserted all three.
 ///
-/// What these inputs did before is not uniform, so it is stated per input rather than per group. A
-/// NaN or positive-infinity font size on a paragraph run already threw, so only the wording changes.
-/// A <c>ColSpan</c> below one already threw when it fell in the row that sets the column count, and
-/// otherwise rendered while silently dropping the cell the caller wrote. Everything else here saved
-/// a document whose content stream was invalid.
+/// A check is made before the layout only where no content on 1c61fa6 produced a valid file with the
+/// input, the rule the <c>Document</c> remarks state: a font size on text that is drawn, a
+/// <c>ColSpan</c> below one, a line separator's margins and colour, a table cell's padding, a
+/// negative line width, an image extent that is zero or not finite. The other non-finite insets,
+/// indents, band heights and colours are not checked here. The layout runs as it did on that version
+/// and <c>PdfCanvas</c> refuses what would be written as <c>NaN</c> or <c>Infinity</c>.
 ///
 /// What is left alone, each rendering valid content today, because refusing it would turn a working
 /// document into an exception: a font size of zero or less, a <c>RowSpan</c> below one, a negative
@@ -57,7 +58,7 @@ internal static class LayoutValidation
     /// default leading, and used to save successfully while writing <c>/F1 -Infinity Tf</c>, which
     /// is not a PDF number.
     /// </summary>
-    internal static void ValidateStyle(TextStyle style, string owner, bool checkColor = true)
+    internal static void ValidateStyle(TextStyle style, string owner)
     {
         // Non-finite only, deliberately. A font size of zero or less renders today and reaches the
         // stream verbatim -- "/F1 0 Tf" at zero, "/F1 -12 Tf" at -12 -- a valid operator either
@@ -74,7 +75,7 @@ internal static class LayoutValidation
                 "A font size must be a finite number.");
         }
 
-        if (checkColor) ValidateColor(style.Color, owner, "text colour");
+        ValidateColor(style.Color, owner, "text colour");
     }
 
     /// <summary>
@@ -106,11 +107,6 @@ internal static class LayoutValidation
             $"{owner} has a {what} whose {channel.Item1} channel is {Format(channel.Item2)}, " +
             "which cannot be written to a content stream. Every colour channel must be a finite number.");
     }
-
-    /// <summary>Whether every edge of the insets is a finite number.</summary>
-    internal static bool IsFinite(EdgeInsets insets) =>
-        double.IsFinite(insets.Left) && double.IsFinite(insets.Top) &&
-        double.IsFinite(insets.Right) && double.IsFinite(insets.Bottom);
 
     /// <summary>Whether every channel of the colour is a finite number.</summary>
     internal static bool IsFinite(ColorRgb color) =>
@@ -217,164 +213,20 @@ internal static class LayoutValidation
     }
 
     /// <summary>
-    /// The kinds of non-finite value an edge may hold without being refused; see
-    /// <see cref="ValidateInsets(EdgeInsets, string, NonFinite, NonFinite, NonFinite, NonFinite)"/>.
+    /// Rejects insets that are not finite, for the two elements where no content saved a valid file
+    /// on 1c61fa6 with one: a line separator's margins and a table cell's padding. Each threw for
+    /// every edge and every one of <c>NaN</c>, positive and negative infinity, where it was measured.
+    /// Every other inset is not checked here. Layout runs as it did on that version, and
+    /// <c>PdfCanvas</c> refuses a value that would be written as <c>NaN</c> or <c>Infinity</c>.
     /// </summary>
-    [Flags]
-    internal enum NonFinite
+    internal static void ValidateInsets(EdgeInsets insets, string owner)
     {
-        None = 0,
-        NaN = 1,
-        PositiveInfinity = 2,
-        NegativeInfinity = 4,
-    }
-
-    /// <summary>
-    /// Rejects insets that are not finite, except for the kinds each edge is told to let through.
-    /// Padding and margins are written straight into a rectangle and a text matrix, so one
-    /// non-finite inset can emit <c>10 NaN 280 NaN re</c> and <c>1 0 0 1 NaN NaN Tm</c>.
-    ///
-    /// The allowances exist because a few element and edge combinations saved a valid file on
-    /// 1c61fa6 with a non-finite value there, measured one edge at a time, and a release before 3.0
-    /// may not turn a document that saves into an exception (#484). An edge is let through only
-    /// where its value is never written, so a caller names exactly those combinations and every
-    /// other one stays refused.
-    /// </summary>
-    internal static void ValidateInsets(
-        EdgeInsets insets,
-        string owner,
-        NonFinite top = NonFinite.None,
-        NonFinite right = NonFinite.None,
-        NonFinite bottom = NonFinite.None,
-        NonFinite left = NonFinite.None)
-    {
-        if (Refused(insets.Left, left) || Refused(insets.Top, top) ||
-            Refused(insets.Right, right) || Refused(insets.Bottom, bottom))
+        if (!double.IsFinite(insets.Left) || !double.IsFinite(insets.Top) ||
+            !double.IsFinite(insets.Right) || !double.IsFinite(insets.Bottom))
         {
             throw new InvalidOperationException(
                 $"{owner} has a non-finite inset. Every inset must be a finite number.");
         }
-
-        static bool Refused(double value, NonFinite allowed)
-        {
-            if (double.IsFinite(value)) return false;
-            var kind = double.IsNaN(value) ? NonFinite.NaN
-                : value > 0 ? NonFinite.PositiveInfinity
-                : NonFinite.NegativeInfinity;
-            return (allowed & kind) == 0;
-        }
-    }
-
-    /// <summary>
-    /// Rejects a list indent of negative infinity where it is written into a text matrix (#532).
-    ///
-    /// A nested child's marker takes the indent as its left inset directly, and a flat item whose
-    /// longest word will not fit beside its marker takes it as its gutter, so either path writes
-    /// <c>1 0 0 1 -Infinity 263.6 Tm</c>. A flat list whose words fit stays safe, because the
-    /// gutter widens to the marker's own width, and it saved a valid file on 1c61fa6 (#484), so the
-    /// caller names the two writing paths and this is not called for the rest.
-    /// </summary>
-    internal static void ValidateListIndentWritten(double indent, string owner)
-    {
-        if (!double.IsNegativeInfinity(indent)) return;
-
-        throw new InvalidOperationException(
-            $"{owner} has an indent of {Format(indent)}, which cannot be laid out. " +
-            "An indent must be a finite number.");
-    }
-
-    /// <summary>
-    /// Rejects a list indent of <c>NaN</c>, which reaches a text matrix as a token that is not a PDF
-    /// number on every path (#532). Negative infinity is refused only where it is written; see
-    /// <see cref="ValidateListIndentWritten"/>.
-    ///
-    /// A nested child's marker takes the indent as its left inset directly, and a flat item whose
-    /// longest word will not fit beside its marker takes it as its gutter, so either path wrote
-    /// <c>1 0 0 1 -Infinity 263.6 Tm</c>. <c>NaN</c> reached the same operand on every path, because
-    /// <c>Math.Max</c> with <c>NaN</c> is <c>NaN</c>. A flat list whose words fit stayed safe for
-    /// negative infinity only because the gutter widened to the marker's own width, which is why
-    /// the flat case looked correct when this was first reported.
-    ///
-    /// Positive infinity is deliberately not checked here. It writes no invalid token, a nested list
-    /// already throws at the content-width boundary, and on a flat list it discards the item text,
-    /// which is its own defect (#476) and renders a valid file today. A finite negative indent is
-    /// likewise left alone.
-    /// </summary>
-    internal static void ValidateListIndent(double indent, string owner)
-    {
-        if (!double.IsNaN(indent)) return;
-
-        throw new InvalidOperationException(
-            $"{owner} has an indent of {Format(indent)}, which cannot be laid out. " +
-            "An indent must be a finite number.");
-    }
-
-    /// <summary>
-    /// Rejects a document margin that is not a finite number, naming the edge.
-    ///
-    /// The margin check that existed compares the horizontal and vertical sums against the page, and
-    /// a comparison against <c>NaN</c> is false, so <c>NaN</c> passed it. Negative infinity is below
-    /// every page size and passed it too. Both then surfaced later as a message about something
-    /// else: <c>NaN</c> as an element that is too tall, negative infinity as 50,000 page
-    /// continuations, the second after the renderer had done that work. Positive infinity was
-    /// already caught by the sum, with a message that named a total rather than the edge (#502).
-    ///
-    /// Raised as <see cref="ArgumentException"/> with the parameter name <c>margins</c>, which is
-    /// what the sum check beside it throws, so a caller's existing handler for a bad margin still
-    /// catches every bad margin. A negative finite margin is not refused: it saves today, a reader
-    /// clips what lands outside the page, and refusing it would turn a rendering document into an
-    /// exception. It is documented on <c>Document.Margins</c> and left to the next major.
-    /// </summary>
-    internal static void ValidateMargins(EdgeInsets margins)
-    {
-        Check(margins.Left, "left", NonFinite.None);
-        Check(margins.Top, "top", NonFinite.NegativeInfinity);
-        // These three saved a valid file on 1c61fa6: the right edge only narrows what is drawn
-        // from a position it never reaches, and the bottom edge only bounds a height. Measured, a
-        // NaN or negative-infinity right margin and a negative-infinity bottom margin saved clean.
-        Check(margins.Right, "right", NonFinite.NaN | NonFinite.NegativeInfinity);
-        Check(margins.Bottom, "bottom", NonFinite.NaN | NonFinite.NegativeInfinity);
-
-        static void Check(double value, string edge, NonFinite allowed)
-        {
-            if (double.IsFinite(value)) return;
-            var kind = double.IsNaN(value) ? NonFinite.NaN
-                : value > 0 ? NonFinite.PositiveInfinity
-                : NonFinite.NegativeInfinity;
-            if ((allowed & kind) != 0) return;
-            throw new ArgumentException(
-                $"The {edge} margin is {Format(value)}, which cannot be laid out. " +
-                "A margin must be a finite number.",
-                "margins");
-        }
-    }
-
-    /// <summary>
-    /// Rejects a running band whose reserved height is not a finite number, for a header and a
-    /// footer alike, so the two cannot disagree (#520).
-    ///
-    /// They disagreed. The header height comes off the top of the content box, so a non-finite
-    /// value poisoned the Y cursor and a later check refused it. The footer height comes off the
-    /// content box's height only, so negative infinity made that height positive infinity, the body
-    /// placed normally, and the band was then drawn at <c>+inf</c> plus <c>-inf</c>: the file saved
-    /// with <c>NaN</c> in a text matrix. Positive infinity and <c>NaN</c> were refused on both, by
-    /// two different exception types across three messages.
-    ///
-    /// Only an explicit <c>Height</c> is checked. A band with no height derives one from its style,
-    /// and a style that makes that derived height unusable is refused by its own checks.
-    /// </summary>
-    internal static void ValidateBandHeight(RunningBand band, string owner)
-    {
-        if (band.Height is not { } height || double.IsFinite(height)) return;
-
-        // A band with an empty template draws nothing, so its height is never written to an operand.
-        // Negative infinity there saved a valid file on 1c61fa6 when the body fitted, and still does;
-        // a body that did not fit was refused by the too-tall path on both versions.
-        if (double.IsNegativeInfinity(height) && band.Template.Length == 0) return;
-
-        throw new InvalidOperationException(
-            $"{owner} has a height of {Format(height)}, which cannot be laid out. " +
-            "A band height must be a finite number.");
     }
 
     /// <summary>

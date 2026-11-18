@@ -1,6 +1,7 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Text.RegularExpressions;
 using VellumPdf.Document;
 using VellumPdf.Fonts;
 using VellumPdf.Layout.Core;
@@ -11,18 +12,28 @@ namespace VellumPdf.Layout.Tests;
 
 /// <summary>
 /// A release before 3.0 may not turn a document that saved a valid file on 1c61fa6 into an exception
-/// (#484). Each case here saved with no NaN or Infinity token on that version and keeps saving; the
-/// other combinations of the same inputs wrote an invalid token or threw there, and stay refused.
-/// The expected outcomes were measured against 1c61fa6, not derived from the code.
+/// (#484). A non-finite inset, indent, colour or band height is not checked before the layout, with
+/// two exceptions that threw for every value there; the layout runs as it did and <c>PdfCanvas</c>
+/// refuses what would be written as <c>NaN</c> or <c>Infinity</c>. See <see cref="Document"/>.
+/// Every expected outcome in this class was measured on 1c61fa6 and pins its output: the drawn text,
+/// the rectangle, image and curve counts, or the exception type. Where that output lost content, such
+/// as a table that is not drawn or text that wraps after every word, the test pins a known defect that
+/// is kept until 3.0 and reported by the diagnostics channel (#607).
 /// </summary>
 public sealed class KeepRenderingTests
 {
-    private static readonly double[] _nonFinite = [double.NaN, double.PositiveInfinity, double.NegativeInfinity];
-    private static readonly string[] _edges = ["top", "right", "bottom", "left"];
-    private static readonly string[] _elements = ["paragraph first", "paragraph last", "table",
-    "list", "pie", "image"];
+    private static string Normalise(string text) => Regex.Replace(text, @"[^\u0020-\u007E]", "?");
 
-    private static string Kind(double v) => double.IsNaN(v) ? "NaN" : v > 0 ? "+inf" : "-inf";
+    private static string Summary(Document doc)
+    {
+        var stream = Save(doc);
+        if (stream.Contains("NaN", StringComparison.Ordinal) || stream.Contains("Infinity", StringComparison.Ordinal))
+            return "INVALID";
+
+        var texts = Regex.Matches(stream, @"\(([^)]*)\) Tj").Select(m => Normalise(m.Groups[1].Value));
+        return $"SAVED {string.Join("|", texts)} re={Regex.Matches(stream, @"\bre\b").Count} " +
+            $"Do={Regex.Matches(stream, @"\bDo\b").Count} c={Regex.Matches(stream, @"(?m) c$").Count}";
+    }
 
     private static EdgeInsets Edge(string edge, double v) => edge switch
     {
@@ -32,34 +43,96 @@ public sealed class KeepRenderingTests
         _ => new EdgeInsets(0, 0, 0, v),
     };
 
-    /// <summary>
-    /// The combinations that saved clean on 1c61fa6, as (element, edge, value). A paragraph was
-    /// measured first and last in the document. Image margins were measured separately with the same
-    /// probe shape: a 2 by 2 image after one paragraph.
-    /// </summary>
-    private static bool SavedClean(string element, string edge, double v)
+    private static double Value(string v) => v switch
     {
-        var nan = double.IsNaN(v);
-        var neg = double.IsNegativeInfinity(v);
-        var pos = double.IsPositiveInfinity(v);
-        return element switch
-        {
-            "paragraph first" or "paragraph last" or "list" =>
-                (edge == "right" && (nan || neg)) || (edge == "bottom" && neg),
-            "table" => (edge == "top" && (pos || neg)) || (edge == "bottom" && (nan || neg)),
-            "pie" => edge == "right" && (pos || neg),
-            "image" => (edge == "right") || (edge == "left" && (pos || neg)),
-            _ => false,
-        };
-    }
+        "NaN" => double.NaN,
+        "+inf" => double.PositiveInfinity,
+        _ => double.NegativeInfinity,
+    };
 
-    public static TheoryData<string, string, double> MarginCases()
+    // Measured on 1c61fa6: element, edge, value, then what it did. SAVED rows list the drawn text
+    // (one entry per Tj, a non-ASCII byte shown as ?) and the re, Do and curve counts. INVALID rows
+    // wrote NaN or Infinity into the stream. THREW rows threw that type.
+    private static readonly (string Element, string Edge, string Value, string Main)[] _margins =
+    [
+        ("paragraph first", "top", "NaN", "THREW InvalidOperationException"),
+        ("paragraph first", "top", "+inf", "THREW InvalidOperationException"),
+        ("paragraph first", "top", "-inf", "INVALID"),
+        ("paragraph first", "right", "NaN", "SAVED First|one|Hello world re=0 Do=0 c=0"),
+        ("paragraph first", "right", "+inf", "THREW InvalidOperationException"),
+        ("paragraph first", "right", "-inf", "SAVED First one|Hello world re=0 Do=0 c=0"),
+        ("paragraph first", "bottom", "NaN", "THREW InvalidOperationException"),
+        ("paragraph first", "bottom", "+inf", "THREW InvalidOperationException"),
+        ("paragraph first", "bottom", "-inf", "SAVED First one|Hello world re=0 Do=0 c=0"),
+        ("paragraph first", "left", "NaN", "INVALID"),
+        ("paragraph first", "left", "+inf", "THREW InvalidOperationException"),
+        ("paragraph first", "left", "-inf", "INVALID"),
+        ("paragraph last", "top", "NaN", "THREW InvalidOperationException"),
+        ("paragraph last", "top", "+inf", "THREW InvalidOperationException"),
+        ("paragraph last", "top", "-inf", "INVALID"),
+        ("paragraph last", "right", "NaN", "SAVED Hello world again|Last|one re=0 Do=0 c=0"),
+        ("paragraph last", "right", "+inf", "THREW InvalidOperationException"),
+        ("paragraph last", "right", "-inf", "SAVED Hello world again|Last one re=0 Do=0 c=0"),
+        ("paragraph last", "bottom", "NaN", "THREW InvalidOperationException"),
+        ("paragraph last", "bottom", "+inf", "THREW InvalidOperationException"),
+        ("paragraph last", "bottom", "-inf", "SAVED Hello world again|Last one re=0 Do=0 c=0"),
+        ("paragraph last", "left", "NaN", "INVALID"),
+        ("paragraph last", "left", "+inf", "THREW InvalidOperationException"),
+        ("paragraph last", "left", "-inf", "INVALID"),
+        ("table", "top", "NaN", "INVALID"),
+        ("table", "top", "+inf", "SAVED Hello re=0 Do=0 c=0"),
+        ("table", "top", "-inf", "SAVED Hello re=0 Do=0 c=0"),
+        ("table", "right", "NaN", "INVALID"),
+        ("table", "right", "+inf", "THREW InvalidOperationException"),
+        ("table", "right", "-inf", "INVALID"),
+        ("table", "bottom", "NaN", "SAVED Hello|a re=1 Do=0 c=0"),
+        ("table", "bottom", "+inf", "THREW InvalidOperationException"),
+        ("table", "bottom", "-inf", "SAVED Hello|a re=1 Do=0 c=0"),
+        ("table", "left", "NaN", "INVALID"),
+        ("table", "left", "+inf", "THREW InvalidOperationException"),
+        ("table", "left", "-inf", "INVALID"),
+        ("list", "top", "NaN", "THREW InvalidOperationException"),
+        ("list", "top", "+inf", "THREW InvalidOperationException"),
+        ("list", "top", "-inf", "INVALID"),
+        ("list", "right", "NaN", "SAVED Hello|?|item re=0 Do=0 c=0"),
+        ("list", "right", "+inf", "THREW InvalidOperationException"),
+        ("list", "right", "-inf", "SAVED Hello|?|item re=0 Do=0 c=0"),
+        ("list", "bottom", "NaN", "THREW InvalidOperationException"),
+        ("list", "bottom", "+inf", "THREW InvalidOperationException"),
+        ("list", "bottom", "-inf", "SAVED Hello|?|item re=0 Do=0 c=0"),
+        ("list", "left", "NaN", "INVALID"),
+        ("list", "left", "+inf", "THREW InvalidOperationException"),
+        ("list", "left", "-inf", "INVALID"),
+        ("pie", "top", "NaN", "INVALID"),
+        ("pie", "top", "+inf", "THREW InvalidOperationException"),
+        ("pie", "top", "-inf", "INVALID"),
+        ("pie", "right", "NaN", "INVALID"),
+        ("pie", "right", "+inf", "SAVED Hello re=0 Do=0 c=4"),
+        ("pie", "right", "-inf", "SAVED Hello re=0 Do=0 c=4"),
+        ("pie", "bottom", "NaN", "INVALID"),
+        ("pie", "bottom", "+inf", "THREW InvalidOperationException"),
+        ("pie", "bottom", "-inf", "INVALID"),
+        ("pie", "left", "NaN", "INVALID"),
+        ("pie", "left", "+inf", "INVALID"),
+        ("pie", "left", "-inf", "INVALID"),
+        ("image", "top", "NaN", "INVALID"),
+        ("image", "top", "+inf", "THREW InvalidOperationException"),
+        ("image", "top", "-inf", "INVALID"),
+        ("image", "right", "NaN", "SAVED Hello re=0 Do=1 c=0"),
+        ("image", "right", "+inf", "SAVED Hello re=0 Do=1 c=0"),
+        ("image", "right", "-inf", "SAVED Hello re=0 Do=1 c=0"),
+        ("image", "bottom", "NaN", "INVALID"),
+        ("image", "bottom", "+inf", "THREW InvalidOperationException"),
+        ("image", "bottom", "-inf", "INVALID"),
+        ("image", "left", "NaN", "INVALID"),
+        ("image", "left", "+inf", "SAVED Hello re=0 Do=1 c=0"),
+        ("image", "left", "-inf", "SAVED Hello re=0 Do=1 c=0"),
+    ];
+
+    public static TheoryData<string, string, string, string> MarginCases()
     {
-        var rows = new TheoryData<string, string, double>();
-        foreach (var element in _elements)
-            foreach (var edge in _edges)
-                foreach (var v in _nonFinite)
-                    rows.Add(element, edge, v);
+        var rows = new TheoryData<string, string, string, string>();
+        foreach (var (element, edge, value, main) in _margins) rows.Add(element, edge, value, main);
         return rows;
     }
 
@@ -105,29 +178,31 @@ public sealed class KeepRenderingTests
         return PdfTestUtil.DecompressAllFlatStreams(ms.ToArray());
     }
 
+    /// <summary>
+    /// 72 shapes: six elements, four edges, three values. What 1c61fa6 saved, this saves with the same
+    /// drawn output. What it wrote as an invalid token throws from <c>PdfCanvas</c> with
+    /// <see cref="ArgumentException"/>. What it threw, it throws, with the same exception type.
+    /// </summary>
     [Theory]
     [MemberData(nameof(MarginCases))]
-    public void ElementMargin_nonFinite_savesCleanWhereItDidAndIsRefusedWhereItDidNot(string element, string edge, double v)
+    public void ElementMargin_nonFinite_gives1c61fa6Output(string element, string edge, string value, string main)
     {
-        using var doc = Build(element, Edge(edge, v));
+        using var doc = Build(element, Edge(edge, Value(value)));
 
-        if (SavedClean(element, edge, v))
+        if (main.StartsWith("SAVED", StringComparison.Ordinal))
         {
-            var stream = Save(doc);
-            Assert.DoesNotContain("NaN", stream, StringComparison.Ordinal);
-            Assert.DoesNotContain("Infinity", stream, StringComparison.Ordinal);
+            Assert.Equal(main, Summary(doc));
+        }
+        else if (main == "INVALID")
+        {
+            var ex = Assert.Throws<ArgumentException>(() => Save(doc));
+            Assert.StartsWith("PDF does not support NaN or Infinity as a real number value", ex.Message, StringComparison.Ordinal);
         }
         else
         {
-            // Refused from the element's own check, from the too-tall path or from PdfCanvas; each
-            // message says which.
+            var type = main["THREW ".Length..];
             var ex = Assert.ThrowsAny<Exception>(() => Save(doc));
-            Assert.True(
-                ex is InvalidOperationException or ArgumentException,
-                $"{element} {edge} {v}: unexpected {ex.GetType().Name}: {ex.Message}");
-            Assert.Matches(
-                "non-finite inset|Pie chart margins|too tall|PDF does not support NaN or Infinity|did not converge|single element",
-                ex.Message);
+            Assert.Equal(type, ex.GetType().Name);
         }
     }
 
@@ -166,7 +241,8 @@ public sealed class KeepRenderingTests
         using var doc = new Document();
         doc.Add(new PieChart { Slices = [new PieSlice(1, _nan)] });
 
-        Assert.Throws<ArgumentException>(() => Save(doc));
+        var ex = Assert.Throws<ArgumentException>(() => Save(doc));
+        Assert.StartsWith("PDF does not support NaN or Infinity as a real number value", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -176,7 +252,10 @@ public sealed class KeepRenderingTests
         doc.Header = new RunningBand(string.Empty, new TextStyle { Color = _nan });
         doc.Add(new Paragraph("Hello"));
 
-        Assert.DoesNotContain("NaN", Save(doc), StringComparison.Ordinal);
+        using var control = new Document();
+        control.Header = new RunningBand(string.Empty);
+        control.Add(new Paragraph("Hello"));
+        Assert.Equal(Summary(control), Summary(doc));
     }
 
     [Fact]
@@ -186,7 +265,8 @@ public sealed class KeepRenderingTests
         doc.Header = new RunningBand("Title", new TextStyle { Color = _nan });
         doc.Add(new Paragraph("Hello"));
 
-        Assert.Throws<InvalidOperationException>(() => Save(doc));
+        var ex = Assert.Throws<ArgumentException>(() => Save(doc));
+        Assert.StartsWith("PDF does not support NaN or Infinity as a real number value", ex.Message, StringComparison.Ordinal);
     }
 
     // ── Elements that write nothing ──────────────────────────────────────────
@@ -198,8 +278,8 @@ public sealed class KeepRenderingTests
         {
             foreach (var (edge, v) in new[] { ("left", double.NaN), ("left", double.NegativeInfinity), ("top", double.NegativeInfinity) })
             {
-                // An empty heading still writes its bookmark position, so a negative-infinity top
-                // margin reaches PdfCanvas and throws on 1c61fa6 and here.
+                // An empty heading still writes its bookmark position through PdfReal, so a
+                // negative-infinity top margin throws on 1c61fa6 and here.
                 if (element == "heading empty" && edge == "top") continue;
                 rows.Add(element, edge, v);
             }
@@ -230,11 +310,11 @@ public sealed class KeepRenderingTests
             default: doc.Add(new Heading("") { Margins = margins }); break;
         }
 
-        var stream = Save(doc);
+        using var control = new Document();
+        control.Add(new Paragraph("Hello"));
 
-        Assert.Contains("(Hello)", stream, StringComparison.Ordinal);
-        Assert.DoesNotContain("NaN", stream, StringComparison.Ordinal);
-        Assert.DoesNotContain("Infinity", stream, StringComparison.Ordinal);
+        // The same output as the document without the element that draws nothing.
+        Assert.Equal(Summary(control), Summary(doc));
     }
 
     [Fact]
@@ -243,7 +323,31 @@ public sealed class KeepRenderingTests
         using var doc = new Document();
         doc.Add(new Paragraph("Hello") { Margins = Edge("left", double.NaN) });
 
-        Assert.Throws<InvalidOperationException>(() => Save(doc));
+        var ex = Assert.Throws<ArgumentException>(() => Save(doc));
+        Assert.StartsWith("PDF does not support NaN or Infinity as a real number value", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// U+00A0 counts as drawable text: 1c61fa6 wrote <c>1 0 0 1 NaN 743.49 Tm</c> for it, so the
+    /// canvas refuses it, where plain white space draws nothing and saves.
+    /// </summary>
+    [Theory]
+    [InlineData(" ", true)]
+    [InlineData("   ", false)]
+    public void Paragraph_withANanLeftMargin_isRefusedOnlyWhenItDrawsSomething(string text, bool refused)
+    {
+        using var doc = new Document();
+        doc.Add(new Paragraph(text) { Margins = Edge("left", double.NaN) });
+
+        if (refused)
+        {
+            var ex = Assert.Throws<ArgumentException>(() => Save(doc));
+            Assert.StartsWith("PDF does not support NaN or Infinity as a real number value", ex.Message, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.DoesNotContain("NaN", Save(doc), StringComparison.Ordinal);
+        }
     }
 
     [Fact]
@@ -254,8 +358,7 @@ public sealed class KeepRenderingTests
         doc.Add(new Paragraph("Hello"));
 
         var stream = Save(doc);
-
-        Assert.Contains("(Hello)", stream, StringComparison.Ordinal);
+        Assert.Contains("(Hello) Tj", stream, StringComparison.Ordinal);
         Assert.DoesNotContain("Infinity", stream, StringComparison.Ordinal);
     }
 
@@ -266,7 +369,8 @@ public sealed class KeepRenderingTests
         doc.Footer = new RunningBand("Page {page}") { Height = double.NegativeInfinity };
         doc.Add(new Paragraph("Hello"));
 
-        Assert.Throws<InvalidOperationException>(() => Save(doc));
+        var ex = Assert.Throws<ArgumentException>(() => Save(doc));
+        Assert.StartsWith("PDF does not support NaN or Infinity as a real number value", ex.Message, StringComparison.Ordinal);
     }
 
     // ── A table cell that is never placed ────────────────────────────────────
@@ -289,10 +393,13 @@ public sealed class KeepRenderingTests
         using var doc = new Document();
         doc.Add(CellPastTheLastColumn(new Cell("d") { Background = _nan }));
 
-        var stream = Save(doc);
+        using var control = new Document();
+        control.Add(CellPastTheLastColumn(new Cell("d")));
 
-        Assert.DoesNotContain("NaN", stream, StringComparison.Ordinal);
-        Assert.DoesNotContain("(d)", stream, StringComparison.Ordinal);
+        // Drawn as it is with no background colour at all; the pushed-past cell is not placed.
+        var summary = Summary(doc);
+        Assert.Equal(Summary(control), summary);
+        Assert.DoesNotContain("|d|", "|" + summary + "|", StringComparison.Ordinal);
     }
 
     [Fact]
@@ -303,8 +410,8 @@ public sealed class KeepRenderingTests
         table.AddRow().AddCell(new Cell("a") { Background = _nan });
         doc.Add(table);
 
-        var ex = Assert.Throws<InvalidOperationException>(() => Save(doc));
+        var ex = Assert.Throws<ArgumentException>(() => Save(doc));
 
-        Assert.StartsWith("Table row 0, cell 0 has a background colour whose red channel is NaN", ex.Message, StringComparison.Ordinal);
+        Assert.StartsWith("PDF does not support NaN or Infinity as a real number value", ex.Message, StringComparison.Ordinal);
     }
 }

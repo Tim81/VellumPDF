@@ -224,9 +224,9 @@ public sealed class DocumentRenderer
     /// <remarks>
     /// The page size and margins are checked here. A page width or height that is not a positive
     /// finite number throws <see cref="ArgumentOutOfRangeException"/>, and margins that meet or
-    /// exceed the page throw <see cref="ArgumentException"/>, both from this constructor. So does a
-    /// margin that is not a finite number, except the few <see cref="Document.Margins"/> accepts;
-    /// the message names the edge (#502).
+    /// exceed the page throw <see cref="ArgumentException"/>, both from this constructor, and so does
+    /// a positive-infinity margin, which meets the page. A <c>NaN</c> or negative-infinity margin
+    /// is not checked here; see <see cref="Document.Margins"/>.
     /// <para>A null <paramref name="pageSize"/> means the <see cref="PdfDocument.DefaultPageSize"/>
     /// of <paramref name="pdf"/> at construction, and a null <paramref name="margins"/> means 72
     /// points on every side.</para>
@@ -400,9 +400,6 @@ public sealed class DocumentRenderer
     /// </summary>
     internal void RunLayout()
     {
-        // Both bands, before the content area is computed from them (#520).
-        if (Header is not null) LayoutValidation.ValidateBandHeight(Header, "The header band");
-        if (Footer is not null) LayoutValidation.ValidateBandHeight(Footer, "The footer band");
 
         var contentArea = ContentArea;
         if (contentArea.Width <= 0 || contentArea.Height <= 0)
@@ -586,7 +583,6 @@ public sealed class DocumentRenderer
         // The band is the one path to a Tf operator that reaches no renderer, so it reached no
         // validation either: a non-finite band font size saved a document containing "/F1 NaN Tf"
         // and "1 0 0 1 NaN NaN Tm". The note further down about geometry validation asked for this.
-        LayoutValidation.ValidateStyle(style, $"The {kind.ToString().ToLowerInvariant()} band", checkColor: false);
 
         var contentWidth = _pageSize.Width - _margins.Horizontal;
         var (drawn, textWidth) = FitToWidth(style, text, contentWidth);
@@ -608,9 +604,6 @@ public sealed class DocumentRenderer
         // corner nobody reaches.
         if (drawn.Length == 0) return;
 
-        // After the return above: the colour is only written when something is drawn, and a band
-        // with an empty or fully truncated template drew nothing and saved on 1c61fa6 (#484).
-        LayoutValidation.ValidateColor(style.Color, $"The {kind.ToString().ToLowerInvariant()} band", "text colour");
 
         // textWidth is bounded by contentWidth for every finite, positive font size, because
         // FitToWidth only ever accumulates a piece whose running total still fits. So no clamp is
@@ -868,10 +861,6 @@ public sealed class DocumentRenderer
             throw new ArgumentOutOfRangeException(nameof(pageSize),
                 FormattableString.Invariant(
                     $"Page height must be a positive finite number (was {pageSize.Height})."));
-
-        // Before the sums below: a comparison against NaN is false, so a NaN margin passed both
-        // of them, and so did a negative-infinity one (#502).
-        LayoutValidation.ValidateMargins(margins);
 
         if (margins.Horizontal >= pageSize.Width)
             throw new ArgumentException(

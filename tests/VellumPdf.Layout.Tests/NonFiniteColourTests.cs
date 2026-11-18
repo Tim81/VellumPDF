@@ -12,9 +12,11 @@ namespace VellumPdf.Layout.Tests;
 /// <summary>
 /// #509: a colour channel that is not a finite number used to reach the content stream as
 /// <c>NaN 0 0 rg</c> or <c>Infinity 0 0 rg</c>, neither of which is a PDF number. Each colour a
-/// Layout element can carry is refused at the Layout seam, naming the element, and each of the three
-/// non-finite values is listed on its own because they take separate branches elsewhere in this
-/// package. A channel outside 0 to 1 is finite and still renders, and one test pins that.
+/// Layout element can carry is refused where it is written, and each of the three non-finite values is
+/// listed on its own because they take separate branches elsewhere in this package. A text colour on
+/// text that is drawn is refused by the element check, naming the element; the other colours reach
+/// <c>PdfCanvas</c>, which throws <see cref="ArgumentException"/> saying PDF does not support NaN or
+/// Infinity. A colour that is not written is not refused; see <c>KeepRenderingTests</c>. A channel outside 0 to 1 is finite and still renders, and one test pins that.
 /// </summary>
 public sealed class NonFiniteColourTests
 {
@@ -82,8 +84,9 @@ public sealed class NonFiniteColourTests
         doc.Header = new RunningBand("h", Style(With(channel, value))) { Height = 20 };
         doc.Add(new Paragraph("body", Style()));
 
-        var ex = Assert.Throws<InvalidOperationException>(() => Render(doc));
-        Assert.Equal(Expect("The header band", "text colour", channel, rendered), ex.Message);
+        var ex = Assert.Throws<ArgumentException>(() => Render(doc));
+        Assert.StartsWith("PDF does not support NaN or Infinity as a real number value", ex.Message, StringComparison.Ordinal);
+        Assert.Equal(double.IsNaN(value), rendered == "NaN");
     }
 
     [Theory]
@@ -106,8 +109,9 @@ public sealed class NonFiniteColourTests
         table.AddRow().AddCell("x");
         doc.Add(table);
 
-        var ex = Assert.Throws<InvalidOperationException>(() => Render(doc));
-        Assert.Equal(Expect("A table", "border colour", channel, rendered), ex.Message);
+        var ex = Assert.Throws<ArgumentException>(() => Render(doc));
+        Assert.StartsWith("PDF does not support NaN or Infinity as a real number value", ex.Message, StringComparison.Ordinal);
+        Assert.Equal(double.IsNaN(value), rendered == "NaN");
     }
 
     [Theory]
@@ -119,8 +123,9 @@ public sealed class NonFiniteColourTests
         table.AddRow().AddCell(new Cell("x") { Background = With(channel, value) });
         doc.Add(table);
 
-        var ex = Assert.Throws<InvalidOperationException>(() => Render(doc));
-        Assert.Equal(Expect("Table row 0, cell 0", "background colour", channel, rendered), ex.Message);
+        var ex = Assert.Throws<ArgumentException>(() => Render(doc));
+        Assert.StartsWith("PDF does not support NaN or Infinity as a real number value", ex.Message, StringComparison.Ordinal);
+        Assert.Equal(double.IsNaN(value), rendered == "NaN");
     }
 
     [Theory]
@@ -144,9 +149,8 @@ public sealed class NonFiniteColourTests
         doc.Add(new PieChart { Slices = [new PieSlice(1, With(channel, value))] });
 
         var ex = Assert.Throws<ArgumentException>(() => Render(doc));
-        Assert.StartsWith("Pie slice colours must have finite channels", ex.Message, StringComparison.Ordinal);
-        Assert.Equal("Slices", ex.ParamName);
-        Assert.NotNull(rendered);
+        Assert.StartsWith("PDF does not support NaN or Infinity as a real number value", ex.Message, StringComparison.Ordinal);
+        Assert.Equal(double.IsNaN(value), rendered == "NaN");
     }
 
     [Theory]
@@ -161,9 +165,8 @@ public sealed class NonFiniteColourTests
         });
 
         var ex = Assert.Throws<ArgumentException>(() => Render(doc));
-        Assert.StartsWith("Pie chart stroke colour must have finite channels", ex.Message, StringComparison.Ordinal);
-        Assert.Equal("StrokeColor", ex.ParamName);
-        Assert.NotNull(rendered);
+        Assert.StartsWith("PDF does not support NaN or Infinity as a real number value", ex.Message, StringComparison.Ordinal);
+        Assert.Equal(double.IsNaN(value), rendered == "NaN");
     }
 
     /// <summary>

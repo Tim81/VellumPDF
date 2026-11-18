@@ -152,11 +152,16 @@ public sealed class Cell
 
     /// <summary>Optional background fill color for the cell.</summary>
     /// <remarks>
-    /// Null means no fill. A colour is stored as given. Channels are not clamped. A channel that is not finite is refused when the document is saved; see <see cref="ColorRgb"/>.
+    /// Null means no fill. A colour is stored as given. Channels are not clamped. A channel that is not
+    /// finite is refused where it is written; see <see cref="Document"/> and <see cref="ColorRgb"/>. A
+    /// cell that a span from an earlier row pushes past the last column is never drawn, so its colour
+    /// is not written and not refused, as on 1c61fa6. <b>Do not pass</b> a non-finite channel: 3.0
+    /// refuses it.
     /// </remarks>
-    /// <exception cref="InvalidOperationException">
-    /// Raised from a save, when a channel is <c>NaN</c> or infinite. The message names the row and the cell and the
-    /// channel. A finite channel outside 0 to 1 is not refused (#509).
+    /// <exception cref="ArgumentException">
+    /// Raised from a save, when a channel is <c>NaN</c> or infinite and the cell is drawn. The message
+    /// says PDF does not support NaN or Infinity as a real number. A finite channel outside 0 to 1 is
+    /// not refused (#509).
     /// </exception>
     public ColorRgb? Background { get; init; }
 

@@ -25,84 +25,84 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   throwing and wrote `/GSn gs` to an ExtGState that was never defined, and later names shifted. Every
   such call now throws and registers nothing.
 
-- **A non-finite number is refused where it is written.** An inset, indent, colour channel or band
-  height of `NaN` or infinity is checked only where it would reach an operand or change what is
-  drawn. A value that never does is accepted, as on 1c61fa6, and 3.0 refuses it at the property that
-  holds it. Whether a value reaches an operand depends on the content: the kind of element, its
-  alignment, whether it draws anything, and the running bands. Where it does, the save throws,
-  either from the element's own check, which names the element, or from `PdfCanvas` with
-  `ArgumentException` ("PDF does not support NaN or Infinity as a real number"). The entries below
-  give examples that were measured against 1c61fa6 and are pinned by `KeepRenderingTests`; they are
-  not a list of every accepted value. The XML doc of each member says not to pass one and points to
-  the `Document` remarks.
+- **A non-finite number is not checked before the layout, except where no content ever saved.** An
+  inset, indent, colour channel or band height of `NaN` or infinity is accepted by the member that
+  holds it, with two exceptions: a line separator's margins and a table cell's padding, which threw
+  for every value on 1c61fa6 and are refused by name before the layout. The layout then runs as it
+  did on 1c61fa6, and the save throws only where it would write the value: `PdfCanvas`, and `PdfReal`
+  for a bookmark or a link rectangle, throw `ArgumentException` ("PDF does not support NaN or
+  Infinity as a real number"). Everything else depends on the content. The file may save with the
+  content drawn, wrapped after every word, placed off the page or not drawn at all, or the layout
+  may refuse it as too tall, exactly as on 1c61fa6. A `NaN` right margin on a left-aligned paragraph
+  wraps it after every word and saves, and on centred or right-aligned text writes `NaN` and is
+  refused; an infinite top margin on a table saves a page with the table not drawn. A saved file
+  that lost content this way is kept, because 1c61fa6 saved it (#484); the XML doc of each member
+  says not to pass such a value and that 3.0 refuses it, and the diagnostics channel (#607) will
+  report it. `KeepRenderingTests` and `NonFiniteGeometryTests` pin what 1c61fa6 did, row by row.
 
-- **A non-finite colour channel is refused at the Layout seam, naming the element (#509).** A
-  `ColorRgb` with a `NaN` or infinite channel on a text style, a running band, a table cell's style
-  or background, a table border, a line separator or a pie slice or stroke reached the content
-  stream as `NaN 0 0 rg`, which is not a PDF number. Each now throws from `Document.Save`:
-  `InvalidOperationException` for the same elements #478 and #481 cover, naming the element and the
-  channel, and `ArgumentException` for the pie chart, whose other refusals already use it. A finite
-  channel outside 0 to 1 is **not** refused. It renders today, a patch does not turn that into an
-  exception, and it is documented on `ColorRgb` and `ColorCmyk` with the refusal listed in #484.
-  Only a colour that is written is checked. A `NaN` colour on a zero-value pie slice saves, because
-  the slice draws no wedge, and so does one on a running band whose template is empty, because the
-  band draws nothing; both saved with no invalid token on 1c61fa6. A `NaN` colour on a table cell
-  that a span from an earlier row pushes past the last column saves for the same reason. A colour on
-  anything that is drawn is refused, including a table cell's empty or white-space text with a `NaN`
-  style colour, which wrote `NaN 0 0 rg` on 1c61fa6.
+- **A non-finite colour channel no longer reaches the content stream (#509).** A `ColorRgb` with a
+  `NaN` or infinite channel on a text style, a running band, a table cell's style or background, a
+  table border, a line separator or a pie slice or stroke reached the content stream as
+  `NaN 0 0 rg`, which is not a PDF number. Text colour on a paragraph run or table cell that draws
+  text, and a line separator's colour, now throw `InvalidOperationException` before the layout,
+  naming the element and the channel. Every other colour is refused where it is written, by
+  `PdfCanvas` with `ArgumentException`. A finite channel outside 0 to 1 is **not** refused. It
+  renders today, a patch does not turn that into an exception, and it is documented on `ColorRgb`
+  and `ColorCmyk` with the refusal listed in #484. A colour that is not written saves, as on
+  1c61fa6: a `NaN` colour on a zero-value pie slice, on a running band whose template is empty, or
+  on a table cell that a span from an earlier row pushes past the last column. A table cell's empty
+  or white-space text with a `NaN` style colour wrote `NaN 0 0 rg` on 1c61fa6 and is refused.
 
-- **A non-finite `Document.Margins` inset is refused, naming the edge (#502).** The only margin
-  check compared the axis sums against the page, and a comparison against `NaN` is false, so `NaN`
-  and negative infinity passed it. They then surfaced as a message about something else: `NaN` as an
-  element that is too tall, negative infinity as 50,000 page continuations after the renderer had
-  done that work, or a document that saved with `NaN` in its content stream. Every inset is now
-  checked before layout, and the save throws `ArgumentException` with the parameter name `margins`,
-  the same type the sum check uses, such as `The top margin is NaN, which cannot be laid out. A
-  margin must be a finite number.` A finite negative inset is not refused. It saves today, and that
-  is documented as a boundary for the next major. An inset that is not written is accepted, as the
-  entry above describes: on 1c61fa6 a `NaN` right margin with a paragraph saved with no invalid
-  token, and it still does.
+- **A `NaN` or negative-infinity `Document.Margins` inset is no longer written as a token (#502).**
+  The only margin check compared the axis sums against the page, and a comparison against `NaN` is
+  false, so `NaN` and negative infinity passed it. They then surfaced as a message about something
+  else: `NaN` as an element that is too tall, negative infinity as 50,000 page continuations after
+  the renderer had done that work, or a document that saved with `NaN` in its content stream. The
+  sum check is unchanged and still refuses positive infinity with `ArgumentException` (parameter
+  `margins`). `NaN` and negative infinity pass it as before and give whatever the layout gives:
+  where the layout would write the value the canvas refuses it, with `ArgumentException`, and
+  otherwise the document saves, as on 1c61fa6. Measured with a one-row table on an A4 page, a `NaN`
+  bottom margin saves the table, a negative-infinity top margin saves a page with the table not
+  drawn, and a `NaN` left margin is refused by the canvas. A finite negative inset is not refused;
+  that is documented as a boundary for the next major.
 
-- **A running band's height is validated at one seam, so a footer at negative infinity no longer
-  saves invalid output (#520).** A footer with `Height = double.NegativeInfinity` saved a file with
-  `NaN` in a text matrix, because the footer's height comes off the content box's height only and
-  the band was then positioned at infinity minus infinity. `NaN`, positive infinity and negative
-  infinity now give the same `InvalidOperationException` on a header and on a footer, naming the
-  band and the value, before any page is laid out. **Attention**: positive infinity used to throw
-  `ArgumentException` about the content area; it now throws `InvalidOperationException` like the
-  other two. A finite height large enough to leave no content area still throws as before. A
-  band with an empty template draws nothing, so its height is not written: negative infinity on
-  one saved on 1c61fa6 when the body fitted, and still does.
+- **A footer at negative infinity no longer saves invalid output (#520).** A footer with
+  `Height = double.NegativeInfinity` saved a file with `NaN` in a text matrix, because the footer's
+  height comes off the content box's height only and the band was then positioned at infinity minus
+  infinity. `PdfCanvas` now refuses that token with `ArgumentException`. The other heights give what
+  they gave on 1c61fa6 (measured with a one-paragraph body): `NaN` is refused as too tall, positive
+  infinity with the content-area `ArgumentException`, and negative infinity on a header as 50,000
+  page continuations. A band with an empty template draws nothing, so negative infinity on its
+  footer saves when the body fits, and still does.
 
-- **A `NaN` or negative-infinity `ListElement.Indent` is refused where it is written (#532).** A
+- **A `NaN` or negative-infinity `ListElement.Indent` no longer reaches the content stream (#532).** A
   nested child's marker, and a flat item whose longest word will not fit beside its marker, take the
   indent as their left inset directly, so negative infinity wrote `1 0 0 1 -Infinity 263.6 Tm` and
-  `NaN` wrote the same operand with `NaN`. The save now throws `InvalidOperationException` naming
-  the list and the value for such a list. A flat list whose words fit saved with no invalid token
-  on 1c61fa6 under negative infinity, because the gutter widens to the marker's own width, and it
-  keeps saving; so does a list with no items, which writes nothing. Positive infinity is
-  deliberately unchanged, because it writes no invalid token and its text loss on a flat list is
-  tracked in #476, and a finite negative indent still renders.
+  `NaN` wrote the same operand with `NaN`. `PdfCanvas` now refuses both with `ArgumentException`. A
+  flat list whose words fit saved with no invalid token on 1c61fa6 under negative infinity, because
+  the gutter widens to the marker's own width, and it keeps saving; so does a list with no items,
+  which writes nothing. Positive infinity is deliberately unchanged, because it writes no invalid
+  token and its text loss on a flat list is tracked in #476, and a finite negative indent still
+  renders.
 
-- **Layout sweep for the comparison-shaped clamps behind #519: an element margin is refused when
-  it is not finite and is written.** The sweep read all 24 `Math.Max`, `Math.Min` and `Math.Clamp`
-  sites in `VellumPdf.Layout`. Twenty-one take values that are derived, integer, or already checked
-  by an earlier refusal in this release (font size, colour, indent, document margins, band height,
-  line width, cell padding, image extent). One is `ColorCmyk.FromRgb`, a pure conversion that is
-  documented rather than refused. The two that read a raw caller value without a check were the list
-  gutter, fixed in #532, and the element `Margins`. A `Paragraph`, `Heading`, `ListElement`,
-  `TableElement`, `LayoutImage` or `PieChart` with a `NaN` or infinite edge was laid out in a box
-  that could be `NaN`, and reached the content stream, or an unrelated "too tall" message, or the
-  canvas guard from #519 with no element named. Each now throws before layout, naming the element,
-  where the edge is written: `InvalidOperationException` for the same elements #478 and #481 cover,
-  and `ArgumentException` with the parameter name `Margins` for the pie chart, whose other
-  refusals already use it. An edge that is not written is accepted, as above. Measured on 1c61fa6,
-  a paragraph with a `NaN` right edge, a table with an infinite top edge, a pie chart with an
-  infinite right edge, an image with a `NaN` right edge and a list with no items and a `NaN` left edge all
-  saved with no invalid token and still do. A line separator, and a table cell's padding, threw for
-  every non-finite edge on 1c61fa6 and still do. Individual non-finite explicit table column widths
-  were already treated as auto (#477), so they needed no change. A finite negative margin still
-  renders and is documented as a boundary.
+- **Layout sweep for the comparison-shaped clamps behind #519: an element margin that would be
+  written as `NaN` or Infinity is refused by `PdfCanvas`.** The sweep read all 24 `Math.Max`,
+  `Math.Min` and `Math.Clamp` sites in `VellumPdf.Layout`. Twenty-one take values that are derived,
+  integer, or already checked by an earlier refusal in this release (font size, colour, document
+  margins, line width, cell padding, image extent). One is `ColorCmyk.FromRgb`, a pure conversion
+  that is documented rather than refused. The two that read a raw caller value without a check were
+  the list gutter, fixed in #532, and the element `Margins`. A `Paragraph`, `Heading`,
+  `ListElement`, `TableElement`, `LayoutImage` or `PieChart` with a `NaN` or infinite edge was laid
+  out in a box that could be `NaN`, and reached the content stream, or an unrelated "too tall"
+  message. The canvas guard from #519 now refuses what would be written, with `ArgumentException`.
+  The layout is otherwise as it was on 1c61fa6, so an edge that is not written saves: a paragraph
+  with a `NaN` right edge, a table with an infinite top edge (not drawn), a pie chart with an
+  infinite right edge, an image with a `NaN` right edge and a list with no items and a `NaN` left
+  edge all saved with no invalid token and still do. A line separator's margins and a table cell's
+  padding threw for every non-finite edge on 1c61fa6 (measured with a separator after a paragraph
+  and a one-cell table) and are refused by name before the layout. Individual non-finite explicit
+  table column widths were already treated as auto (#477), so they needed no change. A finite
+  negative margin still renders and is documented as a boundary.
 
 - **A negative line width is refused (#557).** ISO 32000-2, 8.4.3.2 says a line width "shall be a
   non-negative number", and `LineSeparator.LineWidth` and `TableElement.BorderWidth` wrote a
@@ -112,7 +112,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   documentation carries the clause's advice that zero-width lines should not be used, because the
   result is device-dependent. `PieChart.StrokeWidth` already refused a negative value. Both
   `LineWidth = -3` and `BorderWidth = -3` saved on 1c61fa6; they are refused now because the
-  operand breaks the clause.
+  operand breaks the clause. **Attention**: a negative `LineWidth` or `BorderWidth` saved on 1c61fa6
+  and now throws.
 
 - **Pie slice totals, pie start angles and explicit table widths no longer overflow into empty or
   wrong output (#546).** Three inputs were each valid on their own and wrong together. Two pie
@@ -191,16 +192,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   that described the old behaviour are rewritten. `PageSize`, `DrawContext`, `FontReference`,
   `LayoutResult` and `RendererContext` still store a null, and are outside these three issues.
 
-- **What this release refuses although 1c61fa6 saved the input.** Measured against that version,
-  four refusals are of an input that saved. An unknown-length JBIG2 segment after a known-length
-  page-information segment loaded and dropped the segment, and now throws `InvalidDataException`
-  (see #570 below). A second `Save` of a `Document` whose layout had started and threw wrote a page
-  with the line breaks of the first attempt's width, and now throws `InvalidOperationException`. The
-  save-check precedence changes are listed with the save checks. A foreign font handle whose font
-  program the saving document did not embed under the same name wrote a page that named a font its
-  resources did not define. A negative line width (#557) saved as `-3 w`; it is refused because
-  ISO 32000-2, 8.4.3.2 makes it an invalid operand. Nothing else in this section was checked for
-  this, so it is not a claim that the list is complete.
+- **What this release refuses although 1c61fa6 saved a file.** The criterion is that 1c61fa6 wrote
+  a PDF for the input. Measured against that version, three refusals are of such an input. A second
+  `Save` of a `Document` whose layout had started and threw wrote a page with the line breaks of the
+  first attempt's width, and now throws `InvalidOperationException`; the file was valid, so this
+  one needs the maintainer's ruling. A foreign font handle whose font program the saving document
+  did not embed under the same name wrote a page that named a font its resources did not define, an
+  invalid file. A negative line width saved as `-3 w`, an invalid operand under ISO 32000-2,
+  8.4.3.2. The save-check precedence changes are listed with the save checks. Nothing else in this
+  section was checked for this, so it is not a claim that the list is complete.
 
 - **An embedded font handle from another `Document` is refused unless the saving document embedded
   the same font program under the same name (#544).** A handle's resource name (`TT1`) is a counter
@@ -350,29 +350,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   PDF with the PowerShell wrapper PSVellumPDF. A PDF image is one page, so a file with several pages
   embeds the first: the page named by the first page-information segment, with the segments that
   belong to no page, under both `Passthrough` and `DecodeToRaster`, and the size is that page's.
-  A segment of the embedded page whose data length is unknown (0xFFFFFFFF, T.88 7.2.7) is refused
-  under `Passthrough` with `InvalidDataException` naming the segment and its type, because this loader
-  does not scan for the end marker T.88 7.2.7 describes, so it cannot partition the segment into the
-  page and globals streams; the end-of-page and end-of-file segments, every
-  segment of a page that is not embedded, and every segment of no page (a trailing tables or
-  extension segment, say) are exempt and skipped, as they always were. `DecodeToRaster` keeps refusing an unknown length only on a
-  generic region (types 36, 38 and 39), as before, now with the same message; every other segment
-  behaves as it did. This loader does not scan for the segment's end, so it does not see what follows
-  one in a sequential or embedded stream. A random-access file refuses an unknown length on any page, without
-  naming the segment type. If the first page-information segment has page association 0 it names
-  no page, and every segment is kept, as before pages were chosen. **Attention**: a JBIG2 stream
-  with an unknown-length segment (types 38 and 53 measured) after a known-length page-information
-  segment used to load without an error and drop that segment, and now throws
-  `InvalidDataException`. For an 8 by 1 immediate generic region (type 38, MMR, end marker and row
-  count present), 1c61fa6 embedded a 30-byte stream holding only the page-information segment, where
-  the same image with a known length embedded 62 bytes; `pdftoppm` drew the first as all white (0
-  dark pixels of 3,999) and the second with 890 dark pixels. A type 53 segment loaded the same way
-  and was not rendered. Both input shapes
-  measured take the throw: the headerless embedded organisation and the ID string followed directly
-  by segments. An unknown-length page-information segment itself threw on both versions. A file
+  A segment whose data length is unknown (0xFFFFFFFF, T.88 7.2.7) is dropped under `Passthrough`, as
+  on 1c61fa6, because this loader does not scan for the end marker T.88 7.2.7 describes and so
+  cannot say where the segment ends. The image is embedded without it, which can leave it blank:
+  for an 8 by 1 immediate generic region (type 38, MMR, end marker and row count present), 1c61fa6
+  and this loader both embed a 30-byte stream holding only the page-information segment, where the
+  same image with a known length embeds 62 bytes, and `pdftoppm` draws the first all white and the
+  second with dark pixels. Four inputs were compared against 1c61fa6 and give the same PDF: types 38
+  and 53 in the headerless embedded organisation, and type 38 after the ID string. A file header
+  with such a segment now loads, where 1c61fa6 could not read the header. Nothing reports the
+  dropped segment yet (#607), and 3.0 refuses it. `DecodeToRaster` keeps refusing an unknown length
+  on a generic region (types 36, 38 and 39), as before, now with a message naming the segment, and
+  every other segment behaves as it did. A random-access file refuses an unknown length on any page,
+  because its data parts cannot be located without the length. If the first page-information
+  segment has page association 0 it names no page, and every segment is kept, as before pages were
+  chosen. **Attention**: a segment whose length is unknown ends what this loader reads of a
+  sequential or embedded stream, so what follows one is not seen. A file
   with more than one page
   used to embed every page's segments into one image stream and now embeds only the first page.
-  When no reading of the data is accepted, the `InvalidDataException` now says which readings were
+  When no reading of the data is accepted, the `InvalidDataException` says which readings were
   tried (a sequential or random-access file, the ID string followed directly by segments, or the
   embedded form) after the first reading's message, so a broken older file is not described only
   in the terms of the random-access one.

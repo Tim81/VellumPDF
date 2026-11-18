@@ -12,90 +12,38 @@ namespace VellumPdf.Layout.Tests;
 /// <summary>
 /// #519: an element's own <c>Margins</c> went through no check. A non-finite inset reached a
 /// comparison, and a comparison against <c>NaN</c> is false, so the element was reported as too tall
-/// or, with <c>PdfCanvas</c> now refusing the token, as an unnamed canvas error. Each element that
-/// carries margins is refused by name, with each of the three non-finite values on its own.
+/// or, with <c>PdfCanvas</c> now refusing the token, as an unnamed canvas error. A line separator is
+/// refused by name before the layout; see <see cref="Document"/> for the rule that covers the rest.
 /// </summary>
 public sealed class ElementMarginNonFiniteTests
 {
     private static TextStyle Style() => new() { FontRef = new FontReference(Standard14.Helvetica), FontSize = 10 };
 
-    public static TheoryData<string, double, string> Rows()
+    // Only the line separator is refused before the layout: it threw for every edge and every
+    // non-finite value on 1c61fa6, with the same message. Every other element runs the layout as it
+    // did there and is covered by KeepRenderingTests.
+    public static TheoryData<double> Values() => new()
     {
-        var rows = new TheoryData<string, double, string>();
-        foreach (var element in new[] { "paragraph", "heading", "list", "table", "image", "separator" })
-        {
-            rows.Add(element, double.NaN, "NaN");
-            // An image with an infinite left margin saved a valid file on 1c61fa6 and keeps saving;
-            // see KeepRenderingTests.
-            if (element == "image") continue;
-            rows.Add(element, double.PositiveInfinity, "positive infinity");
-            rows.Add(element, double.NegativeInfinity, "negative infinity");
-        }
-        return rows;
-    }
-
-    private static string OwnerFor(string element) => element switch
-    {
-        "paragraph" or "heading" => "A paragraph or heading",
-        "list" => "A list",
-        "table" => "A table",
-        "image" => "An image",
-        _ => "A line separator",
+        double.NaN,
+        double.PositiveInfinity,
+        double.NegativeInfinity,
     };
 
     [Theory]
-    [MemberData(nameof(Rows))]
-    public void ElementMargins_nonFinite_areRefusedByName(string element, double value, string rendered)
+    [MemberData(nameof(Values))]
+    public void LineSeparatorMargins_nonFinite_areRefusedByName(double value)
     {
         using var doc = new Document
         {
             PageSize = new PdfRectangle(0, 0, 300, 300),
             Margins = new EdgeInsets(10),
         };
-        var margins = new EdgeInsets(0, 0, 0, value);
-        switch (element)
-        {
-            case "paragraph": doc.Add(new Paragraph("x", Style()) { Margins = margins }); break;
-            case "heading": doc.Add(new Heading("x", Style()) { Margins = margins }); break;
-            case "list": doc.Add(new ListElement { Margins = margins, DefaultStyle = Style() }.Add("x")); break;
-            case "table":
-                var table = new TableElement { Margins = margins, DefaultCellStyle = Style() };
-                table.AddRow().AddCell("x");
-                doc.Add(table);
-                break;
-            case "image": doc.Add(new LayoutImage(RefusalMessageTests.TwoByTwoImage()) { Margins = margins, Width = 20 }); break;
-            default: doc.Add(new LineSeparator { Margins = margins }); break;
-        }
+        doc.Add(new LineSeparator { Margins = new EdgeInsets(0, 0, 0, value) });
 
         using var ms = new MemoryStream();
         var ex = Assert.Throws<InvalidOperationException>(() => doc.Save(ms));
 
-        Assert.Equal($"{OwnerFor(element)} has a non-finite inset. Every inset must be a finite number.", ex.Message);
-        Assert.Equal(double.IsNaN(value), rendered == "NaN");
-    }
-
-    [Theory]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
-    public void PieChartMargins_nonFinite_areRefusedByName(double value)
-    {
-        using var doc = new Document
-        {
-            PageSize = new PdfRectangle(0, 0, 300, 300),
-            Margins = new EdgeInsets(10),
-        };
-        doc.Add(new PieChart
-        {
-            Margins = new EdgeInsets(0, 0, 0, value),
-            Slices = [new PieSlice(1, ColorRgb.Black)],
-        });
-
-        using var ms = new MemoryStream();
-        var ex = Assert.Throws<ArgumentException>(() => doc.Save(ms));
-
-        Assert.Equal("Margins", ex.ParamName);
-        Assert.StartsWith("Pie chart margins must have finite insets.", ex.Message, StringComparison.Ordinal);
+        Assert.Equal("A line separator has a non-finite inset. Every inset must be a finite number.", ex.Message);
     }
 
     /// <summary>A finite negative element margin saves today, and keeps saving.</summary>

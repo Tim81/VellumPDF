@@ -42,7 +42,7 @@ public sealed class ParagraphRenderer : IRenderer
     /// as <see cref="LayoutResult.Outcome.Nothing"/>, so a document saving it throws
     /// <see cref="InvalidOperationException"/> saying the element is too tall to fit. A renderer
     /// built directly ignores the paragraph's <see cref="Paragraph.Language"/>.
-    /// <para>Do not pass a start outside the paragraph's lines. A later major version will throw
+    /// <para>Do not pass a start outside the paragraph's lines. 3.0 will throw
     /// from this call.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
@@ -57,20 +57,6 @@ public sealed class ParagraphRenderer : IRenderer
         ArgumentNullException.ThrowIfNull(para);
         _para = para;
         _startLine = startLine;
-    }
-
-    private bool HasDrawableText()
-    {
-        foreach (var run in _para.Runs)
-        {
-            foreach (var c in run.Text)
-            {
-                if (!char.IsWhiteSpace(c) || NoBreakSpaces.IsNoBreakSpace(c))
-                    return true;
-            }
-        }
-
-        return false;
     }
 
     // ── Phase 1: Layout ───────────────────────────────────────────────────────
@@ -98,15 +84,6 @@ public sealed class ParagraphRenderer : IRenderer
         // paragraphs a list builds are the exception: their left inset is the list's indent or
         // gutter, which the list has already checked and names, so a message here would blame a
         // paragraph the caller never wrote.
-        //
-        // A paragraph with no drawable text writes nothing, so its margins reach no operand and are
-        // not checked, as on 1c61fa6. U+00A0 and the other no-break spaces count as drawable (#562).
-        if (!MarginsCheckedByOwner && HasDrawableText())
-            LayoutValidation.ValidateInsets(
-                _para.Margins,
-                "A paragraph or heading",
-                right: LayoutValidation.NonFinite.NaN | LayoutValidation.NonFinite.NegativeInfinity,
-                bottom: LayoutValidation.NonFinite.NegativeInfinity);
 
         var area = context.Area.Deflate(_para.Margins);
         if (area.Width <= 0)

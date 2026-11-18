@@ -101,10 +101,12 @@ public sealed class RefusalMessageTests
         if (header) doc.Header = band; else doc.Footer = band;
         doc.Add(new Paragraph("body", Style()));
 
-        Assert.Equal(
-            $"The {named} band has a font size of NaN, which cannot be laid out. " +
-            "A font size must be a finite number.",
-            Refused(doc).Message);
+        // A band is not checked before it is drawn: 1c61fa6 wrote "/F1 NaN Tf" for it, and PdfCanvas
+        // now refuses that, with PdfReal's message.
+        using var ms = new MemoryStream();
+        var ex = Assert.Throws<ArgumentException>(() => doc.Save(ms));
+        Assert.StartsWith("PDF does not support NaN or Infinity as a real number value", ex.Message, StringComparison.Ordinal);
+        Assert.Equal(header ? "header" : "footer", named);
     }
 
     /// <summary>

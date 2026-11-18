@@ -2115,8 +2115,8 @@ public sealed class Jbig2ImageTests
     //
     // A PDF image is one page. A multi-page file embeds the page of its first page-information
     // segment, with the segments that belong to no page, and drops every other page. A segment whose
-    // data length is unknown (0xFFFFFFFF) cannot be partitioned, so passthrough refuses it where it
-    // used to skip it and embed a blank image.
+    // data length is unknown (0xFFFFFFFF) is dropped by passthrough, as it was on 1c61fa6, which can
+    // leave a blank image; a random-access file and DecodeToRaster still refuse it.
 
     /// <summary>
     /// Two pages in one file: a global symbol dictionary (page 0), then page 1 (64x48: page
@@ -2231,14 +2231,16 @@ public sealed class Jbig2ImageTests
     }
 
     /// <summary>
-    /// A generic region of the first page whose data length is 0xFFFFFFFF. The sequential parser
-    /// takes it to run to the end of the data, and passthrough used to skip it, so the image was
-    /// embedded blank. The message names the segment and the length.
+    /// A generic region of the first page whose data length is 0xFFFFFFFF. The sequential parser takes
+    /// it to run to the end of the data, and passthrough drops it, as 1c61fa6 did, so the image is
+    /// embedded with the page information and no region. The file is valid, so it is not refused
+    /// (#484); the image can be blank, which this test pins as a known defect kept until 3.0, when the
+    /// diagnostics channel (#607) will report it.
     /// </summary>
     [Theory]
     [InlineData(true)]     // with the file header
     [InlineData(false)]    // the embedded organisation, no file header
-    public void Load_Passthrough_SegmentWithAnUnknownDataLength_IsRefusedNamingIt(bool withFileHeader)
+    public void Load_Passthrough_SegmentWithAnUnknownDataLength_IsDropped_asOn1c61fa6(bool withFileHeader)
     {
         var segments = FiveSegments(64, 48);
         for (var i = 7; i < 11; i++) segments[2][i] = 0xFF;       // segment 2: length 0xFFFFFFFF
@@ -2246,12 +2248,13 @@ public sealed class Jbig2ImageTests
             ? Sequential(0x01, PageCountOne, segments)
             : segments.SelectMany(x => x).ToArray();
 
-        var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(file));
+        var image = Jbig2ImageLoader.Load(file);
 
-        Assert.Contains("segment 2", ex.Message, StringComparison.Ordinal);
-        Assert.Contains("type 38", ex.Message, StringComparison.Ordinal);
-        Assert.Contains("0xFFFFFFFF", ex.Message, StringComparison.Ordinal);
-        Assert.Contains("unknown data length", ex.Message, StringComparison.Ordinal);
+        Assert.Equal(64, image.Width);
+        Assert.Equal(48, image.Height);
+        // The page stream holds the page information alone, and the globals the symbol dictionary.
+        Assert.Equal(segments[1], ExtractStreamBody(Serialize(image)));
+        Assert.Equal(segments[0], image.Jbig2Globals);
     }
 
     /// <summary>An unknown-length segment on a page that is not embedded is dropped without comment.</summary>

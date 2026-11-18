@@ -64,11 +64,11 @@ public sealed class ListIndentNonFiniteTests
         using var doc = Page();
         doc.Add(Build(shape, indent));
 
-        var ex = Assert.Throws<InvalidOperationException>(() => Stream(doc));
+        var ex = Assert.Throws<ArgumentException>(() => Stream(doc));
 
-        Assert.Equal(
-            $"A list has an indent of {rendered}, which cannot be laid out. An indent must be a finite number.",
-            ex.Message);
+        // 1c61fa6 wrote the token; PdfCanvas now refuses it, naming PdfReal's message.
+        Assert.StartsWith("PDF does not support NaN or Infinity as a real number value", ex.Message, StringComparison.Ordinal);
+        Assert.Equal(double.IsNaN(indent), rendered == "NaN");
     }
 
     [Fact]

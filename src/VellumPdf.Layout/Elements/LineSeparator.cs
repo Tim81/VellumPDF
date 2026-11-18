@@ -55,7 +55,9 @@ public sealed class LineSeparator
 
     /// <summary>Stroke color of the rule.</summary>
     /// <remarks>
-    /// Stored as given. Channels are not clamped. A channel that is not finite is refused when the document is saved; see <see cref="ColorRgb"/>.
+    /// Stored as given. Channels are not clamped. A channel that is not finite is refused before
+    /// the layout, naming the separator, because a separator is always drawn and threw for every
+    /// value on 1c61fa6; see <see cref="Document"/> and <see cref="ColorRgb"/>.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from a save, when a channel is <c>NaN</c> or infinite. The message names the line separator and the

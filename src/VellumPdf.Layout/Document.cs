@@ -26,18 +26,22 @@ namespace VellumPdf.Layout;
 /// <remarks>
 /// Most refusals fire from the save, not from the member you set, and each member says which call
 /// throws. A save before any element is added throws; see the constructor.
-/// <para><b>A non-finite number is refused where it is written.</b> An inset, indent, colour
-/// channel or band height that is <c>NaN</c> or infinite is checked only where it would be written
-/// into the PDF or changes what is drawn. A value that never reaches an operand is accepted, as it
-/// was on 1c61fa6: a <c>NaN</c> right margin on a paragraph, a colour on a pie slice that draws
-/// nothing, a <c>NaN</c> left margin on a list with no items. Whether a value reaches an operand depends on the
-/// content: the kind of element, its alignment, whether it draws anything, and the running bands.
-/// Where it does, the save throws, either from the element's own check, which names the element,
-/// or from <see cref="PdfCanvas"/> with <see cref="ArgumentException"/> saying PDF does not support
-/// NaN or Infinity as a real number.</para>
-/// <para><b>Do not pass</b> a non-finite number to any of these members. The accepted cases are not
-/// reported yet, because there is no diagnostics channel, and 3.0 refuses every non-finite value
-/// at the member that holds it. Each member that takes one gives one example and refers here.</para>
+/// <para><b>A non-finite number is not checked before the layout.</b> An inset, indent, colour
+/// channel or band height that is <c>NaN</c> or infinite is accepted by the member that holds it,
+/// with two exceptions that threw for every value on 1c61fa6: a line separator's margins and a table
+/// cell's padding are refused by name before the layout. The layout then runs as it did on 1c61fa6,
+/// and the save throws only where it would write the value. <see cref="PdfCanvas"/>, and the
+/// <c>PdfReal</c> constructor for a bookmark or a link rectangle, throw
+/// <see cref="ArgumentException"/> saying PDF does not support NaN or Infinity as a real number.
+/// Everything else depends on the content: the kind of element, its alignment, whether anything is
+/// drawn, the running bands. The file may save with the content drawn, wrapped after every word,
+/// placed off the page or not drawn at all, or the layout may refuse it as too tall, exactly as it
+/// did on 1c61fa6. A <c>NaN</c> right margin on a left-aligned paragraph wraps it after every word
+/// and saves; on centred or right-aligned text it writes <c>NaN</c> and the canvas refuses it. An
+/// infinite top margin on a table saves a page with the table not drawn.</para>
+/// <para><b>Do not pass</b> a non-finite number to any of these members. The saved cases are not
+/// reported yet, because there is no diagnostics channel (#607), and 3.0 refuses every non-finite
+/// value at the member that holds it. Each member that takes one gives an example and refers here.</para>
 /// </remarks>
 public sealed class Document : IDisposable
 {
@@ -247,24 +251,21 @@ public sealed class Document : IDisposable
     /// large enough in magnitude to overflow the position arithmetic, such as -1e308 on the left or
     /// right edge alone, are finite and so pass the check below. They were not measured again after
     /// #502, and what they do depends on the elements laid out.</para>
-    /// <para>An inset that is not a finite number is refused where it would be written; see
-    /// <see cref="Document"/>. The save throws <see cref="ArgumentException"/> with the parameter name
-    /// <c>margins</c> before anything is laid out, naming the edge and the value, such as <c>The top
-    /// margin is NaN, which cannot be laid out. A margin must be a finite number.</c> Before #502 only
-    /// a positive-infinity sum was caught, and <c>NaN</c> and negative infinity surfaced later as a
-    /// message about an element, or saved with <c>NaN</c> or <c>Infinity</c> in the content stream.
-    /// For example, a <c>NaN</c> or negative-infinity right inset is accepted. <b>Do not pass</b> a
-    /// non-finite inset: 3.0 refuses it.</para>
-    /// <para><b>Attention</b>: do not pass a finite negative inset. A later major version will
-    /// reject it.</para>
+    /// <para>An inset that is not a finite number is not checked before the layout; see
+    /// <see cref="Document"/>. A positive-infinity inset meets the page and is refused with
+    /// <see cref="ArgumentException"/> (parameter name <c>margins</c>), as the sum check did before
+    /// #502. <c>NaN</c> and negative infinity pass that check, as they did on 1c61fa6, and then give
+    /// whatever the layout gives: a NaN bottom margin saves a table, and a negative-infinity top margin
+    /// saves a page with the table not drawn, while a NaN left margin with a table reaches the canvas
+    /// and is refused. <b>Do not pass</b> a non-finite inset: 3.0 refuses it.</para>
+    /// <para><b>Attention</b>: do not pass a finite negative inset. 3.0 will reject it.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
-    /// Raised from a save rather than from this property, when an inset is <c>NaN</c> or infinite
-    /// and is written (see <see cref="Document"/>), when the margins on either axis meet or exceed
-    /// the page, or when they leave the content area
-    /// no positive size once the header and footer are taken off. The message for a non-finite
-    /// inset names the edge. The exception is also raised, with a message saying PDF does not
-    /// support NaN or Infinity as a real number, when finite insets whose arithmetic overflows put
+    /// Raised from a save rather than from this property, when the margins on either axis meet or
+    /// exceed the page, positive infinity included, or when they leave the content area no positive
+    /// size once the header and footer are taken off. It is also raised, with a message saying PDF
+    /// does not support NaN or Infinity as a real number, when a <c>NaN</c> or infinite inset puts
+    /// a position the layout writes, or when finite insets whose arithmetic overflows put
     /// a position the save writes outside the content stream, such as a link rectangle, at a
     /// non-finite value.
     /// </exception>

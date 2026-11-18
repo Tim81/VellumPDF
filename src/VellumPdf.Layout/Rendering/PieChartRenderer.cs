@@ -64,13 +64,6 @@ public sealed class PieChartRenderer : IRenderer
                     FormattableString.Invariant(
                 $"Pie slice values must be finite and non-negative (was {slice.Value})."),
                     nameof(PieChart.Slices));
-            // Only a colour that gets written is checked. A zero-value slice draws no wedge, so its
-            // colour never reaches the stream, and it saved on 1c61fa6 (#484).
-            if (slice.Value > 0 && !LayoutValidation.IsFinite(slice.Color))
-                throw new ArgumentException(
-                    FormattableString.Invariant(
-                $"Pie slice colours must have finite channels (was {slice.Color.R}, {slice.Color.G}, {slice.Color.B})."),
-                    nameof(PieChart.Slices));
             total += slice.Value;
         }
 
@@ -93,19 +86,6 @@ public sealed class PieChartRenderer : IRenderer
                 FormattableString.Invariant(
                 $"Pie chart start angle must be a finite number (was {_chart.StartAngle})."),
                 nameof(PieChart.StartAngle));
-        // Right infinity, either sign, is let through: it saved a valid file on 1c61fa6, because the
-        // chart's position is clamped back inside the content box and its width never reads the
-        // edge. NaN there, and every other non-finite edge, wrote an invalid token or threw.
-        var margins = _chart.Margins;
-        if (!double.IsFinite(margins.Left) || !double.IsFinite(margins.Top) ||
-            !double.IsFinite(margins.Bottom) || double.IsNaN(margins.Right))
-            throw new ArgumentException(
-                "Pie chart margins must have finite insets.", nameof(PieChart.Margins));
-        if (_chart.StrokeColor is { } strokeColor && !LayoutValidation.IsFinite(strokeColor))
-            throw new ArgumentException(
-                FormattableString.Invariant(
-                $"Pie chart stroke colour must have finite channels (was {strokeColor.R}, {strokeColor.G}, {strokeColor.B})."),
-                nameof(PieChart.StrokeColor));
         if (!double.IsFinite(_chart.StrokeWidth) || _chart.StrokeWidth < 0)
             throw new ArgumentException(
                 FormattableString.Invariant(

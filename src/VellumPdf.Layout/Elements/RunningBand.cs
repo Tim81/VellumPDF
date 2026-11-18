@@ -57,12 +57,11 @@ public sealed class RunningBand
     /// A null style passed to the constructor is replaced by <see cref="TextStyle.Default"/>; any
     /// other is stored as given. Refusals on size, leading and font are on <see cref="TextStyle"/>
     /// and are raised from the save. A <see cref="TextStyle.LinkUri"/> in it is ignored (#475).
-    /// <para>A non-finite channel in <see cref="TextStyle.Color"/> is refused when the band draws
-    /// text, with <see cref="InvalidOperationException"/>. A band that draws nothing, because its
-    /// template is empty or no part of it fits the content width, does not write the colour, so the
-    /// channel is not refused there: that saved a valid file on 1c61fa6 and still does. <b>Do not
-    /// pass</b> a non-finite channel. Nothing reports it on a band that draws nothing, because there
-    /// is no diagnostics channel yet, and 3.0 will refuse it.</para>
+    /// <para>A non-finite channel in <see cref="TextStyle.Color"/> is refused where it is written; see
+    /// <see cref="Document"/>. A band that draws nothing, because its template is empty or no part of
+    /// it fits the content width, writes no colour, so the channel is not refused there: that saved a
+    /// valid file on 1c61fa6 and still does. <b>Do not pass</b> a non-finite channel: 3.0 refuses
+    /// it.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -105,32 +104,33 @@ public sealed class RunningBand
     /// the text needs therefore lets the band overlap the content rather than shrinking it.
     /// <para><b>Attention</b>: zero and negative values are not refused, and neither is useful. The
     /// height comes off the page's content box, so both leave the band no room while it is still
-    /// drawn, over your content. A later major version will reject them.</para>
-    /// <para>A height that is not a finite number is refused, on a header and on a footer alike, and
-    /// <c>NaN</c>, positive infinity and negative infinity all give the same
-    /// <see cref="InvalidOperationException"/>, naming the band and the value: <c>The footer band has
-    /// a height of negative infinity, which cannot be laid out. A band height must be a finite
-    /// number.</c> The check runs before any page is laid out, so nothing is written. Before #520
-    /// the three values took different routes, by two exception types across three messages, and a
-    /// footer at negative infinity saved a file with <c>NaN</c> in its <c>Tm</c> operator, where a
-    /// coordinate belongs.</para>
+    /// drawn, over your content. 3.0 will reject them.</para>
+    /// <para>A height that is not a finite number is not checked before the layout; see
+    /// <see cref="Document"/>. The layout runs as it did on 1c61fa6. A <c>NaN</c> height is refused as
+    /// too tall, positive infinity as a content area with no size, and negative infinity as too many
+    /// page continuations on a header, but on a footer it writes <c>NaN</c> into the text matrix, which
+    /// <see cref="VellumPdf.Canvas.PdfCanvas"/> refuses. A band with an empty template draws nothing,
+    /// so a negative-infinity footer height there saves when the body fits. <b>Do not pass</b> a
+    /// non-finite height: 3.0 refuses it.</para>
     /// <para>A finite height large enough to leave the content area no room is a separate case, and
     /// shares the type again: measured on a footer, 684 already throws
     /// <see cref="InvalidOperationException"/> while the content area is still a positive 13.9pt,
     /// and so does every height from there to 697.88. At 697.89 the content area reaches exactly
     /// zero and the throw becomes <see cref="ArgumentException"/>; a header takes the same route at
     /// the same values.</para>
-    /// <para>Every case above is raised before the save writes anything. A save to a path leaves the
-    /// file the path held as it was (#508).</para>
+    /// <para>A refusal raised before the save writes anything leaves the file a path held as it was
+    /// (#508).</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from a save rather than from this property, when a finite height is large enough on
-    /// its own that the content area is left with no positive size.
+    /// its own that the content area is left with no positive size, or the height is positive
+    /// infinity, or negative infinity on a footer that draws text and writes <c>NaN</c> into a text
+    /// matrix, which the canvas refuses.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Raised from a save, when the height is <c>NaN</c>, positive infinity or negative infinity on
-    /// either band, or a finite value large enough on its own that the content area is left
-    /// positive but too small for the element. The messages differ for each cause, described above.
+    /// Raised from a save, when the height is <c>NaN</c>, or negative infinity on a header, or a finite
+    /// value large enough on its own that the content area is left positive but too small for the
+    /// element. The messages differ for each cause, described above.
     /// </exception>
     public double? Height { get; init; }
 

@@ -31,17 +31,15 @@ public readonly record struct PieSlice
 
     /// <summary>The fill colour of the wedge.</summary>
     /// <remarks>
-    /// Stored as given. Channels are not clamped. A channel that is not finite is refused when the document is saved; see <see cref="ColorRgb"/>.
-    /// <para>Only a colour that is drawn is checked. A slice whose <see cref="Value"/> is zero draws
-    /// no wedge, so a non-finite channel on it is not refused: that saved a valid file on 1c61fa6
-    /// and still does. <b>Do not pass</b> a non-finite channel on any slice. Nothing reports it on a
-    /// zero-value slice, because there is no diagnostics channel yet, and 3.0 will
-    /// refuse it.</para>
+    /// Stored as given. Channels are not clamped. A channel that is not finite is refused where it is
+    /// written; see <see cref="Document"/>. A slice whose <see cref="Value"/> is zero draws no wedge,
+    /// so a non-finite channel on it is not refused: that saved a valid file on 1c61fa6 and still
+    /// does. <b>Do not pass</b> a non-finite channel on any slice: 3.0 refuses it.
     /// </remarks>
     /// <exception cref="ArgumentException">
-    /// Raised from a save, when a channel is <c>NaN</c> or infinite and <see cref="Value"/> is
-    /// above zero. <see cref="ArgumentException.ParamName"/>
-    /// is <c>Slices</c>. A finite channel outside 0 to 1 is not refused (#509).
+    /// Raised from a save, when a channel is <c>NaN</c> or infinite and the slice is drawn. The message
+    /// says PDF does not support NaN or Infinity as a real number. A finite channel outside 0 to 1 is
+    /// not refused (#509).
     /// </exception>
     public ColorRgb Color { get; init; }
 
@@ -172,20 +170,18 @@ public sealed class PieChart
 
     /// <summary>Margins around the chart. Defaults to 6 points on all sides.</summary>
     /// <remarks>
-    /// A non-finite edge is refused where it would be written; see <see cref="Document"/>. The save
-    /// throws <see cref="ArgumentException"/> with the parameter name <c>Margins</c>, as this chart's
-    /// other refusals do (#519). Before that, the chart was laid out in a box that could be <c>NaN</c>,
-    /// and the save threw an exception about something else or wrote <c>NaN</c> or <c>Infinity</c>
-    /// into the content stream.
-    /// <para>For example, an infinite right edge is accepted. <b>Do not pass</b> a non-finite edge: 3.0
-    /// refuses it.</para>
+    /// A non-finite edge is not checked before the layout; see <see cref="Document"/>. The layout runs
+    /// as it did on 1c61fa6, and the save throws <see cref="ArgumentException"/> from
+    /// <see cref="VellumPdf.Canvas.PdfCanvas"/> only where it would write the value (#519).
+    /// <para>For example, an infinite right edge saves the chart drawn. <b>Do not pass</b> a
+    /// non-finite edge: 3.0 refuses it.</para>
     /// <para><b>Attention</b>: no other edge is checked. The top and bottom edges add to the space the
     /// chart takes on the page. The left and right edges move the chart but do not shrink it: its
     /// diameter is limited by the whole content width, and its position is clamped back inside the
     /// content box. A negative edge can make the save throw an exception about something else, or
     /// move the chart. A negative top or bottom edge can also move the elements placed after
     /// this one.</para>
-    /// <para>Do not pass a negative edge. A later major version will refuse it.</para>
+    /// <para>Do not pass a negative edge. 3.0 will refuse it.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -194,11 +190,10 @@ public sealed class PieChart
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when an edge is not finite. <see cref="ArgumentException.ParamName"/> is
-    /// <c>Margins</c>. It is also raised when finite edges whose arithmetic overflows leave a later
-    /// element at a non-finite position, and the save writes that position outside the content
-    /// stream; the message then says PDF does not support NaN or Infinity as a real number. That
-    /// second route was not measured again after #519.
+    /// from this property, when a non-finite edge would put <c>NaN</c> or infinity into the content
+    /// stream, or when finite edges whose arithmetic overflows leave a later element at a non-finite
+    /// position and the save writes that position outside the content stream. The message says PDF
+    /// does not support NaN or Infinity as a real number.
     /// </exception>
     public EdgeInsets Margins { get; init; } = new EdgeInsets(6);
 
@@ -206,10 +201,13 @@ public sealed class PieChart
     /// Optional colour of the separator stroke drawn around each wedge.
     /// When <c>null</c> (the default) no stroke is drawn.
     /// </summary>
-    /// <remarks>Null means no stroke. A colour is stored as given. Channels are not clamped. A channel that is not finite is refused when the document is saved; see <see cref="ColorRgb"/>.</remarks>
+    /// <remarks>Null means no stroke. A colour is stored as given. Channels are not clamped. A
+    /// channel that is not finite is refused where it is written; see <see cref="Document"/> and
+    /// <see cref="ColorRgb"/>. <b>Do not pass</b> one: 3.0 refuses it.</remarks>
     /// <exception cref="ArgumentException">
-    /// Raised from a save, when a channel is <c>NaN</c> or infinite. <see cref="ArgumentException.ParamName"/>
-    /// is <c>StrokeColor</c>. A finite channel outside 0 to 1 is not refused (#509).
+    /// Raised from a save, when a channel is <c>NaN</c> or infinite and the stroke is drawn. The
+    /// message says PDF does not support NaN or Infinity as a real number. A finite channel outside 0
+    /// to 1 is not refused (#509).
     /// </exception>
     public ColorRgb? StrokeColor { get; init; }
 

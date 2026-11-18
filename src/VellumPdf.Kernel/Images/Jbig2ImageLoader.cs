@@ -103,13 +103,13 @@ public static class Jbig2ImageLoader
     /// </returns>
     /// <exception cref="ArgumentException">Thrown when <paramref name="jbig2"/> is null or empty.</exception>
     /// <exception cref="InvalidDataException">
-    /// Thrown on malformed or truncated input. It is also thrown, in this passthrough embedding,
-    /// for a segment of the first page whose data length is unknown (0xFFFFFFFF, ITU-T T.88 7.2.7),
-    /// because this loader does not scan for the end marker 7.2.7 describes and so cannot partition
-    /// the segment into the page and globals streams; the message
-    /// names the segment number. A segment of no page with an unknown length is skipped. Only the
+    /// Thrown on malformed or truncated input. A segment whose data length is unknown (0xFFFFFFFF,
+    /// ITU-T T.88 7.2.7) is not refused in this passthrough embedding: it is dropped, as on 1c61fa6,
+    /// because this loader does not scan for the end marker 7.2.7 describes and so cannot say where
+    /// the segment ends. <b>Do not pass</b> such a segment. The image is embedded without it, which
+    /// can leave no region and a blank image, and nothing reports it yet; 3.0 refuses it. Only the
     /// first page of a multi-page file is embedded, unless the first page-information segment has
-    /// page association 0, which keeps every segment and refuses none for its length.
+    /// page association 0, which keeps every segment.
     /// </exception>
     public static PdfImageXObject Load(byte[] jbig2)
         => Load(jbig2, ImageLoadOptions.Default);
@@ -138,14 +138,13 @@ public static class Jbig2ImageLoader
     /// <returns>A <see cref="PdfImageXObject"/> with the appropriate filter.</returns>
     /// <exception cref="ArgumentException">Thrown when <paramref name="jbig2"/> is null or empty.</exception>
     /// <exception cref="InvalidDataException">
-    /// Thrown on malformed or truncated input. It is also thrown for a segment whose data length is
-    /// unknown (0xFFFFFFFF, ITU-T T.88 7.2.7): under <see cref="ImageDecodeMode.Passthrough"/> for
-    /// any segment of the first page but end-of-page and end-of-file, because this loader does not
-    /// scan for the end marker 7.2.7 describes and so cannot partition it, and under
-    /// <see cref="ImageDecodeMode.DecodeToRaster"/> for a generic region, which cannot be decoded.
-    /// The message names the segment number. Only the first page of a multi-page file is embedded,
-    /// under either mode, unless the first page-information segment has page association 0, which
-    /// keeps every segment.
+    /// Thrown on malformed or truncated input. Under <see cref="ImageDecodeMode.DecodeToRaster"/> it
+    /// is also thrown for a generic region whose data length is unknown (0xFFFFFFFF, ITU-T T.88
+    /// 7.2.7), which this loader cannot decode; the message names the segment number. Under
+    /// <see cref="ImageDecodeMode.Passthrough"/> such a segment is dropped, as on 1c61fa6; see
+    /// <see cref="Load(byte[])"/>. Only the first page of a multi-page file is embedded, under either
+    /// mode, unless the first page-information segment has page association 0, which keeps every
+    /// segment.
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// Thrown under <see cref="ImageDecodeMode.DecodeToRaster"/> when the file contains
@@ -488,12 +487,11 @@ public static class Jbig2ImageLoader
     }
 
     /// <summary>
-    /// The refusal of a segment whose data length is 0xFFFFFFFF (§7.2.7). Only an immediate generic
-    /// region may carry that length, and its end is found only by scanning the data for a marker that
-    /// depends on the coding (ITU-T T.88 7.2.7): 0xFF 0xAC for template-based arithmetic coding or
-    /// 0x00 0x00 for MMR, each followed by a four-byte row count. This loader does not scan, so such
-    /// a segment can neither be partitioned into the page and globals streams nor decoded. One
-    /// message for both modes.
+    /// The refusal of a generic region whose data length is 0xFFFFFFFF (§7.2.7) under
+    /// <c>DecodeToRaster</c>. Only an immediate generic region may carry that length, and its end is
+    /// found only by scanning the data for a marker that depends on the coding (ITU-T T.88 7.2.7):
+    /// 0xFF 0xAC for template-based arithmetic coding or 0x00 0x00 for MMR, each followed by a
+    /// four-byte row count. This loader does not scan, so it cannot decode such a segment.
     /// </summary>
     private static InvalidDataException UnknownLength(in SegmentHeader seg)
         => new(
@@ -532,19 +530,14 @@ public static class Jbig2ImageLoader
             if (!BelongsToPage(seg, firstPage))
                 continue;
 
-            // A segment of unknown length (§7.2.7) cannot be partitioned: where it ends is found only
-            // by scanning its data for the end marker, which depends on the coding (0xFF 0xAC for
-            // arithmetic, 0x00 0x00 for MMR; only an immediate generic region may have one). Skipping it
-            // left a blank image with nothing to say why, so it is refused.
+            // A segment of unknown length (§7.2.7) is dropped, as it was on 1c61fa6 (#484). This loader
+            // does not scan for the end marker 7.2.7 describes (0xFF 0xAC for arithmetic coding,
+            // 0x00 0x00 for MMR, each followed by a row count; only an immediate generic region may
+            // have one), so it cannot say where the segment ends. Dropping it can leave an image with
+            // no region, which a reader draws blank. The file is valid, so it is not refused; 3.0
+            // refuses it.
             if (!seg.HasKnownLength)
-            {
-                // Refused only on the page being embedded. A segment of no page, such as a trailing
-                // tables or extension segment, and everything in a file that selects no page, are
-                // skipped as they always were, and the image is whole without them.
-                if (firstPage != 0 && seg.PageAssociation == firstPage)
-                    throw UnknownLength(seg);
                 continue;
-            }
 
             var segEnd = seg.DataOffset + (int)seg.DataLength;
             if (seg.HeaderStart < 0 || seg.HeaderEnd > data.Length || segEnd > data.Length)

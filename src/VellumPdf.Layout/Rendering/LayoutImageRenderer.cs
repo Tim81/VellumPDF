@@ -47,13 +47,6 @@ public sealed class LayoutImageRenderer : IRenderer
     /// </exception>
     public LayoutResult Layout(LayoutContext ctx)
     {
-        LayoutValidation.ValidateInsets(
-            _img.Margins,
-            "An image",
-            right: LayoutValidation.NonFinite.NaN | LayoutValidation.NonFinite.PositiveInfinity
-                | LayoutValidation.NonFinite.NegativeInfinity,
-            left: LayoutValidation.NonFinite.PositiveInfinity | LayoutValidation.NonFinite.NegativeInfinity);
-
         var area = ctx.Area.Deflate(_img.Margins);
         var imgW = _img.Image.Width;
         var imgH = _img.Image.Height;

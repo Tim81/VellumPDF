@@ -104,23 +104,6 @@ public sealed class ListRenderer : IRenderer
     /// </exception>
     public LayoutResult Layout(LayoutContext context)
     {
-        // Before the area is computed: a NaN indent reaches an item's text matrix wherever an item
-        // is drawn. Negative infinity does so only on a nested child or a word too wide to sit beside
-        // its marker (#532), so it is refused there, in BuildItems. A flat list whose words fit saved
-        // a valid file with it on 1c61fa6, because the gutter widens to the marker's own width.
-        //
-        // An empty list writes nothing, so neither the indent nor the margins reach an operand and
-        // neither is checked, as on 1c61fa6.
-        if (_list.Items.Count > 0)
-        {
-            LayoutValidation.ValidateListIndent(_list.Indent, "A list");
-            LayoutValidation.ValidateInsets(
-                _list.Margins,
-                "A list",
-                right: LayoutValidation.NonFinite.NaN | LayoutValidation.NonFinite.NegativeInfinity,
-                bottom: LayoutValidation.NonFinite.NegativeInfinity);
-        }
-
         var area = context.Area.Deflate(_list.Margins);
         if (area.IsEmpty) return LayoutResult.Nothing();
 
@@ -395,7 +378,6 @@ public sealed class ListRenderer : IRenderer
             // carries are the lesser harm.
             if (areaWidth - gutter < WidestWord(itemStyle, item.Text))
             {
-                LayoutValidation.ValidateListIndentWritten(indent, "A list");
                 gutter = indent;
             }
 
@@ -425,10 +407,6 @@ public sealed class ListRenderer : IRenderer
             // Nested children
             if (item.Children is not null)
             {
-                // A child's marker takes the indent as its left inset, so negative infinity is
-                // written as -Infinity.
-                if (item.Children.Count > 0)
-                    LayoutValidation.ValidateListIndentWritten(indent, "A list");
                 var seq = 1;
                 foreach (var child in item.Children)
                 {

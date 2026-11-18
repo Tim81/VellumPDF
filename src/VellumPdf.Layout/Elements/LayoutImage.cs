@@ -104,13 +104,11 @@ public sealed class LayoutImage
 
     /// <summary>Margins around the image.</summary>
     /// <remarks>
-    /// A non-finite edge is refused where it would be written; see <see cref="Document"/>. The save
-    /// throws <see cref="InvalidOperationException"/> before the image is laid out, with
-    /// <c>An image has a non-finite inset. Every inset must be a finite number.</c> (#519). Before that, the image
-    /// was laid out in a box that could be <c>NaN</c>, and the save threw an exception about
-    /// something else or wrote <c>NaN</c> or <c>Infinity</c> into the content stream.
-    /// <para>For example, a <c>NaN</c> right edge is accepted. <b>Do not pass</b> a non-finite edge:
-    /// 3.0 refuses it.</para>
+    /// A non-finite edge is not checked before the layout; see <see cref="Document"/>. The layout runs
+    /// as it did on 1c61fa6, and the save throws <see cref="ArgumentException"/> from
+    /// <see cref="VellumPdf.Canvas.PdfCanvas"/> only where it would write the value (#519).
+    /// <para>For example, a <c>NaN</c> right edge saves the image drawn. <b>Do not pass</b> a
+    /// non-finite edge: 3.0 refuses it.</para>
     /// <para><b>Attention</b>: no other edge is checked. The top and bottom edges add to the space the
     /// image takes on the page. The left and right edges work differently by <see cref="Width"/>: with
     /// it set, the image keeps that width, up to the content width, and its position is clamped back
@@ -118,13 +116,11 @@ public sealed class LayoutImage
     /// negative edge, or edges wider than the area, can make the save throw an exception about
     /// something else, or move, mirror or rotate the image. A negative top or bottom edge can also
     /// move the elements placed after this one.</para>
-    /// <para>Do not pass a negative edge. A later major version will refuse it.</para>
+    /// <para>Do not pass a negative edge. 3.0 will refuse it.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when an edge is not finite and is written (see <see cref="Document"/>),
-    /// in which case the message names the element
-    /// and does not name the edge, or when the box the edges leave is too small for the element, in
+    /// from this property, when the box the edges leave is too small for the element, in
     /// which case the message says the element is too tall to fit on a page and does not name the
     /// margins. With <see cref="Width"/> null, the width the edges leave is refused when it is under
     /// 5e-6 in magnitude, or not finite, and so is a height derived from it that is under 5e-6 or not
@@ -132,7 +128,8 @@ public sealed class LayoutImage
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when finite edges whose arithmetic overflows leave a later element at a
+    /// from this property, when a non-finite edge, or finite edges whose arithmetic overflows, put a
+    /// value the save writes at <c>NaN</c> or infinity, or leave a later element at a
     /// non-finite position, and the save writes that position outside the content stream, as a
     /// heading's bookmark or the rectangle of a link from <see cref="TextStyle.LinkUri"/>. The
     /// message says PDF does not support NaN or Infinity as a real number. That route was not

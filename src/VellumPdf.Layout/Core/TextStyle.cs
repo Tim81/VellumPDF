@@ -188,11 +188,21 @@ public sealed class TextStyle
 
     /// <summary>The text colour. Defaults to <see cref="ColorRgb.Black"/>.</summary>
     /// <remarks>
-    /// Stored as given. Channels are not clamped. A channel that is not finite is refused when the document is saved; see <see cref="ColorRgb"/>.
+    /// Stored as given. Channels are not clamped. A channel that is not finite is refused where it is
+    /// written; see <see cref="Document"/> and <see cref="ColorRgb"/>. In a paragraph run or a table
+    /// cell that draws text the element's own check names it. On a running band, and on a band that
+    /// draws nothing, <see cref="VellumPdf.Canvas.PdfCanvas"/> decides: it refuses the value when the
+    /// band is drawn, and an empty template writes no colour. <b>Do not pass</b> a non-finite channel:
+    /// 3.0 refuses it.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
-    /// Raised from a save, when a channel is <c>NaN</c> or infinite. The message names the paragraph run, running band or table cell that carries the style and the
-    /// channel. A finite channel outside 0 to 1 is not refused (#509).
+    /// Raised from a save, when a channel is <c>NaN</c> or infinite on a paragraph run or table cell
+    /// that draws text. The message names the element and the channel. A finite channel outside 0 to 1
+    /// is not refused (#509).
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from a save, when a channel is <c>NaN</c> or infinite on a running band that is drawn.
+    /// The message says PDF does not support NaN or Infinity as a real number.
     /// </exception>
     public ColorRgb Color { get; init; } = ColorRgb.Black;
 
