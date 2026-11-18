@@ -260,7 +260,7 @@ public sealed class PageTreeTests
         // (object number 0) rather than indirect references: only the shared array they both point
         // back at, object 9, ever repeats. Depth doubles every level with no cap of its own to stop
         // it, so a walker that does not also key its cycle guard on the /Kids array's own object
-        // number never returns.
+        // number is stopped only by the depth cap and the /Kids-examined budget.
         var bytes = BuildPdf(
             rootObjectNumber: 1,
             (1, "<< /Type /Catalog /Pages 2 0 R >>"),
@@ -278,7 +278,8 @@ public sealed class PageTreeTests
         // "Before exhausting any budget" is what the test name promises, and it is observable
         // without a clock (#400): a walk that keys its cycle guard only on node objects would run
         // until the /Kids-examined budget or the depth cap stopped it, and say so with these two
-        // codes. The cycle diagnosis above ends the walk first.
+        // codes. They also catch a walker that reports the repeat and then walks it anyway, which
+        // still emits the cycle diagnostic that the Contains above looks for.
         Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.PageTreeNodeLimitExceeded);
         Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.PageTreeDepthExceeded);
     }

@@ -843,12 +843,14 @@ public sealed class EncryptedReconstructionTests
             $"expected under {A4AllocationBound} bytes allocated before the cost budget refused; measured {allocated}.");
     }
 
-    // 8 MiB. With the first bomb's decode charged, Open allocated 2,153,352 to 2,153,888 bytes across
-    // Debug, Release and Release with tiered compilation off; with the charge made after the loop,
-    // so all twenty decodes ran and the message was unchanged, it allocated 42.1 million (Debug
-    // and Release). 8 MiB sits 3.9x above the first and 5.0x below the second. The bound is tied to this fixture: it scales with DecodeCap (one decode's
+    // 5 MiB. With the first bomb's decode charged, Open allocated 2,153,056 to 2,153,888 bytes across
+    // Debug, Release and Release with tiered compilation off. With the charge made after the loop,
+    // so all twenty decodes ran and the message was unchanged, it allocated 42.1 million (Debug and
+    // Release). Measured locally on 2026-11-18. 5 MiB sits 2.4x above the clean value. A reconstruction
+    // that refuses after two decodes allocates 4,256,528 and passes; after three, 6,364,344,
+    // and fails (Debug). The bound is tied to this fixture: it scales with DecodeCap (one decode's
     // growable buffer) and with the bomb count, so changing either means re-measuring.
-    private const long A4AllocationBound = 8L * 1024 * 1024;
+    private const long A4AllocationBound = 5L * 1024 * 1024;
 
     // ── Review finding (MEDIUM): a public-key dict inside a walk-swallowed region ───────────────
 

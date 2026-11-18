@@ -3577,7 +3577,10 @@ public sealed class ContentInterpreterTests
         return buffer.Count == 0 ? [0] : [.. buffer];
     }
 
-    [Fact]
+    // Hang guards only (#400), 300 s for the reason ParserFuzzTests' class doc gives; xUnit1069 has
+    // nowhere to thread a CancellationToken into CsCheck's Sample.
+#pragma warning disable xUnit1069
+    [Fact(Timeout = 300_000)]
     public void Fuzz_run_neverThrowsOutsideTheDeclaredVocabulary_andAlwaysTerminates()
         // A block-bodied lambda, not `bytes => AssertInterpreterIsRobust(bytes)`: CsCheck.Sample has
         // both an Action<T> overload (fails only on a thrown exception) and a Func<T, bool> one
@@ -3590,7 +3593,7 @@ public sealed class ContentInterpreterTests
         // bind to Action<T>, restoring the original semantics.
         => FuzzInputGen.Sample(bytes => { AssertInterpreterIsRobust(bytes); }, iter: FuzzBudget.Iterations);
 
-    [Fact]
+    [Fact(Timeout = 300_000)]
     public void ContentBodyFuzzGenerator_isRobust_andReachesRunOnTheMajorityOfSamples()
     {
         // One Sample() call, not two: it both runs the same robustness assertions
@@ -3630,6 +3633,7 @@ public sealed class ContentInterpreterTests
             $"the content-body fuzz generator reached Run on {reached}/{total} samples; expected a "
             + "majority.");
     }
+#pragma warning restore xUnit1069
 
     /// <summary>Runs the same robustness assertions <see cref="Fuzz_run_neverThrowsOutsideTheDeclaredVocabulary_andAlwaysTerminates"/>
     /// pins, and reports whether this sample reached <c>ContentInterpreter.Run</c> at all, so a
@@ -3677,7 +3681,7 @@ public sealed class ContentInterpreterTests
 
         // Per-sample allocation ceiling (#400), not a clock: a Stopwatch read after Run returns
         // cannot end a hang and failed on a loaded runner. Per thread, for the reason the
-        // HugeFlatArrayOperand test above gives; Open, GetPage and Run are all synchronous. The
+        // HugeArrayOperand_capReportsBeforeMaterialisingIt_boundingAllocation gives; Open, GetPage and Run are all synchronous. The
         // ceiling is a fixed slack plus a per-byte factor on this sample's length:
         //   - Slack: ReaderLimits.MinMaxDecodedBytes (1 MiB), the decoded-stream cap in force
         //     above, the one buffer a sample may legitimately make Open allocate on top of its own
@@ -3689,7 +3693,10 @@ public sealed class ContentInterpreterTests
         //     16,777,216 probe bytes on a 1 MiB body and allocated 2.1 MB in Run, so the probe
         //     lexes without allocating per byte and its budget needs no term of its own. At 1 KiB
         //     the same 'q' run measured 179.5 B/byte. 1,024 is 5.7x the worst of these. Debug and
-        //     Release measured identical bytes for every one of these shapes.
+        //     Release measured identical bytes for every one of these shapes (local, 2026-11-18).
+        //     At the longest fuzz samples (about 1.1 KB) the ceiling is about 2.2 MB against a
+        //     measured maximum of 25,528 bytes over 1,000,000 samples, so it catches gross
+        //     regressions only.
         // This visitor discards what it is handed. The retaining RecordingVisitor this helper used
         // before would charge the test's own list growth to the interpreter.
         var allocated = GC.GetAllocatedBytesForCurrentThread() - allocatedBefore;

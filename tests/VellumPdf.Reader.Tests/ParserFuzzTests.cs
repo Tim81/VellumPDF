@@ -45,15 +45,23 @@ namespace VellumPdf.Reader.Tests;
 /// </para>
 /// <para>
 /// <strong>Cost is bounded by allocation and token count, not by a clock (#400).</strong> The
-/// lexer pins that it emits no more tokens than it has bytes, and the parser and reader pin the
+/// lexer pins that it emits no more tokens than it has bytes plus a slack of 16, and the parser and reader pin the
 /// bytes allocated on the calling thread per sample against a ceiling that scales with that
 /// sample's length (see <see cref="AssertWithinAllocationCeiling"/>). A check of
 /// <c>Stopwatch.Elapsed</c> made after the call returns could not end a hang and failed on a
 /// loaded runner; these keep CsCheck's printed seed and do not depend on the machine. Neither
-/// bound discriminates a defect that burns CPU without allocating or emitting tokens. These
-/// <c>Fact</c>s carry no <c>Timeout</c>: <c>fuzz-nightly.yml</c> runs 200,000 iterations per case,
-/// which a fixed per-test limit would cancel, so the workflow's own <c>timeout-minutes</c> is the
-/// hang guard.
+/// bound discriminates a defect that burns CPU without allocating or emitting tokens. The
+/// <c>Timeout</c> on each case is a 300 s hang guard and nothing else: the nightly run
+/// (44078641870, <c>VELLUMPDF_FUZZ_ITER=200000</c>) passed all five tests of this class in 14 s 992 ms,
+/// a twentieth of the guard, and a local Release run at 1,000,000 iterations per case took 89 s for
+/// the class.
+/// </para>
+/// <para>
+/// At real sample lengths (up to about 6.5 KB) the 1 MiB slack in the ceilings dominates. The
+/// reader and <c>ContentInterpreterTests</c> ceilings therefore catch only gross regressions, an
+/// allocation of megabytes on a kilobyte input. The parser ceiling is the tightest: a measured maximum
+/// of 144,000 bytes over 1,000,000 samples against about 1.9 MB at the longest sample, so an
+/// allocation about thirteen times that maximum would fail it.
 /// </para>
 /// <para>
 /// <strong>Budget.</strong> <see cref="FuzzBudget.Iterations"/> defaults to a few thousand — fast
@@ -84,10 +92,14 @@ public sealed class ParserFuzzTests
     //     slack covers the flat case.
     //   - PdfReader.Open + resolve-all + page walk, reconstruction on: 414 B per input byte at
     //     worst (a run of '<<'), 105 to 168 for object-header and array runs. 2,048 B/byte is
-    //     4.9x the worst. A run of '[' is NOT covered: it allocates a flat ~290 MB at every length
-    //     from 4 KiB up, which no linear bound can admit while still pinning anything. A mutation
-    //     chain of at most 8 operations over a committed seed cannot produce one, and a sample
-    //     that does is a real finding for this test to report (see the PR for the tracking issue).
+    //     4.9x the worst. A run of '[' is NOT covered: with reconstruction on, Open alone allocated
+    //     26 MB on a 512-byte run, 293 MB at 4 KiB, 304 MB from 8 to 64 KiB and 609 MB at 256 KiB.
+    //     Inserted at the start of the smallest committed seed (599 bytes), 160 of them already
+    //     exceed this ceiling. No committed seed holds two consecutive '[', and by my count a chain
+    //     of at most eight operations that each change one byte or duplicate at most 64 builds at
+    //     most about 128 from nothing, so a sample reaching one is unlikely. A sample that does is a real finding
+    //     for this test to report.
+    // All of the above was measured locally on 2026-11-18, in Debug and Release.
     // The slack is ReaderLimits.MinMaxDecodedBytes (1 MiB), the decoded-stream cap every Open call
     // below runs under: the one buffer an input may legitimately make the reader allocate on top of
     // its own size. A cold thread's first parser or reader call measured under 25 KB.
@@ -125,19 +137,25 @@ public sealed class ParserFuzzTests
             + "embedded-resource globs in VellumPdf.Reader.Tests.csproj.");
     }
 
-    [Fact]
+    // The Timeouts below are hang guards (#400); see the class doc for the nightly figure behind
+    // 300 s. xUnit1069 wants TestContext.Current.CancellationToken threaded through so a Timeout can
+    // end a test promptly; CsCheck's Sample takes no CancellationToken, and there is nothing to
+    // thread it into.
+#pragma warning disable xUnit1069
+    [Fact(Timeout = 300_000)]
     public void Lexer_neverThrowsOutsideTheDeclaredVocabulary()
         => FuzzInputGen.Sample(AssertLexerIsRobust, iter: FuzzBudget.Iterations);
 
-    [Fact]
+    [Fact(Timeout = 300_000)]
     public void ObjectParser_neverThrowsOutsideTheDeclaredVocabulary()
         => FuzzInputGen.Sample(AssertParserIsRobust, iter: FuzzBudget.Iterations);
 
-    [Theory]
+    [Theory(Timeout = 300_000)]
     [InlineData(false)]
     [InlineData(true)]
     public void Reader_neverThrowsOutsideTheDeclaredVocabulary(bool allowReconstruction)
         => FuzzInputGen.Sample(bytes => AssertReaderIsRobust(bytes, allowReconstruction), iter: FuzzBudget.Iterations);
+#pragma warning restore xUnit1069
 
     private static void AssertLexerIsRobust(byte[] bytes)
     {

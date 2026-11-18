@@ -78,8 +78,8 @@ namespace VellumPdf.Reader.Tests;
 /// One consequence of the larger fixture is worth knowing before diagnosing a red build. .NET cannot
 /// abort a synchronous test body, so xUnit reports <c>failed (canceled)</c> at the budget and the
 /// work carries on to completion. A genuine regression now orphans minutes of a pegged core rather
-/// than seconds of one, in the same process as the ten-second budget in <c>PdfObjectParserTests</c>.
-/// Expect a cluster of timeouts rather than one clean failure, and read this test as the cause.
+/// than seconds of one, in the same process as the rest of the Reader suite, which it slows while it
+/// runs. Read this test as the cause.
 /// </para>
 /// </summary>
 public sealed class EncryptDictionaryDenialOfServiceTests
@@ -118,8 +118,9 @@ public sealed class EncryptDictionaryDenialOfServiceTests
     // This is the one [Fact(Timeout)] left in the test projects that is a regression pin and not a
     // 300 s hang guard (#400). It was sized in #456, after #400 was opened, and measured against
     // the real defect: with IndexThreshold raised to int.MaxValue it was cancelled at 120.2 s. Nothing deterministic
-    // can replace it at this level, because the defect is CPU-only and PdfDictionary's index is
-    // private; the state check that stands in for it lives in PdfDictionaryIndexTests (IsIndexed).
+    // can replace it here: the defect is CPU-only, and although Reader.Tests can see
+    // PdfDictionary.IsIndexed through Kernel's InternalsVisibleTo, this test does not reach the parsed
+    // /Encrypt dictionary. The state check that stands in for it lives in PdfDictionaryIndexTests.
 #pragma warning disable xUnit1069
     [Fact(Timeout = 120_000)]
     public void HugeEncryptDictionary_opensWellInsideTheBudget()
