@@ -158,7 +158,8 @@ and .NET's `$` matches before a single trailing newline. Measured through `PdfPr
 on hand-assembled fixtures: the octal-escape and bare-line-feed forms fire neither 6.7.4-1 nor
 7.2-29.
 
-**What veraPDF does.** Fails all of them, on both profiles. veraPDF 1.30.2, the pinned version:
+**What veraPDF does.** Fails all of them, on both profiles. The same on veraPDF 1.30.2 and
+1.30.4, run on 2026-11-17 against fixtures rebuilt from this description:
 
 ```
                      PDF/A-2a 6.7.4-1     PDF/UA-1 7.2-29
@@ -182,8 +183,8 @@ string and makes the tag invalid on other grounds. Fix #511 alone and CRLF joins
 accepts. The two want sequencing.
 
 Checkable: all of it. The clauses are the viewer's, the fixtures are hand-assembled and
-reproducible from the bytes described, and the veraPDF column above is a run of the pinned version
-rather than a reading of its profile.
+reproducible from the bytes described, and the veraPDF column above is a run of veraPDF
+1.30.2 and 1.30.4 rather than a reading of their profiles.
 
 ---
 

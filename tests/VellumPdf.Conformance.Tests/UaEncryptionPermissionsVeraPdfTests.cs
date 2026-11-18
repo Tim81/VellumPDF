@@ -16,19 +16,23 @@ namespace VellumPdf.Conformance.Tests;
 /// <remarks>
 /// The three R6 fixtures the tests below read through <see cref="ReadEmbeddedFixture"/> are
 /// committed rather than built by each test, because a document built fresh at
-/// test time is an unreliable input to veraPDF here. ISO 32000-2 §7.6.4.3.4 Algorithm 2.B runs its
+/// test time was an unreliable input to veraPDF 1.30.2. ISO 32000-2 §7.6.4.3.4 Algorithm 2.B runs its
 /// hash loop for 64 rounds, then keeps going while the last byte of E is greater than the round
 /// number minus 32, so the correct exit test is <c>E[last] &lt;= completedRounds - 32</c>. That is
 /// what this library's <c>StandardSecurityHandler.Hash2B</c> does, and qpdf and pdf.js agree.
-/// veraPDF's own <c>EncryptionToolsRevision5_6.computeHash</c> (veraPDF-parser,
-/// <c>org.verapdf.tools</c>) instead exits on <c>E[last] &lt;= rounds - 32</c> with a zero-based
+/// veraPDF 1.30.2's <c>EncryptionToolsRevision5_6.computeHash</c> (veraPDF-parser,
+/// <c>org.verapdf.tools</c>) instead exited on <c>E[last] &lt;= rounds - 32</c> with a zero-based
 /// round counter — in the spec's completed-rounds frame (<c>completedRounds = rounds + 1</c>) that
 /// is <c>E[last] &lt;= completedRounds - 33</c>, one round later than the spec text. The two
-/// readings only disagree when
-/// <c>E[last]</c> lands exactly on <c>completedRounds - 32</c>, in which case veraPDF runs one
-/// extra round, derives a different hash from the same password and salt, and fails its own
+/// readings only disagreed when
+/// <c>E[last]</c> landed exactly on <c>completedRounds - 32</c>, in which case veraPDF ran one
+/// extra round, derived a different hash from the same password and salt, and failed its own
 /// <c>/U</c> check on the file it just opened, refusing it outright (exit 8) even though qpdf and
-/// poppler read the same bytes without complaint. Because the writer draws its salts from
+/// poppler read the same bytes without complaint. veraPDF 1.30.3 fixed this (veraPDF-parser
+/// 40ba1b3 starts the counter at 1 and tests <c>rounds &gt;= 64</c>). On 2026-11-18 a qpdf-built
+/// R6 file whose user hash lands on that boundary was refused by 1.30.2 (exit 8) and validated by
+/// 1.30.4. The fixtures stay committed; on 1.30.3 and later the veraPDF re-check before a
+/// regeneration is a precaution, not a requirement. Because the writer draws its salts from
 /// <see cref="System.Security.Cryptography.RandomNumberGenerator"/>, whether a freshly written file
 /// lands on that boundary is chance, measured at 6 refusals out of 60 freshly built files, so a
 /// fixture built inline here would make these tests flaky against veraPDF for a reason unrelated to

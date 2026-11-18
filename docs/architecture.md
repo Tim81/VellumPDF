@@ -181,7 +181,7 @@ to retrofit:
   (CsCheck) on escaping and cross-reference offsets.
 - **External validators as oracles in CI** (invoked as tools, never linked or
   shipped, so they do not affect the library's license-clean runtime):
-  veraPDF 1.30.2 (PDF/A-2b/2u/2a + PDF/UA-1, via the official Docker image),
+  veraPDF 1.30.4 (PDF/A-2b/2u/2a + PDF/UA-1, via the official Docker image),
   `qpdf --check` and `--show-linearization` (structural and linearization),
   `pdftotext` (text round-trip → proves `ToUnicode`), `pdfsig` (PAdES signature
   validity), and zxing-cpp (decode round-trip for every barcode symbology, via a
