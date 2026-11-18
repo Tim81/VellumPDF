@@ -14,9 +14,12 @@
     <!--
       Kept in the same major band as the target framework. It was pinned at 9.0.5 on a net10.0-only
       library, so the one third-party runtime dependency this repository ships — and it ships on the
-      signing package — was a servicing-stale .NET 9 build.
+      signing package — was a servicing-stale .NET 9 build. With two target frameworks each one
+      takes its own major band: the 11.0.0 package's net10.0 group would pull System.Formats.Asn1
+      11.0.0 into a net10.0 consumer, and its net11.0 group takes no dependency at all.
     -->
-    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.14" />
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.14" Condition="'$(TargetFramework)' == 'net10.0'" />
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="11.0.0" Condition="'$(TargetFramework)' == 'net11.0'" />
     <PackageVersion Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="5.6.0" />
     <!-- xunit.v3 ships xunit.v3.core.mtp-v2 / xunit.v3.mtp-v2, which pull in
          Microsoft.Testing.Platform; the .NET 10 SDK refuses the VSTest target these tests used to
