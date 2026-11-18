@@ -17,28 +17,34 @@ if (Test-Path $installer) { $env:PATH = "$installer;$env:PATH" }
 $rid  = if ($IsWindows -or $null -eq $IsWindows) { 'win-x64' } elseif ($IsMacOS) { if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq [System.Runtime.InteropServices.Architecture]::Arm64) { 'osx-arm64' } else { 'osx-x64' } } else { 'linux-x64' }
 $proj = Join-Path $PSScriptRoot 'VellumPdf.AotSmoke\VellumPdf.AotSmoke.csproj'
 
-Write-Host "Publishing Native AOT ($rid)..." -ForegroundColor Cyan
-dotnet publish $proj -c Release -r $rid
-if ($LASTEXITCODE -ne 0) { throw "AOT publish failed (exit $LASTEXITCODE)" }
-
-$exeName = if ($rid -like 'win-*') { 'VellumPdf.AotSmoke.exe' } else { 'VellumPdf.AotSmoke' }
-$exe = Join-Path $PSScriptRoot "VellumPdf.AotSmoke\bin\Release\net10.0\$rid\publish\$exeName"
-
-Write-Host "Running $exe" -ForegroundColor Cyan
-& $exe
-if ($LASTEXITCODE -ne 0) { throw "AOT smoke run failed (exit $LASTEXITCODE)" }
-
-# The vellum-preflight CLI (issue #130) must also stay Native-AOT clean — it is the
-# public front-end over VellumPdf.Conformance and ships as a per-platform native binary.
+# A multi-targeted Exe cannot be published without -f (NETSDK1129), and each TFM is a separate
+# ILCompiler run against a separate runtime pack, so both are exercised.
+$tfms = @('net10.0', 'net11.0')
 $cli = Join-Path $PSScriptRoot '..\..\src\VellumPdf.Cli\VellumPdf.Cli.csproj'
-Write-Host "Publishing vellum-preflight CLI Native AOT ($rid)..." -ForegroundColor Cyan
-dotnet publish $cli -c Release -r $rid
-if ($LASTEXITCODE -ne 0) { throw "CLI AOT publish failed (exit $LASTEXITCODE)" }
 
-$cliExeName = if ($rid -like 'win-*') { 'vellum-preflight.exe' } else { 'vellum-preflight' }
-$cliExe = Join-Path $PSScriptRoot "..\..\src\VellumPdf.Cli\bin\Release\net10.0\$rid\publish\$cliExeName"
-Write-Host "Running $cliExe --coverage 2b" -ForegroundColor Cyan
-& $cliExe --coverage 2b
-if ($LASTEXITCODE -ne 0) { throw "CLI AOT smoke run failed (exit $LASTEXITCODE)" }
+foreach ($tfm in $tfms) {
+    Write-Host "Publishing Native AOT ($rid, $tfm)..." -ForegroundColor Cyan
+    dotnet publish $proj -c Release -r $rid -f $tfm
+    if ($LASTEXITCODE -ne 0) { throw "AOT publish failed for $tfm (exit $LASTEXITCODE)" }
+
+    $exeName = if ($rid -like 'win-*') { 'VellumPdf.AotSmoke.exe' } else { 'VellumPdf.AotSmoke' }
+    $exe = Join-Path $PSScriptRoot "VellumPdf.AotSmoke\bin\Release\$tfm\$rid\publish\$exeName"
+
+    Write-Host "Running $exe" -ForegroundColor Cyan
+    & $exe
+    if ($LASTEXITCODE -ne 0) { throw "AOT smoke run failed for $tfm (exit $LASTEXITCODE)" }
+
+    # The vellum-preflight CLI (issue #130) must also stay Native-AOT clean — it is the
+    # public front-end over VellumPdf.Conformance and ships as a per-platform native binary.
+    Write-Host "Publishing vellum-preflight CLI Native AOT ($rid, $tfm)..." -ForegroundColor Cyan
+    dotnet publish $cli -c Release -r $rid -f $tfm
+    if ($LASTEXITCODE -ne 0) { throw "CLI AOT publish failed for $tfm (exit $LASTEXITCODE)" }
+
+    $cliExeName = if ($rid -like 'win-*') { 'vellum-preflight.exe' } else { 'vellum-preflight' }
+    $cliExe = Join-Path $PSScriptRoot "..\..\src\VellumPdf.Cli\bin\Release\$tfm\$rid\publish\$cliExeName"
+    Write-Host "Running $cliExe --coverage 2b" -ForegroundColor Cyan
+    & $cliExe --coverage 2b
+    if ($LASTEXITCODE -ne 0) { throw "CLI AOT smoke run failed for $tfm (exit $LASTEXITCODE)" }
+}
 
 Write-Host "AOT smoke PASSED." -ForegroundColor Green

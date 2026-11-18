@@ -2,7 +2,13 @@
 
   <!-- Shared settings for every project in the repository. -->
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <!--
+      Both supported runtimes, built from one SDK. net10.0 is the LTS and net11.0 the STS release
+      (both end of support 2028-11-14). Replacing TargetFramework, rather than adding beside it, is
+      what makes this multi-target: a project that sets TargetFramework itself under a props file
+      that sets TargetFrameworks restores both but builds only one.
+    -->
+    <TargetFrameworks>net10.0;net11.0</TargetFrameworks>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
