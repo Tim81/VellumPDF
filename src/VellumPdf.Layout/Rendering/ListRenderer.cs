@@ -397,6 +397,11 @@ public sealed class ListRenderer : IRenderer
 
             result.Add((markerRenderer, contentRenderer));
 
+            // A null child of a top-level item is refused here, where the position is known. The
+            // same null on a grandchild is never reached, because grandchildren are not read.
+            if (item.HasNullChild)
+                throw new ArgumentNullException("child", "A list item has a null child.");
+
             // Nested children
             if (item.Children is not null)
             {

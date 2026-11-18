@@ -130,19 +130,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   check and surfaced as `NullReferenceException` from a later call the caller did not make, usually
   `Document.Save`, with a stack naming the writer or a renderer. `PdfArray.Add`, `PdfArray`'s
   constructor, `PdfDictionary.Set`'s value, `DocumentRenderer.Add`, `RunningBand`'s template,
-  `Paragraph`, `Paragraph.Add`, `Heading`, `TextRun`, `ListItem`, `ListItem.AddChild`,
-  `ListElement`'s constructor and `Add`, `Row.AddCell(Cell)`, `LayoutImage`, `PieChart.Slices`,
+  `Paragraph`, `Paragraph.Add`, `Heading`, `TextRun`'s text, `ListItem`'s text,
+  `ListItem.AddChild(string)`, `ListElement`'s constructor and `Add`, `Row.AddCell(Cell)`, `LayoutImage`, `PieChart.Slices`,
   every `Document.Add` overload, and the public renderer constructors now throw from the call, naming
   the parameter. A null inside a sequence names its index. An empty string is not null and is
   accepted. A null cell text is the exception: `new Cell(null)` and `Row.AddCell((string)null)` store
   an empty string, so the cell draws no text. That is what a table with explicit column widths
   already drew, and the auto-sized table now agrees with it instead of throwing at save.
   **Attention**: code that passed a null and caught the later `NullReferenceException` now gets
-  `ArgumentNullException` earlier, except for a null cell text, which is accepted. Not every null
-  was fatal before: a `TextRun` with a null style and a null grandchild of a `ListItem` rendered, and
-  the cell above rendered in an explicit-width table. The first two stay refused, because a style
-  or an item is not text that can stand for an empty value. The `<exception>` tags and the "a later
-  major version will throw" paragraphs that described the old behaviour are rewritten. `PageSize`, `DrawContext`, `FontReference`,
+  `ArgumentNullException` earlier, except for a null cell text, which is accepted. Two nulls that
+  saved before are kept saving, because a release before 3.0 may not turn a document that renders
+  into an exception (#484). A `TextRun` with a null style stores `TextStyle.Default` and draws in
+  it; before, a null style saved only when the run's text was empty or white space, and threw
+  `NullReferenceException` for any other text. A null `ListItem` passed to `ListItem.AddChild` is
+  not stored and does not throw from the call. On a grandchild, an item that is itself another
+  item's child, it is skipped as before and the list renders. On a top-level item the save throws
+  `ArgumentNullException` naming `child`, where it threw `NullReferenceException`. Neither is
+  reported, because there is no diagnostics channel yet, and both XML docs say not to pass them and
+  that a later major version will throw. A grandchild made with a null text, through
+  `AddChild((string)null)` or `new ListItem(null)`, saved before and now throws
+  `ArgumentNullException` from the call, because the call cannot tell where the item will sit; that
+  one is not kept. The `<exception>` tags and the "a later major version will throw" paragraphs that
+  described the old behaviour are rewritten. `PageSize`, `DrawContext`, `FontReference`,
   `LayoutResult` and `RendererContext` still store a null, and are outside these three issues.
 
 - **An embedded font handle from another `Document` is refused (#544).** A handle's resource name

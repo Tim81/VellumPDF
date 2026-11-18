@@ -125,20 +125,40 @@ public sealed class ListItem
 
     /// <summary>Adds a nested child item. Returns this item.</summary>
     /// <remarks>
-    /// Children of <paramref name="child"/> are ignored; see <see cref="Children"/>. A null
-    /// <paramref name="child"/> is refused here (#523); it used to be stored, and the save threw
-    /// <see cref="NullReferenceException"/> when this item was laid out as a top-level item.
+    /// Children of <paramref name="child"/> are ignored; see <see cref="Children"/>.
+    /// <para>A null <paramref name="child"/> is not refused by this call, because the call cannot
+    /// know where this item will sit in the list. It is not added: <see cref="Children"/> never holds
+    /// a null. What happens at the save depends on that position, and it matches what the version
+    /// before #523 did. On a grandchild, an item that is itself another item's child, the null is
+    /// never read and the list renders. On a top-level item the save throws
+    /// <see cref="ArgumentNullException"/> naming <c>child</c> when it lays the list out, where it
+    /// used to throw <see cref="NullReferenceException"/>.</para>
+    /// <para><b>Do not pass a null child.</b> On a grandchild it is skipped today and not reported,
+    /// because there is no diagnostics channel yet. A later major version will throw
+    /// <see cref="ArgumentNullException"/> from this call whatever the position, and the diagnostics
+    /// channel will report it before then.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
-    /// <paramref name="child"/> is <see langword="null"/>.
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this call, when <paramref name="child"/> is <see langword="null"/> and this item is laid
+    /// out as a top-level item. <c>ParamName</c> is <c>child</c>. It is not raised when this item is
+    /// a grandchild.
     /// </exception>
     public ListItem AddChild(ListItem child)
     {
-        ArgumentNullException.ThrowIfNull(child);
+        if (child is null)
+        {
+            HasNullChild = true;
+            return this;
+        }
+
         _children ??= [];
         _children.Add(child);
         return this;
     }
+
+    /// <summary>True when <see cref="AddChild(ListItem)"/> was given a null.</summary>
+    internal bool HasNullChild { get; private set; }
 
     /// <summary>Adds a nested child item with the given text and optional style. Returns this item.</summary>
     /// <remarks>

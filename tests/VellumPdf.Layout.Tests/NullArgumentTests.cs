@@ -32,7 +32,6 @@ public sealed class NullArgumentTests
         new("new Heading(null)", "text", () => _ = new Heading(null!)),
         new("new Paragraph(runs: null)", "runs", () => _ = new Paragraph((IEnumerable<TextRun>)null!)),
         new("new Paragraph([null run])", "runs", () => _ = new Paragraph(new TextRun[] { null! })),
-        new("new TextRun(\"x\", null)", "Style", () => _ = new TextRun("x", null!)),
         new("new TextRun(null, style)", "Text", () => _ = new TextRun(null!, Style())),
         // #547 and #523: lists
         new("new ListItem(null)", "text", () => _ = new ListItem(null!)),
@@ -40,7 +39,6 @@ public sealed class NullArgumentTests
         new("ListItem.AddChild((string)null)", "text", () => new ListItem("p").AddChild((string)null!)),
         new("ListElement.Add((ListItem)null)", "item", () => new ListElement().Add((ListItem)null!)),
         new("new ListElement(style, [null item])", "items", () => _ = new ListElement(ListStyle.Unordered, new ListItem[] { null! })),
-        new("ListItem.AddChild((ListItem)null)", "child", () => new ListItem("p").AddChild((ListItem)null!)),
         // #547 and #523: tables
         new("Row.AddCell((Cell)null)", "cell", () => new TableElement().AddRow().AddCell((Cell)null!)),
         // #547: image, chart, band
@@ -154,5 +152,97 @@ public sealed class NullArgumentTests
 
         Assert.Equal(["A", "", "B"], withNull.Select(p => p.Text));
         Assert.Equal(withEmpty, withNull);
+    }
+
+    // ── Two nulls that are kept rendering ────────────────────────────────────
+
+    private static IReadOnlyList<ContentStreamReadback.TextPlacement> Placements(Document doc)
+    {
+        using var ms = new MemoryStream();
+        doc.Save(ms);
+        return ContentStreamReadback.TextPlacements(PdfTestUtil.DecompressAllFlatStreams(ms.ToArray()));
+    }
+
+    [Fact]
+    public void TextRun_withANullStyle_storesTheDefaultStyle_andDrawsAtItsSize()
+    {
+        var run = new TextRun("b", null!);
+
+        Assert.Same(TextStyle.Default, run.Style);
+
+        // The neighbour is Courier 10 pt and TextStyle.Default is Helvetica 12 pt. The font has to
+        // differ: ParagraphRenderer.SwitchFont emits Tf only when the font changes, not the size, so
+        // two Helvetica runs of different sizes both read back at the first size.
+        using var doc = new Document();
+        doc.Add(new Paragraph(new[] { new TextRun("a", new TextStyle { FontRef = new FontReference(Standard14.Courier), FontSize = 10 }), run }));
+        var placements = Placements(doc);
+
+        // "a " carries the space drawn at the boundary between two runs; see Paragraph.
+        Assert.Equal(["a ", "b"], placements.Select(p => p.Text));
+        Assert.Equal([10d, 12d], placements.Select(p => p.FontSize));
+    }
+
+    [Fact]
+    public void TextRun_withANullStyle_drawsExactlyWhatTheDefaultStyleDraws()
+    {
+        IReadOnlyList<ContentStreamReadback.TextPlacement> Draw(TextStyle? style)
+        {
+            using var doc = new Document();
+            doc.Add(new Paragraph(new[] { new TextRun("a", Style()), new TextRun(" ", style!), new TextRun("b", style!) }));
+            return Placements(doc);
+        }
+
+        Assert.Equal(Draw(TextStyle.Default), Draw(null));
+    }
+
+    [Fact]
+    public void TextRun_withANullText_stillThrowsFromTheConstructor()
+    {
+        var ex = Assert.Throws<ArgumentNullException>(() => new TextRun(null!, null!));
+
+        Assert.Equal("Text", ex.ParamName);
+    }
+
+    private static Document ListWithGrandchild(Action<ListItem> addToChild)
+    {
+        var doc = new Document();
+        var child = new ListItem("child", Style());
+        addToChild(child);
+        doc.Add(new ListElement(ListStyle.Unordered, [new ListItem("first", Style()).AddChild(child), new ListItem("second", Style())]));
+        return doc;
+    }
+
+    [Fact]
+    public void NullGrandchild_isSkipped_andTheListRendersAsIfItWereNeverAdded()
+    {
+        using var withNull = ListWithGrandchild(child => child.AddChild((ListItem)null!));
+        using var without = ListWithGrandchild(_ => { });
+
+        var placements = Placements(withNull);
+
+        Assert.Contains("first", placements.Select(p => p.Text));
+        Assert.Contains("child", placements.Select(p => p.Text));
+        Assert.Contains("second", placements.Select(p => p.Text));
+        Assert.Equal(Placements(without), placements);
+    }
+
+    [Fact]
+    public void NullGrandchild_isNotStored_soChildrenNeverHoldsANull()
+    {
+        var child = new ListItem("child").AddChild((ListItem)null!);
+
+        Assert.Null(child.Children);
+    }
+
+    [Fact]
+    public void NullChildOfATopLevelItem_isRefusedBySaveNamingChild()
+    {
+        using var doc = new Document();
+        doc.Add(new ListElement(ListStyle.Unordered).Add(new ListItem("first", Style()).AddChild((ListItem)null!)));
+        using var ms = new MemoryStream();
+
+        var ex = Assert.Throws<ArgumentNullException>(() => doc.Save(ms));
+
+        Assert.Equal("child", ex.ParamName);
     }
 }
