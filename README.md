@@ -4,11 +4,11 @@
 [![NuGet](https://img.shields.io/nuget/v/VellumPdf.Kernel.svg?label=VellumPdf.Kernel)](https://www.nuget.org/packages/VellumPdf.Kernel)
 [![NuGet](https://img.shields.io/nuget/v/VellumPdf.Conformance.svg?label=VellumPdf.Conformance)](https://www.nuget.org/packages/VellumPdf.Conformance)
 
-A modern, **dependency-free PDF generation library for .NET 10**, implemented
+A modern, **dependency-free PDF generation library for .NET 10 and .NET 11**, implemented
 clean-room from the open **ISO 32000** standard.
 
 > **Status: stable.** The public API is locked (analyzer-enforced) and
-> the library targets .NET 10. Core features are CI-validated — including
+> the library targets .NET 10 and .NET 11. Core features are CI-validated — including
 > PDF/A-2a/2b/2u and PDF/UA-1 conformance proven on every push with veraPDF.
 
 ## Why VellumPdf
@@ -328,7 +328,11 @@ as these milestones land. `VellumPdf.Conformance` graduated to Stable in 2.0.
 
 ## Building
 
-Requires the .NET 10 SDK.
+Requires the .NET 11 SDK. The libraries build for `net10.0` and `net11.0` and ship both, so a
+consumer on either runtime restores the matching assembly. The two target frameworks reach end of
+support on the same day, 2028-11-14, and the library keeps both until then.
+
+Running the test suite on `net10.0` also needs the .NET 10 runtime installed beside the SDK.
 
 ```bash
 dotnet build VellumPdf.slnx

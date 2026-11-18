@@ -6,11 +6,11 @@ _layout: landing
 
 [![CI](https://github.com/Tim81/VellumPDF/actions/workflows/ci.yml/badge.svg)](https://github.com/Tim81/VellumPDF/actions/workflows/ci.yml)
 
-A modern, **dependency-free PDF generation library for .NET 10**, implemented
+A modern, **dependency-free PDF generation library for .NET 10 and .NET 11**, implemented
 clean-room from the open **ISO 32000** standard.
 
 > **Status: stable.** The public API is locked (analyzer-enforced) and the
-> library targets .NET 10. Core features are CI-validated, including
+> library targets .NET 10 and .NET 11. Core features are CI-validated, including
 > PDF/A-2a/2b/2u and PDF/UA-1 conformance proven on every push with veraPDF.
 
 ## Packages

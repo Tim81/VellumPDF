@@ -3,7 +3,7 @@
 [![NuGet](https://img.shields.io/nuget/v/VellumPdf.Cli.svg)](https://www.nuget.org/packages/VellumPdf.Cli)
 [![CI](https://github.com/Tim81/VellumPDF/actions/workflows/ci.yml/badge.svg)](https://github.com/Tim81/VellumPDF/actions/workflows/ci.yml)
 
-`vellum-preflight` — the command-line PDF/A and PDF/UA validator from **[VellumPdf](https://github.com/Tim81/VellumPDF)**, a dependency-free PDF library for .NET 10. It checks a PDF against PDF/A-2b/2u/2a and PDF/UA-1 with the in-process `VellumPdf.Conformance` engine, with no JVM and no Docker.
+`vellum-preflight` — the command-line PDF/A and PDF/UA validator from **[VellumPdf](https://github.com/Tim81/VellumPDF)**, a dependency-free PDF library for .NET 10 and .NET 11. It checks a PDF against PDF/A-2b/2u/2a and PDF/UA-1 with the in-process `VellumPdf.Conformance` engine, with no JVM and no Docker.
 
 - Ships as a cross-platform .NET tool and as self-contained Native-AOT binaries.
 - Text, JSON, and SARIF 2.1.0 output; file, glob, directory, and stdin inputs.

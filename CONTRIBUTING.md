@@ -5,8 +5,10 @@ build, test, and submit changes to VellumPdf.
 
 ## Prerequisites
 
-- **.NET 10 SDK**, feature band 10.0.4xx — the exact pin is in `global.json`;
-  earlier feature bands are rejected.
+- **.NET 11 SDK**, feature band 11.0.1xx — the exact pin is in `global.json`;
+  earlier feature bands are rejected. The libraries and tests target both `net10.0` and
+  `net11.0`, so the **.NET 10 runtime** must be installed too: the 11.0 SDK does not carry it, and a
+  `net10.0` test host cannot start without it.
 - Before tagging a release: merge and CI-validate any `global.json`
   feature-band bump first. `release.yml` reads `global.json` from the tag's
   tree, so a stale pin ships a release built on a superseded SDK band.
@@ -161,11 +163,12 @@ that gap from the workflow side rather than in-process, since the suite runs
 each test assembly as its own process and nothing guarantees which one runs
 last. `ci.yml`'s Test step sets `ORACLE_INVOCATION_LOG`, which makes
 `ExternalTool.RunProcess` append one `tool<TAB>first-argument` line per
-successful, non-probe call to a per-process file — an identity probe and a
+successful, non-probe call to a per-process, per-target-framework file named `<base>.<tfm>.<pid>` — an identity probe and a
 launch that never started are both excluded, so neither can pad a tool's
 count without the tool having actually validated anything; a step after
-Test concatenates those files, sums a count per tool, and fails the build if
-any tool falls below a floor pinned next to that count. The env var is
+Test concatenates each target framework's files, sums a count per tool, and fails the build if
+any tool falls below a floor pinned next to that count under either `net10.0` or `net11.0`; a
+framework with no log files at all fails too. The env var is
 unset locally, so this is a no-op outside CI.
 
 A tool that runs and answers is not the same as a tool that discriminated.
@@ -191,8 +194,14 @@ own output directory as `testconfig.json` by `tests/Directory.Build.props`) rath
 switch:
 
 ```bash
-dotnet test VellumPdf.slnx -c Release --results-directory <dir> -- --coverlet
+dotnet test VellumPdf.slnx -c Release --results-directory-layout per-module --results-directory <dir> -- --coverlet
 ```
+
+`--results-directory-layout per-module` is required, not cosmetic: every test project now runs once
+per target framework, and coverlet.MTP names a report only by its write timestamp, so the flat layout
+puts the net10.0 and net11.0 reports of one project in the same directory, where two that finish in
+the same millisecond could overwrite each other. Per-module writes
+`<dir>/<project>/<tfm>_<arch>/`, which is also how the gate tells the reports apart.
 
 `coverlet.testconfig.json` scopes instrumentation to the eight shipping assemblies, the same
 scope `coverlet.runsettings` held under the old VSTest collector (#229), as an include allow-list

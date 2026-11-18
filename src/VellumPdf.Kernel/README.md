@@ -3,7 +3,7 @@
 [![NuGet](https://img.shields.io/nuget/v/VellumPdf.Kernel.svg)](https://www.nuget.org/packages/VellumPdf.Kernel)
 [![CI](https://github.com/Tim81/VellumPDF/actions/workflows/ci.yml/badge.svg)](https://github.com/Tim81/VellumPDF/actions/workflows/ci.yml)
 
-The low-level PDF generation kernel of **[VellumPdf](https://github.com/Tim81/VellumPDF)**, a dependency-free PDF library for .NET 10 implemented clean-room from ISO 32000. This is the object model and content-stream writer everything else builds on. It has **zero runtime dependencies** and is AOT- and trim-ready.
+The low-level PDF generation kernel of **[VellumPdf](https://github.com/Tim81/VellumPDF)**, a dependency-free PDF library for .NET 10 and .NET 11 implemented clean-room from ISO 32000. This is the object model and content-stream writer everything else builds on. It has **zero runtime dependencies** and is AOT- and trim-ready.
 
 - A `PdfCanvas` for precise drawing: text, paths, images, colour, and graphics state.
 - Fonts: the built-in Standard-14 faces plus TrueType and OpenType-CFF embedding and subsetting, with `ToUnicode` maps so text stays searchable and copy-paste-able.
