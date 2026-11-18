@@ -39,7 +39,8 @@ public sealed class PdfWriter
         if (!_activeContainers.Add(container))
         {
             throw new InvalidOperationException(
-                $"A PDF {(container is PdfArray ? "array" : container is PdfStream ? "stream" : "dictionary")} contains itself, directly or " +
+                $"A PDF {(container is PdfArray ? "array" : container is PdfStream ? "stream" : "dictionary")} " +
+                "contains itself, directly or " +
                 "through other arrays and dictionaries, so it cannot be written. Break the cycle, or " +
                 "refer to the object through an indirect reference.");
         }

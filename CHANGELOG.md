@@ -194,13 +194,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **What this release refuses although 1c61fa6 saved a file.** The criterion is that 1c61fa6 wrote
   a PDF for the input. Measured against that version, three refusals are of such an input. A second
-  `Save` of a `Document` whose layout had started and threw wrote a page with the line breaks of the
-  first attempt's width, and now throws `InvalidOperationException`; the file was valid, so this
-  one needs the maintainer's ruling. A foreign font handle whose font program the saving document
-  did not embed under the same name wrote a page that named a font its resources did not define, an
-  invalid file. A negative line width saved as `-3 w`, an invalid operand under ISO 32000-2,
-  8.4.3.2. The save-check precedence changes are listed with the save checks. Nothing else in this
-  section was checked for this, so it is not a claim that the list is complete.
+  `Save` of a `Document` whose layout had started and threw now throws `InvalidOperationException`.
+  The maintainer decided on 2026-11-18 to keep it: it refuses only a second `Save` after one that
+  threw once its layout had started, and the first `Save` already threw on 1c61fa6, so no document
+  that saved there now throws (#484). 1c61fa6 wrote the second call with pages doubled or with the
+  line breaks of the first attempt's width. Build a fresh `Document` to retry. A foreign font
+  handle whose font program the saving document did not embed under the same name wrote a page that
+  named a font its resources did not define, an invalid file. A negative line width saved as
+  `-3 w`, an invalid operand under ISO 32000-2, 8.4.3.2. The save-check precedence changes are
+  listed with the save checks. Nothing else in this section was checked for this, so it is not a
+  claim that the list is complete.
 
 - **An embedded font handle from another `Document` is refused unless the saving document embedded
   the same font program under the same name (#544).** A handle's resource name (`TT1`) is a counter

@@ -240,7 +240,8 @@ public sealed class ListRenderer : IRenderer
             // Re-layout to get the occupied heights at the current y position, offering the height
             // Layout offered. Bottom - y is the same height up to a rounding step, and one step is
             // enough to drop a line (#556); the fallback is for a renderer Layout never ran on.
-            var itemArea = new LayoutBox(area.X, y, area.Width, _offered is { } o ? o[i - _startItem] : area.Bottom - y);
+            var offeredHeight = _offered is { } o ? o[i - _startItem] : area.Bottom - y;
+            var itemArea = new LayoutBox(area.X, y, area.Width, offeredHeight);
             var itemCtx = new LayoutContext(itemArea);
 
             var markerH = isContinuation ? 0 : marker.Layout(itemCtx).OccupiedArea?.Height ?? 0;

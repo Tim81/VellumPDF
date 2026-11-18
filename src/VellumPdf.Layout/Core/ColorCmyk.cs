@@ -13,8 +13,8 @@ namespace VellumPdf.Layout.Core;
 /// <para>A non-finite channel passed to <see cref="VellumPdf.Canvas.PdfCanvas"/> is refused there
 /// with an <see cref="ArgumentException"/>, because neither <c>NaN</c> nor infinity is a PDF number
 /// (#509). A finite channel outside 0 to 1 is <b>not</b> refused, and is written as given.</para>
-/// <para><b>Attention</b>: keep each channel within 0 to 1, the range that clause requires. A later
-/// major version may refuse a channel outside it (#484), as for <see cref="ColorRgb"/>.</para>
+/// <para><b>Attention</b>: keep each channel within 0 to 1, the range that clause requires. 3.0 may
+/// refuse a channel outside it (#484), as for <see cref="ColorRgb"/>.</para>
 /// </remarks>
 public readonly record struct ColorCmyk
 {

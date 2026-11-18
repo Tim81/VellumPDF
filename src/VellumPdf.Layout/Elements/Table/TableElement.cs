@@ -142,7 +142,7 @@ public sealed class TableElement
     /// ratio to that width, even when they fit the available width on their own. With no auto
     /// column, that width is the whole available width. So one very large entry leaves the other
     /// explicit columns near zero: <c>1e200, 60, 70</c> resolves to about 451, 0 and 0 on an A4
-    /// page with the default margins, and nothing reports it. That is a contract tightening for the next major (#484), not
+    /// page with the default margins, and nothing reports it. That is a contract tightening for 3.0 (#484), not
     /// a refusal in a patch, because the table still renders. Entries whose sum overflows to
     /// infinity are accepted, and every column is scaled to zero, so the table is empty. That saved
     /// a valid file on 1c61fa6, so a patch does not turn it into an exception (#546). <b>Do not
