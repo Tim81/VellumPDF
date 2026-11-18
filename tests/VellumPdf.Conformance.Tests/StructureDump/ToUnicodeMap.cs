@@ -12,27 +12,33 @@ namespace VellumPdf.Conformance.Tests.StructureDump;
 /// </summary>
 /// <remarks>
 /// <b>Only <c>bfchar</c> and <c>bfrange</c> sections are read.</b> Everything else in the CMap
-/// program (<c>codespacerange</c>, <c>usecmap</c>, <c>cidrange</c>, procedure bodies) is skipped, so a
-/// source code is looked up by its numeric value alone and the codespace is not consulted. Lookup is
-/// total: a code that no entry covers returns <see langword="false"/>, it does not throw. A section
-/// that stops making sense (a token that is neither a hex string nor the expected keyword) ends that
-/// section, and parsing resumes at the next section keyword.
+/// program (<c>codespacerange</c>, <c>usecmap</c>, <c>cidrange</c>, procedure bodies) is skipped. A
+/// code is looked up by its numeric value and its byte length together, so a one-byte entry
+/// <c>&lt;41&gt;</c> does not answer for the two-byte code <c>0x0041</c>; the codespace itself is not
+/// consulted. Lookup is total: <see cref="TryMap"/> returns <see langword="false"/> for a code no
+/// entry covers and never throws, whatever the range bounds. A section that stops making sense (a
+/// token that is neither a hex string nor the expected keyword) ends that section, and parsing
+/// resumes at the next section keyword.
 /// <para>
 /// <b>Not bounded by a count of its own.</b> The entry count is at most the number of tokens in the
 /// stream, and the stream is the decoded <c>/ToUnicode</c> body the Reader already capped. A
 /// <c>bfrange</c> is stored as one range and never expanded, so a range over four-byte codes costs
-/// one entry, not 2^32.
+/// one entry, not 2^32; lookup is a binary search over ranges sorted by their lower bound.
 /// </para>
 /// <para>
-/// <b>Do not rely on later-wins.</b> When two entries cover one code the single-code
-/// <c>bfchar</c> entries are tried first, then ranges in file order; ISO 32000-2 does not say which
-/// of two overlapping definitions wins.
+/// <b>Do not rely on which of two overlapping definitions wins.</b> ISO 32000-2 does not say. Here a
+/// repeated <c>bfchar</c> for one code is later-wins, a <c>bfchar</c> beats any range, and among
+/// overlapping ranges the one that appears first in the file wins.
 /// </para>
 /// </remarks>
 internal sealed class ToUnicodeMap
 {
-    private readonly Dictionary<uint, string> _chars = [];
-    private readonly List<(uint Lo, uint Hi, string Dst, string[]? Array)> _ranges = [];
+    private readonly Dictionary<(int Length, uint Code), string> _chars = [];
+    private readonly List<RangeEntry> _ranges = [];
+    private RangeEntry[]? _sorted;
+    private uint[]? _prefixMaxHi;
+
+    private readonly record struct RangeEntry(int Length, uint Lo, uint Hi, string Dst, string[]? Array, int Order);
 
     /// <summary>Reads <paramref name="data"/> as a CMap program. Never throws on malformed input.</summary>
     internal static ToUnicodeMap Parse(ReadOnlySpan<byte> data)
@@ -47,8 +53,8 @@ internal sealed class ToUnicodeMap
             {
                 while (i + 1 < tokens.Count && IsHex(tokens[i]) && IsHex(tokens[i + 1]))
                 {
-                    if (TryCode(tokens[i], out var code))
-                        map._chars[code] = Utf16(tokens[i + 1]);
+                    if (TryCode(tokens[i], out var code, out var len))
+                        map._chars[(len, code)] = Utf16(tokens[i + 1]);
                     i += 2;
                 }
             }
@@ -56,11 +62,12 @@ internal sealed class ToUnicodeMap
             {
                 while (i + 2 < tokens.Count && IsHex(tokens[i]) && IsHex(tokens[i + 1]))
                 {
-                    var ok = TryCode(tokens[i], out var lo) & TryCode(tokens[i + 1], out var hi);
+                    var ok = TryCode(tokens[i], out var lo, out var len) & TryCode(tokens[i + 1], out var hi, out _);
+                    var order = map._ranges.Count;
                     if (IsHex(tokens[i + 2]))
                     {
                         if (ok && lo <= hi)
-                            map._ranges.Add((lo, hi, Utf16(tokens[i + 2]), null));
+                            map._ranges.Add(new RangeEntry(len, lo, hi, Utf16(tokens[i + 2]), null, order));
                         i += 3;
                     }
                     else if (tokens[i + 2] == "[")
@@ -70,7 +77,7 @@ internal sealed class ToUnicodeMap
                         while (j < tokens.Count && IsHex(tokens[j]))
                             items.Add(Utf16(tokens[j++]));
                         if (ok && lo <= hi)
-                            map._ranges.Add((lo, hi, "", [.. items]));
+                            map._ranges.Add(new RangeEntry(len, lo, hi, "", [.. items], order));
                         i = j < tokens.Count && tokens[j] == "]" ? j + 1 : j;
                     }
                     else
@@ -84,28 +91,61 @@ internal sealed class ToUnicodeMap
         return map;
     }
 
-    /// <summary>The Unicode text <paramref name="code"/> maps to, if any entry covers it.</summary>
-    internal bool TryMap(uint code, out string text)
+    /// <summary>The Unicode text the <paramref name="byteLength"/>-byte <paramref name="code"/> maps to, if an entry covers it.</summary>
+    internal bool TryMap(uint code, int byteLength, out string text)
     {
-        if (_chars.TryGetValue(code, out text!))
+        if (_chars.TryGetValue((byteLength, code), out text!))
             return true;
 
-        foreach (var (lo, hi, dst, array) in _ranges)
+        if (_sorted is null)
         {
-            if (code < lo || code > hi)
-                continue;
-            var offset = (int)(code - lo);
-            if (array is not null)
+            _sorted = [.. _ranges.OrderBy(r => r.Length).ThenBy(r => r.Lo).ThenBy(r => r.Order)];
+            _prefixMaxHi = new uint[_sorted.Length];
+            for (var k = 0; k < _sorted.Length; k++)
             {
-                if (offset >= array.Length)
-                    continue;
-                text = array[offset];
-                return true;
+                var prev = k > 0 && _sorted[k - 1].Length == _sorted[k].Length ? _prefixMaxHi[k - 1] : 0;
+                _prefixMaxHi[k] = Math.Max(prev, _sorted[k].Hi);
             }
+        }
 
-            if (dst.Length == 0)
+        // Last range of this length whose lower bound is <= code.
+        int lo = 0, hi = _sorted.Length - 1, at = -1;
+        while (lo <= hi)
+        {
+            var mid = lo + ((hi - lo) / 2);
+            var r = _sorted[mid];
+            if (r.Length < byteLength || (r.Length == byteLength && r.Lo <= code))
+            {
+                at = mid;
+                lo = mid + 1;
+            }
+            else
+            {
+                hi = mid - 1;
+            }
+        }
+
+        // Walk back while some earlier range of the same length can still reach the code, and keep
+        // the first-in-file one among those that cover it.
+        RangeEntry? best = null;
+        for (var k = at; k >= 0 && _sorted[k].Length == byteLength && _prefixMaxHi![k] >= code; k--)
+        {
+            var r = _sorted[k];
+            if (code < r.Lo || code > r.Hi)
                 continue;
-            text = dst[..^1] + (char)(ushort)(dst[^1] + offset);
+            var offset = (long)code - r.Lo;
+            if (r.Array is not null ? offset >= r.Array.Length : r.Dst.Length == 0)
+                continue;
+            if (best is null || r.Order < best.Value.Order)
+                best = r;
+        }
+
+        if (best is { } b)
+        {
+            var offset = (long)code - b.Lo;
+            text = b.Array is not null
+                ? b.Array[offset]
+                : b.Dst[..^1] + (char)((b.Dst[^1] + offset) & 0xFFFF);
             return true;
         }
 
@@ -115,10 +155,11 @@ internal sealed class ToUnicodeMap
 
     private static bool IsHex(string token) => token.Length >= 2 && token[0] == '<';
 
-    private static bool TryCode(string hexToken, out uint code)
+    private static bool TryCode(string hexToken, out uint code, out int length)
     {
         var bytes = HexBytes(hexToken);
         code = 0;
+        length = bytes.Length;
         if (bytes.Length is 0 or > 4)
             return false;
         foreach (var b in bytes)
@@ -133,7 +174,7 @@ internal sealed class ToUnicodeMap
         for (var i = 0; i + 1 < bytes.Length; i += 2)
             sb.Append((char)((bytes[i] << 8) | bytes[i + 1]));
         if (bytes.Length % 2 == 1)
-            sb.Append((char)bytes[^1]);
+            sb.Append('�'); // an odd trailing byte is not a UTF-16 code unit
         return sb.ToString();
     }
 

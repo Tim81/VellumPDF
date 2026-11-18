@@ -35,6 +35,30 @@ internal static class RawPdf
         return Build(objs);
     }
 
+    /// <summary>
+    /// Like <see cref="Doc"/> with several pages: page <c>i</c> (from 0) is object <c>100 + i</c> and its
+    /// content stream object <c>200 + i</c>; objects 1, 2 and 5 are the catalog, page tree and structure
+    /// tree root as in <see cref="Doc"/>. <paramref name="more"/> adds objects 6 to 99.
+    /// </summary>
+    internal static byte[] DocPages(string[] contents, string[] pageExtras, string rootExtra, params (int Num, string Body, string? Stream)[] more)
+    {
+        var kids = string.Join(' ', contents.Select((_, i) => $"{100 + i} 0 R"));
+        var objs = new List<(int Num, string Body, string? Stream)>
+        {
+            (1, "<< /Type /Catalog /Pages 2 0 R /StructTreeRoot 5 0 R >>", null),
+            (2, $"<< /Type /Pages /Kids [{kids}] /Count {contents.Length} >>", null),
+            (5, $"<< /Type /StructTreeRoot {rootExtra} >>", null),
+        };
+        for (var i = 0; i < contents.Length; i++)
+        {
+            objs.Add((100 + i, $"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents {200 + i} 0 R {pageExtras[i]} >>", null));
+            objs.Add((200 + i, "<< >>", contents[i]));
+        }
+
+        objs.AddRange(more);
+        return Build(objs);
+    }
+
     /// <summary>Writes <paramref name="objs"/> with a cross-reference table; object 1 is <c>/Root</c>.</summary>
     internal static byte[] Build(IReadOnlyList<(int Num, string Body, string? Stream)> objs)
     {

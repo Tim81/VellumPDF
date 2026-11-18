@@ -62,7 +62,9 @@ public sealed class StructureDumperTests
         Has("UNMARKED form1", lines);
         Has("  BDC /P {MCID=0}", lines);
         Has("    path fill", lines);
-        Has("0 problem line(s)", lines);
+
+        // The only marker is the form drawn outside any sequence; the MCR matched the form's MCID.
+        Has("1 problem line(s)", lines);
 
         // The same MCID 0 on the page's own stream would be a different key: an MCR without /Stm
         // for it must not match the form's content.
@@ -94,7 +96,7 @@ public sealed class StructureDumperTests
         var lines = Lines(pdf);
         Has("      OBJR Link p1", lines);
         Has(
-            "annot 0: Subtype=Link StructParent=1 -> Document/Link[0] Contents=present QuadPoints=present dest=URI",
+            "annot 0: Subtype=Link StructParent=1 -> Document/Link[0] Contents=\"c\" QuadPoints=present dest=URI",
             lines);
         Has("0 problem line(s)", lines);
     }
@@ -244,9 +246,9 @@ public sealed class StructureDumperTests
     {
         var map = ToUnicodeMap.Parse(Encoding.Latin1.GetBytes("1 beginbfrange <10> <12> [<0041> <0042> <0043>] endbfrange"));
 
-        Assert.True(map.TryMap(0x11, out var t));
+        Assert.True(map.TryMap(0x11, 1, out var t));
         Assert.Equal("B", t);
-        Assert.False(map.TryMap(0x13, out _));
+        Assert.False(map.TryMap(0x13, 1, out _));
     }
 
     // ── Problem lines ─────────────────────────────────────────────────────────────────────────
@@ -328,7 +330,7 @@ public sealed class StructureDumperTests
         for (var i = 0; i < count; i++)
         {
             var kids = i + 1 < count ? $"/K [{7 + i} 0 R]" : "";
-            objs.Add((6 + i, $"<< /Type /StructElem /S /Div /P 5 0 R {kids} >>", null));
+            objs.Add((6 + i, $"<< /Type /StructElem /S /Div /P {(i == 0 ? 5 : 5 + i)} 0 R {kids} >>", null));
         }
 
         return RawPdf.Doc("", "", "/K [6 0 R]", [.. objs]);
@@ -350,7 +352,8 @@ public sealed class StructureDumperTests
     public void NodeCap_isRefusedJustAbove_andAcceptedAtTheCap()
     {
         // The Document element is node 1, so this many null kids lands exactly on the cap.
-        Has("0 problem line(s)", Lines(ManyKids(StructureDumper.MaxNodes - 1)));
+        // Each null kid prints UNRESOLVED, and the footer counts every one of them.
+        Has("99999 problem line(s)", Lines(ManyKids(StructureDumper.MaxNodes - 1)));
 
         var ex = Assert.Throws<InvalidOperationException>(() => Dump(ManyKids(StructureDumper.MaxNodes)));
         Assert.Contains("node cap", ex.Message);
@@ -381,7 +384,9 @@ public sealed class StructureDumperTests
     {
         static byte[] Nested(int n) => RawPdf.Doc(string.Concat(Enumerable.Repeat("/Span BMC ", n)), "", "");
 
-        Has("0 problem line(s)", Lines(Nested(StructureDumper.MaxMarkedContentDepth)));
+        var lines = Lines(Nested(StructureDumper.MaxMarkedContentDepth));
+        Has("UNCLOSED-MC 64 p1", lines);
+        Has("1 problem line(s)", lines);
 
         var ex = Assert.Throws<InvalidOperationException>(() => Dump(Nested(StructureDumper.MaxMarkedContentDepth + 1)));
         Assert.Contains("Marked-content depth cap", ex.Message);
