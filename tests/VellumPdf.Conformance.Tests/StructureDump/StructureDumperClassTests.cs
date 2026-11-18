@@ -373,6 +373,21 @@ public sealed class StructureDumperClassTests
     }
 
     [Fact]
+    public void ALineLongerThanTheLineCap_isCut()
+    {
+        // 32 keys, each a dictionary of 32 keys, each an array of 32 integers: about 80,000 characters
+        // in one element line before the cap.
+        var leaf = "[" + string.Join(' ', Enumerable.Range(0, 32)) + "]";
+        var inner = "<< " + string.Join(' ', Enumerable.Range(0, 32).Select(i => $"/I{i:D2} {leaf}")) + " >>";
+        var outer = "<< " + string.Join(' ', Enumerable.Range(0, 32).Select(i => $"/O{i:D2} {inner}")) + " >>";
+        var pdf = RawPdf.Doc("", "", "/K [6 0 R]", (6, $"{DocElem} /X {outer} >>", null));
+
+        var line = Lines(pdf).Single(l => l.StartsWith("  Document", StringComparison.Ordinal));
+        Assert.EndsWith("…(line cut)", line);
+        Assert.True(line.Length <= 20_100, line.Length.ToString());
+    }
+
+    [Fact]
     public void CheckLinesAlone_hitTheOutputBudget()
     {
         // Three shallow levels of long names: the structure listing is about 20 characters per kid,
