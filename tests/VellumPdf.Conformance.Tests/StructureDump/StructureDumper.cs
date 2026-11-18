@@ -11,7 +11,7 @@ using VellumPdf.Reader.Content;
 
 namespace VellumPdf.Conformance.Tests.StructureDump;
 
-/// <summary>
+//// <summary>
 /// Prints the structure tree of a PDF, each page's marked content and each page's annotations as
 /// text, checks the parent tree against them, and prints a problem line where they disagree. A test
 /// pins that text as a golden file, so a later fix shows up as a diff.
@@ -25,17 +25,24 @@ namespace VellumPdf.Conformance.Tests.StructureDump;
 /// it cannot read. It reads the parent tree (§14.7.5.4) only to check it: the tree itself is not
 /// printed.
 /// <para>
-/// <b>Every marker is counted.</b> The last line, <c>N problem line(s)</c>, counts every printed line
-/// that starts (after its indentation) with one of the markers in <c>LineMarkers</c>, plus any
-/// annotation line carrying one of <c>InlineMarkers</c>; <see cref="CountProblems"/> is that count.
-/// The markers are <c>UNRESOLVED</c>, <c>CYCLE</c>, <c>DUPLICATE-ELEMENT</c>, <c>NO-PG</c>,
-/// <c>BAD-*</c>, <c>P-MISMATCH</c>, <c>UNMARKED</c>, <c>UNBALANCED-EMC</c>, <c>UNCLOSED-MC</c>,
-/// <c>MULTI-DO</c>, <c>DIAG</c> (a Reader content diagnostic), <c>PARENTTREE …</c>, <c>ORPHAN</c>,
-/// <c>MISSING</c>, <c>DUP-*</c>, <c>BOTH-STRUCTPARENT(S)</c>, <c>NO-STRUCTPARENTS</c>,
-/// <c>NO-OBJR</c>, <c>STM-NOT-RUN</c> and <c>ANNOTS UNRESOLVED</c>, and on annotation lines
-/// <c>NO-ENTRY</c>, <c>NOT-AN-ELEMENT</c>, <c>BAD-KEY</c>, <c>dest=CYCLE</c> and <c>dest=unresolved</c>.
-/// A <c>0 problem line(s)</c> dump therefore has none of them anywhere. The <c>line</c> marker (a new
-/// text line) is layout information, not a problem.
+/// <b>Problem lines report structural inconsistencies, not PDF/UA findings.</b> A golden can show a
+/// defect (a bare artifact, a split list item, a missing alternative text) with
+/// <c>0 problem line(s)</c>; the footer says only that the structure tree, the parent tree, the
+/// content and the annotations agree with each other and are well formed.
+/// </para>
+/// <para>
+/// <b>Problems are counted when they are emitted.</b> The last line, <c>N problem line(s)</c>, is a
+/// counter incremented by each line created as a problem; nothing reads printed text back to decide
+/// what was one, so document text that looks like a marker is not counted. The kinds are
+/// <c>UNRESOLVED</c>, <c>CYCLE</c>, <c>DUPLICATE-ELEMENT</c>, <c>NO-PG</c>, <c>BAD-*</c> (including
+/// <c>BAD-PROPERTIES</c> for a named property list that does not resolve), <c>P-MISMATCH</c>,
+/// <c>UNMARKED</c>, <c>UNBALANCED-EMC</c>, <c>UNCLOSED-MC</c>, <c>MULTI-DO</c>,
+/// <c>FORM-MCIDS-INSIDE-CONTENT-ITEM</c>, <c>DIAG</c> (a Reader content diagnostic),
+/// <c>PARENTTREE …</c>, <c>ORPHAN</c>, <c>MISSING</c>, <c>DUP-*</c>, <c>BOTH-STRUCTPARENT(S)</c>,
+/// <c>NO-STRUCTPARENTS</c>, <c>NO-OBJR</c>, <c>STM-NOT-RUN</c> and <c>ANNOTS UNRESOLVED</c>, and on an
+/// annotation line <c>NO-ENTRY</c>, <c>NOT-AN-ELEMENT</c>, <c>BAD-KEY</c>, <c>dest=CYCLE</c> and
+/// <c>dest=unresolved</c>. The <c>line</c> marker (a new text line) is layout information, not a
+/// problem.
 /// </para>
 /// <para>
 /// <b>A cap is refused, not truncated.</b> <see cref="Dump"/> throws
@@ -45,13 +52,24 @@ namespace VellumPdf.Conformance.Tests.StructureDump;
 /// <see cref="MaxParentTreeDepth"/>, marked content nests deeper than
 /// <see cref="MaxMarkedContentDepth"/> (counted across a page and every form it draws; the Reader's
 /// own cap is not a bound for a visitor, because the Reader forwards the operators it ignores), or
-/// the printed values (element attributes, property lists, annotation fields) together exceed
-/// <see cref="MaxFormattedChars"/> characters. The printed length of one value, array, string or
-/// name is capped separately at 200 characters and says so with <c>…(+N)</c>. An attribute object
-/// reached through an indirect reference is expanded where it is first met, and printed as
-/// <c>&lt;same as path&gt;</c> afterwards. The output size is otherwise proportional to the content:
-/// the only bound on a page's content is the Reader's own decoded-bytes budget. A document the Reader
-/// cannot open throws whatever <c>PdfReader.Open</c> throws, usually <see cref="InvalidDataException"/>.
+/// the dump would exceed <see cref="MaxOutputChars"/> characters. Every line, whichever section it
+/// belongs to, is charged against that budget when it is created, so the output is bounded by it
+/// whatever the input. A single printed value is also capped: a string, a name or a dictionary key
+/// at 200 characters, an element's <c>/S</c> in a path at 64, and a path at 200 (the tail is kept,
+/// as in <c>…/LBody[1]/P[0]</c>), each saying so with <c>…(+N)</c> or a leading <c>…</c>. An
+/// attribute object reached through an indirect reference is expanded where it is first met, and
+/// printed as <c>&lt;same as path&gt;</c> afterwards. Memory is not bounded by the budget alone: the
+/// structure tree is held in full (at most <see cref="MaxNodes"/> nodes), and a page's content is
+/// bounded only by the Reader's own decoded-bytes budget. A document the Reader cannot open throws
+/// whatever <c>PdfReader.Open</c> throws, usually <see cref="InvalidDataException"/>.
+/// </para>
+/// <para>
+/// <b>Document text is escaped.</b> Every name, key, string and type that reaches the output goes
+/// through one escape: control, format, separator and private-use characters print as
+/// <c>\u{XXXX}</c>, so a name such as <c>/Span#0AORPHAN</c> stays on its line. An integer field
+/// (MCID, parent-tree key, <c>/StructParent(s)</c>, <c>/ParentTreeNextKey</c>) is read by one
+/// routine: a real number, a name, a negative number or one past <see cref="int.MaxValue"/> is
+/// reported as <c>BAD-*</c>, never read as absent and never truncated.
 /// </para>
 /// <para>
 /// <b>Text is decoded through <c>/ToUnicode</c> only.</b> A show operand prints as Unicode when the
@@ -63,23 +81,32 @@ namespace VellumPdf.Conformance.Tests.StructureDump;
 /// TJ adjustments as spaces, or applies a font's own encoding. A text string (<c>/Alt</c>,
 /// <c>/T</c>, <c>/Contents</c>) is read as UTF-16BE when it starts with a byte order mark FE FF, as
 /// UTF-8 after EF BB BF, and as Latin-1 otherwise, which differs from PDFDocEncoding in 0x18-0x1F and
-/// 0x80-0x9E.
+/// 0x80-0x9E. A CMap is parsed once per font dictionary for the whole document.
 /// </para>
 /// <para>
-/// <b>What is not printed.</b> Object numbers never appear (a form is <c>form{n}</c>, numbered per
-/// page in order of first invocation; an element is its index path). Numbers print with the
-/// invariant culture, <c>"0.##"</c>, and <c>-0</c> prints as <c>0</c>, as does the baseline compared
-/// for the <c>line</c> marker. Every key of a structure element except <c>/K /P /Pg /S /Type</c> is
-/// printed; <c>/P</c> is checked against the element being walked instead (<c>P-MISMATCH</c>).
-/// <c>/Pg</c> is read from the element or the MCR/OBJR itself and is not inherited from an ancestor,
-/// because that is what the writer emits. A form XObject's marked-content identifiers belong to that
-/// form and its <c>/StructParents</c>, not to the page. A form that carries MCIDs and is drawn more
-/// than once is reported as <c>MULTI-DO</c>: ISO 32000-2 §14.7.5.2 says such a form shall be
-/// incorporated into the logical structure only by drawing it from inside a marked-content
-/// sequence, so MCIDs inside it cannot be referenced. Its MCIDs are counted once, and it is labelled
-/// by the page that drew it first. An MCR whose
-/// <c>/Stm</c> is an annotation appearance stream prints <c>STM-NOT-RUN</c>, because appearance
-/// streams are not run here.
+/// <b>What is not printed or recognised.</b> Object numbers never appear (a form is
+/// <c>form{n}</c>, numbered per page in order of first invocation; an element is its index path).
+/// Numbers print with the invariant culture, <c>"0.##"</c>, and <c>-0</c> prints as <c>0</c>. Every
+/// key of a structure element except <c>/K /P /Pg /S /Type</c> is printed; <c>/P</c> is checked
+/// against the element being walked instead (<c>P-MISMATCH</c>). <c>/Pg</c> is read from the element
+/// or the MCR/OBJR itself and is not inherited from an ancestor, because that is what the writer
+/// emits. The <c>line</c> marker compares the device-space y of the text line origin, so text
+/// rotated a quarter turn, whose lines advance in x, gets a marker only once, before its first show.
+/// </para>
+/// <para>
+/// <b>Forms.</b> A form XObject's marked-content identifiers belong to that form and its
+/// <c>/StructParents</c>, not to the page. ISO 32000-2 §14.7.5.2 allows a form into the logical
+/// structure in two ways: drawn by a <c>Do</c> inside a marked-content sequence that is a content
+/// item, in which case "the form XObject shall not, in turn, contain any marked-content sequences
+/// associated with this or other structure elements"; or holding such sequences itself, in which
+/// case no <c>Do</c> that paints it "shall be part of a logical structure content item". A form
+/// that has an MCID-carrying sequence and is painted inside one is reported as
+/// <c>FORM-MCIDS-INSIDE-CONTENT-ITEM</c>. The same clause says a form painted with several
+/// <c>Do</c> operators "shall be incorporated into the document's logical structure only by the
+/// first method", so a form that carries MCIDs and is drawn more than once is reported as
+/// <c>MULTI-DO</c>; its MCIDs are counted once, and it is labelled by the page that drew it first.
+/// An MCR whose <c>/Stm</c> is an annotation appearance stream prints <c>STM-NOT-RUN</c>, because
+/// appearance streams are not run here.
 /// </para>
 /// <para>
 /// <b>Do not pass an encrypted document expecting readable text.</b> It is opened with no password,
@@ -103,6 +130,12 @@ internal static class StructureDumper
     internal const int MaxMarkedContentDepth = 64;
 
     /// <summary>
+    /// Most characters, summed over every line of the dump, <see cref="Dump"/> accepts. Every printed
+    /// line is charged when it is created, so no section can grow past it.
+    /// </summary>
+    internal const int MaxOutputChars = 8_000_000;
+
+    /// <summary>
     /// Dumps <paramref name="pdf"/>. <paramref name="knownDefects"/> is printed as the first line when
     /// non-empty, so a golden reads as "wrong on purpose until these land".
     /// </summary>
@@ -118,9 +151,15 @@ internal static class StructureDumper
     // Page value for a /Pg that is present but is not a page of this document; -1 is "absent".
     private const int BadPg = -2;
 
+    private const int MaxTextChars = 200;
+    private const int MaxNameChars = 64;
+    private const int MaxPathChars = 200;
+
     private readonly record struct StreamKey(int Page, int FormObj);
 
     private enum KidKind { Mcid, Mcr, Objr, Elem, Problem }
+
+    private enum IntRead { Absent, Ok, Bad }
 
     private sealed class Kid
     {
@@ -130,17 +169,20 @@ internal static class StructureDumper
         internal int StmObj = -1;
         internal Elem? Child;
         internal string Text = "";
-        internal PdfDictionary? Obj;
         internal string Subtype = "";
         internal bool BadStm;
     }
 
+    // Paths are computed on demand from the parent chain, never stored: a stored path per element is
+    // depth times name length of memory per node.
     private sealed class Elem
     {
         internal required PdfDictionary Dict;
         internal string Type = "?";
         internal string Display = "?";
-        internal string Path = "";
+        internal Elem? Parent;
+        internal int Index;
+        internal int ElemCount;
         internal int Page = -1;
         internal readonly List<Kid> Kids = [];
     }
@@ -160,6 +202,8 @@ internal static class StructureDumper
         internal readonly Dictionary<int, int> Forms = [];
     }
 
+    private delegate void LineSink(string line, bool problem = false);
+
     private sealed class Session(PdfDocumentReader reader)
     {
         private static readonly PdfName KeyK = new("K");
@@ -169,6 +213,8 @@ internal static class StructureDumper
         private static readonly PdfName KeyMcid = new("MCID");
         private static readonly PdfName KeyStm = new("Stm");
         private static readonly PdfName KeyObj = new("Obj");
+        private static readonly PdfName KeyStructParent = new("StructParent");
+        private static readonly PdfName KeyStructParents = new("StructParents");
 
         private readonly PdfDocumentReader _reader = reader;
         private readonly Dictionary<int, int> _pageByObj = [];
@@ -184,10 +230,37 @@ internal static class StructureDumper
         private readonly Dictionary<int, PdfObject> _treeByKey = [];
         private readonly List<string> _problems = [];
         private readonly List<string> _treeProblems = [];
+        private readonly Dictionary<PdfDictionary, FontDecoder> _fontDecoders = new(ReferenceEqualityComparer.Instance);
         private PdfDictionary? _roleMap;
         private PdfDictionary? _structRoot;
         private Elem? _root;
         private int _nodes;
+
+        // ── Output ─────────────────────────────────────────────────────────────────────────────
+
+        private long _emitted;
+        private int _problemCount;
+
+        // Every line of the dump is created through Note or Problem, so every line is charged against
+        // MaxOutputChars, and every problem line is counted the moment it is created. The footer
+        // prints that counter; nothing reads the printed text back to decide what was a problem.
+        internal string Note(List<string> sink, string line)
+        {
+            _emitted += line.Length + 1;
+            if (_emitted > MaxOutputChars)
+                throw new InvalidOperationException(
+                    $"Output budget exceeded: the dump would be longer than {Inv(MaxOutputChars)} characters.");
+            sink.Add(line);
+            return line;
+        }
+
+        internal string Problem(List<string> sink, string line)
+        {
+            _problemCount++;
+            return Note(sink, line);
+        }
+
+        // ── Run ────────────────────────────────────────────────────────────────────────────────
 
         internal string Run(IReadOnlyList<string>? knownDefects)
         {
@@ -210,7 +283,6 @@ internal static class StructureDumper
             {
                 _root = new Elem { Dict = _structRoot, Type = "StructTreeRoot", Display = "StructTreeRoot" };
                 WalkKids(_root, _structRoot.Get(KeyK), 1);
-                AssignPaths(_root);
                 ReadParentTree();
             }
 
@@ -221,8 +293,16 @@ internal static class StructureDumper
 
             RunChecks(annots);
 
+            // Lines already created (and charged) in the content, annotation and check lists are
+            // copied as they are; the rest are created here.
             var lines = new List<string>();
-            void L(string s) => lines.Add(s);
+            void L(string s, bool problem = false)
+            {
+                if (problem)
+                    Problem(lines, s);
+                else
+                    Note(lines, s);
+            }
 
             if (knownDefects is { Count: > 0 })
                 L("known defects: " + string.Join(", ", knownDefects));
@@ -243,22 +323,17 @@ internal static class StructureDumper
             {
                 L($"== page {Inv(i + 1)} content");
                 L("Tabs: " + (Res(pages[i].Dictionary.Get(new PdfName("Tabs"))) is { } tabs ? Fmt(tabs, 0) : "absent"));
-                foreach (var line in _sections[i].Lines)
-                    L(line);
+                lines.AddRange(_sections[i].Lines);
                 L($"== page {Inv(i + 1)} annotations");
                 if (annotLines[i].Count == 0)
                     L("(none)");
-                foreach (var line in annotLines[i])
-                    L(line);
+                lines.AddRange(annotLines[i]);
             }
 
             L("== checks");
-            foreach (var p in _treeProblems.Concat(_problems))
-                L(p);
-
-            // The footer counts every marker the dump printed, in any section, not only this one.
-            var count = CountProblems(lines);
-            L($"{Inv(count)} problem line(s)");
+            lines.AddRange(_treeProblems);
+            lines.AddRange(_problems);
+            L($"{Inv(_problemCount)} problem line(s)");
 
             var sb = new StringBuilder();
             foreach (var line in lines)
@@ -268,7 +343,7 @@ internal static class StructureDumper
 
         // ── Header ─────────────────────────────────────────────────────────────────────────────
 
-        private void WriteHeader(Action<string> l, int pageCount)
+        private void WriteHeader(LineSink l, int pageCount)
         {
             var cat = _reader.Catalog;
             l("Lang: " + (Res(cat.Get(new PdfName("Lang"))) is { } lang ? Fmt(lang, 0) : "absent"));
@@ -282,15 +357,38 @@ internal static class StructureDumper
                 return;
             }
 
-            if (Res(_structRoot.Get(new PdfName("ParentTreeNextKey"))) is PdfInteger next)
+            switch (ReadInt(_structRoot.Get(new PdfName("ParentTreeNextKey")), out var next))
             {
-                var exceeds = _tree.Count == 0 || _tree.All(t => next.Value > t.Key);
-                l($"ParentTreeNextKey: {Inv(next.Value)} (exceeds every key: {(exceeds ? "yes" : "no")})");
+                case IntRead.Ok:
+                    var exceeds = _tree.Count == 0 || _tree.All(t => next > t.Key);
+                    l($"ParentTreeNextKey: {Inv(next)} (exceeds every key: {(exceeds ? "yes" : "no")})");
+                    break;
+                case IntRead.Bad:
+                    l("ParentTreeNextKey: BAD-KEY", true);
+                    break;
+                default:
+                    l("ParentTreeNextKey: absent");
+                    break;
             }
-            else
-            {
-                l("ParentTreeNextKey: absent");
-            }
+        }
+
+        // The one reader of integer fields (MCID, tree keys, StructParent(s), ParentTreeNextKey): a
+        // real, a name, a negative number or one past int.MaxValue is Bad, never silently absent and
+        // never truncated. Callers print a counted BAD-* line for Bad.
+        private IntRead ReadInt(PdfObject? raw, out int value)
+        {
+            value = 0;
+            if (raw is null or PdfNull)
+                return IntRead.Absent;
+
+            var r = raw is PdfIndirectReference ? Res(raw) : raw;
+            if (r is null)
+                return IntRead.Bad;
+            if (r is PdfNull)
+                return IntRead.Absent;
+            if (r is PdfInteger i && TryInt(i.Value, out value))
+                return IntRead.Ok;
+            return IntRead.Bad;
         }
 
         // ── Structure tree ─────────────────────────────────────────────────────────────────────
@@ -318,11 +416,12 @@ internal static class StructureDumper
                     throw new InvalidOperationException(
                         $"Structure node cap exceeded: more than {Inv(MaxNodes)} structure nodes.");
 
-                // An integer kid stored as an indirect object is still an integer kid.
-                var value = raw is PdfInteger ? raw : Res(raw);
-                if (value is PdfInteger mc)
+                // An integer kid stored as an indirect object is still an integer kid, and a real is a
+                // malformed one, not an unresolved reference.
+                var value = raw is PdfInteger or PdfReal ? raw : Res(raw);
+                if (value is PdfInteger or PdfReal)
                 {
-                    if (!TryInt(mc.Value, out var mcid0))
+                    if (ReadInt(value, out var mcid0) != IntRead.Ok)
                     {
                         owner.Kids.Add(new Kid { Kind = KidKind.Problem, Text = "BAD-MCID" });
                         continue;
@@ -342,15 +441,15 @@ internal static class StructureDumper
                 var type = Res(d.Get(PdfName.Type)) is PdfName tn ? tn.Value : "";
                 if (type == "MCR")
                 {
-                    var mcid = Res(d.Get(KeyMcid)) is PdfInteger mi && TryInt(mi.Value, out var m) ? m : -1;
+                    var mcidOk = ReadInt(d.Get(KeyMcid), out var mcid) == IntRead.Ok;
                     var page = d.Get(KeyPg) is { } pg ? PageOf(pg) : owner.Page;
                     var stmRaw = d.Get(KeyStm);
                     var stm = stmRaw is PdfIndirectReference sr ? sr.ObjectNumber : -1;
-                    var kid = new Kid { Kind = KidKind.Mcr, Mcid = mcid, Page = page, StmObj = stm, BadStm = stmRaw is not null && stm < 0 };
-                    owner.Kids.Add(kid);
-                    if (mcid < 0)
+                    var badStm = stmRaw is not null && stm < 0;
+                    owner.Kids.Add(new Kid { Kind = KidKind.Mcr, Mcid = mcidOk ? mcid : -1, Page = page, StmObj = stm, BadStm = badStm });
+                    if (!mcidOk)
                         owner.Kids.Add(new Kid { Kind = KidKind.Problem, Text = "BAD-MCID" });
-                    else
+                    else if (!badStm)
                         RecordMcid(owner, page, stm, mcid);
                 }
                 else if (type == "OBJR")
@@ -358,9 +457,9 @@ internal static class StructureDumper
                     var page = d.Get(KeyPg) is { } pg ? PageOf(pg) : owner.Page;
                     var target = Res(d.Get(KeyObj)) as PdfDictionary;
                     var sub = target is null ? "?"
-                        : Res(target.Get(PdfName.Subtype)) is PdfName sn ? sn.Value
-                        : Res(target.Get(PdfName.Type)) is PdfName tn2 ? tn2.Value : "?";
-                    owner.Kids.Add(new Kid { Kind = KidKind.Objr, Page = page, Obj = target, Subtype = sub });
+                        : Res(target.Get(PdfName.Subtype)) is PdfName sn ? Safe(sn.Value, MaxNameChars)
+                        : Res(target.Get(PdfName.Type)) is PdfName tn2 ? Safe(tn2.Value, MaxNameChars) : "?";
+                    owner.Kids.Add(new Kid { Kind = KidKind.Objr, Page = page, Subtype = sub });
                     _objrs.Add((owner, target, page));
                 }
                 else if (ReferenceEquals(d, _structRoot))
@@ -385,9 +484,11 @@ internal static class StructureDumper
                     var elem = new Elem
                     {
                         Dict = d,
-                        Type = s,
+                        Type = Safe(s, MaxNameChars),
                         Display = DisplayType(s),
                         Page = d.Get(KeyPg) is { } ep ? PageOf(ep) : -1,
+                        Parent = owner,
+                        Index = owner.ElemCount++,
                     };
                     _elemByDict[d] = elem;
                     owner.Kids.Add(new Kid { Kind = KidKind.Elem, Child = elem });
@@ -411,56 +512,65 @@ internal static class StructureDumper
 
         private string DisplayType(string s)
         {
+            var shown = Safe(s, MaxNameChars);
             if (StructureTree.StandardTypes.Contains(s))
-                return s;
+                return shown;
 
             var cur = s;
             var seen = new HashSet<string>(StringComparer.Ordinal) { s };
             for (var i = 0; i < 32; i++)
             {
                 if (_roleMap is null || Res(_roleMap.Get(new PdfName(cur))) is not PdfName next)
-                    return s + "→?";
+                    return shown + "→?";
                 if (StructureTree.StandardTypes.Contains(next.Value))
-                    return s + "→" + next.Value;
+                    return shown + "→" + Safe(next.Value, MaxNameChars);
                 if (!seen.Add(next.Value))
-                    return s + "→?";
+                    return shown + "→?";
                 cur = next.Value;
             }
 
-            return s + "→?";
+            return shown + "→?";
         }
 
-        // The index is among a parent's element kids only; a single top-level element is printed
-        // bare so the path reads "Document/L[0]/LI[1]".
-        private static void AssignPaths(Elem root)
+        // "Document/L[0]/LI[1]": the index is among a parent's element kids only, and a single
+        // top-level element is printed bare. Built from the leaf upwards and cut at MaxPathChars
+        // keeping the tail, so a long path costs a bounded amount of time and output.
+        private string PathOf(Elem e)
         {
-            var top = root.Kids.Where(k => k.Kind == KidKind.Elem).Select(k => k.Child!).ToList();
-            for (var i = 0; i < top.Count; i++)
+            if (ReferenceEquals(e, _root))
+                return "StructTreeRoot";
+
+            var segments = new List<string>();
+            var length = 0;
+            var truncated = false;
+            for (var cur = e; cur is not null && !ReferenceEquals(cur, _root); cur = cur.Parent)
             {
-                top[i].Path = top.Count == 1 ? top[i].Type : top[i].Type + "[" + Inv(i) + "]";
-                AssignChildPaths(top[i]);
+                var seg = cur.Parent is { } p && ReferenceEquals(p, _root) && p.ElemCount == 1
+                    ? cur.Type
+                    : cur.Type + "[" + Inv(cur.Index) + "]";
+                if (segments.Count > 0 && length + seg.Length + 1 > MaxPathChars)
+                {
+                    truncated = true;
+                    break;
+                }
+
+                segments.Add(seg);
+                length += seg.Length + 1;
             }
+
+            segments.Reverse();
+            return (truncated ? "…/" : "") + string.Join('/', segments);
         }
 
-        private static void AssignChildPaths(Elem e)
-        {
-            var i = 0;
-            foreach (var kid in e.Kids.Where(k => k.Kind == KidKind.Elem))
-            {
-                kid.Child!.Path = e.Path + "/" + kid.Child.Type + "[" + Inv(i++) + "]";
-                AssignChildPaths(kid.Child);
-            }
-        }
-
-        private void PrintKids(Elem e, int indent, Action<string> l)
+        private void PrintKids(Elem e, int indent, LineSink l)
         {
             var pad = new string(' ', indent * 2);
             void PageProblem(Kid kid)
             {
                 if (kid.Page == BadPg)
-                    l(pad + "BAD-PG");
+                    l(pad + "BAD-PG", true);
                 else if (kid.Page < 0)
-                    l(pad + "NO-PG");
+                    l(pad + "NO-PG", true);
             }
 
             foreach (var kid in e.Kids)
@@ -475,7 +585,7 @@ internal static class StructureDumper
                         var stm = kid.StmObj >= 0 ? " stm " + FormLabelOnPage(kid.StmObj, kid.Page) : "";
                         l($"{pad}MCR mcid {Inv(kid.Mcid)} {PageText(kid.Page)}{stm}");
                         if (kid.BadStm)
-                            l(pad + "BAD-STM");
+                            l(pad + "BAD-STM", true);
                         PageProblem(kid);
                         break;
                     case KidKind.Objr:
@@ -483,7 +593,7 @@ internal static class StructureDumper
                         PageProblem(kid);
                         break;
                     case KidKind.Problem:
-                        l(pad + kid.Text);
+                        l(pad + kid.Text, true);
                         break;
                     case KidKind.Elem:
                         l(pad + ElementLine(kid.Child!));
@@ -510,11 +620,11 @@ internal static class StructureDumper
                 .OrderBy(kv => kv.Key.Value, StringComparer.Ordinal);
             foreach (var kv in entries)
             {
-                sb.Append(' ').Append(Cap(kv.Key.Value)).Append('=');
-                sb.Append(kv.Key.Value is "A" or "C" ? FmtAttrList(kv.Value, e.Path.Length > 0 ? e.Path : e.Type) : Fmt(kv.Value, 0));
+                sb.Append(' ').Append(Safe(kv.Key.Value, MaxTextChars)).Append('=');
+                sb.Append(kv.Key.Value is "A" or "C" ? FmtAttrList(kv.Value, PathOf(e)) : Fmt(kv.Value, 0));
             }
 
-            return Charge(sb.ToString());
+            return sb.ToString();
         }
 
         // ── ParentTree ─────────────────────────────────────────────────────────────────────────
@@ -536,13 +646,13 @@ internal static class StructureDumper
                     $"ParentTree depth cap exceeded: nesting deeper than {Inv(MaxParentTreeDepth)}.");
             if (onStack.Contains(node))
             {
-                _treeProblems.Add("PARENTTREE CYCLE");
+                Problem(_treeProblems, "PARENTTREE CYCLE");
                 return;
             }
 
             if (!seen.Add(node))
             {
-                _treeProblems.Add("PARENTTREE SHARED-NODE");
+                Problem(_treeProblems, "PARENTTREE SHARED-NODE");
                 return;
             }
 
@@ -552,26 +662,26 @@ internal static class StructureDumper
             {
                 if (Res(numsRaw) is not PdfArray nums)
                 {
-                    _treeProblems.Add("PARENTTREE BAD-NUMS");
+                    Problem(_treeProblems, "PARENTTREE BAD-NUMS");
                 }
                 else
                 {
                     if (nums.Count % 2 == 1)
-                        _treeProblems.Add("PARENTTREE ODD-NUMS");
+                        Problem(_treeProblems, "PARENTTREE ODD-NUMS");
                     for (var i = 0; i + 1 < nums.Count; i += 2)
                     {
                         if (++_nodes > MaxNodes)
                             throw new InvalidOperationException(
                                 $"Structure node cap exceeded: more than {Inv(MaxNodes)} structure nodes.");
-                        if (Res(nums[i]) is not PdfInteger key || !TryInt(key.Value, out var k))
+                        if (ReadInt(nums[i], out var k) != IntRead.Ok)
                         {
-                            _treeProblems.Add("PARENTTREE BAD-KEY");
+                            Problem(_treeProblems, "PARENTTREE BAD-KEY");
                             continue;
                         }
 
                         _tree.Add((k, nums[i + 1]));
                         if (!_treeByKey.TryAdd(k, nums[i + 1]))
-                            _treeProblems.Add($"DUP-KEY {Inv(k)}");
+                            Problem(_treeProblems, $"DUP-KEY {Inv(k)}");
                     }
                 }
             }
@@ -583,7 +693,7 @@ internal static class StructureDumper
                     if (Res(kids[i]) is PdfDictionary child)
                         WalkNumberTree(child, depth + 1, onStack, seen);
                     else
-                        _treeProblems.Add("PARENTTREE UNRESOLVED");
+                        Problem(_treeProblems, "PARENTTREE UNRESOLVED");
                 }
             }
 
@@ -616,7 +726,7 @@ internal static class StructureDumper
                 return lines;
             if (Res(annotsRaw) is not PdfArray arr)
             {
-                lines.Add("ANNOTS UNRESOLVED");
+                Problem(lines, "ANNOTS UNRESOLVED");
                 return lines;
             }
 
@@ -624,36 +734,41 @@ internal static class StructureDumper
             {
                 if (Res(arr[i]) is not PdfDictionary a)
                 {
-                    lines.Add($"annot {Inv(i)}: UNRESOLVED");
+                    Problem(lines, $"annot {Inv(i)}: UNRESOLVED");
                     continue;
                 }
 
                 all.Add((pageNo, i, a));
                 CollectAppearanceStreams(a);
-                var sub = Res(a.Get(PdfName.Subtype)) is PdfName sn ? Cap(sn.Value) : "?";
+                var bad = false;
+                var sub = Res(a.Get(PdfName.Subtype)) is PdfName sn ? Safe(sn.Value, MaxNameChars) : "?";
                 var sb = new StringBuilder($"annot {Inv(i)}: Subtype={sub}");
-                if (Res(a.Get(new PdfName("StructParent"))) is PdfInteger sp)
+                switch (ReadInt(a.Get(KeyStructParent), out var spk))
                 {
-                    if (!TryInt(sp.Value, out var spk))
-                    {
-                        sb.Append(" StructParent=BAD-KEY");
-                    }
-                    else
-                    {
+                    case IntRead.Ok:
                         var e = TreeElemSingle(spk);
-                        var target = e is not null ? e.Path : _treeByKey.ContainsKey(spk) ? "NOT-AN-ELEMENT" : "NO-ENTRY";
-                        sb.Append($" StructParent={Inv(sp.Value)} -> {target}");
-                    }
-                }
-                else
-                {
-                    sb.Append(" StructParent=none");
+                        bad = e is null;
+                        var target = e is not null ? PathOf(e) : _treeByKey.ContainsKey(spk) ? "NOT-AN-ELEMENT" : "NO-ENTRY";
+                        sb.Append($" StructParent={Inv(spk)} -> {target}");
+                        break;
+                    case IntRead.Bad:
+                        bad = true;
+                        sb.Append(" StructParent=BAD-KEY");
+                        break;
+                    default:
+                        sb.Append(" StructParent=none");
+                        break;
                 }
 
                 sb.Append(" Contents=").Append(a.Get(PdfName.Contents) is { } c ? Fmt(Res(c), 0) : "absent");
                 sb.Append(" QuadPoints=").Append(a.Get(new PdfName("QuadPoints")) is null ? "absent" : "present");
-                sb.Append(" dest=").Append(DestText(a));
-                lines.Add(Charge(sb.ToString()));
+                var dest = DestText(a);
+                bad |= dest is "CYCLE" or "unresolved";
+                sb.Append(" dest=").Append(dest);
+                if (bad)
+                    Problem(lines, sb.ToString());
+                else
+                    Note(lines, sb.ToString());
             }
 
             return lines;
@@ -699,12 +814,12 @@ internal static class StructureDumper
 
             if (Res(annot.Get(new PdfName("A"))) is PdfDictionary action)
             {
-                var s = Res(action.Get(KeyS)) is PdfName sn ? Cap(sn.Value) : "?";
+                var s = Res(action.Get(KeyS)) is PdfName sn ? sn.Value : "?";
                 return s switch
                 {
                     "GoTo" => action.Get(new PdfName("D")) is { } d ? DestFrom(d, 0) : "GoTo none",
                     "URI" => "URI",
-                    _ => "action " + s,
+                    _ => "action " + Safe(s, MaxNameChars),
                 };
             }
 
@@ -721,10 +836,10 @@ internal static class StructureDumper
             {
                 case PdfArray arr when arr.Count > 0:
                     var page = arr[0] is PdfIndirectReference pr && _pageByObj.TryGetValue(pr.ObjectNumber, out var n) ? "p" + Inv(n) : "p?";
-                    var fit = arr.Count > 1 && Res(arr[1]) is PdfName fn ? Cap(fn.Value) : "?";
+                    var fit = arr.Count > 1 && Res(arr[1]) is PdfName fn ? Safe(fn.Value, MaxNameChars) : "?";
                     return $"GoTo {page} {fit}";
                 case PdfName name:
-                    return $"named /{Cap(name.Value)}";
+                    return $"named /{Safe(name.Value, MaxNameChars)}";
                 case PdfLiteralString or PdfHexString:
                     return "named " + Fmt(r, 0);
                 case PdfDictionary dd when hop == 0:
@@ -749,7 +864,7 @@ internal static class StructureDumper
             interpreter.Run(page, visitor, sink);
             visitor.Finish();
             foreach (var d in sink.Diagnostics)
-                section.Lines.Add("DIAG " + d.Code.ToString());
+                Problem(section.Lines, "DIAG " + d.Code.ToString());
             return section;
         }
 
@@ -766,10 +881,14 @@ internal static class StructureDumper
         private sealed class Frame
         {
             internal int Base;
-            internal int Open;
+            internal readonly List<bool> OpenIsMcid = [];
             internal StreamInfo? Record;
             internal required string Label;
             internal string? LastBaseline;
+            internal bool InsideContentItem;
+            internal bool Reported;
+
+            internal int Open => OpenIsMcid.Count;
         }
 
         private sealed class ContentDumper(
@@ -781,20 +900,30 @@ internal static class StructureDumper
             // dictionary in force is tracked here: the page's, then each form's own (or, when it has
             // none, the invoker's, ISO 32000-2 7.8.3).
             private readonly Stack<PdfDictionary?> _resources = new([pageResources]);
-            private readonly Dictionary<PdfDictionary, FontDecoder> _fonts = new(ReferenceEqualityComparer.Instance);
             private int _depthTotal;
+            private int _mcidOpen;
 
             private Frame Cur => _frames.Peek();
 
-            private void Line(string text) => section.Lines.Add(new string(' ', (Cur.Base + Cur.Open) * 2) + text);
+            private string Indent => new(' ', (Cur.Base + Cur.Open) * 2);
+
+            private void Line(string text) => s.Note(section.Lines, Indent + text);
+
+            private void ProblemLine(string text) => s.Problem(section.Lines, Indent + text);
 
             // Marked content open anywhere up the frame stack covers a form drawn inside it.
-            private void Paint(string text) => Line(_depthTotal == 0 ? "UNMARKED " + text : text);
+            private void Paint(string text)
+            {
+                if (_depthTotal == 0)
+                    ProblemLine("UNMARKED " + text);
+                else
+                    Line(text);
+            }
 
             internal void Finish()
             {
                 if (_depthTotal > 0)
-                    section.Lines.Add($"UNCLOSED-MC {Inv(_depthTotal)} p{Inv(pageNo)}");
+                    s.Problem(section.Lines, $"UNCLOSED-MC {Inv(_depthTotal)} p{Inv(pageNo)}");
             }
 
             public void OnOperator(string operatorName, IReadOnlyList<PdfObject> operands, int offset)
@@ -803,7 +932,7 @@ internal static class StructureDumper
                 {
                     case "BMC":
                         Line("BMC " + (operands.Count > 0 ? s.Fmt(operands[0], 0) : "?"));
-                        Push();
+                        Push(false);
                         break;
                     case "BDC":
                         BeginDictionarySequence(operands);
@@ -811,11 +940,13 @@ internal static class StructureDumper
                     case "EMC":
                         if (Cur.Open == 0)
                         {
-                            Line("UNBALANCED-EMC");
+                            ProblemLine("UNBALANCED-EMC");
                         }
                         else
                         {
-                            Cur.Open--;
+                            if (Cur.OpenIsMcid[^1])
+                                _mcidOpen--;
+                            Cur.OpenIsMcid.RemoveAt(Cur.Open - 1);
                             _depthTotal--;
                         }
 
@@ -847,9 +978,11 @@ internal static class StructureDumper
                 }
             }
 
-            private void Push()
+            private void Push(bool hasMcid)
             {
-                Cur.Open++;
+                Cur.OpenIsMcid.Add(hasMcid);
+                if (hasMcid)
+                    _mcidOpen++;
                 if (++_depthTotal > MaxMarkedContentDepth)
                     throw new InvalidOperationException(
                         $"Marked-content depth cap exceeded: nesting deeper than {Inv(MaxMarkedContentDepth)}.");
@@ -869,17 +1002,34 @@ internal static class StructureDumper
                         : null;
                 }
 
-                var text = dict is not null ? s.Fmt(dict, 0) : props is PdfName n2 ? "unresolved-properties /" + Cap(n2.Value) : "?";
-                Line(s.Charge($"BDC {tag} {text}"));
-                if (dict is not null && s.Res(dict.Get(KeyMcid)) is PdfInteger mc)
+                var shown = dict is not null ? s.Fmt(dict, 0) : props is PdfName n2 ? "unresolved-properties /" + Safe(n2.Value, MaxNameChars) : "?";
+                Line($"BDC {tag} {shown}");
+                var hasMcid = false;
+                if (dict is null)
                 {
-                    if (TryInt(mc.Value, out var id))
-                        Cur.Record?.Mcids.Add(id);
-                    else
-                        Line("BAD-MCID");
+                    ProblemLine($"BAD-PROPERTIES {(props is PdfName n3 ? "/" + Safe(n3.Value, MaxNameChars) : "?")} {Cur.Label}");
+                }
+                else
+                {
+                    switch (s.ReadInt(dict.Get(KeyMcid), out var id))
+                    {
+                        case IntRead.Ok:
+                            hasMcid = true;
+                            Cur.Record?.Mcids.Add(id);
+                            if (Cur.InsideContentItem && !Cur.Reported)
+                            {
+                                Cur.Reported = true;
+                                ProblemLine($"FORM-MCIDS-INSIDE-CONTENT-ITEM {Cur.Label}");
+                            }
+
+                            break;
+                        case IntRead.Bad:
+                            ProblemLine("BAD-MCID");
+                            break;
+                    }
                 }
 
-                Push();
+                Push(hasMcid);
             }
 
             public void OnInlineImage(PdfDictionary dictionary, ReadOnlyMemory<byte> data, int offset) =>
@@ -916,7 +1066,13 @@ internal static class StructureDumper
                 var stream = s.GetStream(key, s._formLabels[objectNumber]);
                 stream.FormDict ??= formDictionary;
                 stream.Invocations++;
-                _frames.Push(new Frame { Base = Cur.Base + Cur.Open + 1, Record = first ? stream : null, Label = label });
+                _frames.Push(new Frame
+                {
+                    Base = Cur.Base + Cur.Open + 1,
+                    Record = first ? stream : null,
+                    Label = label,
+                    InsideContentItem = _mcidOpen > 0,
+                });
                 _resources.Push(s.Res(formDictionary.Get(PdfName.Resources)) as PdfDictionary ?? _resources.Peek());
             }
 
@@ -926,8 +1082,10 @@ internal static class StructureDumper
                     return;
 
                 if (Cur.Open > 0)
-                    Line($"UNCLOSED-MC {Inv(Cur.Open)} {Cur.Label}");
-                _depthTotal -= _frames.Pop().Open;
+                    ProblemLine($"UNCLOSED-MC {Inv(Cur.Open)} {Cur.Label}");
+                var frame = _frames.Pop();
+                _depthTotal -= frame.Open;
+                _mcidOpen -= frame.OpenIsMcid.Count(x => x);
                 _resources.Pop();
             }
 
@@ -935,7 +1093,8 @@ internal static class StructureDumper
 
             // A "line" marker precedes the first show of each text line, so a line break that falls
             // inside a word shows up in the dump. The baseline is the text line matrix origin mapped
-            // through the CTM; only whether it changed is printed.
+            // through the CTM; only whether its device-space y changed is compared, so rotated text,
+            // where a line advances in x, is not recognised as a new line.
             private void Show(IEnumerable<PdfObject> operands)
             {
                 var bytes = new List<byte>();
@@ -962,7 +1121,7 @@ internal static class StructureDumper
                 var decoder = FontFor(interp.GraphicsState.Font, interp.GraphicsState.FontResources);
                 if (decoder?.Decode(bytes.ToArray()) is { } text)
                 {
-                    Paint("show \"" + Cap(Esc(text)) + "\"");
+                    Paint("show \"" + Safe(text, MaxTextChars) + "\"");
                     return;
                 }
 
@@ -989,7 +1148,9 @@ internal static class StructureDumper
 
                 if (fontDict is null)
                     return null;
-                if (_fonts.TryGetValue(fontDict, out var cached))
+
+                // One decoder per font dictionary for the whole document, so a CMap is parsed once.
+                if (s._fontDecoders.TryGetValue(fontDict, out var cached))
                     return cached;
 
                 var decoder = new FontDecoder();
@@ -1010,7 +1171,7 @@ internal static class StructureDumper
                     decoder.Map = ToUnicodeMap.Parse(data);
                 }
 
-                _fonts[fontDict] = decoder;
+                s._fontDecoders[fontDict] = decoder;
                 return decoder;
             }
         }
@@ -1056,14 +1217,14 @@ internal static class StructureDumper
             for (var i = 0; i < pages.Count; i++)
             {
                 var d = pages[i].Dictionary;
-                if (d.Get(new PdfName("StructParent")) is not null && d.Get(new PdfName("StructParents")) is not null)
-                    _problems.Add("BOTH-STRUCTPARENT(S) p" + Inv(i + 1));
+                if (d.Get(KeyStructParent) is not null && d.Get(KeyStructParents) is not null)
+                    Problem(_problems, "BOTH-STRUCTPARENT(S) p" + Inv(i + 1));
             }
 
             foreach (var a in annots)
             {
-                if (a.Dict.Get(new PdfName("StructParent")) is not null && a.Dict.Get(new PdfName("StructParents")) is not null)
-                    _problems.Add($"BOTH-STRUCTPARENT(S) annot p{Inv(a.Page)} #{Inv(a.Index)}");
+                if (a.Dict.Get(KeyStructParent) is not null && a.Dict.Get(KeyStructParents) is not null)
+                    Problem(_problems, $"BOTH-STRUCTPARENT(S) annot p{Inv(a.Page)} #{Inv(a.Index)}");
             }
 
             // Streams that only the structure side mentions still need a label.
@@ -1088,29 +1249,28 @@ internal static class StructureDumper
                 ? _reader.Pages[st.Key.Page - 1].Dictionary
                 : st.FormDict;
 
-            if (dict is not null && dict.Get(new PdfName("StructParent")) is not null
-                && dict.Get(new PdfName("StructParents")) is not null && st.Key.FormObj >= 0)
+            if (dict is not null && dict.Get(KeyStructParent) is not null
+                && dict.Get(KeyStructParents) is not null && st.Key.FormObj >= 0)
             {
-                _problems.Add("BOTH-STRUCTPARENT(S) " + st.Label);
+                Problem(_problems, "BOTH-STRUCTPARENT(S) " + st.Label);
             }
 
             if (st.Key.FormObj >= 0 && st.Invocations > 1 && st.Mcids.Count > 0)
-                _problems.Add($"MULTI-DO {st.Label} with MCIDs (invoked {Inv(st.Invocations)} times)");
+                Problem(_problems, $"MULTI-DO {st.Label} with MCIDs (invoked {Inv(st.Invocations)} times)");
 
             foreach (var g in st.Mcids.GroupBy(m => m).Where(g => g.Count() > 1).OrderBy(g => g.Key))
-                _problems.Add($"DUP-MCID mcid {Inv(g.Key)} {st.Label}");
+                Problem(_problems, $"DUP-MCID mcid {Inv(g.Key)} {st.Label}");
 
             int? sp = null;
-            if (dict is not null && Res(dict.Get(new PdfName("StructParents"))) is PdfInteger spi)
-            {
-                if (TryInt(spi.Value, out var spk))
-                    sp = spk;
-                else
-                    _problems.Add($"BAD-KEY StructParents {st.Label}");
-            }
+            var spValue = 0;
+            var spState = dict is null ? IntRead.Absent : ReadInt(dict.Get(KeyStructParents), out spValue);
+            if (spState == IntRead.Ok)
+                sp = spValue;
+            else if (spState == IntRead.Bad)
+                Problem(_problems, $"BAD-KEY StructParents {st.Label}");
 
-            if (sp is null && st.Mcids.Count > 0)
-                _problems.Add("NO-STRUCTPARENTS " + st.Label);
+            if (spState == IntRead.Absent && st.Mcids.Count > 0)
+                Problem(_problems, "NO-STRUCTPARENTS " + st.Label);
 
             var notRun = st.Key.FormObj >= 0 && _appearanceStreams.Contains(st.Key.FormObj);
             foreach (var mcid in inContentSet.Concat(byMcid.Select(g => g.Key)).Distinct().OrderBy(m => m))
@@ -1119,27 +1279,27 @@ internal static class StructureDumper
                 var holders = byMcid[mcid].Select(m => m.Owner).ToList();
                 if (!inContent)
                 {
-                    _problems.Add(notRun
-                        ? $"STM-NOT-RUN mcid {Inv(mcid)} in {holders[0].Path}"
-                        : $"MISSING mcid {Inv(mcid)} {st.Label} in {holders[0].Path}");
+                    Problem(_problems, notRun
+                        ? $"STM-NOT-RUN mcid {Inv(mcid)} in {PathOf(holders[0])}"
+                        : $"MISSING mcid {Inv(mcid)} {st.Label} in {PathOf(holders[0])}");
                     continue;
                 }
 
                 if (holders.Count == 0)
                 {
-                    _problems.Add($"ORPHAN mcid {Inv(mcid)} {st.Label}");
+                    Problem(_problems, $"ORPHAN mcid {Inv(mcid)} {st.Label}");
                     continue;
                 }
 
                 if (holders.Count > 1)
-                    _problems.Add($"DUP-HOLDER mcid {Inv(mcid)} {st.Label}: " + string.Join(", ", holders.Select(h => h.Path)));
+                    Problem(_problems, $"DUP-HOLDER mcid {Inv(mcid)} {st.Label}: " + string.Join(", ", holders.Take(8).Select(PathOf)) + (holders.Count > 8 ? $" …(+{Inv(holders.Count - 8)})" : ""));
 
                 if (sp is { } key)
                 {
                     var pt = TreeElemFromArray(key, mcid);
                     if (!ReferenceEquals(pt, holders[0]))
-                        _problems.Add(
-                            $"PARENTTREE MISMATCH mcid {Inv(mcid)} {st.Label}: parent tree has {pt?.Path ?? "nothing"}, element holding it is {holders[0].Path}");
+                        Problem(_problems,
+                            $"PARENTTREE MISMATCH mcid {Inv(mcid)} {st.Label}: parent tree has {(pt is null ? "nothing" : PathOf(pt))}, element holding it is {PathOf(holders[0])}");
                 }
             }
         }
@@ -1156,9 +1316,10 @@ internal static class StructureDumper
             var referenced = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
             foreach (var (owner, target, _) in _objrs)
             {
+                var ownerPath = PathOf(owner);
                 if (target is null)
                 {
-                    _problems.Add($"PARENTTREE MISMATCH OBJR in {owner.Path}: target does not resolve");
+                    Problem(_problems, $"PARENTTREE MISMATCH OBJR in {ownerPath}: target does not resolve");
                     continue;
                 }
 
@@ -1173,25 +1334,30 @@ internal static class StructureDumper
                 else
                 {
                     var kind = Res(target.Get(PdfName.Subtype)) is PdfName sn ? sn.Value : Res(target.Get(PdfName.Type)) is PdfName tn ? tn.Value : "-";
-                    label = $"OBJR target {Cap(kind)} in {owner.Path}";
+                    label = $"OBJR target {Safe(kind, MaxNameChars)} in {ownerPath}";
                     noKey = "target has no /StructParent";
                 }
 
-                if (Res(target.Get(new PdfName("StructParent"))) is not PdfInteger sp || !TryInt(sp.Value, out var key))
+                switch (ReadInt(target.Get(KeyStructParent), out var key))
                 {
-                    _problems.Add($"PARENTTREE MISMATCH {label}: {noKey}, element holding the OBJR is {owner.Path}");
-                    continue;
+                    case IntRead.Absent:
+                        Problem(_problems, $"PARENTTREE MISMATCH {label}: {noKey}, element holding the OBJR is {ownerPath}");
+                        break;
+                    case IntRead.Bad:
+                        Problem(_problems, $"BAD-KEY StructParent {label}");
+                        break;
+                    default:
+                        var pt = TreeElemSingle(key);
+                        if (!ReferenceEquals(pt, owner))
+                            Problem(_problems, $"PARENTTREE MISMATCH {label}: parent tree has {(pt is null ? "nothing" : PathOf(pt))}, element holding the OBJR is {ownerPath}");
+                        break;
                 }
-
-                var pt = TreeElemSingle(key);
-                if (!ReferenceEquals(pt, owner))
-                    _problems.Add($"PARENTTREE MISMATCH {label}: parent tree has {pt?.Path ?? "nothing"}, element holding the OBJR is {owner.Path}");
             }
 
             foreach (var a in annots)
             {
-                if (a.Dict.Get(new PdfName("StructParent")) is not null && !referenced.Contains(a.Dict))
-                    _problems.Add($"NO-OBJR annot p{Inv(a.Page)} #{Inv(a.Index)}");
+                if (a.Dict.Get(KeyStructParent) is not null && !referenced.Contains(a.Dict))
+                    Problem(_problems, $"NO-OBJR annot p{Inv(a.Page)} #{Inv(a.Index)}");
             }
         }
 
@@ -1214,6 +1380,8 @@ internal static class StructureDumper
 
         private static IEnumerable<KeyValuePair<PdfName, PdfObject>> Entries(PdfDictionary d) => d.Entries;
 
+        // Every document-controlled string that reaches the output goes through Safe: control and
+        // format characters become visible escapes, and the length is capped.
         internal string Fmt(PdfObject? o, int depth)
         {
             switch (o)
@@ -1222,7 +1390,7 @@ internal static class StructureDumper
                 case PdfNull:
                     return "null";
                 case PdfName n:
-                    return "/" + Cap(n.Value);
+                    return "/" + Safe(n.Value, MaxTextChars);
                 case PdfInteger i:
                     return Inv(i.Value);
                 case PdfReal r:
@@ -1230,9 +1398,9 @@ internal static class StructureDumper
                 case PdfBoolean b:
                     return b.Value ? "true" : "false";
                 case PdfLiteralString ls:
-                    return "\"" + Cap(Esc(TextString(ls.Bytes.Span))) + "\"";
+                    return "\"" + Safe(TextString(ls.Bytes.Span), MaxTextChars) + "\"";
                 case PdfHexString hs:
-                    return "\"" + Cap(Esc(TextString(hs.Bytes.Span))) + "\"";
+                    return "\"" + Safe(TextString(hs.Bytes.Span), MaxTextChars) + "\"";
                 case PdfArray a:
                     if (depth >= MaxFormatDepth)
                         return "[…]";
@@ -1243,7 +1411,7 @@ internal static class StructureDumper
                     if (depth >= MaxFormatDepth)
                         return "{…}";
                     var sorted = d.Entries.OrderBy(kv => kv.Key.Value, StringComparer.Ordinal).ToList();
-                    var parts = sorted.Take(MaxFormatItems).Select(kv => kv.Key.Value + "=" + Fmt(kv.Value, depth + 1));
+                    var parts = sorted.Take(MaxFormatItems).Select(kv => Safe(kv.Key.Value, MaxTextChars) + "=" + Fmt(kv.Value, depth + 1));
                     var moreD = sorted.Count > MaxFormatItems ? " …(+" + Inv(sorted.Count - MaxFormatItems) + ")" : "";
                     return "{" + string.Join(' ', parts) + moreD + "}";
                 case PdfIndirectReference ir:
@@ -1261,28 +1429,16 @@ internal static class StructureDumper
             if (target is PdfDictionary d)
             {
                 if (_elemByDict.TryGetValue(d, out var e))
-                    return e.Path.Length > 0 ? e.Path : e.Type;
-                var t = Res(d.Get(PdfName.Type)) is PdfName tn ? tn.Value : "-";
-                var st = Res(d.Get(PdfName.Subtype)) is PdfName sn ? sn.Value : "-";
+                    return PathOf(e);
+                var t = Res(d.Get(PdfName.Type)) is PdfName tn ? Safe(tn.Value, MaxNameChars) : "-";
+                var st = Res(d.Get(PdfName.Subtype)) is PdfName sn ? Safe(sn.Value, MaxNameChars) : "-";
                 return $"<ref {t}/{st}>";
             }
 
             return "<ref ?>";
         }
 
-        private long _formatted;
         private readonly Dictionary<PdfObject, string> _shownAttr = new(ReferenceEqualityComparer.Instance);
-
-        // Every formatted value is charged against one budget, so a small file cannot expand into an
-        // arbitrarily large dump.
-        internal string Charge(string text)
-        {
-            _formatted += text.Length;
-            if (_formatted > MaxFormattedChars)
-                throw new InvalidOperationException(
-                    $"Formatted-value budget exceeded: more than {Inv(MaxFormattedChars)} characters of printed values.");
-            return text;
-        }
 
         // An attribute object reached through an indirect reference is expanded where it is first
         // met; every later reference to the same object prints where that was, so one shared object
@@ -1304,7 +1460,8 @@ internal static class StructureDumper
 
         // Table 323: /A is one attribute object or an array of attribute objects, each optionally
         // followed by a revision number; /C is the same for class names. A reference inside the list is
-        // followed once so the attributes themselves show.
+        // followed once so the attributes themselves show, except one that names a structure element,
+        // which prints its path as it does anywhere else.
         private string FmtAttrList(PdfObject value, string where)
         {
             var r = Res(value);
@@ -1321,6 +1478,8 @@ internal static class StructureDumper
                         sb.Append(' ');
                     if (item is PdfInteger rev)
                         sb.Append('@').Append(Inv(rev.Value));
+                    else if (item is PdfDictionary ed && _elemByDict.TryGetValue(ed, out var elem))
+                        sb.Append(PathOf(elem));
                     else if (AlreadyShown(arr[i], item, where, out var again))
                         sb.Append(again);
                     else
@@ -1332,7 +1491,9 @@ internal static class StructureDumper
                 return sb.Append(']').ToString();
             }
 
-            return Fmt(r ?? value, 0);
+            return r is PdfDictionary single && _elemByDict.TryGetValue(single, out var only)
+                ? PathOf(only)
+                : Fmt(r ?? value, 0);
         }
 
         private static string TextString(ReadOnlySpan<byte> b)
@@ -1344,46 +1505,6 @@ internal static class StructureDumper
             return Encoding.Latin1.GetString(b);
         }
     }
-
-    // The one place that says which printed lines are problems. A line is one when, after its
-    // indentation, it starts with a LineMarkers entry; an annotation line also counts when it carries
-    // an InlineMarkers entry, because its problems are fields of the line.
-    private static readonly string[] LineMarkers =
-    [
-        "UNRESOLVED", "CYCLE", "DUPLICATE-ELEMENT", "NO-PG", "BAD-", "P-MISMATCH", "UNMARKED",
-        "UNBALANCED-EMC", "UNCLOSED-MC", "MULTI-DO", "DIAG ", "PARENTTREE", "ORPHAN", "MISSING", "DUP-",
-        "BOTH-STRUCTPARENT", "NO-STRUCTPARENTS", "NO-OBJR", "STM-NOT-RUN", "ANNOTS UNRESOLVED",
-    ];
-
-    private static readonly string[] InlineMarkers =
-    [
-        ": UNRESOLVED", "-> NO-ENTRY", "-> NOT-AN-ELEMENT", "=BAD-KEY", "dest=CYCLE", "dest=unresolved",
-    ];
-
-    /// <summary>How many lines of a dump the footer counts as problems: see the type remarks.</summary>
-    internal static int CountProblems(IEnumerable<string> lines)
-    {
-        var count = 0;
-        foreach (var line in lines)
-        {
-            var t = line.TrimStart();
-            if (LineMarkers.Any(m => t.StartsWith(m, StringComparison.Ordinal))
-                || (t.StartsWith("annot ", StringComparison.Ordinal) && InlineMarkers.Any(m => t.Contains(m, StringComparison.Ordinal))))
-            {
-                count++;
-            }
-        }
-
-        return count;
-    }
-
-    /// <summary>Most characters of printed values (attributes, properties, strings) <see cref="Dump"/> accepts.</summary>
-    internal const int MaxFormattedChars = 1_000_000;
-
-    private const int MaxTextChars = 200;
-
-    private static string Cap(string text) =>
-        text.Length > MaxTextChars ? text[..MaxTextChars] + "…(+" + Inv(text.Length - MaxTextChars) + ")" : text;
 
     private static bool TryInt(long v, out int result)
     {
@@ -1404,6 +1525,15 @@ internal static class StructureDumper
             return v > 0 ? "Infinity" : "-Infinity";
         var s = v.ToString("0.##", CultureInfo.InvariantCulture);
         return s == "-0" ? "0" : s;
+    }
+
+    // The one way document-controlled text reaches the output: cut to max characters first (so an
+    // escape is never cut in half), then escaped, with the number of characters cut shown after it.
+    // A name such as /Span#0AORPHAN decodes to text containing a line feed; here it prints as one
+    // visible escape, on the line that holds it.
+    private static string Safe(string raw, int max)
+    {
+        return raw.Length > max ? Esc(raw[..max]) + "…(+" + Inv(raw.Length - max) + ")" : Esc(raw);
     }
 
     // Anything a reader cannot see (controls, format characters such as the soft hyphen, line and

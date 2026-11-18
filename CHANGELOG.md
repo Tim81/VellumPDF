@@ -12,9 +12,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   nothing under `src/` changes. `StructureDumper` in `VellumPdf.Conformance.Tests` prints a PDF's
   structure tree, per-page marked content and annotations as text, checks the parent tree against
   them, and prints a problem line where they disagree (`PARENTTREE MISMATCH`, `ORPHAN`, `MISSING`,
-  `UNMARKED`, `NO-OBJR`, and others) instead of skipping; the last line counts every such marker. It
-  walks `/K` and `/ParentTree` itself rather than through `StructureTree`, which collapses MCID, MCR
-  and OBJR kids into a flag, and it decodes shown text through `/ToUnicode`, because the Reader's
+  `UNMARKED`, `NO-OBJR`, and others) instead of skipping; the last line counts them as they are
+  emitted. Problem lines report structural inconsistencies, not PDF/UA findings: a golden can show
+  a defect with 0 problem lines. It walks `/K` and `/ParentTree` itself rather than through
+  `StructureTree`, which collapses MCID, MCR and OBJR kids into a flag, and it decodes shown text through `/ToUnicode`, because the Reader's
   text extraction has no marked-content awareness. It refuses oversized input with an
   `InvalidOperationException` naming the cap. Each of ten Layout documents (a split paragraph, a
   table over three pages, a nested list, header and footer bands, images, runs split inside a word,

@@ -252,21 +252,6 @@ public sealed class StructureDumperHardeningTests
     }
 
     [Fact]
-    public void PrintedValueBudget_isRefused()
-    {
-        var value = new string('x', 300);
-        var attrs = string.Join(' ', Enumerable.Range(0, 32).Select(k => $"/K{k:D2} ({value})"));
-        var objs = new List<(int, string, string?)>();
-        var kids = string.Join(' ', Enumerable.Range(0, 200).Select(i => $"{7 + i} 0 R"));
-        objs.Add((6, $"{DocElem} /K [{kids}] >>", null));
-        for (var i = 0; i < 200; i++)
-            objs.Add((7 + i, $"<< /Type /StructElem /S /Div /P 6 0 R /A << {attrs} >> >>", null));
-
-        var ex = Assert.Throws<InvalidOperationException>(() => StructureDumper.Dump(RawPdf.Doc("", "", "/K [6 0 R]", [.. objs])));
-        Assert.Contains("Formatted-value budget", ex.Message);
-    }
-
-    [Fact]
     public void LongStringsAndNames_areCapped()
     {
         var pdf = RawPdf.Doc(
@@ -440,28 +425,6 @@ public sealed class StructureDumperHardeningTests
         Has("0 problem line(s)", Lines(Tree(StructureDumper.MaxNodes - 1)));
         var ex = Assert.Throws<InvalidOperationException>(() => StructureDumper.Dump(Tree(StructureDumper.MaxNodes)));
         Assert.Contains("node cap", ex.Message);
-    }
-
-    // ── Footer ────────────────────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void Footer_countsEveryMarkerTheDumpPrints()
-    {
-        var sample = new[]
-        {
-            "known defects: MISSING-NOTHING",
-            "  UNRESOLVED",
-            "      NO-PG",
-            "UNMARKED show \"x\"",
-            "DIAG ResourceMissing",
-            "show \"MISSING in a string\"",
-            "annot 0: Subtype=Link StructParent=7 -> NO-ENTRY Contents=absent",
-            "annot 1: Subtype=Link StructParent=none Contents=absent",
-            "PARENTTREE MISMATCH mcid 0 p1: x",
-            "DUP-KEY 0",
-        };
-
-        Assert.Equal(7, StructureDumper.CountProblems(sample));
     }
 
     // ── ToUnicodeMap ──────────────────────────────────────────────────────────────────────────

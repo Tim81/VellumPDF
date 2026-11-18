@@ -23,7 +23,7 @@ namespace VellumPdf.Conformance.Tests.StructureDump;
 /// <b>Not bounded by a count of its own.</b> The entry count is at most the number of tokens in the
 /// stream, and the stream is the decoded <c>/ToUnicode</c> body the Reader already capped. A
 /// <c>bfrange</c> is stored as one range and never expanded, so a range over four-byte codes costs
-/// one entry, not 2^32; lookup is a binary search over ranges sorted by their lower bound.
+/// one entry, not 2^32; the first lookup flattens them into disjoint segments, and each lookup is a binary search over those.
 /// </para>
 /// <para>
 /// <b>Do not rely on which of two overlapping definitions wins.</b> ISO 32000-2 does not say. Here a
@@ -35,14 +35,17 @@ internal sealed class ToUnicodeMap
 {
     private readonly Dictionary<(int Length, uint Code), string> _chars = [];
     private readonly List<RangeEntry> _ranges = [];
-    private RangeEntry[]? _sorted;
-    private uint[]? _prefixMaxHi;
 
     private readonly record struct RangeEntry(int Length, uint Lo, uint Hi, string Dst, string[]? Array, int Order);
+
+    /// <summary>How many CMaps this thread has parsed: a test reads it to show a font is parsed once per document.</summary>
+    [ThreadStatic]
+    internal static int ParseCount;
 
     /// <summary>Reads <paramref name="data"/> as a CMap program. Never throws on malformed input.</summary>
     internal static ToUnicodeMap Parse(ReadOnlySpan<byte> data)
     {
+        ParseCount++;
         var map = new ToUnicodeMap();
         var tokens = Tokenize(Encoding.Latin1.GetString(data));
         var i = 0;
@@ -91,67 +94,115 @@ internal sealed class ToUnicodeMap
         return map;
     }
 
+    /// <summary>
+    /// Binary-search steps taken by <see cref="TryMap"/> so far: a test reads it to show the lookup
+    /// does not scan ranges, without timing anything.
+    /// </summary>
+    internal long Comparisons { get; private set; }
+
+    private readonly record struct Segment(uint Lo, uint Hi, int Range);
+
+    private Dictionary<int, Segment[]>? _segments;
+
     /// <summary>The Unicode text the <paramref name="byteLength"/>-byte <paramref name="code"/> maps to, if an entry covers it.</summary>
     internal bool TryMap(uint code, int byteLength, out string text)
     {
         if (_chars.TryGetValue((byteLength, code), out text!))
             return true;
 
-        if (_sorted is null)
+        _segments ??= Flatten();
+        if (_segments.TryGetValue(byteLength, out var segments))
         {
-            _sorted = [.. _ranges.OrderBy(r => r.Length).ThenBy(r => r.Lo).ThenBy(r => r.Order)];
-            _prefixMaxHi = new uint[_sorted.Length];
-            for (var k = 0; k < _sorted.Length; k++)
+            // Segments of one length are disjoint and sorted, so the covering one, if any, is the
+            // last whose lower bound is <= code.
+            int lo = 0, hi = segments.Length - 1, at = -1;
+            while (lo <= hi)
             {
-                var prev = k > 0 && _sorted[k - 1].Length == _sorted[k].Length ? _prefixMaxHi[k - 1] : 0;
-                _prefixMaxHi[k] = Math.Max(prev, _sorted[k].Hi);
+                Comparisons++;
+                var mid = lo + ((hi - lo) / 2);
+                if (segments[mid].Lo <= code)
+                {
+                    at = mid;
+                    lo = mid + 1;
+                }
+                else
+                {
+                    hi = mid - 1;
+                }
             }
-        }
 
-        // Last range of this length whose lower bound is <= code.
-        int lo = 0, hi = _sorted.Length - 1, at = -1;
-        while (lo <= hi)
-        {
-            var mid = lo + ((hi - lo) / 2);
-            var r = _sorted[mid];
-            if (r.Length < byteLength || (r.Length == byteLength && r.Lo <= code))
+            if (at >= 0 && code <= segments[at].Hi)
             {
-                at = mid;
-                lo = mid + 1;
+                var r = _ranges[segments[at].Range];
+                var offset = (long)code - r.Lo;
+                text = r.Array is not null
+                    ? r.Array[offset]
+                    : r.Dst[..^1] + (char)((r.Dst[^1] + offset) & 0xFFFF);
+                return true;
             }
-            else
-            {
-                hi = mid - 1;
-            }
-        }
-
-        // Walk back while some earlier range of the same length can still reach the code, and keep
-        // the first-in-file one among those that cover it.
-        RangeEntry? best = null;
-        for (var k = at; k >= 0 && _sorted[k].Length == byteLength && _prefixMaxHi![k] >= code; k--)
-        {
-            var r = _sorted[k];
-            if (code < r.Lo || code > r.Hi)
-                continue;
-            var offset = (long)code - r.Lo;
-            if (r.Array is not null ? offset >= r.Array.Length : r.Dst.Length == 0)
-                continue;
-            if (best is null || r.Order < best.Value.Order)
-                best = r;
-        }
-
-        if (best is { } b)
-        {
-            var offset = (long)code - b.Lo;
-            text = b.Array is not null
-                ? b.Array[offset]
-                : b.Dst[..^1] + (char)((b.Dst[^1] + offset) & 0xFFFF);
-            return true;
         }
 
         text = "";
         return false;
     }
+
+    // Turns the ranges, in file order, into disjoint segments per byte length where the first range
+    // in the file wins any overlap. "covered" is the union of what earlier ranges claimed, kept as
+    // sorted disjoint intervals that merge as they grow, so a wide range met early absorbs the small
+    // ones after it without being rescanned for each.
+    private Dictionary<int, Segment[]> Flatten()
+    {
+        var result = new Dictionary<int, Segment[]>();
+        foreach (var group in _ranges.Select((r, i) => (r, i)).Where(x => IsUsable(x.r)).GroupBy(x => x.r.Length))
+        {
+            var covered = new List<(long Lo, long Hi)>();
+            var segments = new List<Segment>();
+            foreach (var (r, index) in group)
+            {
+                long lo = r.Lo;
+                var hi = r.Array is not null ? Math.Min(r.Hi, (long)r.Lo + r.Array.Length - 1) : r.Hi;
+
+                // First covered interval whose Hi >= lo.
+                int left = 0, right = covered.Count;
+                while (left < right)
+                {
+                    var mid = left + ((right - left) / 2);
+                    if (covered[mid].Hi < lo)
+                        left = mid + 1;
+                    else
+                        right = mid;
+                }
+
+                var i = left;
+                var cursor = lo;
+                var j = i;
+                var mergedLo = lo;
+                var mergedHi = hi;
+                while (j < covered.Count && covered[j].Lo <= hi)
+                {
+                    if (covered[j].Lo > cursor)
+                        segments.Add(new Segment((uint)cursor, (uint)(covered[j].Lo - 1), index));
+                    cursor = Math.Max(cursor, covered[j].Hi + 1);
+                    mergedLo = Math.Min(mergedLo, covered[j].Lo);
+                    mergedHi = Math.Max(mergedHi, covered[j].Hi);
+                    j++;
+                }
+
+                if (cursor <= hi)
+                    segments.Add(new Segment((uint)cursor, (uint)hi, index));
+
+                covered.RemoveRange(i, j - i);
+                covered.Insert(i, (mergedLo, mergedHi));
+            }
+
+            segments.Sort((a, b) => a.Lo.CompareTo(b.Lo));
+            result[group.Key] = [.. segments];
+        }
+
+        return result;
+    }
+
+    private static bool IsUsable(RangeEntry r) => r.Array is not null ? r.Array.Length > 0 : r.Dst.Length > 0;
 
     private static bool IsHex(string token) => token.Length >= 2 && token[0] == '<';
 
