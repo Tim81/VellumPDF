@@ -20,9 +20,9 @@ Two populations are compared against it:
   vera  - clause attributes in veraPDF's PDFA-2A/2B/2U profiles, read from the CLI jar. Generous
           in the same direction: it scrapes every clause= attribute rather than only a rule's own
           id, so it also picks up the ISO 32000-1 clauses those rules reference. On veraPDF 1.30.2
-          that is 75 values scraped against 54 belonging to a rule. None of the extras collides
-          with an ISO 19005-2 clause 6 id today, but ISO 32000-1 has its own clause 6, so one
-          could.
+          and 1.30.4 that is 75 values scraped against 54 belonging to a rule. None of the extras
+          collides with an ISO 19005-2 clause 6 id today, but ISO 32000-1 has its own clause 6, so
+          one could.
 
 Clauses scoped `reader` are excluded. Those bind a conforming reader rather than a conforming
 file, so a file validator correctly has no rule for them: 6.5.3, 6.3.4, 6.1.5 and 6.2.8.2.

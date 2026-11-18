@@ -184,7 +184,7 @@ internal static class VeraPdf
         // exit 8, stdout "...appears to be an encrypted PDF file and could not be processed.",
         // stderr "WARNING: ...appears to be an encrypted PDF." Exit 8 already falls into the
         // generic error arm below and throws, so this check isn't closing a "refusal reads as
-        // compliant" hole on the pinned version; it turns that generic error into a message that
+        // compliant" hole on veraPDF 1.30.2; it turns that generic error into a message that
         // names the actual cause, and is defence-in-depth against a future version or CI's Docker
         // shim reporting the refusal on a different exit code. Matches the shorter "appears to be
         // an encrypted PDF" (common to both streams' wording) against stdout and stderr, since
