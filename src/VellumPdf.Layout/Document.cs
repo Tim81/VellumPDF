@@ -1124,7 +1124,7 @@ public sealed class Document : IDisposable
         }
         catch
         {
-            MarkFailedIfPagesAdded(pagesBefore);
+            MarkFailedIfLaidOut(pagesBefore, renderer);
             throw;
         }
     }
@@ -1144,14 +1144,18 @@ public sealed class Document : IDisposable
         }
         catch
         {
-            MarkFailedIfPagesAdded(pagesBefore);
+            MarkFailedIfLaidOut(pagesBefore, renderer);
             throw;
         }
     }
 
-    private void MarkFailedIfPagesAdded(int pagesBefore)
+    // A renderer caches its wrap at the first width it is laid out at (ParagraphRenderer._lines,
+    // ListRenderer._items), so a document whose layout started cannot be laid out again even when
+    // no page was added yet, as when the counting pass throws: a retry after a PageSize or margin
+    // change would reuse the wrap measured for the old width. HasStartedLayout covers that case.
+    private void MarkFailedIfLaidOut(int pagesBefore, DocumentRenderer renderer)
     {
-        if (_pdf.Pages.Count != pagesBefore) _layoutFailed = true;
+        if (_pdf.Pages.Count != pagesBefore || renderer.HasStartedLayout) _layoutFailed = true;
     }
 
 
@@ -1203,10 +1207,11 @@ public sealed class Document : IDisposable
     /// page is added and is just as recoverable. A save that threw <b>after</b> its layout had
     /// added pages cannot be undone, whether the layout itself threw, such as for an element too
     /// tall for the page, or a later step did, such as building the PDF or a cancellation seen once
-    /// the layout has run. (With a <see cref="Header"/> or <see cref="Footer"/> set, a counting pass
-    /// runs first, and it refuses a too-tall element before any page is added, so that case can be
-    /// corrected and saved again.) Every later save after one that did add pages then
-    /// throws <see cref="InvalidOperationException"/> telling you to create a new
+    /// the layout has run. So does a save whose layout started and threw before it added a page,
+    /// which a counting pass does when a <see cref="Header"/> or <see cref="Footer"/> is set,
+    /// because the elements keep the line breaks they measured at the old page width and a retry
+    /// after changing <see cref="PageSize"/> would reuse them. Every later save after one of these
+    /// then throws <see cref="InvalidOperationException"/> telling you to create a new
     /// <see cref="Document"/>. Before this, the retry laid everything out again on top of the first
     /// attempt's pages and wrote a file with several times the pages you asked for, with no
     /// exception.</para>
@@ -1466,10 +1471,11 @@ public sealed class Document : IDisposable
     /// page is added and is just as recoverable. A save that threw <b>after</b> its layout had
     /// added pages cannot be undone, whether the layout itself threw, such as for an element too
     /// tall for the page, or a later step did, such as building the PDF or a cancellation seen once
-    /// the layout has run. (With a <see cref="Header"/> or <see cref="Footer"/> set, a counting pass
-    /// runs first, and it refuses a too-tall element before any page is added, so that case can be
-    /// corrected and saved again.) Every later save after one that did add pages then
-    /// throws <see cref="InvalidOperationException"/> telling you to create a new
+    /// the layout has run. So does a save whose layout started and threw before it added a page,
+    /// which a counting pass does when a <see cref="Header"/> or <see cref="Footer"/> is set,
+    /// because the elements keep the line breaks they measured at the old page width and a retry
+    /// after changing <see cref="PageSize"/> would reuse them. Every later save after one of these
+    /// then throws <see cref="InvalidOperationException"/> telling you to create a new
     /// <see cref="Document"/>. Before this, the retry laid everything out again on top of the first
     /// attempt's pages and wrote a file with several times the pages you asked for, with no
     /// exception.</para>
@@ -1567,7 +1573,7 @@ public sealed class Document : IDisposable
         {
             // A token cancelled once the layout has run ends the task before anything is serialised,
             // which leaves the pages behind just as a throw from the layout does (#530).
-            MarkFailedIfPagesAdded(pagesBefore);
+            MarkFailedIfLaidOut(pagesBefore, renderer);
             throw;
         }
 
@@ -1691,7 +1697,7 @@ public sealed class Document : IDisposable
                 }
                 catch
                 {
-                    MarkFailedIfPagesAdded(pagesBefore);
+                    MarkFailedIfLaidOut(pagesBefore, renderer);
                     throw;
                 }
 

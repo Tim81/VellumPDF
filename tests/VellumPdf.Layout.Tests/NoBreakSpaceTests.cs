@@ -221,7 +221,7 @@ public sealed class NoBreakSpaceTests
 
     // ── Embedded font: lines are compared by glyph count ─────────────────────
 
-    private const string DejaVu = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
+    private static readonly string DejaVu = Path.Combine(AppContext.BaseDirectory, "Fonts", "DejaVuSans.ttf");
 
     /// <summary>The number of glyphs on each text line an embedded font drew, in order.</summary>
     private static int[] GlyphCountsPerLine(string stream) =>

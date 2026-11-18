@@ -141,6 +141,43 @@ public sealed class CycleGuardTests
     }
 
     [Fact]
+    public void PdfStream_whoseDictionaryHoldsTheStream_isRefusedWhenWritten()
+    {
+        // WriteTo serialises a fresh copy of the dictionary each time, so the dictionary guard alone
+        // never sees the same container twice here and the recursion ran until the stack was gone.
+        var stream = new PdfStream([1, 2, 3]);
+        stream.Dictionary.Set(new PdfName("Self"), stream);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => Write(stream));
+
+        Assert.StartsWith("A PDF stream contains itself", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ACycleThroughAStreamAndAnArray_isRefusedWhenWritten()
+    {
+        var stream = new PdfStream([1, 2, 3]);
+        var array = new PdfArray();
+        array.Add(stream);
+        stream.Dictionary.Set(new PdfName("Kids"), array);
+
+        Assert.Throws<InvalidOperationException>(() => Write(array));
+    }
+
+    [Fact]
+    public void ThePdfStreamPlacedTwiceSideBySide_isNotACycle()
+    {
+        var stream = new PdfStream([1, 2, 3]);
+        var array = new PdfArray();
+        array.Add(stream);
+        array.Add(stream);
+
+        var text = Write(array);
+
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(text, "endstream").Count);
+    }
+
+    [Fact]
     public void ACycleThroughAnArrayAndADictionary_isRefusedWhenWritten()
     {
         var array = new PdfArray();

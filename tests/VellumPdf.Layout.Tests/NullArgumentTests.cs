@@ -34,9 +34,7 @@ public sealed class NullArgumentTests
         new("new Paragraph([null run])", "runs", () => _ = new Paragraph(new TextRun[] { null! })),
         new("new TextRun(null, style)", "Text", () => _ = new TextRun(null!, Style())),
         // #547 and #523: lists
-        new("new ListItem(null)", "text", () => _ = new ListItem(null!)),
         new("ListElement.Add((string)null)", "text", () => new ListElement().Add((string)null!)),
-        new("ListItem.AddChild((string)null)", "text", () => new ListItem("p").AddChild((string)null!)),
         new("ListElement.Add((ListItem)null)", "item", () => new ListElement().Add((ListItem)null!)),
         new("new ListElement(style, [null item])", "items", () => _ = new ListElement(ListStyle.Unordered, new ListItem[] { null! })),
         // #547 and #523: tables
@@ -47,6 +45,8 @@ public sealed class NullArgumentTests
         // #531
         new("new RunningBand(null)", "template", () => _ = new RunningBand(null!)),
         // #523
+        new("new DocumentRenderer(null)", "pdf", () => _ = new DocumentRenderer(null!)),
+        new("new DocumentRenderer(null, pageSize)", "pdf", () => _ = new DocumentRenderer(null!, new PdfRectangle(0, 0, 400, 400))),
         new("DocumentRenderer.Add(null)", "renderer", () => new DocumentRenderer(new PdfDocument(), new PdfRectangle(0, 0, 400, 400)).Add(null!)),
         // #547: every public renderer constructor
         new("new ParagraphRenderer(null)", "para", () => _ = new ParagraphRenderer(null!)),
@@ -244,5 +244,51 @@ public sealed class NullArgumentTests
         var ex = Assert.Throws<ArgumentNullException>(() => doc.Save(ms));
 
         Assert.Equal("child", ex.ParamName);
+    }
+
+    [Fact]
+    public void NullTextGrandchild_isSkipped_andTheListRendersAsIfItWereNeverAdded()
+    {
+        foreach (var make in new Func<ListItem, ListItem>[]
+        {
+            c => c.AddChild((string)null!),
+            c => c.AddChild(new ListItem(null!)),
+        })
+        {
+            using var withNull = ListWithGrandchild(c => make(c));
+            using var without = ListWithGrandchild(_ => { });
+
+            Assert.Equal(Placements(without), Placements(withNull));
+        }
+    }
+
+    [Fact]
+    public void NullText_isStoredAsAnEmptyString()
+    {
+        Assert.Equal(string.Empty, new ListItem(null!).Text);
+    }
+
+    [Fact]
+    public void NullTextOnATopLevelItem_isRefusedBySaveNamingText()
+    {
+        using var doc = new Document();
+        doc.Add(new ListElement(ListStyle.Unordered).Add(new ListItem(null!, Style())));
+        using var ms = new MemoryStream();
+
+        var ex = Assert.Throws<ArgumentNullException>(() => doc.Save(ms));
+
+        Assert.Equal("text", ex.ParamName);
+    }
+
+    [Fact]
+    public void NullTextOnAChildOfATopLevelItem_isRefusedBySaveNamingText()
+    {
+        using var doc = new Document();
+        doc.Add(new ListElement(ListStyle.Unordered).Add(new ListItem("first", Style()).AddChild((string)null!)));
+        using var ms = new MemoryStream();
+
+        var ex = Assert.Throws<ArgumentNullException>(() => doc.Save(ms));
+
+        Assert.Equal("text", ex.ParamName);
     }
 }

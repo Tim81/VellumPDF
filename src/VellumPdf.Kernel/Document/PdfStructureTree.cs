@@ -390,10 +390,13 @@ internal sealed class PdfStructureTree
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    // The three walks below recurse over Children. AddChild refuses a cycle, so none can be built
-    // through the public API, but a stack overflow cannot be caught, so each walk also keeps the
-    // elements on its current path and refuses to enter one twice (#521). Without it a graph put
-    // together some other way would crash the process rather than raise.
+    // Six walks below recurse over Children. AddChild refuses a cycle, so none can be built through
+    // the public API, but a stack overflow cannot be caught. Three of them, CollectElems,
+    // CollectPages and CollectElemsOnPage, keep the elements on their current path and refuse to
+    // enter one twice (#521). The other three, BuildParentMap, FindFirstLeafPage and
+    // CollectStructTypes, keep no path: they are safe only because each runs after CollectPages
+    // has walked the same tree from the document root and refused a cycle. Reorder them and a graph
+    // put together some other way would crash the process rather than raise.
     private static void EnterElement(HashSet<PdfStructElem> path, PdfStructElem element)
     {
         if (!path.Add(element))

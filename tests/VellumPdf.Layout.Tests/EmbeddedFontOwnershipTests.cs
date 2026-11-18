@@ -16,13 +16,15 @@ namespace VellumPdf.Layout.Tests;
 /// </summary>
 public sealed class EmbeddedFontOwnershipTests
 {
-    private const string Sans = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
-    private const string Bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
+    // Copied beside the test assembly by the project file; the two faces differ, which is all this
+    // needs. Their text is "Hello", which both have.
+    private static readonly string Sans = Path.Combine(AppContext.BaseDirectory, "Fonts", "LiberationSans-Regular.ttf");
+    private static readonly string Bold = Path.Combine(AppContext.BaseDirectory, "Fonts", "LiberationSans-Bold.ttf");
 
     private static (byte[] First, byte[] Second) TwoDifferentFonts()
     {
         if (!File.Exists(Sans) || !File.Exists(Bold))
-            Assert.Skip("DejaVu Sans and DejaVu Sans Bold are both needed to give two documents different fonts under one resource name.");
+            Assert.Skip("Liberation Sans Regular and Bold are both needed to give two documents different fonts under one resource name.");
         return (File.ReadAllBytes(Sans), File.ReadAllBytes(Bold));
     }
 

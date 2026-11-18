@@ -189,7 +189,7 @@ public sealed class NoBreakSpaceFallbackTests
         Assert.Equal(0, NoBreakSpaces.ResolveGlyph(codePoint, Font((0x20, 3))));
     }
 
-    private const string DejaVu = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
+    private static readonly string DejaVu = Path.Combine(AppContext.BaseDirectory, "Fonts", "DejaVuSans.ttf");
 
     /// <summary>A real font with the glyphs keeps them: the fallback must not replace a glyph the font has.</summary>
     [Fact]

@@ -225,8 +225,9 @@ public sealed class ListElement
     /// <summary>Appends a text item with an optional text style and returns this instance for chaining.</summary>
     /// <remarks>
     /// Creates the item with <see cref="ListItem(string, TextStyle?)"/> and adds it. A null
-    /// <paramref name="text"/> is refused by that constructor (#547); it used to be stored, and the
-    /// save threw <see cref="NullReferenceException"/> when it laid out the list.
+    /// <paramref name="text"/> is refused here (#547); it used to be stored, and the save threw
+    /// <see cref="NullReferenceException"/> when it laid out the list. The item is always
+    /// top-level, so unlike the <see cref="ListItem"/> constructor this call knows it will be read.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="text"/> is <see langword="null"/>.
@@ -248,7 +249,10 @@ public sealed class ListElement
     /// <see cref="TextStyle.FontRef"/>.
     /// </exception>
     public ListElement Add(string text, TextStyle? style = null)
-        => Add(new ListItem(text, style));
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        return Add(new ListItem(text, style));
+    }
 
     /// <summary>
     /// Formats the marker at 1-based <paramref name="index"/>. The renderer uses this for nested

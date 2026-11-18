@@ -130,10 +130,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   check and surfaced as `NullReferenceException` from a later call the caller did not make, usually
   `Document.Save`, with a stack naming the writer or a renderer. `PdfArray.Add`, `PdfArray`'s
   constructor, `PdfDictionary.Set`'s value, `DocumentRenderer.Add`, `RunningBand`'s template,
-  `Paragraph`, `Paragraph.Add`, `Heading`, `TextRun`'s text, `ListItem`'s text,
-  `ListItem.AddChild(string)`, `ListElement`'s constructor and `Add`, `Row.AddCell(Cell)`, `LayoutImage`, `PieChart.Slices`,
+  `Paragraph`, `Paragraph.Add`, `Heading`, `TextRun`'s text,
+  `ListElement.Add(string)`, `ListElement`'s constructor and `Add`, `Row.AddCell(Cell)`, `LayoutImage`, `PieChart.Slices`,
   every `Document.Add` overload, and the public renderer constructors now throw from the call, naming
-  the parameter. A null inside a sequence names its index. An empty string is not null and is
+  the parameter. A null inside a sequence names its index. `new Paragraph((IEnumerable<TextRun>)null)` already threw `ArgumentNullException` on 1c61fa6, with `ParamName` `source`; it is now `runs`. `new DocumentRenderer(null)` threw `NullReferenceException` and now throws `ArgumentNullException` naming `pdf`. An empty string is not null and is
   accepted. A null cell text is the exception: `new Cell(null)` and `Row.AddCell((string)null)` store
   an empty string, so the cell draws no text. That is what a table with explicit column widths
   already drew, and the auto-sized table now agrees with it instead of throwing at save.
@@ -147,10 +147,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   item's child, it is skipped as before and the list renders. On a top-level item the save throws
   `ArgumentNullException` naming `child`, where it threw `NullReferenceException`. Neither is
   reported, because there is no diagnostics channel yet, and both XML docs say not to pass them and
-  that a later major version will throw. A grandchild made with a null text, through
-  `AddChild((string)null)` or `new ListItem(null)`, saved before and now throws
-  `ArgumentNullException` from the call, because the call cannot tell where the item will sit; that
-  one is not kept. The `<exception>` tags and the "a later major version will throw" paragraphs that
+  that a later major version will throw. A null text given to `new ListItem` or `ListItem.AddChild(string)` is handled the same way: it is
+  stored as an empty string and the item is marked. On a grandchild the list renders as before. On a
+  top-level item, or a child of one, the save throws `ArgumentNullException` naming `text`, where it
+  threw `NullReferenceException`; `ListElement.Add(string)` always makes a top-level item, so it
+  still throws from the call. The `<exception>` tags and the "a later major version will throw" paragraphs that
   described the old behaviour are rewritten. `PageSize`, `DrawContext`, `FontReference`,
   `LayoutResult` and `RendererContext` still store a null, and are outside these three issues.
 
@@ -164,15 +165,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the text is drawn. It also refuses a null `page` or `handle` with `ArgumentNullException`. A
   null handle given to `FontReference` or `TextStyle.FontRef` still means Helvetica, as documented.
 
-- **A cycle in a structure tree, array or dictionary is refused instead of overflowing the stack
-  (#521).** `array.Add(array)`, `dictionary.Set(key, dictionary)` and `element.AddChild(element)` on a
+- **A cycle in a structure tree, array, dictionary or stream is refused instead of overflowing the
+  stack (#521).** `array.Add(array)`, `dictionary.Set(key, dictionary)`, `stream.Dictionary.Set(key,
+  stream)` and `element.AddChild(element)` on a
   tagged document each recursed with no guard until the process died with a `StackOverflowException`,
   which no application can catch, and the structure-element form needed nothing but `Tagged = true`
   and one `AddChild`. `PdfStructElem.AddChild` now refuses a child that is the element or holds it in
   its own subtree, with `ArgumentException` at the call that makes the cycle, and refuses a null.
-  `PdfWriter` keeps the arrays and dictionaries on its current path, so `PdfArray.WriteTo` and
-  `PdfDictionary.WriteTo` throw `InvalidOperationException` for one that contains itself, and the
-  three structure-tree walks do the same for a graph assembled some other way. There is no depth
+  `PdfWriter` keeps the arrays, dictionaries and streams on its current path, so `PdfArray.WriteTo`,
+  `PdfDictionary.WriteTo` and the stream `WriteTo` throw `InvalidOperationException` for one that
+  contains itself. A stream needs its own entry, because it serialises a fresh copy of its dictionary
+  on every call and the dictionary guard never sees the same one twice. A search of `src` for every
+  `PdfObject` subclass and every `.WriteTo(` call found no other container: `PdfIndirectObject` is
+  built fresh around its value on each write, and the three stream classes share the same guard.
+  The three structure-tree walks do the same for a graph assembled some other way. There is no depth
   cap: a deep acyclic structure saves as before, and an object placed twice side by side, or
   referred to through an indirect reference, is not a cycle. `ListItem.AddChild` has the same shape
   but is unchanged, because a self-referencing item renders today with one level of nesting; it is
@@ -199,8 +205,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   whose `/Contents` placeholder fits in a string; a size between that and 2^30 used to throw
   `OutOfMemoryException` after the layout. A `SaveAsync` cancelled at any checkpoint ends with
   `TaskCanceledException`, as documented. With a header or footer set, the counting pass refuses a
-  too-tall element before any page is added, so that one case can still be corrected and saved
-  again. A refused page geometry adds no pages and stays recoverable. Through `Document`, where the
+  too-tall element before any page is added, but the document still cannot be saved again:
+  an element keeps the line breaks it measured at the first page width, so a retry after changing
+  `PageSize` reused them and wrote a different page from a fresh document's (a 150 pt "Hello" was
+  hard-broken into `(Hell)` and `(o)` where a fresh document wrote `(Hello)`). **Attention**: that
+  retry used to save with the wrong wrap and now throws `InvalidOperationException` asking for a
+  new `Document`, as every save after a layout that started does. A refused page geometry is
+  raised before the layout starts, adds no pages and stays recoverable. Through `Document`, where the
   pages are not known yet, the message for a negative `SignaturePage` says the index cannot be
   negative instead of naming the page count; a `PdfDocument` caller gets the old message. A
   `PdfDocument` with no pages, and a `Document` with no content, still report "The document has no
@@ -222,7 +233,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   layout. A `SaveAsync` given an already-cancelled token together with a bad destination or a
   document in a state that cannot be saved reports the argument or state exception, not the
   cancellation. A `Document` with no content, and a `PdfDocument` with no pages, still report "The
-  document has no pages." before a bad destination or options, as before. `DocumentRenderer.Render`
+  document has no pages." before a bad destination or options, as before. Two precedences were
+  measured against 1c61fa6 and differ. `PdfDocument.Save` on a document with pages and an unwritable
+  stream now throws `ArgumentException` (parameter `destination`) before an incompatible option such
+  as `UseObjectStreams` with `Encrypt`, which threw `NotSupportedException` first. Signing a
+  `Document` with no content, through `VellumPdf.Signing`, now reports "The document has no
+  pages." before margins that meet the page, which threw `ArgumentException` (parameter `margins`)
+  first; a `NaN` header height already reported "no pages" first on both. `DocumentRenderer.Render`
   runs the same checks before its layout, so a failed render to an unwritable stream no longer
   leaves pages behind for a retry to write twice.
 
@@ -284,9 +301,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   behaves as it did. A sequential or embedded stream cannot be read past such a segment, so what
   follows one is not seen. A random-access file refuses an unknown length on any page, without
   naming the segment type. If the first page-information segment has page association 0 it names
-  no page, and every segment is kept, as before pages were chosen. **Attention**: a headerless
-  (embedded-organisation) JBIG2 stream with an unknown-length page segment used to embed as a blank
-  image, with no error, and now throws `InvalidDataException`; and a file with more than one page
+  no page, and every segment is kept, as before pages were chosen. **Attention**: a JBIG2 stream
+  with an unknown-length segment (types 38 and 53 measured) after a known-length page-information
+  segment used to load without an error, and now throws `InvalidDataException`. Both input shapes
+  measured take the throw: the headerless embedded organisation and the ID string followed directly
+  by segments. An unknown-length page-information segment itself threw on both versions. A file with more than one page
   used to embed every page's segments into one image stream and now embeds only the first page.
   When no reading of the data is accepted, the `InvalidDataException` now says which readings were
   tried (a sequential or random-access file, the ID string followed directly by segments, or the

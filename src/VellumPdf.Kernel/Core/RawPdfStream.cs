@@ -38,7 +38,17 @@ internal sealed class RawPdfStream : PdfStream
             .Set(PdfName.Filter, _filter)
             .Set(PdfName.Length, length);
 
-        serialDict.WriteTo(writer);
+        // The copy above is a fresh dictionary on every call, so the writer's guard never sees the
+        // same one twice when the dictionary holds this stream; guard the stream itself.
+        writer.EnterContainer(this);
+        try
+        {
+            serialDict.WriteTo(writer);
+        }
+        finally
+        {
+            writer.LeaveContainer(this);
+        }
         writer.WriteAscii("\nstream\n"u8);
         writer.WriteRaw(body);
         writer.WriteAscii("\nendstream"u8);

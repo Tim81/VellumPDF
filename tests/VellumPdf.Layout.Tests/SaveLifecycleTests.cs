@@ -916,22 +916,34 @@ public sealed class SaveLifecycleTests
         Assert.NotNull(new FileInfo(middle).LinkTarget);
     }
 
-    // ── With a header or footer, a too-tall element is refused before any page is added ──
+    // ── A layout that started cannot be repeated, even before it added a page ──
 
+    // A renderer caches its wrap at the width it was first laid out at. A retry after a PageSize
+    // change would reuse that wrap: probed against a fresh document with "Hello" at 150pt, the
+    // retry hard-broke it as (Hell)/(o) where the fresh one wrote (Hello). So the document refuses
+    // the retry, and the way to recover is a new Document.
     [Fact]
-    public void TooTallElementWithAHeader_isRefusedByTheCountingPass_soTheRetryIsAllowed()
+    public void TooTallElementWithAHeader_isRefusedByTheCountingPass_andTheRetryIsRefusedToo()
     {
         // 150pt text needs a 180pt line; the 300x200 page with a 20pt header leaves 160pt.
-        using var doc = Good();
-        doc.Add(new Paragraph("Hello", Style(150)));
-        doc.Header = new RunningBand("h", Style()) { Height = 20 };
+        Document Build(PdfRectangle page)
+        {
+            var d = Good();
+            d.PageSize = page;
+            d.Add(new Paragraph("Hello world", Style(150)));
+            d.Header = new RunningBand("h", Style()) { Height = 20 };
+            return d;
+        }
+
+        using var doc = Build(new PdfRectangle(0, 0, 300, 200));
         Assert.Throws<InvalidOperationException>(() => Save(doc));
 
         doc.PageSize = new PdfRectangle(0, 0, 600, 800);
-        var recovered = Save(doc);
+        var retry = Assert.Throws<InvalidOperationException>(() => Save(doc));
+        Assert.Contains("new Document", retry.Message);
 
-        // One page, as a fresh document makes it: nothing of the failed attempt was left behind.
-        Assert.Equal(1, Pages(recovered));
+        using var fresh = Build(new PdfRectangle(0, 0, 600, 800));
+        Assert.Equal(1, Pages(Save(fresh)));
     }
 
     // ── Signing refuses what no page count can make valid before the layout ──

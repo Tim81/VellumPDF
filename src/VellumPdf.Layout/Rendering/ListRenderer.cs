@@ -39,7 +39,7 @@ public sealed class ListRenderer : IRenderer
     // short of the remaining height Layout tracked, so the second pass wrapped to one line fewer
     // than the first, the line was never drawn, and the space Layout reserved for it stayed empty
     // (#556). Null until Layout has run on this renderer or the one it was split from.
-    private double[]? _offered;
+    private List<double>? _offered;
 
     /// <summary>Creates a renderer for the list, optionally starting at <paramref name="startItem"/> for pagination.</summary>
     /// <remarks>
@@ -128,11 +128,13 @@ public sealed class ListRenderer : IRenderer
         // Walk items and accumulate height, handling overflow.
         var y = area.Y;
         var remaining = area.Height;
-        var offered = new double[_items.Count];
+        // One entry per item this call visits, indexed by i - _startItem. Sizing it to the whole list
+        // allocated the full item count on every page, which is quadratic over a long list.
+        var offered = new List<double>();
 
         for (var i = _startItem; i < _items.Count; i++)
         {
-            offered[i] = remaining;
+            offered.Add(remaining);
             var itemArea = new LayoutBox(area.X, y, area.Width, remaining);
             var itemCtx = context.WithArea(itemArea);
 
@@ -242,7 +244,7 @@ public sealed class ListRenderer : IRenderer
             // Re-layout to get the occupied heights at the current y position, offering the height
             // Layout offered. Bottom - y is the same height up to a rounding step, and one step is
             // enough to drop a line (#556); the fallback is for a renderer Layout never ran on.
-            var itemArea = new LayoutBox(area.X, y, area.Width, _offered is { } o ? o[i] : area.Bottom - y);
+            var itemArea = new LayoutBox(area.X, y, area.Width, _offered is { } o ? o[i - _startItem] : area.Bottom - y);
             var itemCtx = new LayoutContext(itemArea);
 
             var markerH = isContinuation ? 0 : marker.Layout(itemCtx).OccupiedArea?.Height ?? 0;
@@ -352,6 +354,8 @@ public sealed class ListRenderer : IRenderer
         for (var i = 0; i < _list.Items.Count; i++)
         {
             var item = _list.Items[i];
+            if (item.HasNullText)
+                throw new ArgumentNullException("text", "A list item has a null text.");
             var itemStyle = item.Style ?? defaultStyle;
             var markerText = _list.FormatMarker(i + 1);
             var markerWidth = itemStyle.MeasureString(markerText);
@@ -408,6 +412,8 @@ public sealed class ListRenderer : IRenderer
                 var seq = 1;
                 foreach (var child in item.Children)
                 {
+                    if (child.HasNullText)
+                        throw new ArgumentNullException("text", "A list item has a null text.");
                     var childStyle = child.Style ?? itemStyle;
                     // Nested unordered items use an open-bullet "◦"; nested ordered items
                     // route through ListElement.FormatMarker so OrderedAlpha/OrderedRoman

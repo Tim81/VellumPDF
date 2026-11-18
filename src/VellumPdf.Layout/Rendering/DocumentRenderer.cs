@@ -230,15 +230,16 @@ public sealed class DocumentRenderer
     /// <para>A null <paramref name="pageSize"/> means the <see cref="PdfDocument.DefaultPageSize"/>
     /// of <paramref name="pdf"/> at construction, and a null <paramref name="margins"/> means 72
     /// points on every side.</para>
-    /// <para>A null <paramref name="pdf"/> throws <see cref="NullReferenceException"/>: from this
-    /// constructor when <paramref name="pageSize"/> is null, and from <see cref="Render"/>
+    /// <para>A null <paramref name="pdf"/> throws <see cref="ArgumentNullException"/> from this
+    /// constructor, naming <c>pdf</c>. It used to throw <see cref="NullReferenceException"/>, from
+    /// this constructor when <paramref name="pageSize"/> was null and from <see cref="Render"/>
     /// otherwise.</para>
     /// <para>A negative margin is accepted and moves that edge of the content area outward, as on
     /// <see cref="Document.Margins"/>. The origin of <paramref name="pageSize"/> is not used for
     /// layout, as on <see cref="Document.PageSize"/>.</para>
-    /// <para>Do not pass a null <paramref name="pdf"/>, a page rectangle not at the origin, or a
-    /// page size so large that positions overflow. Do not pass a margin that is a finite negative
-    /// inset either. A later major version will refuse it.</para>
+    /// <para>Do not pass a page rectangle not at the origin or a page size so large that positions
+    /// overflow. Do not pass a margin that is a finite negative inset either. A later major version
+    /// will refuse them.</para>
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// The page width or height is not a positive finite number.
@@ -250,10 +251,8 @@ public sealed class DocumentRenderer
     /// positive content area once a header or footer is taken off, or put a position written
     /// outside the content stream at a non-finite value; see <see cref="Document.Margins"/>.
     /// </exception>
-    /// <exception cref="NullReferenceException">
-    /// <paramref name="pageSize"/> is null and <paramref name="pdf"/> is null, or its
-    /// <see cref="PdfDocument.DefaultPageSize"/> is null. With a page size given, a null
-    /// <paramref name="pdf"/> makes <see cref="Render"/> throw it instead.
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="pdf"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Render"/>, not from this constructor, when a page size and margins
@@ -262,6 +261,7 @@ public sealed class DocumentRenderer
     /// </exception>
     public DocumentRenderer(PdfDocument pdf, PdfRectangle? pageSize = null, EdgeInsets? margins = null)
     {
+        ArgumentNullException.ThrowIfNull(pdf);
         _pdf = pdf;
         _pageSize = pageSize ?? pdf.DefaultPageSize;
         _margins = margins ?? new EdgeInsets(72); // 1-inch default margins (72pt)
@@ -388,6 +388,13 @@ public sealed class DocumentRenderer
     }
 
     /// <summary>
+    /// True once <see cref="RunLayout"/> got past its geometry checks. A renderer caches its wrap at
+    /// the width it was first laid out at, so a document that reached this point cannot be laid out
+    /// again with different geometry.
+    /// </summary>
+    internal bool HasStartedLayout { get; private set; }
+
+    /// <summary>
     /// Runs the layout pass (page count + full render) without writing to any stream.
     /// After this call, callers may invoke <see cref="PdfDocument.Save"/> or
     /// <see cref="PdfDocument.PrepareForSigning"/> on the underlying document.
@@ -406,6 +413,9 @@ public sealed class DocumentRenderer
                 "The margins, header, and footer together exceed the page dimensions. " +
                 "Reduce the margins or band heights.",
                 "margins");
+
+        // From here the renderers measure and cache; see Document.MarkFailedIfLaidOut.
+        HasStartedLayout = true;
 
         int totalPages;
         if (Header is not null || Footer is not null)

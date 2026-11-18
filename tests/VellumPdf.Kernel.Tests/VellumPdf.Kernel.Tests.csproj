@@ -21,4 +21,13 @@
     <PackageReference Include="Verify.XunitV3" />
   </ItemGroup>
 
+  <!-- In-tree fonts, copied beside the test assembly so embedded-font tests do not depend on a system
+       font directory that only exists on Linux. DejaVu Sans has the no-break-space glyphs; the two
+       Liberation Sans faces give two different fonts. Licences sit with the sources. -->
+  <ItemGroup>
+    <None Include="..\VellumPdf.Conformance.Tests\Assets\DejaVuSans.ttf" Link="Fonts\DejaVuSans.ttf" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\VellumPdf.Fonts.Standard14\Fonts\LiberationSans-Regular.ttf" Link="Fonts\LiberationSans-Regular.ttf" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\VellumPdf.Fonts.Standard14\Fonts\LiberationSans-Bold.ttf" Link="Fonts\LiberationSans-Bold.ttf" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

@@ -487,10 +487,12 @@ public static class Jbig2ImageLoader
     }
 
     /// <summary>
-    /// The refusal of a segment whose data length is 0xFFFFFFFF (§7.2.7). Its end is found only by
-    /// scanning the data for a marker that differs per segment type, which this loader does not do,
-    /// so it can neither be partitioned into the page and globals streams nor decoded. One message
-    /// for both modes.
+    /// The refusal of a segment whose data length is 0xFFFFFFFF (§7.2.7). Only an immediate generic
+    /// region may carry that length, and its end is found only by scanning the data for a marker that
+    /// depends on the coding (ITU-T T.88 7.2.7): 0xFF 0xAC for template-based arithmetic coding or
+    /// 0x00 0x00 for MMR, each followed by a four-byte row count. This loader does not scan, so such
+    /// a segment can neither be partitioned into the page and globals streams nor decoded. One
+    /// message for both modes.
     /// </summary>
     private static InvalidDataException UnknownLength(in SegmentHeader seg)
         => new(
@@ -530,7 +532,8 @@ public static class Jbig2ImageLoader
                 continue;
 
             // A segment of unknown length (§7.2.7) cannot be partitioned: where it ends is found only
-            // by scanning its data for the end marker, which differs per segment type. Skipping it
+            // by scanning its data for the end marker, which depends on the coding (0xFF 0xAC for
+            // arithmetic, 0x00 0x00 for MMR; only an immediate generic region may have one). Skipping it
             // left a blank image with nothing to say why, so it is refused.
             if (!seg.HasKnownLength)
             {

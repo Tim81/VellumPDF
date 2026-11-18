@@ -18,7 +18,7 @@ public sealed class PdfWriter
     private readonly Stream _stream;
     private long _position;
 
-    // The arrays and dictionaries currently being written, outermost first. A container that holds
+    // The arrays, dictionaries and streams currently being written, outermost first. A container that holds
     // itself, directly or through others, would recurse until the stack overflowed, which cannot be
     // caught in .NET, so entering one that is already on the path is refused instead (#521).
     // Allocated on first use, because most writers never nest.
@@ -39,7 +39,7 @@ public sealed class PdfWriter
         if (!_activeContainers.Add(container))
         {
             throw new InvalidOperationException(
-                $"A PDF {(container is PdfArray ? "array" : "dictionary")} contains itself, directly or " +
+                $"A PDF {(container is PdfArray ? "array" : container is PdfStream ? "stream" : "dictionary")} contains itself, directly or " +
                 "through other arrays and dictionaries, so it cannot be written. Break the cycle, or " +
                 "refer to the object through an indirect reference.");
         }
