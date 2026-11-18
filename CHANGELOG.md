@@ -25,6 +25,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   except two that were re-measured on 1.30.4 and came out the same: the language-tag table in
   `docs/conformance-divergences.md` and the profile clause counts in `eng/clause-coverage.py`.
 
+### Fixed
+
+- **Cost-bound tests no longer assert on elapsed time (#400, #456).** A `Stopwatch` checked after a
+  call returns cannot end a hang, and a 10 s bound fails on a loaded runner: the main CI run for
+  1c61fa6 failed `FindingHigh_A4FlateBombPadding_refusesQuickly_viaCostBudget` at 11.79 s, and #400
+  records two 10 s `Timeout` cancellations of the #208 encrypt-dictionary pin. Most sites now pin
+  something the code decides, or a bound on bytes allocated on the calling thread.
+  `PageTreeTests`' deep malformed-ancestor walk drops its clock without a replacement, because a
+  quiet per-leaf rescan changes nothing a test can observe without a src hook. A4 flate-bomb padding
+  checks the budget's own message and a 5 MiB allocation bound (about 2.15 MB measured when the
+  budget works, 42.1 MB when it is charged after the loop), using a 4 MiB bomb against a 1 MiB decode
+  cap instead of 600 MiB. PNG zlib bombs bound `Load` at 256 KiB (91,224 bytes measured, 10.5 MB when
+  the cap is checked after the loop). `PdfDictionary` gains an internal `IsIndexed`, so the #208
+  tests assert that the index exists and that `ShallowCopy` carries it, and an entry-swap check
+  shows that `TryGet` follows the index and does not scan. The `ManyStreamsWithNoEol` parser test
+  ends with one well-formed stream, so a scan that skips EOL-less terminators returns a wrong body.
+  The parser, reader and content-interpreter fuzz targets check a per-sample allocation ceiling
+  that scales with input length, so CsCheck's seed still prints; the lexer target drops its clock
+  and keeps its token-count bound. The Layout cap tests use
+  renderers that fail by name after 200,004 `Layout` calls. Remaining `Timeout` values are 300 s hang
+  guards, except the `EncryptDictionaryDenialOfServiceTests` pin sized in #456. No public API changes.
+
 ## [2.3.3] - 2026-09-20
 
 This release is led by documentation. Layout's public surface now states what each member

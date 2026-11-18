@@ -209,15 +209,30 @@ public sealed class PaginationDepthTests
 
     // ── (c) The continuation cap throws ──────────────────────────────────────
 
-    // Generous relative to the ~50,001 real page objects the PlaceRenderer case creates (measured ~75-120ms,
-    // ~62MB allocated). Without a timeout, deleting the cap check makes both tests loop forever,
-    // but the two are not equally inert while they do: pass 1 (CountPlaceRenderer) creates no PDF
-    // objects, so there is no allocation growth to trip an OOM, and it just burns the CI
-    // job to the workflow timeout with no attributable test name. Pass 2 (PlaceRenderer) is not
-    // inert the same way — every turn creates a real page — and measured working set reaches
-    // 2.0-2.6GB within this timeout under a cap-removed mutation, so on a memory-tight runner an
-    // OOM could beat the timeout instead of the workflow-level one (review round 2, #459).
-    private const int CapTestTimeoutMs = 10_000;
+    // The renderers below end their own runaway: each counts Layout calls and fails the test by
+    // name past MaxLayoutCalls. That is what makes a long Timeout safe here (#400). With the cap
+    // check deleted, the loops used to spin until a short Timeout cancelled them, and pass 2
+    // (PlaceRenderer) creates a real page per turn: measured working set reached 2.0-2.6GB within
+    // 10 seconds under a cap-removed mutation, so a longer Timeout alone would have let an OOM beat
+    // it with no test name attached (review round 2, #459). A renderer that stops itself at
+    // 4 x 50,001 calls (a bound on both passes together, with room for the Nothing branch's
+    // retries) stays small: with the cap check replaced by one that never fires, the three tests
+    // that use these renderers failed by name in 1.4 s at a polled peak working set of 155 MiB
+    // (Debug, one process), against 102 MiB when the cap works.
+    // The Timeout is therefore only a hang guard for a hang inside one Layout call, which no
+    // counter sees; it is 300 s so a loaded CI runner executing seven test assemblies at once
+    // cannot cancel a render that is merely slow (#400).
+    private const int CapTestTimeoutMs = 300_000;
+
+    private const int MaxLayoutCalls = 4 * (MaxContinuationsPerElement + 1);
+
+    private static void CountLayoutCall(ref int calls, string renderer)
+    {
+        if (++calls > MaxLayoutCalls)
+            Assert.Fail(
+                $"{renderer} was asked to lay out more than {MaxLayoutCalls} times; the continuation "
+                + "cap did not stop the render.");
+    }
 
     // xUnit1069 wants TestContext.Current.CancellationToken threaded through so a Timeout can end
     // the test promptly; DocumentRenderer.Render takes no CancellationToken, and there is nothing
@@ -280,8 +295,13 @@ public sealed class PaginationDepthTests
     /// </summary>
     private sealed class NeverAdvancingRenderer : IRenderer
     {
-        public LayoutResult Layout(LayoutContext context) =>
-            LayoutResult.Partial(context.Area.WithHeight(0), this, this);
+        private int _calls;
+
+        public LayoutResult Layout(LayoutContext context)
+        {
+            CountLayoutCall(ref _calls, nameof(NeverAdvancingRenderer));
+            return LayoutResult.Partial(context.Area.WithHeight(0), this, this);
+        }
 
         public void Draw(DrawContext context) { }
     }
@@ -327,10 +347,13 @@ public sealed class PaginationDepthTests
     {
         private int _calls;
 
-        public LayoutResult Layout(LayoutContext context) =>
-            ++_calls % 2 != 0
+        public LayoutResult Layout(LayoutContext context)
+        {
+            CountLayoutCall(ref _calls, nameof(NothingThenFullRenderer));
+            return _calls % 2 != 0
                 ? LayoutResult.Nothing()
                 : LayoutResult.Full(context.Area.WithHeight(0));
+        }
 
         public void Draw(DrawContext context) { }
     }
