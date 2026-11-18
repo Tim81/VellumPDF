@@ -117,10 +117,10 @@ public sealed class EncryptDictionaryDenialOfServiceTests
     //
     // This is the one [Fact(Timeout)] left in the test projects that is a regression pin and not a
     // 300 s hang guard (#400). It was sized in #456, after #400 was opened, and measured against
-    // the real defect: with IndexThreshold raised to int.MaxValue it was cancelled at 120.2 s. Nothing deterministic
-    // can replace it here: the defect is CPU-only, and although Reader.Tests can see
-    // PdfDictionary.IsIndexed through Kernel's InternalsVisibleTo, this test does not reach the parsed
-    // /Encrypt dictionary. The state check that stands in for it lives in PdfDictionaryIndexTests.
+    // the real defect: with IndexThreshold raised to int.MaxValue it was cancelled at 120.2 s.
+    // Nothing deterministic replaces it: what it pins is that no step between parsing /Encrypt and
+    // authenticating is quadratic, which is CPU cost with no state to check. Asserting IsIndexed on
+    // the parsed dictionary (reachable via reader.Trailer) would only repeat PdfDictionaryIndexTests.
 #pragma warning disable xUnit1069
     [Fact(Timeout = 120_000)]
     public void HugeEncryptDictionary_opensWellInsideTheBudget()

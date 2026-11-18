@@ -3680,9 +3680,10 @@ public sealed class ContentInterpreterTests
         reader?.Dispose();
 
         // Per-sample allocation ceiling (#400), not a clock: a Stopwatch read after Run returns
-        // cannot end a hang and failed on a loaded runner. Per thread, for the reason the
-        // HugeArrayOperand_capReportsBeforeMaterialisingIt_boundingAllocation gives; Open, GetPage and Run are all synchronous. The
-        // ceiling is a fixed slack plus a per-byte factor on this sample's length:
+        // cannot end a hang, and the same pattern failed on a loaded runner in
+        // EncryptedReconstructionTests (CI run 41460090645). Per thread, for the reason
+        // HugeArrayOperand_capReportsBeforeMaterialisingIt_boundingAllocation gives; Open, GetPage
+        // and Run are all synchronous. The ceiling is a fixed slack plus a per-byte factor on this sample's length:
         //   - Slack: ReaderLimits.MinMaxDecodedBytes (1 MiB), the decoded-stream cap in force
         //     above, the one buffer a sample may legitimately make Open allocate on top of its own
         //     size. A cold first call (Open, GetPage, Run) measured 18,088 bytes.

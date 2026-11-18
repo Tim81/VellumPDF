@@ -22,8 +22,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   tests assert that the index exists and that `ShallowCopy` carries it, and an entry-swap check
   shows that `TryGet` follows the index and does not scan. The `ManyStreamsWithNoEol` parser test
   ends with one well-formed stream, so a scan that skips EOL-less terminators returns a wrong body.
-  The `ParserFuzzTests` and `ContentInterpreterTests` fuzz targets check a per-sample allocation
-  ceiling that scales with input length, so CsCheck's seed still prints. The Layout cap tests use
+  The parser, reader and content-interpreter fuzz targets check a per-sample allocation ceiling
+  that scales with input length, so CsCheck's seed still prints; the lexer target drops its clock
+  and keeps its token-count bound. The Layout cap tests use
   renderers that fail by name after 200,004 `Layout` calls. Remaining `Timeout` values are 300 s hang
   guards, except the `EncryptDictionaryDenialOfServiceTests` pin sized in #456. No public API changes.
 

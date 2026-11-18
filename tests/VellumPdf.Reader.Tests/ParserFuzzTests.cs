@@ -45,23 +45,25 @@ namespace VellumPdf.Reader.Tests;
 /// </para>
 /// <para>
 /// <strong>Cost is bounded by allocation and token count, not by a clock (#400).</strong> The
-/// lexer pins that it emits no more tokens than it has bytes plus a slack of 16, and the parser and reader pin the
-/// bytes allocated on the calling thread per sample against a ceiling that scales with that
-/// sample's length (see <see cref="AssertWithinAllocationCeiling"/>). A check of
-/// <c>Stopwatch.Elapsed</c> made after the call returns could not end a hang and failed on a
-/// loaded runner; these keep CsCheck's printed seed and do not depend on the machine. Neither
+/// lexer pins that it emits no more tokens than it has bytes plus a slack of 16, and the parser
+/// and reader pin the bytes allocated on the calling thread per sample against a ceiling that
+/// scales with that sample's length (see <see cref="AssertWithinAllocationCeiling"/>). A check of
+/// <c>Stopwatch.Elapsed</c> made after the call returns could not end a hang, and the same kind of
+/// check failed on a loaded runner in <c>EncryptedReconstructionTests</c> (#400); these keep
+/// CsCheck's printed seed and do not depend on the machine. Neither
 /// bound discriminates a defect that burns CPU without allocating or emitting tokens. The
 /// <c>Timeout</c> on each case is a 300 s hang guard and nothing else: the nightly run
 /// (44078641870, <c>VELLUMPDF_FUZZ_ITER=200000</c>) passed all five tests of this class in 14 s 992 ms,
-/// a twentieth of the guard, and a local Release run at 1,000,000 iterations per case took 89 s for
-/// the class.
+/// a twentieth of the guard. Local Release runs of the class at 1,000,000 iterations per case took
+/// 28.8 s to 89 s on this machine (2026-11-18).
 /// </para>
 /// <para>
-/// At real sample lengths (up to about 6.5 KB) the 1 MiB slack in the ceilings dominates. The
-/// reader and <c>ContentInterpreterTests</c> ceilings therefore catch only gross regressions, an
-/// allocation of megabytes on a kilobyte input. The parser ceiling is the tightest: a measured maximum
-/// of 144,000 bytes over 1,000,000 samples against about 1.9 MB at the longest sample, so an
-/// allocation about thirteen times that maximum would fail it.
+/// At real sample lengths (up to about 6.5 KB) the 1 MiB slack dominates every ceiling here, so all
+/// three catch gross regressions only. Measured against what samples actually allocate, the reader
+/// ceiling is the tightest: over 1,000,000 samples (Release, 2026-11-18) its worst sample allocated
+/// 1,743,608 bytes on a 1,433-byte input, 0.44 of that sample's ceiling. The parser's worst
+/// allocated 143,184 bytes, 0.077 of its ceiling, so only an allocation about thirteen times that
+/// would fail it.
 /// </para>
 /// <para>
 /// <strong>Budget.</strong> <see cref="FuzzBudget.Iterations"/> defaults to a few thousand — fast
@@ -94,11 +96,12 @@ public sealed class ParserFuzzTests
     //     worst (a run of '<<'), 105 to 168 for object-header and array runs. 2,048 B/byte is
     //     4.9x the worst. A run of '[' is NOT covered: with reconstruction on, Open alone allocated
     //     26 MB on a 512-byte run, 293 MB at 4 KiB, 304 MB from 8 to 64 KiB and 609 MB at 256 KiB.
-    //     Inserted at the start of the smallest committed seed (599 bytes), 160 of them already
-    //     exceed this ceiling. No committed seed holds two consecutive '[', and by my count a chain
-    //     of at most eight operations that each change one byte or duplicate at most 64 builds at
-    //     most about 128 from nothing, so a sample reaching one is unlikely. A sample that does is a real finding
-    //     for this test to report.
+    //     No committed seed holds two consecutive '['. Eight operations can still build a run of
+    //     192: one insert beside an existing '[' and seven duplications of at most 64 bytes of the
+    //     run. Built that way in the 599-byte seed, the reader allocated 4,429,360 bytes against a
+    //     2,666,496-byte ceiling and fails (2026-11-18); seven operations reach 128 and pass. Each
+    //     of the eight has to pick the right kind and land on the run, so a random sample is very
+    //     unlikely to do it. A sample that does is a real finding for this test to report.
     // All of the above was measured locally on 2026-11-18, in Debug and Release.
     // The slack is ReaderLimits.MinMaxDecodedBytes (1 MiB), the decoded-stream cap every Open call
     // below runs under: the one buffer an input may legitimately make the reader allocate on top of
