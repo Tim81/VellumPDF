@@ -168,8 +168,9 @@ to retrofit:
 ## Defaults & conventions
 
 - Default page size **A4**; default units **metric (millimetres)**.
-- Target frameworks **net10.0** and **net11.0**, built from one SDK (11.0.x). Both ship in every
-  package under `lib/`; no source file branches on the target framework.
+- Target frameworks **net10.0** and **net11.0**, built from one SDK (11.0.1xx). Both ship in every
+  package: under `lib/` for the seven libraries, under `tools/` for `VellumPdf.Cli`; no source file
+  branches on the target framework.
 - Modern C# 14: `readonly record struct` for value types (Rect/Matrix/Color),
   `ReadOnlySpan<byte>` + UTF-8 (`u8`) literals for fixed tokens,
   `SearchValues<byte>` for delimiter scanning, `FrozenDictionary` for metric

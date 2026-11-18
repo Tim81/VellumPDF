@@ -329,8 +329,9 @@ as these milestones land. `VellumPdf.Conformance` graduated to Stable in 2.0.
 ## Building
 
 Requires the .NET 11 SDK. The libraries build for `net10.0` and `net11.0` and ship both, so a
-consumer on either runtime restores the matching assembly. The two target frameworks reach end of
-support on the same day, 2028-11-14, and the library keeps both until then.
+project targeting `net10.0` restores the `net10.0` assembly, and one targeting `net11.0` or later
+restores the `net11.0` assembly. The two target frameworks reach end of support on the same day,
+2028-11-14, and VellumPdf keeps both targets until that date.
 
 Running the test suite on `net10.0` also needs the .NET 10 runtime installed beside the SDK.
 

@@ -163,13 +163,14 @@ that gap from the workflow side rather than in-process, since the suite runs
 each test assembly as its own process and nothing guarantees which one runs
 last. `ci.yml`'s Test step sets `ORACLE_INVOCATION_LOG`, which makes
 `ExternalTool.RunProcess` append one `tool<TAB>first-argument` line per
-successful, non-probe call to a per-process, per-target-framework file named `<base>.<tfm>.<pid>` — an identity probe and a
-launch that never started are both excluded, so neither can pad a tool's
-count without the tool having actually validated anything; a step after
-Test concatenates each target framework's files, sums a count per tool, and fails the build if
-any tool falls below a floor pinned next to that count under either `net10.0` or `net11.0`; a
-framework with no log files at all fails too. The env var is
-unset locally, so this is a no-op outside CI.
+successful, non-probe call to a per-process, per-target-framework file named
+`<base>.<tfm>.<pid>`. An identity probe and a launch that never started are both
+excluded, so neither can pad a tool's count without the tool having actually
+validated anything. A step after Test concatenates each target framework's
+files, sums a count per tool, and fails the build if any tool falls below a
+floor pinned next to that count under either `net10.0` or `net11.0`; a
+framework with no log files at all fails too. The env var is unset locally, so
+this is a no-op outside CI.
 
 A tool that runs and answers is not the same as a tool that discriminated.
 `qpdf --show-linearization` exits 0 and prints no `WARNING` for both a
@@ -197,7 +198,7 @@ switch:
 dotnet test VellumPdf.slnx -c Release --results-directory-layout per-module --results-directory <dir> -- --coverlet
 ```
 
-`--results-directory-layout per-module` is required, not cosmetic: every test project now runs once
+Without `--results-directory-layout per-module` the gate cannot attribute a report: every test project now runs once
 per target framework, and coverlet.MTP names a report only by its write timestamp, so the flat layout
 puts the net10.0 and net11.0 reports of one project in the same directory, where two that finish in
 the same millisecond could overwrite each other. Per-module writes

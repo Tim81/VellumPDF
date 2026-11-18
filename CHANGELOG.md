@@ -8,31 +8,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- **Every package now targets `net10.0` and `net11.0`, built with the .NET 11.0.100 SDK.** Each
-  nupkg carries `lib/net10.0` and `lib/net11.0`; the `VellumPdf.Cli` tool package carries
-  `tools/net10.0/any` and `tools/net11.0/any`. The public API files are shared by both frameworks
-  and no source file branches on the target framework. Both runtimes reach end of support on
-  2028-11-14, and both stay supported until then. `VellumPdf.Signing` takes
+- **Every package now targets `net10.0` and `net11.0`, built with the .NET 11 SDK (`global.json`
+  pins 11.0.100, latest patch).** The seven library nupkgs carry `lib/net10.0` and `lib/net11.0`;
+  the `VellumPdf.Cli` tool package carries `tools/net10.0/any` and `tools/net11.0/any`. The public
+  API files are shared by both frameworks and no source file branches on the target framework. The
+  language version stays pinned at C# 14 rather than following the SDK. Both runtimes reach end of
+  support on 2028-11-14, and VellumPdf keeps both targets until that date. `VellumPdf.Signing` takes
   `System.Security.Cryptography.Pkcs` 10.0.14 on `net10.0` and 11.0.0 on `net11.0`, so a `net10.0`
   consumer does not pick up the 11.0.0 package's `System.Formats.Asn1` 11 dependency. Contributors
   need the .NET 10 runtime installed beside the 11.0 SDK to run the `net10.0` test assemblies.
 - **The native `vellum-preflight` binaries on the GitHub Release are published from `net10.0`.**
   Publishing a multi-targeted executable needs an explicit `-f`, and the LTS target is the one
-  chosen. `release.yml` itself cannot be exercised without a tag; the same command was run locally
-  for `win-x64`.
+  chosen.
 - **CI gates run per target framework.** Each test project runs on both frameworks and writes its
   coverage report to `<project>/<tfm>_<arch>/` (`--results-directory-layout per-module`). The
   coverage gate requires exactly one report in each of the 14 expected directories, checks every
-  report against the assemblies its project must instrument, applies its existing checks per
-  framework and on the merge, and fails on a report anywhere else. The oracle invocation floors are
-  checked per framework, and a framework whose runs logged nothing fails. The job timeout is an
-  interim 60 minutes until a CI run measures the longer Test step.
-
-### Fixed
-
-- **`dotnet pack` failed with NU5039 for a multi-targeted project.** The per-package README was
-  attached with `None Update`, which matches nothing in the outer build that packs a
-  multi-targeted project. It is now removed and re-included.
+  report against the assemblies its project must instrument, applies the assembly-name,
+  per-assembly-floor, valid-line and 84% threshold checks to each framework and the assembly-name,
+  per-assembly-floor, valid-line, 84% threshold and total-line checks to the merge, and fails on a
+  report anywhere else. The oracle invocation floors are checked per framework, and a framework
+  whose runs logged nothing fails. A new Pack-time check fails the build if the `net10.0` package
+  group of `VellumPdf.Signing` names a Pkcs version outside 10.x. The job timeout is an interim 60
+  minutes until a CI run measures the longer Test step. The per-package README is now attached
+  with remove-then-include, because an update matches nothing in the outer build that packs a
+  multi-targeted project.
 
 ## [2.3.3] - 2026-09-20
 
