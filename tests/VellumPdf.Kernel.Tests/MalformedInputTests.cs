@@ -563,11 +563,14 @@ public sealed class MalformedInputTests
             $"expected under {PngBombAllocationBound} bytes allocated before the cap fired; measured {allocated}.");
     }
 
-    // 1 MiB. With the cap firing on the first read, Load allocated 91,224 bytes in Debug and Release
-    // and 90,928 with tiered compilation off, for both the plain and the interlaced bomb. With the
-    // cap checked after the loop, so the whole 4,000,000 bytes land in a growing MemoryStream, it
-    // allocated 10.5 million. 1 MiB sits 11.5x above the first and 10x below the second.
-    private const long PngBombAllocationBound = 1024 * 1024;
+    // 256 KiB. With the cap firing on the first read, Load allocated 91,224 bytes (Debug, Release, 2
+    // runs) and 90,928 (Release, tiered compilation off) for both the plain and the interlaced bomb;
+    // with the cap checked after the loop, so the whole 4,000,000 bytes land in a growing
+    // MemoryStream, 10.5 million (Debug and Release). Measured locally on 2026-11-18. 256 KiB sits
+    // 2.9x above the clean value. A cap that fires 245,000 bytes late allocated 337,032 and fails; one
+    // that fires 160,000 bytes late stays under the bound and passes, so this does not catch a cap
+    // that is only slightly late.
+    private const long PngBombAllocationBound = 256 * 1024;
 
     // ── Interlaced PNG builder helpers ────────────────────────────────────────
 

@@ -35,8 +35,8 @@ public sealed class PdfDictionaryIndexTests
     /// loop, so a dictionary that never builds its index fails here by name instead of by a cancelled
     /// test. Every key is read back afterwards to confirm the index (not just the build) is correct.
     ///
-    /// This does not catch an index that is built but never consulted by <c>TryGet</c>; that defect
-    /// is CPU-only and only the hang guard below would end it.
+    /// A built-but-unused index is caught by <see cref="AssertLookupFollowsTheIndex"/>, which makes
+    /// <c>TryGet</c>'s answer depend on which of the two lookup paths it takes.
     /// </summary>
     // xUnit1069 wants TestContext.Current.CancellationToken threaded through so the Timeout can end
     // the test promptly; PdfDictionary.Set/TryGet take no CancellationToken, and there is nothing to
@@ -59,6 +59,7 @@ public sealed class PdfDictionaryIndexTests
         }
 
         Assert.True(dict.IsIndexed);
+        AssertLookupFollowsTheIndex(dict);
 
         for (var i = 0; i < count; i += 997) // a sparse, non-sequential sample across the whole range
         {
@@ -70,6 +71,30 @@ public sealed class PdfDictionaryIndexTests
         Assert.False(dict.TryGet(new PdfName("NotPresent"), out _));
     }
 #pragma warning restore xUnit1069
+
+    /// <summary>
+    /// Pins that <see cref="PdfDictionary.TryGet"/> resolves through the index and not by scanning
+    /// <c>Entries</c>, without timing anything (#400). It swaps the first two entries in the backing
+    /// list, which the index does not hear about, so the index still sends <c>K0</c> to slot 0 and
+    /// slot 0 now holds <c>K1</c>'s pair. A lookup that follows the index therefore returns 1 for
+    /// <c>K0</c>; a linear scan returns 0. The swap is undone before returning. This is a state check
+    /// on a deliberately desynchronised dictionary, which is the only way to tell the two paths
+    /// apart from outside: both are correct on a consistent one.
+    /// </summary>
+    private static void AssertLookupFollowsTheIndex(PdfDictionary dictionary)
+    {
+        var entries = (List<KeyValuePair<PdfName, PdfObject>>)dictionary.Entries;
+        (entries[0], entries[1]) = (entries[1], entries[0]);
+        try
+        {
+            Assert.True(dictionary.TryGet(new PdfName("K0"), out var value));
+            Assert.Equal(1, Assert.IsType<PdfInteger>(value).Value);
+        }
+        finally
+        {
+            (entries[0], entries[1]) = (entries[1], entries[0]);
+        }
+    }
 
     /// <summary>
     /// Insertion order survives crossing the index threshold, both in <c>Entries</c> and in the bytes
@@ -187,6 +212,7 @@ public sealed class PdfDictionaryIndexTests
 
         var copy = source.ShallowCopy();
         Assert.True(copy.IsIndexed, "ShallowCopy must carry the hash index across (#208).");
+        AssertLookupFollowsTheIndex(copy);
 
         for (var i = 0; i < count; i++)
         {
