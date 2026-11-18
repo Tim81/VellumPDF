@@ -1,4 +1,4 @@
-﻿known defects: A11Y-07
+﻿known defects: A11Y-07, A11Y-16
 Lang: "nl-NL"
 MarkInfo: {Marked=true}
 DisplayDocTitle: true
@@ -12,6 +12,7 @@ StructTreeRoot
     Figure Alt="Figure"
       mcid 1 p1
 == page 1 content
+Tabs: absent
 BDC /Figure {MCID=0}
   image 2x2
 BDC /Figure {MCID=1}

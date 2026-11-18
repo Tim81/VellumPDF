@@ -1,4 +1,4 @@
-﻿known defects: A11Y-06, A11Y-09, A11Y-15
+﻿known defects: A11Y-04, A11Y-06, A11Y-09, A11Y-15
 Lang: "nl-NL"
 MarkInfo: {Marked=true}
 DisplayDocTitle: true
@@ -115,66 +115,83 @@ StructTreeRoot
           P
             mcid 5 p2
 == page 1 content
+Tabs: absent
 BDC /P {MCID=0}
+  line
   show "1."
 BDC /P {MCID=1}
   show "Punt 1"
 BDC /P {MCID=2}
+  line
   show "1."
 BDC /P {MCID=3}
   show "Sub 1.1"
 BDC /P {MCID=4}
+  line
   show "2."
 BDC /P {MCID=5}
   show "Sub 1.2"
 BDC /P {MCID=6}
+  line
   show "2."
 BDC /P {MCID=7}
   show "Punt 2"
 BDC /P {MCID=8}
+  line
   show "1."
 BDC /P {MCID=9}
   show "Sub 2.1"
 BDC /P {MCID=10}
+  line
   show "2."
 BDC /P {MCID=11}
   show "Sub 2.2"
 BDC /P {MCID=12}
+  line
   show "3."
 BDC /P {MCID=13}
   show "Punt 3"
 BDC /P {MCID=14}
+  line
   show "1."
 BDC /P {MCID=15}
   show "Sub 3.1"
 BDC /P {MCID=16}
+  line
   show "2."
 BDC /P {MCID=17}
   show "Sub 3.2"
 BDC /P {MCID=18}
+  line
   show "4."
 BDC /P {MCID=19}
   show "Punt 4"
 BDC /P {MCID=20}
+  line
   show "1."
 BDC /P {MCID=21}
   show "Sub 4.1"
 BDC /P {MCID=22}
+  line
   show "2."
 BDC /P {MCID=23}
   show "Sub 4.2"
 == page 1 annotations
 (none)
 == page 2 content
+Tabs: absent
 BDC /P {MCID=0}
+  line
   show "5."
 BDC /P {MCID=1}
   show "Punt 5"
 BDC /P {MCID=2}
+  line
   show "1."
 BDC /P {MCID=3}
   show "Sub 5.1"
 BDC /P {MCID=4}
+  line
   show "2."
 BDC /P {MCID=5}
   show "Sub 5.2"

@@ -8,19 +8,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- **A structure dumper and nine golden dumps of tagged Layout output (A11Y-12, part 1).** Test-only:
+- **A structure dumper and ten golden dumps of tagged Layout output (A11Y-12, part 1).** Test-only:
   nothing under `src/` changes. `StructureDumper` in `VellumPdf.Conformance.Tests` prints a PDF's
-  structure tree, parent tree, per-page marked content and annotations as text, and prints a
-  problem line where they disagree (`PARENTTREE MISMATCH`, `ORPHAN`, `MISSING`, `UNMARKED`,
-  `NO-OBJR`) instead of skipping. It walks `/K` and `/ParentTree` itself rather than
-  through `StructureTree`, which collapses MCID, MCR and OBJR kids into a flag, and it decodes
-  shown text through `/ToUnicode`, because the Reader's text extraction has no marked-content
-  awareness. Each of nine Layout documents (a split paragraph, a table over three pages, a nested
-  list, header and footer bands, images, runs split inside a word, headings, an empty cell, language
-  overrides) is recorded as a Verify golden whose first line lists the audit findings it still
-  shows, so the pull request that fixes one changes the golden in the same diff. The dumper's own
-  tests build PDFs by hand for what the writer cannot yet produce: MCR and OBJR kids, attribute
-  arrays with revision numbers, a form with its own MCIDs, a wrong parent tree.
+  structure tree, per-page marked content and annotations as text, checks the parent tree against
+  them, and prints a problem line where they disagree (`PARENTTREE MISMATCH`, `ORPHAN`, `MISSING`,
+  `UNMARKED`, `NO-OBJR`, and others) instead of skipping; the last line counts every such marker. It
+  walks `/K` and `/ParentTree` itself rather than through `StructureTree`, which collapses MCID, MCR
+  and OBJR kids into a flag, and it decodes shown text through `/ToUnicode`, because the Reader's
+  text extraction has no marked-content awareness. It refuses oversized input with an
+  `InvalidOperationException` naming the cap. Each of ten Layout documents (a split paragraph, a
+  table over three pages, a nested list, header and footer bands, images, runs split inside a word,
+  headings, an empty cell, language overrides, a list item split over a page break) is recorded as a
+  Verify golden whose first line lists the audit findings it still shows, so the pull request that
+  fixes one changes the golden in the same diff. The dumper's own tests build PDFs by hand for what
+  the writer cannot yet produce: MCR and OBJR kids, attribute arrays with revision numbers, a form
+  with its own MCIDs, a wrong parent tree.
 
 ## [2.3.3] - 2026-09-20
 

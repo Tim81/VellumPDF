@@ -12,15 +12,18 @@ StructTreeRoot
     P
       mcid 1 p1
 == page 1 content
+Tabs: /S
 BDC /P {MCID=0}
+  line
   show "Open "
   show "Instellingen "
-  show ". Daarna astro"
+  show ". Daarna astro "
   show "logie "
   show "en ( "
   show "vet "
   show ")."
 BDC /P {MCID=1}
+  line
   show "Lees de "
   show "documentatie "
   show "voor details."

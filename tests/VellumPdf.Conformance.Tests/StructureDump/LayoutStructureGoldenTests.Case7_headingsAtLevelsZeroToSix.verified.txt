@@ -22,19 +22,27 @@ StructTreeRoot
     H6
       mcid 6 p1
 == page 1 content
+Tabs: absent
 BDC /H1 {MCID=0}
+  line
   show "Kop 0"
 BDC /H2 {MCID=1}
+  line
   show "Kop 1"
 BDC /H3 {MCID=2}
+  line
   show "Kop 2"
 BDC /H4 {MCID=3}
+  line
   show "Kop 3"
 BDC /H5 {MCID=4}
+  line
   show "Kop 4"
 BDC /H6 {MCID=5}
+  line
   show "Kop 5"
 BDC /H6 {MCID=6}
+  line
   show "Kop 6"
 == page 1 annotations
 (none)

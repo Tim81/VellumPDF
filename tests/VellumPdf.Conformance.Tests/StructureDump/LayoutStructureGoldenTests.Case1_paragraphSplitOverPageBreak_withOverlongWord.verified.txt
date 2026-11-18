@@ -12,35 +12,62 @@ StructTreeRoot
     P
       mcid 0 p2
 == page 1 content
+Tabs: absent
 BDC /P {MCID=0}
+  line
   show "Zin 1 van de alinea. Zin 2 van de"
+  line
   show "alinea. Zin 3 van de alinea. Zin 4 van"
+  line
   show "de alinea. Zin 5 van de alinea. Zin 6"
+  line
   show "van de alinea. Zin 7 van de alinea."
+  line
   show "Zin 8 van de alinea. Zin 9 van de"
+  line
   show "alinea. Zin 10 van de alinea. Zin 11"
+  line
   show "van de alinea. Zin 12 van de alinea."
+  line
   show "SuperlangWWWWWWWWWWWWW"
+  line
   show "WWWWWWWWWWWWWWWWWWW"
+  line
   show "WWWWWWWW"
+  line
   show "Zin 13 van de alinea. Zin 14 van de"
+  line
   show "alinea. Zin 15 van de alinea. Zin 16"
+  line
   show "van de alinea. Zin 17 van de alinea."
+  line
   show "Zin 18 van de alinea. Zin 19 van de"
+  line
   show "alinea. Zin 20 van de alinea. Zin 21"
+  line
   show "van de alinea. Zin 22 van de alinea."
+  line
   show "Zin 23 van de alinea. Zin 24 van de"
+  line
   show "alinea. Zin 25 van de alinea. Zin 26"
+  line
   show "van de alinea. Zin 27 van de alinea."
+  line
   show "Zin 28 van de alinea. Zin 29 van de"
+  line
   show "alinea. Zin 30 van de alinea. Zin 31"
+  line
   show "van de alinea. Zin 32 van de alinea."
+  line
   show "Zin 33 van de alinea. Zin 34 van de"
+  line
   show "alinea. Zin 35 van de alinea. Zin 36"
 == page 1 annotations
 (none)
 == page 2 content
+Tabs: absent
 BDC /P {MCID=0}
+  line
   show "van de alinea."
 == page 2 annotations
 (none)

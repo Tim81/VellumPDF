@@ -1,4 +1,4 @@
-﻿known defects: A11Y-08
+﻿known defects: A11Y-08 (baseline: element-level language only; per-run language not expressible yet), A11Y-15
 Lang: "nl-NL"
 MarkInfo: {Marked=true}
 DisplayDocTitle: true
@@ -27,15 +27,20 @@ StructTreeRoot
           P Lang="fr"
             mcid 5 p1
 == page 1 content
+Tabs: absent
 BDC /P {MCID=0}
+  line
   show "Dit is Nederlands."
 BDC /P {MCID=1}
+  line
   show "This is English."
 BDC /P {MCID=2}
+  line
   show "•"
 BDC /P {MCID=3}
   show "Een Nederlands punt"
 BDC /P {MCID=4}
+  line
   show "•"
 BDC /P {MCID=5}
   show "Un point en francais"

@@ -12,42 +12,72 @@ StructTreeRoot
     P
       mcid 0 p2
 == page 1 content
+Tabs: absent
 BDC /P {MCID=0}
+  line
   show "Zin 1 van de tekst. Zin 2 van de"
+  line
   show "tekst. Zin 3 van de tekst. Zin 4 van"
+  line
   show "de tekst. Zin 5 van de tekst. Zin 6"
+  line
   show "van de tekst. Zin 7 van de tekst. Zin"
+  line
   show "8 van de tekst. Zin 9 van de tekst."
+  line
   show "Zin 10 van de tekst. Zin 11 van de"
+  line
   show "tekst. Zin 12 van de tekst. Zin 13"
+  line
   show "van de tekst. Zin 14 van de tekst."
+  line
   show "Zin 15 van de tekst. Zin 16 van de"
+  line
   show "tekst. Zin 17 van de tekst. Zin 18"
+  line
   show "van de tekst. Zin 19 van de tekst."
+  line
   show "Zin 20 van de tekst. Zin 21 van de"
+  line
   show "tekst. Zin 22 van de tekst. Zin 23"
+  line
   show "van de tekst. Zin 24 van de tekst."
+  line
   show "Zin 25 van de tekst. Zin 26 van de"
+  line
   show "tekst. Zin 27 van de tekst. Zin 28"
+  line
   show "van de tekst. Zin 29 van de tekst."
+  line
   show "Zin 30 van de tekst. Zin 31 van de"
+  line
   show "tekst. Zin 32 van de tekst. Zin 33"
+  line
   show "van de tekst. Zin 34 van de tekst."
+  line
   show "Zin 35 van de tekst. Zin 36 van de"
+  line
   show "tekst. Zin 37 van de tekst. Zin 38"
+  line
   show "van de tekst. Zin 39 van de tekst."
 BMC /Artifact
+  line
   show "Kop 1"
 BMC /Artifact
+  line
   show "Pagina 1 van 2"
 == page 1 annotations
 (none)
 == page 2 content
+Tabs: absent
 BDC /P {MCID=0}
+  line
   show "Zin 40 van de tekst."
 BMC /Artifact
+  line
   show "Kop 2"
 BMC /Artifact
+  line
   show "Pagina 2 van 2"
 == page 2 annotations
 (none)

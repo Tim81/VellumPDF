@@ -1,4 +1,4 @@
-﻿known defects: A11Y-04, A11Y-05
+﻿known defects: A11Y-02, A11Y-04, A11Y-05
 Lang: "nl-NL"
 MarkInfo: {Marked=true}
 DisplayDocTitle: true
@@ -131,9 +131,11 @@ StructTreeRoot
           P
             mcid 5 p3
 == page 1 content
+Tabs: absent
 BMC /Artifact
   path stroke
 BDC /P {MCID=0}
+  line
   show "Naam"
 BMC /Artifact
   path stroke
@@ -146,6 +148,7 @@ BDC /P {MCID=2}
 BMC /Artifact
   path stroke
 BDC /P {MCID=3}
+  line
   show "Naam 1"
 BMC /Artifact
   path stroke
@@ -158,6 +161,7 @@ BDC /P {MCID=5}
 BMC /Artifact
   path stroke
 BDC /P {MCID=6}
+  line
   show "Naam 2"
 BMC /Artifact
   path stroke
@@ -170,6 +174,7 @@ BDC /P {MCID=8}
 BMC /Artifact
   path stroke
 BDC /P {MCID=9}
+  line
   show "Naam 3"
 BMC /Artifact
   path stroke
@@ -182,6 +187,7 @@ BDC /P {MCID=11}
 BMC /Artifact
   path stroke
 BDC /P {MCID=12}
+  line
   show "Naam 4"
 BMC /Artifact
   path stroke
@@ -194,9 +200,11 @@ BDC /P {MCID=14}
 == page 1 annotations
 (none)
 == page 2 content
+Tabs: absent
 BMC /Artifact
   path stroke
 BDC /P {MCID=0}
+  line
   show "Naam"
 BMC /Artifact
   path stroke
@@ -209,6 +217,7 @@ BDC /P {MCID=2}
 BMC /Artifact
   path stroke
 BDC /P {MCID=3}
+  line
   show "Naam 5"
 BMC /Artifact
   path stroke
@@ -221,6 +230,7 @@ BDC /P {MCID=5}
 BMC /Artifact
   path stroke
 BDC /P {MCID=6}
+  line
   show "Naam 6"
 BMC /Artifact
   path stroke
@@ -233,6 +243,7 @@ BDC /P {MCID=8}
 BMC /Artifact
   path stroke
 BDC /P {MCID=9}
+  line
   show "Naam 7"
 BMC /Artifact
   path stroke
@@ -245,6 +256,7 @@ BDC /P {MCID=11}
 BMC /Artifact
   path stroke
 BDC /P {MCID=12}
+  line
   show "Naam 8"
 BMC /Artifact
   path stroke
@@ -257,9 +269,11 @@ BDC /P {MCID=14}
 == page 2 annotations
 (none)
 == page 3 content
+Tabs: absent
 BMC /Artifact
   path stroke
 BDC /P {MCID=0}
+  line
   show "Naam"
 BMC /Artifact
   path stroke
@@ -272,6 +286,7 @@ BDC /P {MCID=2}
 BMC /Artifact
   path stroke
 BDC /P {MCID=3}
+  line
   show "Naam 9"
 BMC /Artifact
   path stroke

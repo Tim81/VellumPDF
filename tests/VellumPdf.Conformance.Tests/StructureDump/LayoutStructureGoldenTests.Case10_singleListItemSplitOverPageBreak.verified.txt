@@ -1,0 +1,86 @@
+﻿known defects: A11Y-04, A11Y-15
+Lang: "nl-NL"
+MarkInfo: {Marked=true}
+DisplayDocTitle: true
+Pages: 2
+ParentTreeNextKey: 2 (exceeds every key: yes)
+== structure
+StructTreeRoot
+  Document
+    L
+      LI
+        Lbl
+          P
+            mcid 0 p1
+        LBody
+          P
+            mcid 1 p1
+    L
+      LI
+        LBody
+          P
+            mcid 0 p2
+== page 1 content
+Tabs: absent
+BDC /P {MCID=0}
+  line
+  show "1."
+BDC /P {MCID=1}
+  show "Zin 1 van het punt. Zin 2 van het"
+  line
+  show "punt. Zin 3 van het punt. Zin 4 van"
+  line
+  show "het punt. Zin 5 van het punt. Zin 6"
+  line
+  show "van het punt. Zin 7 van het punt."
+  line
+  show "Zin 8 van het punt. Zin 9 van het"
+  line
+  show "punt. Zin 10 van het punt. Zin 11"
+  line
+  show "van het punt. Zin 12 van het punt."
+  line
+  show "Zin 13 van het punt. Zin 14 van"
+  line
+  show "het punt. Zin 15 van het punt. Zin"
+  line
+  show "16 van het punt. Zin 17 van het"
+  line
+  show "punt. Zin 18 van het punt. Zin 19"
+  line
+  show "van het punt. Zin 20 van het punt."
+  line
+  show "Zin 21 van het punt. Zin 22 van"
+  line
+  show "het punt. Zin 23 van het punt. Zin"
+  line
+  show "24 van het punt. Zin 25 van het"
+  line
+  show "punt. Zin 26 van het punt. Zin 27"
+  line
+  show "van het punt. Zin 28 van het punt."
+  line
+  show "Zin 29 van het punt. Zin 30 van"
+  line
+  show "het punt. Zin 31 van het punt. Zin"
+  line
+  show "32 van het punt. Zin 33 van het"
+  line
+  show "punt. Zin 34 van het punt. Zin 35"
+  line
+  show "van het punt. Zin 36 van het punt."
+  line
+  show "Zin 37 van het punt. Zin 38 van"
+  line
+  show "het punt. Zin 39 van het punt. Zin"
+== page 1 annotations
+(none)
+== page 2 content
+Tabs: absent
+BDC /P {MCID=0}
+  line
+  show "40 van het punt."
+== page 2 annotations
+(none)
+== checks
+0 problem line(s)

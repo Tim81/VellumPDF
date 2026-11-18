@@ -1,4 +1,4 @@
-﻿known defects: A11Y-18
+﻿known defects: A11Y-02, A11Y-18
 Lang: "nl-NL"
 MarkInfo: {Marked=true}
 DisplayDocTitle: true
@@ -23,9 +23,11 @@ StructTreeRoot
           P
             mcid 3 p1
 == page 1 content
+Tabs: absent
 BMC /Artifact
   path stroke
 BDC /P {MCID=0}
+  line
   show "Naam"
 BMC /Artifact
   path stroke
@@ -34,6 +36,7 @@ BDC /P {MCID=1}
 BMC /Artifact
   path stroke
 BDC /P {MCID=2}
+  line
   show "Jan"
 BMC /Artifact
   path stroke

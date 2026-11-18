@@ -66,6 +66,9 @@ public sealed class LayoutStructureGoldenTests
         return (pdf, reader.PageCount);
     }
 
+    // Two builds in one process must give equal dumps. That rules out a dump that depends on object
+    // numbering or call order within a run; whether it also holds across processes and platforms is
+    // what the Verify comparison on the next run, and CI, check.
     private static string DumpOf(int expectedPages, string[] knownDefects, Action<LayoutDocument, TextStyle> fill)
     {
         var (pdf, pages) = Build(fill);
@@ -96,7 +99,7 @@ public sealed class LayoutStructureGoldenTests
     [Fact]
     public async Task Case2_tableOverThreePages_withHeaderRow()
     {
-        var dump = DumpOf(3, ["A11Y-04", "A11Y-05"], (doc, style) =>
+        var dump = DumpOf(3, ["A11Y-02", "A11Y-04", "A11Y-05"], (doc, style) =>
         {
             var cellStyle = new TextStyle { FontRef = style.FontRef, FontSize = 14 };
             var padding = new EdgeInsets(50, 10);
@@ -125,7 +128,7 @@ public sealed class LayoutStructureGoldenTests
     [Fact]
     public async Task Case3_orderedListWithNestedList_splitOverPageBreak()
     {
-        var dump = DumpOf(2, ["A11Y-06", "A11Y-09", "A11Y-15"], (doc, style) =>
+        var dump = DumpOf(2, ["A11Y-04", "A11Y-06", "A11Y-09", "A11Y-15"], (doc, style) =>
         {
             var big = new TextStyle { FontRef = style.FontRef, FontSize = 48 };
             var list = new ListElement(ListStyle.OrderedDecimal) { DefaultStyle = big };
@@ -165,7 +168,7 @@ public sealed class LayoutStructureGoldenTests
     [Fact]
     public async Task Case5_twoImages_oneWithAltText()
     {
-        var dump = DumpOf(1, ["A11Y-07"], (doc, style) =>
+        var dump = DumpOf(1, ["A11Y-07", "A11Y-16"], (doc, style) =>
         {
             doc.Add(new LayoutImage(PngImageLoader.Load(TwoByTwoPng())) { Width = 100, Height = 100, AltText = "Een gradient" });
             doc.Add(new LayoutImage(PngImageLoader.Load(TwoByTwoPng())) { Width = 100, Height = 100 });
@@ -181,6 +184,9 @@ public sealed class LayoutStructureGoldenTests
     {
         var dump = DumpOf(1, ["A11Y-01", "BUG-01"], (doc, style) =>
         {
+            // A small size keeps every run of the paragraph on one text line, so the dump shows a word
+            // split across two runs on a single line.
+            style = new TextStyle { FontRef = style.FontRef, FontSize = 14 };
             var emphasis = new TextStyle { FontRef = style.FontRef, FontSize = style.FontSize, Color = Red };
             var link = new TextStyle { FontRef = style.FontRef, FontSize = style.FontSize, LinkUri = "https://example.org/doc" };
             doc.Add(new Paragraph(
@@ -224,7 +230,7 @@ public sealed class LayoutStructureGoldenTests
     [Fact]
     public async Task Case8_tableWithAnEmptyCell()
     {
-        var dump = DumpOf(1, ["A11Y-18"], (doc, style) =>
+        var dump = DumpOf(1, ["A11Y-02", "A11Y-18"], (doc, style) =>
         {
             var cellStyle = new TextStyle { FontRef = style.FontRef, FontSize = 14 };
             var table = new TableElement { BorderWidth = 1, BorderColor = ColorRgb.Black, DefaultCellStyle = cellStyle };
@@ -246,13 +252,29 @@ public sealed class LayoutStructureGoldenTests
     [Fact]
     public async Task Case9_languageOverrides()
     {
-        var dump = DumpOf(1, ["A11Y-08"], (doc, style) =>
+        var dump = DumpOf(1, ["A11Y-08 (baseline: element-level language only; per-run language not expressible yet)", "A11Y-15"], (doc, style) =>
         {
             doc.Add(new Paragraph("Dit is Nederlands.", style));
             doc.Add(new Paragraph("This is English.", style) { Language = "en" });
             var list = new ListElement(ListStyle.Unordered) { DefaultStyle = style };
             list.Add(new ListItem("Een Nederlands punt", style));
             list.Add(new ListItem("Un point en francais", style) { Language = "fr" });
+            doc.Add(list);
+        });
+
+        await Verify(dump);
+    }
+
+    // ── 10. One long list item that splits across a page break ────────────────────────────────
+
+    [Fact]
+    public async Task Case10_singleListItemSplitOverPageBreak()
+    {
+        var dump = DumpOf(2, ["A11Y-04", "A11Y-15"], (doc, style) =>
+        {
+            var text = string.Join(' ', Enumerable.Range(1, 40).Select(i => $"Zin {i} van het punt."));
+            var list = new ListElement(ListStyle.OrderedDecimal) { DefaultStyle = style };
+            list.Add(new ListItem(text, style));
             doc.Add(list);
         });
 
