@@ -12,7 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   pins 11.0.100, latest patch).** The seven library nupkgs carry `lib/net10.0` and `lib/net11.0`;
   the `VellumPdf.Cli` tool package carries `tools/net10.0/any` and `tools/net11.0/any`. The public
   API files are shared by both frameworks and no source file branches on the target framework. The
-  language version stays pinned at C# 14 rather than following the SDK. Both runtimes reach end of
+  language version is now pinned to C# 14 rather than following the SDK. Both runtimes reach end of
   support on 2028-11-14, and VellumPdf keeps both targets until that date. `VellumPdf.Signing` takes
   `System.Security.Cryptography.Pkcs` 10.0.14 on `net10.0` and 11.0.0 on `net11.0`, so a `net10.0`
   consumer does not pick up the 11.0.0 package's `System.Formats.Asn1` 11 dependency. Contributors

@@ -195,13 +195,15 @@ own output directory as `testconfig.json` by `tests/Directory.Build.props`) rath
 switch:
 
 ```bash
-dotnet test VellumPdf.slnx -c Release --results-directory-layout per-module --results-directory <dir> -- --coverlet
+dotnet test VellumPdf.slnx -c Release --results-directory-layout per-module \
+    --results-directory <dir> -- --coverlet
 ```
 
-Without `--results-directory-layout per-module` the gate cannot attribute a report: every test project now runs once
-per target framework, and coverlet.MTP names a report only by its write timestamp, so the flat layout
-puts the net10.0 and net11.0 reports of one project in the same directory, where two that finish in
-the same millisecond could overwrite each other. Per-module writes
+Without `--results-directory-layout per-module` the gate cannot attribute a report: every test
+project now runs once per target framework, and coverlet.MTP names a report only by its write
+timestamp, so the flat layout puts the net10.0 and net11.0 reports of one project in the same
+directory, where two that finish in the same millisecond could overwrite each other. Per-module
+writes
 `<dir>/<project>/<tfm>_<arch>/`, which is also how the gate tells the reports apart.
 
 `coverlet.testconfig.json` scopes instrumentation to the eight shipping assemblies, the same

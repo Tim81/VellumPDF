@@ -24,7 +24,8 @@ jobs:
     # bound it) would otherwise run to GitHub's 360-minute default and burn the runner quietly
     # instead of failing loudly. INTERIM: every test project now runs once per target framework
     # (net10.0 and net11.0), so the Test step does roughly twice the work it did under the old
-    # 30-minute limit. This is deliberately generous until a first CI run measures the Test step; the
+    # 30-minute limit. This is deliberately generous until a first CI run measures the Test step;
+    # the
     # final value follows it.
     timeout-minutes: 60
     env:
@@ -53,7 +54,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      # global.json pins the SDK (11.0.1xx). The test projects also run on net10.0, and a net10.0 test
+      # global.json pins the SDK (11.0.1xx). The test projects also run on net10.0, and a net10.0
+      # test
       # host needs the net10.0 runtime, which the 11.0 SDK does not carry. setup-dotnet installs
       # both lists, so naming 10.0.x here makes that requirement explicit instead of relying on
       # the runner image happening to ship it.
@@ -238,8 +240,8 @@ jobs:
         # gate matches on the bare dependency name rather than the calling suite, for the GIF
         # oracle's python dependency too (OracleGate.cs). ORACLE_INVOCATION_LOG
         # makes ExternalTool.RunProcess append one line per successful, non-probe oracle launch to a
-        # file suffixed with its target framework and process id, so the step below can assert the oracles didn't
-        # just resolve — they actually ran (#228).
+        # file suffixed with its target framework and process id, so the step below can assert the
+        # oracles didn't just resolve — they actually ran (#228).
         env:
           REQUIRE_VERAPDF: '1'
           REQUIRE_BARCODE_ORACLE: '1'
@@ -304,9 +306,12 @@ jobs:
         #
         # Floors are 90% of a full local run with every oracle enabled (REQUIRE_ORACLES=1, QPDF_HOME
         # / POPPLER_HOME / VERAPDF_HOME all pointed at real installs), rounded down, measured
-        # against the commit that set them: verapdf 304, pdftoppm 135, python 137, qpdf 40, pdftotext 8,
-        # pdfsig 2 (the qpdf figure is stale: see the 2026-11-18 measurement just below). They apply to each target framework separately and were not changed when
-        # net11.0 was added. A Windows run on 2026-11-18 (veraPDF 1.30.2, qpdf 12.4.1, poppler from
+        # against the commit that set them: verapdf 304, pdftoppm 135, python 137, qpdf 40,
+        # pdftotext 8,
+        # pdfsig 2 (the 2026-11-18 run below differs for verapdf and qpdf). They apply to each
+        # target
+        # framework separately and were not changed when net11.0 was added. A Windows run on
+        # 2026-11-18 (veraPDF 1.30.2, qpdf 12.4.1, poppler from
         # MSYS2) logged the same counts under net10.0 and under net11.0: verapdf 311, pdftoppm 135,
         # python 137, qpdf 57, pdftotext 8, pdfsig 2. Every floor sits below those counts, and they
         # were not raised to 90% of them because the CI runner is Linux and has not been measured.
@@ -377,12 +382,18 @@ jobs:
 
           # Every test project runs once per target framework, and the Test step passes
           # `--results-directory-layout per-module`, which writes each run's report under
-          # <cov_dir>/<project>/<tfm>_<arch>/. That layout is what makes a report attributable: coverlet.MTP
-          # names a report only by the millisecond it was written, so the flat layout gives no way to say
-          # which project or framework produced a file, and two runs finishing in the same millisecond would
-          # overwrite each other. The checks below therefore walk the EXPECTED set of (project, tfm) pairs and
-          # require exactly one report in each directory, rather than discovering whatever happens to be on
-          # disk, so a run that never wrote its report is a failure by name instead of a smaller input.
+          # <cov_dir>/<project>/<tfm>_<arch>/. That layout is what makes a report attributable:
+          # coverlet.MTP
+          # names a report only by the millisecond it was written, so the flat layout gives no way
+          # to say
+          # which project or framework produced a file, and two runs finishing in the same
+          # millisecond would
+          # overwrite each other. The checks below therefore walk the EXPECTED set of (project,
+          # tfm) pairs and
+          # require exactly one report in each directory, rather than discovering whatever happens
+          # to be on
+          # disk, so a run that never wrote its report is a failure by name instead of a smaller
+          # input.
           TFMS = ("net10.0", "net11.0")
 
           # coverlet.testconfig.json scopes instrumentation to these eight (#200; #229 under
@@ -401,19 +412,37 @@ jobs:
           })
 
           # The assemblies each test project's own report must carry. Three projects (Kernel.Tests,
-          # Layout.Tests, Reader.Tests) instrument an identical set, so once reports are merged, one of them
-          # losing every package but a single one costs no assembly its name and leaves every merged line
+          # Layout.Tests, Reader.Tests) instrument an identical set, so once reports are merged,
+          # one of them
+          # losing every package but a single one costs no assembly its name and leaves every
+          # merged line
           # covered by the other two. Checking each report against its own set is what catches that.
-          # VellumPdf.TestSupport.Tests only exercises VellumPdf.TestSupport, which the include filter
-          # removes from instrumentation, so its report is expected to be empty; it is the one report
+          # VellumPdf.TestSupport.Tests only exercises VellumPdf.TestSupport, which the include
+          # filter
+          # removes from instrumentation, so its report is expected to be empty; it is the one
+          # report
           # that is allowed to be.
           EXPECTED_BY_PROJECT = {
-              "VellumPdf.Barcodes.Tests": frozenset({"VellumPdf.Barcodes", "VellumPdf.Kernel", "VellumPdf.Layout"}),
-              "VellumPdf.Cli.Tests": frozenset({"VellumPdf.Conformance", "VellumPdf.Fonts.Standard14", "VellumPdf.Kernel", "VellumPdf.Layout", "VellumPdf.Reader", "VellumPdf.Signing", "vellum-preflight"}),
-              "VellumPdf.Conformance.Tests": frozenset({"VellumPdf.Conformance", "VellumPdf.Fonts.Standard14", "VellumPdf.Kernel", "VellumPdf.Layout", "VellumPdf.Reader", "VellumPdf.Signing"}),
-              "VellumPdf.Kernel.Tests": frozenset({"VellumPdf.Kernel", "VellumPdf.Layout", "VellumPdf.Reader", "VellumPdf.Signing"}),
-              "VellumPdf.Layout.Tests": frozenset({"VellumPdf.Kernel", "VellumPdf.Layout", "VellumPdf.Reader", "VellumPdf.Signing"}),
-              "VellumPdf.Reader.Tests": frozenset({"VellumPdf.Kernel", "VellumPdf.Layout", "VellumPdf.Reader", "VellumPdf.Signing"}),
+              "VellumPdf.Barcodes.Tests": frozenset({
+                  "VellumPdf.Barcodes", "VellumPdf.Kernel", "VellumPdf.Layout",
+              }),
+              "VellumPdf.Cli.Tests": frozenset({
+                  "VellumPdf.Conformance", "VellumPdf.Fonts.Standard14", "VellumPdf.Kernel",
+                  "VellumPdf.Layout", "VellumPdf.Reader", "VellumPdf.Signing", "vellum-preflight",
+              }),
+              "VellumPdf.Conformance.Tests": frozenset({
+                  "VellumPdf.Conformance", "VellumPdf.Fonts.Standard14", "VellumPdf.Kernel",
+                  "VellumPdf.Layout", "VellumPdf.Reader", "VellumPdf.Signing",
+              }),
+              "VellumPdf.Kernel.Tests": frozenset({
+                  "VellumPdf.Kernel", "VellumPdf.Layout", "VellumPdf.Reader", "VellumPdf.Signing",
+              }),
+              "VellumPdf.Layout.Tests": frozenset({
+                  "VellumPdf.Kernel", "VellumPdf.Layout", "VellumPdf.Reader", "VellumPdf.Signing",
+              }),
+              "VellumPdf.Reader.Tests": frozenset({
+                  "VellumPdf.Kernel", "VellumPdf.Layout", "VellumPdf.Reader", "VellumPdf.Signing",
+              }),
               "VellumPdf.TestSupport.Tests": frozenset(),
           }
 
@@ -434,9 +463,11 @@ jobs:
           # denominator fails even though its (tiny) numerator still divides out to 100%. Re-measured
           # for the coverlet.MTP migration (#200) once instrumentation was scoped through
           # coverlet.testconfig.json rather than command-line filters (see the Test step): every
-          # assembly's valid-line count matched its pre-migration measurement at the time (three
-          # have since grown a little as unrelated PRs added code; the numbers below track the
-          # current measurement), so these floors carry over unchanged rather than re-baselined
+          # assembly's valid-line count matched its pre-migration measurement at the time (several
+          # have since grown as unrelated PRs added code, Reader more than fourfold; the comments
+          # below
+          # give the 2026-11-18 measurement), so these floors carry over unchanged rather than
+          # re-baselined
           # lower. They apply to each target framework's merge and to the merge across both.
           MIN_VALID_LINES = {
               # Comments give the valid lines measured on 2026-11-18 (Windows, Release, net10.0 and
@@ -453,7 +484,8 @@ jobs:
 
           # coverlet.MTP (#200) names its own report coverage.cobertura.<timestamp>.xml, with the
           # timestamp coverlet stamps at the moment it writes the file rather than VSTest's fixed
-          # coverage.cobertura.xml under a per-run guid folder, so the glob matches the timestamp segment.
+          # coverage.cobertura.xml under a per-run guid folder, so the glob matches the timestamp
+          # segment.
           all_reports = sorted(glob.glob(os.path.join(cov_dir, "**", "coverage.cobertura.*.xml"), recursive=True))
           if not all_reports:
               print("::error::No coverage.cobertura.*.xml files found under", cov_dir)
@@ -470,8 +502,10 @@ jobs:
                   else:
                       expected_reports[(project, tfm)] = found[0]
 
-          # Anything outside the expected directories is a failure too. It is also what a Test step that
-          # silently ignored --results-directory-layout looks like: every report in one flat directory,
+          # Anything outside the expected directories is a failure too. It is also what a Test step
+          # that
+          # silently ignored --results-directory-layout looks like: every report in one flat
+          # directory,
           # none of them where the loop above looks.
           stray = sorted(set(all_reports) - set(expected_reports.values()))
           for f in stray:
@@ -527,16 +561,22 @@ jobs:
               return lines, packages
 
 
-          # A hand-written source file is one physical file in both target frameworks, so a line keeps one
+          # A hand-written source file is one physical file in both target frameworks, so a line
+          # keeps one
           # key across them. A generated file is not: the System.Text.Json source generator writes
           # VellumPdf.Cli's CliJsonContext.*.g.cs under obj/Release/<tfm>/, a different path per
-          # framework, and its output differs in size (a 2026-11-18 local run measured vellum-preflight at
+          # framework, and its output differs in size (a 2026-11-18 local run measured
+          # vellum-preflight at
           # 3092 valid lines under net10.0 and 2640 under net11.0, against 4971 merged; every other
-          # assembly's count was identical in all three). The merge therefore counts those generated lines
-          # once per framework, so vellum-preflight's merged denominator (4971) is larger than either
-          # framework's own, and its merged rate falls between the two (84.0% net10.0, 81.3% net11.0,
+          # assembly's count was identical in all three). The merge therefore counts those
+          # generated lines
+          # once per framework, so vellum-preflight's merged denominator (4971) is larger than
+          # either
+          # framework's own, and its merged rate falls between the two (84.0% net10.0, 81.3%
+          # net11.0,
           # 83.0% merged, same run). The combined figure was 91.3% merged against 91.7% for each
-          # framework. The generated code is counted twice, not lost, which is why the per-framework and
+          # framework. The generated code is counted twice, not lost, which is why the
+          # per-framework and
           # merged valid-line counts are both printed below.
           per_tfm = {tfm: {} for tfm in TFMS}
           for (project, tfm), path in sorted(expected_reports.items()):
@@ -545,9 +585,12 @@ jobs:
               fv = len(lines)
               print(f"  {os.path.relpath(path, cov_dir)}: covered={fc}, valid={fv}, line-rate={fc/fv if fv else 0:.4f}")
               expected = EXPECTED_BY_PROJECT[project]
-              # A crashed or partial run still writes a coverage.cobertura.xml (#229), and a report's
-              # exclusive lines leaving the denominator along with the numerator can make the percentage RISE
-              # while actual coverage falls. Failing by project, framework and assembly name makes that
+              # A crashed or partial run still writes a coverage.cobertura.xml (#229), and a
+              # report's
+              # exclusive lines leaving the denominator along with the numerator can make the
+              # percentage RISE
+              # while actual coverage falls. Failing by project, framework and assembly name makes
+              # that
               # actionable instead of an arithmetic side effect.
               if not expected:
                   if fv != 0:
@@ -624,8 +667,10 @@ jobs:
               problems += check(tfm, per_tfm[tfm])
           problems += check("merged across target frameworks", merged)
 
-          # Valid lines per assembly, side by side. Merged equals each framework's count when both build the
-          # same source files; a difference is a file that exists under one framework only, or a path that
+          # Valid lines per assembly, side by side. Merged equals each framework's count when both
+          # build the
+          # same source files; a difference is a file that exists under one framework only, or a
+          # path that
           # one framework spells differently, and is worth reading rather than rounding away.
           print("Valid lines per assembly:")
           stats = {tfm: by_assembly(per_tfm[tfm]) for tfm in TFMS}
@@ -634,32 +679,35 @@ jobs:
               cells = "  ".join(f"{tfm}={stats[tfm].get(asm, (0, 0))[1]}" for tfm in TFMS)
               print(f"  {asm}: {cells}  merged={mstats[asm][1]}")
 
-          if problems:
-              for p in problems:
-                  print("::error::" + p)
-              sys.exit(1)
-
-          # The threshold also applies to each framework on its own, so a coverage drop confined to one
-          # framework is not averaged away by the other.
+          # The threshold also applies to each framework on its own, so a drop confined to one
+          # framework is not masked by the merge, which counts a line covered if either framework
+          # covered it. Every figure is printed and every failure collected before the single exit
+          # below, so one run reports both frameworks and the merge instead of stopping at the
+          # first.
           for tfm in TFMS:
               tc = sum(1 for v in per_tfm[tfm].values() if v)
               tpct = tc / len(per_tfm[tfm]) * 100 if per_tfm[tfm] else 0
               print(f"{tfm}: {tpct:.1f}% over {len(per_tfm[tfm])} unique lines (threshold: {THRESHOLD}%)")
               if tpct < THRESHOLD:
-                  print(f"::error::{tfm} line coverage {tpct:.1f}% is below the required threshold of {THRESHOLD}%.")
-                  sys.exit(1)
+                  problems.append(f"{tfm} line coverage {tpct:.1f}% is below the required threshold "
+                                  f"of {THRESHOLD}%.")
 
           total_valid = len(merged)
           total_covered = sum(1 for v in merged.values() if v)
           combined = total_covered / total_valid if total_valid else 0
           pct = combined * 100
-          print(f"Combined (merged) line coverage: {pct:.1f}% over {total_valid} unique lines (threshold: {THRESHOLD}%)")
+          print(f"Combined (merged) line coverage: {pct:.1f}% over {total_valid} unique lines "
+                f"(threshold: {THRESHOLD}%)")
           if total_valid < MIN_TOTAL_LINES:
-              print(f"::error::Merged coverage covers only {total_valid} lines, below the "
-                    f"{MIN_TOTAL_LINES}-line minimum expected across all reports.")
-              sys.exit(1)
+              problems.append(f"Merged coverage covers only {total_valid} lines, below the "
+                              f"{MIN_TOTAL_LINES}-line minimum expected across all reports.")
           if pct < THRESHOLD:
-              print(f"::error::Line coverage {pct:.1f}% is below the required threshold of {THRESHOLD}%.")
+              problems.append(f"Merged line coverage {pct:.1f}% is below the required threshold "
+                              f"of {THRESHOLD}%.")
+
+          if problems:
+              for p in problems:
+                  print("::error::" + p)
               sys.exit(1)
           print("Coverage gate passed.")
           EOF
@@ -679,26 +727,46 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'EOF'
-          import glob, os, re, sys, zipfile
+          import glob, os, sys, zipfile
+          import xml.etree.ElementTree as ET
 
-          pkgs = glob.glob(os.path.join(os.environ["RUNNER_TEMP"], "packages", "VellumPdf.Signing.*.nupkg"))
+          pkgs = glob.glob(os.path.join(os.environ["RUNNER_TEMP"], "packages",
+                                        "VellumPdf.Signing.*.nupkg"))
           if len(pkgs) != 1:
               print(f"::error::Expected one VellumPdf.Signing nupkg, found {len(pkgs)}.")
               sys.exit(1)
           with zipfile.ZipFile(pkgs[0]) as z:
-              nuspec = z.read(next(n for n in z.namelist() if n.endswith(".nuspec"))).decode("utf-8")
-          expected = {"net10.0": "10.", "net11.0": "11."}
-          for tfm, prefix in expected.items():
-              group = re.search(r'<group targetFramework="' + re.escape(tfm) + r'"[^>]*>(.*?)</group>', nuspec, re.S)
-              version = re.search(r'<dependency id="System\.Security\.Cryptography\.Pkcs" version="([^"]+)"',
-                                  group.group(1)) if group else None
-              if version is None:
+              root = ET.fromstring(z.read(next(n for n in z.namelist() if n.endswith(".nuspec"))))
+
+
+          def local(tag):
+              # The nuspec carries a versioned namespace, which changes between NuGet releases.
+              return tag.rsplit("}", 1)[-1]
+
+
+          groups = {el.get("targetFramework"): el for el in root.iter() if local(el.tag) == "group"}
+          failed = False
+          for tfm, prefix in {"net10.0": "10.", "net11.0": "11."}.items():
+              group = groups.get(tfm)
+              if group is None:
+                  print(f"::error::The Signing nuspec has no {tfm} dependency group.")
+                  failed = True
+                  continue
+              dep = next((d for d in group if local(d.tag) == "dependency"
+                          and (d.get("id") or "").lower() == "system.security.cryptography.pkcs"), None)
+              if dep is None:
                   print(f"::error::The {tfm} group of the Signing nuspec has no Pkcs dependency.")
-                  sys.exit(1)
-              print(f"{tfm}: Pkcs {version.group(1)}")
-              if not version.group(1).startswith(prefix):
-                  print(f"::error::The {tfm} group names Pkcs {version.group(1)}, expected {prefix}x.")
-                  sys.exit(1)
+                  failed = True
+                  continue
+              raw = dep.get("version") or ""
+              # A NuGet range such as "[10.0.14, )" is judged by its lower bound.
+              lower = raw.strip().lstrip("[(").rstrip("])").split(",")[0].strip()
+              print(f"{tfm}: Pkcs {raw}")
+              if not lower.startswith(prefix):
+                  print(f"::error::The {tfm} group names Pkcs {raw}, expected {prefix}x.")
+                  failed = True
+          if failed:
+              sys.exit(1)
           EOF
 
   aot-smoke:
