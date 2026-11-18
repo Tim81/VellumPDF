@@ -343,7 +343,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   naming the segment type. If the first page-information segment has page association 0 it names
   no page, and every segment is kept, as before pages were chosen. **Attention**: a JBIG2 stream
   with an unknown-length segment (types 38 and 53 measured) after a known-length page-information
-  segment used to load without an error, and now throws `InvalidDataException`. Both input shapes
+  segment used to load without an error and drop that segment, and now throws
+  `InvalidDataException`. For an 8 by 1 immediate generic region (type 38, MMR, end marker and row
+  count present), 1c61fa6 embedded a 30-byte stream holding only the page-information segment, where
+  the same image with a known length embedded 62 bytes; `pdftoppm` drew the first as all white (0
+  dark pixels of 3,999) and the second with 890 dark pixels. A type 53 segment loaded the same way
+  and was not rendered. Both input shapes
   measured take the throw: the headerless embedded organisation and the ID string followed directly
   by segments. An unknown-length page-information segment itself threw on both versions. A file with more than one page
   used to embed every page's segments into one image stream and now embeds only the first page.
