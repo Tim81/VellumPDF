@@ -839,13 +839,7 @@ public sealed class PdfObjectParserTests
         Assert.Equal(expectedPos, parser.Position);
     }
 
-    // xUnit1069 wants TestContext.Current.CancellationToken threaded through so the Timeout can end
-    // the test promptly; ParseIndirectObject takes no CancellationToken, and there is nothing to
-    // thread it into. The Timeout itself is the #193 regression pin the test name describes — the
-    // whole point is that a quadratic ScanToEndstream blows this budget — so it stays rather than
-    // being dropped.
-#pragma warning disable xUnit1069
-    [Fact(Timeout = 10_000)]
+    [Fact]
     public void ManyStreamsWithNoEolBeforeTheirOwnEndstream_DoesNotBecomeQuadratic()
     {
         // Every one of many streams lacks the EOL before its own 'endstream'. A scan that rejects
@@ -856,6 +850,13 @@ public sealed class PdfObjectParserTests
         // should be found immediately since 'endobj' follows it directly. Each object is parsed
         // from a fresh parser at its known offset — the point under test is ScanToEndstream's own
         // cost, not whether ParseIndirectObject chains across an 'endobj' it doesn't consume.
+        //
+        // The pin is the body, not a clock (#400): one well-formed stream (an EOL before its
+        // 'endstream') closes the file. A scan that walks past every EOL-less candidate looking for
+        // a better one reaches that closing stream from every earlier object, so it returns a wrong,
+        // enormous body instead of merely taking longer. It does NOT catch a scan that still visits
+        // every later candidate but keeps the first match: that is quadratic with the right answer,
+        // and nothing observable here distinguishes it from the linear scan.
         const int streamCount = 2000;
         var offsets = new int[streamCount];
         var sb = new System.Text.StringBuilder();
@@ -866,6 +867,7 @@ public sealed class PdfObjectParserTests
             sb.Append("SOME BODY DATA HERE").Append(i); // no trailing EOL before 'endstream'
             sb.Append("endstream\nendobj\n");
         }
+        sb.Append("99999 0 obj\n<< /Length 5 >>\nstream\nAAAAA\nendstream\nendobj\n");
         var bytes = System.Text.Encoding.ASCII.GetBytes(sb.ToString());
 
         for (var i = 0; i < streamCount; i++)
@@ -875,7 +877,6 @@ public sealed class PdfObjectParserTests
             Assert.Equal($"SOME BODY DATA HERE{i}", System.Text.Encoding.ASCII.GetString(result.Stream!.RawBody.Span));
         }
     }
-#pragma warning restore xUnit1069
 
     [Fact]
     public void StreamBodyCapturedVerbatim()

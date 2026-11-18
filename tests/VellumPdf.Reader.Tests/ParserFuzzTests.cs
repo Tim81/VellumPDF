@@ -1,7 +1,6 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
-using System.Diagnostics;
 using System.Reflection;
 using System.Text;
 using CsCheck;
@@ -45,6 +44,28 @@ namespace VellumPdf.Reader.Tests;
 /// the same failing input, without needing to capture or hand-carry the bytes themselves.
 /// </para>
 /// <para>
+/// <strong>Cost is bounded by allocation and token count, not by a clock (#400).</strong> The
+/// lexer pins that it emits no more tokens than it has bytes plus a slack of 16, and the parser
+/// and reader pin the bytes allocated on the calling thread per sample against a ceiling that
+/// scales with that sample's length (see <see cref="AssertWithinAllocationCeiling"/>). A check of
+/// <c>Stopwatch.Elapsed</c> made after the call returns could not end a hang, and the same kind of
+/// check failed on a loaded runner in <c>EncryptedReconstructionTests</c> (#400); these keep
+/// CsCheck's printed seed and do not depend on the machine. Neither
+/// bound discriminates a defect that burns CPU without allocating or emitting tokens. The
+/// <c>Timeout</c> on each case is a 300 s hang guard and nothing else: the nightly run
+/// (44078641870, <c>VELLUMPDF_FUZZ_ITER=200000</c>) passed all five tests of this class in
+/// 14 s 992 ms, a twentieth of the guard. Local Release runs of the class at 1,000,000 iterations
+/// per case took 28.8 s to 89 s on this machine (2026-11-18).
+/// </para>
+/// <para>
+/// At real sample lengths (up to about 6.5 KB) the 1 MiB slack dominates every ceiling here, so all
+/// three catch gross regressions only. Measured against what samples actually allocate, the reader
+/// ceiling is the tightest: over 1,000,000 samples (Release, 2026-11-18) its worst sample allocated
+/// 1,743,608 bytes on a 1,433-byte input, 0.44 of that sample's ceiling. The parser's worst
+/// allocated 143,184 bytes, 0.077 of its ceiling, so only an allocation about thirteen times that
+/// would fail it.
+/// </para>
+/// <para>
 /// <strong>Budget.</strong> <see cref="FuzzBudget.Iterations"/> defaults to a few thousand — fast
 /// enough to run in every PR — and widens when <c>VELLUMPDF_FUZZ_ITER</c> is set, which
 /// <c>.github/workflows/fuzz-nightly.yml</c> does for a much larger scheduled run.
@@ -59,14 +80,35 @@ public sealed class ParserFuzzTests
     // not merely a dense token stream on a legitimately busy input.
     private const int TokenCountSlack = 16;
 
-    private static readonly TimeSpan LexerWallClockCeiling = TimeSpan.FromSeconds(2);
-    private static readonly TimeSpan ParserWallClockCeiling = TimeSpan.FromSeconds(2);
-    private static readonly TimeSpan ReaderWallClockCeiling = TimeSpan.FromSeconds(4);
-
     // Bounds how far a single mutation chain can grow a seed. 256 KiB is generous against every
     // committed fixture (all comfortably under that today) while keeping a worst-case iteration's
-    // own cost bounded independent of the wall-clock ceilings above.
+    // own cost bounded.
     private const int MaxMutatedLength = 262_144;
+
+    // Per-sample allocation ceilings (#400): bytes allocated on the calling thread must stay under
+    // FixedAllocationSlack + bytesPerInputByte * input length. The constants come from measuring
+    // seventeen hostile shapes at the 256 KiB MaxMutatedLength (and again at 4, 8 and 64 KiB), in
+    // Debug and Release, which differed by under 3 KB per shape:
+    //   - ParseObject: 52 B per input byte at worst (a run of empty arrays), and a flat 74,512
+    //     bytes for a run of '[' that the depth cap stops. 128 B/byte is 2.4x the worst, and the
+    //     slack covers the flat case.
+    //   - PdfReader.Open + resolve-all + page walk, reconstruction on: 414 B per input byte at
+    //     worst (a run of '<<'), 105 to 168 for object-header and array runs. 2,048 B/byte is
+    //     4.9x the worst. A run of '[' is NOT covered: with reconstruction on, Open alone allocated
+    //     26 MB on a 512-byte run, 293 MB at 4 KiB, 304 MB from 8 to 64 KiB and 609 MB at 256 KiB.
+    //     No committed seed holds two consecutive '['. Eight operations can still build a run of
+    //     192: one insert beside an existing '[' and seven duplications of at most 64 bytes of the
+    //     run. Built that way in the 599-byte seed, the reader allocated 4,429,360 bytes against a
+    //     2,666,496-byte ceiling and fails (2026-11-18); seven operations reach 128 and pass. Each
+    //     of the eight has to pick the right kind and land on the run, so a random sample is very
+    //     unlikely to do it. A sample that does is a real finding for this test to report.
+    // All of the above was measured locally on 2026-11-18, in Debug and Release.
+    // The slack is ReaderLimits.MinMaxDecodedBytes (1 MiB), the decoded-stream cap every Open call
+    // below runs under: the one buffer an input may legitimately make the reader allocate on top of
+    // its own size. A cold thread's first parser or reader call measured under 25 KB.
+    private const long FixedAllocationSlack = ReaderLimits.MinMaxDecodedBytes;
+    private const long ParserBytesPerInputByte = 128;
+    private const long ReaderBytesPerInputByte = 2_048;
 
     private static readonly IReadOnlyList<byte[]> SeedCorpus = BuildSeedCorpus();
 
@@ -98,23 +140,28 @@ public sealed class ParserFuzzTests
             + "embedded-resource globs in VellumPdf.Reader.Tests.csproj.");
     }
 
-    [Fact]
+    // The Timeouts below are hang guards (#400); see the class doc for the nightly figure behind
+    // 300 s. xUnit1069 wants TestContext.Current.CancellationToken threaded through so a Timeout can
+    // end a test promptly; CsCheck's Sample takes no CancellationToken, and there is nothing to
+    // thread it into.
+#pragma warning disable xUnit1069
+    [Fact(Timeout = 300_000)]
     public void Lexer_neverThrowsOutsideTheDeclaredVocabulary()
         => FuzzInputGen.Sample(AssertLexerIsRobust, iter: FuzzBudget.Iterations);
 
-    [Fact]
+    [Fact(Timeout = 300_000)]
     public void ObjectParser_neverThrowsOutsideTheDeclaredVocabulary()
         => FuzzInputGen.Sample(AssertParserIsRobust, iter: FuzzBudget.Iterations);
 
-    [Theory]
+    [Theory(Timeout = 300_000)]
     [InlineData(false)]
     [InlineData(true)]
     public void Reader_neverThrowsOutsideTheDeclaredVocabulary(bool allowReconstruction)
         => FuzzInputGen.Sample(bytes => AssertReaderIsRobust(bytes, allowReconstruction), iter: FuzzBudget.Iterations);
+#pragma warning restore xUnit1069
 
     private static void AssertLexerIsRobust(byte[] bytes)
     {
-        var stopwatch = Stopwatch.StartNew();
         try
         {
             var lexer = new PdfLexer(bytes);
@@ -132,13 +179,11 @@ public sealed class ParserFuzzTests
         {
             // Acceptable outcome — see the class doc.
         }
-
-        AssertWithinCeiling(stopwatch, LexerWallClockCeiling, bytes, "lexer");
     }
 
     private static void AssertParserIsRobust(byte[] bytes)
     {
-        var stopwatch = Stopwatch.StartNew();
+        var before = GC.GetAllocatedBytesForCurrentThread();
         try
         {
             _ = new PdfObjectParser(bytes).ParseObject();
@@ -148,12 +193,12 @@ public sealed class ParserFuzzTests
             // Acceptable outcome — see the class doc.
         }
 
-        AssertWithinCeiling(stopwatch, ParserWallClockCeiling, bytes, "object parser");
+        AssertWithinAllocationCeiling(before, bytes, ParserBytesPerInputByte, "object parser");
     }
 
     private static void AssertReaderIsRobust(byte[] bytes, bool allowReconstruction)
     {
-        var stopwatch = Stopwatch.StartNew();
+        var before = GC.GetAllocatedBytesForCurrentThread();
         try
         {
             var options = new PdfReaderOptions
@@ -212,15 +257,27 @@ public sealed class ParserFuzzTests
             // Acceptable outcome — see the class doc.
         }
 
-        AssertWithinCeiling(stopwatch, ReaderWallClockCeiling, bytes, $"reader (AllowReconstruction={allowReconstruction})");
+        AssertWithinAllocationCeiling(
+            before, bytes, ReaderBytesPerInputByte, $"reader (AllowReconstruction={allowReconstruction})");
     }
 
-    private static void AssertWithinCeiling(Stopwatch stopwatch, TimeSpan ceiling, byte[] bytes, string component)
+    /// <summary>
+    /// Fails when this thread has allocated more than <see cref="FixedAllocationSlack"/> plus
+    /// <paramref name="bytesPerInputByte"/> per byte of <paramref name="bytes"/> since
+    /// <paramref name="allocatedBefore"/>. Per thread, not process-wide: CsCheck and the test host
+    /// both run other work in parallel, and the process-wide counter charged one sample with
+    /// whatever its neighbours allocated (<c>ContentInterpreterTests</c> measured 1,125 MiB that
+    /// way for a shape that costs 76 MiB alone). The call under test is synchronous, so the
+    /// thread-local counter sees exactly that call.
+    /// </summary>
+    private static void AssertWithinAllocationCeiling(
+        long allocatedBefore, byte[] bytes, long bytesPerInputByte, string component)
     {
-        stopwatch.Stop();
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - allocatedBefore;
+        var ceiling = FixedAllocationSlack + bytesPerInputByte * bytes.Length;
         Assert.True(
-            stopwatch.Elapsed <= ceiling,
-            $"{component} took {stopwatch.Elapsed} on a {bytes.Length}-byte input, past the {ceiling} ceiling.");
+            allocated <= ceiling,
+            $"{component} allocated {allocated} bytes on a {bytes.Length}-byte input, past the {ceiling}-byte ceiling.");
     }
 
     private static bool IsDeclaredVocabulary(Exception ex) =>
