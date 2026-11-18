@@ -1,0 +1,48 @@
+﻿known defects: A11Y-02, A11Y-16, A11Y-18
+Lang: "nl-NL"
+MarkInfo: {Marked=true}
+DisplayDocTitle: true
+Pages: 1
+ParentTreeNextKey: 1 (exceeds every key: yes)
+== structure
+StructTreeRoot
+  Document
+    Table
+      TR
+        TH A={O=/Table Scope=/Column}
+          P
+            mcid 0 p1
+        TH A={O=/Table Scope=/Column}
+          P
+            mcid 1 p1
+      TR
+        TD
+          P
+            mcid 2 p1
+        TD
+          P
+            mcid 3 p1
+== page 1 content
+Tabs: absent
+BMC /Artifact
+  path stroke
+BDC /P {MCID=0}
+  line
+  show "Naam"
+BMC /Artifact
+  path stroke
+BDC /P {MCID=1}
+  show "Opmerking"
+BMC /Artifact
+  path stroke
+BDC /P {MCID=2}
+  line
+  show "Jan"
+BMC /Artifact
+  path stroke
+BDC /P {MCID=3}
+  show ""
+== page 1 annotations
+(none)
+== checks
+0 problem line(s)

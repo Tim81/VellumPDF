@@ -1,0 +1,33 @@
+﻿known defects: A11Y-01, BUG-01
+Lang: "nl-NL"
+MarkInfo: {Marked=true}
+DisplayDocTitle: true
+Pages: 1
+ParentTreeNextKey: 1 (exceeds every key: yes)
+== structure
+StructTreeRoot
+  Document
+    P
+      mcid 0 p1
+    P
+      mcid 1 p1
+== page 1 content
+Tabs: /S
+BDC /P {MCID=0}
+  line
+  show "Open "
+  show "Instellingen "
+  show ". Daarna astro "
+  show "logie "
+  show "en ( "
+  show "vet "
+  show ")."
+BDC /P {MCID=1}
+  line
+  show "Lees de "
+  show "documentatie "
+  show "voor details."
+== page 1 annotations
+annot 0: Subtype=Link StructParent=none Contents=absent QuadPoints=absent dest=URI
+== checks
+0 problem line(s)

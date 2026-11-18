@@ -1,0 +1,201 @@
+﻿known defects: A11Y-04, A11Y-06, A11Y-09, A11Y-15
+Lang: "nl-NL"
+MarkInfo: {Marked=true}
+DisplayDocTitle: true
+Pages: 2
+ParentTreeNextKey: 2 (exceeds every key: yes)
+== structure
+StructTreeRoot
+  Document
+    L
+      LI
+        Lbl
+          P
+            mcid 0 p1
+        LBody
+          P
+            mcid 1 p1
+      LI
+        Lbl
+          P
+            mcid 2 p1
+        LBody
+          P
+            mcid 3 p1
+      LI
+        Lbl
+          P
+            mcid 4 p1
+        LBody
+          P
+            mcid 5 p1
+      LI
+        Lbl
+          P
+            mcid 6 p1
+        LBody
+          P
+            mcid 7 p1
+      LI
+        Lbl
+          P
+            mcid 8 p1
+        LBody
+          P
+            mcid 9 p1
+      LI
+        Lbl
+          P
+            mcid 10 p1
+        LBody
+          P
+            mcid 11 p1
+      LI
+        Lbl
+          P
+            mcid 12 p1
+        LBody
+          P
+            mcid 13 p1
+      LI
+        Lbl
+          P
+            mcid 14 p1
+        LBody
+          P
+            mcid 15 p1
+      LI
+        Lbl
+          P
+            mcid 16 p1
+        LBody
+          P
+            mcid 17 p1
+      LI
+        Lbl
+          P
+            mcid 18 p1
+        LBody
+          P
+            mcid 19 p1
+      LI
+        Lbl
+          P
+            mcid 20 p1
+        LBody
+          P
+            mcid 21 p1
+      LI
+        Lbl
+          P
+            mcid 22 p1
+        LBody
+          P
+            mcid 23 p1
+    L
+      LI
+        Lbl
+          P
+            mcid 0 p2
+        LBody
+          P
+            mcid 1 p2
+      LI
+        Lbl
+          P
+            mcid 2 p2
+        LBody
+          P
+            mcid 3 p2
+      LI
+        Lbl
+          P
+            mcid 4 p2
+        LBody
+          P
+            mcid 5 p2
+== page 1 content
+Tabs: absent
+BDC /P {MCID=0}
+  line
+  show "1."
+BDC /P {MCID=1}
+  show "Punt 1"
+BDC /P {MCID=2}
+  line
+  show "1."
+BDC /P {MCID=3}
+  show "Sub 1.1"
+BDC /P {MCID=4}
+  line
+  show "2."
+BDC /P {MCID=5}
+  show "Sub 1.2"
+BDC /P {MCID=6}
+  line
+  show "2."
+BDC /P {MCID=7}
+  show "Punt 2"
+BDC /P {MCID=8}
+  line
+  show "1."
+BDC /P {MCID=9}
+  show "Sub 2.1"
+BDC /P {MCID=10}
+  line
+  show "2."
+BDC /P {MCID=11}
+  show "Sub 2.2"
+BDC /P {MCID=12}
+  line
+  show "3."
+BDC /P {MCID=13}
+  show "Punt 3"
+BDC /P {MCID=14}
+  line
+  show "1."
+BDC /P {MCID=15}
+  show "Sub 3.1"
+BDC /P {MCID=16}
+  line
+  show "2."
+BDC /P {MCID=17}
+  show "Sub 3.2"
+BDC /P {MCID=18}
+  line
+  show "4."
+BDC /P {MCID=19}
+  show "Punt 4"
+BDC /P {MCID=20}
+  line
+  show "1."
+BDC /P {MCID=21}
+  show "Sub 4.1"
+BDC /P {MCID=22}
+  line
+  show "2."
+BDC /P {MCID=23}
+  show "Sub 4.2"
+== page 1 annotations
+(none)
+== page 2 content
+Tabs: absent
+BDC /P {MCID=0}
+  line
+  show "5."
+BDC /P {MCID=1}
+  show "Punt 5"
+BDC /P {MCID=2}
+  line
+  show "1."
+BDC /P {MCID=3}
+  show "Sub 5.1"
+BDC /P {MCID=4}
+  line
+  show "2."
+BDC /P {MCID=5}
+  show "Sub 5.2"
+== page 2 annotations
+(none)
+== checks
+0 problem line(s)
