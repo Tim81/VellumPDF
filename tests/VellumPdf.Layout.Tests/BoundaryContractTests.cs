@@ -17,15 +17,16 @@ namespace VellumPdf.Layout.Tests;
 ///
 /// PR #542 documented the package's public surface by measuring it over 21 review rounds, and later
 /// rounds re-derived partitions an earlier round had already measured, because nothing held the
-/// figures. A sentence in a doc comment is only as good as the last run that checked it, so these tests
-/// are that check: a future round reads a failing assertion instead of re-measuring from zero.
+/// figures. A sentence in a doc comment is only as good as the last run that checked it, so these
+/// tests are that check: a future round reads a failing assertion instead of re-measuring from
+/// zero.
 ///
 /// Every assertion that pins a sentence comes from the probe that produced it; the controls pin no
 /// sentence. A refusal is asserted by exception type, <c>ParamName</c> or a fragment of the
 /// message, an acceptance by the save completing or the call returning, and a placement by the
-/// bytes written. Non-finite inputs are listed value by value:
-/// NaN, positive infinity and negative infinity can take three different branches, and during #542 a
-/// measurement of one of them was twice promoted to a claim about all three.
+/// bytes written. Non-finite inputs are listed value by value: NaN, positive infinity and negative
+/// infinity can take three different branches, and during #542 a measurement of one of them was
+/// twice promoted to a claim about all three.
 ///
 /// A failure here means the library moved, not that the test is stale. Fix the code or fix the
 /// sentence the case pins, and do both in the same commit.
@@ -45,10 +46,11 @@ public sealed class BoundaryContractTests
     // ── The default page, which several boundaries below are expressed against ──────────────────
 
     /// <summary>
-    /// A4 with 72pt margins leaves a content area 451.28pt wide. The figures below (451.28, 451.2799,
-    /// 297.64, 523.28) are what #542's probes measured for the rules
-    /// <see cref="ListElement.Indent"/> and <see cref="TextStyle.FontRef"/> state, not numbers the
-    /// documentation quotes. Pinned first, because every boundary below moves if the default page does.
+    /// A4 with 72pt margins leaves a content area 451.28pt wide. The figures below (451.28,
+    /// 451.2799, 297.64, 523.28) are what #542's probes measured for the rules <see
+    /// cref="ListElement.Indent"/> and <see cref="TextStyle.FontRef"/> state, not numbers the
+    /// documentation quotes. Pinned first, because every boundary below moves if the default page
+    /// does.
     /// </summary>
     [Fact]
     public void DefaultPage_contentArea_is451_28Wide()
@@ -109,10 +111,11 @@ public sealed class BoundaryContractTests
     }
 
     /// <summary>
-    /// <see cref="RendererContext.RegisterImageXObject"/> reads its own argument first, the opposite
-    /// order to <see cref="DrawContext.UseEmbeddedFont"/>, so the two cannot share a rule. A null
-    /// image answers <see cref="ArgumentNullException"/> even when the context has no document,
-    /// while a sound image on a document-less context raises <see cref="NullReferenceException"/>.
+    /// <see cref="RendererContext.RegisterImageXObject"/> reads its own argument first, the
+    /// opposite order to <see cref="DrawContext.UseEmbeddedFont"/>, so the two cannot share a rule.
+    /// A null image answers <see cref="ArgumentNullException"/> even when the context has no
+    /// document, while a sound image on a document-less context raises <see
+    /// cref="NullReferenceException"/>.
     /// </summary>
     [Theory]
     [InlineData(true, true, "ArgumentNullException")] // both null: the image is read first
@@ -169,9 +172,9 @@ public sealed class BoundaryContractTests
 
     /// <summary>
     /// What the save refuses for an outline entry is the Y it writes, not the layoutY passed.
-    /// <c>AddOutlineEntry</c> flips the Y through <see cref="DrawContext.PageBounds"/>, so a finite argument is refused when that
-    /// height is not finite or the subtraction overflows. The tags blamed the caller's argument
-    /// until round 21.
+    /// <c>AddOutlineEntry</c> flips the Y through <see cref="DrawContext.PageBounds"/>, so a finite
+    /// argument is refused when that height is not finite or the subtraction overflows. The tags
+    /// blamed the caller's argument until round 21.
     /// </summary>
     [Theory]
     [InlineData(double.NaN, 10.0)]
@@ -312,7 +315,8 @@ public sealed class BoundaryContractTests
     [InlineData(new[] { 0, 6 }, 1)]
     [InlineData(new[] { 0, 1, 500 }, 2)] // the jump falls back to the root the level 0 entry uses
     [InlineData(new[] { -4, -3 }, 2)] // a negative level hangs under the entry one below it
-    [InlineData(new[] { -1, 0 }, 1)] // level 0 is a root entry even when a level -1 entry precedes it
+    // level 0 is a root entry even when a level -1 entry precedes it
+    [InlineData(new[] { -1, 0 }, 1)]
     public void HeadingLevel_nestsOnTheLevelBelowIt_notOnTheNumber(int[] levels, int distinctParents)
     {
         using var doc = new LayoutDocument();
@@ -334,8 +338,8 @@ public sealed class BoundaryContractTests
 
     /// <summary>
     /// A nested list is refused when its indent reaches the list's own area width, inclusively, and
-    /// the boundary moves with the list's margins. The documentation states the rule; these rows are
-    /// the measured values either side of the edge, at default and at narrowed margins.
+    /// the boundary moves with the list's margins. The documentation states the rule; these rows
+    /// are the measured values either side of the edge, at default and at narrowed margins.
     /// </summary>
     [Theory]
     [InlineData(0, 0, 451.2799, false)]
@@ -463,18 +467,19 @@ public sealed class BoundaryContractTests
             var style = new TextStyle { FontRef = font, FontSize = size };
             for (var cp = 0; cp <= 0xFFFF; cp++)
             {
-                if (cp is >= 0xD800 and <= 0xDFFF) continue; // an unpaired surrogate is a separate input
+                // an unpaired surrogate is a separate input
+                if (cp is >= 0xD800 and <= 0xDFFF) continue;
                 Assert.Equal(0, style.MeasureString(((char)cp).ToString()));
             }
         }
     }
 
     /// <summary>
-    /// Because the width is zero, a centred Symbol line is placed at the exact centre of the content
-    /// area and a right-aligned one at its exact right edge. 297.64 and 523.28 are the values
-    /// #542's probes measured for that rule on the default A4 page, not figures the documentation
-    /// quotes. A Helvetica control shows the same line placed on its measured width. The sentence
-    /// is in <see cref="TextStyle.FontRef"/>.
+    /// Because the width is zero, a centred Symbol line is placed at the exact centre of the
+    /// content area and a right-aligned one at its exact right edge. 297.64 and 523.28 are the
+    /// values #542's probes measured for that rule on the default A4 page, not figures the
+    /// documentation quotes. A Helvetica control shows the same line placed on its measured width.
+    /// The sentence is in <see cref="TextStyle.FontRef"/>.
     /// </summary>
     [Theory]
     [InlineData(Standard14.Symbol, HorizontalAlignment.Center, "297.64")]
