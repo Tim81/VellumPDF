@@ -563,8 +563,10 @@ public sealed class MalformedInputTests
             $"expected under {PngBombAllocationBound} bytes allocated before the cap fired; measured {allocated}.");
     }
 
-    // 1 MiB. See the measured values next to the use in the PR; the uncapped path inflates the whole
-    // 4,000,000 bytes into a growing MemoryStream, which alone is several times this.
+    // 1 MiB. With the cap firing on the first read, Load allocated 91,224 bytes in Debug and Release
+    // and 90,928 with tiered compilation off, for both the plain and the interlaced bomb. With the
+    // cap checked after the loop, so the whole 4,000,000 bytes land in a growing MemoryStream, it
+    // allocated 10.5 million. 1 MiB sits 11.5x above the first and 10x below the second.
     private const long PngBombAllocationBound = 1024 * 1024;
 
     // ── Interlaced PNG builder helpers ────────────────────────────────────────
