@@ -136,7 +136,7 @@ public sealed class NoBreakSpaceFallbackTests
 
     // ── Embedded fonts: fall back to U+00A0, then U+0020, then .notdef ───────
 
-    /// <summary>A pure lookup over a dictionary, so the fallback is tested without a font that lacks the glyphs.</summary>
+    /// <summary>A pure lookup over a dictionary, so the fallback needs no font that lacks the glyphs.</summary>
     private static Func<int, ushort> Font(params (int CodePoint, ushort Glyph)[] glyphs)
     {
         var map = glyphs.ToDictionary(g => g.CodePoint, g => g.Glyph);

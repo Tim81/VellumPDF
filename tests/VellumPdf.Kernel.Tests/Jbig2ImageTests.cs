@@ -2101,7 +2101,7 @@ public sealed class Jbig2ImageTests
         Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(file));
     }
 
-    /// <summary>The 8-byte-only form the loader always accepted still loads, so existing callers keep working.</summary>
+    /// <summary>The 8-byte-only form the loader always accepted still loads, so callers keep working.</summary>
     [Fact]
     public void Load_TheOlderBareIdStringForm_StillLoads()
     {

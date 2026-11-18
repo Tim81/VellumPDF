@@ -13,13 +13,13 @@ using VellumPdf.Layout.Elements.Table;
 namespace VellumPdf.Layout.Tests;
 
 /// <summary>
-/// A null that 1c61fa6 stored and dereferenced only in some shapes is refused in exactly those shapes,
-/// with <see cref="ArgumentNullException"/> where it threw <see cref="NullReferenceException"/>, and
-/// the document that saved there still saves. Each row is a shape measured on 1c61fa6: the second
-/// element is whether it saved. The rows that threw there throw here, and none that saved throws
-/// (#484), which is the rule "what was already refused stays refused" together with "a valid file
-/// is kept". A null that always crashed on 1c61fa6 is refused at the call; see
-/// <c>NullArgumentTests</c>.
+/// The rule is that a null is refused where 2.3.3 dereferenced it. A null 2.3.3 stored, and
+/// dereferenced only in some shapes, is refused in exactly those shapes, with
+/// <see cref="ArgumentNullException"/> where it threw <see cref="NullReferenceException"/>, and a
+/// document that saved there still saves. Each row is a shape measured on 2.3.3 (the commit 1c61fa6):
+/// the second element is whether it saved. The rows that threw there throw here, and none that saved
+/// throws (#484), which is "what was already refused stays refused" together with "a valid file is
+/// kept". A null that 2.3.3 always crashed on is refused at the call; see <c>NullArgumentTests</c>.
 /// </summary>
 public sealed class NullDeferralTests
 {

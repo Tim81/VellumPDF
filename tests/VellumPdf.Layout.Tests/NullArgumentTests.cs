@@ -14,13 +14,13 @@ namespace VellumPdf.Layout.Tests;
 /// <summary>
 /// #523, #531 and #547: a null argument was stored without a check and surfaced as
 /// <see cref="NullReferenceException"/> from a later call the caller did not make, usually
-/// <c>Document.Save</c>. Each call below now throws <see cref="ArgumentNullException"/> from the call
-/// that took the null, naming the parameter. Every row of the three issues' tables is one case, and
-/// the controls show the same calls with a real value still work. Four nulls are not refused from the
-/// call, because each saved on 1c61fa6 and a release before 3.0 may not turn that into an exception
-/// (#484): a null cell text, a null <see cref="TextRun"/> style, a null <see cref="ListItem"/> child
-/// and a null <see cref="ListItem"/> text. The two <see cref="ListItem"/> cases are deferred to the
-/// save, where they throw only for an item that is drawn; they are at the end of the class.
+/// <c>Document.Save</c>. The rule is that a null is refused where 2.3.3 dereferenced it, and not
+/// before. Each call in the case table throws <see cref="ArgumentNullException"/> from the call that
+/// took the null, naming the parameter. Every row of the three issues' tables is one case, and the
+/// controls show the same calls with a real value still work. A null that 2.3.3 stored, and
+/// dereferenced only in some shapes or only when it was drawn, is stored here too and refused where
+/// 2.3.3 failed (#484); those tests are at the end of the class, and <c>NullDeferralTests</c> holds
+/// the table of shapes.
 /// </summary>
 public sealed class NullArgumentTests
 {

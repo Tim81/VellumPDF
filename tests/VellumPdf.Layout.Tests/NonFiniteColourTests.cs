@@ -16,7 +16,8 @@ namespace VellumPdf.Layout.Tests;
 /// listed on its own because they take separate branches elsewhere in this package. A text colour on
 /// text that is drawn is refused by the element check, naming the element; the other colours reach
 /// <c>PdfCanvas</c>, which throws <see cref="ArgumentException"/> saying PDF does not support NaN or
-/// Infinity. A colour that is not written is not refused; see <c>KeepRenderingTests</c>. A channel outside 0 to 1 is finite and still renders, and one test pins that.
+/// Infinity. A colour that is not written is not refused; see <c>KeepRenderingTests</c>. A channel
+/// outside 0 to 1 is finite and still renders, and one test pins that.
 /// </summary>
 public sealed class NonFiniteColourTests
 {
