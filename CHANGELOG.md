@@ -403,10 +403,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   string than the loader read: a flags byte (bit 0 set is sequential, bit 1 set means the number of
   pages is unknown) and, unless that bit is set, a 4-byte page count. The loader took both for the
   start of the first segment, so every standard file failed with an error such as `JBIG2: segment
-  16777216 data length 12288 at offset 11 exceeds buffer size 35.` on a 43-byte file (35 bytes after the 8-byte ID
-  string); the loader's
-  tests built files without those bytes, which
-  is why nothing caught it. It now reads the header, and also the random-access organisation (D.2),
+  16777216 data length 12288 at offset 11 exceeds buffer size 35.` on a 43-byte file (35 bytes after
+  the 8-byte ID string); the loader's tests built files without those bytes, which is why nothing
+  caught it. It now reads the header, and also the random-access organisation (D.2),
   where all segment headers come first, ending with the end-of-file segment, and the data parts
   follow; a random-access file is rejoined into the embedded form a PDF stores, each header with its
   own data. The older form, the ID string followed directly by segments, and the bare embedded form
@@ -423,17 +422,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   for an 8 by 1 immediate generic region (type 38, MMR, end marker and row count present), 2.3.3
   and this loader both embed a 30-byte stream holding only the page-information segment, where the
   same image with a known length embeds 62 bytes, and `pdftoppm` draws the first all white and the
-  second with dark pixels. Four inputs were compared against 2.3.3 and give the same PDF: types 38
-  and 53 in the headerless embedded organisation, and type 38 after the ID string. A file header
-  with such a segment now loads, where 2.3.3 could not read the header. Nothing reports the
-  dropped segment yet (#607), and 3.0 refuses it. `DecodeToRaster` keeps refusing an unknown length
+  second with dark pixels. Four inputs were compared against 2.3.3 and give the same image stream:
+  type 38 and type 53 segments, each in the headerless embedded organisation and after the ID
+  string. A file with the Annex D flags byte and page count and such a segment is refused with
+  `InvalidDataException` naming the segment, as 2.3.3 refused it, reading the flags as the start of
+  a segment. Nothing reports the dropped segment yet (#607), and 3.0
+  refuses it. `DecodeToRaster` keeps refusing an unknown length
   on a generic region (types 36, 38 and 39), as before, now with a message naming the segment, and
   every other segment behaves as it did. A random-access file refuses an unknown length on any page,
   because its data parts cannot be located without the length. If the first page-information
   segment has page association 0 it names no page, and every segment is kept, as before pages were
   chosen. **Attention**: a segment whose length is unknown ends what this loader reads of a
-  sequential or embedded stream, so what follows one is not seen. A file
-  with more than one page
+  sequential or embedded stream, so what follows one is not seen. A file with more than one page
   used to embed every page's segments into one image stream and now embeds only the first page.
   When no reading of the data is accepted, the `InvalidDataException` says which readings were
   tried (a sequential or random-access file, the ID string followed directly by segments, or the
