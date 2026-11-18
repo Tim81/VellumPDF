@@ -27,9 +27,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   per-assembly-floor, valid-line and 84% threshold checks to each framework and the assembly-name,
   per-assembly-floor, valid-line, 84% threshold and total-line checks to the merge, and fails on a
   report anywhere else. The oracle invocation floors are checked per framework, and a framework
-  whose runs logged nothing fails. A new Pack-time check fails the build if the `net10.0` package
-  group of `VellumPdf.Signing` names a Pkcs version outside 10.x. The job timeout is an interim 60
-  minutes until a CI run measures the longer Test step. The per-package README is now attached
+  whose runs logged nothing fails; the verapdf and qpdf floors are now 279 and 51, 90% of the
+  counts the first Linux CI run measured. A new Pack-time check fails the build if the `net10.0`
+  package group of `VellumPdf.Signing` names a Pkcs version outside 10.x. The job timeout stays at
+  60 minutes: the first CI run on both frameworks took 29 minutes, 23 of them in the Test step.
+  The per-package README is now attached
   with remove-then-include, because an update matches nothing in the outer build that packs a
   multi-targeted project.
 

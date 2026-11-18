@@ -22,11 +22,10 @@ jobs:
     runs-on: ubuntu-24.04
     # A hung test (a real one, or a DoesNotHang-named guard whose own assertion turned out not to
     # bound it) would otherwise run to GitHub's 360-minute default and burn the runner quietly
-    # instead of failing loudly. INTERIM: every test project now runs once per target framework
-    # (net10.0 and net11.0), so the Test step does roughly twice the work it did under the old
-    # 30-minute limit. This is deliberately generous until a first CI run measures the Test step;
-    # the
-    # final value follows it.
+    # instead of failing loudly. Every test project runs once per target framework (net10.0 and
+    # net11.0). The first CI run on both (build job 29m0s, Test step 23m22s, 14,214 tests) put 60
+    # at about twice the job time, which leaves room for a slow runner without letting a hang run
+    # on for hours.
     timeout-minutes: 60
     env:
       # Every pinned oracle version in one place, referenced by both the install steps and the
@@ -304,21 +303,17 @@ jobs:
         # GifPillowOracleTests fall back from "python" to "python3" and log whichever name
         # actually launched, so each pair is one oracle under two possible names, not two oracles.
         #
-        # Floors are 90% of a full local run with every oracle enabled (REQUIRE_ORACLES=1, QPDF_HOME
-        # / POPPLER_HOME / VERAPDF_HOME all pointed at real installs), rounded down, measured
-        # against the commit that set them: verapdf 304, pdftoppm 135, python 137, qpdf 40,
-        # pdftotext 8,
-        # pdfsig 2 (the 2026-11-18 run below differs for verapdf and qpdf). They apply to each
-        # target
-        # framework separately and were not changed when net11.0 was added. A Windows run on
-        # 2026-11-18 (veraPDF 1.30.2, qpdf 12.4.1, poppler from
-        # MSYS2) logged the same counts under net10.0 and under net11.0: verapdf 311, pdftoppm 135,
-        # python 137, qpdf 57, pdftotext 8, pdfsig 2. Every floor sits below those counts, and they
-        # were not raised to 90% of them because the CI runner is Linux and has not been measured.
-        # qpdf moved from 29 with #99's third-party SaveDecrypted round-trip oracle
+        # Floors are 90% of a full run with every oracle enabled, rounded down. They apply to each
+        # target framework separately. The first CI run on both frameworks (ubuntu-24.04, veraPDF
+        # 1.30.2, qpdf 12.4.1, poppler 24.02.0) logged the same counts under net10.0 and under
+        # net11.0: verapdf 311, pdftoppm 135, python 137, qpdf 57, pdftotext 8, pdfsig 2. A Windows
+        # run the same day logged identical counts. The floors below are 90% of those, and verapdf
+        # (was 273) and qpdf (was 36) were re-baselined to them: the old values came from earlier
+        # measurements of 304 and 40, and 36 had fallen to 63% of the current qpdf count. qpdf rose
+        # from 29 with #99's third-party SaveDecrypted round-trip oracle
         # (SaveDecryptedThirdPartyQpdfOracleTests, 11 fixtures each running one `qpdf --check`).
-        # verapdf moved from 298 with #138's UaEncryptionPermissionsVeraPdfTests: 4 test methods,
-        # 6 verapdf launches total (two of the four call both Validate and Report). python moved
+        # verapdf rose from 298 with #138's UaEncryptionPermissionsVeraPdfTests: 4 test methods,
+        # 6 verapdf launches total (two of the four call both Validate and Report). python rose
         # from 135 with #490's GifPillowOracleTests: 2 test methods, each launching python once
         # for eng/gif-oracle.py; pdftoppm is untouched since that oracle never rasterizes a PDF.
         # 90% tolerates ordinary run-to-run variance (a data-driven theory whose case
@@ -337,10 +332,10 @@ jobs:
           shopt -s nullglob
 
           declare -A floors=(
-            [verapdf]=273
+            [verapdf]=279
             [pdftoppm]=121
             [python]=123
-            [qpdf]=36
+            [qpdf]=51
             [pdftotext]=7
             [pdfsig]=1
           )
