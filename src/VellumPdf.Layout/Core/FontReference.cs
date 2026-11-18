@@ -68,12 +68,14 @@ public readonly struct FontReference
     /// A null handle is stored. <see cref="IsEmbedded"/> is then false, and text in this reference
     /// is drawn in Helvetica.
     /// <para>The handle is checked against the document that saves it (#544). A handle from a
-    /// different <see cref="VellumPdf.Layout.Document"/> is refused: the save throws
-    /// <see cref="ArgumentException"/> when the text is drawn. A handle's resource name is a counter
-    /// local to the document that issued it, so a page refers to a font by a name that means
-    /// something only there; before this check the page got whatever font the saving document had
-    /// registered under that name, or none, and was saved with the text drawn wrong or not at all.
-    /// Use handles from the document you add the text to.</para>
+    /// different <see cref="VellumPdf.Layout.Document"/> is refused, with <see cref="ArgumentException"/>
+    /// when the text is drawn, unless the saving document embedded the same font program under the
+    /// same resource name; <see cref="VellumPdf.Document.PdfDocument.RegisterEmbeddedFontUsage"/>
+    /// describes both cases. A handle's resource name is a counter local to the document that issued
+    /// it, so a page refers to a font by a name that means something only there; before this check
+    /// the page got whatever font the saving document had registered under that name, or none.
+    /// <b>Do not pass</b> a handle from another document: 3.0 refuses it whatever the saving
+    /// document holds.</para>
     /// <para>Text that holds an unpaired surrogate makes the save throw
     /// <see cref="ArgumentException"/> when it is measured in an embedded font; see
     /// <see cref="TextStyle.FontRef"/>.</para>
@@ -83,7 +85,8 @@ public readonly struct FontReference
     /// <exception cref="ArgumentException">
     /// Raised from the save, not from this call, when text measured in this font holds an unpaired
     /// surrogate, see <see cref="TextStyle.FontRef"/>, or when <paramref name="handle"/> was returned
-    /// by a different document.
+    /// by a different document that did not embed the same font program under the same resource
+    /// name.
     /// </exception>
     public FontReference(EmbeddedFontHandle handle)
     {

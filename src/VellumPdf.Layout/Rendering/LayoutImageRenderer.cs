@@ -50,7 +50,8 @@ public sealed class LayoutImageRenderer : IRenderer
         LayoutValidation.ValidateInsets(
             _img.Margins,
             "An image",
-            right: LayoutValidation.NonFinite.NaN | LayoutValidation.NonFinite.PositiveInfinity | LayoutValidation.NonFinite.NegativeInfinity,
+            right: LayoutValidation.NonFinite.NaN | LayoutValidation.NonFinite.PositiveInfinity
+                | LayoutValidation.NonFinite.NegativeInfinity,
             left: LayoutValidation.NonFinite.PositiveInfinity | LayoutValidation.NonFinite.NegativeInfinity);
 
         var area = ctx.Area.Deflate(_img.Margins);

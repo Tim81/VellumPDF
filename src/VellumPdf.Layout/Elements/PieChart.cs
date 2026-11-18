@@ -35,7 +35,7 @@ public readonly record struct PieSlice
     /// <para>Only a colour that is drawn is checked. A slice whose <see cref="Value"/> is zero draws
     /// no wedge, so a non-finite channel on it is not refused: that saved a valid file on 1c61fa6
     /// and still does. <b>Do not pass</b> a non-finite channel on any slice. Nothing reports it on a
-    /// zero-value slice, because there is no diagnostics channel yet, and a later major version will
+    /// zero-value slice, because there is no diagnostics channel yet, and 3.0 will
     /// refuse it.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
@@ -117,7 +117,7 @@ public sealed class PieChart
     /// <see cref="StrokeColor"/> set, every non-zero slice strokes the same radius (#546). A large
     /// sum that stays finite is unaffected, and each wedge still takes its share.</para>
     /// <para><b>Do not pass</b> values whose sum overflows to infinity. The file is valid and it
-    /// saved on 1c61fa6, so it is not refused in a patch. A later major version will throw
+    /// saved on 1c61fa6, so it is not refused in a patch. 3.0 will throw
     /// <see cref="ArgumentException"/> with <c>ParamName</c> <c>Slices</c>.</para>
     /// <para>A null list is refused where it is set (#547). It used to be stored, and the save threw
     /// <see cref="NullReferenceException"/> when it laid the chart out.</para>
@@ -172,16 +172,13 @@ public sealed class PieChart
 
     /// <summary>Margins around the chart. Defaults to 6 points on all sides.</summary>
     /// <remarks>
-    /// A non-finite edge is refused, whichever of <c>NaN</c>, positive infinity and negative infinity
-    /// it is: the save throws <see cref="ArgumentException"/> with the parameter name
-    /// <c>Margins</c>, as this chart's other refusals do (#519). Before that, the chart was laid out in
-    /// a box that could be <c>NaN</c>, and the save threw an exception about something else or wrote
-    /// <c>NaN</c> or <c>Infinity</c> into the content stream.
-    /// <para><b>An infinite right edge, positive or negative, is not refused.</b> It saved a valid
-    /// file on 1c61fa6 and is accepted today, so a patch does not turn it into an exception. The
-    /// other ten of the twelve edge and value combinations are refused as above. <b>Do not pass</b> a
-    /// non-finite edge. Nothing reports the accepted ones, because there is no diagnostics channel
-    /// yet, and a later major version will refuse all twelve.</para>
+    /// A non-finite edge is refused where it would be written; see <see cref="Document"/>. The save
+    /// throws <see cref="ArgumentException"/> with the parameter name <c>Margins</c>, as this chart's
+    /// other refusals do (#519). Before that, the chart was laid out in a box that could be <c>NaN</c>,
+    /// and the save threw an exception about something else or wrote <c>NaN</c> or <c>Infinity</c>
+    /// into the content stream.
+    /// <para>For example, an infinite right edge is accepted. <b>Do not pass</b> a non-finite edge: 3.0
+    /// refuses it.</para>
     /// <para><b>Attention</b>: no other edge is checked. The top and bottom edges add to the space the
     /// chart takes on the page. The left and right edges move the chart but do not shrink it: its
     /// diameter is limited by the whole content width, and its position is clamped back inside the

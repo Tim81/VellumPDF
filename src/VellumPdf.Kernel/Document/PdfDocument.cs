@@ -270,10 +270,12 @@ public sealed class PdfDocument : IDisposable
     /// page would be saved with a font its resources do not define (#544). When this document has
     /// embedded the same font program under that name, the foreign handle is resolved to this
     /// document's own embedding, and the glyphs the foreign handle registered are added to its
-    /// subset at save.
-    /// <para><b>Do not pass</b> a handle from another document. It works today only when this
-    /// document embedded the same font program under the same resource name, and a later major
-    /// version will refuse it whatever this document holds.</para>
+    /// subset at save. On 1c61fa6 that case saved a file whose subset held only the glyphs this
+    /// document had registered itself, so the text drawn through the foreign handle extracted as
+    /// other characters and veraPDF's PDF/A-2b profile failed.
+    /// <para><b>Do not pass</b> a handle from another document. It works only when this document
+    /// embedded the same font program under the same resource name, and 3.0 refuses it whatever this
+    /// document holds.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="page"/> or <paramref name="handle"/> is <see langword="null"/>.
@@ -291,9 +293,9 @@ public sealed class PdfDocument : IDisposable
         {
             // Same font program embedded here under the same resource name: the content stream names
             // the foreign handle's resource, and this document's own embedding defines that name, so
-            // the page is correct. That saved a correct file on 1c61fa6, and it is kept (#484). The
-            // same program under another name is not: the stream would name a resource that is
-            // undefined here, or is another font.
+            // the page is correct. That saved on 1c61fa6, though with a subset that lacked the foreign
+            // glyphs, and it is kept (#484). The same program under another name is not: the stream
+            // would name a resource that is undefined here, or is another font.
             if (_embeddedFontByHash.TryGetValue(handle.FontHash, out var own) &&
                 own.ResourceName == handle.ResourceName)
             {
@@ -677,7 +679,10 @@ public sealed class PdfDocument : IDisposable
     /// <see cref="Conformance"/> is <see cref="PdfConformance.PdfUA1"/> together with
     /// <see cref="Encrypt"/> settings that omit <see cref="PdfPermissions.Extract"/>, or a
     /// registered form field's <see cref="FormFieldOptions.FontSize"/> is not finite. That
-    /// property's boundary documentation names the value and the field.
+    /// property's boundary documentation names the value and the field. It is also thrown when the
+    /// document has no pages ("The document has no pages."), and when an array, dictionary, stream or
+    /// structure element in the document holds itself, directly or through others, so it cannot be
+    /// written (#521).
     /// </exception>
     public void Save(Stream destination)
     {
@@ -1050,8 +1055,10 @@ public sealed class PdfDocument : IDisposable
     /// <see cref="Conformance"/> is <see cref="PdfConformance.PdfUA1"/> together with
     /// <see cref="Encrypt"/> settings that omit <see cref="PdfPermissions.Extract"/>, or a
     /// registered form field's <see cref="FormFieldOptions.FontSize"/> is not finite. That
-    /// property's boundary documentation names the value and the field; serialisation runs on a
-    /// thread-pool thread, so the exception is rethrown here when the wrapping task is awaited.
+    /// property's boundary documentation names the value and the field. It is also thrown when the
+    /// document has no pages ("The document has no pages."), and when an array, dictionary, stream or
+    /// structure element in the document holds itself (#521). Serialisation runs on a thread-pool
+    /// thread, so the exception is rethrown here when the wrapping task is awaited.
     /// </exception>
     public async Task SaveAsync(Stream destination, CancellationToken cancellationToken = default)
     {

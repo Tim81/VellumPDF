@@ -31,8 +31,9 @@ public sealed class TextStyle
     /// or an <see cref="EmbeddedFontHandle"/> returned by <c>Document.UseTrueTypeFont</c>.
     /// </summary>
     /// <remarks>
-    /// Stored as given. A null handle saves in Helvetica, and a handle from another document keeps
-    /// at most the characters <see cref="FontReference(EmbeddedFontHandle)"/> describes. A
+    /// Stored as given. A null handle saves in Helvetica, and a handle from another document is
+    /// refused unless the saving document embedded the same font program under the same resource name;
+    /// see <see cref="FontReference(EmbeddedFontHandle)"/>. A
     /// Standard-14 value the enumeration does not name makes the save throw once the font is
     /// selected on a page, which an empty table cell or list item with this style also does.
     /// <para><see cref="Standard14.Symbol"/> and <see cref="Standard14.ZapfDingbats"/> measure

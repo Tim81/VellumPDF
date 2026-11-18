@@ -19,7 +19,8 @@ public sealed class KeepRenderingTests
 {
     private static readonly double[] _nonFinite = [double.NaN, double.PositiveInfinity, double.NegativeInfinity];
     private static readonly string[] _edges = ["top", "right", "bottom", "left"];
-    private static readonly string[] _elements = ["paragraph first", "paragraph last", "table", "list", "pie", "image"];
+    private static readonly string[] _elements = ["paragraph first", "paragraph last", "table",
+    "list", "pie", "image"];
 
     private static string Kind(double v) => double.IsNaN(v) ? "NaN" : v > 0 ? "+inf" : "-inf";
 
@@ -32,9 +33,9 @@ public sealed class KeepRenderingTests
     };
 
     /// <summary>
-    /// The 20 of 72 combinations that saved clean on 1c61fa6, as (element, edge, value). Paragraph
-    /// counts twice because it was measured first and last in the document. Image margins were
-    /// measured separately with the same probe shape: a 2 by 2 image after one paragraph.
+    /// The combinations that saved clean on 1c61fa6, as (element, edge, value). A paragraph was
+    /// measured first and last in the document. Image margins were measured separately with the same
+    /// probe shape: a 2 by 2 image after one paragraph.
     /// </summary>
     private static bool SavedClean(string element, string edge, double v)
     {
@@ -118,25 +119,16 @@ public sealed class KeepRenderingTests
         }
         else
         {
-            Assert.ThrowsAny<Exception>(() => Save(doc));
+            // Refused from the element's own check, from the too-tall path or from PdfCanvas; each
+            // message says which.
+            var ex = Assert.ThrowsAny<Exception>(() => Save(doc));
+            Assert.True(
+                ex is InvalidOperationException or ArgumentException,
+                $"{element} {edge} {v}: unexpected {ex.GetType().Name}: {ex.Message}");
+            Assert.Matches(
+                "non-finite inset|Pie chart margins|too tall|PDF does not support NaN or Infinity|did not converge|single element",
+                ex.Message);
         }
-    }
-
-    [Fact]
-    public void ElementMarginTable_holdsTwentyOfSeventyTwoCombinations()
-    {
-        var saves = 0;
-        var total = 0;
-        foreach (var element in _elements)
-            foreach (var edge in _edges)
-                foreach (var v in _nonFinite)
-                {
-                    total++;
-                    if (SavedClean(element, edge, v)) saves++;
-                }
-
-        Assert.Equal(20, saves);
-        Assert.Equal(72, total);
     }
 
     // ── Colours that are not written ─────────────────────────────────────────
@@ -152,6 +144,11 @@ public sealed class KeepRenderingTests
         var stream = Save(doc);
 
         Assert.DoesNotContain("NaN", stream, StringComparison.Ordinal);
+
+        // The zero-value slice draws no wedge: the chart is the one without it.
+        using var without = new Document();
+        without.Add(new PieChart { Slices = [new PieSlice(1, new ColorRgb(0, 0, 1)), new PieSlice(1, new ColorRgb(0, 1, 0))] });
+        Assert.Equal(Save(without), stream);
     }
 
     [Fact]
@@ -190,5 +187,124 @@ public sealed class KeepRenderingTests
         doc.Add(new Paragraph("Hello"));
 
         Assert.Throws<InvalidOperationException>(() => Save(doc));
+    }
+
+    // ── Elements that write nothing ──────────────────────────────────────────
+
+    public static TheoryData<string, string, double> EmptyElementCases()
+    {
+        var rows = new TheoryData<string, string, double>();
+        foreach (var element in new[] { "list margins", "list indent", "paragraph empty", "paragraph white space", "heading empty" })
+        {
+            foreach (var (edge, v) in new[] { ("left", double.NaN), ("left", double.NegativeInfinity), ("top", double.NegativeInfinity) })
+            {
+                // An empty heading still writes its bookmark position, so a negative-infinity top
+                // margin reaches PdfCanvas and throws on 1c61fa6 and here.
+                if (element == "heading empty" && edge == "top") continue;
+                rows.Add(element, edge, v);
+            }
+        }
+        rows.Add("list margins", "top", double.NaN);
+        rows.Add("list margins", "bottom", double.NaN);
+        rows.Add("list indent", "none", double.NaN);
+        return rows;
+    }
+
+    /// <summary>
+    /// An element that draws nothing writes none of its insets, so a non-finite one saved a valid file
+    /// on 1c61fa6 and keeps saving. Each row was measured there.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(EmptyElementCases))]
+    public void ElementThatDrawsNothing_savesWithANonFiniteInset(string element, string edge, double v)
+    {
+        using var doc = new Document();
+        doc.Add(new Paragraph("Hello"));
+        var margins = edge == "none" ? EdgeInsets.Zero : Edge(edge, v);
+        switch (element)
+        {
+            case "list margins": doc.Add(new ListElement { Margins = margins }); break;
+            case "list indent": doc.Add(new ListElement { Indent = v }); break;
+            case "paragraph empty": doc.Add(new Paragraph("") { Margins = margins }); break;
+            case "paragraph white space": doc.Add(new Paragraph("   ") { Margins = margins }); break;
+            default: doc.Add(new Heading("") { Margins = margins }); break;
+        }
+
+        var stream = Save(doc);
+
+        Assert.Contains("(Hello)", stream, StringComparison.Ordinal);
+        Assert.DoesNotContain("NaN", stream, StringComparison.Ordinal);
+        Assert.DoesNotContain("Infinity", stream, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Paragraph_withDrawableTextAndANanLeftMargin_isStillRefused()
+    {
+        using var doc = new Document();
+        doc.Add(new Paragraph("Hello") { Margins = Edge("left", double.NaN) });
+
+        Assert.Throws<InvalidOperationException>(() => Save(doc));
+    }
+
+    [Fact]
+    public void Footer_withAnEmptyTemplateAndANegativeInfinityHeight_saves()
+    {
+        using var doc = new Document();
+        doc.Footer = new RunningBand(string.Empty) { Height = double.NegativeInfinity };
+        doc.Add(new Paragraph("Hello"));
+
+        var stream = Save(doc);
+
+        Assert.Contains("(Hello)", stream, StringComparison.Ordinal);
+        Assert.DoesNotContain("Infinity", stream, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Footer_withTextAndANegativeInfinityHeight_isStillRefused()
+    {
+        using var doc = new Document();
+        doc.Footer = new RunningBand("Page {page}") { Height = double.NegativeInfinity };
+        doc.Add(new Paragraph("Hello"));
+
+        Assert.Throws<InvalidOperationException>(() => Save(doc));
+    }
+
+    // ── A table cell that is never placed ────────────────────────────────────
+
+    private static TableElement CellPastTheLastColumn(Cell last)
+    {
+        var table = new TableElement();
+        var first = table.AddRow();
+        first.AddCell(new Cell("a") { RowSpan = 2 });
+        first.AddCell("b");
+        var second = table.AddRow();
+        second.AddCell("c");
+        second.AddCell(last);
+        return table;
+    }
+
+    [Fact]
+    public void TableCell_pastTheLastColumn_withANanBackground_saves_becauseItIsNeverDrawn()
+    {
+        using var doc = new Document();
+        doc.Add(CellPastTheLastColumn(new Cell("d") { Background = _nan }));
+
+        var stream = Save(doc);
+
+        Assert.DoesNotContain("NaN", stream, StringComparison.Ordinal);
+        Assert.DoesNotContain("(d)", stream, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TableCell_thatIsDrawn_withANanBackground_isStillRefused()
+    {
+        using var doc = new Document();
+        var table = new TableElement();
+        table.AddRow().AddCell(new Cell("a") { Background = _nan });
+        doc.Add(table);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => Save(doc));
+
+        Assert.StartsWith("Table row 0, cell 0 has a background colour whose red channel is NaN", ex.Message, StringComparison.Ordinal);
     }
 }

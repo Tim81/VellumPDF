@@ -26,6 +26,18 @@ namespace VellumPdf.Layout;
 /// <remarks>
 /// Most refusals fire from the save, not from the member you set, and each member says which call
 /// throws. A save before any element is added throws; see the constructor.
+/// <para><b>A non-finite number is refused where it is written.</b> An inset, indent, colour
+/// channel or band height that is <c>NaN</c> or infinite is checked only where it would be written
+/// into the PDF or changes what is drawn. A value that never reaches an operand is accepted, as it
+/// was on 1c61fa6: a <c>NaN</c> right margin on a paragraph, a colour on a pie slice that draws
+/// nothing, a <c>NaN</c> left margin on a list with no items. Whether a value reaches an operand depends on the
+/// content: the kind of element, its alignment, whether it draws anything, and the running bands.
+/// Where it does, the save throws, either from the element's own check, which names the element,
+/// or from <see cref="PdfCanvas"/> with <see cref="ArgumentException"/> saying PDF does not support
+/// NaN or Infinity as a real number.</para>
+/// <para><b>Do not pass</b> a non-finite number to any of these members. The accepted cases are not
+/// reported yet, because there is no diagnostics channel, and 3.0 refuses every non-finite value
+/// at the member that holds it. Each member that takes one gives one example and refers here.</para>
 /// </remarks>
 public sealed class Document : IDisposable
 {
@@ -235,25 +247,21 @@ public sealed class Document : IDisposable
     /// large enough in magnitude to overflow the position arithmetic, such as -1e308 on the left or
     /// right edge alone, are finite and so pass the check below. They were not measured again after
     /// #502, and what they do depends on the elements laid out.</para>
-    /// <para>An inset that is not a finite number is refused, whichever edge holds it and whichever
-    /// of <c>NaN</c>, positive infinity and negative infinity it is. The save throws
-    /// <see cref="ArgumentException"/> with the parameter name <c>margins</c> before anything is laid
-    /// out, naming the edge and the value, such as <c>The top margin is NaN, which cannot be laid
-    /// out. A margin must be a finite number.</c> Before #502 only a positive-infinity sum was
-    /// caught, and <c>NaN</c> and negative infinity surfaced later as a message about an element,
-    /// or saved with <c>NaN</c> or <c>Infinity</c> in the content stream.</para>
-    /// <para><b>Three non-finite insets are not refused: a <c>NaN</c> or negative-infinity right
-    /// inset, and a negative-infinity bottom inset.</b> They saved a valid file on 1c61fa6 and are
-    /// accepted today, so a patch does not turn them into an exception. The other nine of the
-    /// twelve edge and value combinations are refused as above. <b>Do not pass</b> a non-finite
-    /// inset. Nothing reports the accepted ones, because there is no diagnostics channel yet, and a
-    /// later major version will refuse all twelve.</para>
+    /// <para>An inset that is not a finite number is refused where it would be written; see
+    /// <see cref="Document"/>. The save throws <see cref="ArgumentException"/> with the parameter name
+    /// <c>margins</c> before anything is laid out, naming the edge and the value, such as <c>The top
+    /// margin is NaN, which cannot be laid out. A margin must be a finite number.</c> Before #502 only
+    /// a positive-infinity sum was caught, and <c>NaN</c> and negative infinity surfaced later as a
+    /// message about an element, or saved with <c>NaN</c> or <c>Infinity</c> in the content stream.
+    /// For example, a <c>NaN</c> or negative-infinity right inset is accepted. <b>Do not pass</b> a
+    /// non-finite inset: 3.0 refuses it.</para>
     /// <para><b>Attention</b>: do not pass a finite negative inset. A later major version will
     /// reject it.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
-    /// Raised from a save rather than from this property, when an inset is <c>NaN</c> or infinite,
-    /// when the margins on either axis meet or exceed the page, or when they leave the content area
+    /// Raised from a save rather than from this property, when an inset is <c>NaN</c> or infinite
+    /// and is written (see <see cref="Document"/>), when the margins on either axis meet or exceed
+    /// the page, or when they leave the content area
     /// no positive size once the header and footer are taken off. The message for a non-finite
     /// inset names the edge. The exception is also raised, with a message saying PDF does not
     /// support NaN or Infinity as a real number, when finite insets whose arithmetic overflows put
@@ -983,12 +991,14 @@ public sealed class Document : IDisposable
 
     // ── Output ───────────────────────────────────────────────────────────────
 
-    // Set when a save threw after its layout pass had already appended pages to the underlying
-    // document, whether the layout itself threw or a step after it did: serialising, a cancellation,
-    // preparing a signature. Those pages cannot be taken back, so the next save would lay everything
-    // out a second time on top of them and write a file with several times the pages the caller
-    // asked for, silently (#530). A save that failed before it appended anything, such as one
-    // refused for its page geometry, leaves the document exactly as it was and stays usable.
+    // Set when a save threw after its layout had started, whether the layout itself threw or a step
+    // after it did: serialising, a cancellation, preparing a signature. What the layout produced
+    // cannot be taken back, in two forms. Pages it appended to the underlying document would be
+    // laid out again on top of the first attempt's and written as a file with several times the
+    // pages the caller asked for, silently (#530). The line breaks each renderer measured stay
+    // cached at the first width, so a retry after a PageSize or margin change reuses them. A save
+    // that failed before its layout started, such as one refused for its page geometry, leaves the
+    // document exactly as it was and stays usable.
     private bool _layoutFailed;
 
     private void ThrowIfLayoutFailed()
@@ -996,8 +1006,8 @@ public sealed class Document : IDisposable
         if (_layoutFailed)
         {
             throw new InvalidOperationException(
-                "This document cannot be saved again: an earlier save stopped after laying it out, once " +
-                "pages had already been added to it, and those pages cannot be taken back. " +
+                "This document cannot be saved again: an earlier save stopped after its layout had " +
+                "started, and the pages or line breaks it produced cannot be taken back. " +
                 "Create a new Document and add the content again.");
         }
     }
@@ -1240,7 +1250,7 @@ public sealed class Document : IDisposable
     /// PDF/UA-1 when the settings leave out <see cref="PdfPermissions.Extract"/>; see
     /// <see cref="Conformance"/>. It is also raised when a font registered with
     /// <see cref="UseTrueTypeFont"/> lacks a table the save needs, and by every save after one whose
-    /// save threw once its layout had added pages (#530). For the element inputs, the boundary
+    /// save threw once its layout had started (#530). For the element inputs, the boundary
     /// documentation on the property you set says which values reach this.
     /// </exception>
     /// <exception cref="ArgumentException">
@@ -1504,7 +1514,7 @@ public sealed class Document : IDisposable
     /// PDF/UA-1 when the settings leave out <see cref="PdfPermissions.Extract"/>; see
     /// <see cref="Conformance"/>. It is also raised when a font registered with
     /// <see cref="UseTrueTypeFont"/> lacks a table the save needs, and by every save after one whose
-    /// save threw once its layout had added pages (#530). For the element inputs, the boundary
+    /// save threw once its layout had started (#530). For the element inputs, the boundary
     /// documentation on the property you set says which values reach this.
     /// </exception>
     /// <exception cref="ArgumentException">

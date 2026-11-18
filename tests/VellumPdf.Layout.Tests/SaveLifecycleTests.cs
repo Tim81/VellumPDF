@@ -51,6 +51,22 @@ public sealed class SaveLifecycleTests
         return ms.ToArray();
     }
 
+    /// <summary>
+    /// Creates a symbolic link, or skips the test when the platform will not let this user make one.
+    /// Windows needs a privilege or developer mode for it, so the attempt decides, not the platform.
+    /// </summary>
+    private static void CreateLink(string link, string target)
+    {
+        try
+        {
+            File.CreateSymbolicLink(link, target);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            Assert.Skip("This user cannot create a symbolic link here: " + ex.Message);
+        }
+    }
+
     private static byte[] FreshOnePage()
     {
         using var fresh = Good();
@@ -465,13 +481,11 @@ public sealed class SaveLifecycleTests
     [Fact]
     public void SaveToASymbolicLink_writesThroughToItsTarget()
     {
-        Assert.SkipWhen(OperatingSystem.IsWindows(), "Creating a symbolic link needs a privilege on Windows.");
-
         using var dir = new TempDir();
         var real = Path.Combine(dir.Path, "real.pdf");
         var link = Path.Combine(dir.Path, "link.pdf");
         File.WriteAllText(real, "old contents");
-        File.CreateSymbolicLink(link, real);
+        CreateLink(link, real);
 
         using var doc = Good();
         doc.Add(new Paragraph("Hello", Style()));
@@ -486,13 +500,11 @@ public sealed class SaveLifecycleTests
     [Fact]
     public async Task AsyncSaveToASymbolicLink_writesThroughToItsTarget()
     {
-        Assert.SkipWhen(OperatingSystem.IsWindows(), "Creating a symbolic link needs a privilege on Windows.");
-
         using var dir = new TempDir();
         var real = Path.Combine(dir.Path, "real.pdf");
         var link = Path.Combine(dir.Path, "link.pdf");
         await File.WriteAllTextAsync(real, "old contents", TestContext.Current.CancellationToken);
-        File.CreateSymbolicLink(link, real);
+        CreateLink(link, real);
 
         using var doc = Good();
         doc.Add(new Paragraph("Hello", Style()));
@@ -505,12 +517,11 @@ public sealed class SaveLifecycleTests
     [Fact]
     public void SaveToADeviceFile_doesNotTryToTruncateIt()
     {
-        Assert.SkipWhen(OperatingSystem.IsWindows(), "/dev/null does not exist on Windows.");
-
         using var doc = Good();
         doc.Add(new Paragraph("Hello", Style()));
 
-        doc.Save("/dev/null");   // cannot be truncated: SetLength throws IOException
+        // The null device: /dev/null, or NUL on Windows. Neither can be truncated.
+        doc.Save(OperatingSystem.IsWindows() ? "NUL" : "/dev/null");
     }
 
     // ── #530: a step after the layout can fail too ───────────────────────────
@@ -655,12 +666,10 @@ public sealed class SaveLifecycleTests
     [Fact]
     public void FailedSaveThroughADanglingLink_keepsTheLink_andLeavesTheEmptyFileTheOpenCreated()
     {
-        Assert.SkipWhen(OperatingSystem.IsWindows(), "Creating a symbolic link needs a privilege on Windows.");
-
         using var dir = new TempDir();
         var real = Path.Combine(dir.Path, "real.pdf");
         var link = Path.Combine(dir.Path, "link.pdf");
-        File.CreateSymbolicLink(link, real);        // the target does not exist
+        CreateLink(link, real);        // the target does not exist
 
         using var bad = TooTall();
         Assert.Throws<InvalidOperationException>(() => bad.Save(link));
@@ -673,12 +682,10 @@ public sealed class SaveLifecycleTests
     [Fact]
     public async Task FailedAsyncSaveThroughADanglingLink_keepsTheLink_andLeavesTheEmptyFileTheOpenCreated()
     {
-        Assert.SkipWhen(OperatingSystem.IsWindows(), "Creating a symbolic link needs a privilege on Windows.");
-
         using var dir = new TempDir();
         var real = Path.Combine(dir.Path, "real.pdf");
         var link = Path.Combine(dir.Path, "link.pdf");
-        File.CreateSymbolicLink(link, real);
+        CreateLink(link, real);
 
         using var bad = TooTall();
         await Assert.ThrowsAsync<InvalidOperationException>(() => bad.SaveAsync(link, TestContext.Current.CancellationToken));
@@ -691,12 +698,10 @@ public sealed class SaveLifecycleTests
     [Fact]
     public void SaveThroughADanglingLink_createsTheTarget_andKeepsTheLink()
     {
-        Assert.SkipWhen(OperatingSystem.IsWindows(), "Creating a symbolic link needs a privilege on Windows.");
-
         using var dir = new TempDir();
         var real = Path.Combine(dir.Path, "real.pdf");
         var link = Path.Combine(dir.Path, "link.pdf");
-        File.CreateSymbolicLink(link, real);
+        CreateLink(link, real);
 
         using var doc = Good();
         doc.Add(new Paragraph("Hello", Style()));
@@ -709,12 +714,10 @@ public sealed class SaveLifecycleTests
     [Fact]
     public async Task AsyncSaveThroughADanglingLink_createsTheTarget_andKeepsTheLink()
     {
-        Assert.SkipWhen(OperatingSystem.IsWindows(), "Creating a symbolic link needs a privilege on Windows.");
-
         using var dir = new TempDir();
         var real = Path.Combine(dir.Path, "real.pdf");
         var link = Path.Combine(dir.Path, "link.pdf");
-        File.CreateSymbolicLink(link, real);
+        CreateLink(link, real);
 
         using var doc = Good();
         doc.Add(new Paragraph("Hello", Style()));
@@ -733,15 +736,13 @@ public sealed class SaveLifecycleTests
     [Fact]
     public void SaveThroughARelativeLinkWithDotDotBelowASymlinkedDirectory_writesTheFileTheOperatingSystemResolves()
     {
-        Assert.SkipWhen(OperatingSystem.IsWindows(), "Creating a symbolic link needs a privilege on Windows.");
-
         using var dir = new TempDir();
         var deep = Path.Combine(dir.Path, "a", "b");
         Directory.CreateDirectory(deep);
         var linkedDir = Path.Combine(dir.Path, "linkdir");
-        File.CreateSymbolicLink(linkedDir, deep);                         // absolute link to a directory
+        CreateLink(linkedDir, deep);                         // absolute link to a directory
         var link = Path.Combine(linkedDir, "link.pdf");                   // really a/b/link.pdf
-        File.CreateSymbolicLink(link, Path.Combine("..", "out.pdf"));     // relative: a/out.pdf
+        CreateLink(link, Path.Combine("..", "out.pdf"));     // relative: a/out.pdf
 
         using var doc = Good();
         doc.Add(new Paragraph("Hello", Style()));
@@ -755,15 +756,13 @@ public sealed class SaveLifecycleTests
     [Fact]
     public async Task AsyncSaveThroughARelativeLinkWithDotDotBelowASymlinkedDirectory_writesTheFileTheOperatingSystemResolves()
     {
-        Assert.SkipWhen(OperatingSystem.IsWindows(), "Creating a symbolic link needs a privilege on Windows.");
-
         using var dir = new TempDir();
         var deep = Path.Combine(dir.Path, "a", "b");
         Directory.CreateDirectory(deep);
         var linkedDir = Path.Combine(dir.Path, "linkdir");
-        File.CreateSymbolicLink(linkedDir, deep);
+        CreateLink(linkedDir, deep);
         var link = Path.Combine(linkedDir, "link.pdf");
-        File.CreateSymbolicLink(link, Path.Combine("..", "out.pdf"));
+        CreateLink(link, Path.Combine("..", "out.pdf"));
 
         using var doc = Good();
         doc.Add(new Paragraph("Hello", Style()));
@@ -898,15 +897,13 @@ public sealed class SaveLifecycleTests
     [Fact]
     public void FailedSaveThroughAChainOfLinks_leavesTheExistingFinalFileAndBothLinks()
     {
-        Assert.SkipWhen(OperatingSystem.IsWindows(), "Creating a symbolic link needs a privilege on Windows.");
-
         using var dir = new TempDir();
         var real = Path.Combine(dir.Path, "real.pdf");
         var middle = Path.Combine(dir.Path, "middle.pdf");
         var outer = Path.Combine(dir.Path, "outer.pdf");
         File.WriteAllText(real, "old contents");
-        File.CreateSymbolicLink(middle, real);
-        File.CreateSymbolicLink(outer, middle);
+        CreateLink(middle, real);
+        CreateLink(outer, middle);
 
         using var bad = TooTall();
         Assert.Throws<InvalidOperationException>(() => bad.Save(outer));

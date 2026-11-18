@@ -100,7 +100,7 @@ public sealed class ListItem
     /// <see cref="ArgumentNullException"/> naming <c>text</c> when it lays the list out, where it
     /// used to throw <see cref="NullReferenceException"/>.</para>
     /// <para><b>Do not pass a null text.</b> On a grandchild it is accepted today and not reported,
-    /// because there is no diagnostics channel yet. A later major version will throw
+    /// because there is no diagnostics channel yet. 3.0 will throw
     /// <see cref="ArgumentNullException"/> from this constructor whatever the position, and the
     /// diagnostics channel will report it before then. <see cref="ListElement.Add(string, TextStyle?)"/>
     /// has no such leniency: its item is always top-level, so it throws from the call.</para>
@@ -151,7 +151,7 @@ public sealed class ListItem
     /// <see cref="ArgumentNullException"/> naming <c>child</c> when it lays the list out, where it
     /// used to throw <see cref="NullReferenceException"/>.</para>
     /// <para><b>Do not pass a null child.</b> On a grandchild it is skipped today and not reported,
-    /// because there is no diagnostics channel yet. A later major version will throw
+    /// because there is no diagnostics channel yet. 3.0 will throw
     /// <see cref="ArgumentNullException"/> from this call whatever the position, and the diagnostics
     /// channel will report it before then.</para>
     /// </remarks>

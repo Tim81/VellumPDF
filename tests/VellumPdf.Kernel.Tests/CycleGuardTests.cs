@@ -154,6 +154,28 @@ public sealed class CycleGuardTests
     }
 
     [Fact]
+    public void RawPdfStream_whoseDictionaryHoldsTheStream_isRefusedWhenWritten()
+    {
+        var stream = new RawPdfStream([1, 2, 3], PdfName.FlateDecode);
+        stream.Dictionary.Set(new PdfName("Self"), stream);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => Write(stream));
+
+        Assert.StartsWith("A PDF stream contains itself", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void UncompressedPdfStream_whoseDictionaryHoldsTheStream_isRefusedWhenWritten()
+    {
+        var stream = new UncompressedPdfStream([1, 2, 3]);
+        stream.Dictionary.Set(new PdfName("Self"), stream);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => Write(stream));
+
+        Assert.StartsWith("A PDF stream contains itself", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ACycleThroughAStreamAndAnArray_isRefusedWhenWritten()
     {
         var stream = new PdfStream([1, 2, 3]);

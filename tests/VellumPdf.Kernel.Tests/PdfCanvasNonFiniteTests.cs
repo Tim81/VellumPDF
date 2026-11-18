@@ -51,6 +51,10 @@ public sealed class PdfCanvasNonFiniteTests
         // already skips, so those operands are not part of this theory.
         new("c (arc centre x)", 1, (c, a) => c.AppendArc(a[0], 0, 10, 0, 1.5)),
         new("c (arc centre y)", 1, (c, a) => c.AppendArc(0, a[0], 10, 0, 1.5)),
+        // The aligned text methods position through Tm, so their coordinates are refused too.
+        // ShowTextAligned needs a measurable font first and is not in this theory.
+        new("Tm (ShowGlyphsAligned x)", 1, (c, a) => c.ShowGlyphsAligned([1], 10, a[0], 0)),
+        new("Tm (ShowGlyphsAligned y)", 1, (c, a) => c.ShowGlyphsAligned([1], 10, 0, a[0])),
     ];
 
     public static TheoryData<string, int, string> Rows()

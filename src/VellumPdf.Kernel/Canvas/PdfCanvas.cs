@@ -74,29 +74,57 @@ public sealed class PdfCanvas
     public PdfCanvas RestoreState() { WriteOp("Q"u8); return this; }
 
     /// <summary>Concatenates the matrix [a b c d e f] onto the current transformation matrix. Emits <c>cm</c>.</summary>
+    /// <exception cref="ArgumentException">
+    /// A number this method would write is <c>NaN</c> or infinite, which are not PDF numbers; see
+    /// the type remarks. Nothing of this operator is written.
+    /// </exception>
     public PdfCanvas Concat(double a, double b, double c, double d, double e, double f)
     { WriteOpAscii($"{N(a)} {N(b)} {N(c)} {N(d)} {N(e)} {N(f)} cm"); return this; }
 
     /// <summary>Sets the line width for stroking. Emits <c>w</c>.</summary>
+    /// <exception cref="ArgumentException">
+    /// A number this method would write is <c>NaN</c> or infinite, which are not PDF numbers; see
+    /// the type remarks. Nothing of this operator is written.
+    /// </exception>
     public PdfCanvas SetLineWidth(double w) { WriteOpAscii($"{N(w)} w"); return this; }
     /// <summary>Sets the line cap style (0 butt, 1 round, 2 square). Emits <c>J</c>.</summary>
     public PdfCanvas SetLineCap(int cap) { WriteOpAscii($"{cap} J"); return this; }
     /// <summary>Sets the line join style (0 miter, 1 round, 2 bevel). Emits <c>j</c>.</summary>
     public PdfCanvas SetLineJoin(int join) { WriteOpAscii($"{join} j"); return this; }
     /// <summary>Sets the miter limit for mitered line joins. Emits <c>M</c>.</summary>
+    /// <exception cref="ArgumentException">
+    /// A number this method would write is <c>NaN</c> or infinite, which are not PDF numbers; see
+    /// the type remarks. Nothing of this operator is written.
+    /// </exception>
     public PdfCanvas SetMiterLimit(double m) { WriteOpAscii($"{N(m)} M"); return this; }
 
     /// <summary>Sets the stroke colour in DeviceRGB (each component in [0, 1]). Emits <c>RG</c>.</summary>
+    /// <exception cref="ArgumentException">
+    /// A number this method would write is <c>NaN</c> or infinite, which are not PDF numbers; see
+    /// the type remarks. Nothing of this operator is written.
+    /// </exception>
     public PdfCanvas SetStrokeColorRgb(double r, double g, double b)
     { WriteOpAscii($"{N(r)} {N(g)} {N(b)} RG"); return this; }
 
     /// <summary>Sets the fill colour in DeviceRGB (each component in [0, 1]). Emits <c>rg</c>.</summary>
+    /// <exception cref="ArgumentException">
+    /// A number this method would write is <c>NaN</c> or infinite, which are not PDF numbers; see
+    /// the type remarks. Nothing of this operator is written.
+    /// </exception>
     public PdfCanvas SetFillColorRgb(double r, double g, double b)
     { WriteOpAscii($"{N(r)} {N(g)} {N(b)} rg"); return this; }
 
     /// <summary>Sets the stroke colour in DeviceGray (in [0, 1]). Emits <c>G</c>.</summary>
+    /// <exception cref="ArgumentException">
+    /// A number this method would write is <c>NaN</c> or infinite, which are not PDF numbers; see
+    /// the type remarks. Nothing of this operator is written.
+    /// </exception>
     public PdfCanvas SetStrokeColorGray(double g) { WriteOpAscii($"{N(g)} G"); return this; }
     /// <summary>Sets the fill colour in DeviceGray (in [0, 1]). Emits <c>g</c>.</summary>
+    /// <exception cref="ArgumentException">
+    /// A number this method would write is <c>NaN</c> or infinite, which are not PDF numbers; see
+    /// the type remarks. Nothing of this operator is written.
+    /// </exception>
     public PdfCanvas SetFillColorGray(double g) { WriteOpAscii($"{N(g)} g"); return this; }
 
     // ── Feature 4: CMYK colour ──────────────────────────────────────────────
@@ -105,6 +133,10 @@ public sealed class PdfCanvas
     /// Sets the fill colour to the given CMYK values (each in [0, 1]).
     /// Emits the <c>k</c> operator.
     /// </summary>
+    /// <exception cref="ArgumentException">
+    /// A number this method would write is <c>NaN</c> or infinite, which are not PDF numbers; see
+    /// the type remarks. Nothing of this operator is written.
+    /// </exception>
     public PdfCanvas SetFillColorCmyk(double c, double m, double y, double k)
     { WriteOpAscii($"{N(c)} {N(m)} {N(y)} {N(k)} k"); return this; }
 
@@ -112,6 +144,10 @@ public sealed class PdfCanvas
     /// Sets the stroke colour to the given CMYK values (each in [0, 1]).
     /// Emits the <c>K</c> operator.
     /// </summary>
+    /// <exception cref="ArgumentException">
+    /// A number this method would write is <c>NaN</c> or infinite, which are not PDF numbers; see
+    /// the type remarks. Nothing of this operator is written.
+    /// </exception>
     public PdfCanvas SetStrokeColorCmyk(double c, double m, double y, double k)
     { WriteOpAscii($"{N(c)} {N(m)} {N(y)} {N(k)} K"); return this; }
 
@@ -148,6 +184,10 @@ public sealed class PdfCanvas
     /// Emits <c>c1 c2 … scn</c>. Use with ICCBased or Separation colour spaces
     /// after calling <see cref="SetFillColorSpace"/>.
     /// </summary>
+    /// <exception cref="ArgumentException">
+    /// A number this method would write is <c>NaN</c> or infinite, which are not PDF numbers; see
+    /// the type remarks. Nothing of this operator is written.
+    /// </exception>
     public PdfCanvas SetFillColor(params ReadOnlySpan<double> components)
     {
         if (components.IsEmpty)
@@ -168,6 +208,10 @@ public sealed class PdfCanvas
     /// Emits <c>c1 c2 … SCN</c>. Use with ICCBased or Separation colour spaces
     /// after calling <see cref="SetStrokeColorSpace"/>.
     /// </summary>
+    /// <exception cref="ArgumentException">
+    /// A number this method would write is <c>NaN</c> or infinite, which are not PDF numbers; see
+    /// the type remarks. Nothing of this operator is written.
+    /// </exception>
     public PdfCanvas SetStrokeColor(params ReadOnlySpan<double> components)
     {
         if (components.IsEmpty)
@@ -190,6 +234,10 @@ public sealed class PdfCanvas
     /// Emits <c>[a b …] phase d</c>.
     /// Pass an empty span to set a solid line.
     /// </summary>
+    /// <exception cref="ArgumentException">
+    /// A number this method would write is <c>NaN</c> or infinite, which are not PDF numbers; see
+    /// the type remarks. Nothing of this operator is written.
+    /// </exception>
     public PdfCanvas SetLineDash(ReadOnlySpan<double> pattern, double phase)
     {
         var sb = new StringBuilder("[");
@@ -220,6 +268,10 @@ public sealed class PdfCanvas
     /// <c>/GSn gs</c>. Values are deduplicated by alpha value so repeated
     /// calls with the same alpha reuse a single resource entry.
     /// </summary>
+    /// <exception cref="ArgumentException">
+    /// A number this method would write is <c>NaN</c> or infinite, which are not PDF numbers; see
+    /// the type remarks. Nothing of this operator is written.
+    /// </exception>
     public PdfCanvas SetFillAlpha(double alpha)
     {
         var gsName = GetOrRegisterExtGState($"ca:{N(alpha)}", fillAlpha: alpha, strokeAlpha: null);
@@ -233,6 +285,10 @@ public sealed class PdfCanvas
     /// <c>&lt;&lt; /CA <paramref name="alpha"/> &gt;&gt;</c> and emits
     /// <c>/GSn gs</c>.
     /// </summary>
+    /// <exception cref="ArgumentException">
+    /// A number this method would write is <c>NaN</c> or infinite, which are not PDF numbers; see
+    /// the type remarks. Nothing of this operator is written.
+    /// </exception>
     public PdfCanvas SetStrokeAlpha(double alpha)
     {
         var gsName = GetOrRegisterExtGState($"CA:{N(alpha)}", fillAlpha: null, strokeAlpha: alpha);
@@ -286,11 +342,23 @@ public sealed class PdfCanvas
     // ── Path construction ───────────────────────────────────────────────────
 
     /// <summary>Begins a new subpath at (<paramref name="x"/>, <paramref name="y"/>). Emits <c>m</c>.</summary>
+    /// <exception cref="ArgumentException">
+    /// A number this method would write is <c>NaN</c> or infinite, which are not PDF numbers; see
+    /// the type remarks. Nothing of this operator is written.
+    /// </exception>
     public PdfCanvas MoveTo(double x, double y) { WriteOpAscii($"{N(x)} {N(y)} m"); return this; }
     /// <summary>Appends a straight line segment to (<paramref name="x"/>, <paramref name="y"/>). Emits <c>l</c>.</summary>
+    /// <exception cref="ArgumentException">
+    /// A number this method would write is <c>NaN</c> or infinite, which are not PDF numbers; see
+    /// the type remarks. Nothing of this operator is written.
+    /// </exception>
     public PdfCanvas LineTo(double x, double y) { WriteOpAscii($"{N(x)} {N(y)} l"); return this; }
 
     /// <summary>Appends a cubic Bézier curve with control points (x1,y1) and (x2,y2) ending at (x3,y3). Emits <c>c</c>.</summary>
+    /// <exception cref="ArgumentException">
+    /// A number this method would write is <c>NaN</c> or infinite, which are not PDF numbers; see
+    /// the type remarks. Nothing of this operator is written.
+    /// </exception>
     public PdfCanvas CurveTo(double x1, double y1, double x2, double y2, double x3, double y3)
     { WriteOpAscii($"{N(x1)} {N(y1)} {N(x2)} {N(y2)} {N(x3)} {N(y3)} c"); return this; }
 
@@ -312,6 +380,10 @@ public sealed class PdfCanvas
     /// control span.
     /// </para>
     /// </summary>
+    /// <exception cref="ArgumentException">
+    /// The centre is <c>NaN</c> or infinite; see the type remarks. A non-finite radius or angle is
+    /// not refused: the sweep is skipped without drawing.
+    /// </exception>
     public PdfCanvas AppendArc(double cx, double cy, double radius, double startAngle, double endAngle)
     {
         if (radius < 0)
@@ -349,6 +421,10 @@ public sealed class PdfCanvas
     }
 
     /// <summary>Appends a rectangle with lower-left corner (<paramref name="x"/>, <paramref name="y"/>), width <paramref name="w"/> and height <paramref name="h"/> as a complete subpath. Emits <c>re</c>.</summary>
+    /// <exception cref="ArgumentException">
+    /// A number this method would write is <c>NaN</c> or infinite, which are not PDF numbers; see
+    /// the type remarks. Nothing of this operator is written.
+    /// </exception>
     public PdfCanvas Rectangle(double x, double y, double w, double h)
     { WriteOpAscii($"{N(x)} {N(y)} {N(w)} {N(h)} re"); return this; }
 
@@ -384,6 +460,10 @@ public sealed class PdfCanvas
     /// </code>
     /// </para>
     /// </summary>
+    /// <exception cref="ArgumentException">
+    /// A number this method would write is <c>NaN</c> or infinite, which are not PDF numbers; see
+    /// the type remarks. Nothing of this operator is written.
+    /// </exception>
     public PdfCanvas PaintAxialGradient(
         double x0, double y0, double x1, double y1,
         KernelColor c0, KernelColor c1)
@@ -401,6 +481,10 @@ public sealed class PdfCanvas
     /// Colour blends from <paramref name="c0"/> to <paramref name="c1"/>.
     /// Registers an inline <c>/Shading</c> resource and emits <c>sh</c>.
     /// </summary>
+    /// <exception cref="ArgumentException">
+    /// A number this method would write is <c>NaN</c> or infinite, which are not PDF numbers; see
+    /// the type remarks. Nothing of this operator is written.
+    /// </exception>
     public PdfCanvas PaintRadialGradient(
         double x0, double y0, double r0,
         double x1, double y1, double r1,
@@ -490,6 +574,10 @@ public sealed class PdfCanvas
     public PdfCanvas EndText() { WriteOp("ET"u8); return this; }
 
     /// <summary>Selects the given font resource at the specified size, registering it for inclusion in the page resources. Emits <c>Tf</c>.</summary>
+    /// <exception cref="ArgumentException">
+    /// A number this method would write is <c>NaN</c> or infinite, which are not PDF numbers; see
+    /// the type remarks. Nothing of this operator is written.
+    /// </exception>
     public PdfCanvas SetFont(PdfFontResource font, double size)
     {
         // Format the size before touching any state or writing the name, so a refused size leaves
@@ -508,6 +596,10 @@ public sealed class PdfCanvas
     /// The resource must already be registered on the page (via <c>RegisterFontRef</c>)
     /// before the content stream is consumed.
     /// </summary>
+    /// <exception cref="ArgumentException">
+    /// A number this method would write is <c>NaN</c> or infinite, which are not PDF numbers; see
+    /// the type remarks. Nothing of this operator is written.
+    /// </exception>
     public PdfCanvas SetFontByName(string resourceName, double size)
     {
         var sizeToken = N(size);
@@ -537,6 +629,10 @@ public sealed class PdfCanvas
     /// <exception cref="InvalidOperationException">
     /// Thrown when no measurable font has been set (e.g. only <see cref="SetFontByName"/> was called).
     /// Call <see cref="SetFont"/> first, or use <see cref="ShowGlyphsAligned"/> for embedded fonts.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// A number this method would write is <c>NaN</c> or infinite, which are not PDF numbers; see
+    /// the type remarks. Nothing of this operator is written.
     /// </exception>
     public PdfCanvas ShowTextAligned(string text, double x, double y, TextAlignment align = TextAlignment.Left)
     {
@@ -569,6 +665,10 @@ public sealed class PdfCanvas
     /// character spacing (<c>Tc</c>), word spacing (<c>Tw</c>), or horizontal scaling (<c>Tz</c>)
     /// in that value when those are set on the canvas.</para>
     /// </summary>
+    /// <exception cref="ArgumentException">
+    /// A number this method would write is <c>NaN</c> or infinite, which are not PDF numbers; see
+    /// the type remarks. Nothing of this operator is written.
+    /// </exception>
     public PdfCanvas ShowGlyphsAligned(ReadOnlySpan<ushort> glyphIds, double measuredWidth, double x, double y, TextAlignment align = TextAlignment.Left)
     {
         var xAdjusted = align switch
@@ -603,22 +703,50 @@ public sealed class PdfCanvas
     private static byte HexNibble(int v) => (byte)(v < 10 ? '0' + v : 'A' + v - 10);
 
     /// <summary>Sets the text matrix and text line matrix to [a b c d e f]. Emits <c>Tm</c>.</summary>
+    /// <exception cref="ArgumentException">
+    /// A number this method would write is <c>NaN</c> or infinite, which are not PDF numbers; see
+    /// the type remarks. Nothing of this operator is written.
+    /// </exception>
     public PdfCanvas SetTextMatrix(double a, double b, double c, double d, double e, double f)
     { WriteOpAscii($"{N(a)} {N(b)} {N(c)} {N(d)} {N(e)} {N(f)} Tm"); return this; }
 
     /// <summary>Moves to the start of the next line, offset by (<paramref name="tx"/>, <paramref name="ty"/>) from the current line start. Emits <c>Td</c>.</summary>
+    /// <exception cref="ArgumentException">
+    /// A number this method would write is <c>NaN</c> or infinite, which are not PDF numbers; see
+    /// the type remarks. Nothing of this operator is written.
+    /// </exception>
     public PdfCanvas MoveTextPosition(double tx, double ty)
     { WriteOpAscii($"{N(tx)} {N(ty)} Td"); return this; }
 
     /// <summary>Sets the character spacing. Emits <c>Tc</c>.</summary>
+    /// <exception cref="ArgumentException">
+    /// A number this method would write is <c>NaN</c> or infinite, which are not PDF numbers; see
+    /// the type remarks. Nothing of this operator is written.
+    /// </exception>
     public PdfCanvas SetCharSpacing(double cs) { WriteOpAscii($"{N(cs)} Tc"); return this; }
     /// <summary>Sets the word spacing. Emits <c>Tw</c>.</summary>
+    /// <exception cref="ArgumentException">
+    /// A number this method would write is <c>NaN</c> or infinite, which are not PDF numbers; see
+    /// the type remarks. Nothing of this operator is written.
+    /// </exception>
     public PdfCanvas SetWordSpacing(double ws) { WriteOpAscii($"{N(ws)} Tw"); return this; }
     /// <summary>Sets the text rise (vertical baseline shift). Emits <c>Ts</c>.</summary>
+    /// <exception cref="ArgumentException">
+    /// A number this method would write is <c>NaN</c> or infinite, which are not PDF numbers; see
+    /// the type remarks. Nothing of this operator is written.
+    /// </exception>
     public PdfCanvas SetTextRise(double tr) { WriteOpAscii($"{N(tr)} Ts"); return this; }
     /// <summary>Sets the horizontal text scaling as a percentage. Emits <c>Tz</c>.</summary>
+    /// <exception cref="ArgumentException">
+    /// A number this method would write is <c>NaN</c> or infinite, which are not PDF numbers; see
+    /// the type remarks. Nothing of this operator is written.
+    /// </exception>
     public PdfCanvas SetHorizScaling(double s) { WriteOpAscii($"{N(s)} Tz"); return this; }
     /// <summary>Sets the text leading (line spacing) used by <see cref="NextLine"/>. Emits <c>TL</c>.</summary>
+    /// <exception cref="ArgumentException">
+    /// A number this method would write is <c>NaN</c> or infinite, which are not PDF numbers; see
+    /// the type remarks. Nothing of this operator is written.
+    /// </exception>
     public PdfCanvas SetTextLeading(double tl) { WriteOpAscii($"{N(tl)} TL"); return this; }
     /// <summary>Moves to the start of the next text line using the current leading. Emits <c>T*</c>.</summary>
     public PdfCanvas NextLine() { WriteOp("T*"u8); return this; }

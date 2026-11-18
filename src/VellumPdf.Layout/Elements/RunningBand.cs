@@ -62,7 +62,7 @@ public sealed class RunningBand
     /// template is empty or no part of it fits the content width, does not write the colour, so the
     /// channel is not refused there: that saved a valid file on 1c61fa6 and still does. <b>Do not
     /// pass</b> a non-finite channel. Nothing reports it on a band that draws nothing, because there
-    /// is no diagnostics channel yet, and a later major version will refuse it.</para>
+    /// is no diagnostics channel yet, and 3.0 will refuse it.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not

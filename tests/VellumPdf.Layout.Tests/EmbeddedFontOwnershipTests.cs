@@ -18,7 +18,8 @@ public sealed class EmbeddedFontOwnershipTests
 {
     // Copied beside the test assembly by the project file; the two faces differ, which is all this
     // needs. Their text is "Hello", which both have.
-    private static readonly string Sans = Path.Combine(AppContext.BaseDirectory, "Fonts", "LiberationSans-Regular.ttf");
+    private static readonly string Sans = Path.Combine(
+        AppContext.BaseDirectory, "Fonts", "LiberationSans-Regular.ttf");
     private static readonly string Bold = Path.Combine(AppContext.BaseDirectory, "Fonts", "LiberationSans-Bold.ttf");
 
     private static (byte[] First, byte[] Second) TwoDifferentFonts()
@@ -154,5 +155,43 @@ public sealed class EmbeddedFontOwnershipTests
         Assert.NotEqual(foreign.ResourceName, own.ResourceName);
 
         Assert.Throws<ArgumentException>(() => SaveWith(other, foreign));
+    }
+
+    private static (string Streams, string Widths) SaveWithOwnOrForeign(byte[] font, bool drawWithForeign)
+    {
+        using var owner = new Document();
+        var foreign = owner.UseTrueTypeFont(font);
+        using var saving = new Document();
+        var own = saving.UseTrueTypeFont(font);
+        var drawn = drawWithForeign ? foreign : own;
+        saving.Add(new Paragraph("Hello", new TextStyle { FontRef = drawn, FontSize = 12 }));
+        using var ms = new MemoryStream();
+        saving.Save(ms);
+        var bytes = ms.ToArray();
+        var raw = System.Text.Encoding.Latin1.GetString(bytes);
+        var widths = System.Text.RegularExpressions.Regex.Match(
+            raw, @"/W\s*(\[.*?\])\s*(?=/|>>)",
+            System.Text.RegularExpressions.RegexOptions.Singleline).Groups[1].Value;
+        return (PdfTestUtil.DecompressAllFlatStreams(bytes), widths);
+    }
+
+    /// <summary>
+    /// The glyph ids the foreign handle registered must be in the saving document's subset, not just
+    /// in its ToUnicode map. Drawing "Hello" through the foreign handle has to give the same /W
+    /// widths array and the same font program as drawing it through the document's own handle, which
+    /// registers the same glyphs itself. Dropping the merge of the glyph ids leaves both smaller.
+    /// </summary>
+    [Fact]
+    public void ForeignHandle_drawnText_getsTheSameSubsetAsTheOwnHandleWould()
+    {
+        var (first, _) = TwoDifferentFonts();
+
+        var own = SaveWithOwnOrForeign(first, drawWithForeign: false);
+        var viaForeign = SaveWithOwnOrForeign(first, drawWithForeign: true);
+
+        Assert.NotEqual(string.Empty, own.Widths);
+        Assert.Equal(own.Widths, viaForeign.Widths);
+        Assert.Equal(own.Streams.Length, viaForeign.Streams.Length);
+        Assert.Equal(own.Streams, viaForeign.Streams);
     }
 }

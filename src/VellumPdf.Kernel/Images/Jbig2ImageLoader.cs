@@ -105,7 +105,8 @@ public static class Jbig2ImageLoader
     /// <exception cref="InvalidDataException">
     /// Thrown on malformed or truncated input. It is also thrown, in this passthrough embedding,
     /// for a segment of the first page whose data length is unknown (0xFFFFFFFF, ITU-T T.88 7.2.7),
-    /// because the segment cannot be partitioned into the page and globals streams; the message
+    /// because this loader does not scan for the end marker 7.2.7 describes and so cannot partition
+    /// the segment into the page and globals streams; the message
     /// names the segment number. A segment of no page with an unknown length is skipped. Only the
     /// first page of a multi-page file is embedded, unless the first page-information segment has
     /// page association 0, which keeps every segment and refuses none for its length.
@@ -139,8 +140,8 @@ public static class Jbig2ImageLoader
     /// <exception cref="InvalidDataException">
     /// Thrown on malformed or truncated input. It is also thrown for a segment whose data length is
     /// unknown (0xFFFFFFFF, ITU-T T.88 7.2.7): under <see cref="ImageDecodeMode.Passthrough"/> for
-    /// any segment of the first page but end-of-page and end-of-file, because it cannot be
-    /// partitioned into the page and globals streams, and under
+    /// any segment of the first page but end-of-page and end-of-file, because this loader does not
+    /// scan for the end marker 7.2.7 describes and so cannot partition it, and under
     /// <see cref="ImageDecodeMode.DecodeToRaster"/> for a generic region, which cannot be decoded.
     /// The message names the segment number. Only the first page of a multi-page file is embedded,
     /// under either mode, unless the first page-information segment has page association 0, which

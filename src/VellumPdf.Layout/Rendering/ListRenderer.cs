@@ -33,7 +33,8 @@ public sealed class ListRenderer : IRenderer
 
     private LayoutBox _occupied;
 
-    // The height Layout offered each item, indexed by item. Draw offers the same height, because
+    // The height Layout offered each item it visited, indexed by the item's offset from the start
+    // item. Draw offers the same height, because
     // it lays the item out a second time and a paragraph's line count is a floor of the height it is
     // given: the height Draw used to compute for itself, Bottom - y, can come out one rounding step
     // short of the remaining height Layout tracked, so the second pass wrapped to one line fewer
@@ -103,16 +104,22 @@ public sealed class ListRenderer : IRenderer
     /// </exception>
     public LayoutResult Layout(LayoutContext context)
     {
-        // Before the area is computed: NaN reaches an item's text matrix on every path. Negative
-        // infinity does not, so it is refused where it would: on a nested child or a word too wide
-        // to sit beside its marker (#532), in BuildItems. A flat list whose words fit saved a valid
-        // file with it on 1c61fa6, because the gutter widens to the marker's own width.
-        LayoutValidation.ValidateListIndent(_list.Indent, "A list");
-        LayoutValidation.ValidateInsets(
-            _list.Margins,
-            "A list",
-            right: LayoutValidation.NonFinite.NaN | LayoutValidation.NonFinite.NegativeInfinity,
-            bottom: LayoutValidation.NonFinite.NegativeInfinity);
+        // Before the area is computed: a NaN indent reaches an item's text matrix wherever an item
+        // is drawn. Negative infinity does so only on a nested child or a word too wide to sit beside
+        // its marker (#532), so it is refused there, in BuildItems. A flat list whose words fit saved
+        // a valid file with it on 1c61fa6, because the gutter widens to the marker's own width.
+        //
+        // An empty list writes nothing, so neither the indent nor the margins reach an operand and
+        // neither is checked, as on 1c61fa6.
+        if (_list.Items.Count > 0)
+        {
+            LayoutValidation.ValidateListIndent(_list.Indent, "A list");
+            LayoutValidation.ValidateInsets(
+                _list.Margins,
+                "A list",
+                right: LayoutValidation.NonFinite.NaN | LayoutValidation.NonFinite.NegativeInfinity,
+                bottom: LayoutValidation.NonFinite.NegativeInfinity);
+        }
 
         var area = context.Area.Deflate(_list.Margins);
         if (area.IsEmpty) return LayoutResult.Nothing();
@@ -126,9 +133,9 @@ public sealed class ListRenderer : IRenderer
             return LayoutResult.Full(_occupied);
         }
 
-        // Before anything indexes by the start: the per-item heights are an array, which would throw
-        // IndexOutOfRangeException for a negative start where this documents
-        // ArgumentOutOfRangeException (#556).
+        // Before anything indexes by the start. A negative start would also throw from _items[i], an
+        // ArgumentOutOfRangeException with ParamName "index"; this check documents the start item
+        // as the cause (#556).
         ArgumentOutOfRangeException.ThrowIfNegative(_startItem, "startItem");
 
         // Walk items and accumulate height, handling overflow.

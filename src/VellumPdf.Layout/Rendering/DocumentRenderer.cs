@@ -225,8 +225,8 @@ public sealed class DocumentRenderer
     /// The page size and margins are checked here. A page width or height that is not a positive
     /// finite number throws <see cref="ArgumentOutOfRangeException"/>, and margins that meet or
     /// exceed the page throw <see cref="ArgumentException"/>, both from this constructor. So does a
-    /// margin that is not a finite number, whichever of <c>NaN</c>, positive infinity and negative
-    /// infinity it is; the message names the edge (#502), and see <see cref="Document.Margins"/>.
+    /// margin that is not a finite number, except the few <see cref="Document.Margins"/> accepts;
+    /// the message names the edge (#502).
     /// <para>A null <paramref name="pageSize"/> means the <see cref="PdfDocument.DefaultPageSize"/>
     /// of <paramref name="pdf"/> at construction, and a null <paramref name="margins"/> means 72
     /// points on every side.</para>
@@ -238,7 +238,7 @@ public sealed class DocumentRenderer
     /// <see cref="Document.Margins"/>. The origin of <paramref name="pageSize"/> is not used for
     /// layout, as on <see cref="Document.PageSize"/>.</para>
     /// <para>Do not pass a page rectangle not at the origin or a page size so large that positions
-    /// overflow. Do not pass a margin that is a finite negative inset either. A later major version
+    /// overflow. Do not pass a margin that is a finite negative inset either. 3.0
     /// will refuse them.</para>
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">

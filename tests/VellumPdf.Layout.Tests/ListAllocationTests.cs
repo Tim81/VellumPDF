@@ -43,7 +43,7 @@ public sealed class ListAllocationTests
 
         var ratio = (double)b / a;
         // Measured on this machine in both Debug and Release: 22.2 MiB and 88.8 MiB, ratio 4.00, with
-        // the per-visit array; 34.9 MiB and 292.0 MiB, ratio 8.38, with the array sized to the whole
+        // the per-visit list; 34.9 MiB and 292.0 MiB, ratio 8.38, with an array sized to the whole
         // list. The bound of 6 sits between them. The rest of the save is linear, which is why the
         // old ratio is not the 16 a purely quadratic cost would give.
         Assert.True(

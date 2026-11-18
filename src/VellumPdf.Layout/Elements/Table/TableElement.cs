@@ -90,16 +90,12 @@ public sealed class TableElement
 
     /// <summary>Outer margins applied around the whole table.</summary>
     /// <remarks>
-    /// A non-finite edge is refused, whichever of <c>NaN</c>, positive infinity and negative infinity
-    /// it is: the save throws <see cref="InvalidOperationException"/> before the element is laid out,
-    /// with <c>A table has a non-finite inset. Every inset must be a finite number.</c> (#519).
-    /// Before that, the element was laid out in a box that could be <c>NaN</c>, and the save threw an
-    /// exception about something else or wrote <c>NaN</c> or <c>Infinity</c> into the content stream.
-    /// <para><b>Some non-finite edges are not refused: an infinite top edge, positive or negative, and a <c>NaN</c> or negative-infinity bottom edge.</b> They saved a valid file on
-    /// 1c61fa6 and are accepted today, so a patch does not turn them into an exception. The other
-    /// ten of the twelve edge and value combinations are refused as above. <b>Do not pass</b> a
-    /// non-finite edge. Nothing reports the accepted ones, because there is no diagnostics channel
-    /// yet, and a later major version will refuse all twelve.</para>
+    /// A non-finite edge is refused where it would be written; see <see cref="Document"/>. The save
+    /// throws <see cref="InvalidOperationException"/> before the element is laid out, with
+    /// <c>A table has a non-finite inset. Every inset must be a finite number.</c> (#519). Before that, the element
+    /// was laid out in a box that could be <c>NaN</c>, and the save threw an exception about
+    /// something else or wrote <c>NaN</c> or <c>Infinity</c> into the content stream.
+    /// <para>For example, an infinite top edge is accepted. <b>Do not pass</b> a non-finite edge: 3.0 refuses it.</para>
     /// <para><b>Attention</b>: no other edge is checked. Each finite edge is taken off the area this
     /// element is given, and the element is laid out in whatever box is left, even when that box is
     /// empty or inverted. A negative edge, or edges wider than the area, can therefore make the save throw an exception about something else, re-wrap, move or mirror the content, or leave the element off the page. The bottom edge only limits that box: it adds no space before the next element. A negative top edge can also move the elements placed after this one.</para>
@@ -107,7 +103,8 @@ public sealed class TableElement
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when an edge is not finite, in which case the message names the element
+    /// from this property, when an edge is not finite and is written (see <see cref="Document"/>),
+    /// in which case the message names the element
     /// and does not name the edge, or when the box the edges leave is too small for the element, in
     /// which case the message says the element is too tall to fit on a page and does not name the
     /// margins.
@@ -149,7 +146,7 @@ public sealed class TableElement
     /// infinity are accepted, and every column is scaled to zero, so the table is empty. That saved
     /// a valid file on 1c61fa6, so a patch does not turn it into an exception (#546). <b>Do not
     /// pass</b> widths whose sum overflows. Nothing reports it, because there is no diagnostics
-    /// channel yet, and a later major version will throw <see cref="InvalidOperationException"/>.
+    /// channel yet, and 3.0 will throw <see cref="InvalidOperationException"/>.
     /// When the auto columns take all of the available width or more, every column,
     /// auto ones included, is scaled by one ratio instead. A positive entry under 5e-6 is kept and
     /// written as width 0. None of this is reported.</para>

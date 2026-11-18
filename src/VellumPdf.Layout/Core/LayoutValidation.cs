@@ -145,8 +145,9 @@ internal static class LayoutValidation
         }
 
         ValidateInsets(cell.Padding, $"Table row {rowIndex}, cell {cellIndex}");
-        if (cell.Background is { } background)
-            ValidateColor(background, $"Table row {rowIndex}, cell {cellIndex}", "background colour");
+
+        // The background colour is not checked here: a cell past the last column is never drawn, so
+        // its colour is never written. TableRenderer checks it where the cell is placed.
     }
 
     /// <summary>
@@ -327,12 +328,12 @@ internal static class LayoutValidation
     internal static void ValidateMargins(EdgeInsets margins)
     {
         Check(margins.Left, "left", NonFinite.None);
-        Check(margins.Top, "top", NonFinite.None);
+        Check(margins.Top, "top", NonFinite.NegativeInfinity);
         // These three saved a valid file on 1c61fa6: the right edge only narrows what is drawn
         // from a position it never reaches, and the bottom edge only bounds a height. Measured, a
         // NaN or negative-infinity right margin and a negative-infinity bottom margin saved clean.
         Check(margins.Right, "right", NonFinite.NaN | NonFinite.NegativeInfinity);
-        Check(margins.Bottom, "bottom", NonFinite.NegativeInfinity);
+        Check(margins.Bottom, "bottom", NonFinite.NaN | NonFinite.NegativeInfinity);
 
         static void Check(double value, string edge, NonFinite allowed)
         {
@@ -365,6 +366,11 @@ internal static class LayoutValidation
     internal static void ValidateBandHeight(RunningBand band, string owner)
     {
         if (band.Height is not { } height || double.IsFinite(height)) return;
+
+        // A band with an empty template draws nothing, so its height is never written to an operand.
+        // Negative infinity there saved a valid file on 1c61fa6 when the body fitted, and still does;
+        // a body that did not fit was refused by the too-tall path on both versions.
+        if (double.IsNegativeInfinity(height) && band.Template.Length == 0) return;
 
         throw new InvalidOperationException(
             $"{owner} has a height of {Format(height)}, which cannot be laid out. " +

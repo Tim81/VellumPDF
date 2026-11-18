@@ -71,7 +71,7 @@ public sealed class ElementMarginNonFiniteTests
         var ex = Assert.Throws<InvalidOperationException>(() => doc.Save(ms));
 
         Assert.Equal($"{OwnerFor(element)} has a non-finite inset. Every inset must be a finite number.", ex.Message);
-        Assert.NotNull(rendered);
+        Assert.Equal(double.IsNaN(value), rendered == "NaN");
     }
 
     [Theory]

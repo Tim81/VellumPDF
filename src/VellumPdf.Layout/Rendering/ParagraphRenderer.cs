@@ -59,6 +59,20 @@ public sealed class ParagraphRenderer : IRenderer
         _startLine = startLine;
     }
 
+    private bool HasDrawableText()
+    {
+        foreach (var run in _para.Runs)
+        {
+            foreach (var c in run.Text)
+            {
+                if (!char.IsWhiteSpace(c) || NoBreakSpaces.IsNoBreakSpace(c))
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
     // ── Phase 1: Layout ───────────────────────────────────────────────────────
 
     /// <summary>Word-wraps the paragraph and fits as many lines as the area allows, splitting at line boundaries on overflow.</summary>
@@ -84,7 +98,10 @@ public sealed class ParagraphRenderer : IRenderer
         // paragraphs a list builds are the exception: their left inset is the list's indent or
         // gutter, which the list has already checked and names, so a message here would blame a
         // paragraph the caller never wrote.
-        if (!MarginsCheckedByOwner)
+        //
+        // A paragraph with no drawable text writes nothing, so its margins reach no operand and are
+        // not checked, as on 1c61fa6. U+00A0 and the other no-break spaces count as drawable (#562).
+        if (!MarginsCheckedByOwner && HasDrawableText())
             LayoutValidation.ValidateInsets(
                 _para.Margins,
                 "A paragraph or heading",

@@ -344,6 +344,15 @@ public sealed class TableRenderer : IRenderer
             // span from an earlier row advances it by that cell's ColSpan instead. A row of one
             // ColSpan-2 cell, sitting under a row that sums to three columns and spans its first
             // two down into this one, starts at column 2 of 3 and asks for two. It gets one.
+            // Only a cell that is placed writes its background, so the colour is checked here and not
+            // with the span and padding checks in Layout: a cell pushed past the last column by a
+            // span from an earlier row is never drawn, and saved with any colour on 1c61fa6.
+            if (cell.Background is { } cellBackground)
+            {
+                var owner = $"Table row {rowIdx}, cell {cellIdx - 1}";
+                LayoutValidation.ValidateColor(cellBackground, owner, "background colour");
+            }
+
             var rowSpan = EffectiveRowSpan(cell.RowSpan, rowIdx, drawnRows);
             var colSpan = Math.Min(cell.ColSpan, _colWidths.Length - col);
             var colW = ColSpanWidth(col, colSpan);

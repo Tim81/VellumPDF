@@ -9,7 +9,7 @@ namespace VellumPdf.Layout.Elements;
 /// An immutable run of text with a uniform style, used to compose mixed-style paragraphs.
 /// </summary>
 /// <remarks>
-/// **A null text is refused.** The constructor throws <see cref="ArgumentNullException"/> naming
+/// <b>A null text is refused.</b> The constructor throws <see cref="ArgumentNullException"/> naming
 /// <c>Text</c> (#547). Before that it was stored, and the save threw
 /// <see cref="NullReferenceException"/> when it laid out the paragraph holding the run.
 /// <para>A null style is not refused. The run stores <see cref="TextStyle.Default"/> in its
@@ -19,7 +19,7 @@ namespace VellumPdf.Layout.Elements;
 /// alone saved. Refusing it now would turn a document that saves today into an exception, which a
 /// release before 3.0 must not do (#484).</para>
 /// <para><b>Do not pass a null style.</b> It is replaced by <see cref="TextStyle.Default"/> today and
-/// not reported, because there is no diagnostics channel yet. A later major version will refuse it
+/// not reported, because there is no diagnostics channel yet. 3.0 will refuse it
 /// with <see cref="ArgumentNullException"/> naming <c>Style</c>, and the diagnostics channel will
 /// report it before then. Pass <see cref="TextStyle.Default"/> to get the same result.</para>
 /// Refusals on size, leading and font are on <see cref="TextStyle"/> and are raised from the save.

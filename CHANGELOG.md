@@ -25,6 +25,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   throwing and wrote `/GSn gs` to an ExtGState that was never defined, and later names shifted. Every
   such call now throws and registers nothing.
 
+- **A non-finite number is refused where it is written.** An inset, indent, colour channel or band
+  height of `NaN` or infinity is checked only where it would reach an operand or change what is
+  drawn. A value that never does is accepted, as on 1c61fa6, and 3.0 refuses it at the property that
+  holds it. Whether a value reaches an operand depends on the content: the kind of element, its
+  alignment, whether it draws anything, and the running bands. Where it does, the save throws,
+  either from the element's own check, which names the element, or from `PdfCanvas` with
+  `ArgumentException` ("PDF does not support NaN or Infinity as a real number"). The entries below
+  give examples that were measured against 1c61fa6 and are pinned by `KeepRenderingTests`; they are
+  not a list of every accepted value. The XML doc of each member says not to pass one and points to
+  the `Document` remarks.
+
 - **A non-finite colour channel is refused at the Layout seam, naming the element (#509).** A
   `ColorRgb` with a `NaN` or infinite channel on a text style, a running band, a table cell's style
   or background, a table border, a line separator or a pie slice or stroke reached the content
@@ -33,11 +44,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   channel, and `ArgumentException` for the pie chart, whose other refusals already use it. A finite
   channel outside 0 to 1 is **not** refused. It renders today, a patch does not turn that into an
   exception, and it is documented on `ColorRgb` and `ColorCmyk` with the refusal listed in #484.
-  Only a colour that is written is checked. A zero-value pie slice draws no wedge, so a `NaN`
-  colour on one saves, and a running band whose template is empty, or truncated to nothing, draws
-  nothing, so a `NaN` text colour on it saves; both saved with no invalid token on 1c61fa6. A drawn
-  slice, band text, a table cell's empty or white-space text with a `NaN` style colour (which wrote
-  `NaN 0 0 rg` on 1c61fa6), and every other colour listed above are refused.
+  Only a colour that is written is checked. A `NaN` colour on a zero-value pie slice saves, because
+  the slice draws no wedge, and so does one on a running band whose template is empty, because the
+  band draws nothing; both saved with no invalid token on 1c61fa6. A `NaN` colour on a table cell
+  that a span from an earlier row pushes past the last column saves for the same reason. A colour on
+  anything that is drawn is refused, including a table cell's empty or white-space text with a `NaN`
+  style colour, which wrote `NaN 0 0 rg` on 1c61fa6.
 
 - **A non-finite `Document.Margins` inset is refused, naming the edge (#502).** The only margin
   check compared the axis sums against the page, and a comparison against `NaN` is false, so `NaN`
@@ -47,9 +59,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   checked before layout, and the save throws `ArgumentException` with the parameter name `margins`,
   the same type the sum check uses, such as `The top margin is NaN, which cannot be laid out. A
   margin must be a finite number.` A finite negative inset is not refused. It saves today, and that
-  is documented as a boundary for the next major. Three of the twelve edge and value combinations
-  saved with no invalid token on 1c61fa6 and keep saving: a `NaN` or negative-infinity right
-  margin, and a negative-infinity bottom margin. The other nine are refused.
+  is documented as a boundary for the next major. An inset that is not written is accepted, as the
+  entry above describes: on 1c61fa6 a `NaN` right margin with a paragraph saved with no invalid
+  token, and it still does.
 
 - **A running band's height is validated at one seam, so a footer at negative infinity no longer
   saves invalid output (#520).** A footer with `Height = double.NegativeInfinity` saved a file with
@@ -58,42 +70,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   infinity now give the same `InvalidOperationException` on a header and on a footer, naming the
   band and the value, before any page is laid out. **Attention**: positive infinity used to throw
   `ArgumentException` about the content area; it now throws `InvalidOperationException` like the
-  other two. A finite height large enough to leave no content area still throws as before.
+  other two. A finite height large enough to leave no content area still throws as before. A
+  band with an empty template draws nothing, so its height is not written: negative infinity on
+  one saved on 1c61fa6 when the body fitted, and still does.
 
-- **A `NaN` `ListElement.Indent`, and a negative-infinity one where it is written, are refused
-  (#532).** A nested child's marker, and a flat item whose longest word will not fit beside its
-  marker, take the indent as their left inset directly, so negative infinity wrote
-  `1 0 0 1 -Infinity 263.6 Tm`, and `NaN` reached the same operand on every path. The save now
-  throws `InvalidOperationException` naming the list and the value for `NaN` on any list, and for
-  negative infinity on a list with a nested child or an item whose longest word does not fit beside
-  its marker. A flat list whose words fit saved with no invalid token on 1c61fa6 under negative
-  infinity, because the gutter widens to the marker's own width, and it keeps saving. Positive
-  infinity is deliberately unchanged, because it writes no invalid token and its text loss on a flat
-  list is tracked in #476, and a finite negative indent still renders.
+- **A `NaN` or negative-infinity `ListElement.Indent` is refused where it is written (#532).** A
+  nested child's marker, and a flat item whose longest word will not fit beside its marker, take the
+  indent as their left inset directly, so negative infinity wrote `1 0 0 1 -Infinity 263.6 Tm` and
+  `NaN` wrote the same operand with `NaN`. The save now throws `InvalidOperationException` naming
+  the list and the value for such a list. A flat list whose words fit saved with no invalid token
+  on 1c61fa6 under negative infinity, because the gutter widens to the marker's own width, and it
+  keeps saving; so does a list with no items, which writes nothing. Positive infinity is
+  deliberately unchanged, because it writes no invalid token and its text loss on a flat list is
+  tracked in #476, and a finite negative indent still renders.
 
-- **Layout sweep for the comparison-shaped clamps behind #519: element margins are refused when
-  they are not finite and the value was written.** The sweep read all 24 `Math.Max`, `Math.Min` and `Math.Clamp` sites in
-  `VellumPdf.Layout`. Twenty-one take values that are derived, integer, or already checked by an
-  earlier refusal in this release (font size, colour, indent, document margins, band height, line
-  width, cell padding, image extent). One is `ColorCmyk.FromRgb`, a pure conversion that is
-  documented rather than refused. The two that read a raw caller value without a check were the
-  list gutter, fixed in #532, and the element `Margins`. A `Paragraph`, `Heading`, `ListElement`,
+- **Layout sweep for the comparison-shaped clamps behind #519: an element margin is refused when
+  it is not finite and is written.** The sweep read all 24 `Math.Max`, `Math.Min` and `Math.Clamp`
+  sites in `VellumPdf.Layout`. Twenty-one take values that are derived, integer, or already checked
+  by an earlier refusal in this release (font size, colour, indent, document margins, band height,
+  line width, cell padding, image extent). One is `ColorCmyk.FromRgb`, a pure conversion that is
+  documented rather than refused. The two that read a raw caller value without a check were the list
+  gutter, fixed in #532, and the element `Margins`. A `Paragraph`, `Heading`, `ListElement`,
   `TableElement`, `LayoutImage` or `PieChart` with a `NaN` or infinite edge was laid out in a box
   that could be `NaN`, and reached the content stream, or an unrelated "too tall" message, or the
-  canvas guard from #519 with no element named. Each now throws before layout, naming the element:
-  `InvalidOperationException` for the same elements #478 and #481 cover, and `ArgumentException`
-  with the parameter name `Margins` for the pie chart, whose other refusals already use it. That
-  holds for 52 of the 72 combinations measured on 1c61fa6 (a paragraph first and last in the
-  document, a table, a list, a pie chart and an image; each edge; `NaN`, positive and negative
-  infinity), which wrote an invalid token or threw there. The other 20 saved with no invalid token
-  and keep saving: a paragraph, as first or last element, with a `NaN` or negative-infinity right
-  edge or a negative-infinity bottom edge; a list, the same three; a table with an infinite top
-  edge, either sign, or a `NaN` or negative-infinity bottom edge; a pie chart with an infinite
-  right edge, either sign; an image with any non-finite right edge or an infinite left edge, either
-  sign. A line separator threw on all twelve on 1c61fa6 and cell padding on all twelve, so both
-  stay refused.
-  Individual non-finite explicit table column widths were already treated as auto (#477), so they
-  needed no change. A finite negative margin still renders and is documented as a boundary.
+  canvas guard from #519 with no element named. Each now throws before layout, naming the element,
+  where the edge is written: `InvalidOperationException` for the same elements #478 and #481 cover,
+  and `ArgumentException` with the parameter name `Margins` for the pie chart, whose other
+  refusals already use it. An edge that is not written is accepted, as above. Measured on 1c61fa6,
+  a paragraph with a `NaN` right edge, a table with an infinite top edge, a pie chart with an
+  infinite right edge, an image with a `NaN` right edge and a list with no items and a `NaN` left edge all
+  saved with no invalid token and still do. A line separator, and a table cell's padding, threw for
+  every non-finite edge on 1c61fa6 and still do. Individual non-finite explicit table column widths
+  were already treated as auto (#477), so they needed no change. A finite negative margin still
+  renders and is documented as a boundary.
 
 - **A negative line width is refused (#557).** ISO 32000-2, 8.4.3.2 says a line width "shall be a
   non-negative number", and `LineSeparator.LineWidth` and `TableElement.BorderWidth` wrote a
@@ -101,7 +110,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `InvalidOperationException` naming the element, the width and the clause, in the same shape as the
   non-finite refusal. Zero stays accepted, since `0 w` is a defined operator; the member
   documentation carries the clause's advice that zero-width lines should not be used, because the
-  result is device-dependent. `PieChart.StrokeWidth` already refused a negative value.
+  result is device-dependent. `PieChart.StrokeWidth` already refused a negative value. Both
+  `LineWidth = -3` and `BorderWidth = -3` saved on 1c61fa6; they are refused now because the
+  operand breaks the clause.
 
 - **Pie slice totals, pie start angles and explicit table widths no longer overflow into empty or
   wrong output (#546).** Three inputs were each valid on their own and wrong together. Two pie
@@ -141,9 +152,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   A test sweeps the list's start position through 1.5 line heights in 0.01pt steps at three font
   sizes and checks that every word is drawn once: before the fix 766, 1,758 and 504 of those
   positions lost words.
-  The record is an array, so `ListRenderer.Layout` checks the start item first and a negative one
-  still throws `ArgumentOutOfRangeException`; its `ParamName` is now `startItem`, where it was
-  `index`.
+  The record holds one height for each item the call visits, and the same figure is read back by
+  the item's offset from the start item. `ListRenderer.Layout` still checks the start item first. A
+  negative one throws `ArgumentOutOfRangeException` either way, because `_items[i]` with a negative
+  `i` throws it with `ParamName` `index`; the explicit check makes the `ParamName` `startItem`.
 
 - **A null argument is refused by the call that took it, with `ArgumentNullException` (#523, #531,
   #547).** Across the Kernel object model and Layout's element types a null was stored without a
@@ -151,41 +163,44 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `Document.Save`, with a stack naming the writer or a renderer. `PdfArray.Add`, `PdfArray`'s
   constructor, `PdfDictionary.Set`'s value, `DocumentRenderer.Add`, `RunningBand`'s template,
   `Paragraph`, `Paragraph.Add`, `Heading`, `TextRun`'s text,
-  `ListElement.Add(string)`, `ListElement`'s constructor and `Add`, `Row.AddCell(Cell)`, `LayoutImage`, `PieChart.Slices`,
+  `ListElement.Add(string)`, `ListElement`'s constructor and `Add`, `Row.AddCell(Cell)`,
+  `LayoutImage`, `PieChart.Slices`,
   every `Document.Add` overload, and the public renderer constructors now throw from the call, naming
-  the parameter. A null inside a sequence names its index. `new Paragraph((IEnumerable<TextRun>)null)` already threw `ArgumentNullException` on 1c61fa6, with `ParamName` `source`; it is now `runs`. `new DocumentRenderer(null)` threw `NullReferenceException` and now throws `ArgumentNullException` naming `pdf`. An empty string is not null and is
-  accepted. A null cell text is the exception: `new Cell(null)` and `Row.AddCell((string)null)` store
+  the parameter. A null inside a sequence names its index. `new
+  Paragraph((IEnumerable<TextRun>)null)` already threw `ArgumentNullException` on 1c61fa6, with
+  `ParamName` `source`; it is now `runs`. `new DocumentRenderer(null)` threw
+  `NullReferenceException` and now throws `ArgumentNullException` naming `pdf`. An empty string is
+  not null and is
+  accepted. A null cell text is accepted: `new Cell(null)` and `Row.AddCell((string)null)` store
   an empty string, so the cell draws no text. That is what a table with explicit column widths
   already drew, and the auto-sized table now agrees with it instead of throwing at save.
   **Attention**: code that passed a null and caught the later `NullReferenceException` now gets
-  `ArgumentNullException` earlier, except for a null cell text, which is accepted. Two nulls that
-  saved before are kept saving, because a release before 3.0 may not turn a document that renders
-  into an exception (#484). A `TextRun` with a null style stores `TextStyle.Default` and draws in
-  it; before, a null style saved only when the run's text was empty or white space, and threw
-  `NullReferenceException` for any other text. A null `ListItem` passed to `ListItem.AddChild` is
-  not stored and does not throw from the call. On a grandchild, an item that is itself another
-  item's child, it is skipped as before and the list renders. On a top-level item the save throws
-  `ArgumentNullException` naming `child`, where it threw `NullReferenceException`. Neither is
-  reported, because there is no diagnostics channel yet, and both XML docs say not to pass them and
-  that a later major version will throw. A null text given to `new ListItem` or `ListItem.AddChild(string)` is handled the same way: it is
-  stored as an empty string and the item is marked. On a grandchild the list renders as before. On a
-  top-level item, or a child of one, the save throws `ArgumentNullException` naming `text`, where it
-  threw `NullReferenceException`; `ListElement.Add(string)` always makes a top-level item, so it
-  still throws from the call. The `<exception>` tags and the "a later major version will throw" paragraphs that
-  described the old behaviour are rewritten. `PageSize`, `DrawContext`, `FontReference`,
+  `ArgumentNullException` earlier. Four nulls are not refused from the call, because each saved on
+  1c61fa6 and a release before 3.0 may not turn a document that saves into an exception (#484): a
+  null cell text; a `TextRun` with a null style; a null `ListItem` passed to `ListItem.AddChild`; and
+  a null text given to `new ListItem` or `ListItem.AddChild(string)`. A `TextRun` with a null style
+  stores `TextStyle.Default` and draws in it; on 1c61fa6 a null style saved only when the run's text
+  was empty or white space, and threw `NullReferenceException` for any other text. The two
+  `ListItem` cases are deferred. A null child is not stored, and a null text is stored as an empty
+  string with the item marked. Neither throws from the call. On a grandchild, an item that is itself
+  another item's child, the list renders as before. On a top-level item, or a child of one, the save
+  throws `ArgumentNullException` naming `child` or `text`, where it threw `NullReferenceException`;
+  `ListElement.Add(string)` always makes a top-level item, so it still throws from the call. None
+  is reported, because there is no diagnostics channel yet, and each XML doc says not to pass it
+  and that 3.0 throws from the call. The `<exception>` tags and the "3.0 will throw" paragraphs
+  that described the old behaviour are rewritten. `PageSize`, `DrawContext`, `FontReference`,
   `LayoutResult` and `RendererContext` still store a null, and are outside these three issues.
 
-- **What this release refuses that saved a valid file on 1c61fa6.** Every other refusal in this
-  section is of an input that wrote an invalid token or threw on 1c61fa6. The exceptions, each
-  measured against that version: an unknown-length JBIG2 segment after a known-length
-  page-information segment, which loaded and now throws `InvalidDataException`; a second `Save` of
-  a `Document` whose layout started and threw, which wrote a page with the wrap of the first
-  attempt's width and now throws `InvalidOperationException`; the save-check precedence changes
-  listed with the save checks; and a foreign font handle whose font program the saving document did
-  not embed under the same name, which wrote a page naming a font its resources did not define.
-  Not measured in this release: a zero image extent (#478) and a negative line width (#557), which
-  the code comments that name them say wrote a valid operator on 1c61fa6, and which are still
-  refused.
+- **What this release refuses although 1c61fa6 saved the input.** Measured against that version,
+  four refusals are of an input that saved. An unknown-length JBIG2 segment after a known-length
+  page-information segment loaded and dropped the segment, and now throws `InvalidDataException`
+  (see #570 below). A second `Save` of a `Document` whose layout had started and threw wrote a page
+  with the line breaks of the first attempt's width, and now throws `InvalidOperationException`. The
+  save-check precedence changes are listed with the save checks. A foreign font handle whose font
+  program the saving document did not embed under the same name wrote a page that named a font its
+  resources did not define. A negative line width (#557) saved as `-3 w`; it is refused because
+  ISO 32000-2, 8.4.3.2 makes it an invalid operand. Nothing else in this section was checked for
+  this, so it is not a claim that the list is complete.
 
 - **An embedded font handle from another `Document` is refused unless the saving document embedded
   the same font program under the same name (#544).** A handle's resource name (`TT1`) is a counter
@@ -197,13 +212,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `PdfDocument` that returned it and the SHA-256 of its font program.
   `PdfDocument.RegisterEmbeddedFontUsage` throws `ArgumentException` (parameter `handle`) for a
   handle from another document, so the save fails where the text is drawn, except when the saving
-  document embedded the same font program and the resource names match: that saved a correct file
-  on 1c61fa6 and keeps saving, using the saving document's own embedding. The glyphs the foreign
-  handle registered are now added to that embedding's subset at save; on 1c61fa6 the subset held
-  only what the saving document had registered, so text drawn with the foreign handle could lack
-  its glyphs (measured: 53,500 bytes before and 54,144 after, for "Hello" drawn through the foreign
-  handle alone). The same font program under a different resource name is refused. It also refuses a null `page` or `handle` with `ArgumentNullException`. A
-  null handle given to `FontReference` or `TextStyle.FontRef` still means Helvetica, as documented.
+  document embedded the same font program and the resource names match, using the saving
+  document's own embedding. That case saved on 1c61fa6, but its subset held only the glyphs the
+  saving document had registered itself, so text drawn through the foreign handle extracted as other
+  characters and veraPDF's PDF/A-2b profile failed. The glyphs the foreign handle registered are now
+  added to the subset at save, and the same file passes PDF/A-2b. Measured with
+  LiberationSans-Regular, drawing "Hello" through the foreign handle alone, the `FontFile2` stream
+  was 51,030 bytes before and 51,585 after. The same font program under a
+  different resource name is refused. The XML doc of `RegisterEmbeddedFontUsage` says not to pass a
+  foreign handle and that 3.0 refuses it.
 
 - **A cycle in a structure tree, array, dictionary or stream is refused instead of overflowing the
   stack (#521).** `array.Add(array)`, `dictionary.Set(key, dictionary)`, `stream.Dictionary.Set(key,
@@ -234,7 +251,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   on a good stream threw "already written". Those checks now run **before** the layout, through
   internal members on `PdfDocument` that `VellumPdf.Layout` can now reach, so a refusal leaves the
   document untouched and recoverable, and the kernel's `SaveAsync` checks the destination the same
-  way. A save that threw after its layout had added pages cannot be undone, so every later save
+  way. A save that threw after its layout had started cannot be undone, so every later save
   throws `InvalidOperationException` asking for a new `Document`. That covers a layout that threw,
   and also a step after it: a `SaveAsync` cancelled once the layout had run, or a signature
   placeholder that failed to build. Signing also refuses encryption before the layout now, so
@@ -319,8 +336,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   organisation (#570).** A JBIG2 file as ITU-T T.88 Annex D defines it has more after the 8-byte ID
   string than the loader read: a flags byte (bit 0 set is sequential, bit 1 set means the number of
   pages is unknown) and, unless that bit is set, a 4-byte page count. The loader took both for the
-  start of the first segment, so every standard file failed with an error such as `segment 16777216
-  data length 12288 exceeds buffer size`; the loader's tests built files without those bytes, which
+  start of the first segment, so every standard file failed with an error such as `JBIG2: segment
+  16777216 data length 12288 at offset 11 exceeds buffer size 35.` on a 35-byte file; the loader's
+  tests built files without those bytes, which
   is why nothing caught it. It now reads the header, and also the random-access organisation (D.2),
   where all segment headers come first, ending with the end-of-file segment, and the data parts
   follow; a random-access file is rejoined into the embedded form a PDF stores, each header with its
@@ -333,13 +351,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   embeds the first: the page named by the first page-information segment, with the segments that
   belong to no page, under both `Passthrough` and `DecodeToRaster`, and the size is that page's.
   A segment of the embedded page whose data length is unknown (0xFFFFFFFF, T.88 7.2.7) is refused
-  under `Passthrough` with `InvalidDataException` naming the segment and its type, because it cannot
-  be partitioned into the page and globals streams; the end-of-page and end-of-file segments, every
+  under `Passthrough` with `InvalidDataException` naming the segment and its type, because this loader
+  does not scan for the end marker T.88 7.2.7 describes, so it cannot partition the segment into the
+  page and globals streams; the end-of-page and end-of-file segments, every
   segment of a page that is not embedded, and every segment of no page (a trailing tables or
   extension segment, say) are exempt and skipped, as they always were. `DecodeToRaster` keeps refusing an unknown length only on a
   generic region (types 36, 38 and 39), as before, now with the same message; every other segment
-  behaves as it did. A sequential or embedded stream cannot be read past such a segment, so what
-  follows one is not seen. A random-access file refuses an unknown length on any page, without
+  behaves as it did. This loader does not scan for the segment's end, so it does not see what follows
+  one in a sequential or embedded stream. A random-access file refuses an unknown length on any page, without
   naming the segment type. If the first page-information segment has page association 0 it names
   no page, and every segment is kept, as before pages were chosen. **Attention**: a JBIG2 stream
   with an unknown-length segment (types 38 and 53 measured) after a known-length page-information
@@ -350,7 +369,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   dark pixels of 3,999) and the second with 890 dark pixels. A type 53 segment loaded the same way
   and was not rendered. Both input shapes
   measured take the throw: the headerless embedded organisation and the ID string followed directly
-  by segments. An unknown-length page-information segment itself threw on both versions. A file with more than one page
+  by segments. An unknown-length page-information segment itself threw on both versions. A file
+  with more than one page
   used to embed every page's segments into one image stream and now embeds only the first page.
   When no reading of the data is accepted, the `InvalidDataException` now says which readings were
   tried (a sequential or random-access file, the ID string followed directly by segments, or the

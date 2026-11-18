@@ -126,9 +126,10 @@ public sealed class DrawContext
     /// </summary>
     /// <remarks>
     /// This context's own page and document are not read here; its
-    /// <see cref="RendererContext"/> is. The handle must come from the document that saves the page;
-    /// a handle from a different document is refused (#544), as
-    /// <see cref="FontReference(EmbeddedFontHandle)"/> describes.
+    /// <see cref="RendererContext"/> is. The handle should come from the document that saves the page;
+    /// a handle from a different document is refused unless that document embedded the same font
+    /// program under the same resource name (#544), as <see cref="FontReference(EmbeddedFontHandle)"/>
+    /// describes. <b>Do not pass</b> a handle from another document: 3.0 refuses it.
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised from this call when this context's <see cref="RendererContext"/> is
@@ -141,7 +142,8 @@ public sealed class DrawContext
     /// otherwise <c>ParamName</c> is <c>handle</c>.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// Raised from this call when <paramref name="handle"/> was returned by a different document.
+    /// Raised from this call when <paramref name="handle"/> was returned by a different document that
+    /// did not embed the same font program under the same resource name.
     /// </exception>
     public string UseEmbeddedFont(EmbeddedFontHandle handle)
     {

@@ -47,15 +47,17 @@ public sealed class NonFiniteGeometryTests
         return rows;
     }
 
-    /// <summary>Edge 2 is right and 3 is bottom in the order <see cref="Margins"/> uses: left, top, right, bottom.</summary>
+    /// <summary>Edge 1 is top, 2 is right and 3 is bottom, in the order <see cref="Margins"/>
+    /// uses: left, top, right, bottom.</summary>
     private static bool SavesClean(int edge, double value) =>
+        (edge == 1 && double.IsNegativeInfinity(value)) ||
         (edge == 2 && (double.IsNaN(value) || double.IsNegativeInfinity(value))) ||
-        (edge == 3 && double.IsNegativeInfinity(value));
+        (edge == 3 && (double.IsNaN(value) || double.IsNegativeInfinity(value)));
 
     public static TheoryData<int, double> SavedCleanBefore()
     {
         var rows = new TheoryData<int, double>();
-        foreach (var edge in new[] { 2, 3 })
+        foreach (var edge in new[] { 1, 2, 3 })
             foreach (var value in new[] { double.NaN, double.PositiveInfinity, double.NegativeInfinity })
                 if (SavesClean(edge, value)) rows.Add(edge, value);
         return rows;
@@ -86,22 +88,40 @@ public sealed class NonFiniteGeometryTests
     // ── #502: Document.Margins ───────────────────────────────────────────────
 
     /// <summary>
-    /// Measured on 1c61fa6: a NaN or negative-infinity right margin and a negative-infinity bottom
-    /// margin saved a file with no NaN or Infinity token, so they keep saving (#484). Every other
-    /// combination of the twelve is refused by the theory below.
+    /// Measured on 1c61fa6: a negative-infinity top margin, a NaN or negative-infinity right margin
+    /// and a NaN or negative-infinity bottom margin saved a file with no NaN or Infinity token (with
+    /// a one-row table for the top and the NaN bottom, a paragraph for the rest), so they keep saving
+    /// (#484). The other combinations are refused by the theory
+    /// below.
     /// </summary>
     [Theory]
     [MemberData(nameof(SavedCleanBefore))]
     public void Margin_thatSavedCleanBefore_stillSaves(int edge, double value)
     {
         using var doc = Doc(Margins(edge, value));
-        doc.Add(new Paragraph("x", Style()));
+
+        // A paragraph under a NaN bottom or negative-infinity top margin was refused as too tall on
+        // 1c61fa6 and still is; a table saved there, so it is the body for those two.
+        if ((edge == 1 && double.IsNegativeInfinity(value)) || (edge == 3 && double.IsNaN(value)))
+        {
+            var table = new TableElement { DefaultCellStyle = Style() };
+            table.AddRow().AddCell("x");
+            doc.Add(table);
+        }
+        else
+        {
+            doc.Add(new Paragraph("x", Style()));
+        }
+
         using var ms = new MemoryStream();
 
         doc.Save(ms);
 
         var stream = PdfTestUtil.DecompressAllFlatStreams(ms.ToArray());
-        Assert.Contains("(x)", stream, StringComparison.Ordinal);
+        // A negative-infinity top margin puts the table off the page: it saved a page with no text
+        // on 1c61fa6, so there is nothing to find for that row.
+        if (!(edge == 1 && double.IsNegativeInfinity(value)))
+            Assert.Contains("(x)", stream, StringComparison.Ordinal);
         Assert.DoesNotContain("NaN", stream, StringComparison.Ordinal);
         Assert.DoesNotContain("Infinity", stream, StringComparison.Ordinal);
     }
