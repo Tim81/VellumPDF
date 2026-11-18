@@ -25,6 +25,9 @@ public sealed class ElementMarginNonFiniteTests
         foreach (var element in new[] { "paragraph", "heading", "list", "table", "image", "separator" })
         {
             rows.Add(element, double.NaN, "NaN");
+            // An image with an infinite left margin saved a valid file on 1c61fa6 and keeps saving;
+            // see KeepRenderingTests.
+            if (element == "image") continue;
             rows.Add(element, double.PositiveInfinity, "positive infinity");
             rows.Add(element, double.NegativeInfinity, "negative infinity");
         }

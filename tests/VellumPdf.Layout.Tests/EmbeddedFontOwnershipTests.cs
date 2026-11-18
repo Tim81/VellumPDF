@@ -105,4 +105,54 @@ public sealed class EmbeddedFontOwnershipTests
         Assert.Equal("handle", Assert.Throws<ArgumentNullException>(() => pdf.RegisterEmbeddedFontUsage(page, null!)).ParamName);
         Assert.Equal("page", Assert.Throws<ArgumentNullException>(() => pdf.RegisterEmbeddedFontUsage(null!, handle)).ParamName);
     }
+
+    private static string SaveToUnicode(Document doc, VellumPdf.Fonts.EmbeddedFontHandle handle, string text)
+    {
+        doc.Add(new Paragraph(text, new TextStyle { FontRef = handle, FontSize = 12 }));
+        using var ms = new MemoryStream();
+        doc.Save(ms);
+        return PdfTestUtil.DecompressAllFlatStreams(ms.ToArray());
+    }
+
+    /// <summary>
+    /// On 1c61fa6 this saved a correct file by name coincidence: both documents embedded the same font
+    /// program as TT1, so the foreign handle's name resolved to the saving document's own embedding.
+    /// It keeps saving, and the glyphs the foreign handle registered reach the subset, which the
+    /// saving document never measured itself.
+    /// </summary>
+    [Fact]
+    public void ForeignHandle_ofTheSameFontProgramUnderTheSameName_saves_withItsGlyphsInTheSubset()
+    {
+        var (first, _) = TwoDifferentFonts();
+        using var owner = new Document();
+        var foreign = owner.UseTrueTypeFont(first);
+        using var other = new Document();
+        var own = other.UseTrueTypeFont(first);
+        Assert.Equal(foreign.ResourceName, own.ResourceName);
+
+        var stream = SaveToUnicode(other, foreign, "Hello");
+
+        // 0048 is H, 0065 e, 006C l, 006F o: none of them was measured through the saving
+        // document's own handle, so they are in its ToUnicode CMap only if the merge ran.
+        foreach (var cp in new[] { "0048", "0065", "006C", "006F" })
+            Assert.Contains("<" + cp + ">", stream, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The same font program under another resource name is not main's correct case: the content
+    /// stream would name TT2 while this document's resources define it as TT1.
+    /// </summary>
+    [Fact]
+    public void ForeignHandle_ofTheSameFontProgramUnderAnotherName_isRefused()
+    {
+        var (first, second) = TwoDifferentFonts();
+        using var owner = new Document();
+        _ = owner.UseTrueTypeFont(first);
+        var foreign = owner.UseTrueTypeFont(second);
+        using var other = new Document();
+        var own = other.UseTrueTypeFont(second);
+        Assert.NotEqual(foreign.ResourceName, own.ResourceName);
+
+        Assert.Throws<ArgumentException>(() => SaveWith(other, foreign));
+    }
 }

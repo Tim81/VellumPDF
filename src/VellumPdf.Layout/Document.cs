@@ -242,6 +242,12 @@ public sealed class Document : IDisposable
     /// out. A margin must be a finite number.</c> Before #502 only a positive-infinity sum was
     /// caught, and <c>NaN</c> and negative infinity surfaced later as a message about an element,
     /// or saved with <c>NaN</c> or <c>Infinity</c> in the content stream.</para>
+    /// <para><b>Three non-finite insets are not refused: a <c>NaN</c> or negative-infinity right
+    /// inset, and a negative-infinity bottom inset.</b> They saved a valid file on 1c61fa6 and are
+    /// accepted today, so a patch does not turn them into an exception. The other nine of the
+    /// twelve edge and value combinations are refused as above. <b>Do not pass</b> a non-finite
+    /// inset. Nothing reports the accepted ones, because there is no diagnostics channel yet, and a
+    /// later major version will refuse all twelve.</para>
     /// <para><b>Attention</b>: do not pass a finite negative inset. A later major version will
     /// reject it.</para>
     /// </remarks>

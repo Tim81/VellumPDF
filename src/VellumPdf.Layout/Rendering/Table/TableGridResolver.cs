@@ -143,10 +143,11 @@ internal sealed class TableGridResolver
             explicitSum += raw[i];
         }
 
-        // Each entry is finite here, but their sum need not be: three of 1e308 reach +Infinity,
-        // the scale ratio becomes budget / Infinity = 0, and every column was written at width 0,
-        // an empty table (#546).
-        LayoutValidation.ValidateColumnWidthSum(explicitSum);
+        // Each entry is finite here, but their sum need not be: three of 1e308 reach +Infinity, the
+        // scale ratio becomes budget / Infinity = 0, and every column is written at width 0, an
+        // empty table (#546). That is not refused: the file is valid, it saved on 1c61fa6 with no
+        // non-finite token, and a release before 3.0 may not turn a document that saves into an
+        // exception (#484). Documented on ColWidths; the next major refuses it.
 
         var autoCount = 0;
         for (var i = 0; i < cols; i++) if (isAuto[i]) autoCount++;

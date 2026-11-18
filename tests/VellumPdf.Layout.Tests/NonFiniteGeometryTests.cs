@@ -31,10 +31,33 @@ public sealed class NonFiniteGeometryTests
         var rows = new TheoryData<int, double, string>();
         foreach (var edge in new[] { 0, 1, 2, 3 })
         {
-            rows.Add(edge, double.NaN, "NaN");
-            rows.Add(edge, double.PositiveInfinity, "positive infinity");
-            rows.Add(edge, double.NegativeInfinity, "negative infinity");
+            foreach (var (value, rendered) in new[]
+            {
+                (double.NaN, "NaN"),
+                (double.PositiveInfinity, "positive infinity"),
+                (double.NegativeInfinity, "negative infinity"),
+            })
+            {
+                // Three combinations saved a valid file on 1c61fa6 and keep saving; see
+                // Margin_thatSavedCleanBefore_stillSaves.
+                if (SavesClean(edge, value)) continue;
+                rows.Add(edge, value, rendered);
+            }
         }
+        return rows;
+    }
+
+    /// <summary>Edge 2 is right and 3 is bottom in the order <see cref="Margins"/> uses: left, top, right, bottom.</summary>
+    private static bool SavesClean(int edge, double value) =>
+        (edge == 2 && (double.IsNaN(value) || double.IsNegativeInfinity(value))) ||
+        (edge == 3 && double.IsNegativeInfinity(value));
+
+    public static TheoryData<int, double> SavedCleanBefore()
+    {
+        var rows = new TheoryData<int, double>();
+        foreach (var edge in new[] { 2, 3 })
+            foreach (var value in new[] { double.NaN, double.PositiveInfinity, double.NegativeInfinity })
+                if (SavesClean(edge, value)) rows.Add(edge, value);
         return rows;
     }
 
@@ -61,6 +84,27 @@ public sealed class NonFiniteGeometryTests
     }
 
     // ── #502: Document.Margins ───────────────────────────────────────────────
+
+    /// <summary>
+    /// Measured on 1c61fa6: a NaN or negative-infinity right margin and a negative-infinity bottom
+    /// margin saved a file with no NaN or Infinity token, so they keep saving (#484). Every other
+    /// combination of the twelve is refused by the theory below.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(SavedCleanBefore))]
+    public void Margin_thatSavedCleanBefore_stillSaves(int edge, double value)
+    {
+        using var doc = Doc(Margins(edge, value));
+        doc.Add(new Paragraph("x", Style()));
+        using var ms = new MemoryStream();
+
+        doc.Save(ms);
+
+        var stream = PdfTestUtil.DecompressAllFlatStreams(ms.ToArray());
+        Assert.Contains("(x)", stream, StringComparison.Ordinal);
+        Assert.DoesNotContain("NaN", stream, StringComparison.Ordinal);
+        Assert.DoesNotContain("Infinity", stream, StringComparison.Ordinal);
+    }
 
     [Theory]
     [MemberData(nameof(Insets))]

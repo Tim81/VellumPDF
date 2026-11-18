@@ -95,6 +95,11 @@ public sealed class TableElement
     /// with <c>A table has a non-finite inset. Every inset must be a finite number.</c> (#519).
     /// Before that, the element was laid out in a box that could be <c>NaN</c>, and the save threw an
     /// exception about something else or wrote <c>NaN</c> or <c>Infinity</c> into the content stream.
+    /// <para><b>Some non-finite edges are not refused: an infinite top edge, positive or negative, and a <c>NaN</c> or negative-infinity bottom edge.</b> They saved a valid file on
+    /// 1c61fa6 and are accepted today, so a patch does not turn them into an exception. The other
+    /// ten of the twelve edge and value combinations are refused as above. <b>Do not pass</b> a
+    /// non-finite edge. Nothing reports the accepted ones, because there is no diagnostics channel
+    /// yet, and a later major version will refuse all twelve.</para>
     /// <para><b>Attention</b>: no other edge is checked. Each finite edge is taken off the area this
     /// element is given, and the element is laid out in whatever box is left, even when that box is
     /// empty or inverted. A negative edge, or edges wider than the area, can therefore make the save throw an exception about something else, re-wrap, move or mirror the content, or leave the element off the page. The bottom edge only limits that box: it adds no space before the next element. A negative top edge can also move the elements placed after this one.</para>
@@ -141,19 +146,16 @@ public sealed class TableElement
     /// explicit columns near zero: <c>1e200, 60, 70</c> resolves to about 451, 0 and 0 on an A4
     /// page with the default margins, and nothing reports it. That is a contract tightening for the next major (#484), not
     /// a refusal in a patch, because the table still renders. Entries whose sum overflows to
-    /// infinity are different: they would all be scaled to zero and draw an empty table, so the
-    /// save refuses them with <see cref="InvalidOperationException"/>, saying the widths add up to
-    /// positive infinity (#546). When the auto columns take all of the available width or more, every column,
+    /// infinity are accepted, and every column is scaled to zero, so the table is empty. That saved
+    /// a valid file on 1c61fa6, so a patch does not turn it into an exception (#546). <b>Do not
+    /// pass</b> widths whose sum overflows. Nothing reports it, because there is no diagnostics
+    /// channel yet, and a later major version will throw <see cref="InvalidOperationException"/>.
+    /// When the auto columns take all of the available width or more, every column,
     /// auto ones included, is scaled by one ratio instead. A positive entry under 5e-6 is kept and
     /// written as width 0. None of this is reported.</para>
     /// <para>Do not rely on scaling to fit a table. Pass widths that fit the space you give
     /// it.</para>
     /// </remarks>
-    /// <exception cref="InvalidOperationException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the explicit entries add up to infinity. The message says so and
-    /// names no column.
-    /// </exception>
     public IReadOnlyList<double> ColWidths => _colWidths;
 
     /// <summary>Sets the column widths (0 = auto) and returns this instance for chaining.</summary>
@@ -161,12 +163,8 @@ public sealed class TableElement
     /// Replaces every width. Called with no arguments it clears them, so every column is auto. A
     /// null array is refused only after the existing widths are cleared, so they are lost. The
     /// entries follow the rules on <see cref="ColWidths"/>; none is refused here, and a set whose
-    /// sum overflows to infinity is refused at the save.
+    /// sum overflows to infinity is accepted, with the table empty; see <see cref="ColWidths"/>.
     /// </remarks>
-    /// <exception cref="InvalidOperationException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this method, when the entries add up to infinity; see <see cref="ColWidths"/>.
-    /// </exception>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="widths"/> is <see langword="null"/>. <c>ParamName</c> is <c>collection</c>,
     /// not <c>widths</c>.

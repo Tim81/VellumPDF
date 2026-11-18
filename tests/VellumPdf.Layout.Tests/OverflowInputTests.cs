@@ -42,18 +42,21 @@ public sealed class OverflowInputTests
 
     // ── Pie slice totals ─────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Two slices of 1e308 sum to infinity and the chart has no curves. The file is valid and saved on
+    /// 1c61fa6, so it keeps saving (#484).
+    /// </summary>
     [Fact]
-    public void Pie_sliceTotalThatOverflowsToInfinity_isRefused()
+    public void Pie_sliceTotalThatOverflowsToInfinity_stillSaves_withNoCurvesAndNoInvalidToken()
     {
         using var doc = Page();
         doc.Add(new PieChart { Slices = [new PieSlice(1e308, ColorRgb.Black), new PieSlice(1e308, ColorRgb.White)] });
 
-        var ex = Assert.Throws<ArgumentException>(() => Stream(doc));
+        var stream = Stream(doc);
 
-        Assert.Equal("Slices", ex.ParamName);
-        Assert.StartsWith(
-            "The sum of pie slice values must be finite; the slice values overflow when added.",
-            ex.Message, StringComparison.Ordinal);
+        Assert.Equal(0, CurveCount(stream));
+        Assert.DoesNotContain("NaN", stream, StringComparison.Ordinal);
+        Assert.DoesNotContain("Infinity", stream, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -125,18 +128,23 @@ public sealed class OverflowInputTests
 
     // ── Explicit table column widths ─────────────────────────────────────────
 
+    /// <summary>
+    /// Three widths of 1e308 add up to positive infinity, the scale ratio is zero and every column
+    /// is drawn at width 0. The file is valid and saved on 1c61fa6 with no non-finite token, so it
+    /// keeps saving (#484); the next major refuses it.
+    /// </summary>
     [Fact]
-    public void Table_explicitWidthsThatOverflowToInfinity_areRefused()
+    public void Table_explicitWidthsThatOverflowToInfinity_stillSave_withNoNonFiniteToken()
     {
         using var doc = Page();
         var table = new TableElement { DefaultCellStyle = Style() }.SetColumnWidths(1e308, 1e308, 1e308);
         table.AddRow().AddCell("a").AddCell("b").AddCell("c");
         doc.Add(table);
 
-        var ex = Assert.Throws<InvalidOperationException>(() => Stream(doc));
+        var stream = Stream(doc);
 
-        Assert.StartsWith(
-            "A table's explicit column widths add up to positive infinity", ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("NaN", stream, StringComparison.Ordinal);
+        Assert.DoesNotContain("Infinity", stream, StringComparison.Ordinal);
     }
 
     /// <summary>

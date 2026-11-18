@@ -88,7 +88,11 @@ public sealed class TableRenderer : IRenderer
     /// </exception>
     public LayoutResult Layout(LayoutContext context)
     {
-        LayoutValidation.ValidateInsets(_table.Margins, "A table");
+        LayoutValidation.ValidateInsets(
+            _table.Margins,
+            "A table",
+            top: LayoutValidation.NonFinite.PositiveInfinity | LayoutValidation.NonFinite.NegativeInfinity,
+            bottom: LayoutValidation.NonFinite.NaN | LayoutValidation.NonFinite.NegativeInfinity);
 
         var area = context.Area.Deflate(_table.Margins);
         if (area.Width <= 0) return LayoutResult.Nothing();

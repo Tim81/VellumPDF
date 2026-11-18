@@ -57,7 +57,7 @@ internal static class LayoutValidation
     /// default leading, and used to save successfully while writing <c>/F1 -Infinity Tf</c>, which
     /// is not a PDF number.
     /// </summary>
-    internal static void ValidateStyle(TextStyle style, string owner)
+    internal static void ValidateStyle(TextStyle style, string owner, bool checkColor = true)
     {
         // Non-finite only, deliberately. A font size of zero or less renders today and reaches the
         // stream verbatim -- "/F1 0 Tf" at zero, "/F1 -12 Tf" at -12 -- a valid operator either
@@ -74,7 +74,7 @@ internal static class LayoutValidation
                 "A font size must be a finite number.");
         }
 
-        ValidateColor(style.Color, owner, "text colour");
+        if (checkColor) ValidateColor(style.Color, owner, "text colour");
     }
 
     /// <summary>
@@ -216,23 +216,76 @@ internal static class LayoutValidation
     }
 
     /// <summary>
-    /// Rejects insets that are not finite. Padding and margins are written straight into a
-    /// rectangle and a text matrix, so one non-finite inset emits <c>10 NaN 280 NaN re</c> and
-    /// <c>1 0 0 1 NaN NaN Tm</c>.
+    /// The kinds of non-finite value an edge may hold without being refused; see
+    /// <see cref="ValidateInsets(EdgeInsets, string, NonFinite, NonFinite, NonFinite, NonFinite)"/>.
     /// </summary>
-    internal static void ValidateInsets(EdgeInsets insets, string owner)
+    [Flags]
+    internal enum NonFinite
     {
-        if (!double.IsFinite(insets.Left) || !double.IsFinite(insets.Top) ||
-            !double.IsFinite(insets.Right) || !double.IsFinite(insets.Bottom))
+        None = 0,
+        NaN = 1,
+        PositiveInfinity = 2,
+        NegativeInfinity = 4,
+    }
+
+    /// <summary>
+    /// Rejects insets that are not finite, except for the kinds each edge is told to let through.
+    /// Padding and margins are written straight into a rectangle and a text matrix, so one
+    /// non-finite inset can emit <c>10 NaN 280 NaN re</c> and <c>1 0 0 1 NaN NaN Tm</c>.
+    ///
+    /// The allowances exist because a few element and edge combinations saved a valid file on
+    /// 1c61fa6 with a non-finite value there, measured one edge at a time, and a release before 3.0
+    /// may not turn a document that saves into an exception (#484). An edge is let through only
+    /// where its value is never written, so a caller names exactly those combinations and every
+    /// other one stays refused.
+    /// </summary>
+    internal static void ValidateInsets(
+        EdgeInsets insets,
+        string owner,
+        NonFinite top = NonFinite.None,
+        NonFinite right = NonFinite.None,
+        NonFinite bottom = NonFinite.None,
+        NonFinite left = NonFinite.None)
+    {
+        if (Refused(insets.Left, left) || Refused(insets.Top, top) ||
+            Refused(insets.Right, right) || Refused(insets.Bottom, bottom))
         {
             throw new InvalidOperationException(
                 $"{owner} has a non-finite inset. Every inset must be a finite number.");
         }
+
+        static bool Refused(double value, NonFinite allowed)
+        {
+            if (double.IsFinite(value)) return false;
+            var kind = double.IsNaN(value) ? NonFinite.NaN
+                : value > 0 ? NonFinite.PositiveInfinity
+                : NonFinite.NegativeInfinity;
+            return (allowed & kind) == 0;
+        }
     }
 
     /// <summary>
-    /// Rejects a list indent of <c>NaN</c> or negative infinity, the two values that reach a text
-    /// matrix as a token that is not a PDF number (#532).
+    /// Rejects a list indent of negative infinity where it is written into a text matrix (#532).
+    ///
+    /// A nested child's marker takes the indent as its left inset directly, and a flat item whose
+    /// longest word will not fit beside its marker takes it as its gutter, so either path writes
+    /// <c>1 0 0 1 -Infinity 263.6 Tm</c>. A flat list whose words fit stays safe, because the
+    /// gutter widens to the marker's own width, and it saved a valid file on 1c61fa6 (#484), so the
+    /// caller names the two writing paths and this is not called for the rest.
+    /// </summary>
+    internal static void ValidateListIndentWritten(double indent, string owner)
+    {
+        if (!double.IsNegativeInfinity(indent)) return;
+
+        throw new InvalidOperationException(
+            $"{owner} has an indent of {Format(indent)}, which cannot be laid out. " +
+            "An indent must be a finite number.");
+    }
+
+    /// <summary>
+    /// Rejects a list indent of <c>NaN</c>, which reaches a text matrix as a token that is not a PDF
+    /// number on every path (#532). Negative infinity is refused only where it is written; see
+    /// <see cref="ValidateListIndentWritten"/>.
     ///
     /// A nested child's marker takes the indent as its left inset directly, and a flat item whose
     /// longest word will not fit beside its marker takes it as its gutter, so either path wrote
@@ -248,7 +301,7 @@ internal static class LayoutValidation
     /// </summary>
     internal static void ValidateListIndent(double indent, string owner)
     {
-        if (!double.IsNaN(indent) && !double.IsNegativeInfinity(indent)) return;
+        if (!double.IsNaN(indent)) return;
 
         throw new InvalidOperationException(
             $"{owner} has an indent of {Format(indent)}, which cannot be laid out. " +
@@ -273,14 +326,21 @@ internal static class LayoutValidation
     /// </summary>
     internal static void ValidateMargins(EdgeInsets margins)
     {
-        Check(margins.Left, "left");
-        Check(margins.Top, "top");
-        Check(margins.Right, "right");
-        Check(margins.Bottom, "bottom");
+        Check(margins.Left, "left", NonFinite.None);
+        Check(margins.Top, "top", NonFinite.None);
+        // These three saved a valid file on 1c61fa6: the right edge only narrows what is drawn
+        // from a position it never reaches, and the bottom edge only bounds a height. Measured, a
+        // NaN or negative-infinity right margin and a negative-infinity bottom margin saved clean.
+        Check(margins.Right, "right", NonFinite.NaN | NonFinite.NegativeInfinity);
+        Check(margins.Bottom, "bottom", NonFinite.NegativeInfinity);
 
-        static void Check(double value, string edge)
+        static void Check(double value, string edge, NonFinite allowed)
         {
             if (double.IsFinite(value)) return;
+            var kind = double.IsNaN(value) ? NonFinite.NaN
+                : value > 0 ? NonFinite.PositiveInfinity
+                : NonFinite.NegativeInfinity;
+            if ((allowed & kind) != 0) return;
             throw new ArgumentException(
                 $"The {edge} margin is {Format(value)}, which cannot be laid out. " +
                 "A margin must be a finite number.",
@@ -309,29 +369,6 @@ internal static class LayoutValidation
         throw new InvalidOperationException(
             $"{owner} has a height of {Format(height)}, which cannot be laid out. " +
             "A band height must be a finite number.");
-    }
-
-    /// <summary>
-    /// Rejects explicit column widths whose sum is not finite (#546).
-    ///
-    /// Individual non-finite entries are already read as auto, so every entry reaching the sum is
-    /// finite, but finite entries can still overflow when added. The resolver scales explicit
-    /// widths by one ratio when they overrun the room available, so an infinite sum made that ratio
-    /// zero and every column was written at width 0.
-    ///
-    /// Only the overflow is refused. A single dominant but finite entry, such as 1e200 beside 60
-    /// and 70, scales the others to nearly nothing and still renders, so refusing it would turn a
-    /// rendering document into an exception; it is documented on <c>ColWidths</c> and left for the
-    /// next major (#484).
-    /// </summary>
-    internal static void ValidateColumnWidthSum(double sum)
-    {
-        if (double.IsFinite(sum)) return;
-
-        throw new InvalidOperationException(
-            "A table's explicit column widths add up to positive infinity, so they cannot be " +
-            "scaled to fit the page and every column would be drawn at width 0. Use smaller " +
-            "column widths.");
     }
 
     /// <summary>

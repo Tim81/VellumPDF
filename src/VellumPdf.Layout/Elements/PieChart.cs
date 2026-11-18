@@ -32,9 +32,15 @@ public readonly record struct PieSlice
     /// <summary>The fill colour of the wedge.</summary>
     /// <remarks>
     /// Stored as given. Channels are not clamped. A channel that is not finite is refused when the document is saved; see <see cref="ColorRgb"/>.
+    /// <para>Only a colour that is drawn is checked. A slice whose <see cref="Value"/> is zero draws
+    /// no wedge, so a non-finite channel on it is not refused: that saved a valid file on 1c61fa6
+    /// and still does. <b>Do not pass</b> a non-finite channel on any slice. Nothing reports it on a
+    /// zero-value slice, because there is no diagnostics channel yet, and a later major version will
+    /// refuse it.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
-    /// Raised from a save, when a channel is <c>NaN</c> or infinite. <see cref="ArgumentException.ParamName"/>
+    /// Raised from a save, when a channel is <c>NaN</c> or infinite and <see cref="Value"/> is
+    /// above zero. <see cref="ArgumentException.ParamName"/>
     /// is <c>Slices</c>. A finite channel outside 0 to 1 is not refused (#509).
     /// </exception>
     public ColorRgb Color { get; init; }
@@ -106,19 +112,21 @@ public sealed class PieChart
     /// <para><b>Attention</b>: a value of zero is accepted and contributes no angle. The slice
     /// stays in this list and is absent from the chart, and nothing reports that it was dropped.
     /// If a zero slice should be visible in your chart, give it a small positive value.</para>
-    /// <para>Finite values whose sum overflows to infinity are refused by the same exception, with
-    /// <c>The sum of pie slice values must be finite; the slice values overflow when added.</c>
-    /// They used to be accepted: every slice then had no angle and the chart had no area, so it was
-    /// blank, or, with <see cref="StrokeColor"/> set, every non-zero slice stroked the same radius
-    /// (#546). A large sum that stays finite is unaffected, and each wedge still takes its share.</para>
+    /// <para><b>Finite values whose sum overflows to infinity are accepted, and the chart has no
+    /// area.</b> Every slice then has no angle, so the chart is blank, or, with
+    /// <see cref="StrokeColor"/> set, every non-zero slice strokes the same radius (#546). A large
+    /// sum that stays finite is unaffected, and each wedge still takes its share.</para>
+    /// <para><b>Do not pass</b> values whose sum overflows to infinity. The file is valid and it
+    /// saved on 1c61fa6, so it is not refused in a patch. A later major version will throw
+    /// <see cref="ArgumentException"/> with <c>ParamName</c> <c>Slices</c>.</para>
     /// <para>A null list is refused where it is set (#547). It used to be stored, and the save threw
     /// <see cref="NullReferenceException"/> when it laid the chart out.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised while the chart is laid out, which happens inside
     /// <see cref="Document.Save(System.IO.Stream)"/>, when the list is empty, when a value is
-    /// negative or not finite, when the values sum to zero or less, or when they sum to infinity.
-    /// <c>ParamName</c> is this property's name.
+    /// negative or not finite, or when the values sum to zero or less. <c>ParamName</c> is this
+    /// property's name.
     /// </exception>
     /// <exception cref="ArgumentNullException">
     /// The list is <see langword="null"/>. <c>ParamName</c> is <c>value</c>, the name of the
@@ -169,6 +177,11 @@ public sealed class PieChart
     /// <c>Margins</c>, as this chart's other refusals do (#519). Before that, the chart was laid out in
     /// a box that could be <c>NaN</c>, and the save threw an exception about something else or wrote
     /// <c>NaN</c> or <c>Infinity</c> into the content stream.
+    /// <para><b>An infinite right edge, positive or negative, is not refused.</b> It saved a valid
+    /// file on 1c61fa6 and is accepted today, so a patch does not turn it into an exception. The
+    /// other ten of the twelve edge and value combinations are refused as above. <b>Do not pass</b> a
+    /// non-finite edge. Nothing reports the accepted ones, because there is no diagnostics channel
+    /// yet, and a later major version will refuse all twelve.</para>
     /// <para><b>Attention</b>: no other edge is checked. The top and bottom edges add to the space the
     /// chart takes on the page. The left and right edges move the chart but do not shrink it: its
     /// diameter is limited by the whole content width, and its position is clamped back inside the

@@ -31,6 +31,11 @@ public sealed class PdfDocument : IDisposable
     // Dedup cache: font content hash → handle, so loading the same font twice shares one subset.
     private readonly Dictionary<string, EmbeddedFontHandle> _embeddedFontByHash = new();
 
+    // Handles from another document that were resolved to this document's own embedding of the same
+    // font program (#544), as (own, foreign) pairs. The foreign embedder keeps registering glyphs
+    // while the pages are laid out, so they are merged into the own one when the fonts are written.
+    private readonly List<(EmbeddedFontHandle Own, EmbeddedFontHandle Foreign)> _foreignFontHandles = [];
+
     // Per-page embedded font usage: page → set of handle resource names
     private readonly Dictionary<PdfPage, HashSet<string>> _pageEmbeddedFonts = new();
 
@@ -240,10 +245,16 @@ public sealed class PdfDocument : IDisposable
 
         var resourceName = $"TT{++_ttFontCounter}";
         var embedder = new TrueTypeFontEmbedder(fontData, resourceName);
-        var handle = new EmbeddedFontHandle(embedder, this);
+        var handle = new EmbeddedFontHandle(embedder, this, hash);
         _embeddedFonts.Add(handle);
         _embeddedFontByHash[hash] = handle;
         return handle;
+    }
+
+    private void MergeForeignFontUsage()
+    {
+        foreach (var (own, foreign) in _foreignFontHandles)
+            own.Embedder.AddUsageFrom(foreign.Embedder);
     }
 
     /// <summary>
@@ -252,17 +263,25 @@ public sealed class PdfDocument : IDisposable
     /// so that <see cref="Save"/> can register the font reference on the correct pages.
     /// </summary>
     /// <remarks>
-    /// The handle must have been returned by this document's <see cref="UseTrueTypeFont"/>. Usage is
-    /// recorded by resource name, and that name is a counter local to the document that issued it, so
-    /// a handle from another document would be recorded under whatever font this one registered
-    /// as <c>TT1</c>, or under none, and the page would be saved with a font its resources do not
-    /// define (#544).
+    /// <b>A handle from another document is refused unless this document embedded the same font
+    /// program under the same resource name.</b> Usage is recorded by resource name, and that name
+    /// is a counter local to the document that issued it, so a handle from another document would
+    /// be recorded under whatever font this one registered as <c>TT1</c>, or under none, and the
+    /// page would be saved with a font its resources do not define (#544). When this document has
+    /// embedded the same font program under that name, the foreign handle is resolved to this
+    /// document's own embedding, and the glyphs the foreign handle registered are added to its
+    /// subset at save.
+    /// <para><b>Do not pass</b> a handle from another document. It works today only when this
+    /// document embedded the same font program under the same resource name, and a later major
+    /// version will refuse it whatever this document holds.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="page"/> or <paramref name="handle"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="handle"/> was returned by a different <see cref="PdfDocument"/>.
+    /// <paramref name="handle"/> was returned by a different <see cref="PdfDocument"/>, and this
+    /// document has not embedded the same font program, under the same resource name, through
+    /// <see cref="UseTrueTypeFont"/>.
     /// </exception>
     public void RegisterEmbeddedFontUsage(PdfPage page, EmbeddedFontHandle handle)
     {
@@ -270,11 +289,27 @@ public sealed class PdfDocument : IDisposable
         ArgumentNullException.ThrowIfNull(handle);
         if (!ReferenceEquals(handle.Owner, this))
         {
-            throw new ArgumentException(
-                $"The embedded font {handle.ResourceName} belongs to a different document. A handle " +
-                "returned by one document's UseTrueTypeFont cannot be used on another; embed the font " +
-                "again through the document that saves the page.",
-                nameof(handle));
+            // Same font program embedded here under the same resource name: the content stream names
+            // the foreign handle's resource, and this document's own embedding defines that name, so
+            // the page is correct. That saved a correct file on 1c61fa6, and it is kept (#484). The
+            // same program under another name is not: the stream would name a resource that is
+            // undefined here, or is another font.
+            if (_embeddedFontByHash.TryGetValue(handle.FontHash, out var own) &&
+                own.ResourceName == handle.ResourceName)
+            {
+                if (!_foreignFontHandles.Contains((own, handle)))
+                    _foreignFontHandles.Add((own, handle));
+                handle = own;
+            }
+            else
+            {
+                throw new ArgumentException(
+                    $"The embedded font {handle.ResourceName} belongs to a different document, and this " +
+                    "document has not embedded the same font program under that resource name. A " +
+                    "handle returned by one document's UseTrueTypeFont cannot be used on another; " +
+                    "embed the font through the document that saves the page.",
+                    nameof(handle));
+            }
         }
 
         if (!_pageEmbeddedFonts.TryGetValue(page, out var set))
@@ -767,6 +802,7 @@ public sealed class PdfDocument : IDisposable
         // Object graph per font (ref chain):
         //   Type0 dict → DescendantFonts array → CIDFontType2 dict → FontDescriptor → FontFile2
         //   Type0 dict → ToUnicode stream
+        MergeForeignFontUsage();
         foreach (var handle in _embeddedFonts)
         {
             var emb = handle.Embedder;
@@ -1224,6 +1260,7 @@ public sealed class PdfDocument : IDisposable
         RegisterStandard14Fonts(registry);
 
         // ── Embedded TrueType fonts ────────────────────────────────────────────
+        MergeForeignFontUsage();
         foreach (var handle in _embeddedFonts)
         {
             var emb = handle.Embedder;

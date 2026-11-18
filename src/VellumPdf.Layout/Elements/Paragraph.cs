@@ -70,6 +70,11 @@ public sealed class Paragraph
     /// with <c>A paragraph or heading has a non-finite inset. Every inset must be a finite number.</c> (#519).
     /// Before that, the element was laid out in a box that could be <c>NaN</c>, and the save threw an
     /// exception about something else or wrote <c>NaN</c> or <c>Infinity</c> into the content stream.
+    /// <para><b>Some non-finite edges are not refused: a <c>NaN</c> or negative-infinity right edge, and a negative-infinity bottom edge.</b> They saved a valid file on
+    /// 1c61fa6 and are accepted today, so a patch does not turn them into an exception. The other
+    /// ten of the twelve edge and value combinations are refused as above. <b>Do not pass</b> a
+    /// non-finite edge. Nothing reports the accepted ones, because there is no diagnostics channel
+    /// yet, and a later major version will refuse all twelve.</para>
     /// <para><b>Attention</b>: no other edge is checked. Each finite edge is taken off the area this
     /// element is given, and the element is laid out in whatever box is left, even when that box is
     /// empty or inverted. A negative edge, or edges wider than the area, can therefore make the save throw an exception about something else, re-wrap, move or mirror the content, or leave the element off the page. The bottom edge only limits that box: it adds no space before the next element. A negative top edge can also move the elements placed after this one.</para>

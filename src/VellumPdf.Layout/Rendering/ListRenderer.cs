@@ -103,10 +103,16 @@ public sealed class ListRenderer : IRenderer
     /// </exception>
     public LayoutResult Layout(LayoutContext context)
     {
-        // Before the area is computed: NaN reaches an item's text matrix on every path, and negative
-        // infinity on a nested child or a word too wide to sit beside its marker (#532).
+        // Before the area is computed: NaN reaches an item's text matrix on every path. Negative
+        // infinity does not, so it is refused where it would: on a nested child or a word too wide
+        // to sit beside its marker (#532), in BuildItems. A flat list whose words fit saved a valid
+        // file with it on 1c61fa6, because the gutter widens to the marker's own width.
         LayoutValidation.ValidateListIndent(_list.Indent, "A list");
-        LayoutValidation.ValidateInsets(_list.Margins, "A list");
+        LayoutValidation.ValidateInsets(
+            _list.Margins,
+            "A list",
+            right: LayoutValidation.NonFinite.NaN | LayoutValidation.NonFinite.NegativeInfinity,
+            bottom: LayoutValidation.NonFinite.NegativeInfinity);
 
         var area = context.Area.Deflate(_list.Margins);
         if (area.IsEmpty) return LayoutResult.Nothing();
@@ -381,7 +387,10 @@ public sealed class ListRenderer : IRenderer
             // indent does not have, and where it cannot, today's indent and the overprint it
             // carries are the lesser harm.
             if (areaWidth - gutter < WidestWord(itemStyle, item.Text))
+            {
+                LayoutValidation.ValidateListIndentWritten(indent, "A list");
                 gutter = indent;
+            }
 
             // Marker paragraph: sits in the gutter (left portion of the line).
             var markerPara = new Paragraph(markerText, itemStyle)
@@ -409,6 +418,10 @@ public sealed class ListRenderer : IRenderer
             // Nested children
             if (item.Children is not null)
             {
+                // A child's marker takes the indent as its left inset, so negative infinity is
+                // written as -Infinity.
+                if (item.Children.Count > 0)
+                    LayoutValidation.ValidateListIndentWritten(indent, "A list");
                 var seq = 1;
                 foreach (var child in item.Children)
                 {

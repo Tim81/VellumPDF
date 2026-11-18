@@ -9,9 +9,11 @@ namespace VellumPdf.Fonts;
 /// </summary>
 /// <remarks>
 /// A handle belongs to the document that returned it. Its <see cref="ResourceName"/> is a counter
-/// local to that document, so another document refuses it where it records page usage, with
-/// <see cref="ArgumentException"/> (#544). Embed the font again through the document that saves
-/// the page.
+/// local to that document, so another document cannot use it as it stands. When the saving document
+/// has embedded the same font program itself, the page uses that document's own embedding and takes
+/// over the glyphs the handle registered. When it has not, it refuses the handle with
+/// <see cref="ArgumentException"/> where it records page usage (#544). Embed the font through the
+/// document that saves the page.
 /// </remarks>
 public sealed class EmbeddedFontHandle
 {
@@ -28,10 +30,17 @@ public sealed class EmbeddedFontHandle
     /// <summary>PDF resource name assigned to this font (e.g. "TT1").</summary>
     public string ResourceName => Embedder.ResourceName;
 
-    internal EmbeddedFontHandle(TrueTypeFontEmbedder embedder, object owner)
+    /// <summary>
+    /// SHA-256 of the font program this handle embeds, as the owning document keyed it. Another
+    /// document that embedded the same program recognises it by this value (#544).
+    /// </summary>
+    internal string FontHash { get; }
+
+    internal EmbeddedFontHandle(TrueTypeFontEmbedder embedder, object owner, string fontHash)
     {
         Embedder = embedder;
         Owner = owner;
+        FontHash = fontHash;
     }
 
     /// <summary>Measures the width of <paramref name="text"/> in points at <paramref name="pointSize"/>.</summary>

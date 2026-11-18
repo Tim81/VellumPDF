@@ -64,7 +64,9 @@ public sealed class PieChartRenderer : IRenderer
                     FormattableString.Invariant(
                 $"Pie slice values must be finite and non-negative (was {slice.Value})."),
                     nameof(PieChart.Slices));
-            if (!LayoutValidation.IsFinite(slice.Color))
+            // Only a colour that gets written is checked. A zero-value slice draws no wedge, so its
+            // colour never reaches the stream, and it saved on 1c61fa6 (#484).
+            if (slice.Value > 0 && !LayoutValidation.IsFinite(slice.Color))
                 throw new ArgumentException(
                     FormattableString.Invariant(
                 $"Pie slice colours must have finite channels (was {slice.Color.R}, {slice.Color.G}, {slice.Color.B})."),
@@ -73,11 +75,9 @@ public sealed class PieChartRenderer : IRenderer
         }
 
         // Each slice is finite, but two of 1e308 sum to +Infinity, and every wedge's sweep is then
-        // value / Infinity = 0: the chart saved with no curves at all (#546).
-        if (!double.IsFinite(total))
-            throw new ArgumentException(
-                "The sum of pie slice values must be finite; the slice values overflow when added.",
-                nameof(PieChart.Slices));
+        // value / Infinity = 0: the chart has no curves (#546). That is not refused: the file is
+        // valid and it saved on 1c61fa6 with no invalid token, so refusing it would turn a document
+        // that saves into an exception (#484). PieChart.Slices says not to pass it.
 
         if (total <= 0)
             throw new ArgumentException(
@@ -93,7 +93,12 @@ public sealed class PieChartRenderer : IRenderer
                 FormattableString.Invariant(
                 $"Pie chart start angle must be a finite number (was {_chart.StartAngle})."),
                 nameof(PieChart.StartAngle));
-        if (!LayoutValidation.IsFinite(_chart.Margins))
+        // Right infinity, either sign, is let through: it saved a valid file on 1c61fa6, because the
+        // chart's position is clamped back inside the content box and its width never reads the
+        // edge. NaN there, and every other non-finite edge, wrote an invalid token or threw.
+        var margins = _chart.Margins;
+        if (!double.IsFinite(margins.Left) || !double.IsFinite(margins.Top) ||
+            !double.IsFinite(margins.Bottom) || double.IsNaN(margins.Right))
             throw new ArgumentException(
                 "Pie chart margins must have finite insets.", nameof(PieChart.Margins));
         if (_chart.StrokeColor is { } strokeColor && !LayoutValidation.IsFinite(strokeColor))

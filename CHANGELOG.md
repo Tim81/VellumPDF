@@ -33,6 +33,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   channel, and `ArgumentException` for the pie chart, whose other refusals already use it. A finite
   channel outside 0 to 1 is **not** refused. It renders today, a patch does not turn that into an
   exception, and it is documented on `ColorRgb` and `ColorCmyk` with the refusal listed in #484.
+  Only a colour that is written is checked. A zero-value pie slice draws no wedge, so a `NaN`
+  colour on one saves, and a running band whose template is empty, or truncated to nothing, draws
+  nothing, so a `NaN` text colour on it saves; both saved with no invalid token on 1c61fa6. A drawn
+  slice, band text, a table cell's empty or white-space text with a `NaN` style colour (which wrote
+  `NaN 0 0 rg` on 1c61fa6), and every other colour listed above are refused.
 
 - **A non-finite `Document.Margins` inset is refused, naming the edge (#502).** The only margin
   check compared the axis sums against the page, and a comparison against `NaN` is false, so `NaN`
@@ -42,7 +47,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   checked before layout, and the save throws `ArgumentException` with the parameter name `margins`,
   the same type the sum check uses, such as `The top margin is NaN, which cannot be laid out. A
   margin must be a finite number.` A finite negative inset is not refused. It saves today, and that
-  is documented as a boundary for the next major.
+  is documented as a boundary for the next major. Three of the twelve edge and value combinations
+  saved with no invalid token on 1c61fa6 and keep saving: a `NaN` or negative-infinity right
+  margin, and a negative-infinity bottom margin. The other nine are refused.
 
 - **A running band's height is validated at one seam, so a footer at negative infinity no longer
   saves invalid output (#520).** A footer with `Height = double.NegativeInfinity` saved a file with
@@ -53,15 +60,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `ArgumentException` about the content area; it now throws `InvalidOperationException` like the
   other two. A finite height large enough to leave no content area still throws as before.
 
-- **A `NaN` or negative-infinity `ListElement.Indent` is refused (#532).** A nested child's marker,
-  and a flat item whose longest word will not fit beside its marker, take the indent as their left
-  inset directly, so negative infinity wrote `1 0 0 1 -Infinity 263.6 Tm`, and `NaN` reached the same
-  operand on every path. The save now throws `InvalidOperationException` naming the list and the
-  value. Positive infinity is deliberately unchanged, because it writes no invalid token and its
-  text loss on a flat list is tracked in #476, and a finite negative indent still renders.
+- **A `NaN` `ListElement.Indent`, and a negative-infinity one where it is written, are refused
+  (#532).** A nested child's marker, and a flat item whose longest word will not fit beside its
+  marker, take the indent as their left inset directly, so negative infinity wrote
+  `1 0 0 1 -Infinity 263.6 Tm`, and `NaN` reached the same operand on every path. The save now
+  throws `InvalidOperationException` naming the list and the value for `NaN` on any list, and for
+  negative infinity on a list with a nested child or an item whose longest word does not fit beside
+  its marker. A flat list whose words fit saved with no invalid token on 1c61fa6 under negative
+  infinity, because the gutter widens to the marker's own width, and it keeps saving. Positive
+  infinity is deliberately unchanged, because it writes no invalid token and its text loss on a flat
+  list is tracked in #476, and a finite negative indent still renders.
 
 - **Layout sweep for the comparison-shaped clamps behind #519: element margins are refused when
-  they are not finite.** The sweep read all 24 `Math.Max`, `Math.Min` and `Math.Clamp` sites in
+  they are not finite and the value was written.** The sweep read all 24 `Math.Max`, `Math.Min` and `Math.Clamp` sites in
   `VellumPdf.Layout`. Twenty-one take values that are derived, integer, or already checked by an
   earlier refusal in this release (font size, colour, indent, document margins, band height, line
   width, cell padding, image extent). One is `ColorCmyk.FromRgb`, a pure conversion that is
@@ -71,7 +82,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   that could be `NaN`, and reached the content stream, or an unrelated "too tall" message, or the
   canvas guard from #519 with no element named. Each now throws before layout, naming the element:
   `InvalidOperationException` for the same elements #478 and #481 cover, and `ArgumentException`
-  with the parameter name `Margins` for the pie chart, whose other refusals already use it.
+  with the parameter name `Margins` for the pie chart, whose other refusals already use it. That
+  holds for 52 of the 72 combinations measured on 1c61fa6 (a paragraph first and last in the
+  document, a table, a list, a pie chart and an image; each edge; `NaN`, positive and negative
+  infinity), which wrote an invalid token or threw there. The other 20 saved with no invalid token
+  and keep saving: a paragraph, as first or last element, with a `NaN` or negative-infinity right
+  edge or a negative-infinity bottom edge; a list, the same three; a table with an infinite top
+  edge, either sign, or a `NaN` or negative-infinity bottom edge; a pie chart with an infinite
+  right edge, either sign; an image with any non-finite right edge or an infinite left edge, either
+  sign. A line separator threw on all twelve on 1c61fa6 and cell padding on all twelve, so both
+  stay refused.
   Individual non-finite explicit table column widths were already treated as auto (#477), so they
   needed no change. A finite negative margin still renders and is documented as a boundary.
 
@@ -86,15 +106,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Pie slice totals, pie start angles and explicit table widths no longer overflow into empty or
   wrong output (#546).** Three inputs were each valid on their own and wrong together. Two pie
   slices of `1e308` summed to infinity, every wedge's sweep became zero and the chart saved with no
-  curves; the save now throws `ArgumentException` with the parameter name `Slices`. A `StartAngle`
+  curves, which saved with no invalid token on 1c61fa6 and keeps saving; `PieChart.Slices` says not to
+  pass it. A `StartAngle`
   near `1e16` is further from its neighbours than a wedge's sweep, so `1e16` overlapped the wedges
   and `1e17` collapsed them; the angle is now reduced to a turn with an exact remainder before any
   sweep is added, and an angle already within a turn is unchanged, so ordinary documents write the
-  same bytes. Explicit column widths such as `1e308, 1e308, 1e308` summed to infinity, scaled every
-  column to zero and drew an empty table; the save now throws `InvalidOperationException`. A single
-  dominant finite width (`1e200, 60, 70`) still renders, is documented on `ColWidths`, and is
-  listed for the next major (#484), because refusing it would turn a rendering document into an
-  exception.
+  same bytes. Explicit column widths such as `1e308, 1e308, 1e308` sum to infinity, scale every
+  column to zero and draw an empty table. That saved with no invalid token on 1c61fa6 and keeps
+  saving, so it is documented on `ColWidths` and listed for the next major (#484), as is a single
+  dominant finite width (`1e200, 60, 70`).
 
 - **Justified text in a standard-14 font is stretched to the right edge, and a multi-style line
   no longer overprints (#548, #555).** The word spacing was the slack divided by `CountWordGaps`,
@@ -155,14 +175,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   described the old behaviour are rewritten. `PageSize`, `DrawContext`, `FontReference`,
   `LayoutResult` and `RendererContext` still store a null, and are outside these three issues.
 
-- **An embedded font handle from another `Document` is refused (#544).** A handle's resource name
-  (`TT1`) is a counter local to the document that issued it, and page usage was recorded by that
-  name without asking which document embedded the font. A handle from a different `Document`
-  therefore saved without an exception and wrote a page that used a font its resources did not
-  define, or, when the saving document had its own `TT1`, quietly used that other font. Each handle
-  now remembers the `PdfDocument` that returned it, and `PdfDocument.RegisterEmbeddedFontUsage`
-  throws `ArgumentException` (parameter `handle`) for any other document, so the save fails where
-  the text is drawn. It also refuses a null `page` or `handle` with `ArgumentNullException`. A
+- **What this release refuses that saved a valid file on 1c61fa6.** Every other refusal in this
+  section is of an input that wrote an invalid token or threw on 1c61fa6. The exceptions, each
+  measured against that version: an unknown-length JBIG2 segment after a known-length
+  page-information segment, which loaded and now throws `InvalidDataException`; a second `Save` of
+  a `Document` whose layout started and threw, which wrote a page with the wrap of the first
+  attempt's width and now throws `InvalidOperationException`; the save-check precedence changes
+  listed with the save checks; and a foreign font handle whose font program the saving document did
+  not embed under the same name, which wrote a page naming a font its resources did not define.
+  Not measured in this release: a zero image extent (#478) and a negative line width (#557), which
+  the code comments that name them say wrote a valid operator on 1c61fa6, and which are still
+  refused.
+
+- **An embedded font handle from another `Document` is refused unless the saving document embedded
+  the same font program under the same name (#544).** A handle's resource name (`TT1`) is a counter
+  local to the document that issued it, and page usage was recorded by that name without asking
+  which document embedded the font. A handle from a different `Document` therefore saved without an
+  exception and wrote a page whose content named a font its resources did not define (measured:
+  `Tf` name `TT1`, an empty `/Font` resource dictionary, no `FontFile2`), or, when the saving
+  document had its own different `TT1`, quietly used that other font. Each handle now remembers the
+  `PdfDocument` that returned it and the SHA-256 of its font program.
+  `PdfDocument.RegisterEmbeddedFontUsage` throws `ArgumentException` (parameter `handle`) for a
+  handle from another document, so the save fails where the text is drawn, except when the saving
+  document embedded the same font program and the resource names match: that saved a correct file
+  on 1c61fa6 and keeps saving, using the saving document's own embedding. The glyphs the foreign
+  handle registered are now added to that embedding's subset at save; on 1c61fa6 the subset held
+  only what the saving document had registered, so text drawn with the foreign handle could lack
+  its glyphs (measured: 53,500 bytes before and 54,144 after, for "Hello" drawn through the foreign
+  handle alone). The same font program under a different resource name is refused. It also refuses a null `page` or `handle` with `ArgumentNullException`. A
   null handle given to `FontReference` or `TextStyle.FontRef` still means Helvetica, as documented.
 
 - **A cycle in a structure tree, array, dictionary or stream is refused instead of overflowing the

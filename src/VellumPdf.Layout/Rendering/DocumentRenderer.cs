@@ -340,8 +340,7 @@ public sealed class DocumentRenderer
     /// <exception cref="NullReferenceException">
     /// An added renderer is <see langword="null"/>, returns a null result, or returns a
     /// <see cref="LayoutResult.Partial"/> result with a null renderer. It is also raised when a
-    /// band's template, a text or another member an element stored without a check is null, and
-    /// when the constructor was given a null <c>pdf</c> with a page size.
+    /// band's template, a text or another member an element stored without a check is null.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// A <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name is selected
@@ -587,7 +586,7 @@ public sealed class DocumentRenderer
         // The band is the one path to a Tf operator that reaches no renderer, so it reached no
         // validation either: a non-finite band font size saved a document containing "/F1 NaN Tf"
         // and "1 0 0 1 NaN NaN Tm". The note further down about geometry validation asked for this.
-        LayoutValidation.ValidateStyle(style, $"The {kind.ToString().ToLowerInvariant()} band");
+        LayoutValidation.ValidateStyle(style, $"The {kind.ToString().ToLowerInvariant()} band", checkColor: false);
 
         var contentWidth = _pageSize.Width - _margins.Horizontal;
         var (drawn, textWidth) = FitToWidth(style, text, contentWidth);
@@ -608,6 +607,10 @@ public sealed class DocumentRenderer
         // An empty template is one of the shapes the property generator produces, so it is not a
         // corner nobody reaches.
         if (drawn.Length == 0) return;
+
+        // After the return above: the colour is only written when something is drawn, and a band
+        // with an empty or fully truncated template drew nothing and saved on 1c61fa6 (#484).
+        LayoutValidation.ValidateColor(style.Color, $"The {kind.ToString().ToLowerInvariant()} band", "text colour");
 
         // textWidth is bounded by contentWidth for every finite, positive font size, because
         // FitToWidth only ever accumulates a piece whose running total still fits. So no clamp is

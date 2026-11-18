@@ -57,6 +57,12 @@ public sealed class RunningBand
     /// A null style passed to the constructor is replaced by <see cref="TextStyle.Default"/>; any
     /// other is stored as given. Refusals on size, leading and font are on <see cref="TextStyle"/>
     /// and are raised from the save. A <see cref="TextStyle.LinkUri"/> in it is ignored (#475).
+    /// <para>A non-finite channel in <see cref="TextStyle.Color"/> is refused when the band draws
+    /// text, with <see cref="InvalidOperationException"/>. A band that draws nothing, because its
+    /// template is empty or no part of it fits the content width, does not write the colour, so the
+    /// channel is not refused there: that saved a valid file on 1c61fa6 and still does. <b>Do not
+    /// pass</b> a non-finite channel. Nothing reports it on a band that draws nothing, because there
+    /// is no diagnostics channel yet, and a later major version will refuse it.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not

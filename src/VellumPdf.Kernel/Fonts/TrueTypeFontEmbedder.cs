@@ -63,6 +63,18 @@ public sealed class TrueTypeFontEmbedder
         ResourceName = resourceName;
     }
 
+    /// <summary>
+    /// Takes over every glyph another embedder of the same font program registered, so a page that
+    /// was drawn with that embedder's glyph ids finds them in this subset (#544). Only meaningful
+    /// when both embed the same font program, which the caller establishes by its hash.
+    /// </summary>
+    internal void AddUsageFrom(TrueTypeFontEmbedder other)
+    {
+        foreach (var gid in other._usedGids) _usedGids.Add(gid);
+        foreach (var (codePoint, gid) in other._unicodeToGid) _unicodeToGid.TryAdd(codePoint, gid);
+        foreach (var codePoint in other._fallbackCodePoints) _fallbackCodePoints.Add(codePoint);
+    }
+
     /// <summary>Returns the glyph ID for a Unicode code point, registering it for subsetting.</summary>
     public ushort GetGlyphId(int codePoint)
     {

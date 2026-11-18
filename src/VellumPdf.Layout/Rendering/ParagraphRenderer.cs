@@ -85,7 +85,11 @@ public sealed class ParagraphRenderer : IRenderer
         // gutter, which the list has already checked and names, so a message here would blame a
         // paragraph the caller never wrote.
         if (!MarginsCheckedByOwner)
-            LayoutValidation.ValidateInsets(_para.Margins, "A paragraph or heading");
+            LayoutValidation.ValidateInsets(
+                _para.Margins,
+                "A paragraph or heading",
+                right: LayoutValidation.NonFinite.NaN | LayoutValidation.NonFinite.NegativeInfinity,
+                bottom: LayoutValidation.NonFinite.NegativeInfinity);
 
         var area = context.Area.Deflate(_para.Margins);
         if (area.Width <= 0)

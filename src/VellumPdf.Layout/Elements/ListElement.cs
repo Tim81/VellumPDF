@@ -100,12 +100,17 @@ public sealed class ListElement
     /// follows from the rules above, the override included; the measured figures are on #476, not
     /// here, because they depend on the level, on which branch the override takes and on
     /// <see cref="TextStyle.FontSize"/>. A later major version will reject a negative value.</para>
-    /// <para><c>NaN</c> and negative infinity are refused, on a flat list and on a nested one, with
+    /// <para><c>NaN</c> is refused on every list, and negative infinity on a list with a nested
+    /// child or an item whose longest word will not fit beside its marker, with
     /// <see cref="InvalidOperationException"/> naming the list and the value: <c>A list has an indent
     /// of NaN, which cannot be laid out. An indent must be a finite number.</c> They used to be
     /// accepted, and each could reach an item's text matrix as a token that is not a PDF number: a
     /// nested child's marker and a flat item whose longest word will not fit beside its marker take
-    /// this value directly, and <c>NaN</c> reached the operand on every path. Positive infinity is
+    /// this value directly, and <c>NaN</c> reached the operand on every path. Negative infinity on a
+    /// flat list whose words all fit is <b>not</b> refused: the gutter widens to the marker's own
+    /// width, so it saved a valid file on 1c61fa6 and still does. <b>Do not pass</b> negative
+    /// infinity. Nothing reports it, because there is no diagnostics channel yet, and a later major
+    /// version will refuse it on every list. Positive infinity is
     /// <b>not</b> refused here, because it writes no invalid token. A nested list throws at the
     /// area width as described above, and a flat list discards the item text (#476). A finite
     /// negative value is not refused either (#532).</para>
@@ -122,8 +127,9 @@ public sealed class ListElement
     /// support NaN or Infinity as a real number.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Raised from a save rather than from this property, when the value is <c>NaN</c> or negative
-    /// infinity, on any list. It is also raised when a list with nested children has an indent that
+    /// Raised from a save rather than from this property, when the value is <c>NaN</c>, on any
+    /// list, or negative infinity, on a list with a nested child or an item whose longest word will
+    /// not fit beside its marker. It is also raised when a list with nested children has an indent that
     /// reaches the list's own area width, which is the page's content width narrowed by the left and
     /// right edges of <see cref="Margins"/>, positive infinity included; a flat list at any such
     /// indent is not refused. The first message names the list and the value. The second reports an
@@ -138,6 +144,11 @@ public sealed class ListElement
     /// with <c>A list has a non-finite inset. Every inset must be a finite number.</c> (#519).
     /// Before that, the element was laid out in a box that could be <c>NaN</c>, and the save threw an
     /// exception about something else or wrote <c>NaN</c> or <c>Infinity</c> into the content stream.
+    /// <para><b>Some non-finite edges are not refused: a <c>NaN</c> or negative-infinity right edge, and a negative-infinity bottom edge.</b> They saved a valid file on
+    /// 1c61fa6 and are accepted today, so a patch does not turn them into an exception. The other
+    /// ten of the twelve edge and value combinations are refused as above. <b>Do not pass</b> a
+    /// non-finite edge. Nothing reports the accepted ones, because there is no diagnostics channel
+    /// yet, and a later major version will refuse all twelve.</para>
     /// <para><b>Attention</b>: no other edge is checked. Each finite edge is taken off the area this
     /// element is given, and the element is laid out in whatever box is left, even when that box is
     /// empty or inverted. A negative edge, or edges wider than the area, can therefore make the save throw an exception about something else, re-wrap, move or mirror the content, or leave the element off the page. The bottom edge only limits that box and adds no space before the next element. A negative top edge can move the elements placed after this one.</para>

@@ -109,6 +109,11 @@ public sealed class LayoutImage
     /// with <c>An image has a non-finite inset. Every inset must be a finite number.</c> (#519).
     /// Before that, the image was laid out in a box that could be <c>NaN</c>, and the save threw an
     /// exception about something else or wrote <c>NaN</c> or <c>Infinity</c> into the content stream.
+    /// <para><b>Some non-finite edges are not refused: a right edge of any non-finite value, and an infinite left edge, positive or negative.</b> They saved a valid file on
+    /// 1c61fa6 and are accepted today, so a patch does not turn them into an exception. The other
+    /// ten of the twelve edge and value combinations are refused as above. <b>Do not pass</b> a
+    /// non-finite edge. Nothing reports the accepted ones, because there is no diagnostics channel
+    /// yet, and a later major version will refuse all twelve.</para>
     /// <para><b>Attention</b>: no other edge is checked. The top and bottom edges add to the space the
     /// image takes on the page. The left and right edges work differently by <see cref="Width"/>: with
     /// it set, the image keeps that width, up to the content width, and its position is clamped back
