@@ -18,6 +18,20 @@ public sealed class SaveGuardTests
 
     private static MemoryStream ReadOnlyStream() => new(new byte[8], writable: false);
 
+    /// <summary>
+    /// What the save after a refused one wrote must be a PDF, and the same one a document that was never refused
+    /// writes: a length above zero holds for any output at all, including pages the refused save left behind.
+    /// </summary>
+    private static void AssertIsTheFileAFreshOnePageDocumentWrites(MemoryStream written)
+    {
+        Assert.StartsWith("%PDF-", Encoding.Latin1.GetString(written.ToArray()), StringComparison.Ordinal);
+
+        using var fresh = OnePage();
+        using var expected = new MemoryStream();
+        fresh.Save(expected);
+        Assert.Equal(expected.Length, written.Length);
+    }
+
     // ── "No pages" first ─────────────────────────────────────────────────────
 
     [Fact]
@@ -92,7 +106,7 @@ public sealed class SaveGuardTests
 
         using var ok = new MemoryStream();
         doc.Save(ok);
-        Assert.True(ok.Length > 0);
+        AssertIsTheFileAFreshOnePageDocumentWrites(ok);
     }
 
     [Fact]
@@ -105,7 +119,7 @@ public sealed class SaveGuardTests
         using var ok = new MemoryStream();
         doc.Save(ok);
 
-        Assert.True(ok.Length > 0);
+        AssertIsTheFileAFreshOnePageDocumentWrites(ok);
     }
 
     /// <summary>A null destination is checked first and then the token is given to Task.Run, so a token that is already cancelled wins over everything else except the null, as in 2.3.3.</summary>

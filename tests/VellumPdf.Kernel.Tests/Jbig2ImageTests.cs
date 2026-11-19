@@ -2059,11 +2059,15 @@ public sealed class Jbig2ImageTests
         Assert.Contains("end-of-file segment", ex.Message, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void Load_RandomAccess_WithTruncatedDataParts_IsRefused()
+    /// <summary>The generic region's six data bytes end the file, so each cut lands in it: one byte short, three, and all six.</summary>
+    [Theory]
+    [InlineData(1)]
+    [InlineData(3)]
+    [InlineData(6)]
+    public void Load_RandomAccess_WithTruncatedDataParts_IsRefused(int bytesCut)
     {
         var file = RandomAccess(0x00, PageCountOne, FiveSegments(64, 48));
-        var truncated = file[..^3];     // cut into the generic region's data part
+        var truncated = file[..^bytesCut];     // cut into the generic region's data part
 
         var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(truncated));
 
@@ -2557,6 +2561,42 @@ public sealed class Jbig2ImageTests
         Assert.Contains(expectedMessage, randomAccess.Message, StringComparison.Ordinal);
     }
 
+    /// <summary>The segment types T.88 7.3 lists (the 2018 consolidated text): "All other segment types are reserved and must not be used."</summary>
+    private static readonly int[] _allowedSegmentTypes = [0, 4, 6, 7, 16, 20, 22, 23, 36, 38, 39, 40, 42, 43, 48, 49, 50, 51, 52, 53, 54, 62];
+
+    public static TheoryData<int> ReservedSegmentTypes()
+    {
+        var data = new TheoryData<int>();
+        for (var type = 0; type <= 63; type++)
+        {
+            if (!_allowedSegmentTypes.Contains(type)) data.Add(type);
+        }
+
+        return data;
+    }
+
+    /// <summary>Every one of the 42 six-bit values T.88 7.3 does not list is refused, each in an otherwise compliant file, in both organisations.</summary>
+    [Theory]
+    [MemberData(nameof(ReservedSegmentTypes))]
+    public void Load_AnnexDFile_EveryReservedSegmentType_IsRefused(int type)
+    {
+        Assert.Equal(42, 64 - _allowedSegmentTypes.Length);
+        byte[][] segments =
+        [
+            BuildSegment(0, 48, 1, BuildPageInfoSegmentData(8, 1)),
+            BuildSegment(1, type, 1, [0x00]),
+            BuildSegment(2, 38, 1, MmrRegionData()),
+            BuildSegment(3, 49, 1, []),
+        ];
+
+        var sequential = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments)));
+        var randomAccess = Assert.Throws<InvalidDataException>(
+            () => Jbig2ImageLoader.Load(RandomAccess(0x00, PageCountOne, [.. segments, BuildSegment(9, 51, 0, [])])));
+
+        Assert.Contains($"segment 1 has type {type}, which T.88 reserves", sequential.Message, StringComparison.Ordinal);
+        Assert.Contains($"segment 1 has type {type}, which T.88 reserves", randomAccess.Message, StringComparison.Ordinal);
+    }
+
     /// <summary>
     /// The data-part fields T.88 puts at the start of a segment that the loader can read without decoding: the 17-byte
     /// region information (7.4.1), the generic region flags and AT flags (7.4.6.2, 7.4.6.3) and the code table header
@@ -2605,6 +2645,7 @@ public sealed class Jbig2ImageTests
 
     /// <summary>The same fields with the data meeting each rule load, so the rows above fail for their one rule.</summary>
     [Theory]
+    [InlineData(38, 18, 0x01)]        // MMR with no data after the flags: the shortest generic region, 17 + 1 bytes
     [InlineData(38, 18 + 4, 0x01)]    // MMR
     [InlineData(39, 18 + 8, 0x00)]    // template 0, 8 AT bytes
     [InlineData(36, 18 + 2, 0x02)]    // template 1, 2 AT bytes
@@ -3077,17 +3118,45 @@ public sealed class Jbig2ImageTests
         Assert.Equal(segments[0].Concat(segments[1]).ToArray(), ExtractStreamBody(Serialize(img)));
     }
 
-    [Fact]
-    public void Load_AHeaderCutShortInsideAFourBytePageAssociation_IsRefused()
+    /// <summary>
+    /// The header is number(4) flags(1) count(1) = 6 bytes, then a four-byte page association: keep none, one, two and
+    /// three of its bytes. Three is the cut an off-by-one in the length check lets through, to a read past the end.
+    /// </summary>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void Load_AHeaderCutShortInsideAFourBytePageAssociation_IsRefused(int bytesOfTheAssociationKept)
     {
         var info = RawSegment(0, 48, true, [0x00], [], pageAssociation: 1, BuildPageInfoSegmentData(8, 8));
-        // Header: number(4) flags(1) count(1) = 6 bytes, then the page association: keep two of its four.
-        var cut = info[..8];
-        var file = Sequential(0x01, PageCountOne, [cut]);
+        var cut = info[..(6 + bytesOfTheAssociationKept)];
 
-        var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(file));
+        var sequential = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, [cut])));
+        var randomAccess = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(RandomAccess(0x00, PageCountOne, [cut])));
 
-        Assert.Contains("page association", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("truncated page association", sequential.Message, StringComparison.Ordinal);
+        Assert.Contains("truncated page association", randomAccess.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A header that ends exactly where the referred-to segment numbers end is complete as far as they go, so the field
+    /// that is missing is the page association; one byte earlier it is the numbers themselves.
+    /// </summary>
+    [Fact]
+    public void Load_AHeaderCutAtTheEdgeOfItsReferredToNumbers_NamesTheFieldThatIsMissing()
+    {
+        var withOneReferral = RawSegment(1, 6, false, [0x20], [0x00], pageAssociation: 1, []);
+        // number(4) flags(1) count(1) = 6 bytes, then one referred-to number: the cut before it and the cut after it.
+        var page = BuildSegment(0, 48, 1, BuildPageInfoSegmentData(8, 8));
+
+        var beforeTheNumber = Assert.Throws<InvalidDataException>(
+            () => Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, [page, withOneReferral[..6]])));
+        var afterTheNumber = Assert.Throws<InvalidDataException>(
+            () => Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, [page, withOneReferral[..7]])));
+
+        Assert.Contains("truncated referred-to segment numbers", beforeTheNumber.Message, StringComparison.Ordinal);
+        Assert.Contains("truncated page association", afterTheNumber.Message, StringComparison.Ordinal);
     }
 
     // (b) The long form of the referred-to segment count
@@ -3142,6 +3211,22 @@ public sealed class Jbig2ImageTests
         var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments)));
 
         Assert.Contains("retention", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A long-form header that ends exactly where its retention bytes end has them all, so what is missing is the
+    /// referred-to segment numbers that follow; the cut inside the retention bytes is the one named above.
+    /// </summary>
+    [Fact]
+    public void Load_ALongFormCountCutRightAfterItsRetentionBytes_NamesTheReferredToNumbers()
+    {
+        var long5 = RawSegment(40, 6, false, LongFormCount(5), [0, 1, 2, 3, 4], pageAssociation: 1, [0xC1]);
+        // number(4) flags(1) count(4) = 9 bytes, then the single retention byte: keep it, drop the five numbers.
+        byte[][] segments = [BuildSegment(0, 48, 1, BuildPageInfoSegmentData(64, 48)), long5[..10]];
+
+        var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments)));
+
+        Assert.Contains("truncated referred-to segment numbers", ex.Message, StringComparison.Ordinal);
     }
 
     // (c) The width of a referred-to segment number follows the number of the referring segment

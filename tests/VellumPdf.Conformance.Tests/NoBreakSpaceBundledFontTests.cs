@@ -20,6 +20,9 @@ public sealed class NoBreakSpaceBundledFontTests
     private const int NarrowNoBreakSpace = 0x202F;
     private const int FigureSpace = 0x2007;
 
+    // Measurement of the fallback is not tested on Liberation Mono: its .notdef and U+00A0 advances are both 600, so a
+    // measurement cannot tell the fallback from .notdef. NoBreakSpaceSyntheticFontTests measures it on a font where
+    // the advances differ.
     [Fact]
     public void LiberationMono_lacksTheNarrowSpace_soItIsDrawnAsTheNoBreakSpace()
     {
@@ -32,27 +35,19 @@ public sealed class NoBreakSpaceBundledFontTests
         Assert.Equal(courier.GetGlyphId(NoBreakSpace), narrow);       // the fallback
     }
 
-    /// <summary>What is measured is what is drawn: both come through the same glyph lookup.</summary>
-    [Fact]
-    public void LiberationMono_measuresTheNarrowSpaceAsTheNoBreakSpace()
-    {
-        using var doc = new PdfDocument();
-        var courier = doc.EmbedStandard14Font(Standard14.Courier);
-
-        var narrow = courier.MeasureString(((char)NarrowNoBreakSpace).ToString(), 12);
-        var nbsp = courier.MeasureString(((char)NoBreakSpace).ToString(), 12);
-
-        Assert.True(nbsp > 0);
-        Assert.Equal(nbsp, narrow);
-    }
-
     [Fact]
     public void LiberationMono_hasTheFigureSpace_soItKeepsItsOwnGlyph()
     {
         using var doc = new PdfDocument();
         var courier = doc.EmbedStandard14Font(Standard14.Courier);
 
-        Assert.NotEqual(0, courier.GetGlyphId(FigureSpace));
+        var figure = courier.GetGlyphId(FigureSpace);
+
+        // Its own glyph, not the stand-in a font without it would get: neither the missing-glyph box nor the glyph of
+        // U+00A0 or U+0020, which is what a fallback that replaced the figure space would return.
+        Assert.NotEqual(0, figure);
+        Assert.NotEqual(courier.GetGlyphId(NoBreakSpace), figure);
+        Assert.NotEqual(courier.GetGlyphId(0x20), figure);
     }
 
     [Fact]
@@ -154,6 +149,32 @@ public sealed class NoBreakSpaceBundledFontTests
 
         Assert.Contains((0, 0x4E00), entries);
         Assert.Contains((0, 0x4E01), entries);
+    }
+
+    /// <summary>
+    /// A foreign handle for the same font program is merged into this document's own embedding at save, and its
+    /// stand-in code points come with its glyphs: the foreign handle drew U+202F through U+00A0's glyph, so after the
+    /// merge the CMap must not list U+202F for that glyph.
+    /// </summary>
+    [Fact]
+    public void RegisterEmbeddedFontUsage_withAForeignHandleThatUsedAStandIn_doesNotListItInTheMergedToUnicode()
+    {
+        using var owner = new PdfDocument();
+        var foreign = owner.EmbedStandard14Font(Standard14.Courier);
+        var nbsp = foreign.GetGlyphId(NoBreakSpace);
+        Assert.Equal(nbsp, foreign.GetGlyphId(NarrowNoBreakSpace));      // drawn with the stand-in
+
+        using var pdf = new PdfDocument();
+        var own = pdf.EmbedStandard14Font(Standard14.Courier);
+        own.GetGlyphId(NoBreakSpace);
+        var page = pdf.AddPage();
+        pdf.RegisterEmbeddedFontUsage(page, foreign);
+        pdf.Save(new MemoryStream());
+
+        var entries = ToUnicodeEntries(own);
+
+        Assert.Contains((nbsp, NoBreakSpace), entries);
+        Assert.DoesNotContain(entries, e => e.CodePoint == NarrowNoBreakSpace);
     }
 
     // ── A handle belongs to the document that embedded it ────────────────────

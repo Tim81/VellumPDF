@@ -292,6 +292,28 @@ public sealed class CycleGuardTests
         Assert.EndsWith("[7]", Encoding.Latin1.GetString(ms.ToArray()), StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// The refused containers themselves are written again, not a fresh one: an array holding a dictionary that
+    /// holds itself is refused, the dictionary is then given a plain value, and the same array is written to the same
+    /// writer. A container left in the writer's active set by the refused write would be met again and refused as a
+    /// cycle, so both <c>PdfArray.WriteTo</c> and <c>PdfDictionary.WriteTo</c> must leave it in a <c>finally</c>.
+    /// </summary>
+    [Fact]
+    public void WritingTheRefusedContainersAgainOnTheSameWriter_isNotPoisoned_onceTheCycleIsBroken()
+    {
+        using var ms = new MemoryStream();
+        var writer = new PdfWriter(ms);
+        var self = new PdfDictionary();
+        self.Set(new PdfName("Self"), self);
+        var holder = new PdfArray().Add(self);
+        Assert.Throws<InvalidOperationException>(() => holder.WriteTo(writer));
+
+        self.Set(new PdfName("Self"), new PdfInteger(1));
+        holder.WriteTo(writer);
+
+        Assert.EndsWith("[<<\n/Self 1\n>>]", Encoding.Latin1.GetString(ms.ToArray()), StringComparison.Ordinal);
+    }
+
     [Fact]
     public void OrdinaryNestedObjects_writeExactlyAsBefore()
     {

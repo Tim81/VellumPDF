@@ -65,10 +65,12 @@ public sealed class StructureTreeAndWriterGapTests
         doc.RegisterStructElem(root);
 
         using var ms = new MemoryStream();
-        var ex = Record.Exception(() => doc.Save(ms));
+        var ex = Assert.Throws<InvalidOperationException>(() => doc.Save(ms));
 
-        if (ex is not null)
-            Assert.DoesNotContain("cycle", ex.Message, StringComparison.OrdinalIgnoreCase);
+        // The refusal 2.3.3 made for this document (measured on 2.3.3: the same type and message), and not a cycle:
+        // an element is forgotten when the walk leaves it.
+        Assert.Matches(@"^Object \d+ was reserved but never assigned a value\.$", ex.Message);
+        Assert.DoesNotContain("cycle", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>Document &gt; Sect &gt; P, with the marked content owned by P two levels below the root: the page's parent tree must hold P's reference at index 0, so the walk must go down through Sect.</summary>
