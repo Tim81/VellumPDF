@@ -585,7 +585,7 @@ internal sealed class ContentInterpreter
         try
         {
             var lexer = new PdfLexer(data, contentStreamMode: true);
-            var parser = new PdfObjectParser(lexer);
+            var parser = new PdfObjectParser(lexer) { NormalizeEndOfLine = true };
 
             try
             {

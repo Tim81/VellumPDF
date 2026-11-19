@@ -60,9 +60,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   a byte value of (0Ah), irrespective of whether the end-of-line marker was a CARRIAGE RETURN (0Dh),
   a LINE FEED (0Ah), or both". `PdfObjectParser.DecodeLiteralString` kept both bytes of a CRLF and
   kept a lone CR as 0Dh. A hand-assembled `/Lang (en<CR><LF>)` read back as `65 6E 0D 0A`, and now
-  reads `65 6E 0A`. **This changes what the reader returns for such a string**: `PdfReader` objects,
-  content-stream operands, and the strings the conformance rules inspect all go through the same
-  decode. A backslash before the end-of-line marker is still a line continuation, and the escapes
+  reads `65 6E 0A`. **This changes what the reader returns for such a string**, in strings
+  parsed from an unencrypted file, from an object stream body and from a content stream.
+  **Strings in an encrypted file keep their raw bytes.** Every string parsed from the file itself
+  when the trailer carries `/Encrypt` (the encrypted strings, the `/Encrypt` dictionary's `/O`,
+  `/U`, `/OE` and `/UE`, and the trailer `/ID`) is ciphertext or key-derivation input, and a writer
+  that escapes only parentheses and the backslash puts a raw 0Dh in it as data; folding it would
+  corrupt the bytes before decryption. In three runs over 300 AES-256 files from this library's
+  writer, each with every \r escape turned into a raw 0Dh, 2.3.3 opened all 53 files that carried one in
+  a string with the same `/Lang`, this branch opens all 73 that did, and with the end-of-line rule
+  applied to every string, 28 of 70 failed to decrypt and 13 more read a different `/Lang`. A
+  backslash before the end-of-line marker is still a line continuation, and the escapes
   `\r`, `\n` and the octal forms still produce 0Dh and 0Ah exactly as written. The added branch
   throws nothing, so no input that decoded on 2.3.3 stops decoding.
 - **A `/Lang` tag ending in a line feed is now reported by both language rules (#507).** The

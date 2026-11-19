@@ -42,6 +42,21 @@ internal sealed class PdfObjectParser
     /// <summary>Current byte position within the underlying buffer.</summary>
     public int Position => _lexer.Position;
 
+    /// <summary>
+    /// Whether an unescaped end-of-line marker inside a literal string decodes to one 0Ah
+    /// (ISO 32000-2, 7.3.4.2). Off by default, which keeps the bytes as they stand in the file.
+    /// </summary>
+    /// <remarks>
+    /// Off is required wherever the string is still ciphertext. In an encrypted document the bytes
+    /// between the parentheses are the encrypted string, written by a producer that escaped only
+    /// <c>(</c>, <c>)</c> and <c>\</c>, so a 0Dh in them is data. Folding it into 0Ah (and dropping a
+    /// 0Ah after a 0Dh) corrupts the ciphertext before the security handler sees it. The same holds
+    /// for the <c>/Encrypt</c> dictionary's <c>/O</c>, <c>/U</c>, <c>/OE</c> and <c>/UE</c> and the
+    /// trailer <c>/ID</c>, which feed key derivation as raw bytes. On for strings parsed from an
+    /// unencrypted file, an object stream body or a content stream, which are plain text.
+    /// </remarks>
+    internal bool NormalizeEndOfLine { get; init; }
+
     // ── Public API consumed by Phase 2 xref resolver ──────────────────────
 
     /// <summary>
@@ -64,7 +79,7 @@ internal sealed class PdfObjectParser
             TokenKind.Integer => ParseIntegerOrReference(token),
             TokenKind.Real => ParseReal(token),
             TokenKind.Name => ParseName(token),
-            TokenKind.LiteralString => DecodeLiteralString(token.Raw),
+            TokenKind.LiteralString => DecodeLiteralString(token.Raw, NormalizeEndOfLine),
             TokenKind.HexString => DecodeHexString(token.Raw),
             TokenKind.ArrayBegin => ParseArray(),
             TokenKind.DictBegin => ParseDictionary(),
@@ -662,7 +677,7 @@ internal sealed class PdfObjectParser
     // ── String decoders ────────────────────────────────────────────────────
 
     /// <summary>Decodes the raw literal-string token bytes (including '(' and ')') into a <see cref="PdfLiteralString"/>.</summary>
-    internal static PdfLiteralString DecodeLiteralString(ReadOnlyMemory<byte> raw)
+    internal static PdfLiteralString DecodeLiteralString(ReadOnlyMemory<byte> raw, bool normalizeEndOfLine = true)
     {
         // raw includes the outer ( and )
         var span = raw.Span[1..^1];
@@ -673,7 +688,7 @@ internal sealed class PdfObjectParser
         while (i < span.Length)
         {
             var c = span[i];
-            if (c == (byte)'\r')
+            if (normalizeEndOfLine && c == (byte)'\r')
             {
                 // ISO 32000-2 7.3.4.2: an unescaped end-of-line marker inside a literal string is the
                 // single byte 0Ah, whether it was CR, LF or CRLF. A CRLF pair must not yield two bytes.
