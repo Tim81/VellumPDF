@@ -285,7 +285,7 @@ public static class Jbig2ImageLoader
         ImageLimits.ValidateDimensions("JBIG2", width, height);
 
         return options.DecodeMode == ImageDecodeMode.DecodeToRaster
-            ? DecodeToRaster(segments, data, width, height, firstPage, decodeOtherPages: dataStart <= FileHeader.Length)
+            ? DecodeToRaster(segments, data, width, height, firstPage)
             : BuildPassthrough(segments, data, width, height, firstPage);
     }
 
@@ -1008,13 +1008,13 @@ public static class Jbig2ImageLoader
 
     private static PdfImageXObject DecodeToRaster(
         List<SegmentHeader> segments, ReadOnlySpan<byte> data,
-        int width, int height, int firstPage, bool decodeOtherPages)
+        int width, int height, int firstPage)
     {
+        // Every segment is looked at, whatever page it is on, as the class remarks say. A file with the
+        // Annex D header is refused in Load before this runs, so no call here skips the other pages.
         // Reject segment types that require symbol/pattern/refinement decoding.
         foreach (var seg in segments)
         {
-            if (!decodeOtherPages && !BelongsToPage(seg, firstPage)) continue;
-
             switch (seg.Type)
             {
                 case SegmentTypeSymbolDictionary:
@@ -1046,7 +1046,6 @@ public static class Jbig2ImageLoader
         foreach (var seg in segments)
         {
             var onPage = BelongsToPage(seg, firstPage);
-            if (!onPage && !decodeOtherPages) continue;
 
             if (seg.Type != SegmentTypeImmediateGenericRegion
                 && seg.Type != SegmentTypeImmediateLosslessGenericRegion
