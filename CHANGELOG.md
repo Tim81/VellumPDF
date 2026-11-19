@@ -402,9 +402,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   refused with `UnauthorizedAccessException`, is still refused with it, checked before the file is
   opened. The file is held open with `FileShare.None` from before the layout until the save
   returns, which excludes other openers on Windows but is only an advisory lock on Linux and macOS.
-  The PDF is built in a `MemoryStream`, so a PDF over about 2 GB cannot be saved to a path. Passing
-  a `FileStream` to `Save(Stream)` avoids that, but `SaveAsync(Stream)` and a linearized
-  `PdfDocument.Save` buffer the whole file too.
+  The PDF is built in memory in a list of 1 MiB chunks, with no single array, so there is no 2 GB
+  limit on `Save(string)` or `SaveAsync(string)`. The cost is that the finished PDF is held in memory
+  once more until it is copied to the file, which 2.3.3's `Save(string)` did not do: it wrote to the
+  file as it went. Passing a `FileStream` to `Save(Stream)` avoids that copy. `SaveAsync(Stream)` and
+  a linearized `PdfDocument.Save` still buffer the whole file in a `MemoryStream`, about 2 GB at
+  most, as on 2.3.3.
   `VellumPdf.Signing` writes to a stream you pass and was not affected.
 
 - **`Jbig2ImageLoader` reads the file header's flags byte and page count, and the random-access

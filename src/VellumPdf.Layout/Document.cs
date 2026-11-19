@@ -1123,6 +1123,12 @@ public sealed class Document : IDisposable
             throw new UnauthorizedAccessException($"Access to the path '{target}' is denied.");
     }
 
+    /// <summary>
+    /// The chunk size of the buffer a path save builds the PDF in; a test lowers it to copy in several
+    /// pieces.
+    /// </summary>
+    internal static int SaveBufferChunkSize { get; set; } = ChunkedBufferStream.DefaultChunkSize;
+
     private static void EmptyTarget(FileStream fs)
     {
         if (!fs.CanSeek) return;
@@ -1379,13 +1385,15 @@ public sealed class Document : IDisposable
     /// the layout until the save returns. On Windows that excludes every other opener. On Linux and
     /// macOS it is an advisory lock, which other .NET code honours but a process that does not ask
     /// for the lock, <c>cp</c> or a text editor, can ignore.</para>
-    /// <para><b>Attention</b>: the whole PDF is built in memory before any of it is written, in a
-    /// <see cref="MemoryStream"/>, whose capacity is limited to about 2 GB. A larger PDF fails with
-    /// <see cref="IOException"/> or <see cref="OutOfMemoryException"/>. To save one, open a
-    /// <see cref="FileStream"/> yourself and pass it to <see cref="Save(System.IO.Stream)"/>, which
-    /// writes to it as it goes. (A linearized save, which this class does not offer, buffers the
-    /// whole file as well.) <see cref="SaveAsync(System.IO.Stream, System.Threading.CancellationToken)"/>
-    /// builds the PDF in memory too, so it does not avoid the limit.</para>
+    /// <para><b>Attention</b>: the whole PDF is built in memory before any of it is written, so the
+    /// finished PDF is held in memory once more, in chunks of 1 MiB, until it is copied to the file.
+    /// That is memory 2.3.3 did not use for this call, which wrote to the file as it went. There is no
+    /// size limit beyond the memory available: the buffer is a list of chunks, not one array. To avoid
+    /// the extra copy, open a <see cref="FileStream"/> yourself and pass it to
+    /// <see cref="Save(System.IO.Stream)"/>, which writes to it as it goes. The failed-save guarantee
+    /// above does not hold for that stream, which was truncated when you opened it.
+    /// <see cref="SaveAsync(System.IO.Stream, System.Threading.CancellationToken)"/> builds the whole
+    /// PDF in a <see cref="MemoryStream"/> instead, whose capacity is about 2 GB, as it did on 2.3.3.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="path"/> is <see langword="null"/>. A null that an element or a written Kernel
@@ -1415,8 +1423,7 @@ public sealed class Document : IDisposable
     /// A file at <paramref name="path"/> is already open elsewhere with no sharing allowed, which is
     /// found before the layout runs, or <paramref name="path"/> is otherwise invalid for the file
     /// system, being over-long or holding a character the file system refuses, such as
-    /// <c>&lt;</c> or <c>|</c>. It is also raised when writing the file fails, or when the PDF is
-    /// too large for the memory buffer it is built in.
+    /// <c>&lt;</c> or <c>|</c>. It is also raised when writing the file fails.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The document has already been written, or has no pages, or an element's input cannot be laid
@@ -1469,12 +1476,12 @@ public sealed class Document : IDisposable
             {
                 BeginSave(fs);
                 renderer = CreateRenderer();
-                using var buffer = new MemoryStream();
+                var buffer = new ChunkedBufferStream(SaveBufferChunkSize);
                 LayOutThen(renderer, () => _pdf.Save(buffer));
 
                 EmptyTarget(fs);
 
-                fs.Write(buffer.GetBuffer(), 0, (int)buffer.Length);
+                buffer.CopyContentsTo(fs);
                 fs.Flush();
             }
             finally
@@ -1657,8 +1664,8 @@ public sealed class Document : IDisposable
     /// <see cref="Save(string)"/> (#508). A save that fails, at layout, at building the PDF or by
     /// cancellation, therefore leaves whatever the path held exactly as it was, byte for byte, and
     /// creates nothing at a path that did not exist. Everything <see cref="Save(string)"/> says
-    /// about symbolic links, permissions, the advisory lock, the memory limit of about 2 GB and the
-    /// final copy not being atomic applies here too.</para>
+    /// about symbolic links, permissions, the advisory lock, the extra in-memory copy of the PDF, which
+    /// has no 2 GB limit, and the final copy not being atomic applies here too.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="path"/> is <see langword="null"/>. A null that an element or a written Kernel
@@ -1689,8 +1696,7 @@ public sealed class Document : IDisposable
     /// A file at <paramref name="path"/> is already open elsewhere with no sharing allowed, which is
     /// found before the layout runs, or <paramref name="path"/> is otherwise invalid for the file
     /// system, being over-long or holding a character the file system refuses, such as
-    /// <c>&lt;</c> or <c>|</c>. It is also raised when writing the file fails, or when the PDF is
-    /// too large for the memory buffer it is built in.
+    /// <c>&lt;</c> or <c>|</c>. It is also raised when writing the file fails.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The document has already been written, or has no pages, or an element's input cannot be laid
@@ -1758,7 +1764,7 @@ public sealed class Document : IDisposable
             {
                 BeginSave(fs);
                 renderer = CreateRenderer();
-                using var buffer = new MemoryStream();
+                var buffer = new ChunkedBufferStream(SaveBufferChunkSize);
                 var pagesBefore = _pdf.Pages.Count;
                 await Task.Run(() => LayOut(renderer), cancellationToken).ConfigureAwait(false);
                 try
@@ -1777,8 +1783,7 @@ public sealed class Document : IDisposable
 
                 EmptyTarget(fs);
 
-                buffer.Position = 0;
-                await buffer.CopyToAsync(fs, cancellationToken).ConfigureAwait(false);
+                await buffer.CopyContentsToAsync(fs, cancellationToken).ConfigureAwait(false);
                 await fs.FlushAsync(CancellationToken.None).ConfigureAwait(false);
             }
             finally
