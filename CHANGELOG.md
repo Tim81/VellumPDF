@@ -84,6 +84,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`ExternalToolTests.TryRun_CapturesOutputLargerThanTheOsPipeBuffer` no longer times out on a
+  loaded machine (test-only change).** Its child was a 20,000-iteration shell echo loop, which hit
+  the 30 s limit several times on a loaded Windows machine while passing alone. The child now copies
+  a temporary file of about 400KB with `cmd.exe /c type` (`/bin/cat` elsewhere), so the output still
+  exceeds the 64KB pipe buffer but the child does almost no work. The test also asserts the
+  captured stdout equals the file's content. Moving the drain after `WaitForExit` in
+  `ExternalTool.TryRun` still fails the test by timeout. No shipped package changes.
+
 - **Cost-bound tests no longer assert on elapsed time (#400, #456).** A `Stopwatch` checked after a
   call returns cannot end a hang, and a 10 s bound fails on a loaded runner: the main CI run for
   1c61fa6 failed `FindingHigh_A4FlateBombPadding_refusesQuickly_viaCostBudget` at 11.79 s, and #400
