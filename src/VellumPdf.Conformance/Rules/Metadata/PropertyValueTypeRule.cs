@@ -142,9 +142,19 @@ internal sealed class PropertyValueTypeRule : IConformanceRule
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     // XMP real number per XMP Spec §8.2.1.2 (also accepts integers).
+    //
+    // The value is taken from the document's own XMP packet, and the document also picks which
+    // type applies (through its extension-schema declaration), so a file chooses both the pattern
+    // and the input. The earlier form, \d+\.?\d*, let a digit run split between \d+ and \d* at
+    // every position when no decimal point was present, so "9" repeated n times plus one "!" cost
+    // O(n^2) (#506). (\.\d*)? can only start at a literal point, which removes that ambiguity.
+    // NonBacktracking is kept as well, because it makes linear time the engine's guarantee instead
+    // of a property of this pattern that a later edit could lose; the same choice as
+    // A2aLangSyntaxRule, whose comment gives the cost of it. No match timeout: a wall clock
+    // measures scheduling, not work done.
     private static readonly Regex _realRegex = new(
-        @"^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+        @"^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$",
+        RegexOptions.NonBacktracking | RegexOptions.CultureInvariant);
 
     /// <summary>
     /// Scalar XMP primitive type names (from the XMP Specification and ISO 19005)

@@ -75,6 +75,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   produces nor refuses a document. Row D6 is removed from `docs/conformance-divergences.md`, since
   the divergence it recorded is gone. The other `Regex` fields in `src/` are the three XMP
   value patterns, whose input is trimmed before the match, so a trailing newline never reaches them.
+- **An XMP `Real` value can no longer take seconds to check (#506).** `PropertyValueTypeRule`'s
+  real-number pattern split a run of digits between `\d+` and `\d*` at every position when no
+  decimal point was present, so a failing match was quadratic in the length of the run, with no
+  match timeout, on a string taken from the file's own XMP packet (the file also chooses that the
+  property is a `Real`). On the probe build of 2.3.3, 32,000 digits followed by `!` took 15.5 s,
+  and 16,000 digits, an `e`, 16,000 more digits and `!` took 4.5 s. The pattern is now
+  `^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$`, which cannot split a digit run, and runs with
+  `RegexOptions.NonBacktracking`. A test enumerates every string of up to seven characters over
+  the seven tokens the grammar distinguishes (960,800 strings) and finds the new pattern agrees
+  with the old on all of them. No verdict changes. The date and integer patterns are linear and
+  unchanged; no other `Regex` exists in `src/`.
 - **Cost-bound tests no longer assert on elapsed time (#400, #456).** A `Stopwatch` checked after a
   call returns cannot end a hang, and a 10 s bound fails on a loaded runner: the main CI run for
   1c61fa6 failed `FindingHigh_A4FlateBombPadding_refusesQuickly_viaCostBudget` at 11.79 s, and #400
