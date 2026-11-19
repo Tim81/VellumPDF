@@ -111,6 +111,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   still loads, with a negative offset or without, and one or two entries still load. The XML
   documentation no longer lists `IndexOutOfRangeException`. No public API changes.
 
+- **`TiffImageLoader` checks uncompressed strips before it allocates the raster (#536).** The
+  loader sized its buffer from the header and then read the strips, so a 126-byte file declaring a
+  10,000 by 10,000 image of four 16-bit samples allocated 800,002,400 bytes before it was refused.
+  For Compression 1 the strip list is now checked first, chunky and planar, with the same checks in
+  the same order, so that file allocates 2,376 bytes and raises the same exception. A one-row-strip
+  file with one strip present went from 300,092,800 bytes to 62,752. PackBits and LZW strips are
+  not pre-checked, because their output is not bounded by their input and 2.3.3 loaded a PackBits
+  strip that decodes short, zero-filling the rest. A 4-byte LZW strip on a 10,000 by 10,000 RGB
+  header still allocates 600,027,400 bytes before it is refused.
+
 ## [2.3.3] - 2026-09-20
 
 This release is led by documentation. Layout's public surface now states what each member

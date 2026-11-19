@@ -135,10 +135,14 @@ public static class TiffImageLoader
     /// later major version will check it.</para>
     /// <para>One size limit applies: a declared pixel count above <b>100,000,000</b> is refused.
     /// Neither edge is limited on its own, so 2,000,000 by 1 is accepted and 10,001 by 10,001 is
-    /// not. The limit is internal and has no public setting. It bounds the damage a header can do
-    /// rather than preventing it: this loader sizes its buffer from the declared dimensions before
-    /// checking the strips are there. A 16-bit greyscale 10,000 by 10,000 header sizes a 200 MB
-    /// buffer before it refuses; four samples of the same size size 800 MB (#536).</para>
+    /// not. The limit is internal and has no public setting. For uncompressed strips the strip
+    /// list is checked against the file before the raster is allocated, so a header cannot cost
+    /// more than the file carries: a 126-byte file declaring four 16-bit samples at 10,000 by
+    /// 10,000 is refused after about 2 KB, where it once allocated 800 MB. Compressed strips are
+    /// not pre-checked, because a PackBits or LZW stream decodes to more bytes than it occupies. A
+    /// 10,000 by 10,000 three-sample 8-bit file with a 4-byte LZW strip allocates about 600 MB
+    /// before it is refused, and a PackBits strip that decodes to less than the image needs loads
+    /// with the rest zero-filled (#536).</para>
     /// <para>Attention: the safety limit has a hole, and this loader carries it. A strip
     /// compressed with new-style JPEG (Compression 7) is handed to
     /// <see cref="JpegImageLoader.Load(byte[])"/>, which takes its dimensions from the JPEG frame
@@ -530,6 +534,25 @@ public static class TiffImageLoader
             throw new InvalidDataException(
                 $"TIFF row byte count {rawRowBytesLong} exceeds int.MaxValue.");
         var rawRowBytes = (int)rawRowBytesLong;
+
+        // Uncompressed strips hold exactly the bytes they decode to, so a file that lacks them can
+        // be refused before a raster sized from the header is allocated: 126 bytes declaring a
+        // 10,000 by 10,000 four-sample 16-bit image otherwise cost 800,002,400 bytes (#536). The
+        // dry run walks the same checks, in the same order, as the decode below. PackBits and LZW
+        // are not pre-checked: their output size is not bounded by their input, and 2.3.3 loaded a
+        // PackBits strip that decodes to less than the image needs, zero-filling the rest.
+        if (compression == CompressionNone)
+        {
+            if (planarConfiguration == 1)
+                DecodeChunkyStrips(tiff, stripOffsets, stripByteCounts, compression, predictor,
+                    width, height, samplesPerPixel, bytesPerSample, rawRowBytes,
+                    (int)rowsPerStrip, rawBuffer: null);
+            else
+                DecodePlanarStrips(tiff, stripOffsets, stripByteCounts, compression, predictor,
+                    width, height, samplesPerPixel, bytesPerSample, rawRowBytes,
+                    (int)rowsPerStrip, rawBuffer: null);
+        }
+
         var rawBuffer = new byte[(long)height * rawRowBytes];
 
         if (planarConfiguration == 1)
@@ -576,8 +599,9 @@ public static class TiffImageLoader
         long[] stripOffsets, long[] stripByteCounts,
         int compression, int predictor,
         int width, int height, int samplesPerPixel, int bytesPerSample, int rawRowBytes,
-        int rowsPerStrip, byte[] rawBuffer)
+        int rowsPerStrip, byte[]? rawBuffer)
     {
+        // A null rawBuffer is the dry run: every check below runs, nothing is decoded or copied.
         var stripIndex = 0;
         var rowsDone = 0;
         while (rowsDone < height && stripIndex < stripOffsets.Length)
@@ -597,15 +621,23 @@ public static class TiffImageLoader
                 throw new InvalidDataException(
                     $"TIFF strip {stripIndex} data (offset={stripOffset}, length={stripByteCount}) extends beyond end of file.");
 
-            var stripData = DecodeStrip(tiff, stripOffset, stripByteCount, compression, expectedStripBytes);
+            byte[]? stripData = null;
+            if (rawBuffer is null)
+                RequireUncompressedStripLength(stripByteCount, expectedStripBytes);
+            else
+                stripData = DecodeStrip(tiff, stripOffset, stripByteCount, compression, expectedStripBytes);
 
             if (predictor == 2)
-                ApplyHorizontalPredictor(stripData, stripRowCount, width, samplesPerPixel, bytesPerSample);
+            {
+                if (stripData is not null)
+                    ApplyHorizontalPredictor(stripData, stripRowCount, width, samplesPerPixel, bytesPerSample);
+            }
             else if (predictor != 1)
                 throw new NotSupportedException(
                     $"TIFF Predictor={predictor} is not supported. Supported: 1 (None), 2 (Horizontal Differencing).");
 
-            Buffer.BlockCopy(stripData, 0, rawBuffer, rowsDone * rawRowBytes, expectedStripBytes);
+            if (stripData is not null && rawBuffer is not null)
+                Buffer.BlockCopy(stripData, 0, rawBuffer, rowsDone * rawRowBytes, expectedStripBytes);
             rowsDone += stripRowCount;
             stripIndex++;
         }
@@ -620,8 +652,9 @@ public static class TiffImageLoader
         long[] stripOffsets, long[] stripByteCounts,
         int compression, int predictor,
         int width, int height, int samplesPerPixel, int bytesPerSample, int rawRowBytes,
-        int rowsPerStrip, byte[] rawBuffer)
+        int rowsPerStrip, byte[]? rawBuffer)
     {
+        // A null rawBuffer is the dry run: every check below runs, nothing is decoded or copied.
         // Number of strips per plane.
         var stripsPerImage = (height + rowsPerStrip - 1) / rowsPerStrip;
 
@@ -639,7 +672,7 @@ public static class TiffImageLoader
         var planeRowBytes = (int)planeRowBytesLong;
 
         // Plane buffer: decoded rows for a single sample across all height rows.
-        var planeBuffer = new byte[(long)height * planeRowBytes];
+        var planeBuffer = rawBuffer is null ? null : new byte[(long)height * planeRowBytes];
 
         for (var plane = 0; plane < samplesPerPixel; plane++)
         {
@@ -662,21 +695,32 @@ public static class TiffImageLoader
                     throw new InvalidDataException(
                         $"TIFF planar strip {stripIndex} data (offset={stripOffset}, length={stripByteCount}) extends beyond end of file.");
 
-                var stripData = DecodeStrip(tiff, stripOffset, stripByteCount, compression, expectedStripBytes);
+                byte[]? stripData = null;
+                if (planeBuffer is null)
+                    RequireUncompressedStripLength(stripByteCount, expectedStripBytes);
+                else
+                    stripData = DecodeStrip(tiff, stripOffset, stripByteCount, compression, expectedStripBytes);
 
                 if (predictor == 2)
-                    ApplyHorizontalPredictor(stripData, stripRowCount, width, 1, bytesPerSample);
+                {
+                    if (stripData is not null)
+                        ApplyHorizontalPredictor(stripData, stripRowCount, width, 1, bytesPerSample);
+                }
                 else if (predictor != 1)
                     throw new NotSupportedException(
                         $"TIFF Predictor={predictor} is not supported. Supported: 1 (None), 2 (Horizontal Differencing).");
 
-                Buffer.BlockCopy(stripData, 0, planeBuffer, rowsDone * planeRowBytes, expectedStripBytes);
+                if (stripData is not null && planeBuffer is not null)
+                    Buffer.BlockCopy(stripData, 0, planeBuffer, rowsDone * planeRowBytes, expectedStripBytes);
                 rowsDone += stripRowCount;
             }
 
             if (rowsDone < height)
                 throw new InvalidDataException(
                     $"TIFF plane {plane} has only {rowsDone} decoded rows but ImageLength={height}.");
+
+            if (planeBuffer is null || rawBuffer is null)
+                continue;
 
             // Interleave plane bytes into rawBuffer (chunky layout).
             // For each pixel, the plane byte(s) sit at position: pixelIndex * samplesPerPixel * bytesPerSample + plane * bytesPerSample
@@ -706,10 +750,15 @@ public static class TiffImageLoader
 
     private static byte[] DecodeStripNone(byte[] tiff, int stripOffset, int stripByteCount, int expectedBytes)
     {
+        RequireUncompressedStripLength(stripByteCount, expectedBytes);
+        return tiff[stripOffset..(stripOffset + expectedBytes)];
+    }
+
+    private static void RequireUncompressedStripLength(int stripByteCount, int expectedBytes)
+    {
         if (stripByteCount < expectedBytes)
             throw new InvalidDataException(
                 $"TIFF uncompressed strip is too small ({stripByteCount} bytes; expected {expectedBytes}).");
-        return tiff[stripOffset..(stripOffset + expectedBytes)];
     }
 
     // ── Endian swap for 16-bit little-endian samples ─────────────────────────
