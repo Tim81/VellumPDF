@@ -30,7 +30,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   The option also refuses what the default path lets pass, each with `InvalidDataException`
   naming the rule and the GIF89a section: a pixel whose colour index is past the active colour
   table (22.a), image data that decodes more pixels than the descriptor declares or ends without
-  an End of Information code (22.a, Appendix F), image data not ended by a Block Terminator (22.c),
+  an End of Information code (22.a, Appendix F; the code is read at the decoder's current width,
+  and one bit narrower only where the table entry added for the last data code widened it, which
+  is how `GifEncoder` writes it), image data not ended by a Block Terminator (22.c),
   a Graphic Control Extension that is not one sub-block with a Block Size of 4, or a second one
   before the same graphic-rendering block (23.a, 23.c.iii), and a top-level block that is not an
   extension, an image descriptor or the trailer (Appendix B). The canvas is the screen's size at
