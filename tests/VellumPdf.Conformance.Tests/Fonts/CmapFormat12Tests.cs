@@ -201,6 +201,55 @@ public sealed class CmapFormat12Tests
         Assert.Contains("D83EDD16>", all);   // U+1F916 as a surrogate pair
     }
 
+    // ---------------------------------------------------------------- where the two subtables disagree
+
+    /// <summary>
+    /// A font whose format 12 subtable maps a BMP code point differently from its format 4 one keeps
+    /// the format 4 glyph, as 2.3.3 drew it, and still gets its supplementary planes from format 12.
+    /// The disagreement is made in memory: the format 12 group holding 'A' is shifted by 1000
+    /// glyphs, and the format 12 subtable alone is checked to map 'A' to 1036 first, so the test
+    /// cannot pass because nothing disagreed.
+    /// </summary>
+    [Fact]
+    public void FontWhoseFormat12DisagreesOnABmpCodePoint_keepsTheFormat4Glyph()
+    {
+        var full = LoadAsset("DejaVuSans.ttf");
+        var subtables = Subtables(full);
+        var format4 = subtables.First(s => s.Platform == 3 && s.Encoding == 1);
+        var altered = ShiftGroupContaining(subtables.First(s => s.Platform == 3 && s.Format == 12), 'A', 1000);
+        Assert.Equal(1036, Parse(WithCmap(full, [altered])).GetGlyphId('A'));
+
+        var table = Parse(WithCmap(full, [format4, altered]));
+
+        Assert.Equal(36, table.GetGlyphId('A'));
+        Assert.Equal(5857, table.GetGlyphId(0x1F600));
+        var format4Only = Parse(WithCmap(full, [format4]));
+        for (var cp = 0; cp <= 0xFFFF; cp++)
+        {
+            if (format4Only.TryGetGlyphId(cp, out var expected) && table.GetGlyphId(cp) != expected)
+                Assert.Fail($"U+{cp:X}: format 4 maps {expected}, the combined table {table.GetGlyphId(cp)}.");
+        }
+    }
+
+    /// <summary>The subtable with every group that holds <paramref name="codePoint"/> moved up by <paramref name="shift"/> glyphs.</summary>
+    internal static Subtable ShiftGroupContaining(Subtable format12, int codePoint, int shift)
+    {
+        var bytes = (byte[])format12.Bytes.Clone();
+        var groups = (int)U32(bytes, 12);
+        var shifted = 0;
+        for (var i = 0; i < groups; i++)
+        {
+            var at = 16 + i * 12;
+            if (U32(bytes, at) <= codePoint && codePoint <= U32(bytes, at + 4))
+            {
+                Put32(bytes, at + 8, U32(bytes, at + 8) + (uint)shift);
+                shifted++;
+            }
+        }
+        Assert.Equal(1, shifted);
+        return format12 with { Bytes = bytes };
+    }
+
     // ---------------------------------------------------------------- BMP-only output is unchanged
 
     /// <summary>
@@ -338,7 +387,7 @@ public sealed class CmapFormat12Tests
         return all.ToArray();
     }
 
-    private static byte[] LoadAsset(string logicalName)
+    internal static byte[] LoadAsset(string logicalName)
     {
         using var s = typeof(CmapFormat12Tests).Assembly.GetManifestResourceStream(logicalName)
             ?? throw new InvalidOperationException($"Embedded asset '{logicalName}' not found.");
@@ -347,7 +396,7 @@ public sealed class CmapFormat12Tests
         return ms.ToArray();
     }
 
-    private sealed record Subtable(int Platform, int Encoding, int Format, byte[] Bytes);
+    internal sealed record Subtable(int Platform, int Encoding, int Format, byte[] Bytes);
 
     private static ushort U16(byte[] d, int o) => (ushort)((d[o] << 8) | d[o + 1]);
 
@@ -375,7 +424,7 @@ public sealed class CmapFormat12Tests
     }
 
     /// <summary>The font's cmap subtables, each with the bytes the encoding record points at.</summary>
-    private static List<Subtable> Subtables(byte[] font)
+    internal static List<Subtable> Subtables(byte[] font)
     {
         var (_, cmap, _) = FindTable(font, "cmap");
         var count = U16(font, cmap + 2);
@@ -397,7 +446,7 @@ public sealed class CmapFormat12Tests
     /// the file and the directory entry repointed; the old bytes stay where they are, unreferenced.
     /// Table checksums are not recomputed, which this project's parser does not check.
     /// </summary>
-    private static byte[] WithCmap(byte[] font, IEnumerable<Subtable> keep)
+    internal static byte[] WithCmap(byte[] font, IEnumerable<Subtable> keep)
     {
         var tables = keep.ToList();
         Assert.NotEmpty(tables);

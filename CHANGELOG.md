@@ -58,20 +58,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   parser read formats 0, 4 and 6 only. A font with a format 12 subtable beside its format 4 one
   was read through format 4, which cannot hold a code point above U+FFFF, so every such character
   mapped to glyph 0; a font whose only Unicode subtable was format 12 threw
-  `NotSupportedException`. The parser now uses a format 12 subtable on platform 3 / encoding 10 or
-  platform 0 / encoding 4 or 10 when the font has one (OpenType cmap chapter: the 32-bit subtable
-  is the one applications should use). Measured with the DejaVu Sans test font: U+1F600 drew glyph
-  0 and its ToUnicode entry read `<0000> <D83DDE00>` on 2.3.3, and now draws glyph 5857 with
+  `NotSupportedException`. The parser now adds the format 12 subtable on platform 3 / encoding 10
+  or platform 0 / encoding 4 or 10 to the 16-bit subtable it already read (layout and ordering
+  rules from the OpenType cmap chapter, OpenType 1.9.1, learn.microsoft.com, read 2026-11-19; it
+  is not held under `docs/iso`). Measured with the DejaVu Sans test font: U+1F600 drew glyph 0 and
+  its ToUnicode entry read `<0000> <D83DDE00>` on 2.3.3, and now draws glyph 5857 with
   `<16E1> <D83DDE00>`; pdftotext returns the emoji from the page and veraPDF accepts the PDF/A-2u
   build. Deliberate output changes: a document that draws a code point above U+FFFF from such a
   font changes (those characters were glyph 0), and a font whose only Unicode subtable is format 12
   now loads. A document that draws only BMP text is unchanged: the inflated stream bodies hash to
   the same SHA-256 on 2.3.3 and now, for DejaVu Sans, DejaVu Sans cut to its format 4 subtable, and
-  Source Sans 3. A code point that the 16-bit subtable maps and the format 12 one does not keeps
-  its mapping, and where both map it format 12 wins. A malformed format 12 subtable beside a usable
-  16-bit one is ignored, as before; alone it is refused with `InvalidDataException`. Format 12
-  groups must be sorted, must not overlap, must end at or below U+10FFFF and must fit the length the
-  subtable declares, which bounds the work at the 1,114,112 code points Unicode has.
+  Source Sans 3. The 16-bit subtable keeps every code point it maps, so a font whose format 4 and
+  format 12 subtables disagree on a BMP code point keeps the glyph 2.3.3 drew; format 12 supplies
+  only the code points the 16-bit subtable leaves unmapped. A malformed format 12 subtable beside a
+  usable 16-bit one is ignored, as 2.3.3 loaded such a font; when format 12 is the only Unicode
+  subtable and is malformed, the font is refused with `InvalidDataException` (2.3.3 threw
+  `NotSupportedException` for every such font). Format 12 groups must be sorted, must not overlap,
+  must end at or below U+10FFFF and must fit the length the subtable declares, which bounds the
+  work at the 1,114,112 code points Unicode has.
+- **Preflight now checks the glyph presence of simple TrueType fonts whose only Unicode cmap
+  subtable is format 12 (#595).** `GlyphPresenceRule` shares the cmap parser and skipped any font it
+  could not parse, so on 2.3.3 such a font was never checked. Measured by running `PdfPreflight`
+  (PDF/A-2b) over the same three PDFs on a detached `v2.3.3` build and on this one, each a
+  one-character simple-font file whose embedded DejaVu Sans program has only a format 12 subtable:
+  with the glyph present, both builds report no finding; with the code point mapped to glyph 60000,
+  past the program's glyph count, 2.3.3 reports nothing and this build reports
+  `ISO19005-2:6.2.11.4.1-glyph-present`; with the code point absent from the subtable, neither
+  reports anything, because the rule skips a code point it cannot resolve. The same file with the
+  unmodified DejaVu Sans program, format 4 included, reports nothing on both builds.
 - **Cost-bound tests no longer assert on elapsed time (#400, #456).** A `Stopwatch` checked after a
   call returns cannot end a hang, and a 10 s bound fails on a loaded runner: the main CI run for
   1c61fa6 failed `FindingHigh_A4FlateBombPadding_refusesQuickly_viaCostBudget` at 11.79 s, and #400

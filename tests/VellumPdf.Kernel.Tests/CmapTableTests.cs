@@ -227,15 +227,23 @@ public sealed class CmapTableTests
         Assert.Equal((ushort)1, table.GetGlyphId(0x42));
     }
 
+    /// <summary>
+    /// Where the two subtables disagree on a BMP code point the 16-bit one wins, because 2.3.3 read
+    /// only that one and a document drawn from the font must keep its glyphs. 'A' is 99 in format 4
+    /// and 5 in format 12; the code point format 4 lacks still comes from format 12.
+    /// </summary>
     [Fact]
-    public void CmapFormat12_bothSubtables_formatTwelveWinsWhereTheyDisagree()
+    public void CmapFormat12_bothSubtables_formatFourWinsWhereTheyDisagree()
     {
         var sub4 = BuildSubtableFormat4(
             [(0x0041, 0x0041, (short)(99 - 0x41), 0), (0xFFFF, 0xFFFF, 1, 0)]);   // 'A' -> 99
-        var sub12 = BuildSubtableFormat12([(0x41, 0x41, 5)]);                      // 'A' -> 5
+        var sub12 = BuildSubtableFormat12([(0x41, 0x42, 5)]);                      // 'A' -> 5, 'B' -> 6
         var font = SfntFont.Parse(BuildFont(("cmap", BuildCmap((3, 1, sub4), (3, 10, sub12)))));
 
-        Assert.Equal((ushort)5, CmapTable.Parse(font).GetGlyphId(0x41));
+        var table = CmapTable.Parse(font);
+
+        Assert.Equal((ushort)99, table.GetGlyphId(0x41));
+        Assert.Equal((ushort)6, table.GetGlyphId(0x42));
     }
 
     /// <summary>
@@ -308,7 +316,7 @@ public sealed class CmapTableTests
     [Fact]
     public void CmapFormat12_groupCountBackedByLengthButNotByTheTable_isRefused()
     {
-        // The declared length is honest about the group count but claims far more than the font
+        // The declared length matches the group count but claims far more than the font
         // holds; the first read past the buffer is the refusal.
         var sub12 = BuildSubtableFormat12([(0x41, 0x41, 5)], numGroupsOverride: 1_000_000, lengthOverride: 16 + 12_000_000);
         var font = SfntFont.Parse(BuildFont(("cmap", BuildCmap((3, 10, sub12)))));

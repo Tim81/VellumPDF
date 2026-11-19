@@ -9,15 +9,20 @@ namespace VellumPdf.Fonts.Sfnt;
 /// 12 (segmented coverage, the full Unicode range).
 /// </summary>
 /// <remarks>
-/// A format 12 subtable on platform 3 / encoding 10, or platform 0 / encoding 4, is used when
-/// the font has one, because format 4 cannot hold a code point above U+FFFF. The OpenType cmap
-/// chapter says the 32-bit subtable of a font that carries both should be a superset of the
-/// 16-bit one and be the one applications use. Any code point the 16-bit subtable maps and the
-/// format 12 one does not is kept, so a font whose two subtables disagree loses nothing it
-/// mapped before format 12 was read. Where both map a code point, format 12 wins. A format 12
-/// subtable that is malformed is ignored in favour of the 16-bit subtable when the font has
-/// one, as it was before format 12 was read; without one the font is refused.
-/// Format 4 is strictly preferred over formats 0 and 6.
+/// A format 12 subtable on platform 3 / encoding 10, or platform 0 / encoding 4 or 10, adds the
+/// code points format 4 cannot hold, those above U+FFFF.
+/// <para>The 16-bit subtable keeps every code point it maps. The OpenType cmap chapter says the
+/// 32-bit subtable of a font that carries both should be a superset of the 16-bit one, so for a
+/// well-formed font the two agree on the BMP and this changes nothing. A font whose tables
+/// disagree keeps the BMP mapping 2.3.3 gave it, because 2.3.3 read only the 16-bit subtable and
+/// a document drawn from that font must not change glyphs. Format 12 contributes the code points
+/// the 16-bit subtable leaves unmapped: everything above U+FFFF, and any BMP code point the 16-bit
+/// subtable lacks. The 16-bit subtable is the one 2.3.3 selected (format 4 over formats 0 and 6,
+/// platform 3 / encoding 1 first).</para>
+/// <para>A malformed format 12 subtable is ignored when the font has a 16-bit subtable, which is
+/// how 2.3.3 loaded such a font. When format 12 is the font's only Unicode subtable and is
+/// malformed, <see cref="Parse"/> throws <see cref="InvalidDataException"/>; 2.3.3 threw
+/// <see cref="NotSupportedException"/> for every such font.</para>
 /// </remarks>
 internal sealed class CmapTable
 {
@@ -136,8 +141,9 @@ internal sealed class CmapTable
 
         if (narrow is not null)
         {
+            // The 16-bit subtable wins where it maps a code point; see the class remarks.
             foreach (var (cp, gid) in narrow)
-                full.TryAdd(cp, gid);
+                full[cp] = gid;
         }
         return new CmapTable(full);
     }
