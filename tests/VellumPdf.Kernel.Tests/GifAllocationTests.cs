@@ -14,7 +14,7 @@ namespace VellumPdf.Kernel.Tests;
 ///
 /// The bound is a byte count, not a time, so it does not depend on the machine (#400). The
 /// threshold, 1,000,000 bytes, is far below the 100,000,000 the unfixed decoder allocates and far
-/// above what the refusal needs (0.0 MB at the precision the probe printed, which is 100 kB).
+/// above what the refusal needs (about 27 KB, measured with the same counter).
 /// </summary>
 public sealed class GifAllocationTests
 {

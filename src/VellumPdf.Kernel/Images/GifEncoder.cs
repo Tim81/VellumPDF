@@ -35,8 +35,7 @@ public static class GifEncoder
     /// says an encoder "should use the earliest possible version number that defines all the
     /// blocks used in the Data Stream". Every block written today (Global Color Table, Image
     /// Descriptor, Table Based Image Data, Trailer) lists 87a as its required version, so the
-    /// header reads <c>GIF87a</c>. Version 2.3.3 wrote <c>GIF89a</c> over the same
-    /// blocks. Do not rely on either string: a later version that writes a block requiring 89a,
+    /// header reads <c>GIF87a</c>. Do not rely on either string: a later version that writes a block requiring 89a,
     /// such as a Graphic Control Extension, will write <c>GIF89a</c>. Read the version from the
     /// file.</para>
     /// <para>The order colours land in within the returned file's Global Color Table is

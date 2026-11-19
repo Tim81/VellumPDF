@@ -61,7 +61,7 @@ public sealed class GifLogicalScreenLayoutTests
     /// The option is what changes the image's size, so it is what changes whether Layout can place
     /// it: a 40x2000 image is taller than a page, and Layout refuses an element too tall for one.
     /// This is the consequence a caller opts into, pinned so the documentation's warning has a
-    /// measurement behind it.
+    /// measurement behind it: a 40 x 2,000 screen, with and without an explicit width.
     /// </summary>
     [Theory]
     [InlineData(null)]
