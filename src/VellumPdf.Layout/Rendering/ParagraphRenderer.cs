@@ -100,7 +100,7 @@ public sealed class ParagraphRenderer : IRenderer
                 // A non-finite size makes every height derived from it non-finite, every height
                 // comparison false, and the paragraph reports that it placed nothing -- which the
                 // document renderer reads as "too tall" (#481).
-                LayoutValidation.ValidateStyle(frag.Style, "A paragraph run");
+                LayoutValidation.ValidateStyle(frag.Style, RunOwner);
                 _lineHeight = Math.Max(_lineHeight, frag.Style.EffectiveLeading);
             }
         if (_lineHeight <= 0)
@@ -125,7 +125,7 @@ public sealed class ParagraphRenderer : IRenderer
         _endLine = _startLine + maxLines;
         _occupied = area.WithHeight(maxLines * _lineHeight);
 
-        var overflow = new ParagraphRenderer(_para, _endLine) { _lines = _lines, StructType = StructType, ParentStructElem = ParentStructElem, ElementLanguage = ElementLanguage };
+        var overflow = new ParagraphRenderer(_para, _endLine) { _lines = _lines, StructType = StructType, ParentStructElem = ParentStructElem, ElementLanguage = ElementLanguage, RunOwner = RunOwner };
         var split = new ParagraphRenderer(_para, _startLine)
         {
             _lines = _lines,
@@ -135,6 +135,7 @@ public sealed class ParagraphRenderer : IRenderer
             StructType = StructType,
             ParentStructElem = ParentStructElem,
             ElementLanguage = ElementLanguage,
+            RunOwner = RunOwner,
         };
         return LayoutResult.Partial(_occupied, split, overflow);
     }
@@ -160,6 +161,13 @@ public sealed class ParagraphRenderer : IRenderer
     /// Written as <c>/Lang</c> on the struct element when non-null.
     /// </summary>
     internal string? ElementLanguage { get; set; }
+
+    /// <summary>
+    /// What a refused run is called in the message: a paragraph's own run by default, and the heading
+    /// or list item that built this renderer, so a caller is not pointed at a paragraph they did not
+    /// add. Carried to both halves of a split, as the other per-element fields are.
+    /// </summary>
+    internal string RunOwner { get; set; } = "A paragraph run";
 
     /// <summary>Emits the wrapped lines as PDF text operators, applying alignment, justification, links and tagging.</summary>
     /// <remarks>See <see cref="IRenderer.Draw"/>.</remarks>

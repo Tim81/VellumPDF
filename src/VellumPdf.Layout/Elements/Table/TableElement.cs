@@ -58,7 +58,10 @@ public sealed class TableElement
     /// <summary>Width of the table border lines, in points.</summary>
     /// <remarks>
     /// A non-finite width is refused, and so is a negative one. <see cref="Document.Save(System.IO.Stream)"/> throws
-    /// <see cref="InvalidOperationException"/> and names the table.
+    /// <see cref="InvalidOperationException"/> and names the table. The non-finite width is refused
+    /// when the table is laid out; the negative one where a cell border is drawn, so a table that is
+    /// laid out and not drawn, such as one with an infinite top margin, saves with a negative width,
+    /// as it did on 2.3.3.
     /// <para><b>Attention</b>: zero does <b>not</b> hide the borders. It asks the device for its
     /// thinnest line, so the grid is still drawn. Each border stays one device pixel while
     /// everything around it shrinks, so the grid reads as proportionally heavier the further the
@@ -74,7 +77,8 @@ public sealed class TableElement
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this
-    /// property, when the width is not finite or is negative. The message names the table.
+    /// property, when the width is not finite, or is negative and a cell border is drawn. The
+    /// message names the table.
     /// </exception>
     public double BorderWidth { get; init; } = 0.5;
 

@@ -83,7 +83,16 @@ public sealed class RefusalMessageTests
         using var doc = Page();
         doc.Add(new Heading("x", Style(double.NaN)));
 
-        Assert.StartsWith("A paragraph run has a font size of NaN", Refused(doc).Message, StringComparison.Ordinal);
+        Assert.StartsWith("A heading has a font size of NaN", Refused(doc).Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ListItem_nonFiniteFontSize_namesTheListItem()
+    {
+        using var doc = Page();
+        doc.Add(new ListElement().Add("x", Style(double.NaN)));
+
+        Assert.StartsWith("A list item has a font size of NaN", Refused(doc).Message, StringComparison.Ordinal);
     }
 
     /// <summary>

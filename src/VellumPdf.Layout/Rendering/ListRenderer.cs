@@ -315,10 +315,11 @@ public sealed class ListRenderer : IRenderer
         // U+2007 from the whitespace it collapses (#562), so a run joined by one is a single token
         // to WordWrap. Both read the one definition, NoBreakSpaces.IsNoBreakSpace. Splitting on it,
         // which String.Split does through char.IsWhiteSpace, understates the widest token and lets
-        // the widened gutter hard-break a word the caller's own indent would not have. Measured at Helvetica 10pt before this was
-        // fixed: "AAAA<NBSP>AAAA" measures 56.14 whole and the bound saw 26.68, so item 38 of a
-        // roman list on an 80pt page was split into "AAAA<NBSP>AAA" and "A" while the 26 items
-        // whose gutter stayed at the indent, and had less room, stayed intact.
+        // the widened gutter hard-break a word the caller's own indent would not have. Measured at
+        // Helvetica 10pt before this was fixed: "AAAA<NBSP>AAAA" measures 56.14 whole and the bound
+        // saw 26.68, so item 38 of a roman list on an 80pt page was split into "AAAA<NBSP>AAA" and
+        // "A" while the 26 items whose gutter stayed at the indent, and had less room, stayed
+        // intact.
         // The set lives in code points written as escapes, in NoBreakSpaces. This method and
         // NormaliseWhitespace used to keep a literal U+00A0 each, and an invisible literal inverts
         // the predicate if any tool ever normalises it: a plain space would then be treated as
@@ -392,7 +393,7 @@ public sealed class ListRenderer : IRenderer
                 Margins = EdgeInsets.Zero,
                 Alignment = HorizontalAlignment.Left,
             };
-            var markerRenderer = new ParagraphRenderer(markerPara);
+            var markerRenderer = new ParagraphRenderer(markerPara) { RunOwner = "A list item" };
 
             // Content paragraph: indented by the (possibly widened) gutter from the left edge.
             var contentPara = new Paragraph(item.Text, itemStyle)
@@ -400,7 +401,7 @@ public sealed class ListRenderer : IRenderer
                 Margins = new EdgeInsets(0, 0, 0, gutter),
                 Alignment = HorizontalAlignment.Left,
             };
-            var contentRenderer = new ParagraphRenderer(contentPara) { ElementLanguage = item.Language };
+            var contentRenderer = new ParagraphRenderer(contentPara) { ElementLanguage = item.Language, RunOwner = "A list item" };
 
             result.Add((markerRenderer, contentRenderer));
 
@@ -449,7 +450,9 @@ public sealed class ListRenderer : IRenderer
                         Margins = new EdgeInsets(0, 0, 0, childGutter),
                     };
 
-                    result.Add((new ParagraphRenderer(childMarkerPara), new ParagraphRenderer(childContentPara) { ElementLanguage = child.Language }));
+                    result.Add((
+                        new ParagraphRenderer(childMarkerPara) { RunOwner = "A list item" },
+                        new ParagraphRenderer(childContentPara) { ElementLanguage = child.Language, RunOwner = "A list item" }));
                 }
             }
         }

@@ -30,6 +30,7 @@ internal sealed class HeadingRenderer : IRenderer
         {
             StructType = HeadingStructType(heading.Level),
             ElementLanguage = heading.Language,
+            RunOwner = "A heading",
         };
     }
 

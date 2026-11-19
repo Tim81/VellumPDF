@@ -79,6 +79,28 @@ public sealed class NonFiniteColourTests
 
     [Theory]
     [MemberData(nameof(Channels))]
+    public void Heading_textColour_isRefusedNamingTheHeading(int channel, double value, string rendered)
+    {
+        using var doc = Page();
+        doc.Add(new Heading("x", Style(With(channel, value))));
+
+        var ex = Assert.Throws<InvalidOperationException>(() => Render(doc));
+        Assert.Equal(Expect("A heading", "text colour", channel, rendered), ex.Message);
+    }
+
+    [Theory]
+    [MemberData(nameof(Channels))]
+    public void ListItem_textColour_isRefusedNamingTheListItem(int channel, double value, string rendered)
+    {
+        using var doc = Page();
+        doc.Add(new ListElement().Add("x", Style(With(channel, value))));
+
+        var ex = Assert.Throws<InvalidOperationException>(() => Render(doc));
+        Assert.Equal(Expect("A list item", "text colour", channel, rendered), ex.Message);
+    }
+
+    [Theory]
+    [MemberData(nameof(Channels))]
     public void RunningBand_textColour_isRefused(int channel, double value, string rendered)
     {
         using var doc = Page();

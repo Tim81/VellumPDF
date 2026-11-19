@@ -52,11 +52,13 @@ public sealed class EmbeddedFontOwnershipTests
     }
 
     /// <summary>
-    /// The worse case: both documents call their font TT1, so the foreign handle used to be recorded
-    /// under the saving document's own, different, font and the page quietly used the wrong one.
+    /// Both documents call their font TT1 but the fonts differ. 1c61fa6 recorded the foreign handle
+    /// under the saving document's own TT1 and saved a valid file, so it still saves. The page uses
+    /// the saving document's font of that name and the foreign glyphs are not merged into its subset,
+    /// since the two subsets belong to different fonts.
     /// </summary>
     [Fact]
-    public void ForeignHandle_whoseResourceNameCollidesWithTheSavingDocumentsOwn_isRefused()
+    public void ForeignHandle_whoseResourceNameCollidesWithTheSavingDocumentsOwn_saves_withoutTheMerge()
     {
         var (first, second) = TwoDifferentFonts();
         using var owner = new Document();
@@ -65,7 +67,32 @@ public sealed class EmbeddedFontOwnershipTests
         var own = other.UseTrueTypeFont(second);
         Assert.Equal(foreign.ResourceName, own.ResourceName);
 
-        Assert.Throws<ArgumentException>(() => SaveWith(other, foreign));
+        var stream = SaveToUnicode(other, foreign, "Hello");
+
+        Assert.Contains("/" + own.ResourceName + " 12 Tf", stream, StringComparison.Ordinal);
+        Assert.DoesNotContain("<0048>", stream, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The foreign handle's program is embedded here, but under another name, and this document
+    /// defines the handle's name for a different program. 1c61fa6 saved a valid file; it still does.
+    /// </summary>
+    [Fact]
+    public void ForeignHandle_ofAProgramHeldUnderAnotherName_whenTheNameIsDefinedHere_saves()
+    {
+        var (first, second) = TwoDifferentFonts();
+        using var owner = new Document();
+        _ = owner.UseTrueTypeFont(first);
+        var foreign = owner.UseTrueTypeFont(second);               // TT2
+        using var other = new Document();
+        _ = other.UseTrueTypeFont(second);                         // TT1: the foreign program, another name
+        var own2 = other.UseTrueTypeFont(first);                   // TT2: a different program
+        Assert.Equal(foreign.ResourceName, own2.ResourceName);
+
+        var stream = SaveToUnicode(other, foreign, "Hello");
+
+        Assert.Contains("/" + own2.ResourceName + " 12 Tf", stream, StringComparison.Ordinal);
+        Assert.DoesNotContain("<0048>", stream, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -141,8 +168,8 @@ public sealed class EmbeddedFontOwnershipTests
     }
 
     /// <summary>
-    /// The same font program under another resource name is not main's correct case: the content
-    /// stream would name TT2 while this document's resources define it as TT1.
+    /// The same font program under another resource name, with the handle's name defined nowhere in
+    /// this document: the content stream would name TT2 while the resources hold only TT1.
     /// </summary>
     [Fact]
     public void ForeignHandle_ofTheSameFontProgramUnderAnotherName_isRefused()

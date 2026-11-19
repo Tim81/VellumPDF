@@ -417,7 +417,7 @@ public sealed class KeepRenderingTests
 
     // ── A table cell's text colour is written only where the cell is drawn ───
 
-    private static Document TableUnder(string setup, TextStyle? cellStyle, TextStyle? defaultStyle)
+    private static Document TableUnder(string setup, TextStyle? cellStyle, TextStyle? defaultStyle, double borderWidth = 0.5)
     {
         var doc = new Document();
         switch (setup)
@@ -427,7 +427,7 @@ public sealed class KeepRenderingTests
             default: doc.Add(new Paragraph(string.Empty) { Margins = new EdgeInsets(double.NegativeInfinity, 0, 0, 0) }); break;
         }
 
-        var table = new TableElement { DefaultCellStyle = defaultStyle };
+        var table = new TableElement { DefaultCellStyle = defaultStyle, BorderWidth = borderWidth };
         table.AddRow().AddCell(new Cell("a") { Style = cellStyle });
         doc.Add(table);
         return doc;
@@ -452,5 +452,34 @@ public sealed class KeepRenderingTests
         using var plain = TableUnder(setup, null, null);
 
         Assert.Equal(Summary(plain), Summary(doc));
+    }
+
+    /// <summary>
+    /// A negative border width on a table that is laid out and not drawn. 1c61fa6 refused only a
+    /// non-finite width in Layout and wrote the width where a cell border is drawn, so these saved a
+    /// valid file. The negative width is refused where it is written, which a table that never reaches
+    /// the page does not do.
+    /// </summary>
+    [Theory]
+    [InlineData("document top -inf")]
+    [InlineData("empty header -inf")]
+    [InlineData("empty paragraph top -inf")]
+    public void TableBorderWidth_negative_savesWhenTheTableIsNotDrawn_asOn1c61fa6(string setup)
+    {
+        using var doc = TableUnder(setup, null, null, borderWidth: -2);
+        using var plain = TableUnder(setup, null, null);
+
+        Assert.Equal(Summary(plain), Summary(doc));
+    }
+
+    /// <summary>The non-finite width stays a Layout refusal, as on 1c61fa6, drawn or not.</summary>
+    [Fact]
+    public void TableBorderWidth_nan_isRefusedEvenWhenTheTableIsNotDrawn()
+    {
+        using var doc = TableUnder("document top -inf", null, null, borderWidth: double.NaN);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => Save(doc));
+
+        Assert.StartsWith("A table has a line width of NaN", ex.Message, StringComparison.Ordinal);
     }
 }

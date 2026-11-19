@@ -263,27 +263,27 @@ public sealed class PdfDocument : IDisposable
     /// so that <see cref="Save"/> can register the font reference on the correct pages.
     /// </summary>
     /// <remarks>
-    /// <b>A handle from another document is refused unless this document embedded the same font
-    /// program under the same resource name.</b> Usage is recorded by resource name, and that name
-    /// is a counter local to the document that issued it, so a handle from another document would
-    /// be recorded under whatever font this one registered as <c>TT1</c>, or under none, and the
-    /// page would be saved with a font its resources do not define (#544). When this document has
-    /// embedded the same font program under that name, the foreign handle is resolved to this
-    /// document's own embedding, and the glyphs the foreign handle registered are added to its
-    /// subset at save. On 2.3.3 that case saved a file whose subset held only the glyphs this
-    /// document had registered itself, so the text drawn through the foreign handle extracted as
+    /// <b>A handle from another document is refused when this document defines no font under its
+    /// resource name.</b> Usage is recorded by resource name, and that name is a counter local to the
+    /// document that issued it, so a name this document never issued would be saved on the page with
+    /// no <c>/Font</c> entry to define it (#544). <see cref="ArgumentException"/> names the handle.
+    /// When this document has embedded the same font program under that name, the foreign handle is
+    /// resolved to this document's own embedding, and the glyphs the foreign handle registered are
+    /// added to its subset at save. On 2.3.3 that case saved a file whose subset held only the glyphs
+    /// this document had registered itself, so the text drawn through the foreign handle extracted as
     /// other characters and veraPDF's PDF/A-2b profile failed.
-    /// <para><b>Do not pass</b> a handle from another document. It works only when this document
-    /// embedded the same font program under the same resource name, and 3.0 refuses it whatever this
-    /// document holds.</para>
+    /// <para><b>Do not pass</b> a handle from another document. When this document defines the name
+    /// for a different font program, the call is accepted as on 2.3.3: the page is saved with a
+    /// valid font dictionary, and the text drawn through the handle is shown in this document's font
+    /// of that name, with the wrong glyphs. Nothing reports it yet (#607), and 3.0 refuses a foreign
+    /// handle whatever this document holds.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="page"/> or <paramref name="handle"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="handle"/> was returned by a different <see cref="PdfDocument"/>, and this
-    /// document has not embedded the same font program, under the same resource name, through
-    /// <see cref="UseTrueTypeFont"/>.
+    /// document has embedded no font under its resource name through <see cref="UseTrueTypeFont"/>.
     /// </exception>
     public void RegisterEmbeddedFontUsage(PdfPage page, EmbeddedFontHandle handle)
     {
@@ -293,9 +293,10 @@ public sealed class PdfDocument : IDisposable
         {
             // Same font program embedded here under the same resource name: the content stream names
             // the foreign handle's resource, and this document's own embedding defines that name, so
-            // the page is correct. That saved on 2.3.3, though with a subset that lacked the foreign
-            // glyphs, and it is kept (#484). The same program under another name is not: the stream
-            // would name a resource that is undefined here, or is another font.
+            // the page is correct, and the foreign glyphs are merged into that subset. When the name
+            // is defined here for another program, 2.3.3 saved a valid file whose text shows the wrong
+            // glyphs, and that is kept (#484) without a merge, since the subsets are of different
+            // fonts. A name defined nowhere here would have no /Font entry: that is refused.
             if (_embeddedFontByHash.TryGetValue(handle.FontHash, out var own) &&
                 own.ResourceName == handle.ResourceName)
             {
@@ -303,13 +304,13 @@ public sealed class PdfDocument : IDisposable
                     _foreignFontHandles.Add((own, handle));
                 handle = own;
             }
-            else
+            else if (!_embeddedFonts.Exists(f => f.ResourceName == handle.ResourceName))
             {
                 throw new ArgumentException(
                     $"The embedded font {handle.ResourceName} belongs to a different document, and this " +
-                    "document has not embedded the same font program under that resource name. A " +
-                    "handle returned by one document's UseTrueTypeFont cannot be used on another; " +
-                    "embed the font through the document that saves the page.",
+                    "document defines no font under that resource name. A handle returned by one " +
+                    "document's UseTrueTypeFont cannot be used on another; embed the font through the " +
+                    "document that saves the page.",
                     nameof(handle));
             }
         }

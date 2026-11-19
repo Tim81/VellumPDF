@@ -71,9 +71,9 @@ public sealed class TableRenderer : IRenderer
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// The table resolves to no columns, or a cell's span, padding or font size, or the table's border
-    /// width, is refused; see <see cref="TableElement.Rows"/>, <see cref="Cell.ColSpan"/>,
-    /// <see cref="Cell.Padding"/>, <see cref="TableElement.BorderWidth"/>. A cell's text colour is
-    /// refused the same way where the cell is drawn.
+    /// width when it is not finite, is refused; see <see cref="TableElement.Rows"/>, <see cref="Cell.ColSpan"/>,
+    /// <see cref="Cell.Padding"/>, <see cref="TableElement.BorderWidth"/>. A cell's text colour, and a negative
+    /// border width, are refused the same way where the cell is drawn.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// <see cref="VellumPdf.Canvas.PdfCanvas"/> refuses a non-finite <see cref="Cell.Background"/> or
@@ -109,7 +109,7 @@ public sealed class TableRenderer : IRenderer
                 LayoutValidation.ValidateCell(cells[c], r, c);
         }
 
-        LayoutValidation.ValidateLineWidth(_table.BorderWidth, "A table");
+        LayoutValidation.ValidateLineWidthIsFinite(_table.BorderWidth, "A table");
 
         var grid = new TableGridResolver();
         grid.Resolve(_table, area.Width);
@@ -423,6 +423,10 @@ public sealed class TableRenderer : IRenderer
                 .Fill();
             if (ctx.Tagged) ctx.Canvas.EndMarkedContent();
         }
+
+        // Where the border is written, so a table that is never drawn is not refused for a negative
+        // width; 2.3.3 saved those. The finite check is in Layout, as it was there.
+        LayoutValidation.ValidateLineWidth(_table.BorderWidth, "A table");
 
         // Cell border (decorative — wrapped as /Artifact when tagged)
         var (rx, ry, rw, rh) = ctx.ToPdfRect(new LayoutBox(cellX, cellY, colW, h));

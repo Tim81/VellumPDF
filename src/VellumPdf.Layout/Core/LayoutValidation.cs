@@ -23,10 +23,13 @@ namespace VellumPdf.Layout.Core;
 ///
 /// A check is made before the layout only where no content on 2.3.3 produced a valid file with the
 /// input, the rule the <c>Document</c> remarks state: a font size on text that is drawn, a
-/// <c>ColSpan</c> below one, a line separator's margins and colour, a table cell's padding, a
-/// negative line width, an image extent that is zero or not finite. The other non-finite insets,
-/// indents, band heights and colours are not checked here. The layout runs as it did on that version
-/// and <c>PdfCanvas</c> refuses what would be written as <c>NaN</c> or <c>Infinity</c>.
+/// <c>ColSpan</c> below one, a line separator's margins, colour and line width, a table cell's
+/// padding, a non-finite table border width, an image extent that is zero or not finite. The other
+/// non-finite insets, indents, band heights and colours are not checked here. A negative table
+/// border width and a table cell's text colour are refused where they are drawn, because 2.3.3
+/// saved a valid file when the table or cell was laid out and not drawn. The layout runs as it did
+/// on that version and <c>PdfCanvas</c> refuses what would be written as <c>NaN</c> or
+/// <c>Infinity</c>.
 ///
 /// What is left alone, each rendering valid content today, because refusing it would turn a working
 /// document into an exception: a font size of zero or less, a <c>RowSpan</c> below one, a negative
@@ -207,18 +210,29 @@ internal static class LayoutValidation
     /// </summary>
     internal static void ValidateLineWidth(double width, string owner)
     {
-        if (!double.IsFinite(width))
-        {
-            throw new InvalidOperationException(
-                $"{owner} has a line width of {Format(width)}, which cannot be drawn. " +
-                "A line width must be a finite number.");
-        }
+        ValidateLineWidthIsFinite(width, owner);
 
         if (width < 0)
         {
             throw new InvalidOperationException(
                 $"{owner} has a line width of {Format(width)}, which cannot be drawn. " +
                 "A line width must not be negative (ISO 32000-2, 8.4.3.2).");
+        }
+    }
+
+    /// <summary>
+    /// The finite half of <see cref="ValidateLineWidth"/>, for a caller that checks the sign where the
+    /// width is written: a table's border width is checked here in layout, as on 2.3.3, and for sign
+    /// only where a cell border is drawn, because 2.3.3 saved a valid file with a negative width on a
+    /// table that was never drawn.
+    /// </summary>
+    internal static void ValidateLineWidthIsFinite(double width, string owner)
+    {
+        if (!double.IsFinite(width))
+        {
+            throw new InvalidOperationException(
+                $"{owner} has a line width of {Format(width)}, which cannot be drawn. " +
+                "A line width must be a finite number.");
         }
     }
 

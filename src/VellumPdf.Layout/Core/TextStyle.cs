@@ -104,11 +104,10 @@ public sealed class TextStyle
     /// <exception cref="InvalidOperationException">
     /// Raised from a save rather than from this property, when a checked size is not finite (see
     /// the remarks), or when a finite size makes the element too tall for the content area. On a
-    /// paragraph style the message names the run and the size; a
-    /// <see cref="VellumPdf.Layout.Elements.Heading"/> is laid out through the same paragraph code
-    /// and reports the same way, as <c>"A paragraph run"</c>, not by the heading's own name. A list
-    /// item's marker is laid out as a paragraph, so a list-item style reports as <c>"A paragraph
-    /// run"</c> too. On a table-cell style the message names the row and cell instead.
+    /// paragraph style the message names the run and the size, as <c>"A paragraph run"</c>. A
+    /// <see cref="VellumPdf.Layout.Elements.Heading"/> reports as <c>"A heading"</c> and a list item,
+    /// or the marker laid out with it, as <c>"A list item"</c>. On a table-cell style the message names
+    /// the row and cell instead.
     /// <para>On a <see cref="VellumPdf.Layout.Elements.RunningBand"/> style, which message fires
     /// depends on the band and on whether
     /// <see cref="VellumPdf.Layout.Elements.RunningBand.Height"/> is set. Measured with
@@ -189,17 +188,16 @@ public sealed class TextStyle
     /// <summary>The text colour. Defaults to <see cref="ColorRgb.Black"/>.</summary>
     /// <remarks>
     /// Stored as given. Channels are not clamped. A channel that is not finite is refused where it is
-    /// written; see <see cref="Document"/> and <see cref="ColorRgb"/>. In a paragraph run, a heading, a list
-    /// item or a table cell that draws text the element's own check names it. On a running band, and on a band that
-    /// draws nothing, <see cref="VellumPdf.Canvas.PdfCanvas"/> decides: it refuses the value when the
-    /// band is drawn, and an empty template writes no colour. <b>Do not pass</b> a non-finite channel:
-    /// 3.0 refuses it.
+    /// written; see <see cref="Document"/> and <see cref="ColorRgb"/>. In a paragraph run, a heading, a
+    /// list item or a table cell that draws text, the element's own check names it. On a running band,
+    /// and on a band that draws nothing, <see cref="VellumPdf.Canvas.PdfCanvas"/> decides: it refuses
+    /// the value when the band is drawn, and an empty template writes no colour. <b>Do not pass</b> a
+    /// non-finite channel: 3.0 refuses it.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from a save, when a channel is <c>NaN</c> or infinite on a paragraph run, heading, list
-    /// item or table cell that draws text. The message names the element and the channel. A finite channel outside 0 to
-    /// 1
-    /// is not refused (#509).
+    /// item or table cell that draws text. The message names the element and the channel. A finite
+    /// channel outside 0 to 1 is not refused (#509).
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from a save, when a channel is <c>NaN</c> or infinite on a running band that is drawn.
