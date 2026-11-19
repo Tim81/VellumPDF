@@ -1108,7 +1108,11 @@ public sealed class Document : IDisposable
     /// <summary>
     /// Windows refuses to open an existing Hidden or System file with <c>FileMode.Create</c>, which
     /// is what 2.3.3 used, and throws <see cref="UnauthorizedAccessException"/>; <c>OpenOrCreate</c>
-    /// opens it. The refusal is kept (measured on Windows for Hidden, System and both together). It is
+    /// opens it. The refusal is kept. Through a symbolic link the open judges the final target, not the
+    /// link, so the attributes read here are the final target's: measured on Windows with a normal link
+    /// to a hidden file (refused on 2.3.3) and a hidden link to a normal file (saved on 2.3.3). A chain
+    /// that <see cref="FileSystemInfo.ResolveLinkTarget"/> cannot resolve is judged by the link's own
+    /// attributes. It is
     /// Windows only: on a Unix file system <see cref="FileAttributes.Hidden"/> follows from a leading
     /// dot in the name, and a dot file is an ordinary target there.
     /// </summary>
@@ -1116,7 +1120,24 @@ public sealed class Document : IDisposable
     {
         if (!OperatingSystem.IsWindows() || !File.Exists(target)) return;
 
-        if ((File.GetAttributes(target) & (FileAttributes.Hidden | FileAttributes.System)) != 0)
+        // File.GetAttributes reports a link's own attributes, which the open never looks at.
+        FileSystemInfo judged = new FileInfo(target);
+        if (judged.LinkTarget is not null)
+        {
+            try
+            {
+                judged = judged.ResolveLinkTarget(returnFinalTarget: true) ?? judged;
+            }
+            catch (IOException)
+            {
+                // ResolveLinkTarget resolves a relative link's ".." textually, so it throws for a ".."
+                // below a symlinked directory, which the operating system resolves differently and
+                // the open follows (SaveThroughARelativeLinkWithDotDotBelowASymlinkedDirectory...).
+                // For that shape the link's own attributes are all this check has, as before.
+            }
+        }
+
+        if (judged.Exists && (judged.Attributes & (FileAttributes.Hidden | FileAttributes.System)) != 0)
             throw new UnauthorizedAccessException($"Access to the path '{target}' is denied.");
     }
 

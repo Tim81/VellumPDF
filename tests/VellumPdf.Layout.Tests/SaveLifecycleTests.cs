@@ -441,6 +441,62 @@ public sealed class SaveLifecycleTests
         }
     }
 
+    /// <summary>
+    /// Through a symbolic link, 1c61fa6's <c>FileMode.Create</c> judged the final target's Hidden and
+    /// System attributes, not the link's: a normal link to a hidden or system file was refused, and a
+    /// hidden link to a normal file was saved. Measured on Windows against 1c61fa6 for both overloads.
+    /// </summary>
+    [Theory]
+    [InlineData(FileAttributes.Normal, FileAttributes.Hidden, true, false)]
+    [InlineData(FileAttributes.Normal, FileAttributes.System, true, true)]
+    [InlineData(FileAttributes.Hidden, FileAttributes.Normal, false, false)]
+    [InlineData(FileAttributes.Hidden, FileAttributes.Normal, false, true)]
+    [InlineData(FileAttributes.Hidden, FileAttributes.Hidden, true, true)]
+    public async Task SaveThroughALink_judgesTheFinalTargetsAttributes_asOn1c61fa6(
+        FileAttributes linkAttributes, FileAttributes targetAttributes, bool refused, bool async)
+    {
+        if (!OperatingSystem.IsWindows())
+            Assert.Skip("The Hidden and System file attributes refuse FileMode.Create on Windows only.");
+
+        using var dir = new TempDir();
+        var real = Path.Combine(dir.Path, "real.pdf");
+        var link = Path.Combine(dir.Path, "link.pdf");
+        await File.WriteAllTextAsync(real, "keep", TestContext.Current.CancellationToken);
+        CreateLink(link, real);
+        if (linkAttributes != FileAttributes.Normal)
+            new FileInfo(link).Attributes = linkAttributes | FileAttributes.ReparsePoint;
+        if (targetAttributes != FileAttributes.Normal)
+            File.SetAttributes(real, targetAttributes);
+        try
+        {
+            using var doc = Good();
+            doc.Add(new Paragraph("Hello", Style()));
+
+            if (refused)
+            {
+                if (async)
+                    await Assert.ThrowsAsync<UnauthorizedAccessException>(() => doc.SaveAsync(link, TestContext.Current.CancellationToken));
+                else
+                    Assert.Throws<UnauthorizedAccessException>(() => doc.Save(link));
+                File.SetAttributes(real, FileAttributes.Normal);
+                Assert.Equal("keep", await File.ReadAllTextAsync(real, TestContext.Current.CancellationToken));
+            }
+            else
+            {
+                if (async)
+                    await doc.SaveAsync(link, TestContext.Current.CancellationToken);
+                else
+                    doc.Save(link);
+                File.SetAttributes(real, FileAttributes.Normal);
+                Assert.Equal(1, Pages(File.ReadAllBytes(real)));
+            }
+        }
+        finally
+        {
+            File.SetAttributes(real, FileAttributes.Normal);
+        }
+    }
+
     [Fact]
     public async Task FailedAsyncSaveToANewPath_createsNothing()
     {
