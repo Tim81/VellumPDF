@@ -121,18 +121,15 @@ public static class TiffImageLoader
     /// composites wrong (#534). Read the directory yourself if you did not produce the
     /// file.</para>
     /// <para>A <c>ColorMap</c> the loader cannot use is refused with
-    /// <see cref="InvalidDataException"/>: a negative offset on a tag with a nonzero count, an
-    /// offset that puts the map past the end of the file, and an empty map where the map is read.
-    /// The map is read only under Compression 1, 5 and 32773, the three that expand a palette.
-    /// Under Compression 2, 3, 4 and 7 it is never read, so a palette file with an empty map loads
-    /// there. A tag with a count of zero and a negative offset also loads wherever nothing reads
-    /// the map. Before 2.4 a negative offset raised <see cref="IndexOutOfRangeException"/> when
-    /// the offset plus twice the count stayed inside the file, after an array sized from the tag's
-    /// count had been allocated; a negative offset whose sum ran past the end was already an
-    /// <see cref="InvalidDataException"/>. An empty map on a palette photometric raised the same
-    /// exception from the palette expansion (#512, #534). A directory offset or a scalar tag's
-    /// value offset within a few bytes of <see cref="int.MaxValue"/> raised it too, because the
-    /// bounds sum wrapped negative, and now raises <see cref="InvalidDataException"/>.</para>
+    /// <see cref="InvalidDataException"/>. The tag is read whenever the directory carries it, under
+    /// every compression, so a negative offset on a tag with a nonzero count and an offset that
+    /// puts the map past the end of the file are refused under all of them. The map is expanded
+    /// only under Compression 1, 5 and 32773, the three that expand a palette, so an empty map on
+    /// a palette photometric is refused only there; under Compression 2, 3, 4 and 7 the same file
+    /// loads. A tag with a count of zero and a negative offset loads unless the empty map is
+    /// refused as above (#512, #534). A directory offset or a scalar tag's value offset within a
+    /// few bytes of <see cref="int.MaxValue"/> is refused with
+    /// <see cref="InvalidDataException"/>.</para>
     /// <para><see langword="null"/> is not checked. It raises
     /// <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>, so a caller
     /// guarding on the documented type will not catch it. You have to reject null yourself. A
@@ -141,20 +138,17 @@ public static class TiffImageLoader
     /// Neither edge is limited on its own, so 2,000,000 by 1 is accepted and 10,001 by 10,001 is
     /// not. The limit is internal and has no public setting. For uncompressed strips the strip
     /// list is checked against the file before the raster is allocated, so a header cannot cost
-    /// more than the file carries: a 114-byte file declaring four 16-bit samples at 10,000 by
-    /// 10,000 is refused after under 2 KB, where it once allocated about 800 MB. Compressed strips are
-    /// not pre-checked, because a PackBits or LZW stream decodes to more bytes than it occupies. A
-    /// 10,000 by 10,000 three-sample 8-bit file with a 4-byte LZW strip allocates about 600 MB
-    /// before it is refused, and a PackBits strip that decodes to less than the image needs loads
-    /// with the rest zero-filled (#536).</para>
+    /// more than the file carries. Compressed strips are not pre-checked, because a PackBits or
+    /// LZW stream decodes to more bytes than it occupies: a short LZW strip under a large header
+    /// allocates memory sized from the header before it is refused, and a PackBits strip that
+    /// decodes to less than the image needs loads with the rest zero-filled (#536).</para>
     /// <para>The limit is not checked for a JPEG strip. A strip compressed with new-style JPEG
     /// (Compression 7) is handed to <see cref="JpegImageLoader.Load(byte[])"/> and passed through
     /// as DCTDecode data, so the returned size is the one in the JPEG frame header. It is checked
     /// neither against the limit nor against the directory's <c>ImageWidth</c> and
-    /// <c>ImageLength</c>. Measured: an 8 by 8 directory over a strip declaring 65535 by 65535
-    /// returns 65535 by 65535, which is 4,294,836,225 pixels; an 8 by 8 directory over a 16 by 16
-    /// strip returns 16 by 16, and the directory's size is dropped without a report. No raster is
-    /// allocated.</para>
+    /// <c>ImageLength</c>: an 8 by 8 directory over a strip declaring 65535 by 65535 returns
+    /// 65535 by 65535, and over a 16 by 16 strip it returns 16 by 16, with the directory's size
+    /// dropped and nothing reported. No raster is allocated.</para>
     /// <para>Do not pass a JPEG-compressed TIFF whose strip is larger than 100,000,000 pixels, or
     /// whose size disagrees with its <c>ImageWidth</c> and <c>ImageLength</c>. Both are accepted
     /// today and 3.0 will refuse them. If the input is untrusted, check the result's <c>Width</c>
@@ -189,9 +183,7 @@ public static class TiffImageLoader
     /// 3) and for 16-bit greyscale, RGB and RGBA files, the three places the argument is
     /// dereferenced. A null changes the outcome of no other file: 8-bit images, palette images and
     /// Group 4 and JPEG strips load with it as they do without, so whether a null is refused
-    /// depends on the image and not on the call. Before 2.4 the three reads raised
-    /// <see cref="NullReferenceException"/>, which is what made the outcome image-dependent
-    /// (#534).</para>
+    /// depends on the image and not on the call (#534).</para>
     /// <para>Do not pass <see langword="null"/>. The parameter is not annotated nullable, and
     /// 3.0 will refuse a null for every file. Pass <see cref="ImageLoadOptions.Default"/> or call
     /// the single-argument overload.</para>
@@ -563,8 +555,8 @@ public static class TiffImageLoader
         var rawRowBytes = (int)rawRowBytesLong;
 
         // Uncompressed strips hold exactly the bytes they decode to, so a file that lacks them can
-        // be refused before a raster sized from the header is allocated: 126 bytes declaring a
-        // 10,000 by 10,000 four-sample 16-bit image otherwise cost 800,002,400 bytes (#536). The
+        // be refused before a raster sized from the header is allocated: a 114-byte file declaring
+        // a 10,000 by 10,000 four-sample 16-bit image otherwise allocates about 800 MB (#536). The
         // dry run walks the same checks, in the same order, as the decode below. PackBits and LZW
         // are not pre-checked: their output size is not bounded by their input, and 2.3.3 loaded a
         // PackBits strip that decodes to less than the image needs, zero-filling the rest.

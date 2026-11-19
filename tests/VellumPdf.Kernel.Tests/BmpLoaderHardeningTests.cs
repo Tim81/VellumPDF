@@ -320,6 +320,44 @@ public sealed class BmpLoaderHardeningTests
         Assert.Equal(4, img.Height);
     }
 
+    // The header checks belong to the 8-bit branch for files under 1,078 bytes and to nothing else.
+    // A 24- or 32-bit file of that size never reached them, and 2.3.3 loaded it whatever the fields
+    // said, so it still loads, with the same pixels as the untouched file.
+    [Theory]
+    [InlineData(24, 48)]  // 4 x 4 at 3 bytes per pixel, 102 bytes in all
+    [InlineData(32, 64)]  // 4 x 4 at 4 bytes per pixel, 118 bytes in all
+    public void Bmp24And32_fileUnder1078Bytes_isNeverHeldToTheHeaderFields(int bitCount, int pixelBytes)
+    {
+        var pixels = Enumerable.Range(1, pixelBytes).Select(i => (byte)(i * 7)).ToArray();
+        var clean = Bmp(bitCount, 4, 4, clrUsed: 0, [], pixels);
+        Assert.True(clean.Length < 1078);
+        var violating = WithU16(clean, 26, 0);                    // biPlanes
+        violating = WithU32(violating, 6, 0xFFFFFFFFu);           // both reserved words
+        violating = WithU32(violating, 2, 0);                     // bfSize
+        violating = WithU32(violating, 34, 1);                    // biSizeImage
+        violating = WithU32(violating, 50, 200);                  // biClrImportant
+
+        var img = BmpImageLoader.Load(violating);
+
+        Assert.Equal(4, img.Width);
+        Assert.Equal(RgbBytes(BmpImageLoader.Load(clean)), RgbBytes(img));
+    }
+
+    [Fact]
+    public void Bmp24_fileUnder1078Bytes_withBiPlanesZero_loadsAsTheUntouchedFileDoes()
+    {
+        var pixels = new byte[48];
+        pixels[0] = 10;
+        pixels[1] = 20;
+        pixels[2] = 30;
+        var bmp = WithU16(Bmp(24, 4, 4, clrUsed: 0, [], pixels), 26, 0);
+        Assert.Equal(102, bmp.Length);
+
+        // BMP stores blue, green, red, so the first stored pixel is R=30, G=20, B=10. The height is
+        // positive, so the first stored row is the bottom row: raster row 3 of 4, 12 bytes per row.
+        Assert.Equal<byte[]>([30, 20, 10], RgbBytes(BmpImageLoader.Load(bmp))[36..39]);
+    }
+
     // ── The 1,078-byte boundary ───────────────────────────────────────────────
 
     // A 1 x 1 image, clrUsed 4, whose pixel is index 200: past the declared entries, so only a file

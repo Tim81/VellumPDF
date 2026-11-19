@@ -48,9 +48,11 @@ public static class BmpImageLoader
     /// Neither edge is limited on its own, so 2,000,000 by 1 is accepted and 10,001 by 10,001 is
     /// not. The limit is internal and has no public setting. The pixel data is checked against the
     /// file length before the raster is allocated, so a header cannot cost more than the file
-    /// carries: a 1,079-byte file declaring 10,000 by 10,000 is refused after under 2 KB.
-    /// A file that does carry its pixel data still allocates the full raster, at least three
-    /// bytes per pixel, so 300 MB at the limit.</para>
+    /// carries. A file that does carry its pixel data still allocates the full raster, three bytes
+    /// per pixel, which is 300 MB at the limit. Per byte of pixel data the file carries, that is
+    /// up to three bytes allocated for an 8-bit file (one index byte becomes three of RGB), one for
+    /// a 24-bit file and three quarters for a 32-bit file; row padding lowers the 8-bit and 24-bit
+    /// ratios.</para>
     /// <para>This loader reads one variant: an uncompressed 40-byte BITMAPINFOHEADER bitmap at
     /// 8, 24 or 32 bits per pixel. Every other well-formed BMP raises
     /// <see cref="NotSupportedException"/>, compressed ones included, and there is no fallback
@@ -60,28 +62,26 @@ public static class BmpImageLoader
     /// <c>biClrUsed</c> (zero means 256, and a larger value is capped at 256) and requires the
     /// file to hold that many entries after the header. A file declaring 4 entries is 86 bytes for
     /// a 4 by 4 image and loads. A palette that does not fit raises
-    /// <see cref="InvalidDataException"/> as truncated, which is true of it. Before 2.4 the field
-    /// was ignored and any 8-bit file under 1,078 bytes was refused as truncated whatever it
-    /// declared (#533). A file of 1,078 bytes or more still loads as it did then, indexing the
-    /// table as 256 entries, so a pixel pointing past <c>biClrUsed</c> reads whatever bytes lie in
-    /// that slot. A smaller file is held to the entries it declares: a pixel pointing past them, or
-    /// pixel data starting inside the palette, raises <see cref="InvalidDataException"/>.</para>
-    /// <para>That smaller-file branch is the only one that reads header fields beyond the ones
-    /// needed to decode. A file under 1,078 bytes is accepted only if <c>biPlanes</c> is 1, both
-    /// reserved words are zero, <c>biWidth</c> is positive, <c>bfSize</c> equals the file length,
-    /// <c>biSizeImage</c> is zero or between the pixel data the header implies and the bytes the
-    /// file holds from <c>bfOffBits</c>, and
-    /// <c>biClrImportant</c> is zero or no more than the entries in use. Any other file of that
-    /// size raises <see cref="InvalidDataException"/>, as 2.3.3 did. A file of 1,078 bytes or more
-    /// is never held to them, because 2.3.3 ignored them there.</para>
+    /// <see cref="InvalidDataException"/> as truncated, which is true of it. A file of 1,078
+    /// bytes or more indexes the table as 256 entries whatever <c>biClrUsed</c> says, so a pixel
+    /// pointing past <c>biClrUsed</c> reads whatever bytes lie in that slot. A smaller file is held
+    /// to the entries it declares: a pixel pointing past them, or pixel data starting inside the
+    /// palette, raises <see cref="InvalidDataException"/>.</para>
+    /// <para>An 8-bit file under 1,078 bytes is the only one held to header fields beyond the ones
+    /// needed to decode. It is accepted only if <c>biPlanes</c> is 1, both reserved words are zero,
+    /// <c>biWidth</c> is positive, <c>bfSize</c> equals the file length, <c>biSizeImage</c> is zero
+    /// or between the pixel data the header implies and the bytes the file holds from
+    /// <c>bfOffBits</c>, and <c>biClrImportant</c> is zero or no more than the entries in use. Any
+    /// other 8-bit file of that size raises <see cref="InvalidDataException"/>. An 8-bit file of
+    /// 1,078 bytes or more, and a 24-bit or 32-bit file of any size, is never held to these
+    /// fields.</para>
     /// <para>Any other BITMAPINFOHEADER field this loader does not read is neither honoured nor
     /// refused.</para>
     /// <para>A 32-bit bitmap is read as opaque. In <c>BI_RGB</c> with a 40-byte header the fourth
     /// byte of each pixel is unused, so this loader ignores it and returns no soft mask. A file
     /// whose writer filled that byte with transparency values loses them: alpha is carried by
     /// <c>BI_BITFIELDS</c>, <c>BI_ALPHABITFIELDS</c> and the V4 and V5 headers, and this loader
-    /// refuses all four with <see cref="NotSupportedException"/>. Before 2.4 the byte was read as
-    /// alpha, so a file written with zero there loaded fully transparent (#535).</para>
+    /// refuses all four with <see cref="NotSupportedException"/>.</para>
     /// </remarks>
     public static PdfImageXObject Load(byte[] bmpBytes)
     {

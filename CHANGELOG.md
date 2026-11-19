@@ -155,13 +155,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (86 and 134 bytes for a 4 by 4 image) was refused with "BMP file is truncated", which is not
   what was wrong with it. It now reads the field, treats 0 as 256, caps it at 256 before
   multiplying, and requires `54 + entries * 4` bytes. A file of 1,078 bytes or more loads exactly
-  as before, indexing the table as 256 entries whatever `biClrUsed` says. A smaller file, which
-  2.3.3 always refused, loads only if its header conforms: `biPlanes` is 1, both reserved words
-  are zero, `biWidth` is positive, `bfSize` equals the file length, `biSizeImage` is zero or
-  between the pixel data the header implies and the bytes the file holds from `bfOffBits`, and `biClrImportant` is zero or no more than the
-  entries in use. It is also held to the entries it declares, so a pixel pointing past them, or
-  pixel data starting inside the palette, is refused. Every refusal is still an
-  `InvalidDataException`.
+  as before, indexing the table as 256 entries whatever `biClrUsed` says. An 8-bit file under
+  1,078 bytes, which 2.3.3 always refused, loads only if its header conforms: `biPlanes` is 1, both
+  reserved words are zero, `biWidth` is positive, `bfSize` equals the file length, `biSizeImage` is
+  zero or between the pixel data the header implies and the bytes the file holds from `bfOffBits`,
+  and `biClrImportant` is zero or no more than the entries in use. It is also held to the entries
+  it declares, so a pixel pointing past them, or pixel data starting inside the palette, is
+  refused. Every refusal is still an `InvalidDataException`. A 24-bit or 32-bit file is never held
+  to these fields, whatever its size.
 
 - **`TiffImageLoader` refuses an unusable `ColorMap` with `InvalidDataException` (#512, #534).**
   A `ColorMap` whose value field is a negative offset threw `IndexOutOfRangeException` when the
@@ -170,13 +171,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   whose sum ran past the end was already an `InvalidDataException`. A nonzero count with a negative
   offset is now refused before the allocation. A palette image whose `ColorMap` is empty threw the
   same exception from the palette expansion, with no negative value in the file, and is now
-  refused as an empty map. That refusal applies under Compression 1, 5 and 32773, the three that
-  expand a palette; under Compression 2, 3, 4 and 7 the map is never read and the file loads as
-  before. A directory offset or a scalar tag's value offset near `int.MaxValue` also threw the
+  refused as an empty map. The map is expanded only under Compression 1, 5 and 32773, so the
+  empty-map refusal applies only there, and under Compression 2, 3, 4 and 7 the file loads as
+  before. The tag is read under every compression, so the negative-offset and past-the-end
+  refusals apply to all of them. A directory offset or a scalar tag's value offset near `int.MaxValue` also threw the
   exception, because the bounds sum wrapped, and is refused too. Nothing that loaded before is
-  refused: a count of zero loads wherever nothing reads the map, with a negative offset or with
-  an offset inside the file (an offset past the end was already refused), and one or two entries
-  still load. The XML documentation no longer lists `IndexOutOfRangeException`. No public API
+  refused: a count of zero loads with a negative offset or with an offset inside the file (an
+  offset past the end was already refused) unless the empty map is refused as above, and one or
+  two entries still load. The XML documentation no longer lists `IndexOutOfRangeException`. No public API
   changes.
 
 - **`TiffImageLoader` checks uncompressed strips before it allocates the raster (#536).** The

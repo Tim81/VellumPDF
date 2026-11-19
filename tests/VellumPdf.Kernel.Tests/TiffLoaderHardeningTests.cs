@@ -109,8 +109,9 @@ public sealed class TiffLoaderHardeningTests
 
     // ── An empty ColorMap on a palette photometric, by compression ────────────
     //
-    // The map is read only under Compression 1, 5 and 32773. Compression 2, 3, 4 and 7 return
-    // before the palette is expanded, so there the same file loads, as it did on 2.3.3.
+    // The map is expanded only under Compression 1, 5 and 32773. Compression 2, 3, 4 and 7 return
+    // before the palette is expanded, so there the same file loads, as it did on 2.3.3. The tag
+    // itself is read under every compression, so its offset checks are not limited to those three.
 
     [Theory]
     [InlineData(2)]
@@ -144,15 +145,43 @@ public sealed class TiffLoaderHardeningTests
         Assert.Contains("empty ColorMap", ex.Message);
     }
 
-    [Fact]
-    public void ColorMap_countZero_withAnOffsetPastTheEnd_isRefused_underEveryCompression()
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(7)]
+    [InlineData(32773)]
+    public void ColorMap_countZero_withAnOffsetPastTheEnd_isRefused_underEveryCompression(int compression)
     {
         // A count of zero reads nothing, but the offset is still bounds-checked when the tag is
         // read, ahead of any compression. Offset 0x7FFFFF00 is far past the end of the file.
         var tiff = Image(8, 8, photometric: 0, bps: 1, strip: [0x00, 0x10, 0x01, 0x02],
-            compression: 4, colorMapCount: 0, colorMapField: 0x7FFFFF00u);
+            compression: compression, colorMapCount: 0, colorMapField: 0x7FFFFF00u);
 
-        Assert.Throws<InvalidDataException>(() => TiffImageLoader.Load(tiff));
+        var ex = Assert.Throws<InvalidDataException>(() => TiffImageLoader.Load(tiff));
+        Assert.Contains("ColorMap", ex.Message);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(7)]
+    [InlineData(32773)]
+    public void ColorMap_negativeOffset_isRefused_underEveryCompression(int compression)
+    {
+        // The tag is read while the directory is parsed, before the compression decides anything,
+        // so a palette image under CCITT or JPEG compression, where the map is never expanded, is
+        // refused for its offset all the same.
+        var tiff = Image(8, 8, photometric: 3, bps: 1, strip: [0x00, 0x10, 0x01, 0x02],
+            compression: compression, colorMapCount: 6, colorMapField: 0xFFFFFFFEu);
+
+        var ex = Assert.Throws<InvalidDataException>(() => TiffImageLoader.Load(tiff));
+        Assert.Contains("negative", ex.Message);
     }
 
     // ── #512: a directory or value offset whose bounds sum wraps ──────────────

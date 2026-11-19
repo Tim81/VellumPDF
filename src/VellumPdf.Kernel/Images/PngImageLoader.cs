@@ -43,10 +43,10 @@ public static class PngImageLoader
     /// its own, so 2,000,000 by 1 is accepted and 10,001 by 10,001 is not. The limit is internal
     /// and has no public setting. This loader sizes its raster from the decompressed image data
     /// rather than from the header, so a header alone costs little. <see cref="BmpImageLoader"/>
-    /// and <see cref="TiffImageLoader"/> now check the pixel data, or for TIFF the uncompressed
+    /// and <see cref="TiffImageLoader"/> check the pixel data, or for TIFF the uncompressed
     /// strips, against the file before they allocate. TIFF LZW and PackBits strips are not
-    /// checked: a 4-byte LZW strip under a 10,000 by 10,000 header allocates about 600 MB before it
-    /// is refused (#536).</para>
+    /// checked, so a short LZW strip under a large header allocates memory sized from the header
+    /// before it is refused (#536).</para>
     /// <para>A chunk this loader does not handle is skipped, not refused. The IHDR compression
     /// and filter methods are not checked; a zlib IDAT still loads.</para>
     /// </remarks>
