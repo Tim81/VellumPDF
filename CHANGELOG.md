@@ -328,15 +328,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   stream)` and `element.AddChild(element)` on a
   tagged document each recursed with no guard until the process died with a `StackOverflowException`,
   which no application can catch, and the structure-element form needed nothing but `Tagged = true`
-  and one `AddChild`. `PdfStructElem.AddChild` now refuses a child that is the element or holds it in
-  its own subtree, with `ArgumentException` at the call that makes the cycle, and refuses a null.
+  and one `AddChild`. `PdfStructElem.AddChild` still accepts such a child, as 2.3.3 did, and
+  the save refuses the cycle: `Save` throws `InvalidOperationException` for a tagged document whose
+  structure tree reaches it. A document that is not tagged never builds the tree, and saves as it
+  did, with a cyclic element registered or not.
   `PdfWriter` keeps the arrays, dictionaries and streams on its current path, so `PdfArray.WriteTo`,
   `PdfDictionary.WriteTo` and the stream `WriteTo` throw `InvalidOperationException` for one that
   contains itself. A stream needs its own entry, because it serialises a fresh copy of its dictionary
   on every call and the dictionary guard never sees the same one twice. A search of `src` for every
   `PdfObject` subclass and every `.WriteTo(` call found no other container: `PdfIndirectObject` is
   built fresh around its value on each write, and the three stream classes share the same guard.
-  The three structure-tree walks do the same for a graph assembled some other way. There is no depth
+  The three structure-tree walks keep their current path to do that. There is no depth
   cap: a deep acyclic structure saves as before, and an object placed twice side by side, or
   referred to through an indirect reference, is not a cycle. `ListItem.AddChild` has the same shape
   but is unchanged, because a self-referencing item renders today with one level of nesting; it is

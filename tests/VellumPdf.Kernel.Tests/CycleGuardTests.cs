@@ -12,39 +12,100 @@ namespace VellumPdf.Kernel.Tests;
 /// <summary>
 /// #521: three call paths recursed over a caller-built graph with no cycle guard and no depth bound,
 /// and a <c>StackOverflowException</c> cannot be caught in .NET. A structure element added to itself
-/// reached it from an ordinary <c>Save</c>. Every test here asserts the exception, because a test
-/// that only checks the process survives passes on a machine with a larger stack.
+/// reached it from an ordinary <c>Save</c>. Every test here that refuses asserts the exception,
+/// because a test that only checks the process survives passes on a machine with a larger stack.
 /// </summary>
 public sealed class CycleGuardTests
 {
-    // ── Structure elements: refused where the cycle is made ──────────────────
+    // ── Structure elements: accepted where the cycle is made, refused where the tree is built ──
 
+    /// <summary>
+    /// 2.3.3 stored a cycle: <c>AddChild</c> checked nothing. The call keeps accepting it, since the
+    /// cycle only does harm where a save walks the tree.
+    /// </summary>
     [Fact]
-    public void StructElem_AddChild_itself_isRefused()
+    public void StructElem_AddChild_aCycle_isStored()
     {
-        var element = new PdfStructElem("Div");
+        var self = new PdfStructElem("Div");
+        self.AddChild(self);
+        Assert.Same(self, Assert.Single(self.Children));
 
-        var ex = Assert.Throws<ArgumentException>(() => element.AddChild(element));
-
-        Assert.Equal("child", ex.ParamName);
-        Assert.Contains("its own child", ex.Message, StringComparison.Ordinal);
-        Assert.Empty(element.Children);
-    }
-
-    [Fact]
-    public void StructElem_AddChild_aDescendantsAncestor_isRefused()
-    {
         var a = new PdfStructElem("Div");
         var b = a.AddChild(new PdfStructElem("Sect"));
         var c = b.AddChild(new PdfStructElem("P"));
+        c.AddChild(a);
+        Assert.Same(a, Assert.Single(c.Children));
+    }
 
-        // c would then have a, its own great-grandparent, as a child.
-        var ex = Assert.Throws<ArgumentException>(() => c.AddChild(a));
+    /// <summary>
+    /// The shapes 2.3.3 saved: a cyclic element that a save never walks, because the document is not
+    /// tagged when it is saved. Measured on 2.3.3 (1c61fa6): all four save, the last with a
+    /// <c>/StructTreeRoot</c>, since the tree is built only for a tagged document and an element
+    /// registered while the document was untagged is not part of it.
+    /// </summary>
+    [Theory]
+    [InlineData("self-cycle registered")]
+    [InlineData("two-element cycle registered")]
+    [InlineData("cycle built, not registered")]
+    [InlineData("tagged later, cycle registered while untagged")]
+    public void Save_withACyclicElementTheSaveNeverWalks_saves_asOn1c61fa6(string shape)
+    {
+        using var doc = new PdfDocument();
+        doc.AddPage();
+        var e = new PdfStructElem("P");
+        switch (shape)
+        {
+            case "two-element cycle registered":
+                var other = new PdfStructElem("Div");
+                other.AddChild(e);
+                e.AddChild(other);
+                doc.RegisterStructElem(other);
+                break;
+            case "cycle built, not registered":
+                e.AddChild(e);
+                break;
+            default:
+                e.AddChild(e);
+                doc.RegisterStructElem(e);
+                break;
+        }
 
-        Assert.Equal("child", ex.ParamName);
-        Assert.Contains("its own ancestor", ex.Message, StringComparison.Ordinal);
-        Assert.Empty(c.Children);
-        Assert.Single(a.Children);
+        if (shape.StartsWith("tagged later", StringComparison.Ordinal))
+            doc.Tagged = true;
+
+        using var ms = new MemoryStream();
+        doc.Save(ms);
+
+        Assert.StartsWith("%PDF-", Encoding.Latin1.GetString(ms.ToArray()), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A tagged document whose tree reaches a cycle made through <c>AddChild</c> is refused by the
+    /// save with <see cref="InvalidOperationException"/>, for a self-cycle and for a longer one.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Save_taggedDocumentReachingACycleBuiltWithAddChild_raisesInsteadOfOverflowingTheStack(bool longer)
+    {
+        using var doc = new PdfDocument { Tagged = true, Language = "en-US" };
+        doc.AddPage();
+        var root = new PdfStructElem("Div");
+        if (longer)
+        {
+            var child = root.AddChild(new PdfStructElem("Sect"));
+            child.AddChild(root);
+        }
+        else
+        {
+            root.AddChild(root);
+        }
+
+        doc.RegisterStructElem(root);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => doc.Save(new MemoryStream()));
+
+        Assert.Contains("structure tree contains a cycle", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -101,8 +162,8 @@ public sealed class CycleGuardTests
     }
 
     /// <summary>
-    /// The walks keep a guard of their own for a graph assembled some other way. AddChild refuses a
-    /// cycle, so this one is injected by reflection, and Save has to raise rather than overflow.
+    /// The same cycle injected into the child list by reflection, which no member of the public surface
+    /// does: Save has to raise rather than overflow.
     /// </summary>
     [Fact]
     public void Save_withACycleInjectedPastAddChild_raisesInsteadOfOverflowingTheStack()

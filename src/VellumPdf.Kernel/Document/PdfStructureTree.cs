@@ -72,59 +72,32 @@ public sealed class PdfStructElem
 
     /// <summary>Adds a child struct element and returns it (fluent helper).</summary>
     /// <remarks>
-    /// An element may not be its own ancestor (#521). A child that is this element, or that already
-    /// holds this element somewhere in its own subtree, would close a cycle, and the walks that
-    /// number the tree and write it recurse over <see cref="Children"/> with nothing to stop them,
-    /// so a cycle overflowed the stack from an ordinary <c>Save</c>. That cannot be caught in .NET,
-    /// which is why it is refused here, at the call that makes it. An element reachable by two
-    /// routes without a cycle is not refused.
+    /// <b>An element that is its own ancestor is refused when the structure tree is built, not here.</b>
+    /// A child that is this element, or that already holds this element somewhere in its own subtree,
+    /// closes a cycle, and the walks that number the tree and write it recurse over
+    /// <see cref="Children"/>, so a cycle would overflow the stack, which .NET cannot catch (#521).
+    /// <c>Save</c> therefore throws <see cref="InvalidOperationException"/> for a tagged document whose
+    /// structure tree reaches such an element. This call accepts it, because 2.3.3 saved a document
+    /// that holds a cyclic element and is not tagged, or that was tagged after the element was
+    /// registered, and the cycle is harmless to a save that never walks it. An element reachable by
+    /// two routes without a cycle is not refused.
     /// <para>A null <paramref name="child"/> is stored, as on 2.3.3, and refused where the structure
     /// tree is built: a document that is not tagged never builds it, so such a document saves. It is
-    /// not refused at this call. <b>Do not pass</b> a null child: 3.0 refuses it here.</para>
+    /// not refused at this call. <b>Do not pass</b> a null child or a child that closes a cycle: a
+    /// later major refuses both here.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// Raised from <c>Save</c>, not from this call, when the document is tagged and the element is
     /// reachable from the structure tree and holds a null child. <c>ParamName</c> is <c>child</c>.
     /// </exception>
-    /// <exception cref="ArgumentException">
-    /// <paramref name="child"/> is this element or holds it in its subtree, so adding it would make an
-    /// element its own ancestor.
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <c>Save</c>, not from this call, when the document is tagged and the structure tree
+    /// reaches an element that is its own ancestor.
     /// </exception>
     public PdfStructElem AddChild(PdfStructElem child)
     {
-        // A null child is stored and refused where the tree is built, as on 2.3.3, which saved an
-        // untagged document whose elements held one.
-        if (child is not null && child.Contains(this))
-        {
-            throw new ArgumentException(
-                ReferenceEquals(child, this)
-                    ? "A structure element cannot be its own child."
-                    : "A structure element cannot be added below one of its own descendants; that would make it its own ancestor.",
-                nameof(child));
-        }
-        _children.Add(child!);
-        return child!;
-    }
-
-    /// <summary>
-    /// Whether <paramref name="target"/> is this element or lies anywhere below it. Iterative, so a
-    /// deep subtree costs heap rather than stack, and each element is visited once however many
-    /// routes lead to it.
-    /// </summary>
-    private bool Contains(PdfStructElem target)
-    {
-        var seen = new HashSet<PdfStructElem>(ReferenceEqualityComparer.Instance);
-        var pending = new Stack<PdfStructElem>();
-        pending.Push(this);
-        while (pending.Count > 0)
-        {
-            var current = pending.Pop();
-            if (current is null) continue;   // a stored null child; refused where the tree is built
-            if (ReferenceEquals(current, target)) return true;
-            if (!seen.Add(current)) continue;
-            foreach (var child in current._children) pending.Push(child);
-        }
-        return false;
+        _children.Add(child);
+        return child;
     }
 }
 
@@ -398,8 +371,9 @@ internal sealed class PdfStructureTree
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    // Six walks below recurse over Children. AddChild refuses a cycle, so none can be built through
-    // the public API, but a stack overflow cannot be caught. Three of them, CollectElems,
+    // Six walks below recurse over Children. AddChild accepts a cycle (2.3.3 saved a document that
+    // held one and never built the tree), and a stack overflow cannot be caught, so the walks refuse
+    // it. Three of them, CollectElems,
     // CollectPages and CollectElemsOnPage, keep the elements on their current path and refuse to
     // enter one twice (#521). The other three, BuildParentMap, FindFirstLeafPage and
     // CollectStructTypes, keep no path: they are safe only because each runs after CollectPages
