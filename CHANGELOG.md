@@ -22,6 +22,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `qpdf` 12.4.2 `--check` orders name-tree keys after converting them to UTF-8 rather than byte by
   byte, so it reports a tree in correct byte order as unsorted for some keys outside printable
   ASCII; the tests check that range by reading the file back instead.
+- **The boundaries Layout documents are now pinned as tests.** `BoundaryContractTests` holds 67
+  cases (5 facts and 62 theory rows), taken from the probes that produced the sentences in #542:
+  which null argument decides when two are null on `DrawContext` and `RendererContext`, that an
+  outline entry's save refuses the flipped Y, that a foreign page drops a link annotation while
+  keeping the outline entry, that the five `Document.Add` overloads that carry a `TextStyle` defer a
+  non-finite font size (NaN, positive and negative infinity) and an unnamed `Standard14` value to
+  the save, where a nested list's indent is refused (451.2799 saves, 451.28 throws, and the boundary
+  moves with the list's margins), how a heading's level places its bookmark (level 0 is always a
+  top-level entry, and any other level hangs under the most recent earlier entry at exactly one
+  level below it, or at the top level when there is none), and that Symbol and ZapfDingbats measure
+  every non-surrogate Basic Multilingual Plane character as zero at every size probed.
+
+  Documentation goes stale silently: #542's review rounds kept re-measuring partitions an earlier
+  round had already settled, because nothing held the figures. A boundary a test asserts fails
+  loudly instead. A refusal is asserted by exception type, `ParamName` or a fragment of the message,
+  an acceptance by the save completing or the call returning, and a placement by the bytes written.
+  The placement cases carry controls: a Helvetica line beside the Symbol one, and a default indent
+  beside the infinite one. They catch a change that always places the line at the Symbol position or
+  always drops the item text.
 
 ### Changed
 
@@ -100,6 +119,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Released CHANGELOG sections are unchanged.
 
 ### Fixed
+
+- **`ExternalToolTests.TryRun_CapturesOutputLargerThanTheOsPipeBuffer` no longer times out on a
+  loaded machine (test-only change).** Its child was a 20,000-iteration shell echo loop, which hit
+  the 30 s limit several times on a loaded Windows machine while passing alone. The child now copies
+  a temporary file of about 400KB with `cmd.exe /c type` (`/bin/cat` elsewhere), so the output still
+  exceeds the 64KB pipe buffer but the child does almost no work. The test also asserts the
+  captured stdout equals the file's content. Moving the drain after `WaitForExit` in
+  `ExternalTool.TryRun` still fails the test by timeout. No shipped package changes.
 
 - **Cost-bound tests no longer assert on elapsed time (#400, #456).** A `Stopwatch` checked after a
   call returns cannot end a hang, and a 10 s bound fails on a loaded runner: the main CI run for
