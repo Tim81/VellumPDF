@@ -263,11 +263,20 @@ public sealed class BmpLoaderHardeningTests
     }
 
     [Theory]
+    [InlineData(17u)]            // one more than the 16 bytes the file holds after bfOffBits
+    [InlineData(0xDEADBEEFu)]
+    public void Bmp8_shortFile_withABiSizeImageBeyondTheBytesTheFileHolds_isRefused(uint sizeImage)
+    {
+        var bmp = WithU32(Clean86(), 34, sizeImage);
+
+        var ex = Assert.Throws<InvalidDataException>(() => BmpImageLoader.Load(bmp));
+        Assert.Contains("biSizeImage is larger", ex.Message);
+    }
+
+    [Theory]
     [InlineData(0u)]
     [InlineData(16u)]
-    [InlineData(17u)]
-    [InlineData(0xDEADBEEFu)] // not below the pixel data, so it is not a contradiction
-    public void Bmp8_shortFile_withBiSizeImageZeroOrCoveringThePixelData_loads(uint sizeImage)
+    public void Bmp8_shortFile_withBiSizeImageZeroOrEqualToThePixelData_loads(uint sizeImage)
     {
         Assert.Equal(4, BmpImageLoader.Load(WithU32(Clean86(), 34, sizeImage)).Width);
     }

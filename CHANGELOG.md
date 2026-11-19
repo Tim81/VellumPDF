@@ -97,8 +97,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   multiplying, and requires `54 + entries * 4` bytes. A file of 1,078 bytes or more loads exactly
   as before, indexing the table as 256 entries whatever `biClrUsed` says. A smaller file, which
   2.3.3 always refused, loads only if its header conforms: `biPlanes` is 1, both reserved words
-  are zero, `biWidth` is positive, `bfSize` equals the file length, `biSizeImage` is zero or at
-  least the pixel data the header implies, and `biClrImportant` is zero or no more than the
+  are zero, `biWidth` is positive, `bfSize` equals the file length, `biSizeImage` is zero or
+  between the pixel data the header implies and the bytes the file holds from `bfOffBits`, and `biClrImportant` is zero or no more than the
   entries in use. It is also held to the entries it declares, so a pixel pointing past them, or
   pixel data starting inside the palette, is refused. Every refusal is still an
   `InvalidDataException`.

@@ -69,7 +69,8 @@ public static class BmpImageLoader
     /// <para>That smaller-file branch is the only one that reads header fields beyond the ones
     /// needed to decode. A file under 1,078 bytes is accepted only if <c>biPlanes</c> is 1, both
     /// reserved words are zero, <c>biWidth</c> is positive, <c>bfSize</c> equals the file length,
-    /// <c>biSizeImage</c> is zero or at least the pixel data the header implies, and
+    /// <c>biSizeImage</c> is zero or between the pixel data the header implies and the bytes the
+    /// file holds from <c>bfOffBits</c>, and
     /// <c>biClrImportant</c> is zero or no more than the entries in use. Any other file of that
     /// size raises <see cref="InvalidDataException"/>, as 2.3.3 did. A file of 1,078 bytes or more
     /// is never held to them, because 2.3.3 ignored them there.</para>
@@ -154,7 +155,7 @@ public static class BmpImageLoader
             }
             else
             {
-                RequireConformingHeader(bmpBytes, rawWidth, height, entries);
+                RequireConformingHeader(bmpBytes, rawWidth, height, entries, pixelOffset);
                 if (pixelOffset < (uint)(paletteOffset + entries * 4))
                     throw new InvalidDataException(
                         $"BMP pixel data offset {pixelOffset} lies inside the {entries}-entry palette.");
@@ -281,10 +282,12 @@ public static class BmpImageLoader
     //
     // Three requirements are inferences, not quotations. biWidth must be positive: the page gives a
     // sign convention for biHeight only, so a negative width has no defined meaning. biSizeImage,
-    // when not zero, must cover the pixel data the header implies, since a smaller figure
-    // contradicts "the size, in bytes, of the image". biClrImportant must not exceed the entries in
-    // use, since it cannot require more colours than the table holds.
-    private static void RequireConformingHeader(byte[] data, int rawWidth, int height, int paletteEntries)
+    // when not zero, must cover the pixel data the header implies and must fit in the bytes the
+    // file holds from bfOffBits, since a figure outside that range contradicts "the size, in
+    // bytes, of the image". biClrImportant must not exceed the entries in use, since it cannot
+    // require more colours than the table holds.
+    private static void RequireConformingHeader(
+        byte[] data, int rawWidth, int height, int paletteEntries, uint pixelOffset)
     {
         if (ReadU16Le(data, 26) != 1)
             throw NonConforming("biPlanes is not 1");
@@ -298,6 +301,8 @@ public static class BmpImageLoader
         var sizeImage = ReadU32Le(data, 34);
         if (sizeImage != 0 && sizeImage < (long)rowStride * height)
             throw NonConforming("biSizeImage is smaller than the pixel data the header implies");
+        if (sizeImage > data.Length - pixelOffset)
+            throw NonConforming("biSizeImage is larger than the bytes the file holds after bfOffBits");
         var clrImportant = ReadU32Le(data, 50);
         if (clrImportant != 0 && clrImportant > (uint)paletteEntries)
             throw NonConforming("biClrImportant exceeds the palette entries in use");
