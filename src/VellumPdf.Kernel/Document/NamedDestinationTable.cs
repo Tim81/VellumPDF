@@ -1,0 +1,104 @@
+// Copyright © Timothy van der Ham (@Tim81)
+// SPDX-License-Identifier: Apache-2.0
+
+using VellumPdf.Core;
+using VellumPdf.IO;
+
+namespace VellumPdf.Document;
+
+/// <summary>
+/// A document's named destinations (#262): each name maps to a position on a page, and
+/// <see cref="Build"/> turns the table into the <c>/Dests</c> name tree (ISO 32000-2, 12.3.2.4 and 7.9.6).
+/// Internal: no document member holds one yet, and nothing writes the tree into a catalog.
+/// </summary>
+/// <remarks>
+/// <b>What is refused.</b> <see cref="Add"/> throws at the call for a name that breaks the rule of
+/// <see cref="DestinationName"/>, a name already in the table, a <see langword="null"/> page, and a
+/// coordinate that is NaN, infinite or larger in magnitude than 3.403e38 (ISO 32000-1, Table C.1 gives that
+/// as the largest real, and ISO 19005-2, 6.1.13 holds a PDF/A-2 file to it). <see cref="Build"/> throws
+/// <see cref="InvalidOperationException"/> for a page the document does not own, because that needs the
+/// document and cannot be known at <see cref="Add"/>.
+/// <para><see cref="Build"/> reads the table and never changes it, so a save that is retried after a
+/// precondition failure builds the same objects again.</para>
+/// </remarks>
+internal sealed class NamedDestinationTable
+{
+    /// <summary>The largest magnitude of a coordinate, ISO 32000-1 Table C.1 (3.403 x 10^38).</summary>
+    private const double MaxCoordinate = 3.403e38;
+
+    private readonly Dictionary<string, (PdfPage Page, double Left, double Top)> _entries = new(StringComparer.Ordinal);
+
+    /// <summary>The number of destinations added.</summary>
+    internal int Count => _entries.Count;
+
+    /// <summary>
+    /// Adds a destination that shows the point (<paramref name="left"/>, <paramref name="top"/>) of
+    /// <paramref name="page"/>, in default user space, at the current zoom.
+    /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="page"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="name"/> breaks the rule of <see cref="DestinationName"/>, or is already in the table.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="left"/> or <paramref name="top"/> is NaN, infinite, or has a magnitude above 3.403e38.</exception>
+    internal void Add(string name, PdfPage page, double left, double top)
+    {
+        DestinationName.Validate(name, nameof(name));
+        ArgumentNullException.ThrowIfNull(page);
+        CheckCoordinate(left, nameof(left));
+        CheckCoordinate(top, nameof(top));
+        // A name tree maps each key to one value and a reader compares keys byte by byte (7.9.6); the
+        // writer would refuse the pair too, but only at Build and with a hex preview of the key.
+        if (!_entries.TryAdd(name, (page, left, top)))
+            throw new ArgumentException($"The destination name '{name}' is already in the table.", nameof(name));
+    }
+
+    /// <summary>
+    /// Registers one array per destination, in name order, then the tree's nodes, and returns the tree's
+    /// root, which is not registered. Returns <see langword="null"/> for an empty table and leaves the
+    /// registry alone, so a catalog without destinations keeps its object numbers and writes no entry.
+    /// </summary>
+    /// <param name="registry">Where the arrays and the tree's nodes are registered.</param>
+    /// <param name="pageRefs">The reference of every page the document owns.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="registry"/> or <paramref name="pageRefs"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">A destination's page is not in <paramref name="pageRefs"/>. Nothing has been registered when this is thrown.</exception>
+    internal PdfDictionary? Build(PdfObjectRegistry registry, IReadOnlyDictionary<PdfPage, PdfIndirectReference> pageRefs)
+    {
+        ArgumentNullException.ThrowIfNull(registry);
+        ArgumentNullException.ThrowIfNull(pageRefs);
+        if (_entries.Count == 0)
+            return null;
+
+        // Ordinal order is the order the tree sorts into for ASCII names, and fixes the object numbers.
+        var names = _entries.Keys.ToArray();
+        Array.Sort(names, StringComparer.Ordinal);
+
+        // Check every page before registering anything, so a refusal leaves the registry as it was.
+        foreach (var name in names)
+        {
+            if (!pageRefs.ContainsKey(_entries[name].Page))
+                throw new InvalidOperationException($"The page of destination '{name}' does not belong to this document.");
+        }
+
+        var tree = new List<KeyValuePair<byte[], PdfObject>>(names.Length);
+        foreach (var name in names)
+        {
+            var (page, left, top) = _entries[name];
+            // 7.9.6: dictionary, array and string values "should be specified by indirect object references".
+            var value = registry.Add(BuildValue(pageRefs[page], left, top));
+            tree.Add(new KeyValuePair<byte[], PdfObject>(DestinationName.Encode(name), value));
+        }
+        return NameTreeWriter.Write(tree, registry);
+    }
+
+    /// <summary>
+    /// The value stored under a name: <c>[page /XYZ left top null]</c>, ISO 32000-2 Table 149. A null zoom
+    /// leaves the zoom as it is. Kept in one method so a later value form (a dictionary with <c>/D</c> and
+    /// <c>/SD</c>, #600) changes here and not in <see cref="Build"/>.
+    /// </summary>
+    private static PdfArray BuildValue(PdfIndirectReference page, double left, double top) =>
+        new([page, new PdfName("XYZ"), new PdfReal(left), new PdfReal(top), PdfNull.Instance]);
+
+    private static void CheckCoordinate(double value, string paramName)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value) || Math.Abs(value) > MaxCoordinate)
+            throw new ArgumentOutOfRangeException(paramName, value, "A destination coordinate must be finite and at most 3.403e38 in magnitude.");
+    }
+}
