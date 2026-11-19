@@ -13,7 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   out ("Each image must fit within the boundaries of the Logical Screen"): a screen with a width
   or height of 0, a frame whose far edge lies beyond the screen, and a screen of more than 100
   million pixels each throw `InvalidDataException`, and none falls back to the frame's own size.
-  The canvas is the screen's size at 4 bytes a pixel, so a 42-byte file can cost 400,062,040
+  The canvas is the screen's size at 4 bytes a pixel, so a 42-byte file can cost 400,060,032
   bytes (measured at the 100-million-pixel limit); do not enable it for untrusted files without
   checking the screen size in bytes 6 to 9 first. Do not rely on the default being `false`: 3.0
   may place the frame by default. A null `gifBytes` now throws `ArgumentNullException` where
@@ -136,12 +136,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (#536's class).** A 42-byte GIF declaring 10,000 x 10,000 is within the 100-million-pixel limit,
   and 2.3.3 allocated the 100,000,000-byte index buffer before refusing it for carrying 4 pixels
   (measured with `GC.GetAllocatedBytesForCurrentThread` around `Load`: 100,026,800 bytes on 2.3.3
-  for that file, 26,776 bytes now). The LZW decoder now runs
+  for that file, 26,480 bytes now). The LZW decoder now runs
   once without a buffer, which makes the same refusals with the same messages and counts the
   pixels delivered, and allocates only after the count matches. The result for the files probed
   is unchanged: a 3000 x 3000 file, interlaced and not, decodes to the same bytes on 2.3.3 and
   now, and each short stream probed is refused with the same message. A file that loads pays for
-  the counting pass: 51,528 bytes against 26,872 for a 2 x 2 frame.
+  the counting pass: 49,920 bytes against 25,264 for a 2 x 2 frame.
 - **`GifEncoder` writes `GIF87a` when it writes only 87a blocks (#499).** It wrote `GIF89a` over a
   Global Color Table, an Image Descriptor, Table Based Image Data and a Trailer, each of which
   lists 87a as its required version, and GIF89a section 17.d.ii says an encoder should use the
