@@ -395,6 +395,51 @@ public sealed class SaveLifecycleTests
         }
     }
 
+    /// <summary>
+    /// 1c61fa6 opened the target with <c>FileMode.Create</c>, which Windows refuses for an existing
+    /// Hidden or System file with <see cref="UnauthorizedAccessException"/>. The open used now,
+    /// <c>OpenOrCreate</c>, accepts it, so the save refuses it itself, for both overloads, and leaves
+    /// the file as it was. Windows only: elsewhere the Hidden attribute is a leading dot in the name.
+    /// </summary>
+    [Theory]
+    [InlineData(FileAttributes.Hidden, false)]
+    [InlineData(FileAttributes.System, false)]
+    [InlineData(FileAttributes.Hidden | FileAttributes.System, false)]
+    [InlineData(FileAttributes.Hidden, true)]
+    [InlineData(FileAttributes.System, true)]
+    [InlineData(FileAttributes.Hidden | FileAttributes.System, true)]
+    public async Task SaveToAHiddenOrSystemFile_isRefused_asOn1c61fa6(FileAttributes attributes, bool async)
+    {
+        if (!OperatingSystem.IsWindows())
+            Assert.Skip("The Hidden and System file attributes refuse FileMode.Create on Windows only.");
+
+        using var dir = new TempDir();
+        var target = Path.Combine(dir.Path, "hidden.pdf");
+        await File.WriteAllTextAsync(target, "keep", TestContext.Current.CancellationToken);
+        File.SetAttributes(target, attributes);
+        try
+        {
+            using var doc = Good();
+            doc.Add(new Paragraph("Hello", Style()));
+
+            if (async)
+                await Assert.ThrowsAsync<UnauthorizedAccessException>(() => doc.SaveAsync(target, TestContext.Current.CancellationToken));
+            else
+                Assert.Throws<UnauthorizedAccessException>(() => doc.Save(target));
+
+            Assert.Equal("keep", await File.ReadAllTextAsync(target, TestContext.Current.CancellationToken));
+
+            // Refused before the layout, so the document is untouched and saves elsewhere.
+            var ok = Path.Combine(dir.Path, "ok.pdf");
+            doc.Save(ok);
+            Assert.Equal(1, Pages(File.ReadAllBytes(ok)));
+        }
+        finally
+        {
+            File.SetAttributes(target, FileAttributes.Normal);
+        }
+    }
+
     [Fact]
     public async Task FailedAsyncSaveToANewPath_createsNothing()
     {

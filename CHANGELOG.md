@@ -388,10 +388,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   creates between the existence check and the open is taken for one the call created, so it is
   deleted if the save then fails. A failed save through a dangling link can leave an empty file at
   the link's destination, because the open created it. `SaveAsync(string)` looks at its
-  cancellation token before the layout and when the serialisation is queued; a cancellation after
-  that is ignored and the save completes. On Windows the file is opened with `OpenOrCreate`, not
-  `Create`, so a hidden or system file that `FileMode.Create` refused is now overwritten. The file is held open with
-  `FileShare.None` from before the layout until the save
+  cancellation token before the layout, when the serialisation is queued and during the copy into
+  the file, as on 2.3.3; a cancellation during the copy throws after the file was emptied and leaves
+  it truncated or incomplete. On Windows an existing hidden or system file, which `FileMode.Create`
+  refused with `UnauthorizedAccessException`, is still refused with it, checked before the file is
+  opened. The file is held open with `FileShare.None` from before the layout until the save
   returns, which excludes other openers on Windows but is only an advisory lock on Linux and macOS.
   The PDF is built in a `MemoryStream`, so a PDF over about 2 GB cannot be saved to a path. Passing
   a `FileStream` to `Save(Stream)` avoids that, but `SaveAsync(Stream)` and a linearized

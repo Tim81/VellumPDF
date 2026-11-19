@@ -1106,6 +1106,21 @@ public sealed class Document : IDisposable
     // Empties the file the PDF is about to be copied into. Skipped when there is nothing to remove,
     // which is also what keeps a device file working: /dev/null reports that it can seek and a
     // length of 0, and then refuses ftruncate with EINVAL.
+    /// <summary>
+    /// Windows refuses to open an existing Hidden or System file with <c>FileMode.Create</c>, which
+    /// is what 2.3.3 used, and throws <see cref="UnauthorizedAccessException"/>; <c>OpenOrCreate</c>
+    /// opens it. The refusal is kept (measured on Windows for Hidden, System and both together). It is
+    /// Windows only: on a Unix file system <see cref="FileAttributes.Hidden"/> follows from a leading
+    /// dot in the name, and a dot file is an ordinary target there.
+    /// </summary>
+    private static void RefuseHiddenOrSystemFile(string target)
+    {
+        if (!OperatingSystem.IsWindows() || !File.Exists(target)) return;
+
+        if ((File.GetAttributes(target) & (FileAttributes.Hidden | FileAttributes.System)) != 0)
+            throw new UnauthorizedAccessException($"Access to the path '{target}' is denied.");
+    }
+
     private static void EmptyTarget(FileStream fs)
     {
         if (!fs.CanSeek) return;
@@ -1385,7 +1400,8 @@ public sealed class Document : IDisposable
     /// </exception>
     /// <exception cref="UnauthorizedAccessException">
     /// <paramref name="path"/> names a directory rather than a file, an existing file at
-    /// <paramref name="path"/> is read-only, or you may not write to that location.
+    /// <paramref name="path"/> is read-only, or, on Windows, hidden or a system file, or you may not
+    /// write to that location.
     /// </exception>
     /// <exception cref="IOException">
     /// A file at <paramref name="path"/> is already open elsewhere with no sharing allowed, which is
@@ -1435,6 +1451,7 @@ public sealed class Document : IDisposable
         // Opened before the layout, so a lock or a permission error surfaces while the document is
         // still usable, and every check BeginSave runs sees the stream the PDF will go to. Opening
         // does not truncate; the file is emptied only once the whole PDF is in memory.
+        RefuseHiddenOrSystemFile(target);
         var fs = new FileStream(target, FileMode.OpenOrCreate, FileAccess.Write, FileShare.None);
         var succeeded = false;
         DocumentRenderer renderer;
@@ -1651,7 +1668,8 @@ public sealed class Document : IDisposable
     /// </exception>
     /// <exception cref="UnauthorizedAccessException">
     /// <paramref name="path"/> names a directory rather than a file, an existing file at
-    /// <paramref name="path"/> is read-only, or you may not write to that location.
+    /// <paramref name="path"/> is read-only, or, on Windows, hidden or a system file, or you may not
+    /// write to that location.
     /// </exception>
     /// <exception cref="IOException">
     /// A file at <paramref name="path"/> is already open elsewhere with no sharing allowed, which is
@@ -1694,13 +1712,15 @@ public sealed class Document : IDisposable
     /// too large to allocate.
     /// </exception>
     /// <exception cref="OperationCanceledException">
-    /// The token is looked at twice: before the layout starts, and once it has finished, when the
-    /// serialisation is queued. A cancellation seen at either point ends the task with a
-    /// <see cref="TaskCanceledException"/> before the file is emptied, so the file that was there is
-    /// untouched; see the remarks. A failure that comes first, such as a refused page geometry or
-    /// an exception from an element, is reported instead. Once the serialisation is under way the
-    /// token is no longer looked at, and neither is the copy into the file, because stopping
-    /// halfway would leave a truncated file. A cancellation after the layout has run also means this
+    /// The token is looked at three times: before the layout starts, once it has finished, when the
+    /// serialisation is queued, and during the copy into the file. A cancellation seen at either of
+    /// the first two ends the task with a <see cref="TaskCanceledException"/> before the file is
+    /// emptied, so the file that was there is untouched; see the remarks. A failure that comes first,
+    /// such as a refused page geometry or an exception from an element, is reported instead. Once the
+    /// serialisation is under way the token is not looked at until the copy, and a cancellation
+    /// during the copy throws <see cref="OperationCanceledException"/> after the file was emptied,
+    /// as it did on 2.3.3, which leaves it truncated or incomplete. A cancellation after the layout
+    /// has run also means this
     /// <see cref="Document"/> cannot be saved again; see
     /// <see cref="SaveAsync(System.IO.Stream, System.Threading.CancellationToken)"/>.
     /// </exception>
@@ -1712,6 +1732,7 @@ public sealed class Document : IDisposable
         var existed = SomethingExistsAt(target);
 
         // See Save(string): opened before the layout, emptied only once the PDF is in memory.
+        RefuseHiddenOrSystemFile(target);
         var fs = new FileStream(
             target, FileMode.OpenOrCreate, FileAccess.Write, FileShare.None,
             bufferSize: 4096, FileOptions.Asynchronous | FileOptions.SequentialScan);
@@ -1742,7 +1763,8 @@ public sealed class Document : IDisposable
 
                 EmptyTarget(fs);
 
-                await fs.WriteAsync(buffer.GetBuffer().AsMemory(0, (int)buffer.Length), CancellationToken.None).ConfigureAwait(false);
+                buffer.Position = 0;
+                await buffer.CopyToAsync(fs, cancellationToken).ConfigureAwait(false);
                 await fs.FlushAsync(CancellationToken.None).ConfigureAwait(false);
             }
             finally
