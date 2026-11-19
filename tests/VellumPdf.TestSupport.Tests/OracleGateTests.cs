@@ -215,30 +215,38 @@ public sealed class ExternalToolTests : IDisposable
     [Fact]
     public void TryRun_CapturesOutputLargerThanTheOsPipeBuffer()
     {
-        var (tool, args) = BigOutputCommand();
+        // The child only has to copy a file to stdout, which cmd's `type` and `cat` do in one
+        // read-write loop. The earlier child, a 20,000-iteration shell echo loop, spent its time in
+        // process-level interpretation rather than in the pipe, and a loaded machine stretched it
+        // past the 30 s budget although the drain was fine (#400). 400 lines of 1,023 'X's is
+        // about 400KB, over the 256KB asserted below and over the 64KB pipe buffer on either OS.
+        var line = new string('X', 1_023) + "\n";
+        var expected = string.Concat(Enumerable.Repeat(line, 400));
+        var path = Path.Combine(Path.GetTempPath(), $"vellumpdf-bigout-{Guid.NewGuid():N}.txt");
 
-        var ok = ExternalTool.TryRun(tool, args, out var exit, out var stdout, out _, out var timedOut, timeoutMs: 30_000);
-
-        Assert.True(ok, $"'{tool}' could not be started.");
-        Assert.False(timedOut, "the big-output command timed out, or its output could not be fully captured.");
-        Assert.Equal(0, exit);
-        Assert.True(
-            stdout.Length > 256 * 1024,
-            $"Expected over 256KB of stdout to prove the pipe-buffer boundary was crossed; got {stdout.Length} bytes.");
-    }
-
-    private static (string Tool, string[] Args) BigOutputCommand()
-    {
-        // 20,000 lines of 32 'X's (plus newline) is comfortably over 256KB and over the 64KB pipe
-        // buffer both, on either OS.
-        if (OperatingSystem.IsWindows())
+        try
         {
-            return ("cmd.exe",
-                ["/c", "for /L %i in (1,1,20000) do @echo XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"]);
-        }
+            File.WriteAllText(path, expected);
+            var (tool, args) = OperatingSystem.IsWindows()
+                ? ("cmd.exe", new[] { "/c", "type", path })
+                : ("/bin/cat", new[] { path });
 
-        return ("/bin/sh",
-            ["-c", "for i in $(seq 1 20000); do echo XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX; done"]);
+            var ok = ExternalTool.TryRun(tool, args, out var exit, out var stdout, out _, out var timedOut, timeoutMs: 30_000);
+
+            Assert.True(ok, $"'{tool}' could not be started.");
+            Assert.False(timedOut, "the big-output command timed out, or its output could not be fully captured.");
+            Assert.Equal(0, exit);
+            Assert.True(
+                stdout.Length > 256 * 1024,
+                $"Expected over 256KB of stdout to prove the pipe-buffer boundary was crossed; got {stdout.Length} bytes.");
+            // cmd's `type` copies bytes unchanged, and nothing here normalises line endings, so
+            // equality (not "starts with" or a length) is the claim that no byte was dropped.
+            Assert.Equal(expected, stdout);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
     }
 
     // #198 review, round 3, P0: a version probe that ran past its budget left exitCode at
