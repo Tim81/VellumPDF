@@ -74,6 +74,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   renderers that fail by name after 200,004 `Layout` calls. Remaining `Timeout` values are 300 s hang
   guards, except the `EncryptDictionaryDenialOfServiceTests` pin sized in #456. No public API changes.
 
+## [2.3.4] - 2026-11-19
+
+A security servicing release. VellumPdf's own code is unchanged: `git diff v2.3.3 -- src` is empty
+for the commit this release is built from. The one shipped change is the
+`System.Security.Cryptography.Pkcs` dependency of `VellumPdf.Signing`, raised from 10.0.12 to
+10.0.14. If you use `VellumPdf.Signing` 2.3.3 and do not reference a newer Pkcs yourself, NuGet
+resolves the lowest version the package declares, 10.0.12, so you stay on the vulnerable build
+until you update.
+
+### Security
+
+- **`VellumPdf.Signing` now depends on `System.Security.Cryptography.Pkcs` 10.0.14.** The 10.0.12
+  that 2.3.3 declares is inside the affected range of two advisories, both titled ".NET Denial of
+  Service Vulnerability" and both published 2026-10-13: GHSA-846f-f764-76mx (CVE-2026-84008, high)
+  and GHSA-2fmv-rv2c-59x7 (CVE-2026-70162, medium). Each covers 10.0.0 through 10.0.12 and is
+  patched in 10.0.13. This release declares 10.0.14, which is past both fixes. Test-only packages
+  and the SDK patch also moved; none of them ships in a package.
+
 ## [2.3.3] - 2026-09-20
 
 This release is led by documentation. Layout's public surface now states what each member
@@ -3849,7 +3867,8 @@ few small additions. No public API was removed.
   headers, and no unbounded allocations driven by attacker-controlled length
   fields.
 
-[Unreleased]: https://github.com/Tim81/VellumPDF/compare/v2.3.3...HEAD
+[Unreleased]: https://github.com/Tim81/VellumPDF/compare/v2.3.4...HEAD
+[2.3.4]: https://github.com/Tim81/VellumPDF/releases/tag/v2.3.4
 [2.3.3]: https://github.com/Tim81/VellumPDF/releases/tag/v2.3.3
 [2.3.2]: https://github.com/Tim81/VellumPDF/releases/tag/v2.3.2
 [2.3.1]: https://github.com/Tim81/VellumPDF/releases/tag/v2.3.1
