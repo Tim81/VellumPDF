@@ -390,10 +390,38 @@ public sealed class NameAndNumberTreeTests
         var ok = new PdfArray([new PdfDictionary().Set(new PdfName("D"), new PdfArray([reference]))]);
         NameTreeWriter.Write([new([1], ok)], registry);
 
-        // A direct array that contains itself is visited once rather than looped on.
+        // A direct array that contains itself is visited once rather than looped on, and so is a direct
+        // dictionary that contains itself, and an array and a dictionary that contain each other. Without
+        // the visited set these never finish, so run them on a background thread and bound the wait: a
+        // regression fails this test instead of hanging the run.
         var cycle = new PdfArray();
         cycle.Add(cycle);
-        NameTreeWriter.Write([new([1], cycle)], registry);
+        var selfDictionary = new PdfDictionary();
+        selfDictionary.Set(new PdfName("D"), selfDictionary);
+        var mutualArray = new PdfArray();
+        var mutualDictionary = new PdfDictionary();
+        mutualArray.Add(mutualDictionary);
+        mutualDictionary.Set(new PdfName("A"), mutualArray);
+        foreach (var looping in new PdfObject[] { cycle, selfDictionary, mutualArray })
+        {
+            Exception? thrown = null;
+            var worker = new Thread(() =>
+            {
+                try
+                {
+                    NameTreeWriter.Write([new([1], looping)], new PdfObjectRegistry());
+                    NumberTreeWriter.Write([new(1, looping)], new PdfObjectRegistry());
+                }
+                catch (Exception ex)
+                {
+                    thrown = ex;
+                }
+            })
+            { IsBackground = true };
+            worker.Start();
+            Assert.True(worker.Join(TimeSpan.FromSeconds(10)), "a self-containing value was not visited once");
+            Assert.Null(thrown);
+        }
     }
 
     [Fact]

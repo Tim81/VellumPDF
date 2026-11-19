@@ -5,8 +5,7 @@ namespace VellumPdf.Core;
 
 /// <summary>
 /// Builds a number tree (ISO 32000-2:2020, 7.9.7): keys are integers in ascending numerical order, and the
-/// entries array is named <c>/Nums</c>. Internal. Nothing calls it yet; it will be used by named destinations
-/// and page labels (#262) and embedded files (#242).
+/// entries array is named <c>/Nums</c>. Internal. Nothing calls it yet.
 /// </summary>
 /// <remarks>
 /// Node layout, <c>/Limits</c> and the no-limits-on-the-root rule are as for <see cref="NameTreeWriter"/>
@@ -36,8 +35,8 @@ internal static class NumberTreeWriter
     /// is <see langword="null"/>, or an entry's value is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">A key is below -2,147,483,648 or above
     /// 2,147,483,647.</exception>
-    /// <exception cref="ArgumentException">Two entries have the same key, or a value is, or directly
-    /// contains, a <see cref="PdfStream"/> or a <see cref="PdfIndirectObject"/>.</exception>
+    /// <exception cref="ArgumentException">Two entries have the same key, or a value is, or contains
+    /// at any depth of direct nesting, a <see cref="PdfStream"/> or a <see cref="PdfIndirectObject"/>.</exception>
     internal static PdfDictionary Write(IEnumerable<KeyValuePair<long, PdfObject>> entries, PdfObjectRegistry registry)
     {
         ArgumentNullException.ThrowIfNull(entries);

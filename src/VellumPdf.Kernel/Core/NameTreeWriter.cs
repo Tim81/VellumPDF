@@ -5,8 +5,7 @@ namespace VellumPdf.Core;
 
 /// <summary>
 /// Builds a name tree (ISO 32000-2:2020, 7.9.6): keys are byte strings, ordered byte by byte.
-/// Internal, so there is no public surface to lock. Nothing calls it yet; it will be used by named
-/// destinations and page labels (#262) and embedded files (#242).
+/// Internal, so there is no public surface to lock. Nothing calls it yet.
 /// </summary>
 /// <remarks>
 /// The layout rules and the node shape are documented on <see cref="PdfTreeNodes"/>.
@@ -28,9 +27,9 @@ internal static class NameTreeWriter
     /// bytes; the repository does not hold that part, but its own <c>NumericLimitsRule</c> enforces the same
     /// limit (<c>MaxStringBytes</c> = 32767). ISO 32000-1 Table C.1 gives 32,767 as the maximum length of a
     /// string in a content stream and adds "There is no effective restriction on other strings in PDF
-    /// files". ISO 32000-2, C.2 no longer states a figure: its Table C.1 has no string row, and the
-    /// "Length of a string object in a content stream" entry says the 32,767 limit was recommended in
-    /// previous versions and applied only to strings in content streams. So a longer key is valid PDF and
+    /// files". ISO 32000-2 Table C.1 has a row, "Length of a string object in a content stream", that
+    /// gives 32,767 as the recommendation of previous versions and says it applied only to strings in
+    /// content streams, so neither edition limits the length of a key. A longer key is valid PDF and
     /// invalid PDF/A-2, and the cap is applied to every file so a tree never needs rewriting when a
     /// conformance claim is added.
     /// </summary>
@@ -54,8 +53,8 @@ internal static class NameTreeWriter
     /// <exception cref="ArgumentNullException"><paramref name="entries"/> or <paramref name="registry"/>
     /// is <see langword="null"/>, or an entry's key array or value is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">A key is longer than <see cref="MaxKeyBytes"/> bytes; two entries
-    /// have the same key bytes (7.9.6: keys "shall not overlap"); or a value is, or directly contains, a
-    /// <see cref="PdfStream"/> or a <see cref="PdfIndirectObject"/>.</exception>
+    /// have the same key bytes (7.9.6: keys "shall not overlap"); or a value is, or contains
+    /// at any depth of direct nesting, a <see cref="PdfStream"/> or a <see cref="PdfIndirectObject"/>.</exception>
     internal static PdfDictionary Write(IEnumerable<KeyValuePair<byte[], PdfObject>> entries, PdfObjectRegistry registry)
     {
         ArgumentNullException.ThrowIfNull(entries);
