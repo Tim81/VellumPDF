@@ -33,7 +33,8 @@ public sealed class PdfLiteralString : PdfObject
     /// <summary>
     /// Encodes <paramref name="value"/> as a PDF text string (ISO 32000-2, 7.9.2.2): one byte per
     /// character when every character is U+0000 to U+0017, U+0020 to U+007E, or U+00A1 to U+00FF
-    /// except U+00AD, otherwise UTF-16BE with a byte order mark.
+    /// except U+00AD, unless the value begins with U+00FE U+00FF or U+00EF U+00BB U+00BF, otherwise
+    /// UTF-16BE with a byte order mark.
     /// </summary>
     /// <remarks>
     /// No well-formed character is substituted, which is what separates this from
@@ -42,17 +43,17 @@ public sealed class PdfLiteralString : PdfObject
     /// nothing. A lone surrogate, which is not a character, is written as U+FFFD.
     ///
     /// Latin-1 and PDFDocEncoding give the same byte for U+0020 to U+007E and for U+00A1 to U+00FF
-    /// except U+00AD, so ASCII and Western European text keeps the bytes it always had. Table D.3
-    /// of ISO 32000-2 lists the differences: 0x18 to 0x1F are BREVE through SMALL TILDE, 0x80 to
-    /// 0x9E are BULLET through the z with caron, 0xA0 is U+20AC ("0xa0 0240 U+20AC") where Latin-1
-    /// has the no-break space, 0xAD is marked Undefined, and 0x7F and 0x9F have no character in
-    /// the table. A value holding U+0018 to U+001F, U+007F, U+0080 to U+00A0 or U+00AD takes the
-    /// UTF-16BE form rather than a byte a reader would show as another character, or as none.
+    /// except U+00AD, so ASCII and Western European text is written one byte per character. Table
+    /// D.3 of ISO 32000-2 lists the differences: 0x18 to 0x1F are BREVE through SMALL TILDE, 0x80
+    /// to 0x9E are BULLET through the z with caron, 0xA0 is U+20AC ("0xa0 0240 U+20AC") where
+    /// Latin-1 has the no-break space, and 0x7F, 0x9F and 0xAD are marked Undefined. A value holding
+    /// U+0018 to U+001F, U+007F, U+0080 to U+00A0 or U+00AD takes the UTF-16BE form rather than a
+    /// byte a reader would show as another character, or as none.
     ///
     /// The codes 0x00 to 0x17 are a third case. Table D.3 marks them Undefined, except 0x09, 0x0A
     /// and 0x0D, which are defined (CHARACTER TABULATION, LINE FEED, CARRIAGE RETURN, each with the
-    /// note SR). The undefined ones, such as U+0001, stay one byte as 2.3.3 wrote them; the table
-    /// gives those bytes no other character, so a reader has nothing to mistake them for.
+    /// note SR). The undefined ones, such as U+0001, stay one byte: the table gives
+    /// those bytes no other character, so a reader has nothing to mistake them for.
     ///
     /// A value that starts with the bytes of a byte order mark (U+00FE U+00FF, or U+00EF U+00BB
     /// U+00BF) also takes the UTF-16BE form, since PDFDocEncoding cannot begin that way (7.9.2.2.1,

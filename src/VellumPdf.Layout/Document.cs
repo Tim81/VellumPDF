@@ -913,9 +913,9 @@ public sealed class Document : IDisposable
     /// against it: any non-empty bytes are embedded as the profile.</para>
     /// <para>The identifier and <paramref name="info"/> are written as PDF text strings (ISO 32000-2,
     /// Table 401). A value made only of U+0020 to U+007E, U+00A1 to U+00FF except U+00AD, and
-    /// U+0000 to U+0017 is written one byte per character; any other value is written as UTF-16BE
-    /// with a byte order mark and keeps its characters. Up to 2.3.3 a character that Latin-1 cannot
-    /// hold was rewritten to a look-alike (<c>-</c> for an en dash) or to <c>?</c>, with no report.
+    /// U+0000 to U+0017 is written one byte per character, unless it begins with U+00FE U+00FF or
+    /// U+00EF U+00BB U+00BF; any other value is written as UTF-16BE with a byte order mark and keeps
+    /// its characters.
     /// Table 401 describes the identifier as a text string identifying the output device or
     /// production condition, and gives the name of a condition in an industry-standard registry as
     /// a typical value, so a character outside ASCII is unusual there; it is not refused.</para>

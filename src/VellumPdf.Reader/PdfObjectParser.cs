@@ -52,8 +52,9 @@ internal sealed class PdfObjectParser
     /// <c>(</c>, <c>)</c> and <c>\</c>, so a 0Dh in them is data. Folding it into 0Ah (and dropping a
     /// 0Ah after a 0Dh) corrupts the ciphertext before the security handler sees it. The same holds
     /// for the <c>/Encrypt</c> dictionary's <c>/O</c>, <c>/U</c>, <c>/OE</c> and <c>/UE</c> and the
-    /// trailer <c>/ID</c>, which feed key derivation as raw bytes. On for strings parsed from an
-    /// unencrypted file, an object stream body or a content stream, which are plain text.
+    /// trailer <c>/ID</c>, which feed key derivation as raw bytes. On for strings in the objects of
+    /// an unencrypted file, in object stream members and in content streams, which are plain text.
+    /// The trailer, cross-reference and reconstruction parsers leave it off.
     /// </remarks>
     internal bool NormalizeEndOfLine { get; init; }
 

@@ -25,12 +25,12 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// correction for the rule set as a whole, and the sweep of the other rule files carrying this
 /// sentence is #418.
 ///
-/// <b>A tag ending in a line feed is refused.</b> The pattern ends in <c>\z</c> rather than
+/// <b>A tag ending in a line feed is reported.</b> The pattern ends in <c>\z</c> rather than
 /// <c>$</c>: .NET's <c>$</c> also matches before a single trailing newline, where the predicate's
 /// ECMAScript <c>$</c> asserts end of input, so <c>$</c> accepted <c>en</c> followed by a line
 /// feed (#507). A reader delivers that value from <c>/Lang (en\012)</c> or from a raw
-/// end-of-line inside the parentheses (ISO 32000-2, 7.3.4.2). A preflight that passed such a
-/// file on 2.3.3 reports 7.2-29 now.
+/// end-of-line inside the parentheses (ISO 32000-2, 7.3.4.2). A preflight reports 7.2-29 for such a
+/// file.
 ///
 /// Scope (to avoid false positives empirically confirmed against veraPDF):
 /// <list type="bullet">

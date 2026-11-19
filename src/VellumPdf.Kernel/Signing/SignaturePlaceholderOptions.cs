@@ -62,13 +62,9 @@ public sealed class SignaturePlaceholderOptions
     /// <strong>No value is refused, and no character is rewritten into another.</strong> The value
     /// is written as a PDF text string (ISO 32000-2, Table 255). A value made only of U+0020 to
     /// U+007E, U+00A1 to U+00FF except U+00AD, and U+0000 to U+0017 is written one byte per
-    /// character. Any other value, including one with a character above U+00FF, is written as
-    /// UTF-16BE with a byte order mark and reaches the file as written. Up to 2.3.3 the value was
-    /// encoded with <c>Encoding.Latin1</c>, whose fallback replaced a character it cannot hold with
-    /// a look-alike (U+0141 became <c>L</c>, U+2014 became <c>-</c>) or with <c>?</c> (U+20AC and
-    /// U+65E5), and wrote U+0080 to U+00A0 and U+00AD as single bytes that a reader decodes as
-    /// other characters or as none, so the entry could name a different person than the caller
-    /// gave.
+    /// character, unless it begins with U+00FE U+00FF or U+00EF U+00BB U+00BF. Any other
+    /// value, including one with a character above U+00FF, is written as UTF-16BE with a byte
+    /// order mark and reaches the file as written.
     /// <para><strong>Do not</strong> pass a lone UTF-16 surrogate or U+001B. A lone surrogate is
     /// not a character and is written as U+FFFD. U+001B is written as it stands, and a reader takes
     /// U+001B inside a UTF-16BE string for the start of a language escape sequence (7.9.2.2.2).
@@ -82,13 +78,9 @@ public sealed class SignaturePlaceholderOptions
     /// <strong>No value is refused, and no character is rewritten into another.</strong> The value
     /// is written as a PDF text string (ISO 32000-2, Table 255). A value made only of U+0020 to
     /// U+007E, U+00A1 to U+00FF except U+00AD, and U+0000 to U+0017 is written one byte per
-    /// character. Any other value, including one with a character above U+00FF, is written as
-    /// UTF-16BE with a byte order mark and reaches the file as written. Up to 2.3.3 the value was
-    /// encoded with <c>Encoding.Latin1</c>, whose fallback replaced a character it cannot hold with
-    /// a look-alike (U+0141 became <c>L</c>, U+2014 became <c>-</c>) or with <c>?</c> (U+20AC and
-    /// U+65E5), and wrote U+0080 to U+00A0 and U+00AD as single bytes that a reader decodes as
-    /// other characters or as none, so the entry could state something other than what the caller
-    /// gave.
+    /// character, unless it begins with U+00FE U+00FF or U+00EF U+00BB U+00BF. Any other
+    /// value, including one with a character above U+00FF, is written as UTF-16BE with a byte
+    /// order mark and reaches the file as written.
     /// <para><strong>Do not</strong> pass a lone UTF-16 surrogate or U+001B. A lone surrogate is
     /// not a character and is written as U+FFFD. U+001B is written as it stands, and a reader takes
     /// U+001B inside a UTF-16BE string for the start of a language escape sequence (7.9.2.2.2).
@@ -102,13 +94,9 @@ public sealed class SignaturePlaceholderOptions
     /// <strong>No value is refused, and no character is rewritten into another.</strong> The value
     /// is written as a PDF text string (ISO 32000-2, Table 255). A value made only of U+0020 to
     /// U+007E, U+00A1 to U+00FF except U+00AD, and U+0000 to U+0017 is written one byte per
-    /// character. Any other value, including one with a character above U+00FF, is written as
-    /// UTF-16BE with a byte order mark and reaches the file as written. Up to 2.3.3 the value was
-    /// encoded with <c>Encoding.Latin1</c>, whose fallback replaced a character it cannot hold with
-    /// a look-alike (U+0141 became <c>L</c>, U+2014 became <c>-</c>) or with <c>?</c> (U+20AC and
-    /// U+65E5), and wrote U+0080 to U+00A0 and U+00AD as single bytes that a reader decodes as
-    /// other characters or as none, so the entry could state something other than what the caller
-    /// gave.
+    /// character, unless it begins with U+00FE U+00FF or U+00EF U+00BB U+00BF. Any other
+    /// value, including one with a character above U+00FF, is written as UTF-16BE with a byte
+    /// order mark and reaches the file as written.
     /// <para><strong>Do not</strong> pass a lone UTF-16 surrogate or U+001B. A lone surrogate is
     /// not a character and is written as U+FFFD. U+001B is written as it stands, and a reader takes
     /// U+001B inside a UTF-16BE string for the start of a language escape sequence (7.9.2.2.2).
@@ -122,13 +110,9 @@ public sealed class SignaturePlaceholderOptions
     /// <strong>No value is refused, and no character is rewritten into another.</strong> The value
     /// is written as a PDF text string (ISO 32000-2, Table 255). A value made only of U+0020 to
     /// U+007E, U+00A1 to U+00FF except U+00AD, and U+0000 to U+0017 is written one byte per
-    /// character. Any other value, including one with a character above U+00FF, is written as
-    /// UTF-16BE with a byte order mark and reaches the file as written. Up to 2.3.3 the value was
-    /// encoded with <c>Encoding.Latin1</c>, whose fallback replaced a character it cannot hold with
-    /// a look-alike (U+0141 became <c>L</c>, U+2014 became <c>-</c>) or with <c>?</c> (U+20AC and
-    /// U+65E5), and wrote U+0080 to U+00A0 and U+00AD as single bytes that a reader decodes as
-    /// other characters or as none, so the entry could state something other than what the caller
-    /// gave.
+    /// character, unless it begins with U+00FE U+00FF or U+00EF U+00BB U+00BF. Any other
+    /// value, including one with a character above U+00FF, is written as UTF-16BE with a byte
+    /// order mark and reaches the file as written.
     /// <para><strong>Do not</strong> pass a lone UTF-16 surrogate or U+001B. A lone surrogate is
     /// not a character and is written as U+FFFD. U+001B is written as it stands, and a reader takes
     /// U+001B inside a UTF-16BE string for the start of a language escape sequence (7.9.2.2.2).
