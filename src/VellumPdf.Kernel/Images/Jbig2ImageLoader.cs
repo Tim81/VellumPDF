@@ -248,6 +248,23 @@ public static class Jbig2ImageLoader
                     $"JBIG2: the file holds {pages} pages, and a PDF image holds one. " +
                     "A file with the T.88 Annex D header and more than one page is not embedded.");
             }
+
+            // 2.3.3 refused every one of these files, so only one that complies with T.88 may load now;
+            // a file that does not comply stays refused.
+            RequireCompliantSinglePage(jbig2, dataStart, segments);
+
+            // The raster this mode writes is not yet correct for these files: it stores the decoded bits,
+            // where T.88 reads 1 as black (the "typical interpretation" in the note to its 5.6), as
+            // /DeviceGray 1 bpc with no /Decode, whose default maps sample 0 to black (ISO 32000-2
+            // 8.9.5.2). ISO 32000-2 7.4.7 does not say how the filter's bits map to colour. A page that
+            // renders as a negative is not correct handling of compliant input, so it stays refused.
+            if (options.DecodeMode == ImageDecodeMode.DecodeToRaster)
+            {
+                throw new InvalidDataException(
+                    "JBIG2: a file with the T.88 Annex D header is not decoded to a raster, because this " +
+                    "loader's raster output for such a file is not yet correct (it renders inverted). " +
+                    "Use ImageDecodeMode.Passthrough.");
+            }
         }
 
         ImageLimits.ValidateDimensions("JBIG2", width, height);
@@ -256,6 +273,74 @@ public static class Jbig2ImageLoader
             ? DecodeToRaster(segments, data, width, height, firstPage, decodeOtherPages: dataStart <= FileHeader.Length)
             : BuildPassthrough(segments, data, width, height, firstPage);
     }
+
+    /// <summary>
+    /// Refuses a file with the T.88 Annex D header that does not comply with the standard in a way that
+    /// matters to a one-page embedding: 2.3.3 refused every such file, and only compliant input may be
+    /// accepted now.
+    /// </summary>
+    private static void RequireCompliantSinglePage(
+        byte[] jbig2, int dataStart, List<SegmentHeader> segments)
+    {
+        // D.4.3: a page count that is present "must equal the number of pages contained in the file".
+        // This file holds one page at most, so a present count other than 1 is wrong. The count is
+        // present exactly when the segments start 4 bytes after the flags byte (D.4.2 bit 1).
+        if (dataStart == FileHeader.Length + 1 + 4)
+        {
+            var count = ReadUInt32(jbig2, FileHeader.Length + 1);
+            if (count != 1)
+                throw new InvalidDataException(
+                    $"JBIG2: the file header says {count} pages, and a PDF image holds one (T.88 D.4.3).");
+        }
+
+        var firstAssociated = true;
+        var firstPageInformation = true;
+        foreach (var seg in segments)
+        {
+            // 7.2.6: "The first page must be numbered 1"; this file has one page, so 0 or 1 only.
+            if (seg.PageAssociation is not (0 or 1))
+                throw new InvalidDataException(
+                    $"JBIG2: segment {seg.Number} is associated with page {seg.PageAssociation}, but the " +
+                    "file's first page is page 1 and it holds no other (T.88 7.2.6).");
+
+            if (seg.Type == SegmentTypePageInformation)
+            {
+                // 7.3.2: a page information segment must be associated with a page, and 7.2.6 numbers
+                // the first page 1.
+                if (seg.PageAssociation != 1 && firstPageInformation)
+                    throw new InvalidDataException(
+                        $"JBIG2: the first page-information segment ({seg.Number}) is not on page 1 " +
+                        "(T.88 7.2.6, 7.3.2).");
+                firstPageInformation = false;
+            }
+
+            if (seg.PageAssociation != 0)
+            {
+                // 7.4.8: "The first segment that is associated with any page must be a page information
+                // segment."
+                if (firstAssociated && seg.Type != SegmentTypePageInformation)
+                    throw new InvalidDataException(
+                        $"JBIG2: segment {seg.Number} (type {seg.Type}) is the first segment on page 1, " +
+                        "and it is not the page-information segment (T.88 7.4.8).");
+                firstAssociated = false;
+            }
+            else if (IsRegionSegment(seg.Type))
+            {
+                // 7.3.2: "Every region segment must be associated with some page".
+                throw new InvalidDataException(
+                    $"JBIG2: region segment {seg.Number} (type {seg.Type}) is not associated with any " +
+                    "page (T.88 7.3.2).");
+            }
+        }
+    }
+
+    private static bool IsRegionSegment(int type) => type is
+        SegmentTypeIntermediateTextRegion or SegmentTypeImmediateTextRegion
+        or SegmentTypeImmediateLosslessTextRegion or SegmentTypeIntermediateHalftoneRegion
+        or SegmentTypeImmediateHalftoneRegion or SegmentTypeImmediateLosslessHalftoneRegion
+        or SegmentTypeIntermediateGenericRegion or SegmentTypeImmediateGenericRegion
+        or SegmentTypeImmediateLosslessGenericRegion or SegmentTypeIntermediateGenericRefinementRegion
+        or SegmentTypeImmediateGenericRefinementRegion or SegmentTypeImmediateLosslessGenericRefinementRegion;
 
     // ── Parsed segment metadata ───────────────────────────────────────────────
 

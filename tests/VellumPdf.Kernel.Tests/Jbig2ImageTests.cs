@@ -2308,7 +2308,9 @@ public sealed class Jbig2ImageTests
             BuildSegment(2, type: 62, pageAssociation: 2, [0xC1, 0xC2]),
             BuildSegment(3, type: 51, pageAssociation: 0, []),
         ];
-        var file = Sequential(0x01, PageCountOne, segments);
+        // Without the Annex D header: a file with it and a page-information segment on page 0 is refused
+        // (T.88 7.3.2), see Load_AnnexDFile_NonCompliantShapes_AreRefused.
+        var file = Embedded(segments);
 
         var passthrough = Jbig2ImageLoader.Load(file);
         var raster = Jbig2ImageLoader.Load(file, new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster });
@@ -2433,7 +2435,7 @@ public sealed class Jbig2ImageTests
         ];
         var opts = new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster };
 
-        Assert.ThrowsAny<Exception>(() => Jbig2ImageLoader.Load(Embedded(segments), opts));
+        Assert.Throws<NotSupportedException>(() => Jbig2ImageLoader.Load(Embedded(segments), opts));
         Assert.Equal(8, Jbig2ImageLoader.Load(Embedded(segments)).Width);   // Passthrough: page 1, as ruled
     }
 
@@ -2459,9 +2461,113 @@ public sealed class Jbig2ImageTests
         var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments), opts));
         Assert.Contains("2 pages", ex.Message, StringComparison.Ordinal);
 
-        // The same segments with one page load.
-        var single = Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments.Take(2).ToArray()), opts);
-        Assert.Equal(8, single.Width);
+        // The same segments with one page load in Passthrough. DecodeToRaster refuses every Annex D file
+        // (see Load_AnnexDFile_UnderDecodeToRaster_IsRefused).
+        if (!raster)
+            Assert.Equal(8, Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments.Take(2).ToArray()), opts).Width);
+    }
+
+    /// <summary>
+    /// DecodeToRaster keeps page 1: a region on page 2, which it decodes and discards, does not reach
+    /// the raster. Page 1 has no region, so its raster is all 0 bits; page 2 is one black row.
+    /// </summary>
+    [Fact]
+    public void Load_DecodeToRaster_TwoPageStream_KeepsPageOneAndNotPageTwo()
+    {
+        byte[][] segments =
+        [
+            BuildSegment(0, type: 48, pageAssociation: 1, BuildPageInfoSegmentData(8, 1)),
+            BuildSegment(1, type: 48, pageAssociation: 2, BuildPageInfoSegmentData(8, 1)),
+            BuildSegment(2, type: 38, pageAssociation: 2, MmrRegionData()),
+        ];
+
+        var raster = Jbig2ImageLoader.Load(Embedded(segments), new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster });
+
+        Assert.Equal([0x00], CcittImageTests.DecompressFlateStream(raster.BuildStream()));
+    }
+
+    /// <summary>
+    /// DecodeToRaster refuses every file with the Annex D header, even a compliant one-page file: its
+    /// raster stores the decoded bits unchanged, so the page renders as a negative, and compliant input
+    /// handled wrongly stays refused. Passthrough loads the same file.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Load_AnnexDFile_UnderDecodeToRaster_IsRefused(bool randomAccess)
+    {
+        byte[][] segments =
+        [
+            BuildSegment(0, type: 48, pageAssociation: 1, BuildPageInfoSegmentData(8, 1)),
+            BuildSegment(1, type: 38, pageAssociation: 1, MmrRegionData()),
+        ];
+        // A random-access file ends with the end-of-file segment, whose header is the last of the headers.
+        var file = randomAccess
+            ? RandomAccess(0x00, PageCountOne, [.. segments, BuildSegment(2, 51, 0, [])])
+            : Sequential(0x01, PageCountOne, segments);
+
+        var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(file, new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster }));
+
+        Assert.Contains("not yet correct", ex.Message, StringComparison.Ordinal);
+        Assert.Equal(8, Jbig2ImageLoader.Load(file).Width);
+        // The embedded form has no Annex D header, and its raster is unchanged from 1c61fa6.
+        Assert.Equal([0xFF], CcittImageTests.DecompressFlateStream(
+            Jbig2ImageLoader.Load(Embedded(segments), new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster }).BuildStream()));
+    }
+
+    /// <summary>
+    /// An Annex D file must comply with T.88 to load, because 1c61fa6 refused every one: the first
+    /// page-information segment is on page 1 (7.2.6), no segment is on another page (7.2.6), the first
+    /// segment on page 1 is its page information (7.4.8), a region is on a page (7.3.2), and a page
+    /// count in the header equals the one page (D.4.3). Each row breaks one rule only, so each check is
+    /// pinned on its own.
+    /// </summary>
+    [Theory]
+    [InlineData("first page information on page 0", "not on page 1")]
+    [InlineData("extension on page 2", "associated with page 2")]
+    [InlineData("region before the page information", "is the first segment on page 1")]
+    [InlineData("region on no page", "not associated with any page")]
+    [InlineData("page count 2", "says 2 pages")]
+    [InlineData("page count 0", "says 0 pages")]
+    public void Load_AnnexDFile_NonCompliantShapes_AreRefused(string shape, string expectedMessage)
+    {
+        byte[] pageCount = PageCountOne;
+        byte[][] segments;
+        switch (shape)
+        {
+            case "first page information on page 0":
+                segments = [BuildSegment(0, 48, 0, BuildPageInfoSegmentData(8, 1)), BuildSegment(1, 51, 0, [])];
+                break;
+            case "extension on page 2":
+                segments =
+                [
+                    BuildSegment(0, 48, 1, BuildPageInfoSegmentData(8, 1)),
+                    BuildSegment(1, 38, 1, MmrRegionData()),
+                    BuildSegment(2, 62, 2, [0xC1, 0xC2]),
+                ];
+                break;
+            case "region before the page information":
+                segments = [BuildSegment(0, 38, 1, MmrRegionData()), BuildSegment(1, 48, 1, BuildPageInfoSegmentData(8, 1))];
+                break;
+            case "region on no page":
+                segments = [BuildSegment(0, 48, 1, BuildPageInfoSegmentData(8, 1)), BuildSegment(1, 38, 0, MmrRegionData())];
+                break;
+            default:
+                segments = [BuildSegment(0, 48, 1, BuildPageInfoSegmentData(8, 1)), BuildSegment(1, 38, 1, MmrRegionData())];
+                pageCount = [0x00, 0x00, 0x00, (byte)(shape.EndsWith('2') ? 2 : 0)];
+                break;
+        }
+
+        var sequential = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(Sequential(0x01, pageCount, segments)));
+        var withEndOfFile = shape == "first page information on page 0" ? segments : [.. segments, BuildSegment(9, 51, 0, [])];
+        var randomAccess = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(RandomAccess(0x00, pageCount, withEndOfFile)));
+
+        Assert.Contains(expectedMessage, sequential.Message, StringComparison.Ordinal);
+        Assert.Contains(expectedMessage, randomAccess.Message, StringComparison.Ordinal);
+        // The same segments in the embedded form, which 1c61fa6 read, still load where the header was the
+        // only thing wrong; the rows whose segments are the fault are not asserted here.
+        if (shape.StartsWith("page count", StringComparison.Ordinal))
+            Assert.Equal(8, Jbig2ImageLoader.Load(Embedded(segments)).Width);
     }
 
     /// <summary>The end-of-page segment is framing and stays exempt under DecodeToRaster too.</summary>
@@ -2782,11 +2888,12 @@ public sealed class Jbig2ImageTests
         ];
         var opts = new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster };
 
-        var ex = Record.Exception(() => Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments), opts));
+        var ex = Record.Exception(() => Jbig2ImageLoader.Load(Embedded(segments), opts));
 
         // Whatever the MMR decoder makes of no data, the length check let the segment through.
-        if (ex is not null)
-            Assert.DoesNotContain("data too short", ex.Message, StringComparison.Ordinal);
+        Assert.NotNull(ex);
+        Assert.DoesNotContain("data too short", ex.Message, StringComparison.Ordinal);
+        Assert.IsType<InvalidDataException>(ex);
     }
 
     [Fact]
@@ -2799,7 +2906,7 @@ public sealed class Jbig2ImageTests
         ];
         var opts = new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster };
 
-        var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments), opts));
+        var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(Embedded(segments), opts));
 
         Assert.Contains("data too short", ex.Message, StringComparison.Ordinal);
     }
