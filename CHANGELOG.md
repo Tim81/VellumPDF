@@ -50,7 +50,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   files now attribute that to 1.30.2. Statements elsewhere that a behaviour was measured on
   veraPDF 1.30.2 or qpdf 12.4.1 are left as written, since they record what was measured then,
   except two that were re-measured on 1.30.4 and came out the same: the language-tag table in
-  `docs/conformance-divergences.md` and the profile clause counts in `eng/clause-coverage.py`.
+  `docs/conformance-divergences.md` (whose row D6 later left with #507) and the profile clause counts
+  in `eng/clause-coverage.py`.
 
 ### Fixed
 
@@ -64,6 +65,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   decode. A backslash before the end-of-line marker is still a line continuation, and the escapes
   `\r`, `\n` and the octal forms still produce 0Dh and 0Ah exactly as written. The added branch
   throws nothing, so no input that decoded on 2.3.3 stops decoding.
+- **A `/Lang` tag ending in a line feed is now reported by both language rules (#507).** The
+  patterns of `A2aLangSyntaxRule` (6.7.4-1) and `UaLangSyntaxRule` (7.2-29) ended in `$`, which in
+  .NET also matches before a single trailing newline, where the ECMAScript predicate the rules cite
+  asserts end of input. They now end in `\z`. **A preflight that passed on 2.3.3 can now report a
+  failure**: a file whose `/Lang` is `(en\012)`, or has a raw end-of-line before the closing
+  parenthesis, was accepted and is now refused, which is what veraPDF 1.30.2 and 1.30.4 did all
+  along. This is a new finding on non-compliant input; preflight reports compliance and neither
+  produces nor refuses a document. Row D6 is removed from `docs/conformance-divergences.md`, since
+  the divergence it recorded is gone. The other `Regex` fields in `src/` are the three XMP
+  value patterns, whose input is trimmed before the match, so a trailing newline never reaches them.
 - **Cost-bound tests no longer assert on elapsed time (#400, #456).** A `Stopwatch` checked after a
   call returns cannot end a hang, and a 10 s bound fails on a loaded runner: the main CI run for
   1c61fa6 failed `FindingHigh_A4FlateBombPadding_refusesQuickly_viaCostBudget` at 11.79 s, and #400

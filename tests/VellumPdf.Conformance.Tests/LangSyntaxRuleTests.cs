@@ -73,6 +73,12 @@ public sealed class LangSyntaxRuleTests
     [InlineData("en-123456789", false)]      // nine characters in a later subtag
     [InlineData("en_GB", false)]
     [InlineData("1en", false)]
+    // A trailing line feed: .NET's $ matches before one, ECMAScript's does not (#507).
+    [InlineData("en\n", false)]
+    [InlineData("en-GB\n", false)]
+    [InlineData("en\r\n", false)]
+    [InlineData("\nen", false)]
+    [InlineData("en\n\n", false)]
     public void LangRule_acceptsTheSyntaxItDocuments(string tag, bool expected)
     {
         foreach (var ruleType in new[] { typeof(A2aLangSyntaxRule), typeof(UaLangSyntaxRule) })

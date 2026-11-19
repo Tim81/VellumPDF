@@ -25,12 +25,12 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// correction for the rule set as a whole, and the sweep of the other rule files carrying this
 /// sentence is #418.
 ///
-/// Attention: this pattern and that predicate disagree on a whole family of inputs, any tag
-/// followed by a line feed. .NET's <c>$</c> matches
-/// before a single trailing newline, so a <c>/Lang</c> of <c>en</c> followed by a line feed is
-/// accepted here and rejected by the predicate, where ECMAScript's <c>$</c> asserts end of input.
-/// The divergence is a false accept and is recorded as D6 in
-/// <c>docs/conformance-divergences.md</c>. Replacing <c>$</c> with <c>\z</c> closes it (#507).
+/// <b>A tag ending in a line feed is refused.</b> The pattern ends in <c>\z</c> rather than
+/// <c>$</c>: .NET's <c>$</c> also matches before a single trailing newline, where the predicate's
+/// ECMAScript <c>$</c> asserts end of input, so <c>$</c> accepted <c>en</c> followed by a line
+/// feed (#507). A reader delivers that value from <c>/Lang (en\012)</c> or from a raw
+/// end-of-line inside the parentheses (ISO 32000-2, 7.3.4.2). A preflight that passed such a file on 2.3.3
+/// reports 7.2-29 now.
 ///
 /// Scope (to avoid false positives empirically confirmed against veraPDF):
 /// <list type="bullet">
@@ -57,7 +57,7 @@ internal sealed class UaLangSyntaxRule : IConformanceRule
     // no match timeout here: a wall-clock limit in library code fails on a loaded machine for an
     // input that needs microseconds, and NonBacktracking removes the runaway it was guarding.
     private static readonly Regex _bcp47 =
-        new(@"^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*$", RegexOptions.NonBacktracking);
+        new(@"^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*\z", RegexOptions.NonBacktracking);
 
     private static readonly PdfName _lang = new("Lang");
 
