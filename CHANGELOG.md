@@ -457,9 +457,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   own data. The older form, the ID string followed directly by segments, and the bare embedded form
   still load. The older form is tried first, so a file in it is read as 2.3.3 read it even when the
   byte after the ID string could also be a flags byte; the header reading is tried only when that
-  fails. Checked against the ten sequential files in the ITU T.88 conformance data: all now
-  load at the size of their reference bitmaps, and the one MMR file decodes to the reference bitmap
-  pixel for pixel. That data is licensed for conformance testing only and is not in the repository,
+  fails. Checked against the ten sequential files in the ITU T.88 conformance data: nine now
+  load under `Passthrough` at the size of their reference bitmaps, and the tenth, a file of three
+  pages, is refused (see below). That data is licensed for conformance testing only and is not in the repository,
   so the committed tests use fixtures built by hand from Annex D. Found while exporting images from a
   PDF with the PowerShell wrapper PSVellumPDF. A PDF image is one page, so a file with several pages
   embeds the first: the page named by the first page-information segment, with the segments that
@@ -488,6 +488,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   refused on a later page (a region it cannot decode, an unknown length) is refused. A multi-page
   file with the Annex D header, which 2.3.3 could not read, is refused in both modes with
   `InvalidDataException` naming the page count. Do not pass a multi-page file; 3.0 refuses it.
+  A file with the Annex D header loads only if it complies with T.88, because 2.3.3 refused every
+  such file and only compliant input may be accepted now: its first page-information segment is on
+  page 1 (7.2.6), no segment is on another page (7.2.6), the first segment on page 1 is the page
+  information (7.4.8), every region is on a page (7.3.2), and a page count in the header is 1
+  (D.4.3). Any other such file is refused with `InvalidDataException` naming the clause. **`DecodeToRaster`
+  refuses every file with the Annex D header, compliant or not**, with `InvalidDataException`, as 2.3.3 did:
+  the raster it writes stores the decoded bits unchanged as `/DeviceGray` 1 bit per component with no
+  `/Decode`, whose default maps sample 0 to black, while T.88 treats 1 as black, so the page would
+  render as a negative. That inversion is in what 2.3.3 wrote for the files it could read, is not
+  changed here.
   When no reading of the data is accepted, the `InvalidDataException` says which readings were
   tried (a sequential or random-access file, the ID string followed directly by segments, or the
   embedded form) after the last reading's message, so a broken older file is not described only
