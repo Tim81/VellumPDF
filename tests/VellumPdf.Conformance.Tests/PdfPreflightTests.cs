@@ -526,10 +526,11 @@ public sealed class PdfPreflightTests
         bool structTreeRoot = true,
         bool displayDocTitle = true,
         byte[]? xmpOverride = null,
-        string pageExtra = "")
+        string pageExtra = "",
+        string langLiteral = "(en-US)")
     {
         var catalog = "<< /Type /Catalog /Pages 2 0 R"
-            + (lang ? " /Lang (en-US)" : string.Empty)
+            + (lang ? " /Lang " + langLiteral : string.Empty)
             + (marked ? " /MarkInfo << /Marked true >>" : " /MarkInfo << /Marked false >>")
             + (structTreeRoot ? " /StructTreeRoot 4 0 R" : string.Empty)
             + (displayDocTitle
@@ -4327,6 +4328,45 @@ public sealed class PdfPreflightTests
         Assert.Contains(result.Assertions, a =>
             a.RuleId == "ISO19005-2:6.7.4-1"
             && a.Message.Contains("invalid!!bad"));
+    }
+
+    // #507 and #511. Each literal is hand-assembled bytes, since PdfDocument.ApplyLanguage trims its
+    // value and the library cannot write one. Every form below reaches the rule as "en" plus 0Ah
+    // (ISO 32000-2, 7.3.4.2), and veraPDF 1.30.2 and 1.30.4 fail the first three, so a pass is a
+    // false accept. The raw CR and CRLF forms were refused on 2.3.3 only because the reader kept
+    // the CR (#511); they stay refused for the right reason now.
+    public static TheoryData<string> LangLiteralsEndingInAnEndOfLine => new()
+    {
+        "(en\\012)",
+        "(en\n)",
+        "(en\r\n)",
+        "(en\r)",
+        "(en-GB\n)",
+    };
+
+    [Theory]
+    [MemberData(nameof(LangLiteralsEndingInAnEndOfLine))]
+    public void Validate2a_CatalogLangEndingInAnEndOfLine_ReportsError(string literal)
+    {
+        var bytes = Build2aPdf(
+            "/MarkInfo << /Marked true >> /StructTreeRoot 4 0 R /Lang " + literal,
+            new PdfObj("<< /Type /StructTreeRoot >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2A);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.7.4-1");
+    }
+
+    [Theory]
+    [MemberData(nameof(LangLiteralsEndingInAnEndOfLine))]
+    public void ValidateUa_CatalogLangEndingInAnEndOfLine_ReportsError(string literal)
+    {
+        var bytes = BuildUaPdf(langLiteral: literal);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-29");
     }
 
     [Fact]

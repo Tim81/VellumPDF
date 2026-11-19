@@ -206,6 +206,94 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   byte 4 of every file `GifEncoder.Encode` returns changes from `9` to `7` (`89a` to `87a`); the
   rest of the file is identical. `GifImageLoader` accepts both versions, as before. A later release that
   writes a block needing 89a will write `GIF89a`, so read the version from the file.
+- **A raw CRLF, or a raw CR, inside a literal string now reads back as one line feed (#511).** ISO
+  32000-2, 7.3.4.2 says an unescaped end-of-line marker in a literal string "shall be treated as a
+  byte value of (0Ah), irrespective of whether the end-of-line marker was a CARRIAGE RETURN (0Dh), a
+  LINE FEED (0Ah), or both". `PdfObjectParser.DecodeLiteralString` kept both bytes of a CRLF and
+  kept a lone CR as 0Dh. A hand-assembled `/Lang (en<CR><LF>)` read back as `65 6E 0D 0A`, and now
+  reads `65 6E 0A`. **This changes what the reader returns for such a string**, in strings parsed
+  from the objects of an unencrypted file (not its trailer), from an object stream body and from a
+  content stream. **Strings stored directly in an encrypted file's objects (ciphertext, `/Encrypt`,
+  the trailer) keep their raw bytes; object-stream members and content streams are plaintext and are
+  normalised.** Under a `/StrF` other than `/Identity` those strings are ciphertext, or
+  key-derivation input (the `/Encrypt` dictionary's `/O`, `/U`, `/OE` and `/UE`, and the trailer
+  `/ID`), and a writer that escapes only parentheses and the backslash puts a raw 0Dh in them as
+  data; folding it would corrupt the bytes before decryption. **Under `/StrF /Identity` the strings
+  are plaintext and are still not normalised, as on 2.3.3**, because the reader decides from the
+  presence of `/Encrypt` alone. Folding every string failed to decrypt 28 of 70 AES-256 files that
+  carried a raw 0Dh in a string and changed `/Lang` in 13 more; 2.3.3 and this fix opened all of
+  them with the same `/Lang` (measurement in the PR). A backslash before the end-of-line marker is
+  still a line continuation, and the escapes `\r`, `\n` and the octal forms still produce 0Dh and
+  0Ah exactly as written. The added branch throws nothing, so no input that decoded on 2.3.3 stops
+  decoding.
+- **The two font rules that scan content streams now decode literal strings as the reader does
+  (#511).** `CidRangeRule` and `GlyphPresenceRule` each kept a private decoder that stopped at the
+  first closing parenthesis, so `(a(b)c)` was read as `a(b`, and that kept a raw CR. Both now call the
+  reader's decode, which balances parentheses and applies 7.3.4.2. A string with a nested
+  parenthesis pair is therefore checked in full, which can add a finding where 2.3.3 stopped early.
+  Measured: a temporary check that compared the old and new decode of every string these two rules
+  saw found no difference across the 1,379 Conformance tests on net10.0 with the oracles enabled, so
+  none of their verdicts changed there; only the new synthetic strings differ. With this, the strings the
+  conformance rules inspect go through the same decode as the reader's.
+- **The content-stream scan behind the PDF/UA font rules now reads a raw end-of-line marker in a
+  string as one line feed (#511).** `ContentStreamUsage` decodes the strings of `Tj`, `TJ`, `'` and
+  `"` and those in an inline `BDC` property dictionary through the reader's literal-string decode,
+  so a raw CR now reads as 0Ah and a raw CRLF as one 0Ah (ISO 32000-2, 7.3.4.2), where 2.3.3 kept
+  the 0Dh. **This is a deliberate change to what those rules are given.** The text-show bytes feed
+  `UaGlyphPresence`, `UaGlyphWidth`, `UaNotdefGlyph`, `UaToUnicodeCharMapping`, `UaFontEmbedding`
+  and `UaToUnicodeForbidden`, so a string that holds a raw CR is now checked as code 0Ah where it
+  was checked as code 0Dh. The `BDC` strings reach only a null test (`UaMarkedContentLang` asks
+  whether `/Lang`, `/ActualText` or `/Alt` is present), so no verdict depends on their value.
+  Measured as the two font rules were: a temporary check that compared the old and new decode of
+  every literal string this scan decoded in the Conformance tests on net10.0 with the oracles
+  enabled found no difference except in the new tests' own strings, so no verdict in that suite
+  changed. Four tests pin the change, and they fail when the decode is told not to fold the marker.
+- **A `/Lang` tag ending in a line feed is now reported by both language rules (#507).** The
+  patterns of `A2aLangSyntaxRule` (6.7.4-1) and `UaLangSyntaxRule` (7.2-29) ended in `$`, which in
+  .NET also matches before a single trailing newline, where the ECMAScript predicate the rules cite
+  asserts end of input. They now end in `\z`. **A preflight that passed on 2.3.3 can now report a
+  failure**: a file whose `/Lang` is `(en\012)`, or has a raw line feed before the closing
+  parenthesis, was accepted on 2.3.3 and is now reported, as veraPDF 1.30.2 and 1.30.4 did all
+  along. A raw CR or CRLF there already fired on 2.3.3, because the reader kept the CR in the tag;
+  the #511 fix would have turned those two forms into false accepts without this change, which is
+  why the two ship together. This is a new finding on non-compliant input; preflight reports
+  compliance and neither produces nor refuses a document. Row D6 is removed from
+  `docs/conformance-divergences.md`, since the divergence it recorded is gone. The other `Regex`
+  fields in `src/` are the three XMP value patterns, whose input is trimmed before the match, so a
+  trailing newline never reaches them.
+- **An XMP `Real` value can no longer take seconds to check (#506).** `PropertyValueTypeRule`'s
+  real-number pattern split a run of digits between `\d+` and `\d*` at every position when no
+  decimal point was present, so a failing match was quadratic in the length of the run, with no
+  match timeout, on a string taken from the file's own XMP packet (the file also chooses that the
+  property is a `Real`). On the probe build of 2.3.3, 32,000 digits followed by `!` took 15.5 s, and
+  16,000 digits, an `e`, 16,000 more digits and `!` took 4.5 s. The pattern is now
+  `^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$`, which cannot split a digit run, and runs with
+  `RegexOptions.NonBacktracking`. A test enumerates every string of up to seven characters over
+  eight tokens (a digit, the point, both exponent letters, both signs, a character the grammar never
+  accepts, and ARABIC-INDIC DIGIT THREE, which `\d` matches) and finds the new pattern agrees with
+  the old on all 2,396,745 of them. No verdict changes. The date and integer patterns are linear and
+  unchanged; no other `Regex` exists in `src/`.
+- **A signer's name, reason, location and contact are no longer transliterated into Latin-1
+  (#524).** `PdfDocument.PrepareForSigning` and `Sign` wrote `/Name`, `/Reason`, `/Location` and
+  `/ContactInfo`, and `SetPdfAOutputIntent` and `UseCmykOutputIntent` wrote
+  `/OutputConditionIdentifier` and `/Info`, with `Encoding.Latin1.GetBytes`, whose fallback rewrites
+  a character it cannot hold into a look-alike and reports nothing: a name with U+0141 was signed as
+  the same name with `L`, an em dash as `-`, a euro sign or CJK character as `?`. ISO 32000-2 types
+  these entries as text strings (Tables 255 and 401). A value made only of U+0020 to U+007E, U+00A1
+  to U+00FF except U+00AD, and U+0000 to U+0017 keeps its one-byte form, unless it begins with
+  U+00FE U+00FF or U+00EF U+00BB U+00BF. Any other value is now written as UTF-16BE with a byte
+  order mark. **Deliberate output changes**, each measured on the 2.3.3 build and this one: a value
+  with a character above U+00FF now keeps it (`/Name` for the U+0141 example is `FE FF 01 41 00 75
+  ...` where it was `4C 75 ...`); a value with U+0080 to U+00A0, U+00AD, U+0018 to U+001F or U+007F,
+  where PDFDocEncoding gives the byte another character or none, is now UTF-16BE where it was a
+  single byte that a reader shows as another character (0xA0 is the euro sign in PDFDocEncoding); a
+  value starting with the bytes of a byte order mark takes the UTF-16BE form; and a lone surrogate,
+  which was `?`, is now U+FFFD. Printable ASCII and U+00A1 to U+00FF except U+00AD are
+  byte-identical to 2.3.3, and none of the 13 values probed fails to sign. U+001B is written as it
+  stands and a reader takes it for a language escape; the documentation says not to pass it.
+  `AcroFormBuilder` writes field text strings its own way and is not changed here. The public XML
+  documentation on the four signing properties and the output-intent methods now says all this, and
+  replaces the sentence that described the best-fit substitution as the behaviour.
 - **`ExternalToolTests.TryRun_CapturesOutputLargerThanTheOsPipeBuffer` no longer times out on a
   loaded machine (test-only change).** Its child was a 20,000-iteration shell echo loop, which hit
   the 30 s limit several times on a loaded Windows machine while passing alone. The child now copies
@@ -233,6 +321,80 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and keeps its token-count bound. The Layout cap tests use
   renderers that fail by name after 200,004 `Layout` calls. Remaining `Timeout` values are 300 s hang
   guards, except the `EncryptDictionaryDenialOfServiceTests` pin sized in #456. No public API changes.
+
+- **`BmpImageLoader` checks that the pixel data is present before it allocates the raster (#536).**
+  The 8- and 24-bit paths sized the output from the declared dimensions first, so a 1,079-byte file
+  declaring 10,000 by 10,000 allocated about 300 MB on the calling thread before refusing. It now
+  allocates under 2 KB before the same refusal, with the same exception type and message. The
+  32-bit path already checked first. Every file that loaded before loads the same way.
+
+- **A 32-bit `BI_RGB` BMP no longer loads fully transparent (#535).** This is a deliberate output
+  change. `BmpImageLoader` read the fourth byte of each pixel as alpha and emitted a soft mask
+  whenever any byte was not 255. In the only 32-bit variant it accepts, `BI_RGB` with a 40-byte
+  header, Microsoft's `BITMAPINFOHEADER` reference says of that byte "The high byte in each DWORD is
+  not used", and writers commonly leave it at zero. A 4 by 4 file with the byte at 0 or 128 came
+  back with a soft mask of all 0s or all 128s; at 255 it had none. The byte is now ignored and no
+  soft mask is emitted, so such a file loads opaque with its colours unchanged. A file whose writer
+  stored real transparency there loses it: alpha lives in `BI_BITFIELDS`, `BI_ALPHABITFIELDS` and
+  the V4 and V5 headers, which this loader still refuses with `NotSupportedException`.
+
+- **`BmpImageLoader` loads a valid 8-bit BMP with a short palette (#533).** The loader never read
+  `biClrUsed` and demanded `54 + 256 * 4` bytes, so a conforming file declaring 4 or 16 entries
+  (86 and 134 bytes for a 4 by 4 image) was refused with "BMP file is truncated", which is not
+  what was wrong with it. It now reads the field, treats 0 as 256, caps it at 256 before
+  multiplying, and requires `54 + entries * 4` bytes. A file of 1,078 bytes or more loads exactly
+  as before, indexing the table as 256 entries whatever `biClrUsed` says. An 8-bit file under
+  1,078 bytes, which 2.3.3 always refused, loads only if its header conforms: `biPlanes` is 1, both
+  reserved words are zero, `biWidth` is positive, `bfSize` equals the file length, `biSizeImage` is
+  zero or between the pixel data the header implies and the bytes the file holds from `bfOffBits`,
+  and `biClrImportant` is zero or no more than the entries in use. It is also held to the entries
+  it declares, so a pixel pointing past them, or pixel data starting inside the palette, is
+  refused. Every refusal is still an `InvalidDataException`. A 24-bit or 32-bit file is never held
+  to these fields, whatever its size.
+
+- **`TiffImageLoader` refuses an unusable `ColorMap` with `InvalidDataException` (#512, #534).**
+  A `ColorMap` whose value field is a negative offset threw `IndexOutOfRangeException` when the
+  offset plus twice the count stayed inside the file, after allocating `new ushort[count]` from the
+  tag: about 1 GB for a count of 500,000,000 and about 2 GB for 1,073,741,823. A negative offset
+  whose sum ran past the end was already an `InvalidDataException`. A nonzero count with a negative
+  offset is now refused before the allocation. A palette image whose `ColorMap` is empty threw the
+  same exception from the palette expansion, with no negative value in the file, and is now
+  refused as an empty map. The map is expanded only under Compression 1, 5 and 32773, so the
+  empty-map refusal applies only there, and under Compression 2, 3, 4 and 7 the file loads as
+  before. The tag is read under every compression, so the negative-offset and past-the-end
+  refusals apply to all of them. A directory offset or a scalar tag's value offset near `int.MaxValue` also threw the
+  exception, because the bounds sum wrapped, and is refused too. Nothing that loaded before is
+  refused: a count of zero loads with a negative offset or with an offset inside the file (an
+  offset past the end was already refused) unless the empty map is refused as above, and one or
+  two entries still load. The XML documentation no longer lists `IndexOutOfRangeException`. No public API
+  changes.
+
+- **`TiffImageLoader` checks uncompressed strips before it allocates the raster (#536).** The
+  loader sized its buffer from the header and then read the strips, so a 114-byte file declaring a
+  10,000 by 10,000 image of four 16-bit samples allocated about 800 MB before it was refused. For
+  Compression 1 the strip list is now checked first, chunky and planar, with the same checks in
+  the same order, so that file allocates under 2 KB and raises the same exception. A file of
+  one-row strips with one strip present went from about 300 MB to under 2 KB. PackBits and LZW
+  strips are not pre-checked, because their output is not bounded by their input and 2.3.3 loaded
+  a PackBits strip that decodes short, zero-filling the rest. A 4-byte LZW strip on a 10,000 by
+  10,000 RGB header still allocates about 600 MB before it is refused.
+
+- **A null `options` to `TiffImageLoader.Load(byte[], ImageLoadOptions)` raises
+  `ArgumentNullException` where it is read (#534).** The argument was dereferenced in three
+  places only, a Group 3 CCITT strip and the 16-bit greyscale and RGB(A) builders, so a null
+  loaded most files and threw `NullReferenceException` on those. The three reads now throw
+  `ArgumentNullException` with `ParamName` `options`; every file that loaded with a null on 2.3.3
+  (8-bit, palette, Group 4, JPEG) still does. The exception type on the refused paths is the only
+  change. The XML documentation says 3.0 will refuse a null for every file.
+
+- **The JPEG-strip size boundary is documented, not changed (#505).** `JpegImageLoader` and
+  `TiffImageLoader` pass a JPEG through without checking its frame-header size against the
+  100,000,000-pixel limit, and `TiffImageLoader` does not compare it with `ImageWidth` and
+  `ImageLength`. Measured on 2.3.3 and kept: a 65535 by 65535 JPEG loads, the same strip in an 8
+  by 8 TIFF loads as 65535 by 65535, and an 8 by 8 TIFF over a 16 by 16 strip loads as 16 by 16.
+  The XML documentation now describes this once per loader, with a "Do not pass" paragraph naming
+  3.0 as the release that refuses all three. Three tests pin the shapes with exact dimensions.
+  No behaviour changes.
 
 ## [2.3.4] - 2026-11-19
 
