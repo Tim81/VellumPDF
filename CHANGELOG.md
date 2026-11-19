@@ -54,6 +54,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **A raw CRLF, or a raw CR, inside a literal string now reads back as one line feed (#511).**
+  ISO 32000-2, 7.3.4.2 says an unescaped end-of-line marker in a literal string "shall be treated as
+  a byte value of (0Ah), irrespective of whether the end-of-line marker was a CARRIAGE RETURN (0Dh),
+  a LINE FEED (0Ah), or both". `PdfObjectParser.DecodeLiteralString` kept both bytes of a CRLF and
+  kept a lone CR as 0Dh. A hand-assembled `/Lang (en<CR><LF>)` read back as `65 6E 0D 0A`, and now
+  reads `65 6E 0A`. **This changes what the reader returns for such a string**: `PdfReader` objects,
+  content-stream operands, and the strings the conformance rules inspect all go through the same
+  decode. A backslash before the end-of-line marker is still a line continuation, and the escapes
+  `\r`, `\n` and the octal forms still produce 0Dh and 0Ah exactly as written. The added branch
+  throws nothing, so no input that decoded on 2.3.3 stops decoding.
 - **Cost-bound tests no longer assert on elapsed time (#400, #456).** A `Stopwatch` checked after a
   call returns cannot end a hang, and a 10 s bound fails on a loaded runner: the main CI run for
   1c61fa6 failed `FindingHigh_A4FlateBombPadding_refusesQuickly_viaCostBudget` at 11.79 s, and #400

@@ -673,6 +673,16 @@ internal sealed class PdfObjectParser
         while (i < span.Length)
         {
             var c = span[i];
+            if (c == (byte)'\r')
+            {
+                // ISO 32000-2 7.3.4.2: an unescaped end-of-line marker inside a literal string is the
+                // single byte 0Ah, whether it was CR, LF or CRLF. A CRLF pair must not yield two bytes.
+                buf[len++] = (byte)'\n';
+                i++;
+                if (i < span.Length && span[i] == (byte)'\n')
+                    i++;
+                continue;
+            }
             if (c != (byte)'\\')
             {
                 buf[len++] = c;
