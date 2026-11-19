@@ -8,20 +8,12 @@ using VellumPdf.Layout.Elements;
 
 namespace VellumPdf.Layout.Tests;
 
-/// <summary>
-/// Where <c>SaveAsync(string)</c> looks at its token, and what each point leaves behind. 2.3.3 opened the
-/// path with <c>FileMode.Create</c>, so the file was empty before any of them; now the file is emptied
-/// only once the PDF is built, and a cancellation up to that point leaves it as it was.
-/// </summary>
+/// <summary>Where <c>SaveAsync(string)</c> looks at its token and what each point leaves behind: the file is emptied only once the PDF is built, so a cancellation up to that point leaves it as it was.</summary>
 public sealed class SaveAsyncCancellationTests
 {
     private static readonly byte[] Original = Enumerable.Repeat((byte)'X', 1234).ToArray();
 
-    /// <summary>
-    /// A PDF object that cancels a token from inside the serialisation, a point no timing could hit
-    /// reliably. It is the value of an entry in an image's SMask dictionary, so it is written while
-    /// the PDF is being built, after the layout and before the file is emptied.
-    /// </summary>
+    /// <summary>A PDF object that cancels a token from inside the serialisation, written as an image's SMask entry after the layout and before the file is emptied; no timing could hit it reliably.</summary>
     private sealed class CancelWhenWritten(CancellationTokenSource cts) : PdfObject
     {
         public int Writes { get; private set; }
@@ -47,12 +39,7 @@ public sealed class SaveAsyncCancellationTests
 
     private static string TempPdf() => Path.Combine(Path.GetTempPath(), "cancel-" + Guid.NewGuid().ToString("N") + ".pdf");
 
-    /// <summary>
-    /// A cancellation during the serialisation is seen once the PDF is built, before the file is
-    /// emptied: the file that was there is intact, and the task ends with TaskCanceledException, the
-    /// type 2.3.3 threw. The hook firing is asserted, so a save that never reached the serialisation
-    /// cannot pass.
-    /// </summary>
+    /// <summary>A cancellation during the serialisation is seen before the file is emptied: the file is intact and the task ends with TaskCanceledException, as in 2.3.3; the hook firing is asserted.</summary>
     [Fact]
     public async Task CancelDuringSerialisation_leavesTheExistingFileIntact_andThrowsTaskCanceled()
     {
@@ -76,10 +63,7 @@ public sealed class SaveAsyncCancellationTests
         }
     }
 
-    /// <summary>
-    /// The same save with a token that is not cancelled completes and replaces the file, so the
-    /// fixture above does reach the point it claims to.
-    /// </summary>
+    /// <summary>The same save with an uncancelled token completes and replaces the file, so the fixture reaches the serialisation.</summary>
     [Fact]
     public async Task SerialisationHook_withAnUncancelledToken_saves()
     {
@@ -105,11 +89,7 @@ public sealed class SaveAsyncCancellationTests
         }
     }
 
-    /// <summary>
-    /// A cancellation seen in the copy, after the file was emptied, throws TaskCanceledException and
-    /// leaves the file truncated: the one point where it can. The token is cancelled from the seam that
-    /// runs between emptying the file and the copy, so the copy's own token is what is under test.
-    /// </summary>
+    /// <summary>A cancellation seen in the copy, after the file was emptied, throws TaskCanceledException and leaves the file truncated; the token is cancelled from the seam between emptying and copying.</summary>
     [Theory]
     [InlineData(1 << 20)]
     [InlineData(7)]
@@ -133,11 +113,7 @@ public sealed class SaveAsyncCancellationTests
         }
     }
 
-    /// <summary>
-    /// A token that is already cancelled wins over every other defect, as on 2.3.3, where the first
-    /// thing a <c>SaveAsync</c> did was hand it to <c>Task.Run</c>: a null destination, a stream that
-    /// cannot be written to and a document with no pages all end with TaskCanceledException.
-    /// </summary>
+    /// <summary>A token that is already cancelled wins over every other defect, as in 2.3.3: a null destination, a stream that cannot be written to and a document with no pages all end with TaskCanceledException.</summary>
     [Theory]
     [InlineData("null destination")]
     [InlineData("read-only stream")]

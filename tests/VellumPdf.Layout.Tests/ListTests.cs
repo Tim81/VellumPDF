@@ -221,8 +221,7 @@ public sealed class ListTests
     [Fact]
     public void ListRenderer_negativeStartItem_throwsArgumentOutOfRange_notIndexOutOfRange()
     {
-        // The per-item heights became an array in #556, which turned the documented
-        // ArgumentOutOfRangeException for a negative start into IndexOutOfRangeException.
+        // A negative start must throw the documented ArgumentOutOfRangeException, not IndexOutOfRangeException from the per-item height array.
         var list = new ListElement(ListStyle.Unordered).Add("First").Add("Second");
         var renderer = new ListRenderer(list, startItem: -1);
         var context = new LayoutContext(new LayoutBox(0, 0, 300, 200));

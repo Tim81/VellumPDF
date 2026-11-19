@@ -13,15 +13,7 @@ using VellumPdf.Layout.Elements.Table;
 
 namespace VellumPdf.Layout.Tests;
 
-/// <summary>
-/// The rule is that a null is refused where 2.3.3 dereferenced it. A null 2.3.3 stored, and
-/// dereferenced only in some shapes, is refused in exactly those shapes, with
-/// <see cref="ArgumentNullException"/> where it threw <see cref="NullReferenceException"/>, and a
-/// document that saved there still saves. Each row is a shape measured on 2.3.3 (the commit 1c61fa6):
-/// the second element is whether it saved. The rows that threw there throw here, and none that saved
-/// throws (#484), which is "what was already refused stays refused" together with "a valid file is
-/// kept". A null that 2.3.3 always crashed on is refused at the call; see <c>NullArgumentTests</c>.
-/// </summary>
+/// <summary>A null that 2.3.3 stored and dereferenced only in some shapes is refused in exactly those shapes, with <see cref="ArgumentNullException"/> where it threw <see cref="NullReferenceException"/>; each row is a shape's 2.3.3 outcome (the second element is whether it saved), and a document that saved still saves. A null that 2.3.3 always crashed on is refused at the call; see <c>NullArgumentTests</c>.</summary>
 public sealed class NullDeferralTests
 {
     private static TextRun R(string text) => new(text, null);
@@ -64,8 +56,7 @@ public sealed class NullDeferralTests
         ("listitem null child, list never added", true, () => { var d = new Document(); _=new ListElement().Add(new ListItem("p").AddChild((ListItem)null)); d.Add("ok"); return d; }),
     ];
 
-    // What 1c61fa6 drew for each row it saved: every text shown (a Tj operand), joined by |, with a
-    // byte outside printable ASCII shown as ?. Measured by saving the same document on that commit.
+    // What 2.3.3 drew for each row it saved: every text shown (a Tj operand), joined by |, with a byte outside printable ASCII shown as ?.
     private static readonly Dictionary<string, string> _drawn = new()
     {
         ["run null style, empty text"] = "",

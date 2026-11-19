@@ -6,11 +6,7 @@ using VellumPdf.Layout.Elements;
 
 namespace VellumPdf.Layout.Tests;
 
-/// <summary>
-/// #546: a start angle of 1e12 or more is reduced to a turn; a smaller one is used as given, so it
-/// writes the bytes 2.3.3 wrote. The expected lines below were printed by 2.3.3 (1c61fa6) for three
-/// slices (1, 2, 3) with colours of red 0, 0.3 and 0.6 on a default page.
-/// </summary>
+/// <summary>A start angle of 1e12 or more is reduced to a turn; a smaller one is used as given, so it writes the bytes 2.3.3 wrote: the expected lines are 2.3.3's output for three slices (1, 2, 3) with colours of red 0, 0.3 and 0.6 on a default page.</summary>
 public sealed class PieStartAngleTests
 {
     private static string[] PathLines(double angle)

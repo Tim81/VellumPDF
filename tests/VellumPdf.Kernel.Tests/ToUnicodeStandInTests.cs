@@ -6,11 +6,7 @@ using VellumPdf.Fonts;
 
 namespace VellumPdf.Kernel.Tests;
 
-/// <summary>
-/// #562: which code point speaks for a glyph in the /ToUnicode CMap when some of them only got it as
-/// a stand-in. Run through the CMap builder with assignments a bundled font cannot produce, a font
-/// that lacks both U+202F and U+2007.
-/// </summary>
+/// <summary>Which code point speaks for a glyph in the /ToUnicode CMap when some of them only got it as a stand-in, run through the CMap builder with assignments a bundled font cannot produce.</summary>
 public sealed class ToUnicodeStandInTests
 {
     private const int NoBreakSpace = 0x00A0;

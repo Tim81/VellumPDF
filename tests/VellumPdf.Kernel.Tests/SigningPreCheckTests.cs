@@ -6,11 +6,7 @@ using VellumPdf.Signing;
 
 namespace VellumPdf.Kernel.Tests;
 
-/// <summary>
-/// #530: what <c>PdfDocument.EnsureCanPrepareForSigning</c> refuses before a layout engine has laid
-/// anything out. The size bound comes from the placeholder, <c>&lt;</c> + 2n zeros + <c>&gt;</c>, which
-/// has to fit in a string of at most 0x3FFFFFDF characters.
-/// </summary>
+/// <summary>What <c>PdfDocument.EnsureCanPrepareForSigning</c> refuses before a layout engine has laid anything out; the size bound comes from the placeholder, <c>&lt;</c> + 2n zeros + <c>&gt;</c>, which has to fit in a string of at most 0x3FFFFFDF characters.</summary>
 public sealed class SigningPreCheckTests
 {
     private const int MaxBytes = (0x3FFFFFDF - 2) / 2;
@@ -65,11 +61,7 @@ public sealed class SigningPreCheckTests
         doc.EnsureCanPrepareForSigning(new SignaturePlaceholderOptions { EstimatedSignatureSizeBytes = size });
     }
 
-    /// <summary>
-    /// A caller that holds the pages gets the document's own order: no pages is reported before any
-    /// option is looked at, as it was before the pre-check existed. A layout engine that has not
-    /// laid the pages out yet (<c>pagesKnown: false</c>) goes straight to the option.
-    /// </summary>
+    /// <summary>A caller that holds the pages gets the document's own order, with no pages reported before any option; a layout engine that has not laid the pages out (<c>pagesKnown: false</c>) goes straight to the option.</summary>
     [Fact]
     public void ADocumentWithNoPages_reportsThatBeforeALookAtTheOptions()
     {

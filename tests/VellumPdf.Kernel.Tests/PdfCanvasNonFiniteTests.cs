@@ -8,11 +8,7 @@ using VellumPdf.Fonts;
 
 namespace VellumPdf.Kernel.Tests;
 
-/// <summary>
-/// #519: every number <see cref="PdfCanvas"/> writes goes through one formatter, and that formatter
-/// refuses NaN and both infinities, as <c>PdfReal</c> does. A token such as <c>NaN</c> is not a PDF
-/// number (ISO 32000-2 7.3.3), so a stream carrying one is not a valid content stream.
-/// </summary>
+/// <summary>Every number <see cref="PdfCanvas"/> writes goes through one formatter, which refuses NaN and both infinities, as <c>PdfReal</c> does; <c>NaN</c> is not a PDF number (ISO 32000-2 7.3.3).</summary>
 public sealed class PdfCanvasNonFiniteTests
 {
     private delegate void Invoke(PdfCanvas canvas, double[] a);
@@ -47,8 +43,8 @@ public sealed class PdfCanvasNonFiniteTests
         new("TL", 1, (c, a) => c.SetTextLeading(a[0])),
         new("gs fill", 1, (c, a) => c.SetFillAlpha(a[0])),
         new("gs stroke", 1, (c, a) => c.SetStrokeAlpha(a[0])),
-        // AppendArc refuses a non-finite centre. A non-finite radius or angle is a sweep it
-        // already skips, so those operands are not part of this theory.
+        // AppendArc refuses a non-finite centre. A non-finite radius or angle is a sweep it skips, so those operands
+        // are not part of this theory.
         new("c (arc centre x)", 1, (c, a) => c.AppendArc(a[0], 0, 10, 0, 1.5)),
         new("c (arc centre y)", 1, (c, a) => c.AppendArc(0, a[0], 10, 0, 1.5)),
         // The aligned text methods position through Tm, so their coordinates are refused too.
@@ -133,11 +129,7 @@ public sealed class PdfCanvasNonFiniteTests
         Assert.Contains("10 20 m", content, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// The message formats the value with the invariant culture, so it reads the same on every machine:
-    /// under sv-SE and en-US-POSIX-style cultures <c>double.PositiveInfinity.ToString()</c> is not
-    /// "Infinity".
-    /// </summary>
+    /// <summary>The message formats the value with the invariant culture, so it reads the same on every machine (under sv-SE, <c>double.PositiveInfinity.ToString()</c> is not "Infinity").</summary>
     [Fact]
     public void RefusalMessage_formatsTheValueInvariantly()
     {

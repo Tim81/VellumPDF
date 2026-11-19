@@ -26,11 +26,7 @@ public sealed class ListAllocationTests
         return GC.GetAllocatedBytesForCurrentThread() - before;
     }
 
-    /// <summary>
-    /// Each page's layout used to allocate one height slot per item in the whole list, so the
-    /// allocation over a long list grew with items times pages, which is quadratic. Quadrupling the
-    /// items must now cost about four times as much.
-    /// </summary>
+    /// <summary>The allocation over a long list is linear in the items: quadrupling the items must cost about four times as much.</summary>
     [Fact]
     public void LongList_allocatesLinearlyInItsItemCount()
     {
@@ -42,10 +38,7 @@ public sealed class ListAllocationTests
         var b = AllocatedBySaving(small * 4);
 
         var ratio = (double)b / a;
-        // Measured on this machine in both Debug and Release: 22.2 MiB and 88.8 MiB, ratio 4.00, with
-        // the per-visit list; 34.9 MiB and 292.0 MiB, ratio 8.38, with an array sized to the whole
-        // list. The bound of 6 sits between them. The rest of the save is linear, which is why the
-        // old ratio is not the 16 a purely quadratic cost would give.
+        // The bound of 6 sits between a linear allocation and one sized to the whole list for every page.
         Assert.True(
             ratio < RATIO_BOUND,
             $"{small} items allocated {a / 1048576.0:F1} MiB and {small * 4} items {b / 1048576.0:F1} MiB, ratio {ratio:F2}.");

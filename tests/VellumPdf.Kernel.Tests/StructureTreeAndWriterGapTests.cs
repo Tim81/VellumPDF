@@ -9,11 +9,7 @@ using VellumPdf.IO;
 
 namespace VellumPdf.Kernel.Tests;
 
-/// <summary>
-/// Gaps in what #521's cycle guards pin: that the guards leave a path when they leave an element,
-/// so sharing is not mistaken for a cycle, and that a structure element nested more than one level
-/// deep is still found for the parent tree.
-/// </summary>
+/// <summary>The cycle guards leave a path when they leave an element, so sharing is not mistaken for a cycle, and a structure element nested more than one level deep is still found for the parent tree.</summary>
 public sealed class StructureTreeAndWriterGapTests
 {
     private static string Write(PdfObject obj)
@@ -54,12 +50,7 @@ public sealed class StructureTreeAndWriterGapTests
 
     // ── Structure tree ───────────────────────────────────────────────────────
 
-    /// <summary>
-    /// One element under two parents is a DAG, and AddChild allows it. Saving it is not supported:
-    /// the element is walked twice and the second reservation leaves the first unassigned. What
-    /// matters here is that the failure is not reported as a cycle, which it is not: the walk guard
-    /// forgets an element when it leaves it, so only an element that is its own ancestor is refused.
-    /// </summary>
+    /// <summary>One element under two parents is a DAG, and AddChild allows it; saving it is not supported (the element is walked twice), but the failure is not reported as a cycle, since the walk guard forgets an element when it leaves it.</summary>
     [Fact]
     public void Save_withOneElementUnderTwoParents_isNotReportedAsACycle()
     {
@@ -80,11 +71,7 @@ public sealed class StructureTreeAndWriterGapTests
             Assert.DoesNotContain("cycle", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Document &gt; Sect &gt; P, with the marked content on the page owned by P, two levels below the
-    /// root. The page's parent tree must hold P's reference at index 0, so the walk that gathers the
-    /// elements on a page has to go down through Sect, not stop at the root's children.
-    /// </summary>
+    /// <summary>Document &gt; Sect &gt; P, with the marked content owned by P two levels below the root: the page's parent tree must hold P's reference at index 0, so the walk must go down through Sect.</summary>
     [Fact]
     public void Save_anElementTwoLevelsDownWithAnMcid_isInThePagesParentTree()
     {

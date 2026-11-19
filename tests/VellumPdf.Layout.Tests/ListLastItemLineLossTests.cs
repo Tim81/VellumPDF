@@ -9,12 +9,7 @@ using VellumPdf.Layout.Elements;
 
 namespace VellumPdf.Layout.Tests;
 
-/// <summary>
-/// #556: the last item a list draws on a page could lose a line while the space for that line stayed
-/// reserved. Whether it did depended on where the item started on the page, so a single geometry
-/// passes with or without the fix. These tests sweep the start position across more than one line
-/// height and check that every word the list holds is drawn, once, wherever the page break falls.
-/// </summary>
+/// <summary>The last item a list draws on a page keeps every line, wherever the page break falls: the tests sweep the start position across more than one line height and check that every word the list holds is drawn, once.</summary>
 public sealed class ListLastItemLineLossTests
 {
     private static TextStyle Style(double size) =>
@@ -50,11 +45,7 @@ public sealed class ListLastItemLineLossTests
         return (expected.ToArray(), drawn);
     }
 
-    /// <summary>
-    /// The start position is swept in 0.01pt steps across 1.5 line heights, at three font sizes, so
-    /// every phase of the page break against the line grid is visited. A defect that depends on a
-    /// rounding step shows in some of these and not in others.
-    /// </summary>
+    /// <summary>The start position is swept in 0.01pt steps across 1.5 line heights, at three font sizes, so every phase of the page break against the line grid is visited.</summary>
     [Theory]
     [InlineData(10.0)]
     [InlineData(11.0)]
@@ -79,11 +70,7 @@ public sealed class ListLastItemLineLossTests
             $"{failures.Count} of {steps} start positions lost or repeated words. First: {failures.FirstOrDefault()}");
     }
 
-    /// <summary>
-    /// The case the type remarks gave: one item that wraps to two lines at 12pt at the top of an A4
-    /// page. The 20-word item here wraps to two lines, and on 2.3.3 only the first was drawn (13 of
-    /// its 20 words), where this build draws both.
-    /// </summary>
+    /// <summary>One 20-word item that wraps to two lines at 12pt at the top of an A4 page draws both lines.</summary>
     [Fact]
     public void SingleTwoLineItem_atTheTopOfAnA4Page_drawsBothLines()
     {

@@ -9,15 +9,7 @@ using VellumPdf.Layout.Elements.Table;
 
 namespace VellumPdf.Layout.Tests;
 
-/// <summary>
-/// #502 and #520: a document margin or a running band height that is not a finite number. Neither is
-/// checked before the layout. The layout runs as it did on 1c61fa6, and what it would write as
-/// <c>NaN</c> or <c>Infinity</c> is refused by <c>PdfCanvas</c>; see <see cref="Document"/>. Each row
-/// below is the outcome measured on 1c61fa6 for the shape named, with the refusals that were an
-/// invalid token there now reaching the canvas guard. The rows that saved on 1c61fa6 save here with
-/// the same drawn text, including the blank page a negative-infinity top margin gives a table: that
-/// pins a known defect kept until 3.0 (#484), when the diagnostics channel (#607) will report it.
-/// </summary>
+/// <summary>A document margin or running band height that is not a finite number is not checked before the layout; the layout runs and <c>PdfCanvas</c> refuses what it would write as <c>NaN</c> or <c>Infinity</c> (see <see cref="Document"/>), and each row is 2.3.3's outcome for the shape named, including the blank page a negative-infinity top margin gives a table.</summary>
 public sealed class NonFiniteGeometryTests
 {
     private static TextStyle Style() => new() { FontRef = new FontReference(Standard14.Helvetica), FontSize = 10 };
@@ -30,10 +22,10 @@ public sealed class NonFiniteGeometryTests
         /// <summary>Saved, and nothing was drawn.</summary>
         Blank,
 
-        /// <summary>1c61fa6 wrote an invalid token; the canvas now throws <see cref="ArgumentException"/>.</summary>
+        /// <summary>2.3.3 wrote an invalid token; the canvas throws <see cref="ArgumentException"/>.</summary>
         Canvas,
 
-        /// <summary>1c61fa6 refused it with the margin sums against the page, and still does.</summary>
+        /// <summary>The margin sums against the page are refused, as in 2.3.3.</summary>
         MarginSum,
     }
 
@@ -49,7 +41,7 @@ public sealed class NonFiniteGeometryTests
     private static readonly double PosInf = double.PositiveInfinity;
     private static readonly double NegInf = double.NegativeInfinity;
 
-    // Document margin, one-row table "a" on an A4 page, measured on 1c61fa6.
+    // Document margin, one-row table "a" on an A4 page; outcomes are 2.3.3's.
     private static readonly (string Edge, double Value, Outcome Expected)[] _documentMargins =
     [
         ("top", NaN, Outcome.Canvas), ("top", PosInf, Outcome.MarginSum), ("top", NegInf, Outcome.Blank),
@@ -103,10 +95,7 @@ public sealed class NonFiniteGeometryTests
         }
     }
 
-    /// <summary>
-    /// Left alone on purpose: a negative finite margin saves today and a reader clips what lands
-    /// outside the page, so refusing it would turn a rendering document into an exception.
-    /// </summary>
+    /// <summary>A negative finite margin saves and a reader clips what lands outside the page, so it is not refused.</summary>
     [Fact]
     public void Margin_negativeFinite_stillSaves()
     {
@@ -118,27 +107,27 @@ public sealed class NonFiniteGeometryTests
         Assert.Null(ex);
     }
 
-    // ── #520: RunningBand.Height ─────────────────────────────────────────────
+    // ── RunningBand.Height ───────────────────────────────────────────────────
 
     private enum BandOutcome
     {
         /// <summary>Saved with the body drawn.</summary>
         Saves,
 
-        /// <summary>1c61fa6 refused it as too tall to fit, and still does.</summary>
+        /// <summary>Refused as too tall to fit, as in 2.3.3.</summary>
         TooTall,
 
-        /// <summary>1c61fa6 gave up after 50,000 page continuations, and still does.</summary>
+        /// <summary>Gives up after 50,000 page continuations, as in 2.3.3.</summary>
         Continuations,
 
-        /// <summary>1c61fa6 wrote a NaN text matrix; the canvas now throws.</summary>
+        /// <summary>2.3.3 wrote a NaN text matrix; the canvas throws.</summary>
         Canvas,
 
-        /// <summary>1c61fa6 refused it with the content area check, and still does.</summary>
+        /// <summary>Refused with the content area check, as in 2.3.3.</summary>
         ContentArea,
     }
 
-    // A one-paragraph body "x" on an A4 page, measured on 1c61fa6.
+    // A one-paragraph body "x" on an A4 page; outcomes are 2.3.3's.
     private static readonly (string Band, string Template, double Value, BandOutcome Expected)[] _bands =
     [
         ("header", "H", double.NaN, BandOutcome.TooTall),

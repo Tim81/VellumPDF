@@ -11,17 +11,7 @@ using VellumPdf.Layout.Rendering.Table;
 
 namespace VellumPdf.Layout.Tests;
 
-/// <summary>
-/// #523, #531 and #547: a null argument was stored without a check and surfaced as
-/// <see cref="NullReferenceException"/> from a later call the caller did not make, usually
-/// <c>Document.Save</c>. The rule is that a null is refused where 2.3.3 dereferenced it, and not
-/// before. Each call in the case table throws <see cref="ArgumentNullException"/> from the call that
-/// took the null, naming the parameter. Every row of the three issues' tables is one case, and the
-/// controls show the same calls with a real value still work. A null that 2.3.3 stored, and
-/// dereferenced only in some shapes or only when it was drawn, is stored here too and refused where
-/// 2.3.3 failed (#484); those tests are at the end of the class, and <c>NullDeferralTests</c> holds
-/// the table of shapes.
-/// </summary>
+/// <summary>A null argument is refused with <see cref="ArgumentNullException"/> naming the parameter, from the call that took it, where 2.3.3 dereferenced it and not before; a null that 2.3.3 stored and dereferenced only in some shapes is stored here too and refused where 2.3.3 failed (those tests are at the end, and <c>NullDeferralTests</c> holds the shapes).</summary>
 public sealed class NullArgumentTests
 {
     private static TextStyle Style() => new() { FontRef = new FontReference(Standard14.Helvetica), FontSize = 10 };
@@ -30,28 +20,26 @@ public sealed class NullArgumentTests
 
     private static readonly Case[] _cases =
     [
-        // #547: text and runs
+        // Text and runs
         new("new Paragraph((string)null)", "text", () => _ = new Paragraph((string)null!)),
         new("Paragraph.Add(null)", "text", () => new Paragraph("x").Add(null!)),
         new("new Heading(null)", "text", () => _ = new Heading(null!)),
         new("new Paragraph(runs: null)", "runs", () => _ = new Paragraph((IEnumerable<TextRun>)null!)),
         new("new Paragraph([null run])", "runs", () => _ = new Paragraph(new TextRun[] { null! })),
         new("new TextRun(null, style)", "Text", () => _ = new TextRun(null!, Style())),
-        // #547 and #523: lists
+        // Lists
         new("ListElement.Add((string)null)", "text", () => new ListElement().Add((string)null!)),
         new("ListElement.Add((ListItem)null)", "item", () => new ListElement().Add((ListItem)null!)),
         new("new ListElement(style, [null item])", "items", () => _ = new ListElement(ListStyle.Unordered, new ListItem[] { null! })),
-        // #547 and #523: tables
+        // Tables
         new("Row.AddCell((Cell)null)", "cell", () => new TableElement().AddRow().AddCell((Cell)null!)),
-        // #547: image, chart, band
+        // Image, chart, band
         new("new LayoutImage(null)", "image", () => _ = new LayoutImage(null!)),
         new("new PieChart { Slices = null }", "value", () => _ = new PieChart { Slices = null! }),
-        // #531
-        // #523
         new("new DocumentRenderer(null)", "pdf", () => _ = new DocumentRenderer(null!)),
         new("new DocumentRenderer(null, pageSize)", "pdf", () => _ = new DocumentRenderer(null!, new PdfRectangle(0, 0, 400, 400))),
         new("DocumentRenderer.Add(null)", "renderer", () => new DocumentRenderer(new PdfDocument(), new PdfRectangle(0, 0, 400, 400)).Add(null!)),
-        // #547: every public renderer constructor
+        // Every public renderer constructor
         new("new ParagraphRenderer(null)", "para", () => _ = new ParagraphRenderer(null!)),
         new("new ListRenderer(null)", "list", () => _ = new ListRenderer(null!)),
         new("new TableRenderer(null)", "table", () => _ = new TableRenderer(null!)),

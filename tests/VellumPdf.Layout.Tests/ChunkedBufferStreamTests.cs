@@ -8,12 +8,7 @@ using VellumPdf.Testing;
 
 namespace VellumPdf.Layout.Tests;
 
-/// <summary>
-/// The buffer a save to a path builds the PDF in. 2.3.3 wrote that PDF straight to the file, so a
-/// buffer that is one array would add a 2 GB limit it never had; this one is a list of chunks. A
-/// small chunk size stands in for a large PDF: what is checked is that the copy crosses chunk
-/// boundaries and gives the bytes back exactly.
-/// </summary>
+/// <summary>The buffer a save to a path builds the PDF in: a list of chunks, with a small chunk size standing in for a large PDF, so the copy crosses chunk boundaries and gives the bytes back exactly.</summary>
 public sealed class ChunkedBufferStreamTests
 {
     private static byte[] Pattern(int length) => Enumerable.Range(0, length).Select(i => (byte)(i * 31 + 7)).ToArray();
@@ -68,10 +63,7 @@ public sealed class ChunkedBufferStreamTests
         Assert.True(buffer.ChunkCount > 1);
     }
 
-    /// <summary>
-    /// 2.3.3 passed the token to the copy into the file, so a cancellation there throws. An empty buffer
-    /// is included, because it has no chunk to look at the token at.
-    /// </summary>
+    /// <summary>The token is passed to the copy into the file, so a cancellation there throws, as in 2.3.3; an empty buffer is included, since it has no chunk to look at the token at.</summary>
     [Theory]
     [InlineData(0)]
     [InlineData(500)]
@@ -100,11 +92,7 @@ public sealed class ChunkedBufferStreamTests
         Assert.Throws<NotSupportedException>(() => buffer.Read(new byte[1], 0, 1));
     }
 
-    /// <summary>
-    /// A path save through a buffer of 7-byte chunks, which a PDF of a few kilobytes crosses hundreds of
-    /// times, writes a PDF that is whole: it ends in the end-of-file marker and holds the page. The
-    /// chunk count is asserted, so a save that ignored the size would fail here: it would copy in one.
-    /// </summary>
+    /// <summary>A path save through a buffer of 7-byte chunks writes a PDF that is whole; the chunk count is asserted, so a save that ignored the size would fail.</summary>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -135,11 +123,7 @@ public sealed class ChunkedBufferStreamTests
         }
     }
 
-    /// <summary>
-    /// The first chunk is small and each next one doubles, up to the chunk size, so a PDF of a few
-    /// kilobytes does not allocate a whole 1 MiB chunk on the large object heap (its threshold is
-    /// 85,000 bytes). The bytes still come back exactly.
-    /// </summary>
+    /// <summary>The first chunk is small and each next one doubles, up to the chunk size, so a small PDF does not allocate a 1 MiB chunk on the large object heap (threshold 85,000 bytes).</summary>
     [Fact]
     public void Chunks_startSmall_andDoubleUpToTheChunkSize()
     {
@@ -164,11 +148,7 @@ public sealed class ChunkedBufferStreamTests
         Assert.Equal(data, copy.ToArray());
     }
 
-    /// <summary>
-    /// A cancellation that arrives while the last chunk is being written is not reported: the file is
-    /// whole by then. One that arrives with a chunk still to write is, as a TaskCanceledException, and
-    /// the chunks after it are not written.
-    /// </summary>
+    /// <summary>A cancellation that arrives while the last chunk is being written is not reported; one with a chunk still to write is, as a TaskCanceledException, and the chunks after it are not written.</summary>
     [Theory]
     [InlineData(3, false)]
     [InlineData(2, true)]

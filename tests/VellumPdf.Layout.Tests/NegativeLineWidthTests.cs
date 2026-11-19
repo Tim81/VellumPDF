@@ -9,11 +9,7 @@ using VellumPdf.Layout.Elements.Table;
 
 namespace VellumPdf.Layout.Tests;
 
-/// <summary>
-/// #557: ISO 32000-2, 8.4.3.2 says a line width "shall be a non-negative number", and a negative
-/// width was written as <c>-3 w</c>. Zero is legal and stays accepted. The tests assert the operator
-/// each valid width writes, because a PDF is never empty and "a file came back" proves nothing.
-/// </summary>
+/// <summary>ISO 32000-2 8.4.3.2 says a line width "shall be a non-negative number", so a negative width is refused; zero is legal, and the tests assert the operator each valid width writes.</summary>
 public sealed class NegativeLineWidthTests
 {
     private static TextStyle Style() => new() { FontRef = new FontReference(Standard14.Helvetica), FontSize = 10 };
@@ -64,7 +60,7 @@ public sealed class NegativeLineWidthTests
             ex.Message);
     }
 
-    /// <summary>Negative infinity is still the non-finite refusal, not the negative one.</summary>
+    /// <summary>Negative infinity is the non-finite refusal, not the negative one.</summary>
     [Fact]
     public void LineSeparator_negativeInfinity_keepsTheNonFiniteMessage()
     {
@@ -101,7 +97,7 @@ public sealed class NegativeLineWidthTests
         Assert.Contains("0 w", Stream(doc), StringComparison.Ordinal);
     }
 
-    /// <summary>The pie chart already refused a negative stroke width, so #557 needed no change there.</summary>
+    /// <summary>The pie chart refuses a negative stroke width.</summary>
     [Fact]
     public void PieChart_negativeStrokeWidth_wasAlreadyRefused()
     {

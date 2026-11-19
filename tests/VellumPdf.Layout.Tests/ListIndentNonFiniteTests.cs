@@ -9,12 +9,7 @@ using VellumPdf.Layout.Elements;
 
 namespace VellumPdf.Layout.Tests;
 
-/// <summary>
-/// #532: a list indent of <c>NaN</c> or negative infinity reached an item's text matrix as a token
-/// that is not a PDF number, on a nested child always and on a flat item whose longest word will not
-/// fit beside its marker. Each value is listed alone, on each path, and every case asserts the
-/// text-matrix operand rather than that a file came back.
-/// </summary>
+/// <summary>A list indent of <c>NaN</c> or negative infinity is refused rather than written as a text-matrix token that is not a PDF number, on a nested child and on a flat item whose longest word will not fit beside its marker; each value is listed alone, on each path, and every case asserts the text-matrix operand.</summary>
 public sealed class ListIndentNonFiniteTests
 {
     private static TextStyle Style() => new() { FontRef = new FontReference(Standard14.Helvetica), FontSize = 10 };
@@ -50,8 +45,7 @@ public sealed class ListIndentNonFiniteTests
         foreach (var shape in new[] { "flat-short", "flat-longword", "nested" })
         {
             rows.Add(shape, double.NaN, "NaN");
-            // A flat list whose words fit saved a valid file with negative infinity on 1c61fa6, and
-            // keeps saving; see Indent_negativeInfinity_onAFlatListWhoseWordsFit_stillSaves.
+            // A flat list whose words fit saves with negative infinity, as in 2.3.3; see Indent_negativeInfinity_onAFlatListWhoseWordsFit_stillSaves.
             if (shape != "flat-short") rows.Add(shape, double.NegativeInfinity, "negative infinity");
         }
         return rows;
@@ -66,7 +60,7 @@ public sealed class ListIndentNonFiniteTests
 
         var ex = Assert.Throws<ArgumentException>(() => Stream(doc));
 
-        // 1c61fa6 wrote the token; PdfCanvas now refuses it, naming PdfReal's message.
+        // PdfCanvas refuses it, naming PdfReal's message.
         Assert.StartsWith("PDF does not support NaN or Infinity as a real number value", ex.Message, StringComparison.Ordinal);
         Assert.EndsWith("Got: " + (rendered == "NaN" ? "NaN" : rendered == "positive infinity" ? "Infinity" : "-Infinity"), ex.Message, StringComparison.Ordinal);
     }
@@ -102,10 +96,7 @@ public sealed class ListIndentNonFiniteTests
         Assert.Matches(new Regex(@"1 0 0 1 -?\d+(\.\d+)? -?\d+(\.\d+)? Tm"), stream);
     }
 
-    /// <summary>
-    /// Positive infinity is not part of this fix: it writes no invalid token, and a nested list
-    /// already throws at the content-width boundary. It is pinned so the boundary stays visible.
-    /// </summary>
+    /// <summary>Positive infinity writes no invalid token, and a nested list throws at the content-width boundary; it is pinned so the boundary stays visible.</summary>
     [Fact]
     public void Indent_positiveInfinity_nested_stillThrowsTheTooTallMessage()
     {

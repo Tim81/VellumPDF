@@ -12,10 +12,7 @@ using VellumPdf.Layout.Rendering;
 
 namespace VellumPdf.Layout.Tests;
 
-/// <summary>
-/// #530 side effects found after the main review rounds: <c>DocumentRenderer.Render</c> and the
-/// "no pages" precedence, and #548 on Symbol and ZapfDingbats.
-/// </summary>
+/// <summary><c>DocumentRenderer.Render</c> refusals come before the layout, "no pages" takes precedence, and Symbol and ZapfDingbats keep their justification divisor.</summary>
 public sealed class RenderRetryAndOrderTests
 {
     private static TextStyle Style(Standard14 font = Standard14.Helvetica) =>
@@ -110,7 +107,7 @@ public sealed class RenderRetryAndOrderTests
         Assert.Equal(0, second.Length);
     }
 
-    // ── "No pages" is reported first, as it always was (#530) ───────────────
+    // ── "No pages" is reported first ─────────────────────────────────────────
 
     [Fact]
     public void Render_withNothingAdded_reportsNoPagesBeforeADestinationOrOptionProblem()
@@ -176,15 +173,11 @@ public sealed class RenderRetryAndOrderTests
         Assert.Equal("destination", Assert.Throws<ArgumentException>(() => doc.Save(readOnly)).ParamName);
     }
 
-    // ── Symbol and ZapfDingbats keep the old justification divisor (#548, #470) ──
+    // ── Symbol and ZapfDingbats keep their justification divisor ─────────────
 
     private static double D(string s) => double.Parse(s, CultureInfo.InvariantCulture);
 
-    /// <summary>
-    /// Both fonts measure every glyph as zero, so the first line of "aa bb cc" has the whole 200pt box
-    /// as slack. Divided by the two spaces it would put 100pt of word spacing on each; it keeps the
-    /// divisor it had before #548, which counts the four gaps around the two spaces.
-    /// </summary>
+    /// <summary>Both fonts measure every glyph as zero, so the first line of "aa bb cc" has the whole 200pt box as slack; divided by the two spaces it would put 100pt of word spacing on each, but the divisor, as in 2.3.3, counts the four gaps around the two spaces.</summary>
     [Theory]
     [InlineData(Standard14.Symbol)]
     [InlineData(Standard14.ZapfDingbats)]

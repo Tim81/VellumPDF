@@ -6,11 +6,7 @@ using VellumPdf.Document;
 
 namespace VellumPdf.Kernel.Tests;
 
-/// <summary>
-/// #530: the checks a <see cref="PdfDocument"/> save makes before it touches the document or the
-/// destination, and the order they are made in. "No pages" has always been reported before the
-/// destination and the options.
-/// </summary>
+/// <summary>The checks a <see cref="PdfDocument"/> save makes before it touches the document or the destination, and the order they are made in: "no pages" is reported before the destination and the options.</summary>
 public sealed class SaveGuardTests
 {
     private static PdfDocument OnePage()
@@ -112,10 +108,7 @@ public sealed class SaveGuardTests
         Assert.True(ok.Length > 0);
     }
 
-    /// <summary>
-    /// 2.3.3 checked a null destination and then gave the token to Task.Run, so a token that is already
-    /// cancelled won over everything else except the null.
-    /// </summary>
+    /// <summary>A null destination is checked first and then the token is given to Task.Run, so a token that is already cancelled wins over everything else except the null, as in 2.3.3.</summary>
     [Fact]
     public async Task PdfDocumentSaveAsync_withAnAlreadyCancelledToken_winsOverEveryDefectButTheNull_asOn1c61fa6()
     {

@@ -107,9 +107,8 @@ public sealed class BoundaryContractTests
         var ex = Record.Exception(() => ctx.UseEmbeddedFont(handle));
         Assert.NotNull(ex);
         Assert.Equal(expected, ex.GetType().Name);
-        // The null is refused by the kernel call and names the argument (#547). 2.3.3 raised
-        // NullReferenceException for a null handle and named "key" for a null page; a fault becoming
-        // ArgumentNullException is allowed (R2), and the message may improve.
+        // The null is refused by the kernel call and names the argument. 2.3.3 raised NullReferenceException for a null handle
+        // and named "key" for a null page; a fault becoming ArgumentNullException is allowed.
         if (ex is ArgumentNullException ane) Assert.Equal(pageNull ? "page" : "handle", ane.ParamName);
     }
 
@@ -390,11 +389,7 @@ public sealed class BoundaryContractTests
         Assert.NotEmpty(Render(doc));
     }
 
-    /// <summary>
-    /// A NaN indent on a flat list is refused by the canvas with <see cref="ArgumentException"/>: 2.3.3
-    /// saved it with the token NaN in the content stream, which is not a PDF number (ISO 32000-2
-    /// 7.3.3), so the save refuses it (#532).
-    /// </summary>
+    /// <summary>A NaN indent on a flat list is refused by the canvas with <see cref="ArgumentException"/>, because the token NaN is not a PDF number (ISO 32000-2 7.3.3); 2.3.3 saved it.</summary>
     [Fact]
     public void FlatListIndent_atNaN_isRefusedByTheCanvas_where2_3_3WroteAnInvalidToken()
     {

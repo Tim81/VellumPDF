@@ -9,20 +9,12 @@ using VellumPdf.IO;
 
 namespace VellumPdf.Kernel.Tests;
 
-/// <summary>
-/// #521: three call paths recursed over a caller-built graph with no cycle guard and no depth bound,
-/// and a <c>StackOverflowException</c> cannot be caught in .NET. A structure element added to itself
-/// reached it from an ordinary <c>Save</c>. Every test here that refuses asserts the exception,
-/// because a test that only checks the process survives passes on a machine with a larger stack.
-/// </summary>
+/// <summary>Calls that recurse over a caller-built graph have a cycle guard and a depth bound, since a <c>StackOverflowException</c> cannot be caught; each refusing test asserts the exception, because a test that only checks the process survives passes on a larger stack.</summary>
 public sealed class CycleGuardTests
 {
     // ── Structure elements: accepted where the cycle is made, refused where the tree is built ──
 
-    /// <summary>
-    /// 2.3.3 stored a cycle: <c>AddChild</c> checked nothing. The call keeps accepting it, since the
-    /// cycle only does harm where a save walks the tree.
-    /// </summary>
+    /// <summary><c>AddChild</c> accepts a cycle, as in 2.3.3, since it only does harm where a save walks the tree.</summary>
     [Fact]
     public void StructElem_AddChild_aCycle_isStored()
     {
@@ -37,12 +29,7 @@ public sealed class CycleGuardTests
         Assert.Same(a, Assert.Single(c.Children));
     }
 
-    /// <summary>
-    /// The shapes 2.3.3 saved: a cyclic element that a save never walks, because the document is not
-    /// tagged when it is saved. Measured on 2.3.3 (1c61fa6): all four save, the last with a
-    /// <c>/StructTreeRoot</c>, since the tree is built only for a tagged document and an element
-    /// registered while the document was untagged is not part of it.
-    /// </summary>
+    /// <summary>A cyclic element that a save never walks, because the document is not tagged when it is saved, saves as in 2.3.3; the last shape has a <c>/StructTreeRoot</c>, since an element registered while untagged is not part of the tree.</summary>
     [Theory]
     [InlineData("self-cycle registered")]
     [InlineData("two-element cycle registered")]
@@ -111,7 +98,7 @@ public sealed class CycleGuardTests
     [Fact]
     public void StructElem_AddChild_nullChild_isStored_andRefusedWhereTheTreeIsBuilt()
     {
-        // 1c61fa6 stored it: an untagged document never builds the tree and saved.
+        // An untagged document never builds the tree and saves.
         using var untagged = new PdfDocument();
         untagged.AddPage();
         var element = new PdfStructElem("Div");
@@ -161,10 +148,7 @@ public sealed class CycleGuardTests
         Assert.Contains("/StructTreeRoot", Encoding.Latin1.GetString(ms.ToArray()), StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// The same cycle injected into the child list by reflection, which no member of the public surface
-    /// does: Save has to raise rather than overflow.
-    /// </summary>
+    /// <summary>The same cycle injected into the child list by reflection, which no public member does: Save has to raise rather than overflow.</summary>
     [Fact]
     public void Save_withACycleInjectedPastAddChild_raisesInsteadOfOverflowingTheStack()
     {
@@ -217,8 +201,7 @@ public sealed class CycleGuardTests
     [Fact]
     public void PdfStream_whoseDictionaryHoldsTheStream_isRefusedWhenWritten()
     {
-        // WriteTo serialises a fresh copy of the dictionary each time, so the dictionary guard alone
-        // never sees the same container twice here and the recursion ran until the stack was gone.
+        // WriteTo serialises a fresh copy of the dictionary each time, so the dictionary guard alone never sees the same container twice here.
         var stream = new PdfStream([1, 2, 3]);
         stream.Dictionary.Set(new PdfName("Self"), stream);
 

@@ -9,16 +9,7 @@ using VellumPdf.TestSupport;
 
 namespace VellumPdf.Kernel.Tests;
 
-/// <summary>
-/// #562: Layout now keeps U+202F NARROW NO-BREAK SPACE and U+2007 FIGURE SPACE in a paragraph's text
-/// instead of folding them into a plain space, so the Kernel has to be able to draw them. WinAnsiEncoding,
-/// which the Standard-14 text fonts use, has U+00A0 but neither of those two, and a font loaded from a
-/// file may lack their glyphs. Without a fallback the text would have been drawn as <c>?</c> (Standard-14)
-/// or the missing-glyph box (embedded), where the folded text used to show a space.
-///
-/// The code points are written as numbers rather than as escapes or literals, so the test pins which
-/// characters these are independently of the constants the code under test defines.
-/// </summary>
+/// <summary>The Kernel draws U+202F NARROW NO-BREAK SPACE and U+2007 FIGURE SPACE, which WinAnsiEncoding lacks, through a fallback instead of <c>?</c> or the missing-glyph box; the code points are numbers, not literals, so the test pins which characters these are.</summary>
 public sealed class NoBreakSpaceFallbackTests
 {
     private const int NoBreakSpace = 0x00A0;
@@ -27,11 +18,7 @@ public sealed class NoBreakSpaceFallbackTests
 
     // ── The set ──────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Exactly three characters, and every one is white space to .NET. The set was derived by
-    /// intersecting <c>char.IsWhiteSpace</c> with line-breaking class GL in Unicode 15.1's
-    /// LineBreak.txt: U+180E is GL but not white space in .NET, and U+2060 and U+FEFF are class WJ.
-    /// </summary>
+    /// <summary>Exactly three characters, every one white space to .NET: <c>char.IsWhiteSpace</c> intersected with line-breaking class GL in Unicode 15.1's LineBreak.txt (U+180E is GL but not white space in .NET; U+2060 and U+FEFF are class WJ).</summary>
     [Fact]
     public void IsNoBreakSpace_isExactlyTheThreeGlWhiteSpaceCharacters()
     {
@@ -103,11 +90,7 @@ public sealed class NoBreakSpaceFallbackTests
         Assert.Equal(0x0416, Assert.Single(warnings).CodePoint);
     }
 
-    /// <summary>
-    /// What is measured is what is drawn. The fallback character is measured as U+00A0, and U+00A0 is
-    /// the width of a space in all twelve text faces, so a no-break space never stretches or
-    /// shrinks a line against a plain one.
-    /// </summary>
+    /// <summary>The fallback character is measured as U+00A0, the width of a space in all twelve text faces, so a no-break space never stretches or shrinks a line against a plain one.</summary>
     [Fact]
     public void Standard14Metrics_measuresTheTwoSpacesAsU00A0_whichIsTheWidthOfASpace()
     {

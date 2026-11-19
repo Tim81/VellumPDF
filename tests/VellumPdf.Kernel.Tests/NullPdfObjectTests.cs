@@ -6,12 +6,7 @@ using VellumPdf.IO;
 
 namespace VellumPdf.Kernel.Tests;
 
-/// <summary>
-/// #523: a null object added to a <see cref="PdfArray"/> or set on a <see cref="PdfDictionary"/> was
-/// accepted, reported in <c>Count</c>, and failed with <see cref="NullReferenceException"/> later, in
-/// <c>WriteTo</c>. <see cref="PdfDictionary.Set(PdfName, PdfObject)"/> already refused a null key and
-/// its own comment described this failure mode for the value.
-/// </summary>
+/// <summary>A null added to a <see cref="PdfArray"/> is refused at the call; a null set on a <see cref="PdfDictionary"/> is stored and refused by <c>WriteTo</c> naming the key.</summary>
 public sealed class NullPdfObjectTests
 {
     [Fact]

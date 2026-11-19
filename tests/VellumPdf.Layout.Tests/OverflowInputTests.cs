@@ -10,10 +10,7 @@ using VellumPdf.Layout.Elements.Table;
 
 namespace VellumPdf.Layout.Tests;
 
-/// <summary>
-/// #546: inputs that are each valid but whose arithmetic together overflows into empty or wrong
-/// output with no exception. Pie slice totals, pie start angles and explicit column widths.
-/// </summary>
+/// <summary>Inputs that are each valid but whose arithmetic together overflows: pie slice totals, pie start angles and explicit column widths.</summary>
 public sealed class OverflowInputTests
 {
     private static TextStyle Style() => new() { FontRef = new FontReference(Standard14.Helvetica), FontSize = 10 };
@@ -42,10 +39,7 @@ public sealed class OverflowInputTests
 
     // ── Pie slice totals ─────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Two slices of 1e308 sum to infinity and the chart has no curves. The file is valid and saved on
-    /// 1c61fa6, so it keeps saving (#484).
-    /// </summary>
+    /// <summary>Two slices of 1e308 sum to infinity and the chart has no curves; the file saves, as in 2.3.3.</summary>
     [Fact]
     public void Pie_sliceTotalThatOverflowsToInfinity_stillSaves_withNoCurvesAndNoInvalidToken()
     {
@@ -77,11 +71,7 @@ public sealed class OverflowInputTests
 
     // ── Pie start angles ─────────────────────────────────────────────────────
 
-    /// <summary>
-    /// A two-slice 50/50 chart draws 4 curves when the angle is correct (two wedges of two quarter
-    /// arcs each). 1e16 used to draw 6 and 1e17 drew 0, so each is asserted against the ordinary
-    /// angle's count, together with the negative and the exact-multiple cases.
-    /// </summary>
+    /// <summary>A two-slice 50/50 chart draws 4 curves (two wedges of two quarter arcs); 1e16 and 1e17 are each asserted against the ordinary angle's count, with the negative and exact-multiple cases.</summary>
     [Theory]
     [InlineData(1e15)]
     [InlineData(1e16)]
@@ -128,11 +118,7 @@ public sealed class OverflowInputTests
 
     // ── Explicit table column widths ─────────────────────────────────────────
 
-    /// <summary>
-    /// Three widths of 1e308 add up to positive infinity, the scale ratio is zero and every column
-    /// is drawn at width 0. The file is valid and saved on 1c61fa6 with no non-finite token, so it
-    /// keeps saving (#484); the next major refuses it.
-    /// </summary>
+    /// <summary>Three widths of 1e308 add up to positive infinity, so the scale ratio is zero and every column is drawn at width 0; the file saves with no non-finite token, as in 2.3.3.</summary>
     [Fact]
     public void Table_explicitWidthsThatOverflowToInfinity_stillSave_withNoNonFiniteToken()
     {
@@ -147,10 +133,7 @@ public sealed class OverflowInputTests
         Assert.DoesNotContain("Infinity", stream, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// One dominant finite entry is not an overflow. It scales the others to almost nothing and
-    /// still renders, so it is not refused in a patch; it is documented and listed for the next major.
-    /// </summary>
+    /// <summary>One dominant finite entry is not an overflow: it scales the others to almost nothing and still renders.</summary>
     [Fact]
     public void Table_oneDominantFiniteWidth_stillRenders()
     {

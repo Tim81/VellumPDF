@@ -9,12 +9,7 @@ using VellumPdf.TestSupport;
 
 namespace VellumPdf.Kernel.Tests;
 
-/// <summary>
-/// #544: a handle from another document is resolved to the saving document's own embedding of the
-/// same font program under the same name, and the glyphs the handle registered are added to that
-/// subset when the fonts are written. <c>Save</c> and <c>PrepareForSigning</c> write fonts in
-/// separate places, so each needs the merge.
-/// </summary>
+/// <summary>A handle from another document is resolved to the saving document's own embedding of the same font program under the same name, and its registered glyphs are added to that subset when the fonts are written, in both <c>Save</c> and <c>PrepareForSigning</c>.</summary>
 public sealed class ForeignFontHandleSigningTests
 {
     private static readonly string FontPath = Path.Combine(AppContext.BaseDirectory, "Fonts", "DejaVuSans.ttf");
@@ -73,11 +68,7 @@ public sealed class ForeignFontHandleSigningTests
         return doc.PrepareForSigning(new SignaturePlaceholderOptions { SigningTime = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) });
     }
 
-    /// <summary>
-    /// A foreign handle registered before the saving document embeds its own font saves, with the
-    /// same widths as the other order: whether the name is defined is decided at save, as 2.3.3, which
-    /// took no notice of the order, saved this file. A call-site refusal would throw here.
-    /// </summary>
+    /// <summary>A foreign handle registered before the saving document embeds its own font saves, with the same widths as the other order: whether the name is defined is decided at save, as in 2.3.3.</summary>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

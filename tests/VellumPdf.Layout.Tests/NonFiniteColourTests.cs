@@ -9,16 +9,7 @@ using VellumPdf.Layout.Elements.Table;
 
 namespace VellumPdf.Layout.Tests;
 
-/// <summary>
-/// #509: a colour channel that is not a finite number used to reach the content stream as
-/// <c>NaN 0 0 rg</c> or <c>Infinity 0 0 rg</c>, neither of which is a PDF number. Each colour a
-/// Layout element can carry is refused where it is written, and each of the three non-finite values is
-/// listed on its own because they take separate branches elsewhere in this package. A text colour on
-/// text that is drawn is refused by the element check, naming the element; the other colours reach
-/// <c>PdfCanvas</c>, which throws <see cref="ArgumentException"/> saying PDF does not support NaN or
-/// Infinity. A colour that is not written is not refused; see <c>KeepRenderingTests</c>. A channel
-/// outside 0 to 1 is finite and still renders, and one test pins that.
-/// </summary>
+/// <summary>A colour channel that is not a finite number is refused where it is written, each of NaN and both infinities listed on its own because they take separate branches: a text colour on drawn text is refused by the element check naming the element, the other colours by <c>PdfCanvas</c> with <see cref="ArgumentException"/>, a colour that is not written is not refused (see <c>KeepRenderingTests</c>), and a finite channel outside 0 to 1 still renders.</summary>
 public sealed class NonFiniteColourTests
 {
     private static TextStyle Style(ColorRgb? colour = null) => new()
@@ -192,12 +183,7 @@ public sealed class NonFiniteColourTests
         Assert.EndsWith("Got: " + (rendered == "NaN" ? "NaN" : rendered == "positive infinity" ? "Infinity" : "-Infinity"), ex.Message, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// A finite channel outside 0 to 1 still saves and still reaches the stream verbatim. ISO
-    /// 32000-2 8.6.4.3 says a DeviceRGB component "shall" be in range, but the token parses and the
-    /// file renders, and a patch release does not turn a rendering document into an exception.
-    /// The range is documented instead and the refusal belongs to the next major (#484).
-    /// </summary>
+    /// <summary>A finite channel outside 0 to 1 saves and reaches the stream verbatim: ISO 32000-2 8.6.4.3 says a DeviceRGB component "shall" be in range, but the token parses and the file renders.</summary>
     [Fact]
     public void OutOfRangeFiniteChannel_stillRenders_andIsWrittenAsGiven()
     {
