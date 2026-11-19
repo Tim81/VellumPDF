@@ -186,7 +186,7 @@ public static class GifImageLoader
                         // Section 23.a: "at most one Graphic Control Extension may precede a graphic
                         // rendering block", and it "contains only one data sub-block"; section
                         // 23.c.iii: the Block Size "contains the fixed value 4". Without the option
-                        // a block that breaks these is read as far as it goes, as on 2.3.3.
+                        // a block that breaks these is read as far as it goes.
                         if (graphicControlPending)
                             throw new InvalidDataException(
                                 "GIF has two Graphic Control Extensions before one graphic rendering block (section 23.a: at most one may precede it).");
@@ -243,7 +243,7 @@ public static class GifImageLoader
 
             // Appendix B gives a Data Stream three kinds of top-level block: an extension (0x21),
             // an image descriptor (0x2C) and the trailer (0x3B). Anything else is outside the
-            // grammar; without the option it is skipped as a run of sub-blocks, as on 2.3.3.
+            // grammar; without the option it is skipped as a run of sub-blocks.
             if (place)
                 throw new InvalidDataException(
                     $"GIF has the block introducer 0x{blockType:X2} at offset {pos - 1}; Appendix B allows only an extension (0x21), an image descriptor (0x2C) or the trailer (0x3B).");
@@ -309,10 +309,10 @@ public static class GifImageLoader
 
         // LZW decode. The raster buffer is sized from the image descriptor, which is attacker
         // text: a 42-byte file can declare 10,000 x 10,000 and the code stream behind it is
-        // refused as short, but only after the buffer exists (about 100 MB on 2.3.3 for that
-        // file, #536's class, against about 27 KB now). A first pass runs the same decoder with
-        // no buffer and so makes the same refusals, with the same messages, in the same order, and counts
-        // the pixels the stream delivers. The buffer is allocated only once that count has
+        // refused as short, but only after the buffer exists (about 100 MB when the buffer was
+        // sized first, for that file; #536's class; the pass below allocates about 27 KB). A
+        // first pass runs the same decoder with no buffer and so makes the same refusals, with
+        // the same messages, in the same order, and counts the pixels the stream delivers. The buffer is allocated only once that count has
         // matched, so what is allocated is bounded by what the file contained.
         LzwDecode(lzwStream, lzwMinCodeSize, width * height, produce: false, strict: place);
         var indices = LzwDecode(lzwStream, lzwMinCodeSize, width * height, produce: true, strict: false)!;
@@ -561,7 +561,7 @@ public static class GifImageLoader
 
             // Pop stack into output
             // Strict mode keeps counting past the descriptor's pixel count so an overrun shows
-            // as a count above it; the default stops there and drops the rest, as on 2.3.3.
+            // as a count above it; the default stops there and drops the rest.
             for (var i = stackTop - 1; i >= 0 && (strict || outIdx < pixelCount); i--)
             {
                 if (output is not null && outIdx < pixelCount)
@@ -645,8 +645,12 @@ public static class GifImageLoader
     /// <summary>
     /// Appendix F, COMPRESSION item 2: the End of Information code "must be the last code output by
     /// the encoder for an image". After the last pixel only Clear codes may come before it (a Clear
-    /// carries no pixel); a data code is more pixels than declared, and no End of Information at
-    /// all is a missing terminating code. Padding bits after it in its last byte are not codes.
+    /// carries no pixel); a data code is more pixels than declared. With no End of Information code
+    /// the refusal names a missing terminating code only when fewer bits remain than the narrowest
+    /// width a code could be read at (the stream's own padding to a byte boundary counts as
+    /// remaining); with at least that many bits left, whatever they hold is read as a code, so
+    /// a long run of padding is reported as a code after the last pixel. Padding bits after the
+    /// End of Information code in its last byte are not codes.
     ///
     /// The first code after the last pixel is read at the decoder's current width. When the table
     /// entry added for the last data code is what widened that width, it is also read one bit

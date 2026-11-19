@@ -282,6 +282,22 @@ public sealed class GifPlacedRuleTests
         Assert.Equal((4, 3), (GifImageLoader.Load(gif, Placed).Width, GifImageLoader.Load(gif, Placed).Height));
     }
 
+    /// <summary>
+    /// After a Clear the width is the minimum plus one, so a code needs 3 bits here. Two bits left
+    /// after the Clears are fewer than any code, which is a missing End of Information code, not a
+    /// code after the last pixel. The case sits exactly one bit under the width: a read that kept the
+    /// narrower width after a Clear would find 2 bits sufficient and report the other message.
+    /// </summary>
+    [Fact]
+    public void Place_clearThenFewerBitsThanTheResetWidth_isReportedAsNoEndOfInformation()
+    {
+        // 0 0 0 over 3 pixels (3 x 1), Clear at the grown width of 4, three Clears at 3, then 2 bits of padding.
+        (int Code, int Width)[] codes = [(0, 3), (0, 3), (0, 3), (4, 4), (4, 3), (4, 3), (4, 3)];
+        var gif = FileWithWidths(3, 1, codes);
+
+        AssertRefusedOnlyWithTheOption(gif, "ends without an End of Information code (Appendix F");
+    }
+
     // ------------------------------------------------ section 22.a and Appendix F: pixel count
 
     /// <summary>The reviewer's file: a 1x1 frame whose stream codes 4 pixels.</summary>
