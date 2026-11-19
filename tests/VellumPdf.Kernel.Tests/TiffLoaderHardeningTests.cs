@@ -135,6 +135,70 @@ public sealed class TiffLoaderHardeningTests
         Assert.Throws<InvalidDataException>(() => TiffImageLoader.Load(tiff));
     }
 
+    // ── #534: a null options argument is refused where it is read ─────────────
+
+    [Theory]
+    [InlineData(1, 8, 1)]  // grey 8-bit
+    [InlineData(3, 8, 1)]  // RGB 8-bit
+    [InlineData(4, 8, 1)]  // RGBA 8-bit
+    [InlineData(1, 8, 32773)] // grey 8-bit, PackBits
+    public void NullOptions_stillLoad_wherever2_3_3Loaded(int samples, int bps, int compression)
+    {
+        var raw = Enumerable.Range(1, 4 * samples * bps / 8).Select(i => (byte)i).ToArray();
+        var strip = compression == 32773 ? [(byte)(raw.Length - 1), .. raw] : raw;
+        var tiff = Image(2, 2, photometric: samples == 1 ? 1 : 2, bps: bps, strip: strip,
+            compression: compression, samplesPerPixel: samples);
+
+        var withNull = TiffImageLoader.Load(tiff, null!);
+
+        Assert.Equal(RgbBytes(TiffImageLoader.Load(tiff, ImageLoadOptions.Default)), RgbBytes(withNull));
+    }
+
+    [Fact]
+    public void NullOptions_stillLoad_aPaletteImage()
+    {
+        var map = new byte[768 * 2];
+        var tiff = Image(2, 2, photometric: 3, bps: 8, strip: FourBytes, colorMap: map);
+
+        Assert.Equal(2, TiffImageLoader.Load(tiff, null!).Width);
+    }
+
+    [Theory]
+    [InlineData(1, 16)] // grey 16-bit
+    [InlineData(3, 16)] // RGB 16-bit
+    [InlineData(4, 16)] // RGBA 16-bit
+    public void NullOptions_areRefusedOnThe16BitPaths(int samples, int bps)
+    {
+        // 2.3.3: NullReferenceException for each of these.
+        var tiff = Image(2, 2, photometric: samples == 1 ? 1 : 2, bps: bps,
+            strip: new byte[4 * samples * bps / 8], samplesPerPixel: samples);
+
+        var ex = Assert.Throws<ArgumentNullException>(() => TiffImageLoader.Load(tiff, null!));
+        Assert.Equal("options", ex.ParamName);
+    }
+
+    [Theory]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void NullOptions_areRefusedOnAGroup3Strip(int compression)
+    {
+        // 2.3.3: NullReferenceException. The strip bytes are never decoded on the passthrough path,
+        // so they need only be present.
+        var tiff = Image(8, 8, photometric: 0, bps: 1, strip: [0x00, 0x10, 0x01, 0x02], compression: compression);
+
+        var ex = Assert.Throws<ArgumentNullException>(() => TiffImageLoader.Load(tiff, null!));
+        Assert.Equal("options", ex.ParamName);
+    }
+
+    [Theory]
+    [InlineData(4)] // Group 4 never reads options
+    public void NullOptions_stillLoad_aGroup4Strip(int compression)
+    {
+        var tiff = Image(8, 8, photometric: 0, bps: 1, strip: [0x00, 0x10, 0x01, 0x02], compression: compression);
+
+        Assert.Equal(8, TiffImageLoader.Load(tiff, null!).Width);
+    }
+
     // ── #536: the raster is sized after the strips are known to be there ──────
 
     [Theory]

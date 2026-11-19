@@ -121,6 +121,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   strip that decodes short, zero-filling the rest. A 4-byte LZW strip on a 10,000 by 10,000 RGB
   header still allocates 600,027,400 bytes before it is refused.
 
+- **A null `options` to `TiffImageLoader.Load(byte[], ImageLoadOptions)` raises
+  `ArgumentNullException` where it is read (#534).** The argument was dereferenced in three
+  places only, a Group 3 CCITT strip and the 16-bit greyscale and RGB(A) builders, so a null
+  loaded most files and threw `NullReferenceException` on those. The three reads now throw
+  `ArgumentNullException` with `ParamName` `options`; every file that loaded with a null on 2.3.3
+  (8-bit, palette, Group 4, JPEG) still does. The exception type on the refused paths is the only
+  change. The XML documentation says 3.0 will refuse a null for every file.
+
 ## [2.3.3] - 2026-09-20
 
 This release is led by documentation. Layout's public surface now states what each member

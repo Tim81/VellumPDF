@@ -164,6 +164,10 @@ public static class TiffImageLoader
     /// <exception cref="NotSupportedException">
     /// The file is a well-formed TIFF using a feature this loader does not read.
     /// </exception>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="options"/> is <see langword="null"/> and the file reaches a read of it: a
+    /// Group 3 CCITT strip, or a 16-bit greyscale, RGB or RGBA image. Any other file loads.
+    /// </exception>
     /// <remarks>
     /// This overload carries the implementation. The single-argument overload delegates here.
     /// A malformed file raises <see cref="InvalidDataException"/>, a <c>ColorMap</c> it cannot
@@ -172,6 +176,16 @@ public static class TiffImageLoader
     /// raises <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>.
     /// <para>The JPEG-strip hole on the other overload is this overload's. Compression 7 is
     /// handed to <see cref="JpegImageLoader.Load(byte[])"/>, which validates nothing.</para>
+    /// <para><b>A null <paramref name="options"/> is refused only where it is read.</b>
+    /// <see cref="ArgumentNullException"/> is thrown for a Group 3 CCITT strip (Compression 2 or
+    /// 3) and for 16-bit greyscale, RGB and RGBA files, the three places the argument is
+    /// dereferenced. Every other file loads with a null, 8-bit images, palette images, Group 4 and
+    /// JPEG strips among them, so whether a null survives depends on the image and not on the
+    /// call. Before 2.4 the three reads raised <see cref="NullReferenceException"/>, which is
+    /// what made the outcome image-dependent (#534).</para>
+    /// <para>Do not pass <see langword="null"/>. The parameter is not annotated nullable, and
+    /// 3.0 will refuse a null for every file. Pass <see cref="ImageLoadOptions.Default"/> or call
+    /// the single-argument overload.</para>
     /// <para><paramref name="options"/> reaches
     /// <see cref="ImageLoadOptions.DecodeMode"/> on one path only, a Group 3 CCITT strip
     /// (Compression 2 or 3), which you can ask to be decoded to a raster instead of passed
@@ -407,6 +421,10 @@ public static class TiffImageLoader
                 g3EndOfLine = true;
             }
 
+            // options is read from here on, and from nowhere earlier on this path. Null is refused
+            // at the read, as it was (as NullReferenceException) before #534, so a null still loads
+            // every file that never reaches one of the three reads: 2.3.3 loaded those.
+            ArgumentNullException.ThrowIfNull(options);
             if (options.DecodeMode == ImageDecodeMode.DecodeToRaster)
             {
                 var raster = CcittImageLoader.DecodeCcittToRaster(
@@ -801,6 +819,7 @@ public static class TiffImageLoader
                 grey16 = raw;
             }
 
+            ArgumentNullException.ThrowIfNull(options);
             if (options.BitDepth == ImageBitDepth.ReduceToEight)
             {
                 var grey8 = Downsample16(grey16);
@@ -859,6 +878,7 @@ public static class TiffImageLoader
                 rgb16 = raw;
             }
 
+            ArgumentNullException.ThrowIfNull(options);
             if (options.BitDepth == ImageBitDepth.ReduceToEight)
             {
                 var rgb8 = Downsample16(rgb16);
