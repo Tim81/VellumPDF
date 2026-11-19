@@ -970,7 +970,7 @@ internal sealed class GlyphPresenceRule : IConformanceRule
         return sb.ToString();
     }
 
-    private static byte[] DecodeString(ReadOnlySpan<byte> raw, bool hex)
+    internal static byte[] DecodeString(ReadOnlySpan<byte> raw, bool hex)
     {
         var bytes = new List<byte>(raw.Length);
         if (hex)
@@ -996,56 +996,11 @@ internal sealed class GlyphPresenceRule : IConformanceRule
             return bytes.ToArray();
         }
 
-        for (var i = 1; i < raw.Length && raw[i] != (byte)')'; i++)
-        {
-            if (raw[i] == (byte)'\\' && i + 1 < raw.Length)
-            {
-                i++;
-                var next = raw[i];
-                // Line continuation: \CR, \LF, or \CRLF → drop the backslash and EOL.
-                if (next == (byte)'\r')
-                {
-                    if (i + 1 < raw.Length && raw[i + 1] == (byte)'\n')
-                        i++; // consume the LF of CRLF
-                    continue;
-                }
-                if (next == (byte)'\n')
-                    continue;
-
-                // Octal escape: \ followed by 1–3 octal digits, value mod 256.
-                if (next is >= (byte)'0' and <= (byte)'7')
-                {
-                    var val = next - '0';
-                    if (i + 1 < raw.Length && raw[i + 1] is >= (byte)'0' and <= (byte)'7')
-                    {
-                        i++;
-                        val = val * 8 + (raw[i] - '0');
-                        if (i + 1 < raw.Length && raw[i + 1] is >= (byte)'0' and <= (byte)'7')
-                        {
-                            i++;
-                            val = val * 8 + (raw[i] - '0');
-                        }
-                    }
-                    bytes.Add((byte)(val & 0xFF));
-                    continue;
-                }
-
-                bytes.Add(next switch
-                {
-                    (byte)'n' => (byte)'\n',
-                    (byte)'r' => (byte)'\r',
-                    (byte)'t' => (byte)'\t',
-                    (byte)'b' => (byte)'\b',
-                    (byte)'f' => (byte)'\f',
-                    _ => next,
-                });
-            }
-            else
-            {
-                bytes.Add(raw[i]);
-            }
-        }
-        return bytes.ToArray();
+        // The reader's own decode, so a nested balanced parenthesis, an unescaped end-of-line marker
+        // (ISO 32000-2, 7.3.4.2) and the escapes come out as they do everywhere else. This used to be a
+        // private copy that stopped at the first closing parenthesis, which truncated (a(b)c) after
+        // "a(b", and kept a raw CR.
+        return PdfObjectParser.DecodeLiteralString(raw.ToArray()).Bytes.ToArray();
     }
 
     private static int Hex(byte b) => b switch
