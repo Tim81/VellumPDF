@@ -66,7 +66,14 @@ public static class BmpImageLoader
     /// table as 256 entries, so a pixel pointing past <c>biClrUsed</c> reads whatever bytes lie in
     /// that slot. A smaller file is held to the entries it declares: a pixel pointing past them, or
     /// pixel data starting inside the palette, raises <see cref="InvalidDataException"/>.</para>
-    /// <para>A BITMAPINFOHEADER field this loader does not read is neither honoured nor
+    /// <para>That smaller-file branch is the only one that reads header fields beyond the ones
+    /// needed to decode. A file under 1,078 bytes is accepted only if <c>biPlanes</c> is 1, both
+    /// reserved words are zero, <c>biWidth</c> is positive, <c>bfSize</c> equals the file length,
+    /// <c>biSizeImage</c> is zero or at least the pixel data the header implies, and
+    /// <c>biClrImportant</c> is zero or no more than the entries in use. Any other file of that
+    /// size raises <see cref="InvalidDataException"/>, as 2.3.3 did. A file of 1,078 bytes or more
+    /// is never held to them, because 2.3.3 ignored them there.</para>
+    /// <para>Any other BITMAPINFOHEADER field this loader does not read is neither honoured nor
     /// refused.</para>
     /// <para>A 32-bit bitmap is read as opaque. In <c>BI_RGB</c> with a 40-byte header the fourth
     /// byte of each pixel is unused, so this loader ignores it and returns no soft mask. A file
@@ -120,9 +127,11 @@ public static class BmpImageLoader
             throw new InvalidDataException($"BMP pixel data offset {pixelOffset} is beyond the end of the file.");
 
         // 8-bit: the colour table follows the header and holds biClrUsed entries, or 256 when the
-        // field is zero (Microsoft's BITMAPINFOHEADER reference, biClrUsed: "If biClrUsed is zero,
-        // the array contains the maximum number of colors for the given bitdepth"). The field is
-        // the writer's, so it is capped at 256 before it is multiplied.
+        // field is zero. Source: Microsoft Learn, "BITMAPINFOHEADER structure" (Windows GDI,
+        // wingdi.h; learn.microsoft.com/en-us/previous-versions/dd183376(v=vs.85)), Members,
+        // biClrUsed: "If this value is zero, the bitmap uses the maximum number of colors
+        // corresponding to the value of the biBitCount member". The field is the writer's, so it
+        // is capped at 256 before it is multiplied.
         var paletteLimit = 0;
         if (bitCount == 8)
         {
@@ -135,15 +144,17 @@ public static class BmpImageLoader
             // 2.3.3 never read biClrUsed and accepted any file of at least 1,078 bytes, indexing
             // the table as if it held 256 entries whatever the field said. Such a file keeps
             // loading exactly as it did, so an index past biClrUsed still reads the bytes at that
-            // slot. Below 1,078 bytes the file was refused, and the table is held to the entries it
-            // declares: a pixel pointing past them, or pixel data that starts inside the table, is
-            // refused rather than read from the wrong place.
+            // slot. Below 1,078 bytes the file was refused, and nothing that was refused is accepted
+            // unless the file shows it is a conforming bitmap: RequireConformingHeader. The table
+            // is also held to the entries it declares, so a pixel pointing past them, or pixel
+            // data that starts inside the table, is refused rather than read from the wrong place.
             if (bmpBytes.Length >= paletteOffset + MaxPaletteEntries * 4)
             {
                 paletteLimit = MaxPaletteEntries;
             }
             else
             {
+                RequireConformingHeader(bmpBytes, rawWidth, height, entries);
                 if (pixelOffset < (uint)(paletteOffset + entries * 4))
                     throw new InvalidDataException(
                         $"BMP pixel data offset {pixelOffset} lies inside the {entries}-entry palette.");
@@ -235,8 +246,9 @@ public static class BmpImageLoader
             for (var x = 0; x < width; x++)
             {
                 // BI_RGB at 32 bits per pixel stores blue, green, red and then a byte the format
-                // leaves unused: the biBitCount 32 row of Microsoft's BITMAPINFOHEADER reference says
-                // "The high byte in each DWORD is not used". Writers leave whatever is there, and
+                // leaves unused. Microsoft Learn, "BITMAPINFOHEADER structure" (Windows GDI, wingdi.h;
+                // learn.microsoft.com/en-us/previous-versions/dd183376(v=vs.85)), Members, biBitCount,
+                // value 32: "The high byte in each DWORD is not used". Writers leave whatever is there, and
                 // zero is common, so reading it as alpha made such a file fully transparent (#535).
                 // Alpha needs BI_BITFIELDS, BI_ALPHABITFIELDS or a V4/V5 header, none of which this
                 // loader accepts.
@@ -251,6 +263,50 @@ public static class BmpImageLoader
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
+
+    // A file under 1,078 bytes was refused by 2.3.3 whatever it held, so reading it now is only
+    // right when it is a conforming bitmap that 2.3.3 refused because of the palette-size bug, not
+    // one that merely got past the old size test. Each check below is a field Microsoft's reference
+    // constrains. 2.3.3 ignored all of them, so a file of 1,078 bytes or more is never held to them.
+    //
+    // Sources, Microsoft Learn:
+    //   - "BITMAPFILEHEADER structure" (learn.microsoft.com/en-us/windows/win32/api/wingdi/
+    //     ns-wingdi-bitmapfileheader), Members: bfSize "The size, in bytes, of the bitmap file.";
+    //     bfReserved1 and bfReserved2 "Reserved; must be zero."
+    //   - "BITMAPINFOHEADER structure" (learn.microsoft.com/en-us/previous-versions/
+    //     dd183376(v=vs.85)), Members: biPlanes "This value must be set to 1."; biSizeImage "The
+    //     size, in bytes, of the image. This may be set to zero for BI_RGB bitmaps."; biClrImportant
+    //     "The number of color indexes that are required for displaying the bitmap. If this value
+    //     is zero, all colors are required."
+    //
+    // Three requirements are inferences, not quotations. biWidth must be positive: the page gives a
+    // sign convention for biHeight only, so a negative width has no defined meaning. biSizeImage,
+    // when not zero, must cover the pixel data the header implies, since a smaller figure
+    // contradicts "the size, in bytes, of the image". biClrImportant must not exceed the entries in
+    // use, since it cannot require more colours than the table holds.
+    private static void RequireConformingHeader(byte[] data, int rawWidth, int height, int paletteEntries)
+    {
+        if (ReadU16Le(data, 26) != 1)
+            throw NonConforming("biPlanes is not 1");
+        if (ReadU16Le(data, 6) != 0 || ReadU16Le(data, 8) != 0)
+            throw NonConforming("a reserved field is not zero");
+        if (rawWidth <= 0)
+            throw NonConforming("biWidth is not positive");
+        if (ReadU32Le(data, 2) != (uint)data.Length)
+            throw NonConforming("bfSize is not the file length");
+        var rowStride = (rawWidth + 3) & ~3;
+        var sizeImage = ReadU32Le(data, 34);
+        if (sizeImage != 0 && sizeImage < (long)rowStride * height)
+            throw NonConforming("biSizeImage is smaller than the pixel data the header implies");
+        var clrImportant = ReadU32Le(data, 50);
+        if (clrImportant != 0 && clrImportant > (uint)paletteEntries)
+            throw NonConforming("biClrImportant exceeds the palette entries in use");
+    }
+
+    // The exception type 2.3.3 gave every file of this size, with the field named.
+    private static InvalidDataException NonConforming(string reason) =>
+        new("BMP file is truncated: palette extends beyond end of file. " +
+            $"A bitmap this small is read only when its header conforms, and {reason}.");
 
     private static uint ReadU32Le(byte[] data, int offset) =>
         (uint)(data[offset] | (data[offset + 1] << 8) |

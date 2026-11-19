@@ -185,6 +185,164 @@ public sealed class BmpLoaderHardeningTests
         Assert.Equal<byte[]>([123, 234, 89], rgb);
     }
 
+    // ── #533: a file under 1,078 bytes is read only if its header conforms ────
+    //
+    // 2.3.3 refused every 8-bit file under 1,078 bytes. Accepting a short-palette file is right
+    // only for a conforming bitmap, so each header field below is varied alone on an 86-byte
+    // fixture that loads when untouched, and the file must be refused with the old exception type.
+
+    private static byte[] Clean86() =>
+        Bmp(8, 4, 4, clrUsed: 4, Palette(4), pixels: [0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3]);
+
+    private static byte[] WithU16(byte[] bmp, int offset, ushort value)
+    {
+        var copy = (byte[])bmp.Clone();
+        BitConverter.TryWriteBytes(copy.AsSpan(offset), value);
+        return copy;
+    }
+
+    private static byte[] WithU32(byte[] bmp, int offset, uint value)
+    {
+        var copy = (byte[])bmp.Clone();
+        BitConverter.TryWriteBytes(copy.AsSpan(offset), value);
+        return copy;
+    }
+
+    [Fact]
+    public void Bmp8_cleanShortPaletteFixture_is86BytesAndLoads()
+    {
+        var bmp = Clean86();
+
+        Assert.Equal(86, bmp.Length);
+        Assert.Equal(4, BmpImageLoader.Load(bmp).Width);
+    }
+
+    [Theory]
+    [InlineData(26, 0, "biPlanes")]          // biPlanes 0
+    [InlineData(26, 7, "biPlanes")]          // biPlanes 7
+    [InlineData(6, 1, "reserved")]           // bfReserved1
+    [InlineData(8, 0xFFFF, "reserved")]      // bfReserved2
+    public void Bmp8_shortFile_withANonConformingU16Field_isRefused(int offset, int value, string reasonPart)
+    {
+        var bmp = WithU16(Clean86(), offset, (ushort)value);
+
+        var ex = Assert.Throws<InvalidDataException>(() => BmpImageLoader.Load(bmp));
+        Assert.Contains(reasonPart, ex.Message);
+    }
+
+    [Fact]
+    public void Bmp8_shortFile_withANegativeWidth_isRefused()
+    {
+        var bmp = WithU32(Clean86(), 18, unchecked((uint)-4));
+
+        var ex = Assert.Throws<InvalidDataException>(() => BmpImageLoader.Load(bmp));
+        Assert.Contains("biWidth", ex.Message);
+    }
+
+    [Theory]
+    [InlineData(0u)]
+    [InlineData(85u)]
+    [InlineData(87u)]
+    public void Bmp8_shortFile_whoseBfSizeIsNotTheFileLength_isRefused(uint bfSize)
+    {
+        var bmp = WithU32(Clean86(), 2, bfSize);
+
+        var ex = Assert.Throws<InvalidDataException>(() => BmpImageLoader.Load(bmp));
+        Assert.Contains("bfSize", ex.Message);
+    }
+
+    [Theory]
+    [InlineData(1u)]
+    [InlineData(15u)] // one short of the 16 pixel-data bytes a 4 x 4 image implies
+    public void Bmp8_shortFile_withABiSizeImageBelowThePixelData_isRefused(uint sizeImage)
+    {
+        var bmp = WithU32(Clean86(), 34, sizeImage);
+
+        var ex = Assert.Throws<InvalidDataException>(() => BmpImageLoader.Load(bmp));
+        Assert.Contains("biSizeImage", ex.Message);
+    }
+
+    [Theory]
+    [InlineData(0u)]
+    [InlineData(16u)]
+    [InlineData(17u)]
+    [InlineData(0xDEADBEEFu)] // not below the pixel data, so it is not a contradiction
+    public void Bmp8_shortFile_withBiSizeImageZeroOrCoveringThePixelData_loads(uint sizeImage)
+    {
+        Assert.Equal(4, BmpImageLoader.Load(WithU32(Clean86(), 34, sizeImage)).Width);
+    }
+
+    [Theory]
+    [InlineData(5u)]
+    [InlineData(200u)]
+    public void Bmp8_shortFile_withBiClrImportantAboveTheEntriesInUse_isRefused(uint clrImportant)
+    {
+        var bmp = WithU32(Clean86(), 50, clrImportant);
+
+        var ex = Assert.Throws<InvalidDataException>(() => BmpImageLoader.Load(bmp));
+        Assert.Contains("biClrImportant", ex.Message);
+    }
+
+    [Theory]
+    [InlineData(0u)]
+    [InlineData(1u)]
+    [InlineData(4u)]
+    public void Bmp8_shortFile_withBiClrImportantZeroOrWithinTheEntries_loads(uint clrImportant)
+    {
+        Assert.Equal(4, BmpImageLoader.Load(WithU32(Clean86(), 50, clrImportant)).Width);
+    }
+
+    [Fact]
+    public void Bmp8_fileOf1078BytesOrMore_isNeverHeldToTheHeaderFields()
+    {
+        // The same violations on a file 2.3.3 loaded: it ignored all of them, so it still loads.
+        var bmp = Bmp(8, 4, 4, clrUsed: 4, Palette(256), pixels: new byte[16]);
+        Assert.True(bmp.Length >= 1078);
+        bmp = WithU16(bmp, 26, 0);                       // biPlanes
+        bmp = WithU32(bmp, 6, 0xFFFFFFFFu);              // both reserved words
+        bmp = WithU32(bmp, 2, 0);                        // bfSize
+        bmp = WithU32(bmp, 34, 1);                       // biSizeImage
+        bmp = WithU32(bmp, 50, 200);                     // biClrImportant
+        bmp = WithU32(bmp, 18, unchecked((uint)-4));     // biWidth, read as its absolute value
+
+        var img = BmpImageLoader.Load(bmp);
+
+        Assert.Equal(4, img.Width);
+        Assert.Equal(4, img.Height);
+    }
+
+    // ── The 1,078-byte boundary ───────────────────────────────────────────────
+
+    // A 1 x 1 image, clrUsed 4, whose pixel is index 200: past the declared entries, so only a file
+    // read the 2.3.3 way (as 256 entries) can load it. The last four bytes of the file are the
+    // pixel row, so the length is the only thing that changes between the two cases.
+    private static byte[] IndexTwoHundredFileOfLength(int length)
+    {
+        var pixelOffset = (uint)(length - 4);
+        var palette = Palette(256)[..(int)(pixelOffset - 54)];
+        return Bmp(8, 1, 1, clrUsed: 4, palette, pixels: [200, 0, 0, 0], pixelOffset);
+    }
+
+    [Fact]
+    public void Bmp8_fileOfExactly1078Bytes_isReadAs256Entries()
+    {
+        var bmp = IndexTwoHundredFileOfLength(1078);
+        Assert.Equal(1078, bmp.Length);
+
+        // Slot 200 of Palette(256): B=601&255=89, G=1002&255=234, R=1403&255=123.
+        Assert.Equal<byte[]>([123, 234, 89], RgbBytes(BmpImageLoader.Load(bmp)));
+    }
+
+    [Fact]
+    public void Bmp8_fileOf1077Bytes_isHeldToItsDeclaredEntries()
+    {
+        var bmp = IndexTwoHundredFileOfLength(1077);
+        Assert.Equal(1077, bmp.Length);
+
+        var ex = Assert.Throws<InvalidDataException>(() => BmpImageLoader.Load(bmp));
+        Assert.Contains("palette entry 200", ex.Message);
+    }
+
     // ── Helpers for reading the result ────────────────────────────────────────
 
     // The image's raster bytes, recovered through the public surface: serialise the stream and
