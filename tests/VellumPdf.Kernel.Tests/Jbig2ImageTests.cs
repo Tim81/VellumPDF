@@ -2499,7 +2499,10 @@ public sealed class Jbig2ImageTests
 
     private static byte[] Embedded(byte[][] segments) => segments.SelectMany(x => x).ToArray();
 
-    /// <summary>With no page selected (page information on association 0) the length is not looked at in a file 1c61fa6 could read.</summary>
+    /// <summary>
+    /// With no page selected (page information on association 0) the length is not looked at in a
+    /// file 1c61fa6 could read.
+    /// </summary>
     [Fact]
     public void Load_Passthrough_UnknownDataLengthWhenNoPageIsSelected_IsSkipped()
     {

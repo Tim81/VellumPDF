@@ -100,8 +100,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `NaN 0 0 rg`, which is not a PDF number. Text colour on a paragraph run, heading or list item, and a
   line separator's colour, now throw `InvalidOperationException` from the layout, and a table cell's
   text colour does where the cell is drawn, naming the element and the channel. Every other colour
-  is refused where it is written, by `PdfCanvas` with `ArgumentException`. A finite channel outside 0 to 1 is **not** refused. It
-  renders today, a patch does not turn that into an exception, and it is documented on `ColorRgb`
+  is refused where it is written, by `PdfCanvas` with `ArgumentException`. A finite channel outside
+  0 to 1 is **not** refused. It renders today, a patch does not turn that into an exception, and it is documented on `ColorRgb`
   and `ColorCmyk` with the refusal listed in #484. A colour that is not written saves, as on
   2.3.3: a `NaN` colour on a zero-value pie slice, on a running band whose template is empty, or
   on a table cell that a span from an earlier row pushes past the last column. A table cell's empty
@@ -171,8 +171,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   result is device-dependent. `PieChart.StrokeWidth` already refused a negative value. Both
   `LineWidth = -3` and `BorderWidth = -3` saved on 2.3.3; they are refused now because the
   operand breaks the clause. A negative `BorderWidth` is refused where a cell border is drawn, not
-  in the layout, so a table that is laid out and not drawn still saves, as on 2.3.3. **Attention**: a negative `LineWidth` or `BorderWidth` saved on 2.3.3
-  and now throws.
+  in the layout, so a table that is laid out and not drawn still saves, as on 2.3.3.
+  **Attention**: a negative `LineWidth` or `BorderWidth` saved on 2.3.3 and now throws.
 
 - **Pie slice totals, pie start angles and explicit table widths no longer overflow into empty or
   wrong output (#546).** Three inputs were each valid on their own and wrong together. Two pie
@@ -437,9 +437,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   type 38 and type 53 segments, each in the headerless embedded organisation and after the ID
   string. A file with the Annex D flags byte and page count and such a segment, of any type and
   on any page or none, is refused with `InvalidDataException` naming the segment, under both modes,
-  as 2.3.3 refused every such file, reading the flags as the start of a segment. Nothing reports the dropped segment yet (#607), and 3.0
-  refuses it. `DecodeToRaster` keeps refusing an unknown length
-  on a generic region (types 36, 38 and 39), as before, now with a message naming the segment, and
+  as 2.3.3 refused every such file, reading the flags as the start of a segment. Nothing reports
+  the dropped segment yet (#607), and 3.0 refuses it. `DecodeToRaster` keeps refusing an unknown
+  length on a generic region (types 36, 38 and 39), as before, now with a message naming the segment, and
   every other segment behaves as it did. A random-access file refuses an unknown length on any page,
   because its data parts cannot be located without the length. If the first page-information
   segment has page association 0 it names no page, and every segment is kept, as before pages were
