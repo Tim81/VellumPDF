@@ -1056,9 +1056,22 @@ public sealed class PdfObjectParserTests
         Assert.Equal(expected, ls.Bytes.ToArray());
 
         // The same bytes through the full parse path, as a dictionary value.
-        var dict = Assert.IsType<PdfDictionary>(Parser("<< /Lang " + token + " >>").ParseObject());
+        var bytes = System.Text.Encoding.Latin1.GetBytes("<< /Lang " + token + " >>");
+        var dict = Assert.IsType<PdfDictionary>(new PdfObjectParser(bytes) { NormalizeEndOfLine = true }.ParseObject());
         var parsed = Assert.IsType<PdfLiteralString>(dict.Get(new PdfName("Lang")));
         Assert.Equal(expected, parsed.Bytes.ToArray());
+    }
+
+    /// <summary>
+    /// A parser that is not told the strings are plain text keeps every byte between the
+    /// parentheses, which is what an encrypted file's strings need (they are ciphertext).
+    /// </summary>
+    [Fact]
+    public void LiteralString_keepsRawBytes_whenEndOfLineNormalisationIsOff()
+    {
+        var bytes = System.Text.Encoding.Latin1.GetBytes("(a\r\nb\rc)");
+        var parsed = Assert.IsType<PdfLiteralString>(new PdfObjectParser(bytes).ParseObject());
+        Assert.Equal(new byte[] { 0x61, 0x0D, 0x0A, 0x62, 0x0D, 0x63 }, parsed.Bytes.ToArray());
     }
 
     // ── Empty / edge input ─────────────────────────────────────────────────
