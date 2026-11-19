@@ -265,7 +265,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   with T.88 (first page-information segment on page 1, no segment on another page, page
   information first on page 1, every region on a page, a header page count of 1, increasing
   segment numbers with none repeated, no reserved segment type, exactly one end-of-page segment
-  that is the last one on the page), and otherwise
+  that is the last one on the page, a region segment of at least 17 bytes, a generic region
+  segment whose flags leave bits 5-7 clear, set no template under MMR and are followed by the AT
+  flags that arithmetic coding needs, and a tables segment of at least 9 bytes with bit 7 of its
+  flags clear), and otherwise
   throws `InvalidDataException` naming the clause. It loads only under `Passthrough`:
   `DecodeToRaster` throws `InvalidDataException` for every file with that header, because its
   `/DeviceGray` output would render the page as a negative. A multi-page file with that header, and

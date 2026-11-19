@@ -42,7 +42,11 @@ namespace VellumPdf.Images;
 /// the page information (7.4.8), a region on no page (7.3.2), a header page count other than 1
 /// (D.4.3), segment numbers that do not increase through the file (7.2, D.1, D.2; a repeated number
 /// is refused too, though T.88 does not say numbers are unique), a reserved segment type (7.3), or a
-/// page that does not end with exactly one end-of-page segment (7.4.9). <see cref="ImageDecodeMode.DecodeToRaster"/> refuses every such file, compliant or not,
+/// page that does not end with exactly one end-of-page segment (7.4.9). Three data-part rules are checked
+/// without decoding: a region segment of fewer than 17 bytes (7.4.1), a generic region segment whose
+/// flags set reserved bits 5-7, set GBTEMPLATE under MMR, or leave out its AT flags (7.4.6.2, 7.4.6.3),
+/// and a tables segment of fewer than 9 bytes or with reserved bit 7 of its flags set (B.2, B.2.1). The coded
+/// bytes after those fields are passed through unread, as are the data parts of every other segment type. <see cref="ImageDecodeMode.DecodeToRaster"/> refuses every file with that header, compliant or not,
 /// because the raster it writes would render as a negative: it stores the decoded bits unchanged as
 /// <c>/DeviceGray</c> without <c>/Decode</c>, while T.88 (5.6, NOTE 1) gives 1 as black as the typical reading. A file without the header
 /// decodes to the same raster, with the same inversion.</para>
@@ -315,6 +319,8 @@ public static class Jbig2ImageLoader
                 throw new InvalidDataException(
                     $"JBIG2: segment {number} has type {seg.Type}, which T.88 reserves (T.88 7.3).");
 
+            RequireWellFormedSegmentData(seg, jbig2.AsSpan(dataStart));
+
             // 7.2.6: "The first page must be numbered 1"; this file has one page, so 0 or 1 only.
             if (seg.PageAssociation is not (0 or 1))
                 throw new InvalidDataException(
@@ -360,6 +366,86 @@ public static class Jbig2ImageLoader
                 "JBIG2: page 1 must end with exactly one end-of-page segment, and the last segment " +
                 "associated with a page must be that segment (T.88 7.4.9).");
     }
+
+    /// <summary>
+    /// Refuses a segment whose data part is too short for the fields T.88 puts at its start, or sets a
+    /// bit that T.88 reserves there. Passthrough copies the data without decoding it, so these are the
+    /// only data-part fields the gate can read without a decoder; the coded bytes after them are not
+    /// checked, nor is any segment type other than the ones named here.
+    /// </summary>
+    private static void RequireWellFormedSegmentData(in SegmentHeader seg, ReadOnlySpan<byte> data)
+    {
+        var length = seg.DataLength;
+        var offset = seg.DataOffset;
+
+        // 7.4.1: every region segment's data part begins with the 17-byte region segment information field.
+        if (IsRegionSegment(seg.Type) && length < RegionInformationLength)
+            throw new InvalidDataException(
+                $"JBIG2: region segment {seg.Number} (type {seg.Type}) has {length} bytes of data, but its " +
+                $"region segment information field alone takes {RegionInformationLength} (T.88 7.4.1).");
+
+        if (seg.Type == SegmentTypeTables)
+        {
+            // B.2: the code table flags (1 byte), HTLOW (4) and HTHIGH (9 bytes in all) open the data part.
+            if (length < CodeTableHeaderLength)
+                throw new InvalidDataException(
+                    $"JBIG2: tables segment {seg.Number} has {length} bytes of data, but the code table " +
+                    $"flags, lowest value and highest value take {CodeTableHeaderLength} (T.88 B.2).");
+
+            // B.2.1: "Bit 7 Reserved; must be zero."
+            if ((data[offset] & 0x80) != 0)
+                throw new InvalidDataException(
+                    $"JBIG2: tables segment {seg.Number} sets bit 7 of its code table flags, which T.88 " +
+                    "reserves and requires to be zero (B.2.1).");
+        }
+
+        if (seg.Type is SegmentTypeIntermediateGenericRegion or SegmentTypeImmediateGenericRegion
+            or SegmentTypeImmediateLosslessGenericRegion)
+        {
+            // 7.4.6.1 and 7.4.6.2: the region information field, then the generic region flags byte.
+            if (length < RegionInformationLength + 1)
+                throw new InvalidDataException(
+                    $"JBIG2: generic region segment {seg.Number} (type {seg.Type}) has {length} bytes of " +
+                    "data, too few for its region segment information field and generic region flags " +
+                    "(T.88 7.4.6.1).");
+
+            var flags = data[offset + RegionInformationLength];
+
+            // 7.4.6.2: "Bits 5-7 Reserved; must be zero."
+            if ((flags & 0xE0) != 0)
+                throw new InvalidDataException(
+                    $"JBIG2: generic region segment {seg.Number} sets reserved bits 5-7 of its generic region " +
+                    "flags (T.88 7.4.6.2).");
+
+            var mmr = (flags & 0x01) != 0;
+            var template = (flags >> 1) & 0x03;
+            var extended = (flags & 0x10) != 0;
+
+            // 7.4.6.2: "If MMR is 1 then [GBTEMPLATE] must contain the value zero."
+            if (mmr && template != 0)
+                throw new InvalidDataException(
+                    $"JBIG2: generic region segment {seg.Number} is MMR coded but sets GBTEMPLATE to " +
+                    $"{template}, which T.88 requires to be zero then (7.4.6.2).");
+
+            // 7.4.6.3: the AT flags are present only when MMR is 0: 8 bytes for template 0, 32 bytes for
+            // template 0 with EXTTEMPLATE, 2 bytes for templates 1 to 3.
+            if (!mmr)
+            {
+                var atLength = template != 0 ? 2 : extended ? 32 : 8;
+                if (length < RegionInformationLength + 1 + atLength)
+                    throw new InvalidDataException(
+                        $"JBIG2: generic region segment {seg.Number} uses template {template} arithmetic " +
+                        $"coding, whose AT flags take {atLength} bytes, but the segment has {length} bytes " +
+                        "of data (T.88 7.4.6.3).");
+            }
+        }
+    }
+
+    // 7.4.1: width, height, X location and Y location (4 bytes each), then the region flags (1 byte).
+    private const int RegionInformationLength = 17;
+
+    // B.2: code table flags (1 byte), then HTLOW and HTHIGH (4 bytes each).
+    private const int CodeTableHeaderLength = 9;
 
     private static bool IsAllowedSegmentType(int type) => type is
         0 or 4 or 6 or 7 or 16 or 20 or 22 or 23 or 36 or 38 or 39 or 40 or 42 or 43

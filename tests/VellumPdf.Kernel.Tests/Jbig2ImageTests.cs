@@ -1932,6 +1932,30 @@ public sealed class Jbig2ImageTests
     // clear: random-access; bit 1 set: the number of pages is unknown) and, unless bit 1 is set, a
     // 4-byte page count. The fixtures are built by hand from Annex D.
 
+    /// <summary>
+    /// A generic region data part that meets T.88 7.4.1 and 7.4.6.2 (17 bytes of region information, the MMR flag) followed
+    /// by <paramref name="tail"/> as its coded bytes, so a test of the segment plumbing can tell the segment's own bytes apart.
+    /// </summary>
+    private static byte[] RegionWithTail(byte[] tail)
+    {
+        var region = new byte[18 + tail.Length];
+        WriteInt32(region, 0, 8);
+        WriteInt32(region, 4, 1);
+        region[17] = 0x01;
+        tail.CopyTo(region, 18);
+        return region;
+    }
+
+    /// <summary>The 17-byte region segment information field (T.88 7.4.1) of an 8x1 region, then <paramref name="tail"/>: enough of a text region's data part for the loader's checks.</summary>
+    private static byte[] RegionInformationWithTail(byte[] tail)
+    {
+        var region = new byte[17 + tail.Length];
+        WriteInt32(region, 0, 8);
+        WriteInt32(region, 4, 1);
+        tail.CopyTo(region, 17);
+        return region;
+    }
+
     private static readonly byte[] IdString = [0x97, 0x4A, 0x42, 0x32, 0x0D, 0x0A, 0x1A, 0x0A];
 
     private static readonly byte[] PageCountOne = [0x00, 0x00, 0x00, 0x01];
@@ -1944,7 +1968,7 @@ public sealed class Jbig2ImageTests
     [
         BuildSegment(0, type: 0, pageAssociation: 0, [0xA1, 0xA2, 0xA3, 0xA4]),
         BuildSegment(1, type: 48, pageAssociation: 1, BuildPageInfoSegmentData(width, height)),
-        BuildSegment(2, type: 38, pageAssociation: 1, [0xB1, 0xB2, 0xB3, 0xB4, 0xB5, 0xB6]),
+        BuildSegment(2, type: 38, pageAssociation: 1, RegionWithTail([0xB1, 0xB2, 0xB3, 0xB4, 0xB5, 0xB6])),
         BuildSegment(3, type: 49, pageAssociation: 1, []),
         BuildSegment(4, type: 51, pageAssociation: 0, []),
     ];
@@ -2533,6 +2557,114 @@ public sealed class Jbig2ImageTests
         Assert.Contains(expectedMessage, randomAccess.Message, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// The data-part fields T.88 puts at the start of a segment that the loader can read without decoding: the 17-byte
+    /// region information (7.4.1), the generic region flags and AT flags (7.4.6.2, 7.4.6.3) and the code table header
+    /// (B.2, B.2.1). Each row breaks one rule. "AT flags absent" is the shape of corpus file 1030_Cm and "tables of 5
+    /// bytes" that of 0023_Cm.
+    /// </summary>
+    [Theory]
+    [InlineData("region of 16 bytes", 38, 16, 0x00, "region segment information field alone takes 17")]
+    [InlineData("generic region of 17 bytes", 38, 17, 0x00, "too few")]
+    [InlineData("generic region reserved bit 5", 38, 22, 0x21, "reserved bits 5-7")]
+    [InlineData("generic region reserved bit 7", 39, 22, 0x81, "reserved bits 5-7")]
+    [InlineData("MMR with template 1", 38, 22, 0x03, "sets GBTEMPLATE to 1")]
+    [InlineData("MMR with template 3", 36, 22, 0x07, "sets GBTEMPLATE to 3")]
+    [InlineData("AT flags absent", 39, 23, 0x00, "AT flags take 8 bytes")]
+    [InlineData("template 0 AT flags one byte short", 38, 25, 0x00, "AT flags take 8 bytes")]
+    [InlineData("template 1 AT flags one byte", 38, 19, 0x02, "AT flags take 2 bytes")]
+    [InlineData("extended template AT flags of 8 bytes", 38, 26, 0x10, "AT flags take 32 bytes")]
+    [InlineData("tables of 5 bytes", 53, 5, 0x00, "tables segment")]
+    [InlineData("tables of 8 bytes", 53, 8, 0x00, "tables segment")]
+    [InlineData("tables with reserved bit 7", 53, 9, 0x80, "bit 7")]
+    public void Load_AnnexDFile_SegmentDataTooShortOrReservedBitSet_IsRefused(
+        string shape, int type, int dataLength, int flags, string expectedMessage)
+    {
+        // The first byte of a tables segment is its code table flags; for a region, byte 17 is the generic region flags.
+        var data = new byte[dataLength];
+        if (type == 53) data[0] = (byte)flags;
+        else if (dataLength > 17) data[17] = (byte)flags;
+        var page = type == 53 ? 0 : 1;
+        byte[][] segments =
+        [
+            BuildSegment(0, 48, 1, BuildPageInfoSegmentData(8, 1)),
+            BuildSegment(1, type, page, data),
+            BuildSegment(2, 49, 1, []),
+        ];
+
+        var sequential = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments)));
+        var randomAccess = Assert.Throws<InvalidDataException>(
+            () => Jbig2ImageLoader.Load(RandomAccess(0x00, PageCountOne, [.. segments, BuildSegment(9, 51, 0, [])])));
+
+        Assert.True(sequential.Message.Contains(expectedMessage, StringComparison.Ordinal), $"{shape}: {sequential.Message}");
+        Assert.True(randomAccess.Message.Contains(expectedMessage, StringComparison.Ordinal), $"{shape}: {randomAccess.Message}");
+        // The same segments without the Annex D header are 2.3.3's: it passes the data through unread.
+        Assert.Equal(8, Jbig2ImageLoader.Load(Embedded(segments)).Width);
+        Assert.Equal(8, Jbig2ImageLoader.Load([.. IdString, .. Embedded(segments)]).Width);
+    }
+
+    /// <summary>The same fields with the data meeting each rule load, so the rows above fail for their one rule.</summary>
+    [Theory]
+    [InlineData(38, 18 + 4, 0x01)]    // MMR
+    [InlineData(39, 18 + 8, 0x00)]    // template 0, 8 AT bytes
+    [InlineData(36, 18 + 2, 0x02)]    // template 1, 2 AT bytes
+    [InlineData(38, 18 + 2, 0x04)]    // template 2
+    [InlineData(38, 18 + 2, 0x06)]    // template 3
+    [InlineData(38, 18 + 32, 0x10)]   // template 0 with EXTTEMPLATE, 32 AT bytes
+    [InlineData(38, 18 + 8, 0x08)]    // TPGDON
+    [InlineData(53, 9, 0x7F)]         // a tables segment with its 9 header bytes
+    public void Load_AnnexDFile_SegmentDataMeetingTheFieldRules_Loads(int type, int dataLength, int flags)
+    {
+        var data = new byte[dataLength];
+        if (type == 53) data[0] = (byte)flags;
+        else data[17] = (byte)flags;
+        byte[][] segments =
+        [
+            BuildSegment(0, 48, 1, BuildPageInfoSegmentData(8, 1)),
+            BuildSegment(1, type, type == 53 ? 0 : 1, data),
+            BuildSegment(2, 49, 1, []),
+        ];
+
+        Assert.Equal(8, Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments)).Width);
+        Assert.Equal(8, Jbig2ImageLoader.Load(RandomAccess(0x00, PageCountOne, [.. segments, BuildSegment(9, 51, 0, [])])).Width);
+    }
+
+    /// <summary>
+    /// Corpus file 1356_Cm: a flip made the page 36100 rows tall over two 16x4 regions. T.88 7.4.8.2 puts no limit
+    /// on the height, so the file complies and loads, and the page height is the one embedded.
+    /// </summary>
+    [Fact]
+    public void Load_AnnexDFile_PageTallerThanItsRegions_Loads()
+    {
+        byte[] region = [0, 0, 0, 16, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01, 0xF0, 0x01, 0x00, 0x10];
+        byte[][] segments =
+        [
+            BuildSegment(255, 48, 1, BuildPageInfoSegmentData(16, 36100)),
+            BuildSegment(256, 38, 1, region),
+            BuildSegment(257, 38, 1, region),
+            BuildSegment(258, 49, 1, []),
+        ];
+
+        var img = Jbig2ImageLoader.Load(Sequential(0x03, null, segments));
+
+        Assert.Equal(16, img.Width);
+        Assert.Equal(36100, img.Height);
+    }
+
+    /// <summary>
+    /// Corpus file 1030_Cm: a flip set the page X resolution to 0xF6000000. 7.4.8.3 allows any resolution, so the
+    /// file complies and loads.
+    /// </summary>
+    [Fact]
+    public void Load_AnnexDFile_WithAnyPageResolution_Loads()
+    {
+        var pageInfo = BuildPageInfoSegmentData(8, 1);
+        pageInfo[8] = 0xF6;
+        byte[][] segments = [BuildSegment(0, 48, 1, pageInfo), BuildSegment(1, 38, 1, MmrRegionData()), BuildSegment(2, 49, 1, [])];
+
+        Assert.Equal(8, Jbig2ImageLoader.Load(Sequential(0x03, null, segments)).Width);
+    }
+
     /// <summary>The same segments with all of the rules met load, so the rows above fail for their one rule.</summary>
     [Fact]
     public void Load_AnnexDFile_WithIncreasingNumbersAndOneEndOfPage_Loads()
@@ -2706,7 +2838,7 @@ public sealed class Jbig2ImageTests
         byte[][] segments =
         [
             RawSegment(0, 48, true, [0x00], [], pageAssociation: 1, BuildPageInfoSegmentData(77, 55)),
-            RawSegment(1, 38, true, [0x00], [], pageAssociation: 1, [0xB1, 0xB2, 0xB3]),
+            RawSegment(1, 38, true, [0x00], [], pageAssociation: 1, RegionWithTail([0xB1, 0xB2, 0xB3])),
             RawSegment(2, 49, true, [0x00], [], pageAssociation: 1, []),
             RawSegment(3, 51, true, [0x00], [], pageAssociation: 0, []),
         ];
@@ -2761,8 +2893,8 @@ public sealed class Jbig2ImageTests
         byte[][] segments =
         [
             BuildSegment(0, 48, 1, BuildPageInfoSegmentData(64, 48)),
-            RawSegment(40, 6, false, LongFormCount(count), referred, pageAssociation: 1, [0xC1, 0xC2]),
-            BuildSegment(41, 38, 1, [0xB1, 0xB2, 0xB3]),
+            RawSegment(40, 6, false, LongFormCount(count), referred, pageAssociation: 1, RegionInformationWithTail([0xC1, 0xC2])),
+            BuildSegment(41, 38, 1, RegionWithTail([0xB1, 0xB2, 0xB3])),
             BuildSegment(42, 49, 1, []),
         ];
 
@@ -2803,8 +2935,8 @@ public sealed class Jbig2ImageTests
         byte[][] segments =
         [
             BuildSegment(0, 48, 1, BuildPageInfoSegmentData(64, 48)),
-            RawSegment(segmentNumber, 6, false, [0x20], entry, pageAssociation: 1, [0xC1, 0xC2]),
-            BuildSegment(segmentNumber + 1, 38, 1, [0xB1, 0xB2, 0xB3]),
+            RawSegment(segmentNumber, 6, false, [0x20], entry, pageAssociation: 1, RegionInformationWithTail([0xC1, 0xC2])),
+            BuildSegment(segmentNumber + 1, 38, 1, RegionWithTail([0xB1, 0xB2, 0xB3])),
             BuildSegment(segmentNumber + 2, 49, 1, []),
         ];
 
