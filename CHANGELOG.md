@@ -120,6 +120,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`PdfReader.Open` with `AllowReconstruction = true` no longer allocates hundreds of megabytes on a
+  short run of `[` (#610).** The reconstruction walk resumes one byte after a failed construct (two bytes
+  after a failed `<<`, and just after `obj` for a failed `N G obj` header), so a run of `[` starts a
+  fresh parse at every byte, and each parse failed by an exception raised at nesting depth 257 and
+  unwound through every level. On v2.3.3 that cost about 72 KB per start and the
+  1 MiB work budget, which counts bytes advanced rather than bytes allocated, allowed about 4,000
+  starts: 293 MB for a 4 KiB run, about 304 MB for runs from 8 KiB to 64 KiB, and 609 MB at 256 KiB
+  (measured on net10.0, Release, one `Open` call after a warm-up call). The same files now allocate
+  592 KB, 591 KB and 1.18 MB. Allocation per failed start was already proportional to the bytes the
+  walk advanced; what changed is the constant, from about 280 bytes allocated per byte advanced (293
+  MB over the 1 MiB budget) to about 0.56 for a run of `[`. The
+  walk now parses in a scan mode that recognises a construct without building anything (no integer,
+  name or container) and reports a malformed one by return value, at the same position and with the
+  same charge; only a span it accepts is parsed again, once, by the ordinary parser. The shapes that
+  carry a leaf at every nesting level improve the most: `[1[1...` at 4 KiB went from 192 MB to 297 KB
+  and at 256 KiB from 414 MB to 592 KB. Which files open, what they open to, and which refuse
+  (including the "could not scan the file within its cost budget" refusal) are unchanged. Runs of
+  `<<` still cost about 72 bytes per input byte, the objects each failed start constructs, down from
+  about 416. Reconstruction's last-resort catalog search had the same cost: it parsed every
+  object-stream member, so a 117 KB file whose members all point at a run of `[` allocated 1.2 GB on
+  v2.3.3 and now allocates 4.5 MB, and 4,000 members pointing at one 4,000-element array (35 KB)
+  allocated 1.16 GB and now allocate 1.09 MB. The search keeps only a dictionary whose own `/Type`
+  is `/Catalog`, so it now decides that from the member's top-level keys without building any
+  nested value, and builds only a member that is one. A member that is not a dictionary, is
+  malformed, or is a dictionary of another type is no longer built, and each distinct member
+  offset is looked at once. A dictionary that nests a 50,000-element array at each of 255 levels
+  (1,323 bytes of FlateDecode data, one member per level) allocated 989.6 MB on v2.3.3, because
+  every member was built in full, and now allocates 509 KB. A run of 255 array openers around the
+  same array (102 KB, uncompressed) went from 987.6 MB to 243 KB. Which files open, and
+  what they open to, are unchanged. `AllowReconstruction` and `ReconstructionBudgetMultiplier` now
+  document that the budget bounds bytes advanced, not allocation, and `AllowReconstruction`
+  documents which exception a failed reconstruction throws by what the scan found: encryption
+  evidence it cannot carry gives `UnsupportedPdfFeatureException`, and every other failure,
+  including the budget running out while it verifies an encrypted file's cross-reference streams,
+  gives `InvalidDataException`.
 - **`ExternalToolTests.TryRun_CapturesOutputLargerThanTheOsPipeBuffer` no longer times out on a
   loaded machine (test-only change).** Its child was a 20,000-iteration shell echo loop, which hit
   the 30 s limit several times on a loaded Windows machine while passing alone. The child now copies
