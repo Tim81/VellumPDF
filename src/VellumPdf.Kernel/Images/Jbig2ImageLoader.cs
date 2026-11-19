@@ -23,10 +23,17 @@ namespace VellumPdf.Images;
 /// <para><b>One page:</b> a PDF image is one page, so only the first page of a multi-page file is
 /// embedded (#570). The first page is the one named by the page association of the first
 /// page-information segment (type 48). Its segments are kept, with the segments that belong to no
-/// page (page association 0), and the segments of every other page are dropped, in
-/// <see cref="ImageDecodeMode.Passthrough"/> and <see cref="ImageDecodeMode.DecodeToRaster"/> alike.
-/// The width and height are the first page's. The page count in a file header is not checked
-/// against the pages the file holds.</para>
+/// page (page association 0), and the segments of every other page are dropped. The width and height
+/// are the first page's. The page count in a file header is not checked against the pages the file
+/// holds.</para>
+///
+/// <para><see cref="ImageDecodeMode.DecodeToRaster"/> still decodes the regions of the other pages,
+/// as 2.3.3 did, and discards the result, so a later page with a region this loader cannot decode, or
+/// whose data length is unknown, refuses the file there as it did on 2.3.3. 2.3.3 composited every
+/// page into one raster, and this loader keeps the first page. <b>Do not pass</b> a multi-page file
+/// without the T.88 Annex D header: the other pages are lost without a word, and 3.0 refuses it.
+/// A multi-page file with that header, which 2.3.3 could not read, is refused with
+/// <see cref="InvalidDataException"/> naming the page count, in both modes.</para>
 ///
 /// <para><b>Unknown segment length:</b> a segment whose data length field is 0xFFFFFFFF (ITU-T T.88
 /// 7.2.7) is not embedded. This loader does not scan the data for the end marker that clause
@@ -111,8 +118,9 @@ public static class Jbig2ImageLoader
     /// the flags byte and page count of T.88 Annex D, which 2.3.3 could not read, is the exception:
     /// a segment of unknown length on any page, or of no page, is refused with
     /// <see cref="InvalidDataException"/> naming it, because this loader does not scan for the end
-    /// marker. Only the first page of a multi-page file is embedded, unless the first page-information segment has
-    /// page association 0, which keeps every segment.
+    /// marker. Only the first page of a multi-page file is embedded, unless the first page-information
+    /// segment has page association 0, which keeps every segment. A file with the Annex D header and
+    /// more than one page is refused, naming the page count.
     /// </exception>
     public static PdfImageXObject Load(byte[] jbig2)
         => Load(jbig2, ImageLoadOptions.Default);
@@ -147,7 +155,9 @@ public static class Jbig2ImageLoader
     /// <see cref="ImageDecodeMode.Passthrough"/> such a segment is dropped, as on 2.3.3; see
     /// <see cref="Load(byte[])"/>. Only the first page of a multi-page file is embedded, under either
     /// mode, unless the first page-information segment has page association 0, which keeps every
-    /// segment.
+    /// segment. Under <see cref="ImageDecodeMode.DecodeToRaster"/> the other pages are decoded and
+    /// discarded, so what 2.3.3 refused on them is refused, and a file with the Annex D header and more
+    /// than one page is refused in both modes, naming the page count.
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// Thrown under <see cref="ImageDecodeMode.DecodeToRaster"/> when the file contains
@@ -221,17 +231,29 @@ public static class Jbig2ImageLoader
         // where such a segment ends, so dropping it would embed an image with no region or, for a
         // segment of any other type, accept a file that is not compliant. It stays refused, on every
         // page and in both modes. A file without that header, which 2.3.3 read, keeps its output.
+        // The same goes for a page count above one; see below.
         if (dataStart > FileHeader.Length)
         {
             foreach (var seg in segments)
                 if (!seg.HasKnownLength)
                     throw UnknownLength(seg);
+
+            // The same file with more than one page is refused too, in both modes. A PDF image is one
+            // page, and embedding the first and dropping the rest is not correct handling of a file
+            // that 2.3.3 refused outright.
+            var pages = segments.Count(seg => seg.Type == SegmentTypePageInformation);
+            if (pages > 1)
+            {
+                throw new InvalidDataException(
+                    $"JBIG2: the file holds {pages} pages, and a PDF image holds one. " +
+                    "A file with the T.88 Annex D header and more than one page is not embedded.");
+            }
         }
 
         ImageLimits.ValidateDimensions("JBIG2", width, height);
 
         return options.DecodeMode == ImageDecodeMode.DecodeToRaster
-            ? DecodeToRaster(segments, data, width, height, firstPage)
+            ? DecodeToRaster(segments, data, width, height, firstPage, decodeOtherPages: dataStart <= FileHeader.Length)
             : BuildPassthrough(segments, data, width, height, firstPage);
     }
 
@@ -616,12 +638,12 @@ public static class Jbig2ImageLoader
 
     private static PdfImageXObject DecodeToRaster(
         List<SegmentHeader> segments, ReadOnlySpan<byte> data,
-        int width, int height, int firstPage)
+        int width, int height, int firstPage, bool decodeOtherPages)
     {
         // Reject segment types that require symbol/pattern/refinement decoding.
         foreach (var seg in segments)
         {
-            if (!BelongsToPage(seg, firstPage)) continue;
+            if (!decodeOtherPages && !BelongsToPage(seg, firstPage)) continue;
 
             switch (seg.Type)
             {
@@ -649,10 +671,12 @@ public static class Jbig2ImageLoader
             throw new InvalidDataException("JBIG2: decoded raster would exceed the safety limit.");
 
         var raster = new byte[(int)outputSize];
+        byte[]? discarded = null;
 
         foreach (var seg in segments)
         {
-            if (!BelongsToPage(seg, firstPage)) continue;
+            var onPage = BelongsToPage(seg, firstPage);
+            if (!onPage && !decodeOtherPages) continue;
 
             if (seg.Type != SegmentTypeImmediateGenericRegion
                 && seg.Type != SegmentTypeImmediateLosslessGenericRegion
@@ -669,7 +693,13 @@ public static class Jbig2ImageLoader
                 throw new InvalidDataException(
                     $"JBIG2: generic region segment {seg.Number} data too short.");
 
-            DecodeGenericRegion(seg, data, raster, width, height, rowBytes);
+            // The regions of the other pages are decoded, as 2.3.3 decoded them, so that what it refused
+            // in them is refused here, and the result is thrown away.
+            byte[] target = raster;
+            if (!onPage)
+                target = discarded ??= new byte[raster.Length];
+
+            DecodeGenericRegion(seg, data, target, width, height, rowBytes);
         }
 
         return new PdfImageXObject(

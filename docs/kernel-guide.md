@@ -357,7 +357,10 @@ for JPEG strips, which pass through either way.
 source is split into a page stream and a `/JBIG2Globals` stream with its
 end-of-file and end-of-page segments dropped, only the first page of a
 multi-page file is embedded (a first page-information segment with page
-association 0 names no page, and keeps every segment). A segment of unknown
+association 0 names no page, and keeps every segment). `DecodeToRaster`
+decodes the later pages and discards them, so a later page it cannot decode
+refuses the file as on 2.3.3, and an Annex D file with more than one page
+throws `InvalidDataException` in both modes. A segment of unknown
 length (0xFFFFFFFF) is dropped under passthrough, as 2.3.3 did, and that can
 leave the image blank; `DecodeToRaster` refuses it on a generic region with
 `InvalidDataException`. A file with the flags byte and page count of T.88

@@ -2139,12 +2139,12 @@ public sealed class Jbig2ImageTests
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public void Load_TwoPages_EmbedsOnlyTheFirstPage(bool sequential)
+    public void Load_TwoPages_EmbedsOnlyTheFirstPage(bool withIdString)
     {
+        // Forms 1c61fa6 could read. The Annex D forms with two pages are refused; see below.
         var pages = TwoPages();
-        var file = sequential
-            ? Sequential(0x01, [0x00, 0x00, 0x00, 0x02], pages)
-            : RandomAccess(0x00, [0x00, 0x00, 0x00, 0x02], pages);
+        var body0 = pages.SelectMany(x => x).ToArray();
+        var file = withIdString ? [.. IdString, .. body0] : body0;
 
         var img = Jbig2ImageLoader.Load(file);
         var body = ExtractStreamBody(Serialize(img));
@@ -2184,7 +2184,7 @@ public sealed class Jbig2ImageTests
             BuildSegment(4, type: 51, pageAssociation: 0, []),
         ];
 
-        var img = Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, pages));
+        var img = Jbig2ImageLoader.Load(Embedded(pages));
 
         Assert.Equal(99, img.Width);
         Assert.Equal(77, img.Height);
@@ -2192,11 +2192,12 @@ public sealed class Jbig2ImageTests
     }
 
     /// <summary>
-    /// DecodeToRaster draws only the first page too: the second page holds a symbol dictionary and an
-    /// arithmetic-coded region, either of which would throw NotSupportedException if it were read.
+    /// DecodeToRaster decodes the later pages too, as 1c61fa6 did, so a second page that holds a symbol
+    /// dictionary and an arithmetic-coded region refuses the file with NotSupportedException there and
+    /// here. Only the first page is kept when every page decodes.
     /// </summary>
     [Fact]
-    public void Load_TwoPagesDecodeToRaster_UsesOnlyTheFirstPage()
+    public void Load_TwoPagesDecodeToRaster_RefusesWhatALaterPageCannotDecode_asOn1c61fa6()
     {
         // Page 1: an 8x1 MMR region, one black run of 8 (horizontal mode, white run 0, black run 8).
         var mmr = PackMsbFirst((0b001, 3), (0b00110101, 8), (0b000101, 6));
@@ -2223,11 +2224,7 @@ public sealed class Jbig2ImageTests
         ];
         var opts = new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster };
 
-        var img = Jbig2ImageLoader.Load(Sequential(0x01, [0x00, 0x00, 0x00, 0x02], pages), opts);
-
-        Assert.Equal(8, img.Width);
-        Assert.Equal(1, img.Height);
-        Assert.Equal([0xFF], CcittImageTests.DecompressFlateStream(img.BuildStream()));
+        Assert.Throws<NotSupportedException>(() => Jbig2ImageLoader.Load(Embedded(pages), opts));
     }
 
     /// <summary>
@@ -2398,7 +2395,7 @@ public sealed class Jbig2ImageTests
     }
 
     [Fact]
-    public void Load_DecodeToRaster_UnknownDataLengthOnAnotherPage_IsNotAFault()
+    public void Load_DecodeToRaster_UnknownDataLengthOnAnotherPage_IsRefused_asOn1c61fa6()
     {
         var lastRegion = BuildSegment(3, type: 38, pageAssociation: 2, [0xC1, 0xC2]);
         for (var i = 7; i < 11; i++) lastRegion[i] = 0xFF;
@@ -2411,9 +2408,60 @@ public sealed class Jbig2ImageTests
         ];
         var opts = new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster };
 
-        var img = Jbig2ImageLoader.Load(Embedded(segments), opts);
+        // 1c61fa6 decoded every page's regions, so the unknown length on page 2 threw there; the other
+        // pages are decoded here too, into a raster that is thrown away, so it still does.
+        var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(Embedded(segments), opts));
 
-        Assert.Equal([0xFF], CcittImageTests.DecompressFlateStream(img.BuildStream()));
+        Assert.Contains("segment 3 (type 38)", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A region 1c61fa6 could not decode on a later page, here an arithmetic-coded generic region on
+    /// page 2, refuses the file in DecodeToRaster as it did there. The first page alone is embedded.
+    /// </summary>
+    [Fact]
+    public void Load_DecodeToRaster_ArithmeticRegionOnAnotherPage_IsRefused_asOn1c61fa6()
+    {
+        var arithmetic = MmrRegionData();
+        arithmetic[17] = 0x00;                                      // not MMR
+        byte[][] segments =
+        [
+            BuildSegment(0, type: 48, pageAssociation: 1, BuildPageInfoSegmentData(8, 1)),
+            BuildSegment(1, type: 38, pageAssociation: 1, MmrRegionData()),
+            BuildSegment(2, type: 48, pageAssociation: 2, BuildPageInfoSegmentData(8, 1)),
+            BuildSegment(3, type: 38, pageAssociation: 2, arithmetic),
+        ];
+        var opts = new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster };
+
+        Assert.ThrowsAny<Exception>(() => Jbig2ImageLoader.Load(Embedded(segments), opts));
+        Assert.Equal(8, Jbig2ImageLoader.Load(Embedded(segments)).Width);   // Passthrough: page 1, as ruled
+    }
+
+    /// <summary>
+    /// 1c61fa6 refused every file with the Annex D header, so one with more than one page is refused
+    /// here, in both modes, naming the page count: embedding the first page and dropping the rest is
+    /// not correct handling of it.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Load_AnnexDFileWithTwoPages_IsRefusedNamingThePageCount(bool raster)
+    {
+        byte[][] segments =
+        [
+            BuildSegment(0, type: 48, pageAssociation: 1, BuildPageInfoSegmentData(8, 1)),
+            BuildSegment(1, type: 38, pageAssociation: 1, MmrRegionData()),
+            BuildSegment(2, type: 48, pageAssociation: 2, BuildPageInfoSegmentData(8, 1)),
+            BuildSegment(3, type: 38, pageAssociation: 2, MmrRegionData()),
+        ];
+        var opts = new ImageLoadOptions { DecodeMode = raster ? ImageDecodeMode.DecodeToRaster : ImageDecodeMode.Passthrough };
+
+        var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments), opts));
+        Assert.Contains("2 pages", ex.Message, StringComparison.Ordinal);
+
+        // The same segments with one page load.
+        var single = Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments.Take(2).ToArray()), opts);
+        Assert.Equal(8, single.Width);
     }
 
     /// <summary>The end-of-page segment is framing and stays exempt under DecodeToRaster too.</summary>

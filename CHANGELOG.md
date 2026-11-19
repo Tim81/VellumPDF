@@ -446,6 +446,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   chosen. **Attention**: a segment whose length is unknown ends what this loader reads of a
   sequential or embedded stream, so what follows one is not seen. A file with more than one page
   used to embed every page's segments into one image stream and now embeds only the first page.
+  `DecodeToRaster` composited every page into one raster on 2.3.3 and now keeps the first page, a
+  deliberate output change. It still decodes the later pages and discards them, so what 2.3.3
+  refused on a later page (a region it cannot decode, an unknown length) is refused. A multi-page
+  file with the Annex D header, which 2.3.3 could not read, is refused in both modes with
+  `InvalidDataException` naming the page count. Do not pass a multi-page file; 3.0 refuses it.
   When no reading of the data is accepted, the `InvalidDataException` says which readings were
   tried (a sequential or random-access file, the ID string followed directly by segments, or the
   embedded form) after the last reading's message, so a broken older file is not described only
