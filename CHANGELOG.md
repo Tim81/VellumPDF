@@ -105,26 +105,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   or band height of `NaN` or infinity is accepted by the member that holds it. The layout then runs
   as it did on 2.3.3, and the save throws only where it would write the value: `PdfCanvas`, and
   `PdfReal` for a bookmark or a link rectangle, throw `ArgumentException` ("PDF does not support
-  NaN or Infinity as a real number"). Everything else depends on the content. The file may save
-  with the content drawn, wrapped after every word, placed off the page or not drawn at all, or the
-  layout may refuse it as too tall or after 50,000 page continuations, exactly as on 2.3.3. A
-  `NaN` right margin on a left-aligned paragraph wraps it after every word and saves, and on
-  centred or right-aligned text writes `NaN` and is refused; an infinite top margin on a table saves
-  a page with the table not drawn; a negative-infinity top document margin with a paragraph is
-  refused after 50,000 page continuations. A saved file that lost content this way is kept, because
-  2.3.3 saved it (#484); the XML doc of each member says not to pass such a value and that 3.0
-  refuses it, and the diagnostics channel (#607) will report it. A few checks do run in the
-  layout and name the element, each for input that made 2.3.3 throw or write an invalid token in
-  every shape measured. Each runs inside the element's own `Layout` call, in document order, so an
-  earlier element that is too tall for the page is reported first: the font size and colour of a
-  paragraph run, heading or list item, the font size of a table cell, a line separator's width,
-  margins and colour, a table cell's padding, a table's border width when it is not finite, an
-  image extent that is zero or not finite, and a `ColSpan` below one. Three are made where the
-  value is written, because 2.3.3 saved a valid file when the element was laid out and not drawn:
-  a table cell's text colour, a negative table border width, and a running band's font size.
-  Those raise `InvalidOperationException`, which a caller that catches `ArgumentException` around
-  a save does not see. `KeepRenderingTests`, `NonFiniteGeometryTests` and
-  `NullDeferralTests` pin what 2.3.3 did, row by row.
+  NaN or Infinity as a real number"). The canvas's refusal while an element is
+  drawn is raised once the layout has finished, so a refusal that 2.3.3 made later in the document
+  is reported instead, with its exception type: a paragraph after a table, under a `NaN` document
+  top margin, is still refused as too tall. Everything else depends on the content. The file may
+  save with the content drawn, wrapped after every word, placed off the page or not drawn at all, or
+  the layout may refuse it as too tall or after 50,000 page continuations, exactly as on 2.3.3. A
+  `NaN` right margin on a left-aligned paragraph wraps it after every word and saves, and on centred
+  or right-aligned text writes `NaN` and is refused; an infinite top margin on a table saves a page
+  with the table not drawn; a negative-infinity top document margin with a paragraph is refused
+  after 50,000 page continuations. A saved file that lost content this way is kept, because 2.3.3
+  saved it (#484); the XML doc of each member says not to pass such a value and that 3.0 refuses it,
+  and the diagnostics channel (#607) will report it. A few checks do run in the layout and name the
+  element, each for input that made 2.3.3 throw or write an invalid token in every shape measured.
+  Each runs inside the element's own `Layout` call, in document order, so an earlier element that is
+  too tall for the page is reported first: the font size and colour of a paragraph run, heading or
+  list item, the font size of a table cell, a line separator's width, margins and colour, a table
+  cell's padding, a table's border width when it is not finite, an image extent that is zero or not
+  finite, and a `ColSpan` below one. Three are made where the value is written, because 2.3.3 saved
+  a valid file when the element was laid out and not drawn: a table cell's text colour, a negative
+  table border width, and a running band's font size. Those raise `InvalidOperationException`, which
+  a caller that catches `ArgumentException` around a save does not see. `KeepRenderingTests`,
+  `NonFiniteGeometryTests` and `NullDeferralTests` pin what 2.3.3 did, row by row.
 
 - **A non-finite colour channel no longer reaches the content stream (#509).** A `ColorRgb` with a
   `NaN` or infinite channel on a text style, a running band, a table cell's style or background, a

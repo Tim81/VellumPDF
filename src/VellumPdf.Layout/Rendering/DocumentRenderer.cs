@@ -539,8 +539,8 @@ public sealed class DocumentRenderer
     // The first refusal of a non-finite operand that the canvas raised while an element was drawn.
     // 2.3.3 had no such guard: it wrote the token and went on to lay out the elements after it, so an
     // element that was too tall, or any other refusal later in the document, surfaced as its own
-    // exception type (R2). The draw therefore stops at the first refusal and the layout carries on
-    // without drawing, and the refusal is raised when the layout has finished and nothing else threw.
+    // exception type. The first refusal is therefore kept and the layout carries on, and it is
+    // raised when the layout has finished and nothing else threw.
     private ArgumentException? _deferredCanvasRefusal;
 
     private static bool IsCanvasNonFiniteRefusal(ArgumentException ex) =>
@@ -549,8 +549,6 @@ public sealed class DocumentRenderer
 
     private void DrawRenderer(IRenderer renderer)
     {
-        if (_deferredCanvasRefusal is not null) return;
-
         var pageBounds = new LayoutBox(0, 0, _pageSize.Width, _pageSize.Height);
         var ctx = new DrawContext(_currentCanvas!, pageBounds, _currentRendererCtx!, _pdf, _currentPage!);
         try
@@ -559,7 +557,7 @@ public sealed class DocumentRenderer
         }
         catch (ArgumentException ex) when (IsCanvasNonFiniteRefusal(ex))
         {
-            _deferredCanvasRefusal = ex;
+            _deferredCanvasRefusal ??= ex;
         }
     }
 
