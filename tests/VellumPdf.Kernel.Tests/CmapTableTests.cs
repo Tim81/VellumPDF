@@ -552,6 +552,23 @@ public sealed class CmapTableTests
         Assert.True(ParseLoaded(BuildCmap((0, 4, Sub12()), (3, 10, Sub12()))).OnlyFormat12);   // the same records in order
     }
 
+    /// <summary>The order is platform, then encoding, then language: two Macintosh records that differ only by language must be in language order.</summary>
+    [Fact]
+    public void CmapFormat12Only_recordsOutOfLanguageOrder_areRefused()
+    {
+        static byte[] Mac(ushort language)
+        {
+            var mac = new byte[8];
+            WriteU16Be(mac, 0, 2);   // a format this class does not read, so the font stays format-12-only
+            WriteU16Be(mac, 2, 8);
+            WriteU16Be(mac, 4, language);
+            return mac;
+        }
+
+        AssertSoleFormat12Refused(BuildCmap((1, 0, Mac(20)), (1, 0, Mac(19)), (3, 10, Sub12())), "encoding records are not sorted");
+        Assert.True(ParseLoaded(BuildCmap((1, 0, Mac(19)), (1, 0, Mac(20)), (3, 10, Sub12()))).OnlyFormat12);
+    }
+
     [Fact]
     public void CmapFormat12Only_nonZeroLanguageOffMacintosh_isRefused()
     {

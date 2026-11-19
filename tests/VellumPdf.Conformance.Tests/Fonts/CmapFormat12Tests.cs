@@ -430,6 +430,73 @@ public sealed class CmapFormat12Tests
     }
 
     /// <summary>
+    /// A component record can carry word arguments and a scale, an x and y scale or a 2 by 2
+    /// transform (glyf chapter: 2, 4 or 8 bytes after the arguments), and the walk must step over
+    /// each to reach the next record. DejaVu Sans has no composite whose first record carries a
+    /// transform, so the longest composite's data is rewritten as two records: the first with the
+    /// given flags, naming glyph 1, and the second naming numGlyphs (refused) or numGlyphs - 1
+    /// (accepted).
+    /// </summary>
+    [Theory]
+    [InlineData(0x0000, 2)]    // byte arguments, no transform
+    [InlineData(0x0001, 4)]    // ARG_1_AND_2_ARE_WORDS
+    [InlineData(0x0008, 4)]    // WE_HAVE_A_SCALE: 2 bytes after 2 bytes of arguments
+    [InlineData(0x0040, 6)]    // WE_HAVE_AN_X_AND_Y_SCALE: 4 bytes
+    [InlineData(0x0080, 10)]   // WE_HAVE_A_TWO_BY_TWO: 8 bytes
+    [InlineData(0x0009, 6)]    // words and a scale
+    [InlineData(0x0081, 12)]   // words and a 2 by 2
+    public void FormatTwelveOnlyFont_componentAfterATransformedRecord_isFound(int flags, int firstRecordBodyBytes)
+    {
+        var full = LoadAsset("DejaVuSans.ttf");
+        var only12 = WithCmap(full, Subtables(full).Where(s => s.Platform == 3 && s.Format == 12));
+        var numGlyphs = U16(only12, FindTable(only12, "maxp").Offset + 4);
+
+        var atEnd = WithTwoRecords(only12, flags, firstRecordBodyBytes, numGlyphs);
+        var lastGlyph = WithTwoRecords(only12, flags, firstRecordBodyBytes, numGlyphs - 1);
+
+        var ex = Assert.Throws<NotSupportedException>(() => new TrueTypeFontEmbedder(atEnd, "F1"));
+        Assert.Contains($"names component glyph {numGlyphs}, but the font has {numGlyphs} glyph(s)", ex.Message);
+        _ = new TrueTypeFontEmbedder(lastGlyph, "F1");
+    }
+
+    /// <summary>
+    /// The longest composite glyph rewritten as two component records: the first has
+    /// <paramref name="flags"/> (plus MORE_COMPONENTS and ARGS_ARE_XY_VALUES) and
+    /// <paramref name="firstRecordBodyBytes"/> bytes of arguments and transform after the glyph
+    /// index, naming glyph 1; the second has byte arguments and names <paramref name="second"/>.
+    /// </summary>
+    private static byte[] WithTwoRecords(byte[] font, int flags, int firstRecordBodyBytes, int second)
+    {
+        var copy = (byte[])font.Clone();
+        var head = FindTable(copy, "head").Offset;
+        var loca = FindTable(copy, "loca").Offset;
+        var glyf = FindTable(copy, "glyf").Offset;
+        var numGlyphs = U16(copy, FindTable(copy, "maxp").Offset + 4);
+        var shortOffsets = U16(copy, head + 50) == 0;
+        int Offset(int g) => shortOffsets ? U16(copy, loca + 2 * g) * 2 : (int)U32(copy, loca + 4 * g);
+
+        var best = -1;
+        var bestLength = 0;
+        for (var g = 0; g < numGlyphs; g++)
+        {
+            var length = Offset(g + 1) - Offset(g);
+            if (length >= 10 && (short)U16(copy, glyf + Offset(g)) < 0 && length > bestLength)
+                (best, bestLength) = (g, length);
+        }
+
+        var needed = 10 + 4 + firstRecordBodyBytes + 6;
+        Assert.True(bestLength >= needed, $"the longest composite is {bestLength} bytes, {needed} are needed");
+
+        var at = glyf + Offset(best) + 10;
+        Put16(copy, at, flags | 0x0020 | 0x0002);   // MORE_COMPONENTS, ARGS_ARE_XY_VALUES
+        Put16(copy, at + 2, 1);
+        at += 4 + firstRecordBodyBytes;
+        Put16(copy, at, 0x0002);
+        Put16(copy, at + 2, second);
+        return copy;
+    }
+
+    /// <summary>
     /// The font with the glyphIndex of component <paramref name="componentIndex"/> of composite glyph
     /// <paramref name="gid"/> rewritten to <paramref name="component"/>. Written from the glyf
     /// chapter's record layout (flags, glyphIndex, two arguments of 2 or 4 bytes, an optional
