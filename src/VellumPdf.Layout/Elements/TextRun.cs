@@ -10,13 +10,9 @@ namespace VellumPdf.Layout.Elements;
 /// </summary>
 /// <remarks>
 /// <b>A null text is refused.</b> The constructor throws <see cref="ArgumentNullException"/> naming
-/// <c>Text</c> (#547). Before that it was stored, and the save threw
-/// <see cref="NullReferenceException"/> when it laid out the paragraph holding the run.
+/// <c>Text</c>.
 /// <para>A null style is stored, and refused where the paragraph is laid out, with
-/// <see cref="ArgumentNullException"/> naming <c>Style</c>. That is where 2.3.3 dereferenced it, and
-/// it did so only for a run that yields a word: a non-white-space character, U+00A0 included, so the
-/// run is refused for the text <c>Hello</c> or <c>a\nb</c> and saves for empty text, white space, a
-/// tab or line breaks alone. The save throws <see cref="NullReferenceException"/> there on 2.3.3.
+/// <see cref="ArgumentNullException"/> naming <c>Style</c>. It is refused only for a run that yields a word, a non-white-space character, U+00A0 included; it saves for empty text, white space, a tab or line breaks alone.
 /// <b>Do not pass a null style.</b> 3.0 refuses it from the constructor, whatever the text, and the
 /// diagnostics channel (#607) will report the saved cases before then.</para>
 /// Refusals on size, leading, font and text colour are on <see cref="TextStyle"/> and are raised

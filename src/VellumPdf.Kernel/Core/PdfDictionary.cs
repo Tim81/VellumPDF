@@ -35,9 +35,7 @@ public sealed class PdfDictionary : PdfObject
     /// <remarks>
     /// A null <paramref name="key"/> is refused here. A null <paramref name="value"/> is stored and
     /// refused where <see cref="WriteTo"/> reaches it, with <see cref="ArgumentNullException"/> naming
-    /// the key (#523). It used to throw <see cref="NullReferenceException"/> there, and it still does
-    /// not throw earlier: setting the key again replaces the null, and a dictionary that is never
-    /// written never fails. <b>Do not pass</b> a null value: 3.0 refuses it here. A dictionary entry
+    /// the key. Setting the key again replaces the null, and a dictionary that is never written never fails. <b>Do not pass</b> a null value: 3.0 refuses it here. A dictionary entry
     /// whose value is absent is expressed by not setting the key, or by <see cref="PdfNull"/> where a
     /// PDF null is meant.
     /// </remarks>
@@ -56,8 +54,8 @@ public sealed class PdfDictionary : PdfObject
         // pins.
         ArgumentNullException.ThrowIfNull(key);
 
-        // A null value is stored and refused in WriteTo, where 2.3.3 failed: a sequence that sets the
-        // key again before the dictionary is written saved a valid file there.
+        // A null value is stored and refused in WriteTo: a sequence that sets the key again before
+        // the dictionary is written saves a valid file.
         if (_index is not null)
         {
             if (_index.TryGetValue(key, out var i))
@@ -175,7 +173,7 @@ public sealed class PdfDictionary : PdfObject
     /// <summary>Writes the serialised PDF representation to <paramref name="writer"/>.</summary>
     /// <remarks>
     /// A dictionary that holds itself, directly or through other arrays and dictionaries, is refused
-    /// (#521). Writing it would recurse until the stack overflowed, which cannot be caught. A value
+    ///. Writing it would recurse until the stack overflowed, which cannot be caught. A value
     /// that is an indirect reference is written as a reference and not followed, so a cycle through
     /// indirect objects, which PDF allows, is not affected. The same object placed in two entries,
     /// side by side, is not a cycle.

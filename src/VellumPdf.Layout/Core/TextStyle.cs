@@ -197,7 +197,7 @@ public sealed class TextStyle
     /// <exception cref="InvalidOperationException">
     /// Raised from a save, when a channel is <c>NaN</c> or infinite on a paragraph run, heading, list
     /// item or table cell that draws text. The message names the element and the channel. A finite
-    /// channel outside 0 to 1 is not refused (#509).
+    /// channel outside 0 to 1 is not refused.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from a save, when a channel is <c>NaN</c> or infinite on a running band that is drawn.
@@ -235,9 +235,9 @@ public sealed class TextStyle
     /// 14289-1, 7.18.5 (#550). A link whose rectangle lies wholly outside the page's crop box is
     /// exempt: clause 7.18.1 lifts the requirements of clause 7.18 for it. On a justified line in a
     /// standard-14 text face the link's rectangle starts where the linked text is drawn and covers
-    /// its drawn width, spaces stretched included (#555). On a justified line in an embedded font
+    /// its drawn width, spaces stretched included. On a justified line in an embedded font
     /// the rectangle is still sized and placed as if the line were not stretched, so the linked
-    /// words can run past it and can lie away from it (#551).
+    /// words can run past it and can lie away from it.
     /// <para>Do not pass a value that is not an absolute URI. A later major version will refuse
     /// one.</para>
     /// </remarks>

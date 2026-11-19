@@ -32,7 +32,7 @@ public sealed class LineSeparator
     /// Zoom is a separate matter: the line stays one device pixel while everything around it
     /// shrinks, so it reads as proportionally heavier the further the page is scaled down. If you
     /// want no rule, leave the element out.</para>
-    /// <para>A negative width is refused as well (#557). ISO 32000-2, 8.4.3.2 says a line width
+    /// <para>A negative width is refused as well. ISO 32000-2, 8.4.3.2 says a line width
     /// "shall be a non-negative number", and a negative one was written as <c>-3 w</c>, an operand
     /// the standard forbids. <see cref="Document.Save(System.IO.Stream)"/> throws
     /// <see cref="InvalidOperationException"/>, naming the separator, the width and the clause.
@@ -57,12 +57,11 @@ public sealed class LineSeparator
     /// <summary>Stroke color of the rule.</summary>
     /// <remarks>
     /// Stored as given. Channels are not clamped. A channel that is not finite is refused when the
-    /// separator is laid out, naming the separator, because a separator is always drawn and 2.3.3
-    /// wrote <c>NaN 0 0 RG</c> for it; see <see cref="Document"/> and <see cref="ColorRgb"/>.
+    /// separator is laid out, naming the separator, because a separator is always drawn; see <see cref="Document"/> and <see cref="ColorRgb"/>.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from a save, when a channel is <c>NaN</c> or infinite. The message names the line separator and the
-    /// channel. A finite channel outside 0 to 1 is not refused (#509).
+    /// channel. A finite channel outside 0 to 1 is not refused.
     /// </exception>
     public ColorRgb Color { get; init; } = ColorRgb.Black;
 

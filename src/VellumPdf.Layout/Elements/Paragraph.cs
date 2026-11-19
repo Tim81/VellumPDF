@@ -12,7 +12,7 @@ namespace VellumPdf.Layout.Elements;
 /// <remarks>
 /// Refusals on size, leading, font and text colour are on <see cref="TextStyle"/> and are raised
 /// from the save. Null text and a null run are refused where they are passed, with
-/// <see cref="ArgumentNullException"/>; see the constructors and <see cref="Add"/> (#547).
+/// <see cref="ArgumentNullException"/>; see the constructors and <see cref="Add"/>.
 /// <para>Text is laid out word by word. A carriage return, a line feed, or a carriage return
 /// followed by a line feed starts a new line. One before the first word leaves an empty first line;
 /// at the end of the text the first trailing break is dropped and each further one adds an empty
@@ -24,7 +24,7 @@ namespace VellumPdf.Layout.Elements;
 /// the run <c>Bold</c> followed by the run <c>er</c> is drawn as <c>Bold er</c>.</para>
 /// <para>A line cannot wrap at a no-break space, so
 /// <c>Pourquoi ?</c> written with U+202F before the question mark does not wrap between the two
-/// (#562). These are the three white-space characters that UAX #14 puts in its GL class, and the
+///. These are the three white-space characters that UAX #14 puts in its GL class, and the
 /// only ones; a tab, an en or em space and a thin space still break. In a Standard-14 font
 /// U+202F and U+2007 are drawn as U+00A0, which WinAnsiEncoding has and they do not, so they show
 /// as a space of that width and report no <see cref="Document.TextEncodingWarnings"/> entry. In an
@@ -59,18 +59,16 @@ public sealed class Paragraph
     /// <summary>All inline text runs in this paragraph (always at least one entry).</summary>
     /// <remarks>
     /// Never empty: a zero-run input becomes one empty run. No entry is null; a null run is refused
-    /// by the constructor (#547).
+    /// by the constructor.
     /// </remarks>
     public IReadOnlyList<TextRun> Runs => _runs;
 
     /// <summary>Margins around the paragraph.</summary>
     /// <remarks>
-    /// A non-finite edge is not checked before the layout; see <see cref="Document"/>. The layout runs
-    /// as it did on 2.3.3, and the save throws <see cref="ArgumentException"/> from
-    /// <see cref="VellumPdf.Canvas.PdfCanvas"/> only where it would write the value (#519).
-    /// <para>For example, a <c>NaN</c> right edge wraps a left-aligned paragraph after every word,
-    /// and on centred or right-aligned text writes <c>NaN</c> and is refused. <b>Do not pass</b> a
-    /// non-finite edge: 3.0 refuses it.</para>
+    /// A non-finite edge is not checked before the layout; see <see cref="Document"/>. The save throws <see cref="ArgumentException"/> from
+    /// <see cref="VellumPdf.Canvas.PdfCanvas"/> only where it would write the value.
+    /// <b>Do not pass</b> a
+    /// non-finite edge: 3.0 refuses it.
     /// <para><b>Attention</b>: no other edge is checked. Each finite edge is taken off the area this
     /// element is given, and the element is laid out in whatever box is left, even when that box is
     /// empty or inverted. A negative edge, or edges wider than the area, can therefore make the save throw an exception
@@ -126,8 +124,7 @@ public sealed class Paragraph
     /// <summary>Creates a single-run paragraph with uniform style.</summary>
     /// <remarks>
     /// A null <paramref name="style"/> becomes <see cref="TextStyle.Default"/>. A null
-    /// <paramref name="text"/> is refused here (#547). It used to be stored, and the save threw
-    /// <see cref="NullReferenceException"/> when it laid out the paragraph. An empty string is not
+    /// <paramref name="text"/> is refused here. An empty string is not
     /// null and is accepted.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
@@ -159,9 +156,7 @@ public sealed class Paragraph
     /// <summary>Creates a mixed-style paragraph from a sequence of runs.</summary>
     /// <remarks>
     /// An empty sequence becomes one empty run at <see cref="TextStyle.Default"/>. A null sequence
-    /// throws <see cref="ArgumentNullException"/>, and so does a null run inside it (#547). A null
-    /// run used to be kept, which made <see cref="Text"/> and <see cref="Style"/> throw and the
-    /// save throw <see cref="NullReferenceException"/>.
+    /// throws <see cref="ArgumentNullException"/>, and so does a null run inside it.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="runs"/> is <see langword="null"/> or contains <see langword="null"/>; the
@@ -201,8 +196,7 @@ public sealed class Paragraph
     /// <summary>Appends a run with the given text and optional style. Returns this paragraph.</summary>
     /// <remarks>
     /// A null <paramref name="style"/> uses the first run's style, <see cref="Style"/>. A null
-    /// <paramref name="text"/> is refused here (#547). It used to be stored, and the save threw
-    /// <see cref="NullReferenceException"/> when it laid out the paragraph.
+    /// <paramref name="text"/> is refused here.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="text"/> is <see langword="null"/>.

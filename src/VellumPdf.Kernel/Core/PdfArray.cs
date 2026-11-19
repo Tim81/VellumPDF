@@ -12,7 +12,7 @@ public sealed class PdfArray : PdfObject
     public PdfArray() => _items = [];
     /// <summary>Creates an array populated with <paramref name="items"/>.</summary>
     /// <remarks>
-    /// A null element is refused, as it is by <see cref="Add"/> (#523). The message names its index.
+    /// A null element is refused, as it is by <see cref="Add"/>. The message names its index.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="items"/> is <see langword="null"/> or contains <see langword="null"/>.
@@ -35,14 +35,12 @@ public sealed class PdfArray : PdfObject
 
     /// <summary>Appends <paramref name="obj"/> to the array and returns this array.</summary>
     /// <remarks>
-    /// A null <paramref name="obj"/> is refused (#523). It used to be added, <see cref="Count"/>
-    /// reported it, and <c>WriteTo</c> threw <see cref="NullReferenceException"/> later, far from
-    /// this call. A PDF null is <see cref="PdfNull"/>.
+    /// A null <paramref name="obj"/> is refused. A PDF null is <see cref="PdfNull"/>.
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="obj"/> is <see langword="null"/>.</exception>
     public PdfArray Add(PdfObject obj)
     {
-        // A null item reported Count 1 and failed later, in WriteTo, far from this call (#523).
+        // Refused here, not in WriteTo, so the failure lands on the call that passed the null.
         ArgumentNullException.ThrowIfNull(obj);
         _items.Add(obj);
         return this;
@@ -59,7 +57,7 @@ public sealed class PdfArray : PdfObject
     /// <summary>Writes the serialised PDF representation to <paramref name="writer"/>.</summary>
     /// <remarks>
     /// An array that holds itself, directly or through other arrays and dictionaries, is refused
-    /// (#521). Writing it would recurse until the stack overflowed, which cannot be caught. A
+    ///. Writing it would recurse until the stack overflowed, which cannot be caught. A
     /// member that is an indirect reference is written as a reference and not followed, so a cycle
     /// through indirect objects, which PDF allows, is not affected. The same object placed twice,
     /// side by side, is not a cycle.

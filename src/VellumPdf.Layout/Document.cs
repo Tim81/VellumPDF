@@ -28,31 +28,30 @@ namespace VellumPdf.Layout;
 /// throws. A save before any element is added throws; see the constructor.
 /// <para><b>A non-finite number is mostly not checked before the layout.</b> An inset, indent, colour
 /// channel or band height that is <c>NaN</c> or infinite is accepted by the member that holds it. The
-/// layout then runs as it did on 2.3.3, and the save throws only where it would write the value.
-/// <see cref="PdfCanvas"/>, and the <c>PdfReal</c> constructor for a bookmark or a link rectangle,
-/// throw <see cref="ArgumentException"/> saying PDF does not support NaN or Infinity as a real
-/// number. Everything else depends on the content: the kind of element, its alignment, whether
-/// anything is drawn, the running bands. The file may save with the content drawn, wrapped after
-/// every word, placed off the page or not drawn at all, or the layout may refuse it as too tall or
-/// after 50,000 page continuations, exactly as it did on 2.3.3. A <c>NaN</c> right margin on a
-/// left-aligned paragraph wraps it after every word and saves; on centred or right-aligned text it
-/// writes <c>NaN</c> and the canvas refuses it. An infinite top margin on a table saves a page with
-/// the table not drawn.</para>
-/// <para>A few checks do run in the layout and name the element, each for input that made 2.3.3
-/// throw or write an invalid token in every shape measured. Each runs inside the element's own
+/// save then throws only where the layout or the canvas writes the value: <see cref="PdfCanvas"/>, and
+/// the <c>PdfReal</c> constructor for a bookmark or a link rectangle, throw
+/// <see cref="ArgumentException"/> saying PDF does not support NaN or Infinity as a real number.
+/// Otherwise the result depends on the content: the file can save with the content drawn, wrapped
+/// after every word, placed off the page or not drawn at all, or the layout can refuse it as too tall
+/// or after 50,000 page continuations.</para>
+/// <para><b>Where the layout checks run.</b> A few inputs are refused in the layout and name the
+/// element, because each yields an invalid file or an exception. Each runs inside the element's own
 /// <c>Layout</c> call, in document order, so an earlier element that is too tall for the page is
 /// reported first and a later element's own refusal is not reached: the font size and colour of a
 /// paragraph run, heading or list item, the font size of a table cell, a line separator's width,
 /// margins and colour, a table cell's padding, a table's border width when it is not finite, an
-/// image extent that is zero or not finite, and a <c>ColSpan</c> below one. Three are made where
-/// the value is written, because 2.3.3 saved a valid file when the element was laid out and not
-/// drawn: a table cell's text colour, a negative table border width, and a running band's font
-/// size, which is checked when the band's text is drawn. A caller that catches
-/// <see cref="ArgumentException"/> around a save does not see any of these, which are
-/// <see cref="InvalidOperationException"/>.</para>
+/// image extent that is zero or not finite, and a <c>ColSpan</c> below one. Three run where the value is
+/// written, because a table or band that is laid out and not drawn writes no invalid token: a table
+/// cell's text colour, a negative table border width, and a running band's font size. These are
+/// <see cref="InvalidOperationException"/>, so a <c>catch</c> of <see cref="ArgumentException"/>
+/// around a save does not see them.</para>
+/// <para>A call with two or more defects is refused, but which defect's exception is reported can
+/// differ between releases. A save precondition (null destination, disposed document, an unwritable
+/// stream, an option conflict) is reported before a layout defect, and an already cancelled token
+/// before either.</para>
 /// <para><b>Do not pass</b> a non-finite number to any of these members. The saved cases are not
 /// reported yet, because there is no diagnostics channel (#607), and 3.0 refuses every non-finite
-/// value at the member that holds it. Each member that takes one gives an example and refers here.</para>
+/// value at the member that holds it.</para>
 /// </remarks>
 public sealed class Document : IDisposable
 {
@@ -120,19 +119,8 @@ public sealed class Document : IDisposable
     /// <para>Do not pass null, a rectangle not at the origin, or a size so large that positions
     /// overflow; a page 1e308 wide makes an auto-width table write <c>NaN</c>. A later major
     /// version will refuse all three.</para>
-    /// <para>Setting this after adding elements applies to what you have already
-    /// added. The layout runs at save, so the size in force then is the size the whole document
-    /// is laid out at, not only the part added after you set it.</para>
-    /// <para>On a document no save has been attempted on, that holds byte for byte. Resizing before
-    /// <see cref="Save(System.IO.Stream)"/> produces a file matching one built at the new size from
-    /// the start, except the random <c>/ID</c> and the XMP <c>CreateDate</c>/<c>ModifyDate</c>
-    /// timestamps, which carry the time each build ran. Measured by resizing a document from 600 by
-    /// 800 to 200 by 120 at <b>10pt</b> margins and normalising those three fields: the bytes match
-    /// a build at 200 by 120 throughout, and every <c>/MediaBox</c> carries the new size. The
-    /// default 72pt insets on <see cref="Margins"/> do not fit a 120pt page, so that combination is
-    /// refused before either file is built. A save that already threw breaks that equivalence,
-    /// along with the rest of the document's state; see
-    /// <see cref="Save(System.IO.Stream)"/>.</para>
+    /// <para>The size in force when the save runs applies to the whole document, including elements
+    /// added before it was set.</para>
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// Raised from a save rather than from this property, when the width or height is zero,
@@ -249,28 +237,22 @@ public sealed class Document : IDisposable
     /// <summary>Page margins applied to the content area. Defaults to 72 points (1 inch) on all sides.</summary>
     /// <remarks>
     /// Margins that meet or exceed the page are refused. Saving throws
-    /// <see cref="ArgumentException"/> and names the axis and both figures. The content box would
-    /// otherwise have no positive size, and no element could be placed in it.
+    /// <see cref="ArgumentException"/> and names the axis and both figures, because the content box
+    /// would otherwise have no positive size.
     /// <para>The header and footer count toward this. Their heights come off the same box, so
     /// margins that fit on their own can still leave nothing once you set a running band.</para>
     /// <para><b>Attention</b>: a finite negative inset is not refused. That edge of the content
     /// area then lies at the inset plus the height of any header or footer there, measured inward
     /// from the page's edge, so a negative total places it beyond the page, where a reader clips
-    /// the content. A header or footer on that edge starts at the inset, so part or all of it lies
-    /// beyond the page. On a one-paragraph document with every inset at -72, the file is written
-    /// with no invalid token in it, so nothing downstream reports the loss either. Negative insets
-    /// large enough in magnitude to overflow the position arithmetic, such as -1e308 on the left or
-    /// right edge alone, are finite and so pass the check below. What they do depends on the elements laid
-    /// out.</para>
+    /// the content, and the file contains no invalid token. A finite inset large enough in magnitude to
+    /// overflow the position arithmetic, such as -1e308 on the left or right edge alone, also passes the
+    /// check above; what it does depends on the elements laid out.</para>
     /// <para>An inset that is not a finite number is not checked before the layout; see
     /// <see cref="Document"/>. A positive-infinity inset meets the page and is refused with
-    /// <see cref="ArgumentException"/> (parameter name <c>margins</c>), as the sum check did before
-    /// #502. <c>NaN</c> and negative infinity pass that check, as they did on 2.3.3, and then give
-    /// whatever the layout gives: a NaN bottom margin saves a table, and a negative-infinity top margin
-    /// saves a page with the table not drawn, while a NaN left margin with a table reaches the canvas
-    /// and is refused. A negative-infinity top margin with a paragraph is refused after 50,000 page
-    /// continuations, as on 2.3.3. <b>Do not pass</b> a non-finite inset: 3.0 refuses it.</para>
-    /// <para><b>Attention</b>: do not pass a finite negative inset. 3.0 will reject it.</para>
+    /// <see cref="ArgumentException"/> (parameter name <c>margins</c>). <c>NaN</c> and negative infinity
+    /// pass that check and then give whatever the layout gives: a table can save, drawn or not, a
+    /// paragraph is refused after 50,000 page continuations, and a position the canvas writes is
+    /// refused. <b>Do not pass</b> a non-finite or a finite negative inset: 3.0 refuses both.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from a save rather than from this property, when the margins on either axis meet or
@@ -297,7 +279,7 @@ public sealed class Document : IDisposable
     /// </summary>
     /// <remarks>
     /// A band whose <see cref="RunningBand.Template"/> is null is refused when the band is drawn,
-    /// not when it is assigned (#531). The band's height and style carry
+    /// not when it is assigned. The band's height and style carry
     /// refusals of their own; see <see cref="RunningBand.Height"/>,
     /// <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/> and
     /// <see cref="TextStyle.FontRef"/>.
@@ -330,7 +312,7 @@ public sealed class Document : IDisposable
     /// </summary>
     /// <remarks>
     /// A band whose <see cref="RunningBand.Template"/> is null is refused when the band is drawn,
-    /// not when it is assigned (#531). The band's height and style carry
+    /// not when it is assigned. The band's height and style carry
     /// refusals of their own; see <see cref="RunningBand.Height"/>,
     /// <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/> and
     /// <see cref="TextStyle.FontRef"/>.
@@ -391,11 +373,9 @@ public sealed class Document : IDisposable
 
     /// <summary>Sets a header band with optional style and alignment. Returns this document for chaining.</summary>
     /// <remarks>
-    /// A null <paramref name="template"/> is refused here (#531). The parameter is non-nullable, but
+    /// A null <paramref name="template"/> is refused here. The parameter is non-nullable, but
     /// that is a compiler diagnostic rather than a check, and <c>null!</c> silences it. This method
-    /// builds a <see cref="RunningBand"/>, whose constructor throws, so the failure now lands on
-    /// this call. It used to surface as a <see cref="NullReferenceException"/> from the save, a
-    /// call you did not make. Pass an empty string for a band that draws no text. A null band
+    /// builds a <see cref="RunningBand"/>, whose constructor throws, so the failure lands on this call. Pass an empty string for a band that draws no text. A null band
     /// assigned to <see cref="Header"/> directly is a different case and means no band.
     /// <para>The band's height and <paramref name="style"/> carry refusals of their own; see
     /// <see cref="RunningBand.Height"/>, <see cref="TextStyle.FontSize"/>,
@@ -433,11 +413,9 @@ public sealed class Document : IDisposable
 
     /// <summary>Sets a footer band with optional style and alignment. Returns this document for chaining.</summary>
     /// <remarks>
-    /// A null <paramref name="template"/> is refused here (#531). The parameter is non-nullable, but
+    /// A null <paramref name="template"/> is refused here. The parameter is non-nullable, but
     /// that is a compiler diagnostic rather than a check, and <c>null!</c> silences it. This method
-    /// builds a <see cref="RunningBand"/>, whose constructor throws, so the failure now lands on
-    /// this call. It used to surface as a <see cref="NullReferenceException"/> from the save, a
-    /// call you did not make. Pass an empty string for a band that draws no text. A null band
+    /// builds a <see cref="RunningBand"/>, whose constructor throws, so the failure lands on this call. Pass an empty string for a band that draws no text. A null band
     /// assigned to <see cref="Footer"/> directly is a different case and means no band.
     /// <para>The band's height and <paramref name="style"/> carry refusals of their own; see
     /// <see cref="RunningBand.Height"/>, <see cref="TextStyle.FontSize"/>,
@@ -650,8 +628,7 @@ public sealed class Document : IDisposable
 
     /// <summary>Adds a horizontal line separator to the document content. Returns this document for chaining.</summary>
     /// <remarks>
-    /// A null separator is refused here (#547); it used to be stored, and the save threw
-    /// <see cref="NullReferenceException"/> when it laid the element out.
+    /// A null separator is refused here.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="separator"/> is <see langword="null"/>.
@@ -675,8 +652,7 @@ public sealed class Document : IDisposable
 
     /// <summary>Adds a table to the document content. Returns this document for chaining.</summary>
     /// <remarks>
-    /// A null table is refused here (#547); it used to be stored, and the save threw
-    /// <see cref="NullReferenceException"/> when it laid the element out. A table's own
+    /// A null table is refused here. A table's own
     /// refusals are on <see cref="TableElement"/>, among them a table that needs more than 50,000
     /// page continuations.
     /// </remarks>
@@ -708,8 +684,7 @@ public sealed class Document : IDisposable
 
     /// <summary>Adds an image to the document content. Returns this document for chaining.</summary>
     /// <remarks>
-    /// A null image is refused here (#547); it used to be stored, and the save threw
-    /// <see cref="NullReferenceException"/> when it laid the element out.
+    /// A null image is refused here.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="image"/> is <see langword="null"/>.
@@ -734,8 +709,7 @@ public sealed class Document : IDisposable
 
     /// <summary>Adds a pie chart to the document content. Returns this document for chaining.</summary>
     /// <remarks>
-    /// A null chart is refused here (#547); it used to be stored, and the save threw
-    /// <see cref="NullReferenceException"/> when it laid the element out.
+    /// A null chart is refused here.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="chart"/> is <see langword="null"/>.
@@ -758,8 +732,7 @@ public sealed class Document : IDisposable
 
     /// <summary>Adds a bulleted or numbered list to the document content. Returns this document for chaining.</summary>
     /// <remarks>
-    /// A null list is refused here (#547); it used to be stored, and the save threw
-    /// <see cref="NullReferenceException"/> when it laid the element out.
+    /// A null list is refused here.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="list"/> is <see langword="null"/>.
@@ -826,8 +799,7 @@ public sealed class Document : IDisposable
     /// <remarks>
     /// With <paramref name="style"/> null, the paragraph takes the style from the most recent
     /// <see cref="SetDefaultFont"/> call made before this one.
-    /// A null <paramref name="text"/> is refused here (#547); it used to be stored, and the save
-    /// threw <see cref="NullReferenceException"/> when it laid the paragraph out.
+    /// A null <paramref name="text"/> is refused here.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="text"/> is <see langword="null"/>.
@@ -1005,14 +977,10 @@ public sealed class Document : IDisposable
 
     // ── Output ───────────────────────────────────────────────────────────────
 
-    // Set when a save threw after its layout had started, whether the layout itself threw or a step
-    // after it did: serialising, a cancellation, preparing a signature. What the layout produced
-    // cannot be taken back, in two forms. Pages it appended to the underlying document would be
-    // laid out again on top of the first attempt's and written as a file with several times the
-    // pages the caller asked for, silently (#530). The line breaks each renderer measured stay
-    // cached at the first width, so a retry after a PageSize or margin change reuses them. A save
-    // that failed before its layout started, such as one refused for its page geometry, leaves the
-    // document exactly as it was and stays usable.
+    // Set when a save threw after its layout had started. The pages the layout appended and the
+    // line breaks each renderer cached at the first width cannot be taken back, so a second layout
+    // would stack pages on the first or reuse stale wraps (#530). A save that failed before its
+    // layout started leaves the document as it was and stays usable.
     private bool _layoutFailed;
 
     private void ThrowIfLayoutFailed()
@@ -1029,15 +997,14 @@ public sealed class Document : IDisposable
     /// <summary>
     /// Everything a save can refuse that does not depend on the layout, run before the layout starts.
     /// Layout appends pages, so a refusal that came after it left them behind and the next save
-    /// appended a second layout (#530). Running these first keeps each refusal recoverable: correct
+    /// appended a second layout. Running these first keeps each refusal recoverable: correct
     /// the cause and save again.
     /// </summary>
     private void BeginSave(Stream destination, bool asynchronous = false)
     {
-        // A document with nothing in it lays out no pages, so its pages are already known: none. It
-        // gets the order a save always had: the page geometry and the bands (the layout of nothing
-        // checks them and adds nothing), then "no pages", before the destination and the options,
-        // instead of whichever of those comes first (#530).
+        // An empty document lays out no pages, so its page count is already known. The page
+        // geometry and the bands are still checked, then "no pages", before the destination and
+        // the options.
         if (_content.Count == 0) CreateRenderer().RunLayout();
         _pdf.EnsureCanSave(destination, pagesKnown: _content.Count == 0, asynchronous: asynchronous);
         ThrowIfLayoutFailed();
@@ -1046,11 +1013,8 @@ public sealed class Document : IDisposable
 
     // ── Saving to a path ─────────────────────────────────────────────────────
 
-    // A save to a path opens the target before it lays anything out and writes it last (#508). It
-    // used to open the target with FileMode.Create first, which truncates it, and then lay the
-    // document out, so a layout failure left a zero-byte file in place of whatever the path held: a
-    // caller regenerating a report over its previous output lost the previous report to one bad
-    // value, with an exception about layout that gave no hint the file was gone.
+    // A save to a path opens the target before it lays anything out and writes it last (#508), so a
+    // layout failure does not leave a truncated file in place of whatever the path held.
     //
     // Opening early surfaces a lock or a permission error while the Document is still usable, since
     // nothing has been laid out. The open does not truncate (FileMode.OpenOrCreate), the document is
@@ -1063,7 +1027,7 @@ public sealed class Document : IDisposable
     /// Makes the path absolute and nothing more. The file is opened exactly as given, so the operating
     /// system follows any symbolic link, a chain or a link into another directory included, and
     /// resolves a relative link target against the link's own directory, as the open always did
-    /// (#508). Whether the path is a directory, read-only or otherwise unwritable is also for the
+    ///. Whether the path is a directory, read-only or otherwise unwritable is also for the
     /// operating system to say when the file is opened: .NET reads a Unix file's read-only attribute
     /// from its mode bits alone, which ignores root, supplementary groups and access-control lists,
     /// so a check made here refused files the open would have written. Following links here by
@@ -1109,15 +1073,13 @@ public sealed class Document : IDisposable
     }
 
     /// <summary>
-    /// Windows refuses to open an existing Hidden or System file with <c>FileMode.Create</c>, which
-    /// is what 2.3.3 used, and throws <see cref="UnauthorizedAccessException"/>; <c>OpenOrCreate</c>
-    /// opens it. The refusal is kept. Through a symbolic link the open judges the final target, not the
-    /// link, so the attributes read here are the final target's: measured on Windows with a normal link
-    /// to a hidden file (refused on 2.3.3) and a hidden link to a normal file (saved on 2.3.3). A chain
-    /// that <see cref="FileSystemInfo.ResolveLinkTarget"/> cannot resolve is judged by the link's own
-    /// attributes. It is
-    /// Windows only: on a Unix file system <see cref="FileAttributes.Hidden"/> follows from a leading
-    /// dot in the name, and a dot file is an ordinary target there.
+    /// Windows refuses an existing Hidden or System file, as opening it with <c>FileMode.Create</c>
+    /// does; <c>OpenOrCreate</c> would open it, so the refusal is made here and
+    /// <see cref="UnauthorizedAccessException"/> is thrown. Through a symbolic link the open judges the
+    /// final target, not the link, so the attributes read here are the target's. A chain that
+    /// <see cref="FileSystemInfo.ResolveLinkTarget"/> cannot resolve is judged by the link's own
+    /// attributes. Windows only: on a Unix file system <see cref="FileAttributes.Hidden"/> follows from a
+    /// leading dot in the name, and a dot file is an ordinary target there.
     /// </summary>
     private static void RefuseHiddenOrSystemFile(string target)
     {
@@ -1211,7 +1173,7 @@ public sealed class Document : IDisposable
     /// <summary>
     /// Runs the layout and then the step that follows it, and treats a failure of either the same
     /// way: any exception, a cancellation included, once the layout had added pages leaves the
-    /// document unable to be saved again (#530).
+    /// document unable to be saved again.
     /// </summary>
     private void LayOutThen(DocumentRenderer renderer, Action afterLayout)
     {
@@ -1276,7 +1238,7 @@ public sealed class Document : IDisposable
     /// new one. It writes nothing to the stream, appended or otherwise.</para>
     /// <para>A failure once the save has started writing leaves what was written so far in
     /// <paramref name="destination"/>, which can be the PDF header alone.</para>
-    /// <para>What a save that threw leaves behind depends on where it threw (#530). A refusal that
+    /// <para>What a save that threw leaves behind depends on where it threw. A refusal that
     /// does not depend on the layout comes first, before anything is laid out: a null or unwritable
     /// <paramref name="destination"/>, a document already written, <see cref="UseObjectStreams"/>
     /// together with <see cref="Encrypt"/>, a PDF/A <see cref="Conformance"/> together with
@@ -1291,9 +1253,7 @@ public sealed class Document : IDisposable
     /// because the elements keep the line breaks they measured at the old page width and a retry
     /// after changing <see cref="PageSize"/> would reuse them. Every later save after one of these
     /// then throws <see cref="InvalidOperationException"/> telling you to create a new
-    /// <see cref="Document"/>. Before this, the retry laid everything out again on top of the first
-    /// attempt's pages and wrote a file with several times the pages you asked for, with no
-    /// exception.</para>
+    /// <see cref="Document"/>. </para>
     /// <para>A document with no pages throws as well. Add at least one element before you
     /// save.</para>
     /// </remarks>
@@ -1314,9 +1274,7 @@ public sealed class Document : IDisposable
     /// </exception>
     /// <exception cref="ObjectDisposedException">
     /// This <see cref="Document"/> was already disposed. It derives from
-    /// <see cref="InvalidOperationException"/>, so a catch written for the base type also catches
-    /// it; <see cref="Document"/> implements <see cref="IDisposable"/>, so this is ordinary misuse
-    /// rather than a case this API adds.
+    /// <see cref="InvalidOperationException"/>, so a catch written for the base type also catches it.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The document has already been written, or has no pages, or an element's input cannot be laid
@@ -1324,7 +1282,7 @@ public sealed class Document : IDisposable
     /// PDF/UA-1 when the settings leave out <see cref="PdfPermissions.Extract"/>; see
     /// <see cref="Conformance"/>. It is also raised when a font registered with
     /// <see cref="UseTrueTypeFont"/> lacks a table the save needs, and by every save after one whose
-    /// save threw once its layout had started (#530). For the element inputs, the boundary
+    /// save threw once its layout had started. For the element inputs, the boundary
     /// documentation on the property you set says which values reach this.
     /// </exception>
     /// <exception cref="ArgumentException">
@@ -1352,7 +1310,7 @@ public sealed class Document : IDisposable
     /// A null that a member still stores without a check: a null <see cref="PageSize"/>. A custom
     /// renderer that returns a null result, or a null renderer inside one, raises it too; see
     /// <see cref="IRenderer.Layout"/>. An element, text or item passed to an
-    /// <c>Add</c> overload is refused where it is passed instead (#523, #531, #547).
+    /// <c>Add</c> overload is refused where it is passed instead.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// A <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name is selected
@@ -1386,11 +1344,10 @@ public sealed class Document : IDisposable
     /// Everything on <see cref="Save(System.IO.Stream)"/> applies, and one thing more.
     /// <para>The file is opened for writing first, before anything is laid out, without emptying it,
     /// and the PDF is built in memory. Only when the whole PDF is ready is the file emptied and the
-    /// bytes copied in (#508). A lock or a permission error therefore surfaces while the document is
+    /// bytes copied in. A lock or a permission error therefore surfaces while the document is
     /// still usable, and a save that fails at layout or at building the PDF leaves
     /// whatever the path held exactly as it was, byte for byte, and creates nothing at a path that
-    /// did not exist. It used to open the path with truncation first, so a layout failure left a
-    /// zero-byte file in place of the previous report.</para>
+    /// did not exist.</para>
     /// <para>The existing file is rewritten in place, so it keeps its permissions, owner, hard links
     /// and extended attributes. The path is opened as given, so the operating system follows a
     /// symbolic link, a chain of them included, and the file at the end is rewritten while the link
@@ -1419,13 +1376,13 @@ public sealed class Document : IDisposable
     /// for the lock, <c>cp</c> or a text editor, can ignore.</para>
     /// <para><b>Attention</b>: the whole PDF is built in memory before any of it is written, so the
     /// finished PDF is held in memory once more, in chunks of 1 MiB, until it is copied to the file.
-    /// That is memory 2.3.3 did not use for this call, which wrote to the file as it went. There is no
+    /// There is no
     /// size limit beyond the memory available: the buffer is a list of chunks, not one array. To avoid
     /// the extra copy, open a <see cref="FileStream"/> yourself and pass it to
     /// <see cref="Save(System.IO.Stream)"/>, which writes to it as it goes. The failed-save guarantee
     /// above does not hold for that stream, which was truncated when you opened it.
     /// <see cref="SaveAsync(System.IO.Stream, System.Threading.CancellationToken)"/> builds the whole
-    /// PDF in a <see cref="MemoryStream"/> instead, whose capacity is about 2 GB, as it did on 2.3.3.</para>
+    /// PDF in a <see cref="MemoryStream"/> instead, whose capacity is about 2 GB.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="path"/> is <see langword="null"/>. A null that an element or a written Kernel
@@ -1474,7 +1431,7 @@ public sealed class Document : IDisposable
     /// A null that a member still stores without a check: a null <see cref="PageSize"/>. A custom
     /// renderer that returns a null result, or a null renderer inside one, raises it too; see
     /// <see cref="IRenderer.Layout"/>. An element, text or item passed to an
-    /// <c>Add</c> overload is refused where it is passed instead (#523, #531, #547).
+    /// <c>Add</c> overload is refused where it is passed instead.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// A <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name is selected
@@ -1558,7 +1515,7 @@ public sealed class Document : IDisposable
     /// <para>The PDF is built in memory before any of it is written to
     /// <paramref name="destination"/>, so a failure while it is built writes nothing to
     /// <paramref name="destination"/>.</para>
-    /// <para>What a save that threw leaves behind depends on where it threw (#530). A refusal that
+    /// <para>What a save that threw leaves behind depends on where it threw. A refusal that
     /// does not depend on the layout comes first, before anything is laid out: a null or unwritable
     /// <paramref name="destination"/>, a document already written, <see cref="UseObjectStreams"/>
     /// together with <see cref="Encrypt"/>, a PDF/A <see cref="Conformance"/> together with
@@ -1573,9 +1530,7 @@ public sealed class Document : IDisposable
     /// because the elements keep the line breaks they measured at the old page width and a retry
     /// after changing <see cref="PageSize"/> would reuse them. Every later save after one of these
     /// then throws <see cref="InvalidOperationException"/> telling you to create a new
-    /// <see cref="Document"/>. Before this, the retry laid everything out again on top of the first
-    /// attempt's pages and wrote a file with several times the pages you asked for, with no
-    /// exception.</para>
+    /// <see cref="Document"/>. </para>
     /// <para>A document with no pages throws as well. Add at least one element before you
     /// save.</para>
     /// </remarks>
@@ -1596,9 +1551,7 @@ public sealed class Document : IDisposable
     /// </exception>
     /// <exception cref="ObjectDisposedException">
     /// This <see cref="Document"/> was already disposed. It derives from
-    /// <see cref="InvalidOperationException"/>, so a catch written for the base type also catches
-    /// it; <see cref="Document"/> implements <see cref="IDisposable"/>, so this is ordinary misuse
-    /// rather than a case this API adds.
+    /// <see cref="InvalidOperationException"/>, so a catch written for the base type also catches it.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The document has already been written, or has no pages, or an element's input cannot be laid
@@ -1606,14 +1559,13 @@ public sealed class Document : IDisposable
     /// PDF/UA-1 when the settings leave out <see cref="PdfPermissions.Extract"/>; see
     /// <see cref="Conformance"/>. It is also raised when a font registered with
     /// <see cref="UseTrueTypeFont"/> lacks a table the save needs, and by every save after one whose
-    /// save threw once its layout had started (#530). For the element inputs, the boundary
+    /// save threw once its layout had started. For the element inputs, the boundary
     /// documentation on the property you set says which values reach this.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="destination"/> cannot be written to, which includes a stream that was already
     /// closed. That is refused before the layout runs and reports <c>destination</c>, so the
-    /// document is untouched; it used to be <see cref="NotSupportedException"/> or
-    /// <see cref="ObjectDisposedException"/> from the write. The margins, header and footer leave
+    /// document is untouched. The margins, header and footer leave
     /// the content area no positive size, or an element refuses its own input while being laid
     /// out. The boundary documentation on the individual
     /// properties says which inputs those are. A registered font with a value that makes a font
@@ -1633,7 +1585,7 @@ public sealed class Document : IDisposable
     /// A null that a member still stores without a check: a null <see cref="PageSize"/>. A custom
     /// renderer that returns a null result, or a null renderer inside one, raises it too; see
     /// <see cref="IRenderer.Layout"/>. An element, text or item passed to an
-    /// <c>Add</c> overload is refused where it is passed instead (#523, #531, #547).
+    /// <c>Add</c> overload is refused where it is passed instead.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// A <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name is selected
@@ -1669,8 +1621,7 @@ public sealed class Document : IDisposable
     public async Task SaveAsync(Stream destination, CancellationToken cancellationToken = default)
 #pragma warning restore RS0026
     {
-        // A token that is already cancelled wins over every other defect, as on 2.3.3, where the first
-        // thing the save did was hand it to Task.Run.
+        // A token that is already cancelled wins over every other defect.
         ChunkedBufferStream.ThrowIfCanceled(cancellationToken);
         BeginSave(destination, asynchronous: true);
         var renderer = CreateRenderer();
@@ -1698,7 +1649,7 @@ public sealed class Document : IDisposable
     /// because the PDF goes into a file rather than a caller's stream: the
     /// <see cref="OperationCanceledException"/> tag below lists them.
     /// <para>The file is opened first and emptied only once the PDF is built in memory, as on
-    /// <see cref="Save(string)"/> (#508). A save that fails at layout or at building the PDF, or that
+    /// <see cref="Save(string)"/>. A save that fails at layout or at building the PDF, or that
     /// is cancelled before the copy starts, therefore leaves whatever the path held exactly as it
     /// was, byte for byte, and creates nothing at a path that did not exist. Only a cancellation
     /// during the copy can leave the file truncated. Everything <see cref="Save(string)"/> says
@@ -1753,7 +1704,7 @@ public sealed class Document : IDisposable
     /// A null that a member still stores without a check: a null <see cref="PageSize"/>. A custom
     /// renderer that returns a null result, or a null renderer inside one, raises it too; see
     /// <see cref="IRenderer.Layout"/>. An element, text or item passed to an
-    /// <c>Add</c> overload is refused where it is passed instead (#523, #531, #547).
+    /// <c>Add</c> overload is refused where it is passed instead.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// A <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name is selected
@@ -1771,14 +1722,13 @@ public sealed class Document : IDisposable
     /// </exception>
     /// <exception cref="OperationCanceledException">
     /// The token is looked at four times, and a cancellation seen at any of them throws
-    /// <see cref="TaskCanceledException"/>, the type 2.3.3 threw: before the layout starts; once the
+    /// <see cref="TaskCanceledException"/>: before the layout starts; once the
     /// layout has finished, when the serialisation is queued; once the PDF is built, before the file is
     /// emptied; and in the copy into the file, before each chunk. A cancellation seen at one of the
     /// first three leaves the file that was there untouched; see the remarks. A failure that comes
     /// first, such as a refused page geometry or an exception from an element, is reported instead.
     /// While the PDF is being built the token is not looked at. The copy is the one point after the
-    /// file was emptied, so a cancellation there leaves it truncated or incomplete, as it did on
-    /// 2.3.3; one seen after the last chunk was written is not reported. A cancellation after the
+    /// file was emptied, so a cancellation there leaves it truncated or incomplete; one seen after the last chunk was written is not reported. A cancellation after the
     /// layout has run also means this <see cref="Document"/> cannot be saved again; see
     /// <see cref="SaveAsync(System.IO.Stream, System.Threading.CancellationToken)"/>.
     /// </exception>
@@ -1800,8 +1750,8 @@ public sealed class Document : IDisposable
         {
             try
             {
-                // After the open, which 2.3.3 did first and which reports a bad path or a lock, and before
-                // anything else, so an already cancelled token wins over every other defect as there.
+                // After the open, which reports a bad path or a lock, and before
+                // anything else, so an already cancelled token wins over every other defect.
                 ChunkedBufferStream.ThrowIfCanceled(cancellationToken);
                 BeginSave(fs);
                 renderer = CreateRenderer();
@@ -1817,8 +1767,7 @@ public sealed class Document : IDisposable
                     await Task.Run(() => _pdf.Save(buffer), cancellationToken).ConfigureAwait(false);
 
                     // The PDF is built and the file is not yet emptied: the last point where stopping
-                    // costs nothing. 2.3.3 looked at the token here too, in the copy, but after
-                    // FileMode.Create had emptied the file.
+                    // costs nothing.
                     ChunkedBufferStream.ThrowIfCanceled(cancellationToken);
                 }
                 catch

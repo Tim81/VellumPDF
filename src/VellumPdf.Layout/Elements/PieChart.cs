@@ -33,13 +33,12 @@ public readonly record struct PieSlice
     /// <remarks>
     /// Stored as given. Channels are not clamped. A channel that is not finite is refused where it is
     /// written; see <see cref="Document"/>. A slice whose <see cref="Value"/> is zero draws no wedge,
-    /// so a non-finite channel on it is not refused: that saved a valid file on 2.3.3 and still
-    /// does. <b>Do not pass</b> a non-finite channel on any slice: 3.0 refuses it.
+    /// so a non-finite channel on it is not refused. <b>Do not pass</b> a non-finite channel on any slice: 3.0 refuses it.
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from a save, when a channel is <c>NaN</c> or infinite and the slice is drawn. The message
     /// says PDF does not support NaN or Infinity as a real number. A finite channel outside 0 to 1 is
-    /// not refused (#509).
+    /// not refused.
     /// </exception>
     public ColorRgb Color { get; init; }
 
@@ -112,13 +111,11 @@ public sealed class PieChart
     /// If a zero slice should be visible in your chart, give it a small positive value.</para>
     /// <para><b>Finite values whose sum overflows to infinity are accepted, and the chart has no
     /// area.</b> Every slice then has no angle, so the chart is blank, or, with
-    /// <see cref="StrokeColor"/> set, every non-zero slice strokes the same radius (#546). A large
+    /// <see cref="StrokeColor"/> set, every non-zero slice strokes the same radius. A large
     /// sum that stays finite is unaffected, and each wedge still takes its share.</para>
-    /// <para><b>Do not pass</b> values whose sum overflows to infinity. The file is valid and it
-    /// saved on 2.3.3, so it is not refused in a patch. 3.0 will throw
+    /// <para><b>Do not pass</b> values whose sum overflows to infinity. The file is valid, so it is not refused before 3.0, which will throw
     /// <see cref="ArgumentException"/> with <c>ParamName</c> <c>Slices</c>.</para>
-    /// <para>A null list is refused where it is set (#547). It used to be stored, and the save threw
-    /// <see cref="NullReferenceException"/> when it laid the chart out.</para>
+    /// <para>A null list is refused where it is set.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised while the chart is laid out, which happens inside
@@ -170,11 +167,10 @@ public sealed class PieChart
 
     /// <summary>Margins around the chart. Defaults to 6 points on all sides.</summary>
     /// <remarks>
-    /// A non-finite edge is not checked before the layout; see <see cref="Document"/>. The layout runs
-    /// as it did on 2.3.3, and the save throws <see cref="ArgumentException"/> from
-    /// <see cref="VellumPdf.Canvas.PdfCanvas"/> only where it would write the value (#519).
-    /// <para>For example, an infinite right edge saves the chart drawn. <b>Do not pass</b> a
-    /// non-finite edge: 3.0 refuses it.</para>
+    /// A non-finite edge is not checked before the layout; see <see cref="Document"/>. The save throws <see cref="ArgumentException"/> from
+    /// <see cref="VellumPdf.Canvas.PdfCanvas"/> only where it would write the value.
+    /// <b>Do not pass</b> a
+    /// non-finite edge: 3.0 refuses it.
     /// <para><b>Attention</b>: no other edge is checked. The top and bottom edges add to the space the
     /// chart takes on the page. The left and right edges move the chart but do not shrink it: its
     /// diameter is limited by the whole content width, and its position is clamped back inside the
@@ -207,7 +203,7 @@ public sealed class PieChart
     /// <exception cref="ArgumentException">
     /// Raised from a save, when a channel is <c>NaN</c> or infinite and the stroke is drawn. The
     /// message says PDF does not support NaN or Infinity as a real number. A finite channel outside 0
-    /// to 1 is not refused (#509).
+    /// to 1 is not refused.
     /// </exception>
     public ColorRgb? StrokeColor { get; init; }
 
@@ -246,13 +242,9 @@ public sealed class PieChart
     /// <remarks>
     /// A non-finite angle is refused. Laying the chart out throws
     /// <see cref="ArgumentException"/> and names <c>StartAngle</c>.
-    /// <para>The unit is radians, not degrees. An angle of 1e12 or more in magnitude is reduced to
-    /// the equivalent angle before any wedge is drawn, so you do not have to normalise one yourself
-    /// (#546). Before that, each wedge's end was computed by adding its sweep to the angle, and
-    /// doubles near 1e16 are too far apart to hold a sweep: 1e16 overlapped the wedges and 1e17
-    /// collapsed every wedge to a line with no area. A smaller angle is used exactly as given, so a
-    /// document that saved on 2.3.3 writes the same bytes. The reduction takes the remainder, so a
-    /// negative angle stays negative.</para>
+    /// <para>The unit is radians, not degrees. An angle of 1e12 or more in magnitude is reduced
+    /// modulo a turn before any wedge is drawn, so a negative angle stays negative; a smaller angle
+    /// is drawn as given.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised while the chart is laid out, which happens inside

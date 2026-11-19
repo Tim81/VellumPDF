@@ -67,7 +67,7 @@ public readonly struct FontReference
     /// <remarks>
     /// A null handle is stored. <see cref="IsEmbedded"/> is then false, and text in this reference
     /// is drawn in Helvetica.
-    /// <para>The handle is checked against the document that saves it (#544). A handle from a
+    /// <para>The handle is checked against the document that saves it. A handle from a
     /// <see cref="VellumPdf.Layout.Document"/> other than the one that saves the text is refused, with
     /// <see cref="ArgumentException"/> by the save that draws the text, unless the saving document embedded
     /// the same font program under the

@@ -231,9 +231,7 @@ public sealed class DocumentRenderer
     /// of <paramref name="pdf"/> at construction, and a null <paramref name="margins"/> means 72
     /// points on every side.</para>
     /// <para>A null <paramref name="pdf"/> throws <see cref="ArgumentNullException"/> from this
-    /// constructor, naming <c>pdf</c>. It used to throw <see cref="NullReferenceException"/>, from
-    /// this constructor when <paramref name="pageSize"/> was null and from <see cref="Render"/>
-    /// otherwise.</para>
+    /// constructor, naming <c>pdf</c>. </para>
     /// <para>A negative margin is accepted and moves that edge of the content area outward, as on
     /// <see cref="Document.Margins"/>. The origin of <paramref name="pageSize"/> is not used for
     /// layout, as on <see cref="Document.PageSize"/>.</para>
@@ -271,9 +269,8 @@ public sealed class DocumentRenderer
 
     /// <summary>Appends a renderer to the document flow and returns this instance for chaining.</summary>
     /// <remarks>
-    /// A null <paramref name="renderer"/> is refused here (#523), as <see cref="Document"/> refuses
-    /// one passed to its own <c>Add</c>. It used to be stored, and <see cref="Render"/> threw
-    /// <see cref="NullReferenceException"/> when it reached it. What the renderer holds is not
+    /// A null <paramref name="renderer"/> is refused here, as <see cref="Document"/> refuses
+    /// one passed to its own <c>Add</c>. What the renderer holds is not
     /// checked here. The page-continuation limit on <see cref="IRenderer.Layout"/> applies from
     /// <see cref="Render"/>.
     /// </remarks>
@@ -298,7 +295,7 @@ public sealed class DocumentRenderer
     public DocumentRenderer Add(IRenderer renderer)
     {
         // Document.Add(IRenderer) already refused a null; this is the same operation by the other
-        // door, and it accepted the null and failed later, in Render (#523).
+        // door.
         ArgumentNullException.ThrowIfNull(renderer);
         _renderers.Add(renderer);
         return this;
@@ -308,13 +305,13 @@ public sealed class DocumentRenderer
     /// <remarks>
     /// The checks on <paramref name="destination"/> and on the kernel document's options run first,
     /// before the layout adds any page to it, so a refusal leaves the document as it was and a
-    /// retry cannot write the pages twice (#530). The write is
+    /// retry cannot write the pages twice. The write is
     /// <see cref="PdfDocument.Save(System.IO.Stream)"/>, so every exception it documents can reach
     /// you from here. <see cref="Document.Save(System.IO.Stream)"/> builds a
     /// renderer and calls this method, so the exceptions listed on that save, other than those
     /// about the <see cref="Document"/> itself, can reach you from here, and so can anything a
     /// custom renderer or the destination raises. A second call after one that succeeded throws;
-    /// after a layout that threw, it can succeed and write the failed call's pages as well (#530).
+    /// after a layout that threw, it can succeed and write the failed call's pages as well.
     /// <see cref="Document.Save(System.IO.Stream)"/> guards against that by refusing a save after a
     /// layout that threw; this method does not. A failure once writing has started leaves what was
     /// written so far in
@@ -537,10 +534,9 @@ public sealed class DocumentRenderer
     }
 
     // The first refusal of a non-finite operand that the canvas raised while an element was drawn.
-    // 2.3.3 had no such guard: it wrote the token and went on to lay out the elements after it, so an
-    // element that was too tall, or any other refusal later in the document, surfaced as its own
-    // exception type. The first refusal is therefore kept and the layout carries on, and it is
-    // raised when the layout has finished and nothing else threw.
+    // The first refusal is kept and the layout carries on, so an element that is too tall, or any
+    // other refusal later in the document, surfaces as its own exception type. It is raised when the
+    // layout has finished and nothing else threw.
     private ArgumentException? _deferredCanvasRefusal;
 
     private static bool IsCanvasNonFiniteRefusal(ArgumentException ex) =>
@@ -604,11 +600,9 @@ public sealed class DocumentRenderer
     {
         var style = band.Style;
 
-        // The band is the one path to a Tf operator that reaches no renderer, so it reached no
-        // validation either: a non-finite band font size saved a document containing "/F1 NaN Tf"
-        // and "1 0 0 1 NaN NaN Tm". The note further down about geometry validation asked for this.
-        // The size only: a colour is written only when text is drawn, and a band that draws nothing
-        // saved with any colour on 2.3.3.
+        // The band is the one path to a Tf operator that reaches no renderer, so it needs its own
+        // check. The size only: a colour is written only when text is drawn, and a band that draws
+        // nothing is not refused for one.
         LayoutValidation.ValidateFontSize(style, $"The {kind.ToString().ToLowerInvariant()} band");
 
         var contentWidth = _pageSize.Width - _margins.Horizontal;

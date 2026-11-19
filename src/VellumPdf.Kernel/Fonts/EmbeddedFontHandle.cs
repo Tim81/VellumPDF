@@ -12,7 +12,7 @@ namespace VellumPdf.Fonts;
 /// local to that document, so another document cannot use it as it stands. When the saving document
 /// has embedded the same font program itself, the page uses that document's own embedding and takes
 /// over the glyphs the handle registered. When it has not, it refuses the handle with
-/// <see cref="ArgumentException"/> where it records page usage (#544). Embed the font through the
+/// <see cref="ArgumentException"/> where it records page usage. Embed the font through the
 /// document that saves the page.
 /// </remarks>
 public sealed class EmbeddedFontHandle
@@ -23,7 +23,7 @@ public sealed class EmbeddedFontHandle
     /// The document that embedded this font. A handle is only meaningful to that document: its
     /// <see cref="ResourceName"/> is a counter local to it, so two documents can each hold a
     /// different font called <c>TT1</c>, and a handle used on the wrong one would resolve to
-    /// whichever font the saving document happened to register under that name (#544).
+    /// whichever font the saving document happened to register under that name.
     /// </summary>
     internal object Owner { get; }
 
@@ -32,7 +32,7 @@ public sealed class EmbeddedFontHandle
 
     /// <summary>
     /// SHA-256 of the font program this handle embeds, as the owning document keyed it. Another
-    /// document that embedded the same program recognises it by this value (#544).
+    /// document that embedded the same program recognises it by this value.
     /// </summary>
     internal string FontHash { get; }
 
@@ -53,7 +53,7 @@ public sealed class EmbeddedFontHandle
     /// in the subset written during <c>Save</c>.
     /// </summary>
     /// <remarks>
-    /// A code point the font has no glyph for gives glyph 0 (.notdef), with one exception (#562):
+    /// A code point the font has no glyph for gives glyph 0 (.notdef), with one exception:
     /// U+202F NARROW NO-BREAK SPACE and U+2007 FIGURE SPACE, when the font lacks them, give the
     /// glyph of U+00A0 NO-BREAK SPACE, or of U+0020 SPACE when it lacks that too. Layout keeps these
     /// characters in a paragraph rather than turning them into a plain space, so a font that cannot

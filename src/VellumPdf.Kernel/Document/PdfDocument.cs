@@ -32,9 +32,9 @@ public sealed class PdfDocument : IDisposable
     private readonly Dictionary<string, EmbeddedFontHandle> _embeddedFontByHash = new();
 
     // Handles from another document that pages here were registered with, in the order they were
-    // first registered (#544). Whether each is resolved to one of this document's own embeddings is
-    // decided at save, so it does not depend on whether UseTrueTypeFont ran before or after the
-    // registration, as it did not on 2.3.3.
+    // first registered. Whether each is resolved to one of this document's own embeddings is decided
+    // at save, so it does not depend on whether UseTrueTypeFont ran before or after the
+    // registration.
     private readonly List<EmbeddedFontHandle> _foreignFontHandles = [];
 
     // Per-page embedded font usage: page → set of handle resource names
@@ -263,7 +263,7 @@ public sealed class PdfDocument : IDisposable
 
     /// <summary>
     /// Refuses, before anything is written, a handle from another document whose resource name this
-    /// document defines no font under: the page would name a font its resources do not hold (#544).
+    /// document defines no font under: the page would name a font its resources do not hold.
     /// It runs at save, once every <c>UseTrueTypeFont</c> call has been made, so the order of those
     /// calls and the registration does not matter.
     /// </summary>
@@ -286,8 +286,8 @@ public sealed class PdfDocument : IDisposable
     // The same font program embedded here under the same resource name: the content stream names the
     // foreign handle's resource, and this document's own embedding defines that name, so the glyphs
     // the foreign embedder registered are added to this subset. Where the name is defined here for a
-    // different program, 2.3.3 saved a valid file whose text shows the wrong glyphs, and that is kept
-    // (#484) without a merge, since the subsets are of different fonts.
+    // different program, the file is valid and the text shows the wrong glyphs; that is kept without a
+    // merge, since the subsets are of different fonts.
     private void MergeForeignFontUsage()
     {
         foreach (var foreign in _foreignFontHandles)
@@ -303,19 +303,17 @@ public sealed class PdfDocument : IDisposable
     /// <b>A handle from another document is refused at <see cref="Save"/> when this document defines
     /// no font under its resource name.</b> Usage is recorded by resource name, and that name is a
     /// counter local to the document that issued it, so a name this document never issued would be
-    /// saved on the page with no <c>/Font</c> entry to define it (#544). <see cref="Save"/> throws
+    /// saved on the page with no <c>/Font</c> entry to define it. <see cref="Save"/> throws
     /// <see cref="ArgumentException"/> naming the handle, before anything is written, and not this
     /// call: whether the name is defined is decided once every <see cref="UseTrueTypeFont"/> call has
-    /// been made, so registering the handle before this document embeds its own font is accepted, as
-    /// on 2.3.3. When this document has embedded the same font program under that name, the glyphs the
-    /// foreign handle registered are added to this document's subset at save. On 2.3.3 that case saved
-    /// a file whose subset held only the glyphs this document had registered itself, so the text drawn
-    /// through the foreign handle extracted as other characters and veraPDF's PDF/A-2b profile failed.
+    /// been made, so registering the handle before this document embeds its own font is accepted.
+    /// When this document has embedded the same font program under that name, the glyphs the foreign
+    /// handle registered are added to this document's subset at save.
     /// <para><b>Do not pass</b> a handle from another document. When this document defines the name
-    /// for a different font program, the call is accepted as on 2.3.3: the page is saved with a
-    /// valid font dictionary, and the text drawn through the handle is shown in this document's font
-    /// of that name, with the wrong glyphs. Nothing reports it yet (#607), and 3.0 refuses a foreign
-    /// handle whatever this document holds.</para>
+    /// for a different font program, the call is accepted: the page is saved with a valid font
+    /// dictionary, and the text drawn through the handle is shown in this document's font of that name,
+    /// with the wrong glyphs. Nothing reports it yet (#607), and 3.0 refuses a foreign handle whatever
+    /// this document holds.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="page"/> or <paramref name="handle"/> is <see langword="null"/>.
@@ -594,20 +592,18 @@ public sealed class PdfDocument : IDisposable
     /// The checks every save makes before it touches the document or the destination, and the ones a
     /// caller that lays pages out first must make before it starts: that the document is not
     /// disposed, not already written, that there is somewhere to write and that it can be written to.
-    /// Called by the layout engine ahead of layout (#530), because layout appends pages to this
-    /// document and a refusal that came after it left the pages behind, so the next save laid
-    /// everything out a second time and wrote twice the pages.
+    /// Called by the layout engine ahead of layout, because layout appends pages to this
+    /// document and a refusal that came after it would leave the pages behind.
     /// </summary>
     /// <param name="destination">Where the PDF will be written.</param>
     /// <param name="pagesKnown">
     /// Whether the document's pages are already there, which is true for a document that holds its
     /// pages and for a layout engine with nothing to lay out. Then a document with no pages is
-    /// reported ("The document has no pages.") before the destination is looked at, as
-    /// <see cref="Save"/> always did. A layout engine about to add pages passes <see langword="false"/>.
+    /// reported ("The document has no pages.") before the destination is looked at, as <see cref="Save"/> does. A layout engine about to add pages passes <see langword="false"/>.
     /// </param>
     /// <param name="asynchronous">
-    /// Whether the save is one of the <c>SaveAsync</c> overloads, which keep the exception types
-    /// 2.3.3 gave for a destination that cannot be written to.
+    /// Whether the save is one of the <c>SaveAsync</c> overloads, which throw the stream's own
+    /// exception types for a destination that cannot be written to.
     /// </param>
     internal void EnsureCanSave(Stream destination, bool pagesKnown = true, bool asynchronous = false)
     {
@@ -622,15 +618,13 @@ public sealed class PdfDocument : IDisposable
             throw new InvalidOperationException("The document has no pages.");
 
         // Checked here and not left to PdfWriter's constructor: that runs after _written is set, so
-        // an unusable stream used to burn the document, and a caller who caught the documented
-        // ArgumentException and retried with a good stream met a different exception that did not
-        // say why (#530).
+        // an unusable stream would burn the document.
         if (!destination.CanWrite)
         {
-            // 2.3.3's asynchronous saves failed inside the copy into the stream, so the type was the
-            // stream's own: NotSupportedException for one that cannot be written to, and
-            // ObjectDisposedException for one that was closed, which reports neither CanRead nor
-            // CanSeek. The synchronous saves threw ArgumentException from the writer's constructor.
+            // An asynchronous save fails inside the copy into the stream, so the type is the stream's
+            // own: NotSupportedException for one that cannot be written to, and ObjectDisposedException
+            // for one that was closed, which reports neither CanRead nor CanSeek. The synchronous
+            // saves throw ArgumentException from the writer's constructor.
             if (asynchronous)
             {
                 if (!destination.CanRead && !destination.CanSeek)
@@ -645,7 +639,7 @@ public sealed class PdfDocument : IDisposable
     /// <summary>
     /// Refuses option combinations a save cannot honour. Like <see cref="EnsureCanSave"/> it is run
     /// ahead of layout by the layout engine, so a document with a bad combination fails before any
-    /// page is appended and can be corrected and saved again (#530).
+    /// page is appended and can be corrected and saved again.
     /// </summary>
     internal void ValidateSaveOptions()
     {
@@ -706,8 +700,7 @@ public sealed class PdfDocument : IDisposable
     /// </exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="destination"/> cannot be written to, which includes a stream that was already
-    /// closed. A linearized save to a closed stream used to throw <see cref="ObjectDisposedException"/>
-    /// after the document had been marked as written. It is also thrown, naming the handle, when a page
+    /// closed. It is also thrown, naming the handle, when a page
     /// was registered with an <see cref="EmbeddedFontHandle"/> from another document and this document
     /// defines no font under its resource name; see <see cref="RegisterEmbeddedFontUsage"/>.
     /// </exception>
@@ -721,7 +714,7 @@ public sealed class PdfDocument : IDisposable
     /// property's boundary documentation names the value and the field. It is also thrown when the
     /// document has no pages ("The document has no pages."), and when an array, dictionary, stream or
     /// structure element in the document holds itself, directly or through others, so it cannot be
-    /// written (#521).
+    /// written.
     /// </exception>
     public void Save(Stream destination)
     {
@@ -1091,8 +1084,7 @@ public sealed class PdfDocument : IDisposable
     /// <exception cref="ArgumentException">
     /// <paramref name="destination"/> cannot be written to, which includes a stream that was already
     /// closed. It is checked before anything is serialised, so the document is not marked as
-    /// written. It used to be <see cref="NotSupportedException"/> from the final copy, or
-    /// <see cref="ObjectDisposedException"/> for a closed stream.
+    /// written.
     /// </exception>
     /// <exception cref="NotSupportedException"><see cref="UseObjectStreams"/> is combined with <see cref="Encrypt"/>.</exception>
     /// <exception cref="InvalidOperationException">
@@ -1102,16 +1094,15 @@ public sealed class PdfDocument : IDisposable
     /// registered form field's <see cref="FormFieldOptions.FontSize"/> is not finite. That
     /// property's boundary documentation names the value and the field. It is also thrown when the
     /// document has no pages ("The document has no pages."), and when an array, dictionary, stream or
-    /// structure element in the document holds itself (#521). Serialisation runs on a thread-pool
+    /// structure element in the document holds itself. Serialisation runs on a thread-pool
     /// thread, so the exception is rethrown here when the wrapping task is awaited.
     /// </exception>
     public async Task SaveAsync(Stream destination, CancellationToken cancellationToken = default)
     {
         // The whole of the destination check, not only the null: Save runs against an in-memory
-        // buffer here, so an unwritable destination was found only after the document had been
-        // written and marked, and the output was never delivered (#530).
-        // 2.3.3 checked the null destination and then handed the token to Task.Run, so a token that
-        // is already cancelled won over every other defect with TaskCanceledException.
+        // buffer here, so an unwritable destination would be found only after the document had been
+        // written and marked.
+        // A token that is already cancelled wins over every other defect, with TaskCanceledException.
         ArgumentNullException.ThrowIfNull(destination);
         if (cancellationToken.IsCancellationRequested)
             throw new TaskCanceledException(null, null, cancellationToken);
@@ -1131,7 +1122,7 @@ public sealed class PdfDocument : IDisposable
     /// <see cref="SignaturePlaceholderOptions.EstimatedSignatureSizeBytes"/> that is negative or
     /// larger than <see cref="PdfSignatureHelper.MaxContentsPlaceholderBytes"/>, which would not fit
     /// in a string). Called by the layout engine ahead of layout, because layout appends pages and a
-    /// refusal that came after it left them behind (#530). A page index past the last page cannot
+    /// refusal that came after it left them behind. A page index past the last page cannot
     /// be judged until the pages exist and is refused later. A caller that already holds the pages
     /// (<paramref name="pagesKnown"/>) gets the document's own order of refusals: a document with
     /// no pages throws before any option is looked at.
@@ -1140,9 +1131,8 @@ public sealed class PdfDocument : IDisposable
     /// <param name="pagesKnown">
     /// Whether the document's pages are already there, which is true for a caller that holds a
     /// finished document and for a layout engine with nothing to lay out. It makes a document with
-    /// no pages throw "no pages" before any option is looked at, as the document itself does, and it
-    /// lets the message for a negative page index name the page count. When it is false, the pages
-    /// are still to come, so neither applies.
+    /// no pages throw "no pages" before any option is looked at and lets the message for a negative
+    /// page index name the page count.
     /// </param>
     internal void EnsureCanPrepareForSigning(SignaturePlaceholderOptions options, bool pagesKnown = true)
     {

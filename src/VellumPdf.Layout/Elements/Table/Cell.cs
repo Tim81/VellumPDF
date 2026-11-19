@@ -16,7 +16,7 @@ public sealed class Cell
 {
     /// <summary>The text content rendered in the cell.</summary>
     /// <remarks>
-    /// An empty string draws no text. The value is null when the constructor was given a null (#547);
+    /// An empty string draws no text. The value is null when the constructor was given a null;
     /// the cell then draws no text, and the save refuses it only where a column is sized
     /// automatically, as the constructor describes.
     /// Spaces are the only break points between words, and a word wider than the cell is broken
@@ -156,14 +156,13 @@ public sealed class Cell
     /// <remarks>
     /// Null means no fill. A colour is stored as given. Channels are not clamped. A channel that is not
     /// finite is refused where it is written; see <see cref="Document"/> and <see cref="ColorRgb"/>. A
-    /// cell that a span from an earlier row pushes past the last column is never drawn, so its colour
-    /// is not written and not refused, as on 2.3.3. <b>Do not pass</b> a non-finite channel: 3.0
+    /// cell that a span from an earlier row pushes past the last column is never drawn, so its colour is not written and not refused. <b>Do not pass</b> a non-finite channel: 3.0
     /// refuses it.
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from a save, when a channel is <c>NaN</c> or infinite and the cell is drawn. The message
     /// says PDF does not support NaN or Infinity as a real number. A finite channel outside 0 to 1 is
-    /// not refused (#509).
+    /// not refused.
     /// </exception>
     public ColorRgb? Background { get; init; }
 
@@ -194,8 +193,7 @@ public sealed class Cell
     /// <see cref="ArgumentNullException"/> (<c>ParamName</c> <c>content</c>) when it sizes a column
     /// automatically, which it does for a column without a positive finite width in
     /// <see cref="TableElement.ColWidths"/>, and then for every cell of the table; a table where every
-    /// column has such a width draws the cell empty. That is the split 2.3.3 had, with
-    /// <see cref="NullReferenceException"/> for the first case. <b>Do not pass</b> a null: 3.0 refuses
+    /// column has such a width draws the cell empty. <b>Do not pass</b> a null: 3.0 refuses
     /// it here.
     /// </remarks>
     /// <exception cref="ArgumentNullException">

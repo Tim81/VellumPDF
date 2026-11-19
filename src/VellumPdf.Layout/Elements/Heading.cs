@@ -18,7 +18,7 @@ public sealed class Heading
 {
     /// <summary>Heading text (also used as the bookmark title unless <see cref="BookmarkTitle"/> is set).</summary>
     /// <remarks>
-    /// Never null; the constructor refuses a null (#547). White space is drawn as on
+    /// Never null; the constructor refuses a null. White space is drawn as on
     /// <see cref="Paragraph"/>. An empty string draws no text, but the heading still adds a
     /// bookmark, titled by <see cref="BookmarkTitle"/> or else empty, and, in a tagged document,
     /// its structure element.
@@ -83,12 +83,10 @@ public sealed class Heading
 
     /// <summary>Margins around the heading.</summary>
     /// <remarks>
-    /// A non-finite edge is not checked before the layout; see <see cref="Document"/>. The layout runs
-    /// as it did on 2.3.3, and the save throws <see cref="ArgumentException"/> from
-    /// <see cref="VellumPdf.Canvas.PdfCanvas"/> only where it would write the value (#519).
-    /// <para>For example, a <c>NaN</c> right edge wraps a left-aligned heading after every word,
-    /// and on centred or right-aligned text writes <c>NaN</c> and is refused. <b>Do not pass</b> a
-    /// non-finite edge: 3.0 refuses it.</para>
+    /// A non-finite edge is not checked before the layout; see <see cref="Document"/>. The save throws <see cref="ArgumentException"/> from
+    /// <see cref="VellumPdf.Canvas.PdfCanvas"/> only where it would write the value.
+    /// <b>Do not pass</b> a
+    /// non-finite edge: 3.0 refuses it.
     /// <para><b>Attention</b>: no other edge is checked. Each finite edge is taken off the area this
     /// element is given, and the element is laid out in whatever box is left, even when that box is
     /// empty or inverted. A negative edge, or edges wider than the area, can therefore make the save throw an exception
@@ -135,8 +133,7 @@ public sealed class Heading
     /// <summary>Creates a heading with the given text and optional style (defaults to 14pt).</summary>
     /// <remarks>
     /// A null <paramref name="style"/> becomes 14pt Helvetica. A null <paramref name="text"/> is
-    /// refused here (#547); it used to be stored, and the save threw
-    /// <see cref="NullReferenceException"/> when it laid out the heading. An empty string is not
+    /// refused here. An empty string is not
     /// null and is accepted.
     /// </remarks>
     /// <exception cref="ArgumentNullException">

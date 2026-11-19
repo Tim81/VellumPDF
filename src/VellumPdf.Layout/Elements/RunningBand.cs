@@ -18,16 +18,13 @@ public sealed class RunningBand
 {
     /// <summary>Text template — may contain {page} and/or {pages}.</summary>
     /// <remarks>
-    /// Not checked when it is set (#531): the constructor stores a null template and
+    /// Not checked when it is set: the constructor stores a null template and
     /// <see cref="Resolve"/> throws during the save. A template that does not fit the content box
     /// is truncated, not refused;
     /// <see cref="VellumPdf.Layout.Rendering.DocumentRenderer.BandTruncations"/> says when it
     /// counts as not fitting. The cut is reported through <c>Document.BandTruncations</c> and
     /// <c>DocumentRenderer.BandTruncations</c>, so read one of those if you need to know it
     /// happened. Pass an empty string for a band that draws no text, never <see langword="null"/>.
-    /// <para><b>NOTE</b>: before #365 an overlong template was drawn off the page at a negative
-    /// coordinate, with every glyph still written into the content stream. The header or footer
-    /// was then invisible in every reader while you paid for its bytes.</para>
     /// <para>The cut bounds the advance width, <b>not</b> the ink. Side bearings and italic
     /// overhang can still paint a little past it. Nothing in this package sets a clip path.</para>
     /// <para><b>Attention</b>: truncation does nothing for text whose glyphs measure zero, because
@@ -56,11 +53,10 @@ public sealed class RunningBand
     /// A null style passed to the constructor is replaced by <see cref="TextStyle.Default"/>; any
     /// other is stored as given. Refusals on size, leading, font and text colour are on
     /// <see cref="TextStyle"/> and are raised from the save. A <see cref="TextStyle.LinkUri"/> in
-    /// it is ignored (#475).
+    /// it is ignored.
     /// <para>A non-finite channel in <see cref="TextStyle.Color"/> is refused where it is written; see
     /// <see cref="Document"/>. A band that draws nothing, because its template is empty or no part of
-    /// it fits the content width, writes no colour, so the channel is not refused there: that saved a
-    /// valid file on 2.3.3 and still does. <b>Do not pass</b> a non-finite channel: 3.0 refuses
+    /// it fits the content width, writes no colour, so the channel is not refused there. <b>Do not pass</b> a non-finite channel: 3.0 refuses
     /// it.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
@@ -108,7 +104,7 @@ public sealed class RunningBand
     /// height comes off the page's content box, so both leave the band no room while it is still
     /// drawn, over your content. 3.0 will reject them.</para>
     /// <para>A height that is not a finite number is not checked before the layout; see
-    /// <see cref="Document"/>. The layout runs as it did on 2.3.3. With a one-paragraph body, a
+    /// <see cref="Document"/>. With a one-paragraph body, a
     /// <c>NaN</c> height is refused as too tall, positive infinity as a content area with no size, and
     /// negative infinity as too many page continuations on a header, but on a footer it writes
     /// <c>NaN</c> into the text matrix, which <see cref="VellumPdf.Canvas.PdfCanvas"/> refuses. Other
@@ -117,13 +113,11 @@ public sealed class RunningBand
     /// so a negative-infinity footer height there saves when the body fits. <b>Do not pass</b> a
     /// non-finite height: 3.0 refuses it.</para>
     /// <para>A finite height large enough to leave the content area no room is a separate case, and
-    /// shares the type again: measured on a footer, 684 already throws
-    /// <see cref="InvalidOperationException"/> while the content area is still a positive 13.9pt,
-    /// and so does every height from there to 697.88. At 697.89 the content area reaches exactly
-    /// zero and the throw becomes <see cref="ArgumentException"/>; a header takes the same route at
-    /// the same values.</para>
+    /// shares the type again: <see cref="InvalidOperationException"/> while the content area is
+    /// still positive, and <see cref="ArgumentException"/> once it reaches exactly zero, on a header and a
+    /// footer alike.</para>
     /// <para>A refusal raised before the save writes anything leaves the file a path held as it was
-    /// (#508).</para>
+    ///.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from a save rather than from this property, when a finite height is large enough on
@@ -143,9 +137,8 @@ public sealed class RunningBand
     /// <remarks>
     /// A null <paramref name="style"/> becomes <see cref="TextStyle.Default"/>. A null
     /// <paramref name="template"/> is stored, and <see cref="Resolve"/> refuses it where the band is
-    /// drawn, with <see cref="ArgumentNullException"/> (#531). It is not refused earlier, because a band
-    /// that is replaced before the save never reaches <see cref="Resolve"/>, and 2.3.3 saved that,
-    /// throwing <see cref="NullReferenceException"/> only for a band that stayed. <b>Do not pass</b> a
+    /// drawn, with <see cref="ArgumentNullException"/>. It is not refused earlier, because a band
+    /// that is replaced before the save never reaches <see cref="Resolve"/>. <b>Do not pass</b> a
     /// null template: 3.0 refuses it here. An empty template is not null and is accepted.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
@@ -190,7 +183,7 @@ public sealed class RunningBand
     /// <summary>Substitutes <c>{page}</c> and <c>{pages}</c> in <see cref="Template"/>.</summary>
     /// <remarks>
     /// Any other brace text is left as given. A null template is refused here, where the band is
-    /// drawn, with <see cref="ArgumentNullException"/> (#531).
+    /// drawn, with <see cref="ArgumentNullException"/>.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <see cref="Template"/> is <see langword="null"/>. <c>ParamName</c> is <c>template</c>.

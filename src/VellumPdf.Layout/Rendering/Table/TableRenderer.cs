@@ -48,8 +48,7 @@ public sealed class TableRenderer : IRenderer
     /// <paramref name="startRow"/> on, so a start below zero or inside the header run draws every
     /// row. A start past the last row lays out as <see cref="LayoutResult.Outcome.Nothing"/>, so a
     /// document saving it throws <see cref="InvalidOperationException"/> saying the element is too
-    /// tall to fit. A null <paramref name="table"/> is refused here (#547); it used to be stored, and
-    /// <see cref="Layout"/> threw <see cref="NullReferenceException"/>.
+    /// tall to fit. A null <paramref name="table"/> is refused here.
     /// <para>Do not pass a start outside the table's rows. 3.0 will throw from
     /// this call.</para>
     /// </remarks>
@@ -425,7 +424,7 @@ public sealed class TableRenderer : IRenderer
         }
 
         // Where the border is written, so a table that is never drawn is not refused for a negative
-        // width; 2.3.3 saved those. The finite check is in Layout, as it was there.
+        // width. The finite check is in Layout.
         LayoutValidation.ValidateLineWidth(_table.BorderWidth, "A table");
 
         // Cell border (decorative — wrapped as /Artifact when tagged)
@@ -465,8 +464,8 @@ public sealed class TableRenderer : IRenderer
             canvas.SetFont(cf, cs.FontSize);
         }
 
-        // Where the text colour is written, so a cell that is never drawn is not refused for it; 2.3.3
-        // saved those with any colour. The font size is checked in Layout.
+        // Where the text colour is written, so a cell that is never drawn is not refused for it.
+        // The font size is checked in Layout.
         LayoutValidation.ValidateColor(cs.Color, $"Table row {rowIndex}, cell {cellIndex}", "text colour");
         canvas.SetFillColorRgb(cs.Color.R, cs.Color.G, cs.Color.B);
 

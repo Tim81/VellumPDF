@@ -79,7 +79,7 @@ public sealed class RendererContext
     /// </summary>
     /// <remarks>
     /// A handle from a document other than the one that saves the page is refused unless the saving
-    /// document embedded the same font program under the same resource name (#544); see
+    /// document embedded the same font program under the same resource name; see
     /// <see cref="VellumPdf.Layout.Core.FontReference.FontReference(EmbeddedFontHandle)"/>.
     /// <b>Do not pass</b> a handle from another document: 3.0 refuses it.
     /// </remarks>

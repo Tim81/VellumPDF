@@ -16,7 +16,7 @@ public sealed class LayoutImage
 {
     /// <summary>The image to draw.</summary>
     /// <remarks>
-    /// Never null; the constructor refuses a null (#547). An image whose own pixel width or height
+    /// Never null; the constructor refuses a null. An image whose own pixel width or height
     /// is not a positive number makes the save throw. A JPEG that declares a zero dimension loads
     /// as such an image.
     /// </remarks>
@@ -104,12 +104,11 @@ public sealed class LayoutImage
 
     /// <summary>Margins around the image.</summary>
     /// <remarks>
-    /// A non-finite edge is not checked before the layout; see <see cref="Document"/>. The layout runs
-    /// as it did on 2.3.3, and the save throws <see cref="ArgumentException"/> from
-    /// <see cref="VellumPdf.Canvas.PdfCanvas"/> only where it would write the value (#519).
-    /// <para>For example, a <c>NaN</c> right edge saves the image drawn when <see cref="Width"/> is set. <b>Do not
+    /// A non-finite edge is not checked before the layout; see <see cref="Document"/>. The save throws <see cref="ArgumentException"/> from
+    /// <see cref="VellumPdf.Canvas.PdfCanvas"/> only where it would write the value.
+    /// <b>Do not
     /// pass</b> a
-    /// non-finite edge: 3.0 refuses it.</para>
+    /// non-finite edge: 3.0 refuses it.
     /// <para><b>Attention</b>: no other edge is checked. The top and bottom edges add to the space the
     /// image takes on the page. The left and right edges work differently by <see cref="Width"/>: with
     /// it set, the image keeps that width, up to the content width, and its position is clamped back
@@ -147,8 +146,7 @@ public sealed class LayoutImage
 
     /// <summary>Creates a flow image element for the given image.</summary>
     /// <remarks>
-    /// A null <paramref name="image"/> is refused here (#547); it used to be stored, and the save
-    /// threw <see cref="NullReferenceException"/> when it laid out the image.
+    /// A null <paramref name="image"/> is refused here.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="image"/> is <see langword="null"/>.

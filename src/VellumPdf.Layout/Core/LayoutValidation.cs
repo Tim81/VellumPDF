@@ -11,55 +11,45 @@ namespace VellumPdf.Layout.Core;
 /// Names the input a renderer cannot work with, at the point the renderer would otherwise give up.
 ///
 /// A renderer that cannot place an element returns <c>Nothing</c>, and <c>DocumentRenderer</c> reads
-/// that as "this element can never fit" and raises the too-tall message. For a genuinely oversized
-/// element that is the right answer. For a font size of <c>NaN</c> or a <c>ColSpan</c> of zero it is
-/// not: the element is not too tall, its input is unusable, and the suggested remedy of reducing its
-/// content or enlarging the page cannot help (#481).
+/// that as "this element can never fit" and raises the too-tall message. For a font size of
+/// <c>NaN</c> or a <c>ColSpan</c> of zero that message is wrong: the input is unusable, and
+/// reducing the content or enlarging the page cannot help.
 ///
-/// Each check is narrower than the property it guards, and every boundary below was measured at the
-/// value stated rather than inferred from a neighbouring one. That distinction is not academic: NaN,
-/// positive infinity and negative infinity take three different branches here, and an earlier draft
-/// of this file measured one of them and asserted all three.
+/// Each check is narrower than the property it guards: <c>NaN</c>, positive infinity and negative
+/// infinity take different branches, so each boundary here was measured at the value stated.
 ///
-/// A check is made in the layout only where no content on 2.3.3 produced a valid file with the
-/// input, the rule the <c>Document</c> remarks state, and it runs inside the element's own
-/// <c>Layout</c> call: a font size on text that is drawn, a <c>ColSpan</c> below one, a line
-/// separator's width, margins and colour, a table cell's padding, a non-finite table border width,
-/// an image extent that is zero or not finite. The other non-finite insets, indents, band heights
-/// and colours are not checked here. A negative table border width, a table cell's text colour and
-/// a running band's font size are refused where they are drawn, because 2.3.3 saved a valid file
-/// when the table or cell was laid out and not drawn. The layout runs as it did on that version and
-/// <c>PdfCanvas</c> refuses what would be written as <c>NaN</c> or <c>Infinity</c>.
+/// A check is made in the layout only where the input yields an invalid file or an exception, the
+/// rule the <c>Document</c> remarks state, and it runs inside the element's own <c>Layout</c> call:
+/// a font size on text that is drawn, a <c>ColSpan</c> below one, a line separator's width, margins
+/// and colour, a table cell's padding, a non-finite table border width, an image extent that is
+/// zero or not finite. The other non-finite insets, indents, band heights and colours are not
+/// checked here. A negative table border width, a table cell's text colour and a running band's
+/// font size are refused where they are drawn, because a table or cell that is laid out and not
+/// drawn writes none of them. <c>PdfCanvas</c> refuses what would be written as <c>NaN</c> or
+/// <c>Infinity</c>.
 ///
-/// What is left alone, each rendering valid content today, because refusing it would turn a working
-/// document into an exception: a font size of zero or less, a <c>RowSpan</c> below one, a negative
-/// image extent, and a positive-infinity image width, which #472's over-wide clamp resolves to the
-/// content box before anything here sees it. Those are contract tightenings for the next major.
+/// What is left alone renders valid content, so refusing it would turn a working document into an
+/// exception: a font size of zero or less, a <c>RowSpan</c> below one, a negative image extent, and
+/// a positive-infinity image width, which the over-wide clamp resolves to the content box before
+/// anything here sees it. Those are contract tightenings for the next major.
 /// </summary>
 internal static class LayoutValidation
 {
     /// <summary>
     /// The magnitude below which <c>PdfCanvas</c>'s own number format writes the token <c>0</c>, or
-    /// <c>-0</c> for a small negative. Measured at the boundary: 5e-6 writes <c>0.00001</c>, 4.9e-6
-    /// writes <c>0</c>.
-    ///
-    /// The extent check tests this rather than equality with zero, because what makes the matrix
-    /// singular is the token written, not the value held. An earlier draft refused only an exact
-    /// zero, and a width of 4e-6 went on emitting <c>0 0 0 0 10 390 cm</c> — the very matrix the
-    /// check exists to prevent.
+    /// <c>-0</c> for a small negative: 5e-6 writes <c>0.00001</c>, 4.9e-6 writes <c>0</c>. The extent
+    /// check tests this rather than equality with zero, because what makes the matrix singular is the
+    /// token written, not the value held.
     /// </summary>
     private const double SmallestWrittenExtent = 5e-6;
 
     /// <summary>
     /// Rejects a text style whose font size is not a finite number.
     ///
-    /// The three non-finite values reach the too-tall message by three different routes, and only
-    /// the first is the mechanism usually described. A NaN size makes every height comparison false,
-    /// so the renderer measures nothing and reports placing nothing. A positive-infinity size
-    /// reports a height larger than any page, reaching the same message by the ordinary route. A
-    /// negative-infinity size is clamped to zero by the line-height maximum, falls back to the
-    /// default leading, and used to save successfully while writing <c>/F1 -Infinity Tf</c>, which
-    /// is not a PDF number.
+    /// The three non-finite values take different routes: a NaN size makes every height comparison
+    /// false, so the renderer reports placing nothing; a positive-infinity size reports a height
+    /// larger than any page; a negative-infinity size is clamped to zero by the line-height maximum
+    /// and would write <c>/F1 -Infinity Tf</c>, which is not a PDF number.
     /// </summary>
     internal static void ValidateStyle(TextStyle style, string owner)
     {
@@ -68,10 +58,8 @@ internal static class LayoutValidation
     }
 
     /// <summary>
-    /// The font-size half of <see cref="ValidateStyle"/>, for the callers that decide where a colour is
-    /// checked themselves: a running band and a table cell. 2.3.3 refused a non-finite size there
-    /// and wrote no colour for text that is never drawn, so a cell's size is checked in the layout
-    /// and its colour, like the band's size, only where it is written.
+    /// The font-size half of <see cref="ValidateStyle"/>, for the callers that check a colour only
+    /// where it is written: a running band and a table cell.
     /// </summary>
     internal static void ValidateFontSize(TextStyle style, string owner)
     {
@@ -79,10 +67,7 @@ internal static class LayoutValidation
         // stream verbatim -- "/F1 0 Tf" at zero, "/F1 -12 Tf" at -12 -- a valid operator either
         // way, so refusing it would turn a working document into an exception. Deferred.
         //
-        // Leading is not checked here. EffectiveLeading now treats any non-finite leading as
-        // "derive it from the font size", the same as zero, so none reaches a measurement. It used
-        // to: a positive-infinity leading was taken by the positive branch and raised the too-tall
-        // message, an unfixed instance of the very defect this file addresses.
+        // Leading is not checked: EffectiveLeading derives any non-finite leading from the font size.
         if (!double.IsFinite(style.FontSize))
         {
             throw new InvalidOperationException(
@@ -94,16 +79,12 @@ internal static class LayoutValidation
     /// <summary>
     /// Rejects a colour with a channel that is not a finite number. A channel is written straight
     /// into an <c>rg</c> or <c>RG</c> operand, so <c>NaN</c> reached the stream as <c>NaN 0 0 rg</c>
-    /// and infinity as <c>Infinity 0 0 rg</c>, neither of which is a PDF number (#509).
+    /// and infinity as <c>Infinity 0 0 rg</c>, neither of which is a PDF number.
     ///
-    /// Finite is all this checks. A channel outside 0 to 1 is not a PDF number problem: the token
-    /// still parses and the file renders, so refusing it would turn a working document into an
-    /// exception. The range is documented on the colour types instead, and the refusal is deferred
-    /// to the next major (#484).
-    ///
-    /// <c>PdfCanvas</c> refuses the same values when it writes the operand, so a colour that
-    /// reaches the stream by some route this check does not cover still fails loudly. This check is
-    /// the one that can name the element the caller wrote, which the canvas cannot.
+    /// Finite is all this checks. A channel outside 0 to 1 still parses and renders, so refusing it
+    /// would turn a working document into an exception; the range is documented on the colour
+    /// types and its refusal is deferred to the next major. <c>PdfCanvas</c> refuses the same values
+    /// when it writes the operand; this check names the element the caller wrote.
     /// </summary>
     /// <param name="color">The colour to check.</param>
     /// <param name="owner">What the colour belongs to, such as <c>A line separator</c>.</param>
@@ -121,9 +102,6 @@ internal static class LayoutValidation
             "which cannot be written to a content stream. Every colour channel must be a finite number.");
     }
 
-    /// <summary>Whether every channel of the colour is a finite number.</summary>
-    internal static bool IsFinite(ColorRgb color) =>
-        double.IsFinite(color.R) && double.IsFinite(color.G) && double.IsFinite(color.B);
 
     /// <summary>
     /// Rejects a cell that covers less than one column, or whose padding is not finite.
@@ -143,9 +121,7 @@ internal static class LayoutValidation
     /// </param>
     internal static void ValidateCell(Cell cell, int rowIndex, int cellIndex)
     {
-        // ColSpan only. A RowSpan below one renders today, measured, because nothing derives the
-        // column count from it; rejecting it would turn a rendering document into an exception and
-        // belongs with the other contract tightenings in the next major.
+        // ColSpan only: a RowSpan below one renders, because nothing derives the column count from it.
         if (cell.ColSpan < 1)
         {
             throw new InvalidOperationException(
@@ -155,24 +131,18 @@ internal static class LayoutValidation
 
         ValidateInsets(cell.Padding, $"Table row {rowIndex}, cell {cellIndex}");
 
-        // The background colour is not checked here: a cell past the last column is never drawn, so
-        // its colour is never written. TableRenderer checks it where the cell is placed.
+        // The background colour is not checked here; the canvas refuses a non-finite channel where it
+        // is written.
     }
 
     /// <summary>
     /// Rejects an image whose drawn extent is written as zero, or is not finite.
     ///
     /// A zero extent gives a transformation matrix with no inverse: a zero width writes
-    /// <c>0 0 0 0 10 390 cm</c> and a zero height <c>280 0 0 0 10 390 cm</c>. ISO 32000-2, 8.3.4,
-    /// NOTE 3 records that a matrix whose a, b, c and d entries are all zero maps every user
-    /// coordinate to the same device coordinate so there is no unique inverse, that such matrices
-    /// "generally arise from unintended operations, such as scaling by 0", and that painting
-    /// through one "can result in unpredictable behaviour". That note is informative rather than a
-    /// requirement, and its scope is painting graphics objects generally rather than images alone.
-    ///
-    /// A non-finite extent writes <c>NaN 0 0 NaN 10 NaN cm</c>, where the token is not a PDF number
-    /// at all. Both of these saved without complaint and produced a document a reader cannot
-    /// render (#478).
+    /// <c>0 0 0 0 10 390 cm</c>. ISO 32000-2, 8.3.4, NOTE 3 records that such a matrix has no
+    /// unique inverse and that painting through one "can result in unpredictable behaviour"; the note
+    /// is informative. A non-finite extent writes <c>NaN 0 0 NaN 10 NaN cm</c>, which is not a PDF
+    /// number at all.
     /// </summary>
     internal static void ValidateImageExtent(double width, double height)
     {
@@ -183,9 +153,8 @@ internal static class LayoutValidation
         {
             if (double.IsFinite(value) && Math.Abs(value) >= SmallestWrittenExtent) return;
 
-            // No "leave it unset" advice: the drawn extent can reach zero from margins that consume
-            // the content box while the property was never set at all, and telling such a caller to
-            // unset it would point them at the wrong input.
+            // No "leave it unset" advice: margins that consume the content box can reach zero
+            // while the property was never set.
             throw new InvalidOperationException(
                 $"An image would be drawn with a {which} of {Format(value)}, which cannot be " +
                 $"painted. A drawn {which} must be finite and at least " +
@@ -196,7 +165,7 @@ internal static class LayoutValidation
 
     /// <summary>
     /// Rejects a non-finite line width, which reaches the stream as <c>NaN w</c>, and a negative
-    /// one, which reaches it as <c>-3 w</c> (#557).
+    /// one, which reaches it as <c>-3 w</c>.
     ///
     /// ISO 32000-2, 8.4.3.2 (Line width) says the operand "shall be a non-negative number", so a
     /// negative width is a non-conforming operand even though it parses. That is why this refuses
@@ -222,9 +191,7 @@ internal static class LayoutValidation
 
     /// <summary>
     /// The finite half of <see cref="ValidateLineWidth"/>, for a caller that checks the sign where the
-    /// width is written: a table's border width is checked here in layout, as on 2.3.3, and for sign
-    /// only where a cell border is drawn, because 2.3.3 saved a valid file with a negative width on a
-    /// table that was never drawn.
+    /// width is written: a table's border width, whose sign is checked only where a cell border is drawn.
     /// </summary>
     internal static void ValidateLineWidthIsFinite(double width, string owner)
     {
@@ -237,11 +204,10 @@ internal static class LayoutValidation
     }
 
     /// <summary>
-    /// Rejects insets that are not finite, for the two elements where no content saved a valid file
-    /// on 2.3.3 with one: a line separator's margins and a table cell's padding. Each threw for
-    /// every edge and every one of <c>NaN</c>, positive and negative infinity, where it was measured.
-    /// Every other inset is not checked here. Layout runs as it did on that version, and
-    /// <c>PdfCanvas</c> refuses a value that would be written as <c>NaN</c> or <c>Infinity</c>.
+    /// Rejects insets that are not finite, for the two elements where such an inset yields an invalid
+    /// file or an exception for every edge and every one of <c>NaN</c>, positive and negative
+    /// infinity: a line separator's margins and a table cell's padding. Every other inset is not
+    /// checked here.
     /// </summary>
     internal static void ValidateInsets(EdgeInsets insets, string owner)
     {

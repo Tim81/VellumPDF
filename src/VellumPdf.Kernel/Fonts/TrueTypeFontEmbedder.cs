@@ -65,7 +65,7 @@ public sealed class TrueTypeFontEmbedder
 
     /// <summary>
     /// Takes over every glyph another embedder of the same font program registered, so a page that
-    /// was drawn with that embedder's glyph ids finds them in this subset (#544). Only meaningful
+    /// was drawn with that embedder's glyph ids finds them in this subset. Only meaningful
     /// when both embed the same font program, which the caller establishes by its hash.
     /// </summary>
     internal void AddUsageFrom(TrueTypeFontEmbedder other)

@@ -17,8 +17,7 @@ public sealed class LayoutImageRenderer : IRenderer
 
     /// <summary>Creates a renderer for the given layout image.</summary>
     /// <remarks>
-    /// A null <paramref name="img"/> is refused here (#547); it used to be stored, and
-    /// <see cref="Layout"/> threw <see cref="NullReferenceException"/>. A layout image cannot hold a
+    /// A null <paramref name="img"/> is refused here. A layout image cannot hold a
     /// null image, because <see cref="LayoutImage"/> refuses one when it is created.
     /// </remarks>
     /// <exception cref="ArgumentNullException">

@@ -48,7 +48,7 @@ public enum HorizontalAlignment
     /// space left on the line is divided evenly over the line's space characters, and a line ends at
     /// the right edge of its box, including a line that holds text in more than one
     /// <see cref="VellumPdf.Layout.Core.TextStyle"/> instance, where each instance starts at the
-    /// width the one before it is drawn to (#548, #555). Before that, the divisor counted every
+    /// width the one before it is drawn to. Before that, the divisor counted every
     /// space twice, so the line stopped short of the right edge, and each instance was placed at its
     /// unstretched width, so it could overprint the text after it. Only the space character
     /// (U+0020) is stretched; a no-break space and other white space are not.</para>

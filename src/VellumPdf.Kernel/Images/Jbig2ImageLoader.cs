@@ -14,54 +14,50 @@ namespace VellumPdf.Images;
 /// flags selects the organisation. In the <i>sequential</i> organisation (D.1) each segment's header
 /// is followed by its data. In the <i>random-access</i> organisation (D.2) all the segment headers
 /// come first, the last of them the end-of-file segment, and the data parts follow in the same
-/// order. Both are read (#570). PDF <c>/JBIG2Decode</c> uses the <i>embedded</i> organisation (D.3):
+/// order. Both are read. PDF <c>/JBIG2Decode</c> uses the <i>embedded</i> organisation (D.3):
 /// no file header; page-associated segments go in the image stream; globally-referenced segments
 /// (symbol dictionaries, pattern dictionaries, tables) go in a separate stream referenced as
 /// <c>/DecodeParms &lt;&lt; /JBIG2Globals &lt;ref&gt; &gt;&gt;</c>. A random-access file is written out in
 /// that embedded form, each header joined to its own data.</para>
 ///
 /// <para><b>One page:</b> a PDF image is one page, so only the first page of a multi-page file is
-/// embedded (#570). The first page is the one named by the page association of the first
+/// embedded. The first page is the one named by the page association of the first
 /// page-information segment (type 48). Its segments are kept, with the segments that belong to no
 /// page (page association 0), and the segments of every other page are dropped. The width and height
 /// are the first page's. The page count in a file header is not checked against the pages the file
-/// holds.</para>
+/// holds. A first page-information segment with page association 0 names no page, so every segment is
+/// kept.</para>
 ///
-/// <para><see cref="ImageDecodeMode.DecodeToRaster"/> still decodes the regions of the other pages,
-/// as 2.3.3 did, and discards the result, so a later page with a region this loader cannot decode, or
-/// whose data length is unknown, refuses the file there as it did on 2.3.3. 2.3.3 composited every
-/// page into one raster, and this loader keeps the first page. <b>Do not pass</b> a multi-page file
-/// without the T.88 Annex D header: the other pages are lost without a word, and 3.0 refuses it.
-/// A multi-page file with that header, which 2.3.3 could not read, is refused with
-/// <see cref="InvalidDataException"/> naming the page count, in both modes.</para>
+/// <para><see cref="ImageDecodeMode.DecodeToRaster"/> still decodes the regions of the other pages and
+/// discards the result, so a later page with a region this loader cannot decode, or whose data length
+/// is unknown, refuses the file there. <b>Do not pass</b> a multi-page file without the T.88 Annex D
+/// header: the other pages are lost without a word, and 3.0 refuses it. A multi-page file with that
+/// header is refused with <see cref="InvalidDataException"/> naming the page count, in both
+/// modes.</para>
 ///
-/// <para><b>A file with the Annex D header is loaded only if it complies, and only in
-/// <see cref="ImageDecodeMode.Passthrough"/>.</b> 2.3.3 refused every such file, so a file that breaks
-/// T.88 is refused with <see cref="InvalidDataException"/> naming the clause: a page-information
-/// segment that is not on page 1 (7.2.6, 7.3.2), a segment on any other page (7.2.6), a first segment
-/// on page 1 that is not the page information (7.4.8), a region on no page (7.3.2), or a header page
-/// count other than 1 (D.4.3). <see cref="ImageDecodeMode.DecodeToRaster"/> refuses every such file,
-/// compliant or not, because the raster it writes would render as a negative: it stores the decoded
-/// bits unchanged as <c>/DeviceGray</c> without <c>/Decode</c>. That inversion is also in what 2.3.3
-/// wrote for the input it could read, and is not changed here.</para>
+/// <para><b>A file with the Annex D header is loaded only if it complies with T.88, and only in
+/// <see cref="ImageDecodeMode.Passthrough"/>.</b> A file that breaks T.88 is refused with
+/// <see cref="InvalidDataException"/> naming the clause: a page-information segment that is not on
+/// page 1 (7.2.6, 7.3.2), a segment on any other page (7.2.6), a first segment on page 1 that is not
+/// the page information (7.4.8), a region on no page (7.3.2), or a header page count other than 1
+/// (D.4.3). <see cref="ImageDecodeMode.DecodeToRaster"/> refuses every such file, compliant or not,
+/// because the raster it writes would render as a negative: it stores the decoded bits unchanged as
+/// <c>/DeviceGray</c> without <c>/Decode</c>, where T.88 reads 1 as black. A file without the header
+/// decodes to the same raster, with the same inversion.</para>
 ///
 /// <para><b>Unknown segment length:</b> a segment whose data length field is 0xFFFFFFFF (ITU-T T.88
-/// 7.2.7) is not embedded. This loader does not scan the data for the end marker that clause
-/// describes, so it cannot say where such a segment ends. <see cref="ImageDecodeMode.Passthrough"/>
-/// drops it, as 2.3.3 did, which can leave a page blank without a word; <b>do not pass</b> such a
-/// segment, because 3.0 refuses it and the diagnostics channel (#607) will report it before then. The
-/// one exception is a file with the flags byte and page count of T.88 Annex D, which 2.3.3 could not
-/// read: there, a segment of unknown length on any page, or of no page, is refused with
-/// <see cref="InvalidDataException"/> naming it, in both modes.
-/// <see cref="ImageDecodeMode.DecodeToRaster"/> refuses an unknown length on an immediate,
-/// lossless or intermediate generic region (types 36, 38 and 39), as it always did, with a message
-/// naming the segment. Because this loader does not scan, a sequential or embedded stream takes the
-/// rest of the data as an unknown-length segment's own, so what follows one is not seen. A
-/// random-access file cannot use an unknown length on any page, because its data parts cannot be
-/// located without it, and says so without naming the segment type.</para>
-///
-/// <para>If the first page-information segment has page association 0 it names no page, and no
-/// page is selected: every segment is kept, as before pages were chosen.</para>
+/// 7.2.7) is not embedded in a file without the Annex D header, because this loader does not scan the
+/// data for the end marker that clause describes and so cannot say where such a segment ends.
+/// <see cref="ImageDecodeMode.Passthrough"/> drops it, which can leave a page blank without a word;
+/// <b>do not pass</b> such a segment, because 3.0 refuses it and the diagnostics channel (#607) will
+/// report it before then. In a file with the Annex D header, a segment of unknown length on any page,
+/// or of no page, is refused with <see cref="InvalidDataException"/> naming it, in both modes.
+/// <see cref="ImageDecodeMode.DecodeToRaster"/> refuses an unknown length on an immediate, lossless or
+/// intermediate generic region (types 36, 38 and 39), with a message naming the segment. A
+/// sequential or embedded stream takes the rest of the data as an unknown-length segment's own, so
+/// what follows one is not seen. A random-access file cannot use an unknown length on any page,
+/// because its data parts cannot be located without it, and says so without naming the segment
+/// type.</para>
 ///
 /// <para>When the input has no global segments the resulting XObject carries no
 /// <c>/JBIG2Globals</c> entry and is self-contained.</para>
@@ -109,8 +105,7 @@ public static class Jbig2ImageLoader
     /// The JBIG2 bytes: a standalone file in either organisation of ITU-T T.88 Annex D, sequential or
     /// random-access, with its file header (the 8-byte ID string, a flags byte, and a 4-byte page
     /// count unless the flags say it is unknown); or data already in embedded form, without a file
-    /// header. The ID string followed directly by segments, which this loader accepted before it read
-    /// the flags byte and page count (#570), still loads.
+    /// header. The ID string followed directly by segments loads too.
     /// </param>
     /// <returns>
     /// A <see cref="PdfImageXObject"/> with <c>/Filter /JBIG2Decode</c>.
@@ -120,18 +115,16 @@ public static class Jbig2ImageLoader
     /// </returns>
     /// <exception cref="ArgumentException">Thrown when <paramref name="jbig2"/> is null or empty.</exception>
     /// <exception cref="InvalidDataException">
-    /// Thrown on malformed or truncated input. A segment whose data length is unknown (0xFFFFFFFF,
-    /// ITU-T T.88 7.2.7) is not refused in this passthrough embedding: it is dropped, as on 2.3.3,
-    /// because this loader does not scan for the end marker 7.2.7 describes and so cannot say where
-    /// the segment ends. <b>Do not pass</b> such a segment. The image is embedded without it, which
-    /// can leave no region and a blank image, and nothing reports it yet; 3.0 refuses it. A file with
-    /// the flags byte and page count of T.88 Annex D, which 2.3.3 could not read, is the exception:
-    /// a segment of unknown length on any page, or of no page, is refused with
-    /// <see cref="InvalidDataException"/> naming it, because this loader does not scan for the end
-    /// marker. Only the first page of a multi-page file is embedded, unless the first page-information
-    /// segment has page association 0, which keeps every segment. A file with the Annex D header and
-    /// more than one page is refused, naming the page count, and so is one that does not comply with
-    /// T.88 (see the remarks on this type).
+    /// Thrown on malformed or truncated input. In a file without the Annex D header, a segment whose
+    /// data length is unknown (0xFFFFFFFF, ITU-T T.88 7.2.7) is dropped, not refused, because this
+    /// loader does not scan for the end marker 7.2.7 describes and so cannot say where the segment
+    /// ends. <b>Do not pass</b> such a segment: the image is embedded without it, which can leave no
+    /// region and a blank image, and nothing reports it yet; 3.0 refuses it. In a file with the Annex D
+    /// header, a segment of unknown length on any page, or of no page, is refused with
+    /// <see cref="InvalidDataException"/> naming it. Only the first page of a multi-page file is
+    /// embedded, unless the first page-information segment has page association 0, which keeps every
+    /// segment. A file with the Annex D header and more than one page is refused, naming the page
+    /// count, and so is one that does not comply with T.88 (see the remarks on this type).
     /// </exception>
     public static PdfImageXObject Load(byte[] jbig2)
         => Load(jbig2, ImageLoadOptions.Default);
@@ -143,8 +136,7 @@ public static class Jbig2ImageLoader
     /// The JBIG2 bytes: a standalone file in either organisation of ITU-T T.88 Annex D, sequential or
     /// random-access, with its file header (the 8-byte ID string, a flags byte, and a 4-byte page
     /// count unless the flags say it is unknown); or data already in embedded form, without a file
-    /// header. The ID string followed directly by segments, which this loader accepted before it read
-    /// the flags byte and page count (#570), still loads.
+    /// header. The ID string followed directly by segments loads too.
     /// </param>
     /// <param name="options">
     /// Options controlling how the image is mapped into the XObject.
@@ -163,14 +155,14 @@ public static class Jbig2ImageLoader
     /// Thrown on malformed or truncated input. Under <see cref="ImageDecodeMode.DecodeToRaster"/> it
     /// is also thrown for a generic region whose data length is unknown (0xFFFFFFFF, ITU-T T.88
     /// 7.2.7), which this loader cannot decode; the message names the segment number. Under
-    /// <see cref="ImageDecodeMode.Passthrough"/> such a segment is dropped, as on 2.3.3; see
-    /// <see cref="Load(byte[])"/>. Only the first page of a multi-page file is embedded, under either
-    /// mode, unless the first page-information segment has page association 0, which keeps every
-    /// segment. Under <see cref="ImageDecodeMode.DecodeToRaster"/> the other pages are decoded and
-    /// discarded, so what 2.3.3 refused on them is refused, and a file with the Annex D header and more
-    /// than one page is refused in both modes, naming the page count. Every file with that header is
-    /// refused under <see cref="ImageDecodeMode.DecodeToRaster"/>, and in either mode when it does not
-    /// comply with T.88; see the remarks on this type.
+    /// <see cref="ImageDecodeMode.Passthrough"/> such a segment is dropped in a file without the Annex D
+    /// header; see <see cref="Load(byte[])"/>. Only the first page of a multi-page file is embedded,
+    /// under either mode, unless the first page-information segment has page association 0, which keeps
+    /// every segment. Under <see cref="ImageDecodeMode.DecodeToRaster"/> the other pages are decoded and
+    /// discarded, so a region on them that cannot be decoded refuses the file. A file with the Annex D
+    /// header and more than one page is refused in both modes, naming the page count; every file with
+    /// that header is refused under <see cref="ImageDecodeMode.DecodeToRaster"/>, and in either mode
+    /// when it does not comply with T.88; see the remarks on this type.
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// Thrown under <see cref="ImageDecodeMode.DecodeToRaster"/> when the file contains
@@ -184,11 +176,10 @@ public static class Jbig2ImageLoader
 
         // The segments start after a file header, if there is one: the ID string, then a flags byte,
         // then a page count unless the flags say it is unknown (T.88 D.4). Embedded-form input has no
-        // file header at all. Which of those a file is cannot be read off the bytes alone, because the
-        // form this loader used to accept, the ID string followed straight away by segments, is
-        // indistinguishable from a flags byte followed by more of the same. Each reading is tried in
-        // turn, the one 2.3.3 used first, and the first that yields a page-information segment wins
-        // (#570).
+        // file header at all. Which of those a file is cannot be read off the bytes alone: the ID
+        // string followed straight away by segments is indistinguishable from a flags byte followed by
+        // more of the same. Each reading is tried in turn, and the first that yields a
+        // page-information segment wins.
         InvalidDataException? leadFailure = null;
         var failed = new List<(string Reading, string Message)>();
         var lastReading = "";
@@ -212,9 +203,8 @@ public static class Jbig2ImageLoader
             }
             catch (InvalidDataException ex)
             {
-                // Lead with the last reading's failure. When the file has a well-formed header, the
-                // header reading is the last one tried and is the one that applies; the first is the
-                // fallback for older input.
+                // Lead with the last reading's failure: with a well-formed header, that reading is
+                // the last one tried and is the one that applies.
                 leadFailure = ex;
                 lastReading = reading;
                 failed.Add((reading, ex.Message));
@@ -239,21 +229,19 @@ public static class Jbig2ImageLoader
 
         var data = jbig2.AsSpan(dataStart);
 
-        // A file with a T.88 Annex D header threw on 2.3.3, which could not read the header. T.88 7.2.7
-        // allows an unknown length only on an immediate generic region, and this loader cannot place
-        // where such a segment ends, so dropping it would embed an image with no region or, for a
-        // segment of any other type, accept a file that is not compliant. It stays refused, on every
-        // page and in both modes. A file without that header, which 2.3.3 read, keeps its output.
-        // The same goes for a page count above one; see below.
+        // T.88 7.2.7 allows an unknown length only on an immediate generic region, and this loader
+        // cannot place where such a segment ends, so dropping it would embed an image with no
+        // region or, for a segment of any other type, accept a file that is not compliant. In a
+        // file with the Annex D header it is refused, on every page and in both modes. The same
+        // goes for a page count above one; see below.
         if (dataStart > FileHeader.Length)
         {
             foreach (var seg in segments)
                 if (!seg.HasKnownLength)
                     throw UnknownLength(seg);
 
-            // The same file with more than one page is refused too, in both modes. A PDF image is one
-            // page, and embedding the first and dropping the rest is not correct handling of a file
-            // that 2.3.3 refused outright.
+            // More than one page is refused too, in both modes: a PDF image is one page, and
+            // embedding the first and dropping the rest is not correct handling.
             var pages = segments.Count(seg => seg.Type == SegmentTypePageInformation);
             if (pages > 1)
             {
@@ -262,15 +250,13 @@ public static class Jbig2ImageLoader
                     "A file with the T.88 Annex D header and more than one page is not embedded.");
             }
 
-            // 2.3.3 refused every one of these files, so only one that complies with T.88 may load now;
-            // a file that does not comply stays refused.
+            // Only a file that complies with T.88 loads; a file that does not comply is refused.
             RequireCompliantSinglePage(jbig2, dataStart, segments);
 
-            // The raster this mode writes is not yet correct for these files: it stores the decoded bits,
-            // where T.88 reads 1 as black (the "typical interpretation" in the note to its 5.6), as
-            // /DeviceGray 1 bpc with no /Decode, whose default maps sample 0 to black (ISO 32000-2
-            // 8.9.5.2). ISO 32000-2 7.4.7 does not say how the filter's bits map to colour. A page that
-            // renders as a negative is not correct handling of compliant input, so it stays refused.
+            // The raster this mode writes is not correct for these files: it stores the decoded bits,
+            // where T.88 reads 1 as black (clause 3 NOTE 1, 5.6), as /DeviceGray 1 bpc with no
+            // /Decode, whose default maps sample 0 to black (ISO 32000-2 8.9.5.2). A page that
+            // renders as a negative is not correct handling of compliant input, so it is refused.
             if (options.DecodeMode == ImageDecodeMode.DecodeToRaster)
             {
                 throw new InvalidDataException(
@@ -289,8 +275,7 @@ public static class Jbig2ImageLoader
 
     /// <summary>
     /// Refuses a file with the T.88 Annex D header that does not comply with the standard in a way that
-    /// matters to a one-page embedding: 2.3.3 refused every such file, and only compliant input may be
-    /// accepted now.
+    /// matters to a one-page embedding. Only compliant input is accepted.
     /// </summary>
     private static void RequireCompliantSinglePage(
         byte[] jbig2, int dataStart, List<SegmentHeader> segments)
@@ -404,7 +389,7 @@ public static class Jbig2ImageLoader
     /// <summary>
     /// Reads one segment header (§7.2) at <paramref name="pos"/> and leaves <paramref name="pos"/> just
     /// past it. Shared by the sequential organisation, where the data follows, and the random-access
-    /// one, where it does not (#570).
+    /// one, where it does not.
     /// </summary>
     private static RawHeader ReadSegmentHeader(ReadOnlySpan<byte> data, ref int pos)
     {
@@ -535,7 +520,7 @@ public static class Jbig2ImageLoader
     /// Parses the random-access organisation (§D.2): a run of segment headers that ends with the
     /// end-of-file segment's header, then the data parts of every segment in the same order. The
     /// end-of-file segment is what tells a reader the headers are over, so a file without one cannot
-    /// be read (#570).
+    /// be read.
     /// </summary>
     private static List<SegmentHeader> ParseRandomAccessSegments(ReadOnlySpan<byte> data)
     {
@@ -670,16 +655,15 @@ public static class Jbig2ImageLoader
             if (seg.Type is SegmentTypeEndOfFile or SegmentTypeEndOfPage)
                 continue;
 
-            // A PDF image is one page; the rest of a multi-page file is not embedded (#570).
+            // A PDF image is one page; the rest of a multi-page file is not embedded.
             if (!BelongsToPage(seg, firstPage))
                 continue;
 
-            // A segment of unknown length (§7.2.7) is dropped, as it was on 2.3.3 (#484). This loader
-            // does not scan for the end marker 7.2.7 describes (0xFF 0xAC for arithmetic coding,
-            // 0x00 0x00 for MMR, each followed by a row count; only an immediate generic region may
-            // have one), so it cannot say where the segment ends. Dropping it can leave an image with
-            // no region, which a reader draws blank. The file is valid, so it is not refused; 3.0
-            // refuses it.
+            // A segment of unknown length (§7.2.7) is dropped. This loader does not scan for the end
+            // marker 7.2.7 describes (0xFF 0xAC for arithmetic coding, 0x00 0x00 for MMR, each
+            // followed by a row count; only an immediate generic region may have one), so it cannot
+            // say where the segment ends. Dropping it can leave an image with no region, which a
+            // reader draws blank. The file is valid, so it is not refused; 3.0 refuses it.
             if (!seg.HasKnownLength)
                 continue;
 
@@ -688,7 +672,7 @@ public static class Jbig2ImageLoader
                 continue; // safety guard against corrupt entries
 
             // The embedded organisation a PDF stores is header then data. In a random-access file the
-            // two are far apart, so they are joined here rather than sliced as one range (#570).
+            // two are far apart, so they are joined here rather than sliced as one range.
             var segBytes = new byte[(seg.HeaderEnd - seg.HeaderStart) + (int)seg.DataLength];
             data[seg.HeaderStart..seg.HeaderEnd].CopyTo(segBytes);
             data.Slice(seg.DataOffset, (int)seg.DataLength).CopyTo(segBytes.AsSpan(seg.HeaderEnd - seg.HeaderStart));
@@ -791,8 +775,8 @@ public static class Jbig2ImageLoader
                 throw new InvalidDataException(
                     $"JBIG2: generic region segment {seg.Number} data too short.");
 
-            // The regions of the other pages are decoded, as 2.3.3 decoded them, so that what it refused
-            // in them is refused here, and the result is thrown away.
+            // The regions of the other pages are decoded so that one this loader cannot decode is
+            // refused, and the result is thrown away.
             byte[] target = raster;
             if (!onPage)
                 target = discarded ??= new byte[raster.Length];
@@ -903,11 +887,10 @@ public static class Jbig2ImageLoader
     /// The places the segments can start, in the order they are tried, as (offset, random-access).
     /// </summary>
     /// <remarks>
-    /// With the ID string, the older reading comes first: the ID string followed directly by the first
-    /// segment, which is how 2.3.3 read every such file. A valid file in that form can have a first
-    /// segment number whose high byte looks like a flags byte, so trying the Annex D reading first
-    /// misreads it. Only when that reading fails, and the byte after the ID string is a flags byte
-    /// whose reserved bits 4 to 7 are zero (T.88 D.4.2), is the file header read as the standard says:
+    /// With the ID string, the reading with the first segment directly after it comes first. A valid
+    /// file in that form can have a first segment number whose high byte looks like a flags byte, so
+    /// trying the Annex D reading first misreads it. Only when that reading fails, and the
+    /// byte after the ID string is a flags byte whose reserved bits 4 to 7 are zero (T.88 D.4.2), is the file header read as the standard says:
     /// bit 0 clear is the random-access organisation, bit 1 set means there is no 4-byte page count.
     /// Without the ID string the bytes are the embedded organisation.
     /// </remarks>

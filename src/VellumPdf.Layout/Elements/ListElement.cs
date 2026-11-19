@@ -45,12 +45,8 @@ public enum ListStyle
 /// <remarks>
 /// Nesting is one level, via <see cref="ListItem.Children"/>. Marker formatting of zero and
 /// negative indices is on <see cref="FormatMarker"/>.
-/// <para>The last item a list draws on a page keeps all of its lines (#556). It used to lose one,
-/// while the space for that line stayed reserved and nothing reported it: the draw pass laid each
-/// item out again in a height it worked out for itself, which for the last item on a page could
-/// come out one rounding step short of the height the layout pass had offered, and a paragraph's
-/// line count is a floor of the height it is given. The draw pass now offers each item the height
-/// the layout pass did.</para>
+/// <para>The last item a list draws on a page keeps all of its lines: the draw pass offers each
+/// item the height the layout pass did.</para>
 /// <para><b>Attention</b>: an item whose text holds only white space is laid out at the leading of
 /// <see cref="TextStyle.Default"/>, as on <see cref="Paragraph"/>, while its marker is laid out in
 /// the item's own style. When the marker's line does not fit where the item lands, the item is
@@ -70,7 +66,7 @@ public sealed class ListElement
     /// <summary>The items contained in this list, in render order.</summary>
     /// <remarks>
     /// Empty is allowed. No item is null: <see cref="Add(ListItem)"/> and the constructor refuse a
-    /// null (#523).
+    /// null.
     /// </remarks>
     public IReadOnlyList<ListItem> Items => _items;
 
@@ -96,20 +92,17 @@ public sealed class ListElement
     /// gutter needs. The child marker, inset by this value alone, is not refused and is still
     /// drawn. Keep this value well below half the area width (#476).</para>
     /// <para>Do <b>not</b> pass a negative value. It can carry content left of the margin and off
-    /// the page. A finite negative value is not reported. Where an item lands
-    /// follows from the rules above, the override included; the measured figures are on #476, not
-    /// here, because they depend on the level, on which branch the override takes and on
-    /// <see cref="TextStyle.FontSize"/>. 3.0 will reject a negative value.</para>
+    /// the page, and a finite negative value is not reported. 3.0 will reject it.</para>
     /// <para>A non-finite indent is not checked before the layout; see <see cref="Document"/>. A
     /// nested child's marker and a flat item whose longest word does not fit beside its marker take
     /// the indent directly as their left inset, so there a <c>NaN</c> or negative-infinity indent
     /// writes a token that is not a PDF number and <see cref="VellumPdf.Canvas.PdfCanvas"/> refuses it,
-    /// with <see cref="ArgumentException"/> (#532). A flat list whose words all fit saves with a
+    /// with <see cref="ArgumentException"/>. A flat list whose words all fit saves with a
     /// negative-infinity indent, because the gutter widens to the marker's own width, and a list with
     /// no items saves with any. <b>Do not pass</b> a non-finite indent: 3.0 refuses it.</para>
     /// <para>Positive infinity is not refused here, because it writes no invalid token. A nested list
-    /// throws at the area width as described above, and a flat list discards the item text (#476). A
-    /// finite negative value is not refused either (#532).</para>
+    /// throws at the area width as described above, and a flat list discards the item text. A
+    /// finite negative value is not refused either.</para>
     /// <para>A finite negative value can put linked item text, or a linked nested marker, at a
     /// non-finite position when the gutter taken from it, added to the list's left edge, overflows,
     /// as a nested list with an indent of -1e308 and a left margin of -1e308 does. The save then
@@ -135,12 +128,10 @@ public sealed class ListElement
 
     /// <summary>Outer margins applied around the whole list block.</summary>
     /// <remarks>
-    /// A non-finite edge is not checked before the layout; see <see cref="Document"/>. The layout runs
-    /// as it did on 2.3.3, and the save throws <see cref="ArgumentException"/> from
-    /// <see cref="VellumPdf.Canvas.PdfCanvas"/> only where it would write the value (#519).
-    /// <para>For example, a <c>NaN</c> right edge saves a list with its items drawn, and a
-    /// <c>NaN</c> left edge on a list with no items saves. <b>Do not pass</b> a non-finite edge:
-    /// 3.0 refuses it.</para>
+    /// A non-finite edge is not checked before the layout; see <see cref="Document"/>. The save throws <see cref="ArgumentException"/> from
+    /// <see cref="VellumPdf.Canvas.PdfCanvas"/> only where it would write the value.
+    /// <b>Do not pass</b> a non-finite edge:
+    /// 3.0 refuses it.
     /// <para><b>Attention</b>: no other edge is checked. Each finite edge is taken off the area this
     /// element is given, and the element is laid out in whatever box is left, even when that box is
     /// empty or inverted. A negative edge, or edges wider than the area, can therefore make the save throw an exception
@@ -192,9 +183,7 @@ public sealed class ListElement
 
     /// <summary>Creates a list with the given marker style and optional initial items.</summary>
     /// <remarks>
-    /// A null <paramref name="items"/> is an empty list. A null entry inside it is refused (#547);
-    /// it used to be kept, and the save threw <see cref="NullReferenceException"/> when it laid the
-    /// list out. Entries before the null one are not left behind, because the list is not returned.
+    /// A null <paramref name="items"/> is an empty list. A null entry inside it is refused. Entries before the null one are not left behind, because the list is not returned.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="items"/> contains <see langword="null"/>. <c>ParamName</c> is <c>items</c>.
@@ -215,8 +204,7 @@ public sealed class ListElement
 
     /// <summary>Appends an item to the list and returns this instance for chaining.</summary>
     /// <remarks>
-    /// A null <paramref name="item"/> is refused here (#523); it used to be stored, and the save
-    /// threw <see cref="NullReferenceException"/> when it laid out the list.
+    /// A null <paramref name="item"/> is refused here.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="item"/> is <see langword="null"/>.
@@ -231,8 +219,7 @@ public sealed class ListElement
     /// <summary>Appends a text item with an optional text style and returns this instance for chaining.</summary>
     /// <remarks>
     /// Creates the item with <see cref="ListItem(string, TextStyle?)"/> and adds it. A null
-    /// <paramref name="text"/> is refused here (#547); it used to be stored, and the save threw
-    /// <see cref="NullReferenceException"/> when it laid out the list. The item is always
+    /// <paramref name="text"/> is refused here. The item is always
     /// top-level, so unlike the <see cref="ListItem"/> constructor this call knows it will be read.
     /// </remarks>
     /// <exception cref="ArgumentNullException">

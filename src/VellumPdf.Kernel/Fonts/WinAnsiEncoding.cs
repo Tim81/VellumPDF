@@ -43,7 +43,7 @@ internal static class WinAnsiEncoding
 
     /// <summary>
     /// <see cref="TryGetByte"/>, except that the two no-break spaces WinAnsiEncoding lacks, U+202F
-    /// and U+2007, encode as the one it has, U+00A0 (0xA0), instead of failing (#562). It is what
+    /// and U+2007, encode as the one it has, U+00A0 (0xA0), instead of failing. It is what
     /// <see cref="VellumPdf.Canvas.PdfCanvas.ShowText"/> encodes with and
     /// <see cref="Standard14Metrics.GetWidth"/> measures with, so what is measured is what is drawn.
     /// Every other character is encoded exactly as <see cref="TryGetByte"/> does.

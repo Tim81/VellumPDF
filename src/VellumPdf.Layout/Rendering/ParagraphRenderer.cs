@@ -35,8 +35,7 @@ public sealed class ParagraphRenderer : IRenderer
 
     /// <summary>Creates a renderer for the paragraph, optionally starting at <paramref name="startLine"/> for pagination.</summary>
     /// <remarks>
-    /// A null <paramref name="para"/> is refused here (#547); it used to be stored, and
-    /// <see cref="Layout"/> threw <see cref="NullReferenceException"/>. Nothing else is checked. A
+    /// A null <paramref name="para"/> is refused here. Nothing else is checked. A
     /// negative <paramref name="startLine"/> makes <see cref="Layout"/> count that many lines more
     /// than the text holds, and makes <see cref="Draw"/> throw. A start past the last line lays out
     /// as <see cref="LayoutResult.Outcome.Nothing"/>, so a document saving it throws
@@ -525,7 +524,7 @@ public sealed class ParagraphRenderer : IRenderer
 
     /// <summary>
     /// Whether a fragment of the line is set in Symbol or ZapfDingbats, which have no width metrics
-    /// and measure as zero (#470).
+    /// and measure as zero.
     /// </summary>
     private static bool HoldsZeroMeasuredFont(LineFragment[] fragments)
     {
@@ -590,7 +589,7 @@ public sealed class ParagraphRenderer : IRenderer
     /// <list type="bullet">
     ///   <item><c>\n</c> — consumed as the hard-break sentinel by the caller.</item>
     ///   <item>The no-break spaces, which must keep words together: U+00A0 NO-BREAK SPACE,
-    ///   U+202F NARROW NO-BREAK SPACE and U+2007 FIGURE SPACE (#562). These are the white-space
+    ///   U+202F NARROW NO-BREAK SPACE and U+2007 FIGURE SPACE. These are the white-space
     ///   characters in UAX #14 line-breaking class GL; see <see cref="NoBreakSpaces"/>.</item>
     ///   <item>Any non-whitespace character.</item>
     /// </list>
@@ -636,7 +635,7 @@ public sealed class ParagraphRenderer : IRenderer
     /// (tab, thin space, en/em space, etc.) to plain spaces, then splits on space. The no-break
     /// spaces (U+00A0, U+202F and U+2007) are intentionally <em>not</em> split points because they
     /// are semantically a non-breaking join between words: <c>Pourquoi ?</c> written with U+202F
-    /// before the question mark cannot wrap between the two (#562).
+    /// before the question mark cannot wrap between the two.
     /// </para>
     /// </summary>
     private static List<LineFragment[]> WordWrap(IReadOnlyList<TextRun> runs, double maxWidth)
@@ -664,8 +663,8 @@ public sealed class ParagraphRenderer : IRenderer
                 var isFirstWord = true;
                 foreach (var w in words)
                 {
-                    // 2.3.3 dereferenced the style for the first word of a run and for nothing else, so a
-                    // run of empty text, white space or line breaks alone saved with a null style.
+                    // Only a run that yields a word is refused; empty text, white space or line breaks
+                    // alone save with a null style.
                     if (run.Style is null)
                         throw new ArgumentNullException("Style", "A paragraph run with text has a null style.");
                     tokens.Add((w, run.Style, !isFirstHardLine && isFirstWord));

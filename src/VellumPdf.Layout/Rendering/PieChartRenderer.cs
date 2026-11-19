@@ -25,8 +25,7 @@ public sealed class PieChartRenderer : IRenderer
 
     /// <summary>Creates a renderer for the given pie chart.</summary>
     /// <remarks>
-    /// A null <paramref name="chart"/> is refused here (#547); it used to be stored, and
-    /// <see cref="Layout"/> threw <see cref="NullReferenceException"/>.
+    /// A null <paramref name="chart"/> is refused here.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="chart"/> is <see langword="null"/>.
@@ -71,9 +70,8 @@ public sealed class PieChartRenderer : IRenderer
         }
 
         // Each slice is finite, but two of 1e308 sum to +Infinity, and every wedge's sweep is then
-        // value / Infinity = 0: the chart has no curves (#546). That is not refused: the file is
-        // valid and it saved on 2.3.3 with no invalid token, so refusing it would turn a document
-        // that saves into an exception (#484). PieChart.Slices says not to pass it.
+        // value / Infinity = 0: the chart has no curves. The file is valid, so it is kept;
+        // PieChart.Slices says not to pass it.
 
         if (total <= 0)
             throw new ArgumentException(

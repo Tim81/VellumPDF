@@ -95,11 +95,9 @@ public sealed class ListItem
     /// then inherits. An empty string is not null and is accepted.
     /// <para>A null <paramref name="text"/> is not refused by this call, because the call cannot
     /// know where the item will sit. <see cref="Text"/> becomes an empty string and the item is
-    /// marked. What happens at the save depends on the depth, and it matches the version before
-    /// #547. On a top-level item, or a child of one, the save throws
-    /// <see cref="ArgumentNullException"/> naming <c>text</c> when it lays the list out, where it
-    /// used to throw <see cref="NullReferenceException"/>. On an item deeper than that, a child of a
-    /// child, nothing is read and the list renders.</para>
+    /// marked. On a top-level item, or a child of one, the save throws
+    /// <see cref="ArgumentNullException"/> naming <c>text</c> when it lays the list out. On an item
+    /// deeper than that, a child of a child, nothing is read and the list renders.</para>
     /// <para><b>Do not pass a null text.</b> On a child of a child it is accepted today and not
     /// reported, because there is no diagnostics channel yet. 3.0 will throw
     /// <see cref="ArgumentNullException"/> from this constructor whatever the position, and the
@@ -147,10 +145,8 @@ public sealed class ListItem
     /// Children of <paramref name="child"/> are ignored; see <see cref="Children"/>.
     /// <para>A null <paramref name="child"/> is not refused by this call, because the call cannot
     /// know where this item will sit in the list. It is not added: <see cref="Children"/> never holds
-    /// a null. What happens at the save depends on that position, and it matches what the version
-    /// before #523 did. When this item is top-level the save throws
-    /// <see cref="ArgumentNullException"/> naming <c>child</c> when it lays the list out, where it
-    /// used to throw <see cref="NullReferenceException"/>. When this item is itself another item's
+    /// a null. When this item is top-level the save throws <see cref="ArgumentNullException"/>
+    /// naming <c>child</c> when it lays the list out. When this item is itself another item's
     /// child, or deeper, its children are never read and the list renders.</para>
     /// <para><b>Do not pass a null child.</b> Held by a child item it is skipped today and not
     /// reported, because there is no diagnostics channel yet. 3.0 will throw

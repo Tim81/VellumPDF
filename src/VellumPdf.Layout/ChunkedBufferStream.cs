@@ -6,12 +6,11 @@ namespace VellumPdf.Layout;
 /// <summary>
 /// An append-only buffer that holds what is written to it in chunks, so it has no single array and
 /// no 2 GB ceiling. <c>Document.Save(string)</c> builds the PDF in one of these before it empties
-/// the file at the path (#508).
+/// the file at the path.
 /// </summary>
 /// <remarks>
 /// A <see cref="MemoryStream"/> holds its bytes in one array, which cannot pass about 2 GB, and doubles
-/// it as it grows. 2.3.3 wrote a path save straight to the file and had no such limit, so the buffer
-/// must not add one. The cost is one more copy of the finished PDF in memory, in chunks, until it is
+/// it as it grows. A file write has no such limit, so the buffer must not add one. The cost is one more copy of the finished PDF in memory, in chunks, until it is
 /// copied to the file. The first chunk is small and each next one twice the size of the last, up to
 /// the chunk size, so a PDF of a few kilobytes does not allocate a whole chunk of 1 MiB, which would
 /// land on the large object heap (the threshold is 85,000 bytes).
@@ -88,10 +87,7 @@ internal sealed class ChunkedBufferStream : Stream
 
     /// <summary>
     /// Throws <see cref="TaskCanceledException"/> when <paramref name="cancellationToken"/> is
-    /// cancelled. 2.3.3's asynchronous path save threw that type at every point where it looked at the
-    /// token, because it handed the token to <c>Task.Run</c> and to the stream copy, which fail their
-    /// task; a plain <see cref="OperationCanceledException"/> would slip past a
-    /// <c>catch (TaskCanceledException)</c> written against it.
+    /// cancelled. The asynchronous path save throws this type, not its base type, at every point where it looks at the token, so a <c>catch (TaskCanceledException)</c> keeps working.
     /// </summary>
     internal static void ThrowIfCanceled(CancellationToken cancellationToken)
     {
@@ -115,7 +111,7 @@ internal sealed class ChunkedBufferStream : Stream
             remaining -= take;
         }
 
-        // An empty buffer has no chunk to look at the token at, and 2.3.3's copy looked at it anyway.
+        // An empty buffer has no chunk to look at the token at, so the copy still looks at it once.
         if (_chunks.Count == 0)
             ThrowIfCanceled(cancellationToken);
     }

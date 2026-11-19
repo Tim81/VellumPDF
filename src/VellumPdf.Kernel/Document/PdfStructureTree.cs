@@ -75,13 +75,11 @@ public sealed class PdfStructElem
     /// <b>An element that is its own ancestor is refused when the structure tree is built, not here.</b>
     /// A child that is this element, or that already holds this element somewhere in its own subtree,
     /// closes a cycle, and the walks that number the tree and write it recurse over
-    /// <see cref="Children"/>, so a cycle would overflow the stack, which .NET cannot catch (#521).
+    /// <see cref="Children"/>, so a cycle would overflow the stack, which .NET cannot catch.
     /// <c>Save</c> therefore throws <see cref="InvalidOperationException"/> for a tagged document whose
-    /// structure tree reaches such an element. This call accepts it, because 2.3.3 saved a document
-    /// that holds a cyclic element and is not tagged, or that was tagged after the element was
-    /// registered, and the cycle is harmless to a save that never walks it. An element reachable by
+    /// structure tree reaches such an element. This call accepts it, because the cycle is harmless to a save that never walks it: a document that is not tagged, or that was tagged after the element was registered. An element reachable by
     /// two routes without a cycle is not refused.
-    /// <para>A null <paramref name="child"/> is stored, as on 2.3.3, and refused where the structure
+    /// <para>A null <paramref name="child"/> is stored and refused where the structure
     /// tree is built: a document that is not tagged never builds it, so such a document saves. It is
     /// not refused at this call. <b>Do not pass</b> a null child or a child that closes a cycle: a
     /// later major refuses both here.</para>
@@ -371,14 +369,13 @@ internal sealed class PdfStructureTree
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    // Six walks below recurse over Children. AddChild accepts a cycle (2.3.3 saved a document that
-    // held one and never built the tree), and a stack overflow cannot be caught, so the walks refuse
-    // it. Three of them, CollectElems,
-    // CollectPages and CollectElemsOnPage, keep the elements on their current path and refuse to
-    // enter one twice (#521). The other three, BuildParentMap, FindFirstLeafPage and
-    // CollectStructTypes, keep no path: they are safe only because each runs after CollectPages
-    // has walked the same tree from the document root and refused a cycle. Reorder them and a graph
-    // put together some other way would crash the process rather than raise.
+    // Six walks below recurse over Children. AddChild accepts a cycle (an untagged document never
+    // builds the tree), and a stack overflow cannot be caught, so the walks refuse it. Three of them,
+    // CollectElems, CollectPages and CollectElemsOnPage, keep the elements on their current path and
+    // refuse to enter one twice. The other three, BuildParentMap, FindFirstLeafPage and
+    // CollectStructTypes, keep no path: they are safe only because each runs after CollectPages has
+    // walked the same tree from the document root and refused a cycle. Reorder them and a graph put
+    // together some other way would crash the process rather than raise.
     private static void EnterElement(HashSet<PdfStructElem> path, PdfStructElem element)
     {
         if (!path.Add(element))

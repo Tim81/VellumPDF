@@ -11,14 +11,14 @@ namespace VellumPdf.Layout.Core;
 /// <c>init</c> accessors never throw. What happens to a channel is decided where the colour is
 /// drawn. A channel that is <c>NaN</c> or infinite is refused where it is written, because neither is
 /// a PDF number (ISO 32000-2, 7.3.3): <see cref="VellumPdf.Canvas.PdfCanvas"/> refuses it for any
-/// caller, and a paragraph run, table cell text or line separator names the element first (#509). A
+/// caller, and a paragraph run, table cell text or line separator names the element first. A
 /// colour that is not written is not refused; see <c>Document</c>.
 /// <para>A finite channel outside 0 to 1 is <b>not</b> refused. It is written as given after
 /// rounding to five decimals, so (5, 0, -1) is written as <c>5 0 -1 rg</c>. ISO 32000-2, 8.6.4.3,
 /// says each DeviceRGB component "shall" be a number from 0.0 to 1.0, so that output is not
 /// conforming even though it parses and renders.</para>
 /// <para><b>Attention</b>: keep each channel within 0 to 1. 3.0 may refuse a channel outside
-/// that range (#484).</para>
+/// that range.</para>
 /// </remarks>
 public readonly record struct ColorRgb
 {

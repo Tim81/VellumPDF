@@ -34,12 +34,10 @@ public sealed class ListRenderer : IRenderer
     private LayoutBox _occupied;
 
     // The height Layout offered each item it visited, indexed by the item's offset from the start
-    // item. Draw offers the same height, because
-    // it lays the item out a second time and a paragraph's line count is a floor of the height it is
-    // given: the height Draw used to compute for itself, Bottom - y, can come out one rounding step
-    // short of the remaining height Layout tracked, so the second pass wrapped to one line fewer
-    // than the first, the line was never drawn, and the space Layout reserved for it stayed empty
-    // (#556). Null until Layout has run on this renderer or the one it was split from.
+    // item. Draw offers the same height: it lays the item out a second time, a paragraph's line
+    // count is a floor of the height it is given, and Bottom - y can come out one rounding step
+    // short of the height Layout tracked, which drops the item's last line. Null until Layout has
+    // run on this renderer or the one it was split from.
     private List<double>? _offered;
 
     /// <summary>Creates a renderer for the list, optionally starting at <paramref name="startItem"/> for pagination.</summary>
@@ -52,8 +50,7 @@ public sealed class ListRenderer : IRenderer
     /// <see cref="LayoutResult.Full"/> occupying no height. A negative start on an empty list also
     /// returns <see cref="LayoutResult.Full"/> occupying no height, and <see cref="Draw"/> then
     /// throws <see cref="ArgumentOutOfRangeException"/>.
-    /// A null <paramref name="list"/> is refused here (#547); it used to be stored, and
-    /// <see cref="Layout"/> threw <see cref="NullReferenceException"/>, even for an empty area.
+    /// A null <paramref name="list"/> is refused here.
     /// <para>Do not pass a start outside the list's entries, which count each child after its
     /// parent. 3.0 will throw from this constructor.</para>
     /// </remarks>
@@ -320,10 +317,8 @@ public sealed class ListRenderer : IRenderer
         // saw 26.68, so item 38 of a roman list on an 80pt page was split into "AAAA<NBSP>AAA" and
         // "A" while the 26 items whose gutter stayed at the indent, and had less room, stayed
         // intact.
-        // The set lives in code points written as escapes, in NoBreakSpaces. This method and
-        // NormaliseWhitespace used to keep a literal U+00A0 each, and an invisible literal inverts
-        // the predicate if any tool ever normalises it: a plain space would then be treated as
-        // non-breaking and nothing would separate a word.
+        // The set lives in code points written as escapes, in NoBreakSpaces: an invisible literal
+        // U+00A0 inverts the predicate if any tool normalises it.
         var widest = 0.0;
         var start = -1;
         for (var i = 0; i <= text.Length; i++)
