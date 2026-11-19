@@ -6,6 +6,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **`GifLoadOptions` and `GifImageLoader.Load(byte[], GifLoadOptions)` (#498).** One property,
+  `PlaceOnLogicalScreen`, default `false`. With it set the loader refuses what section 20.a rules
+  out ("Each image must fit within the boundaries of the Logical Screen"): a screen with a width
+  or height of 0, a frame whose far edge lies beyond the screen, and a screen of more than 100
+  million pixels each throw `InvalidDataException`, and none falls back to the frame's own size.
+  The canvas is the screen's size at 4 bytes a pixel, so a 42-byte file can cost 400,062,040
+  bytes (measured at the 100-million-pixel limit); do not enable it for untrusted files without
+  checking the screen size in bytes 6 to 9 first. Do not rely on the default being `false`: 3.0
+  may place the frame by default. A null `gifBytes` now throws `ArgumentNullException` where
+  2.3.3 threw `NullReferenceException`.
+- **The boundaries Layout documents are now pinned as tests.** `BoundaryContractTests` holds 67
+  cases (5 facts and 62 theory rows), taken from the probes that produced the sentences in #542:
+  which null argument decides when two are null on `DrawContext` and `RendererContext`, that an
+  outline entry's save refuses the flipped Y, that a foreign page drops a link annotation while
+  keeping the outline entry, that the five `Document.Add` overloads that carry a `TextStyle` defer a
+  non-finite font size (NaN, positive and negative infinity) and an unnamed `Standard14` value to
+  the save, where a nested list's indent is refused (451.2799 saves, 451.28 throws, and the boundary
+  moves with the list's margins), how a heading's level places its bookmark (level 0 is always a
+  top-level entry, and any other level hangs under the most recent earlier entry at exactly one
+  level below it, or at the top level when there is none), and that Symbol and ZapfDingbats measure
+  every non-surrogate Basic Multilingual Plane character as zero at every size probed.
+
+  Documentation goes stale silently: #542's review rounds kept re-measuring partitions an earlier
+  round had already settled, because nothing held the figures. A boundary a test asserts fails
+  loudly instead. A refusal is asserted by exception type, `ParamName` or a fragment of the message,
+  an acceptance by the save completing or the call returning, and a placement by the bytes written.
+  The placement cases carry controls: a Helvetica line beside the Symbol one, and a default indent
+  beside the infinite one. They catch a change that always places the line at the Symbol position or
+  always drops the item text.
+
 ### Changed
 
 - **Every package now targets `net10.0` and `net11.0`, built with the .NET 11 SDK (`global.json`
@@ -52,38 +84,79 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   except two that were re-measured on 1.30.4 and came out the same: the language-tag table in
   `docs/conformance-divergences.md` and the profile clause counts in `eng/clause-coverage.py`.
 
+- **The roadmap table is generated from a snapshot of the GitHub milestones (#369).** The block was
+  copied by hand into the root README and the eight package READMEs, and had drifted twice.
+  `eng/generate-roadmap.py` now renders it between `roadmap:begin` and `roadmap:end` markers in all
+  nine files from `eng/roadmap/milestones.json`, using each milestone's description as the row text.
+  `--check` compares the files with the snapshot offline, requires exactly one marker pair per
+  file, and runs in the new `docs-roadmap.yml` workflow on pull requests. `--refresh` pulls titles,
+  descriptions and the latest release tag from GitHub and regenerates; it exits 1 if an open
+  milestone is missing from the snapshot, which needs a track added by hand. `--drift` reports a
+  snapshot that no longer matches the live milestones, weekly and on demand, never on a pull
+  request. The table follows the 2026-11-19 renumbering: v2.4 is hardening and navigable
+  documents, v2.5 is accessible documents, extraction and Reader graduation, and the former v2.5
+  to v2.13 are v2.6 to v2.14.
+- **The package READMEs link to the docs by absolute URL.** The roadmap block's links to
+  `docs/pdf20-conformance.md`, the Reader guide and the Layout guide were `../../docs/...`, which
+  rendered with an empty href on the nuget.org page for Reader 2.3.3 (observed in review); they now
+  point at `https://github.com/Tim81/VellumPDF/blob/main/docs/`. This fixes those three links on
+  the package pages. Other links in the package READMEs are
+  unchanged.
+- **Milestone references corrected after the renumbering.** Swept: `v2.N` and bare `2.N` mentions
+  and `Layout [A-I]` mentions in `*.md` outside `CHANGELOG.md`, `docs/iso` and
+  `docs/pdf20-conformance.md`, and in `src/**/*.cs`; each hit was read for whether it names a
+  milestone, a release or neither. Changed: `docs/architecture.md`, `docs/layout-guide.md`,
+  `docs/reader-guide.md`, the Layout and Reader READMEs (capability tables: PDF/A-1 and PDF/A-4
+  are v2.6, the ISO/TS extensions v2.7, Reader graduation v2.5, signature verification v2.14,
+  tables of contents, indexes and widow and orphan control v2.4, table header semantics v2.5),
+  and comments in `PdfReadPage.cs`, `PdfReaderDiagnostic.cs` and `PdfImageColorSpace.cs`. The
+  Reader README and `docs/architecture.md` now say that image extraction and text extraction from
+  simple fonts shipped in 2.3.2, and `docs/architecture.md` says the Layout track runs A to G.
+  Released CHANGELOG sections are unchanged.
+
 ### Fixed
 
-- **`GifImageLoader` places the frame on the logical screen (#498).** It decoded the first frame
-  at the frame's own size and read neither the Logical Screen Descriptor's size nor the Image
-  Descriptor's left and top position, so a GIF whose frame covers part of a larger screen came
-  back at a different size and aspect ratio from the one a viewer shows. This is a deliberate
-  output change for those files and no others: the result is now as large as the screen
-  (GIF89a section 18), with the frame at its position (section 20.c.ii and 20.c.iii), and the
-  pixels the frame does not cover are transparent, through an 8-bit `/SMask` with alpha 0 and
-  black stored under it. A frame that fills the screen from the origin decodes to the same bytes
-  as 2.3.3 and gets no soft mask. The Background Color Index (section 18.f) is not used, because
-  it names a colour for the uncovered pixels and the transparent answer invents none. A screen
-  smaller than the frame does not crop it: the result is widened to the frame's far edge, and a
-  screen dimension of zero is handled the same way. A screen whose area would exceed the
-  100-million-pixel limit is not refused; the frame comes back at its own size, as on 2.3.3, and
-  the XML doc says not to rely on it: 3.0 will refuse such a file.
-  Only the first frame is decoded, as before.
+- **`GifImageLoader` can place the frame on the logical screen, as an option (#498).** The loader
+  decodes the first frame at the frame's own size and reads neither the Logical Screen
+  Descriptor's size nor the Image Descriptor's left and top position, so a GIF whose frame covers
+  part of a larger screen comes back at a different size and aspect ratio from the one a viewer
+  shows. `GifImageLoader.Load(byte[], GifLoadOptions)` with
+  `GifLoadOptions.PlaceOnLogicalScreen` set returns the screen's size (GIF89a section 18) with
+  the frame at its position (section 20.c.ii and 20.c.iii), and the pixels the frame does not
+  cover transparent, through an 8-bit `/SMask` with alpha 0 and black stored under it. The
+  Background Color Index (section 18.c.vii) is not used, because it names a colour for the
+  uncovered pixels and the transparent answer invents none. The frame is placed when its left or
+  top is not 0 or when the screen is wider or taller than the frame; a frame that fills the
+  screen from the origin gets no soft mask. **The default does not change:** `Load(byte[])` and
+  `Load` with default options return what 2.3.3 returned, byte for byte, for every file that
+  loaded on 2.3.3 (3,937 files in a generated corpus, compared by size, pixel and mask hashes
+  and refusal message), so Layout documents keep their size. Only the first frame is decoded, as
+  before.
 - **`GifImageLoader` no longer allocates the raster before the data has been shown to hold it
   (#536's class).** A 42-byte GIF declaring 10,000 x 10,000 is within the 100-million-pixel limit,
   and 2.3.3 allocated the 100,000,000-byte index buffer before refusing it for carrying 4 pixels
-  (measured with `GC.GetAllocatedBytesForCurrentThread` around `Load`: 100.0 MB on 2.3.3, 0.0 MB
-  now). The LZW decoder now runs once without a buffer, which makes the same refusals with the same
-  messages and counts the pixels delivered, and allocates only after the count matches. The result
-  for the files probed is unchanged: a 3000 x 3000 file, interlaced and not, decodes to the same
-  bytes on 2.3.3 and now, and each short stream probed is refused with the same message.
+  (measured with `GC.GetAllocatedBytesForCurrentThread` around `Load`: 100,026,800 bytes on 2.3.3
+  for that file, 26,776 bytes now). The LZW decoder now runs
+  once without a buffer, which makes the same refusals with the same messages and counts the
+  pixels delivered, and allocates only after the count matches. The result for the files probed
+  is unchanged: a 3000 x 3000 file, interlaced and not, decodes to the same bytes on 2.3.3 and
+  now, and each short stream probed is refused with the same message. A file that loads pays for
+  the counting pass: 51,528 bytes against 26,872 for a 2 x 2 frame.
 - **`GifEncoder` writes `GIF87a` when it writes only 87a blocks (#499).** It wrote `GIF89a` over a
   Global Color Table, an Image Descriptor, Table Based Image Data and a Trailer, each of which
   lists 87a as its required version, and GIF89a section 17.d.ii says an encoder should use the
   earliest version that defines every block in the stream. This is a deliberate output change:
-  bytes 3 to 5 of every file `GifEncoder.Encode` returns change from `89a` to `87a`; the rest of
-  the file is identical. `GifImageLoader` accepts both versions, as before. A later release that
+  byte 4 of every file `GifEncoder.Encode` returns changes from `9` to `7` (`89a` to `87a`); the
+  rest of the file is identical. `GifImageLoader` accepts both versions, as before. A later release that
   writes a block needing 89a will write `GIF89a`, so read the version from the file.
+- **`ExternalToolTests.TryRun_CapturesOutputLargerThanTheOsPipeBuffer` no longer times out on a
+  loaded machine (test-only change).** Its child was a 20,000-iteration shell echo loop, which hit
+  the 30 s limit several times on a loaded Windows machine while passing alone. The child now copies
+  a temporary file of about 400KB with `cmd.exe /c type` (`/bin/cat` elsewhere), so the output still
+  exceeds the 64KB pipe buffer but the child does almost no work. The test also asserts the
+  captured stdout equals the file's content. Moving the drain after `WaitForExit` in
+  `ExternalTool.TryRun` still fails the test by timeout. No shipped package changes.
+
 - **Cost-bound tests no longer assert on elapsed time (#400, #456).** A `Stopwatch` checked after a
   call returns cannot end a hang, and a 10 s bound fails on a loaded runner: the main CI run for
   1c61fa6 failed `FindingHigh_A4FlateBombPadding_refusesQuickly_viaCostBudget` at 11.79 s, and #400
@@ -103,6 +176,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and keeps its token-count bound. The Layout cap tests use
   renderers that fail by name after 200,004 `Layout` calls. Remaining `Timeout` values are 300 s hang
   guards, except the `EncryptDictionaryDenialOfServiceTests` pin sized in #456. No public API changes.
+
+## [2.3.4] - 2026-11-19
+
+A security servicing release. VellumPdf's own code is unchanged: `git diff v2.3.3 -- src` is empty
+for the commit this release is built from. The one shipped change is the
+`System.Security.Cryptography.Pkcs` dependency of `VellumPdf.Signing`, raised from 10.0.12 to
+10.0.14. If you use `VellumPdf.Signing` 2.3.3 and do not reference a newer Pkcs yourself, NuGet
+resolves the lowest version the package declares, 10.0.12, so you stay on the vulnerable build
+until you update.
+
+### Security
+
+- **`VellumPdf.Signing` now depends on `System.Security.Cryptography.Pkcs` 10.0.14.** The 10.0.12
+  that 2.3.3 declares is inside the affected range of two advisories, both titled ".NET Denial of
+  Service Vulnerability" and both published 2026-10-13: GHSA-846f-f764-76mx (CVE-2026-84008, high)
+  and GHSA-2fmv-rv2c-59x7 (CVE-2026-70162, medium). Each covers 10.0.0 through 10.0.12 and is
+  patched in 10.0.13. This release declares 10.0.14, which is past both fixes. Test-only packages
+  and the SDK patch also moved; none of them ships in a package.
 
 ## [2.3.3] - 2026-09-20
 
@@ -3879,7 +3970,8 @@ few small additions. No public API was removed.
   headers, and no unbounded allocations driven by attacker-controlled length
   fields.
 
-[Unreleased]: https://github.com/Tim81/VellumPDF/compare/v2.3.3...HEAD
+[Unreleased]: https://github.com/Tim81/VellumPDF/compare/v2.3.4...HEAD
+[2.3.4]: https://github.com/Tim81/VellumPDF/releases/tag/v2.3.4
 [2.3.3]: https://github.com/Tim81/VellumPDF/releases/tag/v2.3.3
 [2.3.2]: https://github.com/Tim81/VellumPDF/releases/tag/v2.3.2
 [2.3.1]: https://github.com/Tim81/VellumPDF/releases/tag/v2.3.1

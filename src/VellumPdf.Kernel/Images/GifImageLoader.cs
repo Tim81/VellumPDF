@@ -13,8 +13,9 @@ namespace VellumPdf.Images;
 ///   • Global and local colour tables.
 ///   • Interlaced images, deinterlaced to display order (Appendix E).
 ///   • Graphic Control Extension: transparent index → 8-bit /SMask.
-///   • Logical screen: a frame that does not cover the logical screen is placed on it at its
-///     Image Left/Top Position, and the pixels it does not cover are transparent (8-bit /SMask).
+///   • Logical screen, opt-in through <see cref="GifLoadOptions.PlaceOnLogicalScreen"/>: the frame
+///     is placed on the screen at its Image Left/Top Position and the pixels it does not cover are
+///     transparent (8-bit /SMask). Without the option the frame comes back at its own size.
 ///   • Animated GIFs: only the first image descriptor is decoded; subsequent frames are ignored.
 ///
 /// Rejected: a file with no image descriptor, an image descriptor truncated before its own fields
@@ -26,7 +27,9 @@ namespace VellumPdf.Images;
 /// </summary>
 public static class GifImageLoader
 {
-    /// <summary>Decodes the first frame of a GIF into a FlateDecode Image XObject.</summary>
+    /// <summary>
+    /// Decodes the first frame of a GIF into a FlateDecode Image XObject, at the frame's own size.
+    /// </summary>
     /// <remarks>
     /// Malformed input is refused. This method throws <see cref="InvalidDataException"/> naming
     /// the fault for a file with no image descriptor, an image descriptor truncated before its own
@@ -35,33 +38,20 @@ public static class GifImageLoader
     /// read from, a colour table or sub-block chain that runs past the end of the file, a truncated
     /// extension, or dimensions <see cref="ImageLimits.ValidateDimensions"/> refuses. A caller
     /// can guard on the one exception type for all of them rather than several.
-    /// <para><b>The frame is placed on the logical screen.</b> The result is as large as the
-    /// Logical Screen Descriptor says (GIF89a section 18), with the frame at its Image Left and Top
-    /// Position (section 20.c.ii and 20.c.iii). The pixels the frame does not cover are
-    /// transparent: the result carries an /SMask whose alpha is 0 there, and the colour stored
-    /// under them is black. The Background Color Index (section 18.f) is not read and plays no
-    /// part, because it names a colour for those pixels and the transparent answer invents none.
-    /// A frame that fills the screen from its origin, which is what a single-image file from an
-    /// ordinary encoder looks like, is decoded exactly as before and gets no /SMask it did not
-    /// already have from a Graphic Control Extension.</para>
-    /// <para>A screen smaller than the frame it carries is not refused and does not crop the
-    /// frame: the result is widened to the right and bottom edge of the frame, so every pixel the
-    /// file holds is kept. A screen dimension of zero is treated the same way, as a screen the
-    /// frame overflows. Version 2.3.3 returned the frame at its own size and ignored
-    /// the screen and the position, so a file whose frame does not cover its screen decodes to a
-    /// different size now.</para>
-    /// <para><b>A logical screen over the pixel limit is not applied.</b> The frame is bounded by
-    /// <see cref="ImageLimits.ValidateDimensions"/>, as before. When the screen the frame would be
-    /// placed on has more than 100 million pixels, the call does not throw: the frame is returned
-    /// at its own size, with no /SMask from the screen, which is what 2.3.3 returned for every
-    /// file and what a caller of 2.x may keep relying on. <b>Do not pass a file whose screen is
-    /// over the limit and expect the frame to be placed.</b> Version 3.0 will refuse such a file
-    /// with <see cref="InvalidDataException"/>, because a result that silently ignores the
-    /// screen is the defect this member fixes for every smaller one.</para>
+    /// <para><b>The Logical Screen Descriptor and the frame's position are not read.</b> The result
+    /// is the frame at its own size, with an /SMask only where a Graphic Control Extension names a
+    /// transparent index. A file whose frame is smaller than its screen, or sits away from the
+    /// screen's origin, therefore decodes to a different size and aspect ratio from the one a
+    /// viewer shows. <see cref="Load(byte[], GifLoadOptions)"/> with
+    /// <see cref="GifLoadOptions.PlaceOnLogicalScreen"/> set places the frame on the screen. <b>Do
+    /// not rely on the default ignoring the screen:</b> a later major may place the frame by
+    /// default.</para>
     /// <para>A stream carrying more pixels than the image descriptor promises is <b>not</b>
     /// refused: decoding stops once the promised count is produced, so trailing codes are never
     /// read. Do not rely on the overrun being rejected; a later major may make it one.</para>
     /// </remarks>
+    /// <param name="gifBytes">The GIF file.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="gifBytes"/> is <see langword="null"/>.</exception>
     /// <exception cref="InvalidDataException">
     /// <paramref name="gifBytes"/> is too small to be a GIF, does not carry the GIF87a/GIF89a
     /// signature, has no image descriptor, the image descriptor itself is truncated, a colour
@@ -70,8 +60,52 @@ public static class GifImageLoader
     /// the LZW stream is corrupt or ends before every promised pixel is produced, or the image
     /// dimensions are invalid or exceed the safety limit named in the message.
     /// </exception>
-    public static PdfImageXObject Load(byte[] gifBytes)
+    public static PdfImageXObject Load(byte[] gifBytes) => Load(gifBytes, GifLoadOptions.Default);
+
+    /// <summary>
+    /// Decodes the first frame of a GIF into a FlateDecode Image XObject, placing it on the logical
+    /// screen when <paramref name="options"/> asks for that.
+    /// </summary>
+    /// <remarks>
+    /// With <see cref="GifLoadOptions.PlaceOnLogicalScreen"/> unset this is
+    /// <see cref="Load(byte[])"/>. The rest of this section describes the option set.
+    /// <para><b>The frame is placed on the logical screen.</b> The result is as large as the
+    /// Logical Screen Descriptor says (GIF89a section 18), with the frame at its Image Left and Top
+    /// Position (section 20.c.ii and 20.c.iii). The pixels the frame does not cover are
+    /// transparent: the result carries an /SMask whose alpha is 0 there, and the colour stored
+    /// under them is black. The Background Color Index (section 18.c.vii) is not read and plays no
+    /// part, because it names a colour for those pixels and the transparent answer invents none.
+    /// The frame is placed when its left or top is not 0 or when the screen is wider or taller
+    /// than the frame. A frame that fills the screen from the origin gets no /SMask it did not
+    /// already have from a Graphic Control Extension.</para>
+    /// <para><b>A screen the frame does not fit is refused.</b> Section 20.a says each image must
+    /// fit within the boundaries of the Logical Screen, so under this option a screen with a
+    /// width or height of 0, a frame whose far edge lies beyond the screen, and a screen of more
+    /// than 100 million pixels (the limit <see cref="ImageLimits.ValidateDimensions"/> applies to a
+    /// frame) all throw <see cref="InvalidDataException"/>. None falls back to the frame's own
+    /// size, because the option was asked for and an answer that silently ignored it would be
+    /// the defect it exists to fix.</para>
+    /// <para><b>Cost.</b> The canvas is allocated at the screen's size, 4 bytes a pixel (RGB plus
+    /// the alpha of the /SMask), however small the frame is. A 42-byte file can therefore claim a
+    /// screen that allocates about 400 MB, the largest the limit allows. Callers loading
+    /// untrusted files should check the screen size in bytes 6 to 9 before enabling the option.
+    /// With the option unset no allocation depends on the screen.</para>
+    /// </remarks>
+    /// <param name="gifBytes">The GIF file.</param>
+    /// <param name="options">What to do with the logical screen.</param>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="gifBytes"/> or <paramref name="options"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="InvalidDataException">
+    /// Every case <see cref="Load(byte[])"/> documents, and, with
+    /// <see cref="GifLoadOptions.PlaceOnLogicalScreen"/> set, a screen with a zero dimension, a
+    /// frame that extends past the screen, or a screen over 100 million pixels.
+    /// </exception>
+    public static PdfImageXObject Load(byte[] gifBytes, GifLoadOptions options)
     {
+        ArgumentNullException.ThrowIfNull(gifBytes);
+        ArgumentNullException.ThrowIfNull(options);
+        var place = options.PlaceOnLogicalScreen;
         if (gifBytes.Length < 13)
             throw new InvalidDataException("GIF data too small.");
 
@@ -83,7 +117,8 @@ public static class GifImageLoader
 
         // Logical screen descriptor, section 18: width(2), height(2), packed(1), background(1),
         // aspect(1). The background index (byte 11) is deliberately not read; see the remarks on
-        // Load for why the uncovered area is transparent rather than that colour.
+        // Load for why the uncovered area is transparent rather than that colour. The size is
+        // used only when placement was asked for.
         var screenWidth = gifBytes[6] | (gifBytes[7] << 8);
         var screenHeight = gifBytes[8] | (gifBytes[9] << 8);
         var globalColorTableFlag = (gifBytes[10] & 0x80) != 0;
@@ -113,7 +148,7 @@ public static class GifImageLoader
 
             if (blockType == 0x2C) // Image Descriptor
             {
-                return DecodeImage(gifBytes, ref pos, globalPalette, transparentIndex, screenWidth, screenHeight);
+                return DecodeImage(gifBytes, ref pos, globalPalette, transparentIndex, screenWidth, screenHeight, place);
             }
 
             if (blockType == 0x21) // Extension
@@ -184,7 +219,7 @@ public static class GifImageLoader
 
     private static PdfImageXObject DecodeImage(
         byte[] data, ref int pos,
-        byte[]? globalPalette, int transparentIndex, int screenWidth, int screenHeight)
+        byte[]? globalPalette, int transparentIndex, int screenWidth, int screenHeight, bool place)
     {
         if (pos + 9 > data.Length)
             throw new InvalidDataException("Truncated GIF image descriptor.");
@@ -233,8 +268,8 @@ public static class GifImageLoader
         var lzwStream = GatherSubBlocks(data, ref pos);
 
         // LZW decode. The raster buffer is sized from the image descriptor, which is attacker
-        // text: a 39-byte file can declare 10,000 x 10,000 and the code stream behind it is
-        // refused as short, but only after the buffer exists (100,026,144 bytes measured on
+        // text: a 42-byte file can declare 10,000 x 10,000 and the code stream behind it is
+        // refused as short, but only after the buffer exists (100,029,576 bytes measured on
         // 2.3.3 for that file, #536's class). A first pass runs the same decoder with no buffer
         // and so makes the same refusals, with the same messages, in the same order, and counts
         // the pixels the stream delivers. The buffer is allocated only once that count has
@@ -248,22 +283,29 @@ public static class GifImageLoader
         if (interlaced)
             indices = Deinterlace(indices, width, height);
 
-        // The frame goes on the logical screen (section 18) at its Left/Top Position (section 20).
-        // A screen smaller than the frame's far edge is widened to it rather than cropping, so no
-        // pixel the file holds is lost, and a screen of zero is the same case.
-        var canvasWidth = Math.Max(screenWidth, left + width);
-        var canvasHeight = Math.Max(screenHeight, top + height);
-        if (canvasWidth == width && canvasHeight == height)
+        if (!place)
             return FrameOnly(indices, width, height, palette, transparentIndex);
 
-        // Version 2.3.3 returned the frame at its own size for every file, and refusing
-        // one now would turn a file that loaded into one that does not. A screen that cannot be
-        // built within the pixel limit therefore gets the frame as it always did.
-        if ((long)canvasWidth * canvasHeight > ImageLimits.MaxPixels)
+        // Placement was asked for, so a screen the frame cannot be placed on is refused rather
+        // than answered with the frame alone. Section 20.a: "Each image must fit within the
+        // boundaries of the Logical Screen". The checks run after the LZW decode, so a file that is
+        // malformed in the ways Load documents is refused with those messages first.
+        if (screenWidth == 0 || screenHeight == 0)
+            throw new InvalidDataException(
+                $"GIF logical screen is {screenWidth}x{screenHeight}; the frame cannot be placed on it.");
+        if (left + width > screenWidth || top + height > screenHeight)
+            throw new InvalidDataException(
+                $"GIF frame {width}x{height} at ({left},{top}) does not fit its {screenWidth}x{screenHeight} logical screen (section 20.a).");
+        if ((long)screenWidth * screenHeight > ImageLimits.MaxPixels)
+            throw new InvalidDataException(
+                $"GIF logical screen {screenWidth}x{screenHeight} exceeds the {ImageLimits.MaxPixels}-pixel limit.");
+
+        // A frame that fills the screen from the origin is the frame as it is.
+        if (screenWidth == width && screenHeight == height)
             return FrameOnly(indices, width, height, palette, transparentIndex);
 
         return FrameOnScreen(
-            indices, width, height, left, top, canvasWidth, canvasHeight, palette, transparentIndex);
+            indices, width, height, left, top, screenWidth, screenHeight, palette, transparentIndex);
     }
 
     private static PdfImageXObject FrameOnly(

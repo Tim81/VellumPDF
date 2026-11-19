@@ -78,7 +78,7 @@ public sealed class PdfReadPage
     /// <summary>
     /// The page's <c>/Resources</c> dictionary (ISO 32000-2 §7.7.3.3), own or inherited, or
     /// <see langword="null"/> when nothing in the page's ancestor chain supplies one. Internal for
-    /// v2.4 by design (the Reader package does not expose resource/content access yet).
+    /// v2.5 by design (the Reader package does not expose resource/content access yet).
     /// </summary>
     internal PdfDictionary? Resources { get; }
 

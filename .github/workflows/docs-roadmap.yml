@@ -1,0 +1,65 @@
+# Guards the roadmap block in the nine READMEs against drifting from its snapshot (#369).
+#
+# eng/generate-roadmap.py renders the block from eng/roadmap/milestones.json, a committed
+# snapshot of the GitHub milestones. `check` is offline on purpose: a pull request is judged
+# against the snapshot it carries, never against the live milestones, so editing a milestone
+# on GitHub cannot turn an unrelated pull request red.
+#
+# Drift between the snapshot and the live milestones is reported by `drift`, which runs only
+# weekly and on demand. It never runs on a pull request. A red `drift` job means a maintainer
+# should run `python eng/generate-roadmap.py --refresh` and commit the result.
+
+name: Docs roadmap
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'README.md'
+      - 'src/*/README.md'
+      - 'eng/generate-roadmap.py'
+      - 'eng/roadmap/**'
+      - '.github/workflows/docs-roadmap.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'README.md'
+      - 'src/*/README.md'
+      - 'eng/generate-roadmap.py'
+      - 'eng/roadmap/**'
+      - '.github/workflows/docs-roadmap.yml'
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+
+      - name: Roadmap block matches the snapshot
+        run: python eng/generate-roadmap.py --check
+
+  drift:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+
+      - name: Snapshot matches the live milestones
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python eng/generate-roadmap.py --drift

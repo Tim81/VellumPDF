@@ -1,1 +1,14 @@
 #nullable enable
+static VellumPdf.Images.GifImageLoader.Load(byte[]! gifBytes, VellumPdf.Images.GifLoadOptions! options) -> VellumPdf.Images.PdfImageXObject!
+VellumPdf.Images.GifLoadOptions
+VellumPdf.Images.GifLoadOptions.<Clone>$() -> VellumPdf.Images.GifLoadOptions!
+static VellumPdf.Images.GifLoadOptions.Default.get -> VellumPdf.Images.GifLoadOptions!
+VellumPdf.Images.GifLoadOptions.Equals(VellumPdf.Images.GifLoadOptions? other) -> bool
+override VellumPdf.Images.GifLoadOptions.Equals(object? obj) -> bool
+override VellumPdf.Images.GifLoadOptions.GetHashCode() -> int
+VellumPdf.Images.GifLoadOptions.GifLoadOptions() -> void
+VellumPdf.Images.GifLoadOptions.PlaceOnLogicalScreen.get -> bool
+VellumPdf.Images.GifLoadOptions.PlaceOnLogicalScreen.init -> void
+override VellumPdf.Images.GifLoadOptions.ToString() -> string!
+static VellumPdf.Images.GifLoadOptions.operator !=(VellumPdf.Images.GifLoadOptions? left, VellumPdf.Images.GifLoadOptions? right) -> bool
+static VellumPdf.Images.GifLoadOptions.operator ==(VellumPdf.Images.GifLoadOptions? left, VellumPdf.Images.GifLoadOptions? right) -> bool

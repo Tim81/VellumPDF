@@ -55,7 +55,70 @@ public sealed class GifAllocationTests
         var b = GifImageLoader.Load(overlong);
 
         Assert.Equal((2, 2), (a.Width, a.Height));
-        Assert.Equal((2, 2), (b.Width, b.Height));   // 1x1 frame on the 2x2 screen, placed on it (#498)
+        Assert.Equal((1, 1), (b.Width, b.Height));   // the declared 1x1 frame; the screen is not read by default
+    }
+
+    /// <summary>
+    /// Without the option, no allocation depends on the logical screen: a valid 2x2 frame on a
+    /// screen declaring 10,000 x 10,000 loads for the same allocation as on a 2x2 screen, on the
+    /// order of the frame. (The screen is bytes 6 to 9 of the header; the file is the same 42-byte
+    /// size.)
+    /// </summary>
+    [Fact]
+    public void Load_defaultPath_doesNotAllocateForTheScreen()
+    {
+        var gif = TinyFileDeclaring(2, 2, interlaced: false);
+        gif[6] = 0x10; gif[7] = 0x27; gif[8] = 0x10; gif[9] = 0x27;   // 10,000 x 10,000
+        Assert.True(gif.Length < 64, $"fixture is {gif.Length} bytes");
+        _ = GifImageLoader.Load(gif);   // warm up
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        var img = GifImageLoader.Load(gif);
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal((2, 2), (img.Width, img.Height));
+        Assert.True(allocated < 1_000_000, $"allocated {allocated} bytes for a 2x2 frame on a 10,000 x 10,000 screen");
+    }
+
+    /// <summary>
+    /// With the option, the canvas is the screen: allocation is bounded by 4 bytes a pixel (RGB
+    /// plus the alpha of the /SMask) plus a constant for the frame and the decoder, and the screen
+    /// itself is bounded by the 100M-pixel limit, so the most a file can cost is about 400 MB. The
+    /// bound is checked on a 16M-pixel screen, 5 bytes a pixel allowed, so a second copy of the
+    /// canvas (another 4 bytes a pixel) fails it.
+    /// </summary>
+    [Fact]
+    public void Load_placed_allocatesAtMostFourBytesAPixelOfScreen()
+    {
+        var gif = TinyFileDeclaring(2, 2, interlaced: false);
+        gif[6] = 0xA0; gif[7] = 0x0F; gif[8] = 0xA0; gif[9] = 0x0F;   // 4,000 x 4,000
+        var options = new GifLoadOptions { PlaceOnLogicalScreen = true };
+        _ = GifImageLoader.Load(gif, options);   // warm up
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        var img = GifImageLoader.Load(gif, options);
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        var pixels = 4_000L * 4_000L;
+        Assert.Equal((4_000, 4_000), (img.Width, img.Height));
+        Assert.True(allocated >= 4 * pixels, $"allocated {allocated} bytes, under the canvas's {4 * pixels}");
+        Assert.True(allocated <= 5 * pixels, $"allocated {allocated} bytes, over 5 bytes a pixel ({5 * pixels})");
+    }
+
+    /// <summary>A screen over the limit is refused before the canvas exists, so the refusal allocates no canvas.</summary>
+    [Fact]
+    public void Load_placedOverTheLimit_isRefusedWithoutAllocatingTheCanvas()
+    {
+        var gif = TinyFileDeclaring(2, 2, interlaced: false);
+        gif[6] = 0xFF; gif[7] = 0xFF; gif[8] = 0xFF; gif[9] = 0xFF;   // 65,535 x 65,535
+        var options = new GifLoadOptions { PlaceOnLogicalScreen = true };
+        Assert.Throws<InvalidDataException>(() => GifImageLoader.Load(gif, options));   // warm up
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        Assert.Throws<InvalidDataException>(() => GifImageLoader.Load(gif, options));
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.True(allocated < 1_000_000, $"allocated {allocated} bytes refusing an over-limit screen");
     }
 
     private static byte[] TinyFileDeclaring(int width, int height, bool interlaced)

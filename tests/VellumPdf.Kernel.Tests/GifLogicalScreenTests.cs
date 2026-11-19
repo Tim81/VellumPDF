@@ -10,13 +10,15 @@ using VellumPdf.Images;
 namespace VellumPdf.Kernel.Tests;
 
 /// <summary>
-/// Where <see cref="GifImageLoader"/> puts the first frame: on the logical screen of GIF89a
-/// section 18, at the Image Left and Top Position of section 20.c.ii and 20.c.iii (#498).
+/// Where <see cref="GifImageLoader"/> puts the first frame (#498). By default it is the frame at
+/// its own size, exactly what 2.3.3 returned. With
+/// <see cref="GifLoadOptions.PlaceOnLogicalScreen"/> it is placed on the logical screen of GIF89a
+/// section 18, at the Image Left and Top Position of section 20.c.ii and 20.c.iii.
 ///
-/// Releases through 2.3.3 decoded at the frame's own size. A file whose frame fills the screen
-/// from the origin, which is every file in the #490 sweep, could not tell the difference, which is
-/// why nothing caught it. Every case here therefore uses a frame that is not the whole screen,
-/// apart from the one that pins that a file that is the whole screen is unchanged.
+/// A file whose frame fills the screen from the origin, which is every file in the #490 sweep,
+/// cannot tell the two apart, which is why nothing caught the defect. Every case here therefore
+/// uses a frame that is not the whole screen, apart from the ones that pin that a file that is the
+/// whole screen is unchanged.
 ///
 /// Each fixture is a real file from <see cref="GifEncoder"/> with the screen size and the frame
 /// position patched in the header and the image descriptor, so the LZW stream is a conforming one
@@ -35,20 +37,73 @@ public sealed class GifLogicalScreenTests
         ['D'] = [240, 250, 70],
     };
 
+    private static readonly GifLoadOptions Placed = new() { PlaceOnLogicalScreen = true };
+
+    private static PdfImageXObject Place(byte[] gif) => GifImageLoader.Load(gif, Placed);
+
     /// <summary>
     /// A frame that fills the screen from the origin decodes as it did on 2.3.3: the frame's own
-    /// pixels, no soft mask. This is the file every ordinary encoder writes.
+    /// pixels, no soft mask, with or without the option. This is the file every ordinary encoder
+    /// writes.
     /// </summary>
     [Fact]
     public void Decode_frameFillsScreenAtOrigin_isTheFrameWithNoSoftMask()
     {
         var gif = Build(["ABA", "CDC"], screenWidth: 3, screenHeight: 2, left: 0, top: 0);
 
+        foreach (var img in new[] { GifImageLoader.Load(gif), Place(gif) })
+        {
+            Assert.Equal((3, 2), (img.Width, img.Height));
+            Assert.Null(img.SMask);
+            Assert.Equal(["ABA", "CDC"], ReadMap(img));
+        }
+    }
+
+    /// <summary>
+    /// The default result is the frame at its own size and nothing else, whatever the screen and
+    /// position say: byte-identical to loading the same frame from a file whose screen is the
+    /// frame, which is what 2.3.3 returned for every one of these.
+    /// </summary>
+    [Theory]
+    [InlineData(20, 20, 3, 6)]    // the #498 offset frame on a larger screen
+    [InlineData(9, 7, 4, 3)]      // flush to the far corner
+    [InlineData(4, 3, 0, 0)]      // at the origin, screen larger
+    [InlineData(2, 2, 0, 0)]      // screen smaller than the frame
+    [InlineData(2, 2, 1, 2)]      // screen smaller than the far edge
+    [InlineData(0, 0, 1, 1)]      // zero screen, offset
+    [InlineData(65535, 65535, 0, 0)]   // over the pixel limit
+    [InlineData(10_000, 10_000, 9_998, 9_998)]   // at the limit
+    public void Default_ignoresTheScreenAndThePosition_asVersion233Did(int sw, int sh, int left, int top)
+    {
+        string[] frame = ["ABCDA", "BCDAB", "CDABC", "DABCD"];
+        var reference = GifImageLoader.Load(Build(frame, screenWidth: 5, screenHeight: 4, left: 0, top: 0));
+
+        var img = GifImageLoader.Load(Build(frame, sw, sh, left, top));
+
+        Assert.Equal((5, 4), (img.Width, img.Height));
+        Assert.Null(img.SMask);
+        Assert.Equal(Inflate(reference), Inflate(img));
+    }
+
+    /// <summary>A transparent index still gives the /SMask it gave on 2.3.3, at the frame's size, with no screen involved.</summary>
+    [Fact]
+    public void Default_transparentIndexOnAnOffsetFrame_isTheFramesOwnMask()
+    {
+        var gif = Build(["AB", "BA"], screenWidth: 4, screenHeight: 3, left: 1, top: 1, transparentColour: 'B');
+
         var img = GifImageLoader.Load(gif);
 
-        Assert.Equal((3, 2), (img.Width, img.Height));
-        Assert.Null(img.SMask);
-        Assert.Equal(["ABA", "CDC"], ReadMap(img));
+        Assert.Equal((2, 2), (img.Width, img.Height));
+        Assert.Equal([255, 0, 0, 255], ReadAlpha(img));
+    }
+
+    [Fact]
+    public void Load_nullArguments_areRefusedByName()
+    {
+        var gif = Build(["AB", "CD"], screenWidth: 2, screenHeight: 2, left: 0, top: 0);
+
+        Assert.Equal("gifBytes", Assert.Throws<ArgumentNullException>(() => GifImageLoader.Load(null!)).ParamName);
+        Assert.Equal("options", Assert.Throws<ArgumentNullException>(() => GifImageLoader.Load(gif, null!)).ParamName);
     }
 
     /// <summary>
@@ -63,7 +118,7 @@ public sealed class GifLogicalScreenTests
         string[] frame = ["ABCDA", "BCDAB", "CDABC", "DABCD"];
         var gif = Build(frame, screenWidth: 20, screenHeight: 20, left: 3, top: 6);
 
-        var img = GifImageLoader.Load(gif);
+        var img = Place(gif);
 
         Assert.Equal((20, 20), (img.Width, img.Height));
         var map = ReadMap(img);
@@ -80,7 +135,7 @@ public sealed class GifLogicalScreenTests
         string[] frame = ["ABCDA", "BCDAB", "CDABC", "DABCD"];
         var gif = Build(frame, screenWidth: 9, screenHeight: 7, left: 4, top: 3);
 
-        var map = ReadMap(GifImageLoader.Load(gif));
+        var map = ReadMap(Place(gif));
 
         Assert.Equal(
             [".........", ".........", ".........", "....ABCDA", "....BCDAB", "....CDABC", "....DABCD"],
@@ -96,7 +151,7 @@ public sealed class GifLogicalScreenTests
     {
         var gif = Build(["AB", "CD"], screenWidth: 4, screenHeight: 3, left: 0, top: 0);
 
-        var img = GifImageLoader.Load(gif);
+        var img = Place(gif);
 
         Assert.Equal((4, 3), (img.Width, img.Height));
         Assert.Equal(["AB..", "CD..", "...."], ReadMap(img));
@@ -107,18 +162,18 @@ public sealed class GifLogicalScreenTests
 
     /// <summary>
     /// The colour stored under an uncovered pixel is black. It is not the Background Color Index's
-    /// colour (section 18.f), and it does not change when that index changes, which is what the
-    /// remarks on <see cref="GifImageLoader.Load"/> say.
+    /// colour (section 18.c.vii), and it does not change when that index changes, which is what the
+    /// remarks on <see cref="GifImageLoader.Load(byte[], GifLoadOptions)"/> say.
     /// </summary>
     [Fact]
     public void Decode_backgroundColourIndex_playsNoPart()
     {
         var plain = Build(["AB", "CD"], screenWidth: 4, screenHeight: 3, left: 0, top: 0);
         var withBackground = (byte[])plain.Clone();
-        withBackground[11] = 2;   // Background Color Index, section 18.f: a non-black table entry
+        withBackground[11] = 2;   // Background Color Index, section 18.c.vii: a non-black table entry
 
-        var a = GifImageLoader.Load(plain);
-        var b = GifImageLoader.Load(withBackground);
+        var a = Place(plain);
+        var b = Place(withBackground);
 
         Assert.Equal(Inflate(a), Inflate(b));
         Assert.Equal(ReadAlpha(a), ReadAlpha(b));
@@ -128,49 +183,38 @@ public sealed class GifLogicalScreenTests
     }
 
     /// <summary>
-    /// A screen smaller than the frame does not crop it: every pixel the file holds is kept, and
-    /// with the frame at the origin the result is exactly the frame, as it was on 2.3.3.
+    /// Section 20.a: "Each image must fit within the boundaries of the Logical Screen". With the
+    /// option, a frame that does not is refused, naming both sizes. The first two cases need
+    /// `left + width > screenWidth` or the height equivalent and nothing else: the screen is in the
+    /// pixel limit and has no zero dimension, so no other guard can be what throws.
     /// </summary>
-    [Fact]
-    public void Decode_screenSmallerThanFrameAtOrigin_keepsTheWholeFrame()
+    [Theory]
+    [InlineData(2, 2, 0, 0)]    // screen smaller than the frame at the origin
+    [InlineData(4, 3, 1, 0)]    // wide enough alone; the offset pushes the far edge out
+    [InlineData(4, 3, 0, 1)]    // tall enough alone; the offset pushes the bottom out
+    [InlineData(4, 2, 0, 0)]    // only the height is short
+    public void Place_frameDoesNotFitTheScreen_isRefused(int sw, int sh, int left, int top)
     {
-        var gif = Build(["ABCD", "DCBA", "ABCD"], screenWidth: 2, screenHeight: 2, left: 0, top: 0);
+        var gif = Build(["ABCD", "DCBA", "ABCD"], sw, sh, left, top);
 
-        var img = GifImageLoader.Load(gif);
+        var ex = Assert.Throws<InvalidDataException>(() => Place(gif));
 
-        Assert.Equal((4, 3), (img.Width, img.Height));
-        Assert.Null(img.SMask);
-        Assert.Equal(["ABCD", "DCBA", "ABCD"], ReadMap(img));
+        Assert.Contains("does not fit its " + sw + "x" + sh + " logical screen", ex.Message);
+        Assert.Contains("4x3 at (" + left + "," + top + ")", ex.Message);
     }
 
-    /// <summary>
-    /// A screen smaller than the frame's far edge is widened to that edge, with the frame at its
-    /// position and the margin it leaves transparent.
-    /// </summary>
-    [Fact]
-    public void Decode_screenSmallerThanOffsetFrame_isWidenedToTheFramesFarEdge()
+    /// <summary>A screen of 0 in either dimension has no area to place on; the frame is not returned alone instead.</summary>
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(0, 5)]
+    [InlineData(5, 0)]
+    public void Place_zeroSizedScreen_isRefused(int sw, int sh)
     {
-        var gif = Build(["ABC", "CBA"], screenWidth: 2, screenHeight: 2, left: 1, top: 2);
+        var gif = Build(["AB", "CD"], sw, sh, left: 0, top: 0);
 
-        var img = GifImageLoader.Load(gif);
+        var ex = Assert.Throws<InvalidDataException>(() => Place(gif));
 
-        Assert.Equal((4, 4), (img.Width, img.Height));
-        Assert.Equal(["....", "....", ".ABC", ".CBA"], ReadMap(img));
-    }
-
-    /// <summary>
-    /// A screen of zero by zero is a screen the frame overflows, so the same widening applies. A
-    /// frame at the origin comes back at its own size with no soft mask, as on 2.3.3.
-    /// </summary>
-    [Fact]
-    public void Decode_zeroSizedScreen_isTreatedAsOverflowedByTheFrame()
-    {
-        var atOrigin = GifImageLoader.Load(Build(["AB", "CD"], screenWidth: 0, screenHeight: 0, left: 0, top: 0));
-        var offset = GifImageLoader.Load(Build(["AB", "CD"], screenWidth: 0, screenHeight: 0, left: 1, top: 1));
-
-        Assert.Equal(["AB", "CD"], ReadMap(atOrigin));
-        Assert.Null(atOrigin.SMask);
-        Assert.Equal(["...", ".AB", ".CD"], ReadMap(offset));
+        Assert.Contains($"logical screen is {sw}x{sh}; the frame cannot be placed on it", ex.Message);
     }
 
     /// <summary>
@@ -183,7 +227,7 @@ public sealed class GifLogicalScreenTests
     {
         var gif = Build(["AB", "BA"], screenWidth: 4, screenHeight: 3, left: 1, top: 1, transparentColour: 'B');
 
-        var img = GifImageLoader.Load(gif);
+        var img = Place(gif);
 
         Assert.Equal((4, 3), (img.Width, img.Height));
         Assert.Equal(
@@ -206,51 +250,48 @@ public sealed class GifLogicalScreenTests
         var sequential = Build(frame, screenWidth: 5, screenHeight: 9, left: 2, top: 1);
         var interlaced = Build(frame, screenWidth: 5, screenHeight: 9, left: 2, top: 1, interlaced: true);
 
-        var seqMap = ReadMap(GifImageLoader.Load(sequential));
-        var intMap = ReadMap(GifImageLoader.Load(interlaced));
+        var seqMap = ReadMap(Place(sequential));
+        var intMap = ReadMap(Place(interlaced));
 
         Assert.Equal(ExpectedMap(frame, 5, 9, 2, 1), seqMap);
         Assert.Equal(seqMap, intMap);
     }
 
     /// <summary>
-    /// The largest screen the descriptor can hold, 65535 by 65535, is far over the pixel limit,
-    /// so the frame comes back at its own size, as on 2.3.3. This pins the documented fallback; it
-    /// is not a statement that the fallback is the right answer for a later major.
+    /// The largest screen the descriptor can hold, 65535 by 65535, is far over the pixel limit.
+    /// With the option it is refused before any canvas exists, with the screen size in the message.
     /// </summary>
     [Fact]
-    public void Decode_screenOverThePixelLimit_returnsTheFrameAtItsOwnSize()
+    public void Place_screenOverThePixelLimit_isRefused()
     {
         var gif = Build(["AB", "CD"], screenWidth: 65535, screenHeight: 65535, left: 0, top: 0);
 
-        var img = GifImageLoader.Load(gif);
+        var ex = Assert.Throws<InvalidDataException>(() => Place(gif));
 
-        Assert.Equal((2, 2), (img.Width, img.Height));
-        Assert.Null(img.SMask);
-        Assert.Equal(["AB", "CD"], ReadMap(img));
+        Assert.Contains("logical screen 65535x65535 exceeds the 100000000-pixel limit", ex.Message);
     }
 
     /// <summary>
     /// The canvas is checked against the same pixel limit as the frame, at the limit and one over,
-    /// without allocating either: the frame is 2x2 and only the screen changes. 10,000 by 10,000 is
-    /// exactly 100,000,000 pixels and is placed; one more column is over and falls back.
+    /// the frame being 2x2 and only the screen changing. 10,000 by 10,000 is exactly 100,000,000
+    /// pixels and is placed; one more column is over and refused.
     /// </summary>
     [Fact]
-    public void Decode_screenAtAndOverThePixelLimit_isPlacedThenFallsBack()
+    public void Place_screenAtAndOverThePixelLimit_isPlacedThenRefused()
     {
         var atLimit = Build(["AB", "CD"], screenWidth: 10_000, screenHeight: 10_000, left: 9_998, top: 9_998);
         var over = Build(["AB", "CD"], screenWidth: 10_001, screenHeight: 10_000, left: 9_998, top: 9_998);
 
-        var placed = GifImageLoader.Load(atLimit);
-        var fallback = GifImageLoader.Load(over);
+        var placed = Place(atLimit);
+        var ex = Assert.Throws<InvalidDataException>(() => Place(over));
 
         Assert.Equal((10_000, 10_000), (placed.Width, placed.Height));
         Assert.NotNull(placed.SMask);
-        Assert.Equal((2, 2), (fallback.Width, fallback.Height));
+        Assert.Contains("10001x10000 exceeds", ex.Message);
     }
 
     /// <summary>
-    /// The logical-screen fix gives an image an /SMask, which is transparency. ISO 19005-2 6.2.10
+    /// Placing a frame on a larger screen gives the image an /SMask, which is transparency. ISO 19005-2 6.2.10
     /// has the OutputIntent as the default blending space and wants a page /Group with a /CS when
     /// there is none, so a PDF/A file that carried the mask without either would be non-conformant.
     /// <see cref="PdfDocument"/> writes a GTS_PDFA1 OutputIntent on every PDF/A save (the code
@@ -264,7 +305,7 @@ public sealed class GifLogicalScreenTests
     [InlineData(PdfConformance.PdfA2a)]
     public void PdfAFileWithAnImageSmallerThanItsScreen_carriesAnOutputIntentForTheMask(PdfConformance conformance)
     {
-        var image = GifImageLoader.Load(Build(["AB", "CD"], screenWidth: 4, screenHeight: 3, left: 1, top: 1));
+        var image = Place(Build(["AB", "CD"], screenWidth: 4, screenHeight: 3, left: 1, top: 1));
         Assert.NotNull(image.SMask);
         using var doc = new PdfDocument { Conformance = conformance, Language = "en-US" };
         doc.Info.Title = "gif screen";
