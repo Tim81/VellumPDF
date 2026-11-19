@@ -175,7 +175,7 @@ public sealed class BmpLoaderHardeningTests
     public void Bmp8_fileOf1078BytesOrMore_keepsIndexingAs256Entries_whateverClrUsedSays()
     {
         // 2.3.3 never read biClrUsed, so this file loaded with index 200 reading the table slot
-        // at 54 + 200*4. It must still load and read that slot (rule: what loaded keeps loading).
+        // at 54 + 200*4. It must still load and read that slot, because a file that loaded keeps loading.
         // Slot 200 of Palette(256): B=601&255=89, G=1002&255=234, R=1403&255=123.
         var bmp = Bmp(8, 1, 1, clrUsed: 4, Palette(256), pixels: [200, 0, 0, 0]);
         Assert.Equal(1082, bmp.Length);

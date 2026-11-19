@@ -48,7 +48,7 @@ public static class BmpImageLoader
     /// Neither edge is limited on its own, so 2,000,000 by 1 is accepted and 10,001 by 10,001 is
     /// not. The limit is internal and has no public setting. The pixel data is checked against the
     /// file length before the raster is allocated, so a header cannot cost more than the file
-    /// carries: a 1,079-byte file declaring 10,000 by 10,000 is refused after a few kilobytes.
+    /// carries: a 1,079-byte file declaring 10,000 by 10,000 is refused after under 2 KB.
     /// A file that does carry its pixel data still allocates the full raster, at least three
     /// bytes per pixel, so 300 MB at the limit.</para>
     /// <para>This loader reads one variant: an uncompressed 40-byte BITMAPINFOHEADER bitmap at

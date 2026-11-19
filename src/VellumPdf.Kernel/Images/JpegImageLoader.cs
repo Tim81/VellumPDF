@@ -23,12 +23,10 @@ public static class JpegImageLoader
     /// This loader decodes nothing. The bytes are embedded verbatim as DCTDecode data and only
     /// the frame header is read. A file this accepts is therefore not necessarily a file a reader
     /// can render: corruption past the header passes straight into the document.
-    /// <para>The 100,000,000-pixel limit the other image loaders apply covers the rasters they
-    /// decode. This loader decodes none, so the size in the frame header is not checked against
-    /// it: a file carrying nothing but a frame header saying 65535 by 65535 returns an image of
-    /// <b>4,294,836,225</b> pixels, where <see cref="PngImageLoader"/> refuses the same
-    /// declaration. Nothing allocates a raster, since the bytes pass through, but the width and
-    /// height reach the image dictionary.</para>
+    /// <para>The 100,000,000-pixel limit is not checked for a JPEG. A file carrying nothing but a
+    /// frame header saying 65535 by 65535 returns an image of <b>4,294,836,225</b> pixels, where
+    /// <see cref="PngImageLoader"/> refuses the same declaration. Nothing allocates a raster,
+    /// since the bytes pass through, but the width and height reach the image dictionary.</para>
     /// <para>Do not pass a JPEG larger than 100,000,000 pixels, or rely on this loader to refuse
     /// one. It is accepted today and 3.0 will refuse it, as the other loaders do. If the input is
     /// untrusted, check <c>Width</c> and <c>Height</c> on the result yourself. The same applies to

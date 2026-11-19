@@ -120,15 +120,19 @@ public static class TiffImageLoader
     /// pre-multiplied alpha is emitted as a plain soft mask with no <c>/Matte</c> and
     /// composites wrong (#534). Read the directory yourself if you did not produce the
     /// file.</para>
-    /// <para>A <c>ColorMap</c> the loader cannot use is a malformed file, not a crash. A negative
-    /// offset, an offset that puts the map past the end of the file, and an empty map on a palette
-    /// photometric all raise <see cref="InvalidDataException"/>. Before 2.4 the first and the
-    /// last raised <see cref="IndexOutOfRangeException"/> from an unguarded read, and the first
-    /// allocated an array sized from the tag's count before it did (#512, #534). A tag
-    /// whose offset is negative but whose count is zero, on a photometric that does not read the
-    /// map, still loads. A directory offset or a scalar tag's value offset within a few bytes of
-    /// <see cref="int.MaxValue"/> raised the same exception, because the bounds sum wrapped
-    /// negative; it now raises <see cref="InvalidDataException"/> too.</para>
+    /// <para>A <c>ColorMap</c> the loader cannot use is refused with
+    /// <see cref="InvalidDataException"/>: a negative offset on a tag with a nonzero count, an
+    /// offset that puts the map past the end of the file, and an empty map where the map is read.
+    /// The map is read only under Compression 1, 5 and 32773, the three that expand a palette.
+    /// Under Compression 2, 3, 4 and 7 it is never read, so a palette file with an empty map loads
+    /// there. A tag with a count of zero and a negative offset also loads wherever nothing reads
+    /// the map. Before 2.4 a negative offset raised <see cref="IndexOutOfRangeException"/> when
+    /// the offset plus twice the count stayed inside the file, after an array sized from the tag's
+    /// count had been allocated; a negative offset whose sum ran past the end was already an
+    /// <see cref="InvalidDataException"/>. An empty map on a palette photometric raised the same
+    /// exception from the palette expansion (#512, #534). A directory offset or a scalar tag's
+    /// value offset within a few bytes of <see cref="int.MaxValue"/> raised it too, because the
+    /// bounds sum wrapped negative, and now raises <see cref="InvalidDataException"/>.</para>
     /// <para><see langword="null"/> is not checked. It raises
     /// <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>, so a caller
     /// guarding on the documented type will not catch it. You have to reject null yourself. A
@@ -137,20 +141,20 @@ public static class TiffImageLoader
     /// Neither edge is limited on its own, so 2,000,000 by 1 is accepted and 10,001 by 10,001 is
     /// not. The limit is internal and has no public setting. For uncompressed strips the strip
     /// list is checked against the file before the raster is allocated, so a header cannot cost
-    /// more than the file carries: a 126-byte file declaring four 16-bit samples at 10,000 by
-    /// 10,000 is refused after about 2 KB, where it once allocated 800 MB. Compressed strips are
+    /// more than the file carries: a 114-byte file declaring four 16-bit samples at 10,000 by
+    /// 10,000 is refused after under 2 KB, where it once allocated about 800 MB. Compressed strips are
     /// not pre-checked, because a PackBits or LZW stream decodes to more bytes than it occupies. A
     /// 10,000 by 10,000 three-sample 8-bit file with a 4-byte LZW strip allocates about 600 MB
     /// before it is refused, and a PackBits strip that decodes to less than the image needs loads
     /// with the rest zero-filled (#536).</para>
-    /// <para>The limit covers the rasters this loader decodes, and a JPEG strip is not one. A strip
-    /// compressed with new-style JPEG (Compression 7) is handed to
-    /// <see cref="JpegImageLoader.Load(byte[])"/> and passed through as DCTDecode data, so the
-    /// returned size is the one in the JPEG frame header. It is checked neither against the limit
-    /// nor against the directory's <c>ImageWidth</c> and <c>ImageLength</c>. Measured: an 8 by 8
-    /// directory over a strip declaring 65535 by 65535 returns 65535 by 65535, which is
-    /// 4,294,836,225 pixels; an 8 by 8 directory over a 16 by 16 strip returns 16 by 16, and the
-    /// directory's size is dropped without a report. No raster is allocated.</para>
+    /// <para>The limit is not checked for a JPEG strip. A strip compressed with new-style JPEG
+    /// (Compression 7) is handed to <see cref="JpegImageLoader.Load(byte[])"/> and passed through
+    /// as DCTDecode data, so the returned size is the one in the JPEG frame header. It is checked
+    /// neither against the limit nor against the directory's <c>ImageWidth</c> and
+    /// <c>ImageLength</c>. Measured: an 8 by 8 directory over a strip declaring 65535 by 65535
+    /// returns 65535 by 65535, which is 4,294,836,225 pixels; an 8 by 8 directory over a 16 by 16
+    /// strip returns 16 by 16, and the directory's size is dropped without a report. No raster is
+    /// allocated.</para>
     /// <para>Do not pass a JPEG-compressed TIFF whose strip is larger than 100,000,000 pixels, or
     /// whose size disagrees with its <c>ImageWidth</c> and <c>ImageLength</c>. Both are accepted
     /// today and 3.0 will refuse them. If the input is untrusted, check the result's <c>Width</c>
@@ -161,15 +165,16 @@ public static class TiffImageLoader
     /// <summary>Decodes baseline TIFF file bytes into a FlateDecode Image XObject with the specified load options.</summary>
     /// <exception cref="InvalidDataException">
     /// The bytes are not a TIFF file, or the directory they carry does not describe an image this
-    /// loader will read: truncated, a pixel count above the safety limit, a required tag missing, or
-    /// tags that disagree with each other.
+    /// loader will read: truncated, a pixel count above the safety limit, a required tag missing,
+    /// a <c>ColorMap</c> it cannot use, or tags that disagree with each other.
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// The file is a well-formed TIFF using a feature this loader does not read.
     /// </exception>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="options"/> is <see langword="null"/> and the file reaches a read of it: a
-    /// Group 3 CCITT strip, or a 16-bit greyscale, RGB or RGBA image. Any other file loads.
+    /// Group 3 CCITT strip, or a 16-bit greyscale, RGB or RGBA image. A null changes the outcome
+    /// of no other file.
     /// </exception>
     /// <remarks>
     /// This overload carries the implementation. The single-argument overload delegates here.
@@ -182,10 +187,11 @@ public static class TiffImageLoader
     /// <para><b>A null <paramref name="options"/> is refused only where it is read.</b>
     /// <see cref="ArgumentNullException"/> is thrown for a Group 3 CCITT strip (Compression 2 or
     /// 3) and for 16-bit greyscale, RGB and RGBA files, the three places the argument is
-    /// dereferenced. Every other file loads with a null, 8-bit images, palette images, Group 4 and
-    /// JPEG strips among them, so whether a null survives depends on the image and not on the
-    /// call. Before 2.4 the three reads raised <see cref="NullReferenceException"/>, which is
-    /// what made the outcome image-dependent (#534).</para>
+    /// dereferenced. A null changes the outcome of no other file: 8-bit images, palette images and
+    /// Group 4 and JPEG strips load with it as they do without, so whether a null is refused
+    /// depends on the image and not on the call. Before 2.4 the three reads raised
+    /// <see cref="NullReferenceException"/>, which is what made the outcome image-dependent
+    /// (#534).</para>
     /// <para>Do not pass <see langword="null"/>. The parameter is not annotated nullable, and
     /// 3.0 will refuse a null for every file. Pass <see cref="ImageLoadOptions.Default"/> or call
     /// the single-argument overload.</para>
@@ -927,8 +933,9 @@ public static class TiffImageLoader
         // ColorMap layout: 3 * 2^bps entries of 16-bit values (range 0–65535).
         // First 2^bps entries are red, next 2^bps are green, last 2^bps are blue.
         // Scale 0–65535 → 0–255 by taking the high byte.
-        // An empty map has nothing for index 0 to read, and the out-of-range clamp below maps to
-        // index 0, so it would throw IndexOutOfRangeException from the indexer (#512, #534). One or
+        // Reached only under Compression 1, 5 and 32773. An empty map has nothing for index 0 to
+        // read, and the out-of-range clamp below maps to index 0, so it would throw
+        // IndexOutOfRangeException from the indexer (#512, #534). One or
         // two entries do not reach that: paletteSize is then 0 as well, but colorMap[0] exists, so
         // those files keep loading as they did, every pixel reading entry 0 for all three channels.
         if (colorMap.Length == 0)
@@ -1130,11 +1137,13 @@ public static class TiffImageLoader
         var offset = (int)ReadU32(data, entryBase + 8, le);
 
         // A value field of 0x80000000 or more reads as a negative int, and a negative offset plus
-        // any length still passes the upper-bound test below. ReadTagValue and ReadTagArray refuse
-        // it; this reader did not, and the first array read then threw IndexOutOfRangeException
-        // after `new ushort[count]` had already been sized from the tag (#512, #534). A count of
-        // zero never reads an element, so it keeps loading as it did: the file is judged by what
-        // BuildPalette needs from the map, not by an offset nothing dereferences.
+        // the map's length passes the upper-bound test below whenever the sum stays inside the file.
+        // ReadTagValue and ReadTagArray refuse a negative offset; this reader did not, and the first
+        // array read then threw IndexOutOfRangeException after `new ushort[count]` had been sized
+        // from the tag (#512, #534). A negative offset whose sum ran past the end was already
+        // refused by the bound below. A count of zero never reads an element, so a negative offset
+        // with it keeps loading when nothing reads the map; a positive offset past the end is still
+        // refused by the bound below. Where the map is read, BuildPalette refuses an empty one.
         if (count > 0 && offset < 0)
             throw new InvalidDataException(
                 $"TIFF ColorMap offset {offset} is negative.");

@@ -13,9 +13,9 @@ namespace VellumPdf.Kernel.Tests;
 public sealed class TiffLoaderHardeningTests
 {
     // Allocation bound for a refusal, measured per calling thread as MalformedInputTests does for
-    // PNG. 1 MiB sits far under the sizes the loader allocated before it refused (1,000,002,480
-    // bytes for the ColorMap count below, 800,002,400 for the raster) and far above what a refusal
-    // costs, which is a few kilobytes.
+    // PNG. 1 MiB sits far under the sizes the loader allocated before it refused (about 1 GB for
+    // the ColorMap count below, about 800 MB for the raster) and far above what a refusal costs,
+    // which is a few kilobytes.
     private const long RefusalAllocationBound = 1024 * 1024;
 
     private static readonly byte[] FourBytes = [0, 1, 2, 3];
@@ -49,8 +49,8 @@ public sealed class TiffLoaderHardeningTests
     [InlineData(1_073_741_823u)]
     public void ColorMap_negativeOffset_withAHugeCount_isRefusedWithoutAllocatingFromTheCount(uint count)
     {
-        // 2.3.3 sized `new ushort[count]` before it threw: 1,000,002,480 bytes for 500,000,000 and
-        // 2,147,486,368 for 1,073,741,823, measured on the calling thread.
+        // 2.3.3 sized `new ushort[count]` before it threw: about 1 GB for 500,000,000 and about
+        // 2 GB for 1,073,741,823, measured on the calling thread.
         var tiff = Image(2, 2, photometric: 3, bps: 8, strip: FourBytes, colorMapCount: count, colorMapField: 0x80000000u);
 
         // Warm-up, so one-time JIT and static-initialiser allocations are not charged below.
@@ -105,6 +105,54 @@ public sealed class TiffLoaderHardeningTests
         var rgb = RgbBytes(TiffImageLoader.Load(tiff));
 
         Assert.Equal<byte[]>([0x12, 0x12, 0x12, 0x12, 0x12, 0x12], rgb);
+    }
+
+    // ── An empty ColorMap on a palette photometric, by compression ────────────
+    //
+    // The map is read only under Compression 1, 5 and 32773. Compression 2, 3, 4 and 7 return
+    // before the palette is expanded, so there the same file loads, as it did on 2.3.3.
+
+    [Theory]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    public void EmptyColorMap_onAPaletteImage_loadsWhereTheMapIsNeverRead_ccitt(int compression)
+    {
+        var tiff = Image(8, 8, photometric: 3, bps: 1, strip: [0x00, 0x10, 0x01, 0x02],
+            compression: compression, colorMapCount: 0, colorMapField: 100);
+
+        Assert.Equal(8, TiffImageLoader.Load(tiff).Width);
+    }
+
+    [Fact]
+    public void EmptyColorMap_onAPaletteImage_loadsUnderJpegCompression()
+    {
+        var tiff = Image(8, 8, photometric: 3, bps: 8, strip: Jpeg(8, 8), compression: 7,
+            colorMapCount: 0, colorMapField: 100);
+
+        Assert.Equal(8, TiffImageLoader.Load(tiff).Width);
+    }
+
+    [Fact]
+    public void EmptyColorMap_onAPaletteImage_isRefusedUnderPackBits()
+    {
+        // One literal run of four bytes: a well-formed 2 x 2 strip, so only the map can refuse it.
+        var tiff = Image(2, 2, photometric: 3, bps: 8, strip: [3, 0, 1, 2, 3],
+            compression: 32773, colorMapCount: 0, colorMapField: 100);
+
+        var ex = Assert.Throws<InvalidDataException>(() => TiffImageLoader.Load(tiff));
+        Assert.Contains("empty ColorMap", ex.Message);
+    }
+
+    [Fact]
+    public void ColorMap_countZero_withAnOffsetPastTheEnd_isRefused_underEveryCompression()
+    {
+        // A count of zero reads nothing, but the offset is still bounds-checked when the tag is
+        // read, ahead of any compression. Offset 0x7FFFFF00 is far past the end of the file.
+        var tiff = Image(8, 8, photometric: 0, bps: 1, strip: [0x00, 0x10, 0x01, 0x02],
+            compression: 4, colorMapCount: 0, colorMapField: 0x7FFFFF00u);
+
+        Assert.Throws<InvalidDataException>(() => TiffImageLoader.Load(tiff));
     }
 
     // ── #512: a directory or value offset whose bounds sum wraps ──────────────
@@ -299,9 +347,9 @@ public sealed class TiffLoaderHardeningTests
     [Fact]
     public void PackBitsStrip_shorterThanTheImage_stillLoads_zeroFilled()
     {
-        // Rule 1: 2.3.3 loaded a PackBits strip that decodes to fewer bytes than the image needs
-        // (probed at 10,000 x 10,000 with four no-op bytes), so the pre-check is not extended to
-        // compressed strips. 1,000 x 1,000 keeps the test small; the raster is all zeros.
+        // 2.3.3 loaded a PackBits strip that decodes to fewer bytes than the image needs (probed at
+        // 10,000 x 10,000 with four no-op bytes), so the pre-check is not extended to compressed
+        // strips. 1,000 x 1,000 keeps the test small; the raster is all zeros.
         var tiff = Image(1_000, 1_000, photometric: 2, bps: 8, strip: [0x80, 0x80, 0x80, 0x80],
             compression: 32773, samplesPerPixel: 3);
 
@@ -313,9 +361,9 @@ public sealed class TiffLoaderHardeningTests
 
     // ── #505: a JPEG strip is passed through, unchecked, and keeps loading ────
     //
-    // The maintainer ruled that 2.3.3's behaviour stays through 2.x and that the documentation
-    // states it. These pin the three shapes, with exact dimensions, so a 3.0 tightening shows up
-    // as a change to these tests and not as a surprise.
+    // 2.3.3's behaviour stays through 2.x and the documentation states it. These pin the three
+    // shapes, with exact dimensions, so a 3.0 tightening shows up as a change to these tests and
+    // not as a surprise.
 
     [Fact]
     public void JpegLoader_aFrameHeaderOver100MPixels_keepsLoading_withItsDeclaredSize()

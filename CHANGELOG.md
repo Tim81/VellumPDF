@@ -76,10 +76,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **`BmpImageLoader` checks that the pixel data is present before it allocates the raster (#536).**
   The 8- and 24-bit paths sized the output from the declared dimensions first, so a 1,079-byte file
-  declaring 10,000 by 10,000 allocated 300,000,848 bytes on the calling thread before refusing. It
-  now allocates 3,136 bytes (8-bit) and 1,064 bytes (24-bit) before the same refusal, with the same
-  exception type and message. The 32-bit path already checked first. Every file that loaded before
-  loads the same way.
+  declaring 10,000 by 10,000 allocated about 300 MB on the calling thread before refusing. It now
+  allocates under 2 KB before the same refusal, with the same exception type and message. The
+  32-bit path already checked first. Every file that loaded before loads the same way.
 
 - **A 32-bit `BI_RGB` BMP no longer loads fully transparent (#535).** This is a deliberate output
   change. `BmpImageLoader` read the fourth byte of each pixel as alpha and emitted a soft mask
@@ -105,25 +104,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `InvalidDataException`.
 
 - **`TiffImageLoader` refuses an unusable `ColorMap` with `InvalidDataException` (#512, #534).**
-  A `ColorMap` whose value field is a negative offset threw `IndexOutOfRangeException` after
-  allocating `new ushort[count]` from the tag: 1,000,002,480 bytes for a count of 500,000,000 and
-  2,147,486,368 for 1,073,741,823, on the calling thread. It is now refused before the allocation.
-  A palette image whose `ColorMap` has a count of zero threw the same exception from `BuildPalette`
-  with no negative value in the file, and is now refused as an empty map. A directory offset or a
-  scalar tag's value offset near `int.MaxValue` also threw it, because the bounds sum wrapped, and
-  is refused too. Nothing that loaded before is refused: a count of zero on a non-palette image
-  still loads, with a negative offset or without, and one or two entries still load. The XML
-  documentation no longer lists `IndexOutOfRangeException`. No public API changes.
+  A `ColorMap` whose value field is a negative offset threw `IndexOutOfRangeException` when the
+  offset plus twice the count stayed inside the file, after allocating `new ushort[count]` from the
+  tag: about 1 GB for a count of 500,000,000 and about 2 GB for 1,073,741,823. A negative offset
+  whose sum ran past the end was already an `InvalidDataException`. A nonzero count with a negative
+  offset is now refused before the allocation. A palette image whose `ColorMap` is empty threw the
+  same exception from the palette expansion, with no negative value in the file, and is now
+  refused as an empty map. That refusal applies under Compression 1, 5 and 32773, the three that
+  expand a palette; under Compression 2, 3, 4 and 7 the map is never read and the file loads as
+  before. A directory offset or a scalar tag's value offset near `int.MaxValue` also threw the
+  exception, because the bounds sum wrapped, and is refused too. Nothing that loaded before is
+  refused: a count of zero loads wherever nothing reads the map, with a negative offset or with
+  an offset inside the file (an offset past the end was already refused), and one or two entries
+  still load. The XML documentation no longer lists `IndexOutOfRangeException`. No public API
+  changes.
 
 - **`TiffImageLoader` checks uncompressed strips before it allocates the raster (#536).** The
-  loader sized its buffer from the header and then read the strips, so a 126-byte file declaring a
-  10,000 by 10,000 image of four 16-bit samples allocated 800,002,400 bytes before it was refused.
-  For Compression 1 the strip list is now checked first, chunky and planar, with the same checks in
-  the same order, so that file allocates 2,376 bytes and raises the same exception. A one-row-strip
-  file with one strip present went from 300,092,800 bytes to 62,752. PackBits and LZW strips are
-  not pre-checked, because their output is not bounded by their input and 2.3.3 loaded a PackBits
-  strip that decodes short, zero-filling the rest. A 4-byte LZW strip on a 10,000 by 10,000 RGB
-  header still allocates 600,027,400 bytes before it is refused.
+  loader sized its buffer from the header and then read the strips, so a 114-byte file declaring a
+  10,000 by 10,000 image of four 16-bit samples allocated about 800 MB before it was refused. For
+  Compression 1 the strip list is now checked first, chunky and planar, with the same checks in
+  the same order, so that file allocates under 2 KB and raises the same exception. A file of
+  one-row strips with one strip present went from about 300 MB to under 2 KB. PackBits and LZW
+  strips are not pre-checked, because their output is not bounded by their input and 2.3.3 loaded
+  a PackBits strip that decodes short, zero-filling the rest. A 4-byte LZW strip on a 10,000 by
+  10,000 RGB header still allocates about 600 MB before it is refused.
 
 - **A null `options` to `TiffImageLoader.Load(byte[], ImageLoadOptions)` raises
   `ArgumentNullException` where it is read (#534).** The argument was dereferenced in three
