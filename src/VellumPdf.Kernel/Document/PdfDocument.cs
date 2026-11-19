@@ -668,7 +668,13 @@ public sealed class PdfDocument : IDisposable
 
     /// <summary>Writes a complete PDF file to <paramref name="destination"/>.</summary>
     /// <exception cref="ObjectDisposedException">The document has been disposed.</exception>
-    /// <exception cref="ArgumentNullException"><paramref name="destination"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="destination"/> is <see langword="null"/>. It is also raised from the write, not
+    /// from the call that stored the null, for a <see langword="null"/> value in a
+    /// <see cref="PdfDictionary"/> that is written (<c>ParamName</c> <c>value</c>) and for a
+    /// <see langword="null"/> child of a <see cref="PdfStructElem"/> reachable from the structure tree
+    /// of a tagged document (<c>ParamName</c> <c>child</c>); see <see cref="PdfDictionary.Set(PdfName, PdfObject)"/>.
+    /// </exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="destination"/> cannot be written to, which includes a stream that was already
     /// closed. A linearized save to a closed stream used to throw <see cref="ObjectDisposedException"/>
@@ -1044,7 +1050,12 @@ public sealed class PdfDocument : IDisposable
     /// </para>
     /// </summary>
     /// <exception cref="ObjectDisposedException">The document has been disposed.</exception>
-    /// <exception cref="ArgumentNullException"><paramref name="destination"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="destination"/> is <see langword="null"/>. A <see langword="null"/> value in a
+    /// written <see cref="PdfDictionary"/> and a <see langword="null"/> child of a
+    /// <see cref="PdfStructElem"/> are raised from the serialisation, with <c>ParamName</c>
+    /// <c>value</c> or <c>child</c>; see <see cref="Save(System.IO.Stream)"/>.
+    /// </exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="destination"/> cannot be written to, which includes a stream that was already
     /// closed. It is checked before anything is serialised, so the document is not marked as
@@ -1141,7 +1152,11 @@ public sealed class PdfDocument : IDisposable
     /// <see cref="NotSupportedException"/> when <see cref="Encrypt"/> has been called.</para>
     /// </summary>
     /// <exception cref="ObjectDisposedException">The document has been disposed.</exception>
-    /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="options"/> is <see langword="null"/>. A <see langword="null"/> dictionary value
+    /// or structure-element child is raised from the write as it is by
+    /// <see cref="Save(System.IO.Stream)"/>.
+    /// </exception>
     /// <exception cref="NotSupportedException"><see cref="Encrypt"/> has been called; encryption and signing cannot be combined.</exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <see cref="SignaturePlaceholderOptions.SignaturePage"/> is negative or past the last page,

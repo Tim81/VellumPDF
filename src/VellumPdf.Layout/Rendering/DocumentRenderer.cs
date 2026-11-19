@@ -335,12 +335,15 @@ public sealed class DocumentRenderer
     /// non-finite position is written outside the content stream, such as a link rectangle.
     /// </exception>
     /// <exception cref="ArgumentNullException">
-    /// <paramref name="destination"/> is <see langword="null"/>, checked before the layout runs.
+    /// <paramref name="destination"/> is <see langword="null"/>, checked before the layout runs. A
+    /// null that an element holds and that is refused where it is used, such as a band template that
+    /// is drawn or a null value in a written <see cref="PdfDictionary"/>, is raised from here too; see
+    /// <see cref="Document.Save(System.IO.Stream)"/>.
     /// </exception>
     /// <exception cref="NullReferenceException">
     /// An added renderer is <see langword="null"/>, returns a null result, or returns a
     /// <see cref="LayoutResult.Partial"/> result with a null renderer. It is also raised when a
-    /// band's template, a text or another member an element stored without a check is null.
+    /// member an element stored without a check is null.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// A <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name is selected

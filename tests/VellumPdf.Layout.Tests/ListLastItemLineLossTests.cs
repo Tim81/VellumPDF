@@ -81,21 +81,22 @@ public sealed class ListLastItemLineLossTests
 
     /// <summary>
     /// The case the type remarks gave: one item that wraps to two lines at 12pt at the top of an A4
-    /// page. Only the first line used to be drawn.
+    /// page. The 20-word item here wraps to two lines, and on 2.3.3 only the first was drawn (13 of
+    /// its 20 words), where this build draws both.
     /// </summary>
     [Fact]
     public void SingleTwoLineItem_atTheTopOfAnA4Page_drawsBothLines()
     {
         using var doc = new Document();
-        doc.Add(new ListElement(ListStyle.Unordered) { DefaultStyle = Style(12) }.Add(Words(0, 90)));
+        doc.Add(new ListElement(ListStyle.Unordered) { DefaultStyle = Style(12) }.Add(Words(0, 20)));
 
         using var ms = new MemoryStream();
         doc.Save(ms);
         var stream = PdfTestUtil.DecompressAllFlatStreams(ms.ToArray());
         var lines = Regex.Matches(stream, @"\(([^)]*)\) Tj").Count(m => m.Groups[1].Value.Contains("w0"));
 
-        Assert.True(lines >= 2, $"expected the item to wrap to at least two lines, drew {lines}");
-        foreach (var word in Enumerable.Range(0, 90).Select(n => $"w{n:D3}"))
+        Assert.True(lines == 2, $"expected the item to wrap to two lines, drew {lines}");
+        foreach (var word in Enumerable.Range(0, 20).Select(n => $"w{n:D3}"))
             Assert.Contains(word, stream, StringComparison.Ordinal);
     }
 }

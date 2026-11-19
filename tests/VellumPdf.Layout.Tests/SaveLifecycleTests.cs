@@ -10,6 +10,7 @@ using VellumPdf.Fonts;
 using VellumPdf.Layout.Core;
 using VellumPdf.Layout.Elements;
 using VellumPdf.Signing;
+using VellumPdf.TestSupport;
 
 namespace VellumPdf.Layout.Tests;
 
@@ -838,7 +839,7 @@ public sealed class SaveLifecycleTests
     [Fact]
     public async Task SaveToANamedPipe_writesTheWholePdfIntoIt()
     {
-        Assert.SkipWhen(!OperatingSystem.IsLinux(), "mkfifo is needed.");
+        Assert.SkipWhen(!OperatingSystem.IsLinux(), "A named pipe is made with mkfifo, which this test uses on Linux only.");
 
         using var dir = new TempDir();
         var fifo = Path.Combine(dir.Path, "pipe");
@@ -847,18 +848,20 @@ public sealed class SaveLifecycleTests
             using var mkfifo = System.Diagnostics.Process.Start(
                 new System.Diagnostics.ProcessStartInfo("mkfifo", fifo) { RedirectStandardError = true });
             await mkfifo!.WaitForExitAsync(TestContext.Current.CancellationToken);
-            Assert.SkipWhen(mkfifo.ExitCode != 0, "mkfifo failed.");
+            if (mkfifo.ExitCode != 0)
+                OracleGate.Unavailable("mkfifo", "mkfifo exited with code " + mkfifo.ExitCode + ".");
         }
         catch (System.ComponentModel.Win32Exception)
         {
-            Assert.Skip("mkfifo is not available.");
+            OracleGate.Unavailable("mkfifo", "the program could not be started.");
         }
 
         // Opening a pipe blocks until the other end is open, so the reader is a separate process.
         // It is cat rather than a FileStream because .NET takes an advisory lock on every file it
         // opens, and a reader in this process would conflict with the writer's.
         using var cat = StartCat(fifo);
-        Assert.SkipWhen(cat is null, "cat is not available.");
+        if (cat is null)
+            OracleGate.Unavailable("cat", "the program could not be started; it reads the named pipe.");
         var received = new MemoryStream();
         var reader = cat!.StandardOutput.BaseStream.CopyToAsync(received, TestContext.Current.CancellationToken);
         System.Diagnostics.Process? rescue = null;

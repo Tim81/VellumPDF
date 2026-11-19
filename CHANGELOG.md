@@ -83,27 +83,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   a page with the table not drawn; a negative-infinity top document margin with a paragraph is
   refused after 50,000 page continuations. A saved file that lost content this way is kept, because
   2.3.3 saved it (#484); the XML doc of each member says not to pass such a value and that 3.0
-  refuses it, and the diagnostics channel (#607) will report it. A few checks do run before the
+  refuses it, and the diagnostics channel (#607) will report it. A few checks do run in the
   layout and name the element, each for input that made 2.3.3 throw or write an invalid token in
-  every shape measured: the size or colour of text that is drawn (paragraph runs, headings, list
-  items, table cells), a band's font size, a line separator's margins and colour, a table cell's
-  padding, a negative line width, an image extent that is zero or not finite, and a `ColSpan` below
-  one. Those raise `InvalidOperationException`, which a caller that catches `ArgumentException`
-  around a save does not see. `KeepRenderingTests`, `NonFiniteGeometryTests` and
+  every shape measured: the font size and colour of a paragraph run, heading or list item, the font
+  size of a table cell and of a band, a line separator's margins, colour and line width, a table
+  cell's padding, a table's border width when it is not finite, an image extent that is zero or not
+  finite, and a `ColSpan` below one. Two are made where the value is written, because 2.3.3 saved a
+  valid file when the table or cell was laid out and not drawn: a table cell's text colour and a
+  negative table border width. Those raise `InvalidOperationException`, which a caller that catches
+  `ArgumentException` around a save does not see. `KeepRenderingTests`, `NonFiniteGeometryTests` and
   `NullDeferralTests` pin what 2.3.3 did, row by row.
 
 - **A non-finite colour channel no longer reaches the content stream (#509).** A `ColorRgb` with a
   `NaN` or infinite channel on a text style, a running band, a table cell's style or background, a
   table border, a line separator or a pie slice or stroke reached the content stream as
-  `NaN 0 0 rg`, which is not a PDF number. Text colour on a paragraph run or table cell that draws
-  text, and a line separator's colour, now throw `InvalidOperationException` before the layout,
-  naming the element and the channel. Every other colour is refused where it is written, by
-  `PdfCanvas` with `ArgumentException`. A finite channel outside 0 to 1 is **not** refused. It
+  `NaN 0 0 rg`, which is not a PDF number. Text colour on a paragraph run, heading or list item, and a
+  line separator's colour, now throw `InvalidOperationException` from the layout, and a table cell's
+  text colour does where the cell is drawn, naming the element and the channel. Every other colour
+  is refused where it is written, by `PdfCanvas` with `ArgumentException`. A finite channel outside 0 to 1 is **not** refused. It
   renders today, a patch does not turn that into an exception, and it is documented on `ColorRgb`
   and `ColorCmyk` with the refusal listed in #484. A colour that is not written saves, as on
   2.3.3: a `NaN` colour on a zero-value pie slice, on a running band whose template is empty, or
   on a table cell that a span from an earlier row pushes past the last column. A table cell's empty
-  or white-space text with a `NaN` style colour wrote `NaN 0 0 rg` on 2.3.3 and is refused.
+  or white-space text with a `NaN` style colour wrote `NaN 0 0 rg` on 2.3.3 and is refused. The
+  `PdfCanvas` and `PdfReal` message ends with the value formatted with the invariant culture: on
+  2.3.3 it used the current culture, and positive infinity printed as `∞` under `nl-NL`, `en-US`,
+  `fr-FR` and `de-DE` on .NET 10.0.15 (measured), where it now prints `Infinity`.
 
 - **A `NaN` or negative-infinity `Document.Margins` inset is no longer written as a token (#502).**
   The only margin check compared the axis sums against the page, and a comparison against `NaN` is
@@ -116,7 +121,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   otherwise the document saves, as on 2.3.3. Measured with a one-row table on an A4 page, a `NaN`
   bottom margin saves the table, a negative-infinity top margin saves a page with the table not
   drawn, and a `NaN` left margin is refused by the canvas. A finite negative inset is not refused;
-  that is documented as a boundary for the next major.
+  that is documented as a boundary for 3.0.
 
 - **A footer at negative infinity no longer saves invalid output (#520).** A footer with
   `Height = double.NegativeInfinity` saved a file with `NaN` in a text matrix, because the footer's
@@ -165,7 +170,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   documentation carries the clause's advice that zero-width lines should not be used, because the
   result is device-dependent. `PieChart.StrokeWidth` already refused a negative value. Both
   `LineWidth = -3` and `BorderWidth = -3` saved on 2.3.3; they are refused now because the
-  operand breaks the clause. **Attention**: a negative `LineWidth` or `BorderWidth` saved on 2.3.3
+  operand breaks the clause. A negative `BorderWidth` is refused where a cell border is drawn, not
+  in the layout, so a table that is laid out and not drawn still saves, as on 2.3.3. **Attention**: a negative `LineWidth` or `BorderWidth` saved on 2.3.3
   and now throws.
 
 - **Pie slice totals, pie start angles and explicit table widths no longer overflow into empty or
@@ -178,7 +184,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   sweep is added, and an angle already within a turn is unchanged, so ordinary documents write the
   same bytes. Explicit column widths such as `1e308, 1e308, 1e308` sum to infinity, scale every
   column to zero and draw an empty table. That saved with no invalid token on 2.3.3 and keeps
-  saving, so it is documented on `ColWidths` and listed for the next major (#484), as is a single
+  saving, so it is documented on `ColWidths` and listed for 3.0 (#484), as is a single
   dominant finite width (`1e200, 60, 70`).
 
 - **Justified text in a standard-14 font is stretched to the right edge, and a multi-style line

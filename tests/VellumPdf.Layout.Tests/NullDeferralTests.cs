@@ -1,6 +1,7 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Text.RegularExpressions;
 using VellumPdf.Core;
 using VellumPdf.Document;
 using VellumPdf.Layout.Core;
@@ -63,11 +64,41 @@ public sealed class NullDeferralTests
         ("listitem null child, list never added", true, () => { var d = new Document(); _=new ListElement().Add(new ListItem("p").AddChild((ListItem)null)); d.Add("ok"); return d; }),
     ];
 
+    // What 1c61fa6 drew for each row it saved: every text shown (a Tj operand), joined by |, with a
+    // byte outside printable ASCII shown as ?. Measured by saving the same document on that commit.
+    private static readonly Dictionary<string, string> _drawn = new()
+    {
+        ["run null style, empty text"] = "",
+        ["run null style, spaces"] = "",
+        ["run null style, tab"] = "",
+        ["run null style, newline only"] = "",
+        ["run null style, ws between styled"] = "a b",
+        ["run null style, paragraph never added"] = "ok",
+        ["cell null explicit widths all (60)"] = "",
+        ["cell null 2 cols widths (60,60)"] = "a|",
+        ["cell null second row, widths (60,60)"] = "a|b|",
+        ["dict Set(k,null) then Set(k,v), written"] = "hello",
+        ["dict Set(k,null) never written"] = "hello",
+        ["band null template assigned then replaced"] = "hello|h",
+        ["band null template assigned then cleared"] = "hello",
+        ["listitem null child on grandchild"] = "?|p|?|c",
+        ["listitem null text grandchild"] = "?|p|?|c",
+        ["listitem null child, list never added"] = "ok",
+    };
+
     public static TheoryData<string> Names()
     {
         var rows = new TheoryData<string>();
         foreach (var r in _rows) rows.Add(r.Name);
         return rows;
+    }
+
+    private static string DrawnText(byte[] pdf)
+    {
+        var stream = PdfTestUtil.DecompressAllFlatStreams(pdf);
+        var texts = Regex.Matches(stream, @"\(([^)]*)\) Tj")
+            .Select(m => Regex.Replace(m.Groups[1].Value, @"[^ -~]", "?"));
+        return string.Join("|", texts);
     }
 
     [Theory]
@@ -87,7 +118,7 @@ public sealed class NullDeferralTests
         if (row.Saved)
         {
             BuildAndSave();
-            Assert.True(ms.Length > 0);
+            Assert.Equal(_drawn[name], DrawnText(ms.ToArray()));
         }
         else
         {

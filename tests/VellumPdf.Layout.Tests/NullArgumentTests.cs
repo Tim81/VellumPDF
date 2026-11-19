@@ -100,10 +100,17 @@ public sealed class NullArgumentTests
         doc.Add(table);
         doc.Header = new RunningBand("h {page}", Style()) { Height = 20 };
 
-        using var ms = new MemoryStream();
-        doc.Save(ms);
+        var texts = Placements(doc).Select(p => p.Text).ToArray();
 
-        Assert.True(ms.Length > 0);
+        // Every text the document holds is drawn, once, in the order it was added; the list marker is
+        // the bullet and the ordered ones are "1." and "2.".
+        Assert.Equal(["runs ", "here", "title"], texts.Take(3));
+        Assert.Contains("one", texts);
+        Assert.Contains("child", texts);
+        Assert.Contains("two", texts);
+        Assert.Contains("cell", texts);
+        Assert.Contains("text", texts);
+        Assert.Contains("h 1", texts);
     }
 
     [Fact]
@@ -195,7 +202,8 @@ public sealed class NullArgumentTests
         else
         {
             doc.Save(ms);
-            Assert.True(ms.Length > 0);
+            var drawn = ContentStreamReadback.TextPlacements(PdfTestUtil.DecompressAllFlatStreams(ms.ToArray()));
+            Assert.Equal(["a"], drawn.Select(p => p.Text).ToArray());
         }
     }
 

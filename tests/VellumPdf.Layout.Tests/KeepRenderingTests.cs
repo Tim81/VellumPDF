@@ -179,7 +179,8 @@ public sealed class KeepRenderingTests
     }
 
     /// <summary>
-    /// 72 shapes: six elements, four edges, three values. What 1c61fa6 saved, this saves with the same
+    /// 72 shapes: six elements (a first paragraph, a last paragraph, a table, a list, an image and a pie
+    /// chart; there is no heading row), four edges, three values. What 1c61fa6 saved, this saves with the same
     /// drawn output. What it wrote as an invalid token throws from <c>PdfCanvas</c> with
     /// <see cref="ArgumentException"/>. What it threw, it throws, with the same exception type.
     /// </summary>

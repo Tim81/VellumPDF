@@ -38,12 +38,14 @@ namespace VellumPdf.Layout;
 /// left-aligned paragraph wraps it after every word and saves; on centred or right-aligned text it
 /// writes <c>NaN</c> and the canvas refuses it. An infinite top margin on a table saves a page with
 /// the table not drawn.</para>
-/// <para>A few checks do run before the layout and name the element, each for input that made 2.3.3
-/// throw or write an invalid token in every shape measured: the size or colour of text that is
-/// drawn (paragraph runs, headings, list items, table cells), a band's font size, a line
-/// separator's margins and colour, a table cell's padding, a negative line width, an image extent
-/// that is zero or not finite, and a <c>ColSpan</c> below one. A caller that catches
-/// <see cref="ArgumentException"/> around a save does not see those, which are
+/// <para>A few checks do run in the layout and name the element, each for input that made 2.3.3
+/// throw or write an invalid token in every shape measured: the font size and colour of a paragraph
+/// run, heading or list item, the font size of a table cell and of a band, a line separator's
+/// margins, colour and line width, a table cell's padding, a table's border width when it is not
+/// finite, an image extent that is zero or not finite, and a <c>ColSpan</c> below one. Two are made
+/// where the value is written, because 2.3.3 saved a valid file when the table or cell was laid out
+/// and not drawn: a table cell's text colour, and a negative table border width. A caller that
+/// catches <see cref="ArgumentException"/> around a save does not see any of these, which are
 /// <see cref="InvalidOperationException"/>.</para>
 /// <para><b>Do not pass</b> a non-finite number to any of these members. The saved cases are not
 /// reported yet, because there is no diagnostics channel (#607), and 3.0 refuses every non-finite
@@ -1266,8 +1268,11 @@ public sealed class Document : IDisposable
     /// word (<c>ParamName</c> <c>Style</c>), a <see cref="Cell"/> text in a table with an
     /// automatically sized column (<c>content</c>), a <see cref="ListItem"/> child or text on a
     /// top-level item or its child (<c>child</c>, <c>text</c>), and a <see cref="RunningBand"/>
-    /// template that is drawn (<c>template</c>). The layout had started, so the document cannot be
-    /// saved again.
+    /// template that is drawn (<c>template</c>). A null value in a <see cref="PdfDictionary"/>, or a
+    /// null child of a <see cref="PdfStructElem"/> in a tagged document, is refused when the PDF is
+    /// written, with <c>ParamName</c> <c>value</c> or <c>child</c>; see
+    /// <see cref="PdfDocument.Save(System.IO.Stream)"/>. The layout had started, so the document
+    /// cannot be saved again.
     /// </exception>
     /// <exception cref="ObjectDisposedException">
     /// This <see cref="Document"/> was already disposed. It derives from
@@ -1382,8 +1387,11 @@ public sealed class Document : IDisposable
     /// whole file as well.) <see cref="SaveAsync(System.IO.Stream, System.Threading.CancellationToken)"/>
     /// builds the PDF in memory too, so it does not avoid the limit.</para>
     /// </remarks>
-    /// <exception cref="ArgumentNullException"><paramref name="path"/> is
-    /// <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="path"/> is <see langword="null"/>. A null that an element or a written Kernel
+    /// object holds is refused from the layout or the write, as it is by
+    /// <see cref="Save(System.IO.Stream)"/>; see there for the shapes and the parameter names.
+    /// </exception>
     /// <exception cref="ObjectDisposedException">
     /// This <see cref="Document"/> was already disposed. It derives from
     /// <see cref="InvalidOperationException"/>, so a catch written for the base type also
@@ -1539,8 +1547,11 @@ public sealed class Document : IDisposable
     /// word (<c>ParamName</c> <c>Style</c>), a <see cref="Cell"/> text in a table with an
     /// automatically sized column (<c>content</c>), a <see cref="ListItem"/> child or text on a
     /// top-level item or its child (<c>child</c>, <c>text</c>), and a <see cref="RunningBand"/>
-    /// template that is drawn (<c>template</c>). The layout had started, so the document cannot be
-    /// saved again.
+    /// template that is drawn (<c>template</c>). A null value in a <see cref="PdfDictionary"/>, or a
+    /// null child of a <see cref="PdfStructElem"/> in a tagged document, is refused when the PDF is
+    /// written, with <c>ParamName</c> <c>value</c> or <c>child</c>; see
+    /// <see cref="PdfDocument.Save(System.IO.Stream)"/>. The layout had started, so the document
+    /// cannot be saved again.
     /// </exception>
     /// <exception cref="ObjectDisposedException">
     /// This <see cref="Document"/> was already disposed. It derives from
@@ -1649,8 +1660,11 @@ public sealed class Document : IDisposable
     /// about symbolic links, permissions, the advisory lock, the memory limit of about 2 GB and the
     /// final copy not being atomic applies here too.</para>
     /// </remarks>
-    /// <exception cref="ArgumentNullException"><paramref name="path"/> is
-    /// <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="path"/> is <see langword="null"/>. A null that an element or a written Kernel
+    /// object holds is refused from the layout or the write, as it is by
+    /// <see cref="Save(System.IO.Stream)"/>; see there for the shapes and the parameter names.
+    /// </exception>
     /// <exception cref="ObjectDisposedException">
     /// This <see cref="Document"/> was already disposed. It derives from
     /// <see cref="InvalidOperationException"/>, so a catch written for the base type also
