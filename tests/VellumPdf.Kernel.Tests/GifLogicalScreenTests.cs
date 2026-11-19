@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using System.Text;
+using VellumPdf.Canvas;
 using VellumPdf.Core;
+using VellumPdf.Document;
 using VellumPdf.Images;
 
 namespace VellumPdf.Kernel.Tests;
@@ -245,6 +247,45 @@ public sealed class GifLogicalScreenTests
         Assert.Equal((10_000, 10_000), (placed.Width, placed.Height));
         Assert.NotNull(placed.SMask);
         Assert.Equal((2, 2), (fallback.Width, fallback.Height));
+    }
+
+    /// <summary>
+    /// The logical-screen fix gives an image an /SMask, which is transparency. ISO 19005-2 6.2.10
+    /// has the OutputIntent as the default blending space and wants a page /Group with a /CS when
+    /// there is none, so a PDF/A file that carried the mask without either would be non-conformant.
+    /// <see cref="PdfDocument"/> writes a GTS_PDFA1 OutputIntent on every PDF/A save (the code
+    /// builds it whenever Conformance is not None), so no /Group is needed; this pins that for the
+    /// three claims the library offers, and pins 6.2.8.1 for the image: no /Interpolate and no
+    /// /Alternates. veraPDF 1.30.4 passed the same three files (2b, 2u, 2a) when measured.
+    /// </summary>
+    [Theory]
+    [InlineData(PdfConformance.PdfA2b)]
+    [InlineData(PdfConformance.PdfA2u)]
+    [InlineData(PdfConformance.PdfA2a)]
+    public void PdfAFileWithAnImageSmallerThanItsScreen_carriesAnOutputIntentForTheMask(PdfConformance conformance)
+    {
+        var image = GifImageLoader.Load(Build(["AB", "CD"], screenWidth: 4, screenHeight: 3, left: 1, top: 1));
+        Assert.NotNull(image.SMask);
+        using var doc = new PdfDocument { Conformance = conformance, Language = "en-US" };
+        doc.Info.Title = "gif screen";
+        var page = doc.AddPage();
+        var name = doc.RegisterImageXObject(page, image, "Im1");
+        var canvas = new PdfCanvas(page);
+        if (conformance == PdfConformance.PdfA2a)
+            canvas.BeginMarkedContent("Figure");
+        canvas.SaveState().Concat(100, 0, 0, 75, 72, 600).DoXObject(name).RestoreState();
+        if (conformance == PdfConformance.PdfA2a)
+            canvas.EndMarkedContent();
+        canvas.Finish();
+        using var ms = new MemoryStream();
+        doc.Save(ms);
+
+        var text = System.Text.Encoding.Latin1.GetString(ms.ToArray());
+
+        Assert.Contains("/OutputIntents", text);
+        Assert.Contains("GTS_PDFA1", text);
+        Assert.DoesNotContain("/Interpolate", text);
+        Assert.DoesNotContain("/Alternates", text);
     }
 
     // ---------------------------------------------------------------- fixtures
