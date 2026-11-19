@@ -164,9 +164,11 @@ public sealed class SaveLifecycleTests
     }
 
     /// <summary>
-    /// A document whose layout already failed, saved to a stream that cannot be written: the stream is the
-    /// precondition and is reported first, as on 2.3.3, where the layout defect was still in the content and the
-    /// call reported the stream. The refusal "cannot be saved again" only follows once the destination is usable.
+    /// A document whose layout already failed, saved to a stream that cannot be written: the stream is a precondition
+    /// and is reported before the layout and before "cannot be saved again", which only follows once the destination is
+    /// usable. The call has two defects, and 2.3.3 laid out first and reported the layout defect (measured on
+    /// 2.3.3+1c61fa6: the same too-tall exception), so this is the documented change for a call with two defects:
+    /// preconditions are checked before the layout so that they stay retryable (#530).
     /// </summary>
     [Fact]
     public void LayoutThatThrew_thenAnUnwritableStream_reportsTheStreamBeforeTheBurnedDocument()

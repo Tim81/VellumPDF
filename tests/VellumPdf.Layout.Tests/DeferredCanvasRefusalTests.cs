@@ -85,7 +85,8 @@ public sealed class DeferredCanvasRefusalTests
 
     /// <summary>
     /// Two elements are each refused by the canvas, with different operands in the message (NaN, then positive
-    /// infinity). The layout goes on past the first, and the one raised is the first, as on 2.3.3, which threw at it.
+    /// infinity). The layout goes on past the first, and the one raised is the first. 2.3.3 had no canvas refusal for
+    /// this (it saved the document with the NaN operand, measured on 2.3.3+1c61fa6), so there is no 2.3.3 exception to keep.
     /// </summary>
     [Fact]
     public void TwoCanvasRefusals_theFirstIsTheOneRaised_andBothElementsWereDrawn()
