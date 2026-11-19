@@ -1032,14 +1032,14 @@ public sealed class Document : IDisposable
     /// appended a second layout (#530). Running these first keeps each refusal recoverable: correct
     /// the cause and save again.
     /// </summary>
-    private void BeginSave(Stream destination)
+    private void BeginSave(Stream destination, bool asynchronous = false)
     {
         // A document with nothing in it lays out no pages, so its pages are already known: none. It
         // gets the order a save always had: the page geometry and the bands (the layout of nothing
         // checks them and adds nothing), then "no pages", before the destination and the options,
         // instead of whichever of those comes first (#530).
         if (_content.Count == 0) CreateRenderer().RunLayout();
-        _pdf.EnsureCanSave(destination, pagesKnown: _content.Count == 0);
+        _pdf.EnsureCanSave(destination, pagesKnown: _content.Count == 0, asynchronous: asynchronous);
         ThrowIfLayoutFailed();
         _pdf.ValidateSaveOptions();
     }
@@ -1669,7 +1669,10 @@ public sealed class Document : IDisposable
     public async Task SaveAsync(Stream destination, CancellationToken cancellationToken = default)
 #pragma warning restore RS0026
     {
-        BeginSave(destination);
+        // A token that is already cancelled wins over every other defect, as on 2.3.3, where the first
+        // thing the save did was hand it to Task.Run.
+        ChunkedBufferStream.ThrowIfCanceled(cancellationToken);
+        BeginSave(destination, asynchronous: true);
         var renderer = CreateRenderer();
         var pagesBefore = _pdf.Pages.Count;
         await Task.Run(() => LayOut(renderer), cancellationToken).ConfigureAwait(false);
@@ -1797,6 +1800,9 @@ public sealed class Document : IDisposable
         {
             try
             {
+                // After the open, which 2.3.3 did first and which reports a bad path or a lock, and before
+                // anything else, so an already cancelled token wins over every other defect as there.
+                ChunkedBufferStream.ThrowIfCanceled(cancellationToken);
                 BeginSave(fs);
                 renderer = CreateRenderer();
                 var buffer = new ChunkedBufferStream(SaveBufferChunkSize);

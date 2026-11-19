@@ -605,7 +605,11 @@ public sealed class PdfDocument : IDisposable
     /// reported ("The document has no pages.") before the destination is looked at, as
     /// <see cref="Save"/> always did. A layout engine about to add pages passes <see langword="false"/>.
     /// </param>
-    internal void EnsureCanSave(Stream destination, bool pagesKnown = true)
+    /// <param name="asynchronous">
+    /// Whether the save is one of the <c>SaveAsync</c> overloads, which keep the exception types
+    /// 2.3.3 gave for a destination that cannot be written to.
+    /// </param>
+    internal void EnsureCanSave(Stream destination, bool pagesKnown = true, bool asynchronous = false)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(destination);
@@ -622,7 +626,20 @@ public sealed class PdfDocument : IDisposable
         // ArgumentException and retried with a good stream met a different exception that did not
         // say why (#530).
         if (!destination.CanWrite)
+        {
+            // 2.3.3's asynchronous saves failed inside the copy into the stream, so the type was the
+            // stream's own: NotSupportedException for one that cannot be written to, and
+            // ObjectDisposedException for one that was closed, which reports neither CanRead nor
+            // CanSeek. The synchronous saves threw ArgumentException from the writer's constructor.
+            if (asynchronous)
+            {
+                if (!destination.CanRead && !destination.CanSeek)
+                    throw new ObjectDisposedException(destination.GetType().FullName);
+                throw new NotSupportedException("Stream does not support writing.");
+            }
+
             throw new ArgumentException("Stream must be writable.", nameof(destination));
+        }
     }
 
     /// <summary>
@@ -1093,7 +1110,13 @@ public sealed class PdfDocument : IDisposable
         // The whole of the destination check, not only the null: Save runs against an in-memory
         // buffer here, so an unwritable destination was found only after the document had been
         // written and marked, and the output was never delivered (#530).
-        EnsureCanSave(destination);
+        // 2.3.3 checked the null destination and then handed the token to Task.Run, so a token that
+        // is already cancelled won over every other defect with TaskCanceledException.
+        ArgumentNullException.ThrowIfNull(destination);
+        if (cancellationToken.IsCancellationRequested)
+            throw new TaskCanceledException(null, null, cancellationToken);
+
+        EnsureCanSave(destination, asynchronous: true);
         using var buffer = new MemoryStream();
         await Task.Run(() => Save(buffer), cancellationToken).ConfigureAwait(false);
         buffer.Position = 0;

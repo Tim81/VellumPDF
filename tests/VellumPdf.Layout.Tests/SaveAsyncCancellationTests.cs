@@ -132,4 +132,29 @@ public sealed class SaveAsyncCancellationTests
             File.Delete(path);
         }
     }
+
+    /// <summary>
+    /// A token that is already cancelled wins over every other defect, as on 2.3.3, where the first
+    /// thing a <c>SaveAsync</c> did was hand it to <c>Task.Run</c>: a null destination, a stream that
+    /// cannot be written to and a document with no pages all end with TaskCanceledException.
+    /// </summary>
+    [Theory]
+    [InlineData("null destination")]
+    [InlineData("read-only stream")]
+    [InlineData("no pages")]
+    public async Task APreCancelledToken_winsOverEveryOtherDefect_asOn1c61fa6(string defect)
+    {
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+        using var doc = new Document();
+        if (defect != "no pages") doc.Add(new Paragraph("x"));
+        using var readOnly = new MemoryStream([], writable: false);
+        var destination = defect == "read-only stream" ? readOnly : defect == "null destination" ? null! : new MemoryStream();
+
+        await Assert.ThrowsAsync<TaskCanceledException>(() => doc.SaveAsync(destination, cts.Token));
+
+        var path = TempPdf();
+        await Assert.ThrowsAsync<TaskCanceledException>(() => doc.SaveAsync(path, cts.Token));
+        Assert.False(File.Exists(path));
+    }
 }

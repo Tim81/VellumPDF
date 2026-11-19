@@ -72,13 +72,12 @@ public sealed class SaveGuardTests
     }
 
     [Fact]
-    public async Task SaveAsync_toANonWritableStream_throwsArgumentExceptionNamingDestination_andTheDocumentIsStillSaveable()
+    public async Task SaveAsync_toANonWritableStream_throwsNotSupportedException_asOn1c61fa6_andTheDocumentIsStillSaveable()
     {
         using var doc = OnePage();
         using var readOnly = ReadOnlyStream();
 
-        var ex = await Assert.ThrowsAsync<ArgumentException>(() => doc.SaveAsync(readOnly, TestContext.Current.CancellationToken));
-        Assert.Equal("destination", ex.ParamName);
+        await Assert.ThrowsAsync<NotSupportedException>(() => doc.SaveAsync(readOnly, TestContext.Current.CancellationToken));
 
         // Refused up front, so the document was not marked as written: a good stream still works.
         using var ok = new MemoryStream();
@@ -87,13 +86,13 @@ public sealed class SaveGuardTests
     }
 
     [Fact]
-    public async Task SaveAsync_toAClosedStream_throwsArgumentException_andTheDocumentIsStillSaveable()
+    public async Task SaveAsync_toAClosedStream_throwsObjectDisposedException_asOn1c61fa6_andTheDocumentIsStillSaveable()
     {
         using var doc = OnePage();
         var closed = new MemoryStream();
         closed.Dispose();
 
-        await Assert.ThrowsAsync<ArgumentException>(() => doc.SaveAsync(closed, TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => doc.SaveAsync(closed, TestContext.Current.CancellationToken));
 
         using var ok = new MemoryStream();
         doc.Save(ok);
@@ -111,5 +110,21 @@ public sealed class SaveGuardTests
         doc.Save(ok);
 
         Assert.True(ok.Length > 0);
+    }
+
+    /// <summary>
+    /// 2.3.3 checked a null destination and then gave the token to Task.Run, so a token that is already
+    /// cancelled won over everything else except the null.
+    /// </summary>
+    [Fact]
+    public async Task PdfDocumentSaveAsync_withAnAlreadyCancelledToken_winsOverEveryDefectButTheNull_asOn1c61fa6()
+    {
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+        using var doc = new PdfDocument();   // no pages
+        using var readOnly = new MemoryStream([], writable: false);
+
+        await Assert.ThrowsAsync<TaskCanceledException>(() => doc.SaveAsync(readOnly, cts.Token));
+        await Assert.ThrowsAsync<ArgumentNullException>(() => doc.SaveAsync(null!, cts.Token));
     }
 }

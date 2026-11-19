@@ -184,13 +184,13 @@ public sealed class SaveLifecycleTests
     }
 
     [Fact]
-    public async Task AsyncSave_refusesTheSameThingsBeforeLayout()
+    public async Task AsyncSave_refusesTheSameThingsBeforeLayout_andTheRetrySavesOnce()
     {
         using var doc = Good();
         doc.Add(new Paragraph("Hello", Style()));
         using var readOnly = new MemoryStream(new byte[8], writable: false);
 
-        await Assert.ThrowsAsync<ArgumentException>(() => doc.SaveAsync(readOnly, TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<NotSupportedException>(() => doc.SaveAsync(readOnly, TestContext.Current.CancellationToken));
         await Assert.ThrowsAsync<ArgumentNullException>(() => doc.SaveAsync((Stream)null!, TestContext.Current.CancellationToken));
 
         using var ok = new MemoryStream();
