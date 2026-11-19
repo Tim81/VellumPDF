@@ -7,24 +7,23 @@ using VellumPdf.Core;
 namespace VellumPdf.Conformance.Tests.Fonts;
 
 /// <summary>
-/// <c>GlyphPresenceRule</c> parses the cmap of a simple TrueType font program with the same
-/// <c>CmapTable</c> the writer uses and skips its check when that parse throws. A font whose only
-/// Unicode subtable is format 12 threw on 2.3.3, so the rule skipped such a font; it now parses and
-/// the rule runs (#595). These tests pin what the rule then says, so the change in what preflight
-/// checks is on record rather than implied.
+/// <c>GlyphPresenceRule</c> resolves a simple TrueType character through the 16-bit cmap subtable,
+/// which is the lookup ISO 32000-2 9.6.5.4 specifies ((3,1), then post), and skips a font whose cmap
+/// parse throws or that has no 16-bit subtable. Reading format 12 (#595) therefore changes nothing
+/// the rule says: a font whose only Unicode subtable is format 12 is skipped, as it was on 2.3.3
+/// when its parse threw, and a code point only format 12 maps is not looked up. These tests pin
+/// that.
 ///
 /// Each fixture is the oracle corpus's simple-font PDF (one character, 'A', drawn with WinAnsi
 /// encoding and a /Widths entry measured from the unmodified DejaVu Sans) with the embedded program
-/// swapped for DejaVu Sans carrying a rewritten cmap. The 2.3.3 verdicts for the same three files
-/// are in the pull request body and the CHANGELOG, measured by running <c>PdfPreflight</c> from a
-/// detached <c>v2.3.3</c> build over these exact bytes.
+/// swapped for DejaVu Sans carrying a rewritten cmap.
 /// </summary>
 public sealed class CmapFormat12PreflightTests
 {
     private const string GlyphPresent = "ISO19005-2:6.2.11.4.1-glyph-present";
     private const string GlyphWidth = "ISO19005-2:6.2.11.5-glyph-width";
 
-    /// <summary>The program's own format 12 subtable, glyphs present: the rule runs and finds nothing.</summary>
+    /// <summary>The program's own format 12 subtable, glyphs present: the rule skips the font and finds nothing.</summary>
     [Fact]
     public void FormatTwelveOnlyProgram_withTheGlyphPresent_raisesNoGlyphFinding()
     {
@@ -64,6 +63,37 @@ public sealed class CmapFormat12PreflightTests
     {
         var ids = RuleIds(FormatTwelveOnlyKeeping(0x42));
 
+        Assert.DoesNotContain(GlyphPresent, ids);
+    }
+
+    /// <summary>
+    /// ISO 32000-2 9.6.5.4 resolves a non-symbolic TrueType character through the (3,1) cmap, then
+    /// the post table. A font with a 16-bit subtable that lacks the code point and a format 12
+    /// subtable that maps it was skipped on 2.3.3 (the 16-bit subtable was the only one read), and
+    /// the rule keeps reading only the 16-bit subtable for such a font: it would otherwise judge the
+    /// declared width against a glyph the specified lookup never reaches. Here 'A' is in format 12
+    /// only, mapped to a glyph whose advance differs from the /Widths entry, and the rule says
+    /// nothing, as it did on 2.3.3.
+    /// </summary>
+    [Fact]
+    public void FontWithAFormat12SubtableBesideA16BitOneThatLacksTheCodePoint_isCheckedAgainstTheSixteenBitSubtableOnly()
+    {
+        var font = CmapFormat12Tests.LoadAsset("DejaVuSans.ttf");
+        var format12 = CmapFormat12Tests.Subtables(font).First(s => s.Format == 12 && s.Platform == 3);
+        var shifted = CmapFormat12Tests.ShiftGroupContaining(format12, 'A', 100);   // 'A' draws another glyph
+        var format6 = new byte[12];
+        format6[1] = 6;
+        format6[3] = (byte)format6.Length;
+        format6[7] = 0x42;                                                           // firstCode 'B'
+        format6[9] = 1;                                                              // one entry
+        format6[11] = 37;                                                            // 'B' in DejaVu Sans
+        var program = CmapFormat12Tests.WithCmap(
+            font, [new CmapFormat12Tests.Subtable(3, 1, 6, format6), shifted]);
+        var pdf = OracleCorpus.SimpleTrueTypeFont(_ => { }, encoding: new PdfName("WinAnsiEncoding"), fontProgram: program);
+
+        var ids = RuleIds(pdf);
+
+        Assert.DoesNotContain(GlyphWidth, ids);
         Assert.DoesNotContain(GlyphPresent, ids);
     }
 

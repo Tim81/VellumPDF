@@ -41,6 +41,16 @@ public sealed class TrueTypeFontEmbedder
     public string ResourceName { get; }
 
     /// <summary>Parses the SFNT font program and prepares it for embedding under the given resource name.</summary>
+    /// <exception cref="NotSupportedException">
+    /// The font's <c>cmap</c> has no Unicode subtable this library reads (format 0, 4 or 6, or
+    /// format 12 on platform 3 / encoding 10 or platform 0 / encoding 4, or on platform 0 / encoding 10 beside a 16-bit subtable). Also, when format
+    /// 12 is the only such subtable, the font is refused if that subtable is malformed, if its
+    /// encoding records repeat or are out of order, if a non-Macintosh subtable has a non-zero
+    /// language, if the only format 12 record is platform 0 / encoding 10, if a required table is
+    /// missing or short, if <c>unitsPerEm</c> is 0, if a <c>loca</c> range lies outside
+    /// <c>glyf</c>, if a composite glyph names a component at or past <c>numGlyphs</c>, or if the
+    /// <c>CFF </c> table does not parse; the message names the rule.
+    /// </exception>
     public TrueTypeFontEmbedder(ReadOnlyMemory<byte> fontData, string resourceName)
     {
         _sfnt = SfntFont.Parse(fontData);
@@ -90,9 +100,9 @@ public sealed class TrueTypeFontEmbedder
     // What is checked for a format-12-only font, beyond the tables ParseOtherTables reads (each of
     // which must be present and long enough): for glyf outlines, every glyph's loca range lies
     // inside the glyf table (GlyfSubsetter reads exactly this, for each glyph it keeps); for CFF
-    // outlines, the CFF table parses. Not checked: the contents of any glyph or charstring,
-    // composite component references, table checksums, and the values (as opposed to the
-    // presence) of the name, OS/2 and post fields; and head.unitsPerEm other than 0 is the only
+    // outlines, the CFF table parses; and no composite glyph names a component at or past
+    // numGlyphs. Not checked: the contents of any glyph or charstring, table checksums, and the
+    // values (as opposed to the presence) of the name, OS/2 and post fields; and head.unitsPerEm other than 0 is the only
     // value check (0 makes every metric non-finite and the save throw). A font that is wrong
     // only in the unchecked places is accepted.
     private static void ValidateOutlines(SfntFont sfnt)
@@ -106,7 +116,38 @@ public sealed class TrueTypeFontEmbedder
         var subsetter = new GlyfSubsetter(sfnt);
         var numGlyphs = MaxpTable.Parse(sfnt).NumGlyphs;
         for (var gid = 0; gid < numGlyphs; gid++)
-            _ = subsetter.GetGlyphData(gid);
+            RequireComponentsInTheFont(gid, subsetter.GetGlyphData(gid), numGlyphs);
+    }
+
+    // OpenType glyf chapter (OpenType 1.9.1, learn.microsoft.com/typography/opentype/spec/glyf,
+    // read 2026-11-19): a glyph whose numberOfContours is negative is composite; after the 10-byte
+    // header it holds component records of "uint16 flags; uint16 glyphIndex", two arguments of 2 or
+    // 4 bytes in all (ARG_1_AND_2_ARE_WORDS, 0x0001), then 2 (WE_HAVE_A_SCALE, 0x0008), 4
+    // (WE_HAVE_AN_X_AND_Y_SCALE, 0x0040) or 8 (WE_HAVE_A_TWO_BY_TWO, 0x0080) bytes of transform,
+    // repeated "while ( flags & MORE_COMPONENTS )" (0x0020). "glyphIndex" is "glyph index of
+    // component", and glyph IDs run from 0 to numGlyphs - 1, so an index at or past numGlyphs names
+    // no glyph. The records are walked here without decoding any outline. A record that runs past
+    // the glyph's data ends the walk, as it does in GlyfSubsetter.ExpandComposites.
+    private static void RequireComponentsInTheFont(int gid, ReadOnlySpan<byte> data, int numGlyphs)
+    {
+        if (data.Length < 10 || (short)((data[0] << 8) | data[1]) >= 0)
+            return;
+
+        var offset = 10;
+        int flags;
+        do
+        {
+            if (offset + 4 > data.Length)
+                return;
+            flags = (data[offset] << 8) | data[offset + 1];
+            var component = (data[offset + 2] << 8) | data[offset + 3];
+            if (component >= numGlyphs)
+                throw new InvalidDataException(
+                    $"composite glyph {gid} names component glyph {component}, but the font has {numGlyphs} glyph(s) (OpenType glyf chapter: glyphIndex is the glyph index of the component).");
+            offset += 4 + ((flags & 0x0001) != 0 ? 4 : 2);
+            offset += (flags & 0x0008) != 0 ? 2 : (flags & 0x0040) != 0 ? 4 : (flags & 0x0080) != 0 ? 8 : 0;
+        }
+        while ((flags & 0x0020) != 0);
     }
 
     /// <summary>Returns the glyph ID for a Unicode code point, registering it for subsetting.</summary>

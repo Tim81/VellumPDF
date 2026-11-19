@@ -278,7 +278,6 @@ public sealed class CmapTableTests
 
     [Theory]
     [InlineData(0, 4)]
-    [InlineData(0, 10)]
     [InlineData(3, 10)]
     public void CmapFormat12_acceptedRecords_load(int platform, int encoding)
     {
@@ -335,8 +334,15 @@ public sealed class CmapTableTests
     {
         var sub12 = BuildSubtableFormat12([(0x41, 0x41, 5)], numGroupsOverride: 0xFFFF_FFFF);
         var font = BuildFont(("cmap", BuildCmap((3, 10, sub12))));
+        AssertRefusedAs(font, "declares 4294967295 groups");   // also warms the parser up
 
+        // The count is checked against the declared length before anything is allocated for it.
+        // A 4-billion-entry dictionary or group array would be tens of gigabytes; the bound is far
+        // above the few kilobytes the refusal needs and far below what allocating for the count costs.
+        var before = GC.GetAllocatedBytesForCurrentThread();
         AssertRefusedAs(font, "declares 4294967295 groups");
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.True(allocated < 1_000_000, $"allocated {allocated} bytes refusing a {font.Length}-byte font");
     }
 
     [Fact]
@@ -414,7 +420,7 @@ public sealed class CmapTableTests
         var table = CmapTable.Parse(SfntFont.Parse(BuildFont(("cmap", BuildCmap((3, 10, atLimit))))));
 
         Assert.Equal((ushort)0xFFFF, table.GetGlyphId(0x50));
-        AssertRefusedAs(BuildFont(("cmap", BuildCmap((3, 10, pastLimit)))), "maps glyph 65536, but the font has 65536 glyph(s)");
+        AssertRefusedAs(BuildFont(("cmap", BuildCmap((3, 10, pastLimit)))), "maps glyph 65536, past the largest glyph ID 65535 (the font has no readable maxp to bound it)");
     }
 
     /// <summary>
@@ -506,6 +512,83 @@ public sealed class CmapTableTests
 
         Assert.Equal((ushort)7, table.GetGlyphId(0x42));
         Assert.Equal((ushort)0, table.GetGlyphId(0x1F600));
+    }
+
+    // A font whose only Unicode subtable is format 12 is accepted on the strength of a subtable
+    // 2.3.3 refused, so the chapter's rules on the encoding records hold it too. Each refusal below
+    // is paired with the same defect beside a 16-bit subtable, which loaded on 2.3.3 and still does.
+
+    private static byte[] Sub12(uint language = 0)
+    {
+        var sub = BuildSubtableFormat12([(0x41, 0x41, 1)]);
+        WriteU32Be(sub, 8, language);
+        return sub;
+    }
+
+    private static void AssertSoleFormat12Refused(byte[] cmapTable, string rule)
+    {
+        var ex = Assert.Throws<NotSupportedException>(() => CmapTable.Parse(SfntFont.Parse(BuildFont(("cmap", cmapTable)))));
+        Assert.Contains("only Unicode cmap subtable is format 12", ex.Message);
+        Assert.Contains(rule, ex.Message);
+    }
+
+    private static CmapTable ParseLoaded(byte[] cmapTable)
+    {
+        var table = CmapTable.Parse(SfntFont.Parse(BuildFont(("cmap", cmapTable))));
+        Assert.Equal((ushort)1, table.GetGlyphId(0x41));
+        return table;
+    }
+
+    [Fact]
+    public void CmapFormat12Only_duplicateEncodingRecords_isRefused()
+    {
+        AssertSoleFormat12Refused(BuildCmap((3, 10, Sub12()), (3, 10, Sub12())), "platform 3 / encoding 10 / language 0 appears twice");
+    }
+
+    [Fact]
+    public void CmapFormat12Only_unsortedEncodingRecords_isRefused()
+    {
+        AssertSoleFormat12Refused(BuildCmap((3, 10, Sub12()), (0, 4, Sub12())), "encoding records are not sorted");
+        Assert.True(ParseLoaded(BuildCmap((0, 4, Sub12()), (3, 10, Sub12()))).OnlyFormat12);   // the same records in order
+    }
+
+    [Fact]
+    public void CmapFormat12Only_nonZeroLanguageOffMacintosh_isRefused()
+    {
+        AssertSoleFormat12Refused(BuildCmap((3, 10, Sub12(language: 1))), "has language 1; the OpenType cmap chapter requires 0 on every platform but Macintosh");
+    }
+
+    [Fact]
+    public void CmapFormat12Only_nonZeroLanguageOnMacintosh_isAccepted()
+    {
+        // A Macintosh record may carry a language. Format 2 is not a subtable this class reads, so
+        // the font is still format-12-only; the record is only looked at.
+        var mac = new byte[8];
+        WriteU16Be(mac, 0, 2);
+        WriteU16Be(mac, 2, 8);
+        WriteU16Be(mac, 4, 19);
+        Assert.True(ParseLoaded(BuildCmap((1, 0, mac), (3, 10, Sub12()))).OnlyFormat12);
+    }
+
+    [Fact]
+    public void CmapFormat12Only_platform0Encoding10Alone_isRefusedButEncoding4IsNot()
+    {
+        AssertSoleFormat12Refused(BuildCmap((0, 10, Sub12())), "platform 0 / encoding 10, which the OpenType cmap chapter does not define");
+        Assert.True(ParseLoaded(BuildCmap((0, 4, Sub12()))).OnlyFormat12);
+        Assert.True(ParseLoaded(BuildCmap((0, 4, Sub12()), (0, 10, Sub12()))).OnlyFormat12);   // (0,4) is a record the chapter defines
+    }
+
+    [Fact]
+    public void CmapFormat12_sameRecordDefectsBesideA16BitSubtable_areNotRefused()
+    {
+        var narrow = BuildSubtableFormat6(0x41, [1]);
+        // Duplicate records, records out of order, a language on a Windows record and platform 0 /
+        // encoding 10 as the only format 12 record: each loaded on 2.3.3 through the 16-bit
+        // subtable and must keep loading.
+        Assert.False(ParseLoaded(BuildCmap((3, 1, narrow), (3, 10, Sub12()), (3, 10, Sub12()))).OnlyFormat12);
+        Assert.False(ParseLoaded(BuildCmap((3, 10, Sub12()), (3, 1, narrow))).OnlyFormat12);
+        Assert.False(ParseLoaded(BuildCmap((3, 1, narrow), (3, 10, Sub12(language: 1)))).OnlyFormat12);
+        Assert.False(ParseLoaded(BuildCmap((0, 10, Sub12()), (3, 1, narrow))).OnlyFormat12);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────────

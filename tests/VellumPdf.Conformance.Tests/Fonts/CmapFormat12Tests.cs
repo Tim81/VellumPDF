@@ -72,7 +72,6 @@ public sealed class CmapFormat12Tests
     /// </summary>
     [Theory]
     [InlineData("DejaVuSans.ttf", 3, 10)]
-    [InlineData("DejaVuSans.ttf", 0, 10)]
     [InlineData("SourceSans3-ExtraLight.otf", 3, 10)]
     [InlineData("SourceSans3-ExtraLight.otf", 0, 4)]
     public void FontWithOnlyAFormat12Subtable_loadsAndMapsEveryCodePointTheFullFontDoes(
@@ -384,6 +383,62 @@ public sealed class CmapFormat12Tests
 
         Assert.Equal(36, embedder.GetGlyphId('A'));
         Assert.Equal(0, embedder.GetGlyphId(0x1F600));   // 2.3.3 read format 4 only: no supplementary plane
+    }
+
+    /// <summary>
+    /// Platform 0 / encoding 10 is not an encoding the cmap chapter defines (its Unicode-platform
+    /// IDs run 0 to 6), and 2.3.3 refused this font, so it stays refused when it is the only
+    /// Unicode subtable. Beside the 16-bit subtable it is read, as DejaVu Sans carries it.
+    /// </summary>
+    [Fact]
+    public void FontWithOnlyAPlatform0Encoding10Subtable_isRefusedButBesideFormat4ItLoads()
+    {
+        var full = LoadAsset("DejaVuSans.ttf");
+        var only = WithCmap(full, Subtables(full).Where(s => s.Platform == 0 && s.Encoding == 10 && s.Format == 12));
+        var beside = WithCmap(full, Subtables(full).Where(s => s.Format == 4 && s.Platform == 3 || s.Platform == 0 && s.Encoding == 10 && s.Format == 12));
+
+        var ex = Assert.Throws<NotSupportedException>(() => new TrueTypeFontEmbedder(only, "F1"));
+        Assert.Contains("platform 0 / encoding 10, which the OpenType cmap chapter does not define", ex.Message);
+        Assert.Equal(5857, new TrueTypeFontEmbedder(beside, "F1").GetGlyphId(0x1F600));
+    }
+
+    /// <summary>
+    /// The glyf chapter's composite record names a component glyph by index, so an index at or past
+    /// numGlyphs names nothing. The first component of U+00E9 is rewritten to numGlyphs (refused) and
+    /// to numGlyphs - 1 (accepted), in the format-12-only font; the same rewrite on the full font is
+    /// not reported as NotSupportedException.
+    /// </summary>
+    [Fact]
+    public void FormatTwelveOnlyFont_compositeComponentPastNumGlyphs_isRefusedAsNotSupported()
+    {
+        var full = LoadAsset("DejaVuSans.ttf");
+        var only12 = WithCmap(full, Subtables(full).Where(s => s.Platform == 3 && s.Format == 12));
+        var numGlyphs = U16(only12, FindTable(only12, "maxp").Offset + 4);
+        var gid = new TrueTypeFontEmbedder(only12, "F1").GetGlyphId(0xE9);
+
+        var atEnd = WithFirstComponent(only12, gid, numGlyphs);
+        var lastGlyph = WithFirstComponent(only12, gid, numGlyphs - 1);
+
+        var ex = Assert.Throws<NotSupportedException>(() => new TrueTypeFontEmbedder(atEnd, "F1"));
+        Assert.Contains($"composite glyph {gid} names component glyph {numGlyphs}, but the font has {numGlyphs} glyph(s)", ex.Message);
+        _ = new TrueTypeFontEmbedder(lastGlyph, "F1");
+        var control = Record.Exception(() => new TrueTypeFontEmbedder(WithFirstComponent(full, gid, numGlyphs), "F1"));
+        Assert.False(control is NotSupportedException, "the damage is not what is being refused");
+    }
+
+    /// <summary>The font with the first component of composite glyph <paramref name="gid"/> rewritten to name <paramref name="component"/>.</summary>
+    private static byte[] WithFirstComponent(byte[] font, int gid, int component)
+    {
+        var copy = (byte[])font.Clone();
+        var head = FindTable(copy, "head").Offset;
+        var loca = FindTable(copy, "loca").Offset;
+        var glyf = FindTable(copy, "glyf").Offset;
+        var shortOffsets = U16(copy, head + 50) == 0;
+        var start = shortOffsets ? U16(copy, loca + 2 * gid) * 2 : (int)U32(copy, loca + 4 * gid);
+        var at = glyf + start;
+        Assert.True((short)U16(copy, at) < 0, $"glyph {gid} is not composite");
+        Put16(copy, at + 12, component);   // 10-byte header, then flags(2), then glyphIndex(2)
+        return copy;
     }
 
     // ---------------------------------------------------------------- fixtures

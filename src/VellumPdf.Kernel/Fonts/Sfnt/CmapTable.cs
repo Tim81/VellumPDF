@@ -9,7 +9,7 @@ namespace VellumPdf.Fonts.Sfnt;
 /// 12 (segmented coverage, the full Unicode range).
 /// </summary>
 /// <remarks>
-/// A format 12 subtable on platform 3 / encoding 10, or platform 0 / encoding 4 or 10, adds the
+/// A format 12 subtable on platform 3 / encoding 10, or platform 0 / encoding 4 (or 10 beside a 16-bit subtable), adds the
 /// code points format 4 cannot hold, those above U+FFFF. The OpenType cmap chapter (OpenType 1.9.1,
 /// learn.microsoft.com, read 2026-11-19; not held under docs/iso) names platform 3 / encoding 10
 /// and platform 0 / encoding 4 for format 12. Platform 0 / encoding 10 is not in its list of
@@ -32,6 +32,13 @@ namespace VellumPdf.Fonts.Sfnt;
 /// Unicode subtable makes <see cref="Parse"/> throw <see cref="NotSupportedException"/>, the type
 /// 2.3.3 threw for every font in that position; the message names the rule, and the
 /// <see cref="InvalidDataException"/> that found it is the inner exception.</para>
+/// <para><b>A font whose only Unicode subtable is format 12 is held to the chapter's other
+/// rules too</b>, because accepting it is new. <see cref="Parse"/> throws
+/// <see cref="NotSupportedException"/> naming the rule when two encoding records share a platform,
+/// encoding and language, when the records are not sorted by platform, encoding and language, when
+/// a subtable on a platform other than Macintosh has a non-zero language field, or when the only
+/// format 12 record is platform 0 / encoding 10 (the chapter defines platform 0 encodings 0 to 6
+/// only). A font that also has a 16-bit subtable is not held to these, as on 2.3.3.</para>
 /// <para><b>Cost is bounded by the file.</b> Groups are sorted and disjoint, so a font maps at
 /// most 1,114,112 code points however it is built, and a group count must fit the declared length,
 /// so a subtable of 12 bytes a group costs at most what its groups hold. A group maps at most as
@@ -45,6 +52,7 @@ namespace VellumPdf.Fonts.Sfnt;
 internal sealed class CmapTable
 {
     private readonly Dictionary<int, ushort> _map;
+    private readonly Dictionary<int, ushort>? _sixteenBit;
 
     // Format-4 covers the Basic Multilingual Plane (0x0000-0xFFFF), so a well-formed subtable
     // maps at most 0x10000 code points. Budget 2x that and reject hostile subtables whose
@@ -57,9 +65,10 @@ internal sealed class CmapTable
     // at the number of groups the subtable's declared length has room for.
     private const int MaxCodePoint = 0x10FFFF;
 
-    private CmapTable(Dictionary<int, ushort> map, bool onlyFormat12 = false)
+    private CmapTable(Dictionary<int, ushort> map, Dictionary<int, ushort>? sixteenBit, bool onlyFormat12 = false)
     {
         _map = map;
+        _sixteenBit = sixteenBit;
         OnlyFormat12 = onlyFormat12;
     }
 
@@ -72,6 +81,18 @@ internal sealed class CmapTable
 
     public bool TryGetGlyphId(int codePoint, out ushort glyphId) =>
         _map.TryGetValue(codePoint, out glyphId);
+
+    /// <summary>
+    /// Looks the code point up in the 16-bit subtable alone, which is all releases through 2.3.3
+    /// read. ISO 32000-2 9.6.5.4 resolves a non-symbolic TrueType character through the (3,1)
+    /// subtable, so a check that follows that clause uses this rather than <see cref="TryGetGlyphId"/>,
+    /// which also sees format 12. A font with no 16-bit subtable maps nothing here.
+    /// </summary>
+    public bool TryGetSixteenBitGlyphId(int codePoint, out ushort glyphId)
+    {
+        glyphId = 0;
+        return _sixteenBit is not null && _sixteenBit.TryGetValue(codePoint, out glyphId);
+    }
 
     public ushort GetGlyphId(int codePoint) =>
         _map.TryGetValue(codePoint, out var gid) ? gid : (ushort)0;
@@ -101,6 +122,7 @@ internal sealed class CmapTable
 
         int best = -1; int bestPriority = -1; int bestFormat = -1;
         int wide = -1; int widePriority = -1;
+        var chapterWide = false;
         for (var i = 0; i < numTabs; i++)
         {
             var platform = r.ReadU16(4 + i * 8);
@@ -116,6 +138,8 @@ internal sealed class CmapTable
                 var widePrio = platform == 3 && encoding == 10 ? 2 :
                                platform == 0 && (encoding == 4 || encoding == 10) ? 1 : 0;
                 if (widePrio > widePriority) { widePriority = widePrio; wide = offset; }
+                if (platform == 3 && encoding == 10 || platform == 0 && encoding == 4)
+                    chapterWide = true;
                 continue;
             }
 
@@ -155,7 +179,7 @@ internal sealed class CmapTable
         }
 
         if (widePriority < 1)
-            return new CmapTable(narrow!);
+            return new CmapTable(narrow!, narrow);
 
         Dictionary<int, ushort> full;
         try
@@ -166,7 +190,7 @@ internal sealed class CmapTable
         {
             // The font loaded without this subtable before it was read, so a bad one costs the
             // supplementary planes and nothing else.
-            return new CmapTable(narrow);
+            return new CmapTable(narrow, narrow);
         }
         catch (InvalidDataException ex)
         {
@@ -176,13 +200,74 @@ internal sealed class CmapTable
                 "font's only Unicode cmap subtable is format 12 and it is malformed: " + ex.Message, ex);
         }
 
+        if (narrow is null)
+            RequireSoundRecordsForSoleFormat12(r, numTabs, chapterWide);
+
         if (narrow is not null)
         {
             // The 16-bit subtable wins where it maps a code point; see the class remarks.
             foreach (var (cp, gid) in narrow)
                 full[cp] = gid;
         }
-        return new CmapTable(full, onlyFormat12: narrow is null);
+        return new CmapTable(full, narrow, onlyFormat12: narrow is null);
+    }
+
+    // A font whose only Unicode subtable is format 12 was refused before format 12 was read, so
+    // accepting it is new, and what is new is held to the chapter's own rules (R2: input that does
+    // not comply never gets the exception for bugs). Each failure is NotSupportedException, the type
+    // 2.3.3 threw for every such font. Fonts that also carry a 16-bit subtable loaded on 2.3.3 and
+    // are not held to these.
+    //
+    // OpenType cmap chapter (OpenType 1.9.1, learn.microsoft.com/typography/opentype/spec/cmap, read
+    // 2026-11-19): "The encoding record entries in the 'cmap' header must be sorted first by
+    // platform ID, then by platform-specific encoding ID, and then by the language field in the
+    // corresponding subtable. Each platform ID, platform-specific encoding ID, and subtable
+    // language combination may appear only once in the 'cmap' table." and "The language field must
+    // be set to zero for all 'cmap' subtables whose platform IDs are other than Macintosh
+    // (platform ID 1)." Its Unicode-platform encoding IDs are 0 to 6, so platform 0 / encoding 10
+    // is not one the chapter defines; platform 3 / encoding 10 and platform 0 / encoding 4 are the
+    // chapter's full-repertoire records.
+    private static void RequireSoundRecordsForSoleFormat12(SfntReader r, int numTabs, bool chapterWide)
+    {
+        if (!chapterWide)
+            throw new NotSupportedException(
+                "font's only Unicode cmap subtable is format 12 on platform 0 / encoding 10, which the OpenType cmap chapter does not define (its Unicode-platform encoding IDs run 0 to 6)");
+
+        try
+        {
+            ulong previous = 0;
+            var seen = new HashSet<ulong>();
+            for (var i = 0; i < numTabs; i++)
+            {
+                var platform = r.ReadU16(4 + i * 8);
+                var encoding = r.ReadU16(4 + i * 8 + 2);
+                var offset = (int)r.ReadU32(4 + i * 8 + 4);
+                var language = r.ReadU16(offset) switch
+                {
+                    0 or 2 or 4 or 6 => r.ReadU16(offset + 4),
+                    8 or 10 or 12 or 13 => r.ReadU32(offset + 8),
+                    _ => 0u,   // format 14 has no language field
+                };
+
+                if (platform != 1 && language != 0)
+                    throw new NotSupportedException(
+                        $"font's only Unicode cmap subtable is format 12 and the record for platform {platform} / encoding {encoding} has language {language}; the OpenType cmap chapter requires 0 on every platform but Macintosh");
+
+                var key = ((ulong)platform << 48) | ((ulong)encoding << 32) | language;
+                if (!seen.Add(key))
+                    throw new NotSupportedException(
+                        $"font's only Unicode cmap subtable is format 12 and platform {platform} / encoding {encoding} / language {language} appears twice; the OpenType cmap chapter allows each combination once");
+                if (i > 0 && key < previous)
+                    throw new NotSupportedException(
+                        $"font's only Unicode cmap subtable is format 12 and its encoding records are not sorted by platform, encoding and language (record {i}: platform {platform} / encoding {encoding}); the OpenType cmap chapter requires that order");
+                previous = key;
+            }
+        }
+        catch (InvalidDataException ex)
+        {
+            throw new NotSupportedException(
+                "font's only Unicode cmap subtable is format 12 and its encoding records cannot be read: " + ex.Message, ex);
+        }
     }
 
     // maxp numGlyphs bounds every glyph ID a cmap may name. A font with no readable maxp has no
@@ -328,7 +413,9 @@ internal sealed class CmapTable
             // wrap because the inverted-group check above has already run.
             if ((long)startGlyph + (end - start) >= numGlyphs)
                 throw new InvalidDataException(
-                    $"Malformed font: cmap format-12 group {i} maps glyph {(long)startGlyph + (end - start)}, but the font has {numGlyphs} glyph(s).");
+                    numGlyphs > ushort.MaxValue
+                        ? $"Malformed font: cmap format-12 group {i} maps glyph {(long)startGlyph + (end - start)}, past the largest glyph ID 65535 (the font has no readable maxp to bound it)."
+                        : $"Malformed font: cmap format-12 group {i} maps glyph {(long)startGlyph + (end - start)}, but the font has {numGlyphs} glyph(s).");
             previousEnd = end;
 
             for (var cp = start; cp <= end; cp++)

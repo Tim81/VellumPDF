@@ -231,6 +231,16 @@ public sealed class PdfDocument : IDisposable
     /// (e.g. "TT1"). Call <see cref="RegisterEmbeddedFontUsage"/> during drawing to record
     /// per-page usage so <see cref="Save"/> wires each page's resource dictionary.
     /// </summary>
+    /// <exception cref="NotSupportedException">
+    /// The font's <c>cmap</c> has no Unicode subtable this library reads (format 0, 4 or 6, or
+    /// format 12 on platform 3 / encoding 10 or platform 0 / encoding 4, or on platform 0 / encoding 10 beside a 16-bit subtable). Also, when format
+    /// 12 is the only such subtable, the font is refused if that subtable is malformed, if its
+    /// encoding records repeat or are out of order, if a non-Macintosh subtable has a non-zero
+    /// language, if the only format 12 record is platform 0 / encoding 10, if a required table is
+    /// missing or short, if <c>unitsPerEm</c> is 0, if a <c>loca</c> range lies outside
+    /// <c>glyf</c>, if a composite glyph names a component at or past <c>numGlyphs</c>, or if the
+    /// <c>CFF </c> table does not parse; the message names the rule.
+    /// </exception>
     public EmbeddedFontHandle UseTrueTypeFont(byte[] fontData)
     {
         // Dedup by content so loading the same font twice shares one embedded subset.
