@@ -17,17 +17,23 @@ public sealed record GifLoadOptions
     /// being returned at its own size. Defaults to <see langword="false"/>.
     /// </summary>
     /// <remarks>
-    /// <b>With the option set, a screen the frame does not fit is refused.</b>
+    /// <b>With the option set, a screen the frame does not fit is refused, and so is a file that
+    /// breaks a GIF89a rule the default path lets pass.</b>
     /// <see cref="GifImageLoader.Load(byte[], GifLoadOptions)"/> throws
     /// <see cref="InvalidDataException"/> for a screen with a width or height of 0, a frame that
-    /// extends past the screen, and a screen of more than 100 million pixels.
+    /// extends past the screen, a screen of more than 100 million pixels, a pixel whose colour
+    /// index is past the active colour table, image data that decodes more pixels than the
+    /// descriptor declares or that has no End of Information code or Block Terminator, a Graphic
+    /// Control Extension that is not one sub-block of 4 bytes or a second one before the same
+    /// image, and a top-level block that is not an extension, an image descriptor or the trailer.
+    /// Each message names the rule and its section. Without the option the same files load as on
+    /// 2.3.3.
     /// <para>The canvas is allocated at the screen's size, 4 bytes a pixel, so the option costs up
     /// to about 400 MB for a file of a few dozen bytes. Do not enable it for untrusted files
     /// without checking the screen size first.</para>
     /// <para>The image is as large as the screen, so a Layout document that places it changes
     /// size with it. A placed image too tall for a page makes the document's save throw
-    /// <see cref="InvalidOperationException"/> (measured with a 40 x 2,000 screen, with and without
-    /// an explicit width).</para>
+    /// <see cref="InvalidOperationException"/>.</para>
     /// <para><b>Do not rely on the default being <see langword="false"/>.</b> Version 3.0 may
     /// place the frame by default.</para>
     /// </remarks>
