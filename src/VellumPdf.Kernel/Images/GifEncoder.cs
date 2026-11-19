@@ -4,7 +4,7 @@
 namespace VellumPdf.Images;
 
 /// <summary>
-/// Writes a single-frame GIF89a file.
+/// Writes a single-frame GIF file, as 87a or 89a depending on the blocks it writes.
 ///
 /// Implemented from the Graphics Interchange Format, Version 89a, CompuServe Incorporated,
 /// 31 July 1990. The block order follows the grammar in Appendix B:
@@ -23,7 +23,7 @@ public static class GifEncoder
 
     /// <summary>
     /// Encodes 8-bit RGB samples, three bytes per pixel in row order from the top-left, as a
-    /// single-frame GIF89a.
+    /// single-frame GIF.
     /// </summary>
     /// <remarks>
     /// An image with more than 256 distinct colours is refused. This method throws
@@ -31,6 +31,14 @@ public static class GifEncoder
     /// per frame and this encoder will not choose which ones to discard: it builds the palette
     /// from the colours the image actually holds, in keeping with the rest of the image path,
     /// which never trades quality away without being asked.
+    /// <para>The header's version is derived from the blocks written, not fixed. GIF89a §17.d.ii
+    /// says an encoder "should use the earliest possible version number that defines all the
+    /// blocks used in the Data Stream". Every block written today (Global Color Table, Image
+    /// Descriptor, Table Based Image Data, Trailer) lists 87a as its required version, so the
+    /// header reads <c>GIF87a</c>. Releases through 2.3.3 wrote <c>GIF89a</c> over the same
+    /// blocks. Do not rely on either string: a later version that writes a block requiring 89a,
+    /// such as a Graphic Control Extension, will write <c>GIF89a</c>. Read the version from the
+    /// file.</para>
     /// <para>The order colours land in within the returned file's Global Color Table is
     /// first-appearance order and is <b>not</b> a contract. Do not rely on a given colour landing
     /// at a given palette index; a later version may build the table differently as long as the
@@ -100,8 +108,11 @@ public static class GifEncoder
 
         using var ms = new MemoryStream();
 
-        // Header §17.
-        ms.Write("GIF89a"u8);
+        // Header §17. The version depends on which blocks follow (§17.d.ii), so it is chosen
+        // from a flag that any block requiring 89a must set before this line. No block this
+        // encoder writes requires 89a, so it is false today.
+        var requires89a = false;
+        ms.Write(requires89a ? "GIF89a"u8 : "GIF87a"u8);
 
         // Logical Screen Descriptor §18.
         WriteUInt16(ms, width);

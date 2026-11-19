@@ -54,6 +54,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`GifEncoder` writes `GIF87a` when it writes only 87a blocks (#499).** It wrote `GIF89a` over a
+  Global Color Table, an Image Descriptor, Table Based Image Data and a Trailer, each of which
+  lists 87a as its required version, and GIF89a section 17.d.ii says an encoder should use the
+  earliest version that defines every block in the stream. This is a deliberate output change:
+  bytes 3 to 5 of every file `GifEncoder.Encode` returns change from `89a` to `87a`; the rest of
+  the file is identical. `GifImageLoader` accepts both versions, as before. A later release that
+  writes a block needing 89a will write `GIF89a`, so read the version from the file.
 - **Cost-bound tests no longer assert on elapsed time (#400, #456).** A `Stopwatch` checked after a
   call returns cannot end a hang, and a 10 s bound fails on a loaded runner: the main CI run for
   1c61fa6 failed `FindingHigh_A4FlateBombPadding_refusesQuickly_viaCostBudget` at 11.79 s, and #400
