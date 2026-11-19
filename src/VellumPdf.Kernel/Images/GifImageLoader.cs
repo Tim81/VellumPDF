@@ -228,8 +228,15 @@ public static class GifImageLoader
         // Gather sub-blocks into a single byte stream
         var lzwStream = GatherSubBlocks(data, ref pos);
 
-        // LZW decode
-        var indices = LzwDecode(lzwStream, lzwMinCodeSize, width * height);
+        // LZW decode. The raster buffer is sized from the image descriptor, which is attacker
+        // text: a 39-byte file can declare 10,000 x 10,000 and the code stream behind it is
+        // refused as short, but only after the buffer exists (100,026,144 bytes measured on
+        // 2.3.3 for that file, #536's class). A first pass runs the same decoder with no buffer
+        // and so makes the same refusals, with the same messages, in the same order, and counts
+        // the pixels the stream delivers. The buffer is allocated only once that count has
+        // matched, so what is allocated is bounded by what the file contained.
+        LzwDecode(lzwStream, lzwMinCodeSize, width * height, produce: false);
+        var indices = LzwDecode(lzwStream, lzwMinCodeSize, width * height, produce: true)!;
 
         // The LZW stream carries rows in storage order. For an interlaced image that is not
         // display order, so the rows are put back before anything reads a pixel. The colour
@@ -324,7 +331,7 @@ public static class GifImageLoader
     //   • Code width starts at minCodeSize+1 and grows as the table fills.
     //   • Maximum table size is 4096 entries (12-bit codes).
 
-    private static byte[] LzwDecode(byte[] stream, int minCodeSize, int pixelCount)
+    private static byte[]? LzwDecode(byte[] stream, int minCodeSize, int pixelCount, bool produce)
     {
         var clearCode = 1 << minCodeSize;
         var eoiCode = clearCode + 1;
@@ -337,8 +344,8 @@ public static class GifImageLoader
         var tablePrefix = new int[maxTableSize];
         var tableSuffix = new byte[maxTableSize];
 
-        // Output buffer
-        var output = new byte[pixelCount];
+        // Output buffer; null on the counting pass (see the caller).
+        var output = produce ? new byte[pixelCount] : null;
         var outIdx = 0;
 
         // Bit-reading state
@@ -446,7 +453,11 @@ public static class GifImageLoader
 
             // Pop stack into output
             for (var i = stackTop - 1; i >= 0 && outIdx < pixelCount; i--)
-                output[outIdx++] = stack[i];
+            {
+                if (output is not null)
+                    output[outIdx] = stack[i];
+                outIdx++;
+            }
 
             // Add new table entry: prevCode's sequence + first byte of current code.
             // The chain walk pushes suffix bytes root-to-leaf reversed, so stack[stackTop-1]

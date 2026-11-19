@@ -68,6 +68,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   screen dimension of zero is handled the same way. A screen whose area would exceed the
   100-million-pixel limit is not refused; the frame comes back at its own size, as on 2.3.3.
   Only the first frame is decoded, as before.
+- **`GifImageLoader` no longer allocates the raster before the data has been shown to hold it
+  (#536's class).** A 42-byte GIF declaring 10,000 x 10,000 is within the 100-million-pixel limit,
+  and 2.3.3 allocated the 100,000,000-byte index buffer before refusing it for carrying 4 pixels
+  (measured with `GC.GetAllocatedBytesForCurrentThread` around `Load`: 100.0 MB on 2.3.3, 0.0 MB
+  now). The LZW decoder now runs once without a buffer, which makes the same refusals with the same
+  messages and counts the pixels delivered, and allocates only after the count matches. The result
+  for the files probed is unchanged: a 3000 x 3000 file, interlaced and not, decodes to the same
+  bytes on 2.3.3 and now, and each short stream probed is refused with the same message.
 - **`GifEncoder` writes `GIF87a` when it writes only 87a blocks (#499).** It wrote `GIF89a` over a
   Global Color Table, an Image Descriptor, Table Based Image Data and a Trailer, each of which
   lists 87a as its required version, and GIF89a section 17.d.ii says an encoder should use the
