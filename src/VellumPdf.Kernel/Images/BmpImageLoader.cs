@@ -43,10 +43,11 @@ public static class BmpImageLoader
     /// later major version will check it.</para>
     /// <para>One size limit applies: a declared pixel count above <b>100,000,000</b> is refused.
     /// Neither edge is limited on its own, so 2,000,000 by 1 is accepted and 10,001 by 10,001 is
-    /// not. The limit is internal and has no public setting. It bounds the damage a header can do
-    /// rather than preventing it: the raster is sized from the declared dimensions before the
-    /// pixel data is checked, so a 1,079-byte file declaring 10,000 by 10,000 still allocates
-    /// 300 MB before it refuses (#536).</para>
+    /// not. The limit is internal and has no public setting. The pixel data is checked against the
+    /// file length before the raster is allocated, so a header cannot cost more than the file
+    /// carries: a 1,079-byte file declaring 10,000 by 10,000 is refused after a few kilobytes.
+    /// A file that does carry its pixel data still allocates the full raster, at least three
+    /// bytes per pixel, so 300 MB at the limit.</para>
     /// <para>This loader reads one variant: an uncompressed 40-byte BITMAPINFOHEADER bitmap at
     /// 8, 24 or 32 bits per pixel. Every other well-formed BMP raises
     /// <see cref="NotSupportedException"/>, compressed ones included, and there is no fallback
@@ -137,9 +138,9 @@ public static class BmpImageLoader
         // Colour table starts at offset 54 (after BITMAPINFOHEADER).
         // Each entry is RGBQUAD: blue, green, red, reserved (4 bytes).
         var colorTableOffset = 54;
-        var rgb = new byte[width * height * 3];
         var rowStride = (width + 3) & ~3; // DWORD-aligned
         RequirePixelData(data, pixelOffset, height, rowStride);
+        var rgb = new byte[width * height * 3];
 
         for (var y = 0; y < height; y++)
         {
@@ -165,8 +166,8 @@ public static class BmpImageLoader
     {
         // Each row is padded to a DWORD boundary.
         var rowStride = (width * 3 + 3) & ~3;
-        var rgb = new byte[width * height * 3];
         RequirePixelData(data, pixelOffset, height, rowStride);
+        var rgb = new byte[width * height * 3];
 
         for (var y = 0; y < height; y++)
         {

@@ -74,6 +74,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   renderers that fail by name after 200,004 `Layout` calls. Remaining `Timeout` values are 300 s hang
   guards, except the `EncryptDictionaryDenialOfServiceTests` pin sized in #456. No public API changes.
 
+- **`BmpImageLoader` checks that the pixel data is present before it allocates the raster (#536).**
+  The 8- and 24-bit paths sized the output from the declared dimensions first, so a 1,079-byte file
+  declaring 10,000 by 10,000 allocated 300,000,848 bytes on the calling thread before refusing. It
+  now allocates 3,136 bytes (8-bit) and 1,064 bytes (24-bit) before the same refusal, with the same
+  exception type and message. The 32-bit path already checked first. Every file that loaded before
+  loads the same way.
+
 ## [2.3.3] - 2026-09-20
 
 This release is led by documentation. Layout's public surface now states what each member
