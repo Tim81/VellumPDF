@@ -522,6 +522,10 @@ public sealed class CmapFormat12Tests
         var pairEx = Assert.Throws<NotSupportedException>(() => new TrueTypeFontEmbedder(pair, "F1"));
         Assert.Contains("so the composite glyphs form a cycle (OpenType glyf chapter: the graph of composite glyphs must be acyclic)", pairEx.Message);
         _ = new TrueTypeFontEmbedder(nested, "F1");
+        // The cycle sits behind the second component, which the walk reaches only after the first.
+        var viaSecond = WithComponent(only12, a, 1, a);
+        var secondEx = Assert.Throws<NotSupportedException>(() => new TrueTypeFontEmbedder(viaSecond, "F1"));
+        Assert.Contains($"composite glyph {a} names component glyph {a}, which is already being expanded above it", secondEx.Message);
         var control = Record.Exception(() => new TrueTypeFontEmbedder(WithComponent(full, a, 0, a), "F1"));
         Assert.False(control is NotSupportedException, "a font with a 16-bit subtable is not held to the cycle rule");
     }
