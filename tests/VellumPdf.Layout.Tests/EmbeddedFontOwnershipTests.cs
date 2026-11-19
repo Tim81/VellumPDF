@@ -8,13 +8,7 @@ using VellumPdf.TestSupport;
 
 namespace VellumPdf.Layout.Tests;
 
-/// <summary>
-/// #544: an <see cref="VellumPdf.Fonts.EmbeddedFontHandle"/> is only meaningful to the document that
-/// embedded it. Its resource name is a counter local to that document, so two documents can each
-/// hold a different font called <c>TT1</c>, and usage is recorded by that name. A handle from another
-/// document was recorded without question and the page saved with a font its resources do not
-/// define, or, when the saving document had its own <c>TT1</c>, with that other font silently.
-/// </summary>
+/// <summary>An <see cref="VellumPdf.Fonts.EmbeddedFontHandle"/> is only meaningful to the document that embedded it: its resource name is a counter local to that document, and usage is recorded by that name.</summary>
 public sealed class EmbeddedFontOwnershipTests
 {
     // Copied beside the test assembly by the project file; the two faces differ, which is all this
@@ -51,12 +45,7 @@ public sealed class EmbeddedFontOwnershipTests
         Assert.Contains("belongs to a different document", ex.Message, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// Both documents call their font TT1 but the fonts differ. 1c61fa6 recorded the foreign handle
-    /// under the saving document's own TT1 and saved a valid file, so it still saves. The page uses
-    /// the saving document's font of that name and the foreign glyphs are not merged into its subset,
-    /// since the two subsets belong to different fonts.
-    /// </summary>
+    /// <summary>Both documents call their font TT1 but the fonts differ: the page uses the saving document's font of that name, as in 2.3.3, and the foreign glyphs are not merged into its subset.</summary>
     [Fact]
     public void ForeignHandle_whoseResourceNameCollidesWithTheSavingDocumentsOwn_saves_withoutTheMerge()
     {
@@ -73,10 +62,7 @@ public sealed class EmbeddedFontOwnershipTests
         Assert.DoesNotContain("<0048>", stream, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// The foreign handle's program is embedded here, but under another name, and this document
-    /// defines the handle's name for a different program. 1c61fa6 saved a valid file; it still does.
-    /// </summary>
+    /// <summary>The foreign handle's program is embedded here under another name, and this document defines the handle's name for a different program; it saves, as in 2.3.3.</summary>
     [Fact]
     public void ForeignHandle_ofAProgramHeldUnderAnotherName_whenTheNameIsDefinedHere_saves()
     {
@@ -143,12 +129,7 @@ public sealed class EmbeddedFontOwnershipTests
         return PdfTestUtil.DecompressAllFlatStreams(ms.ToArray());
     }
 
-    /// <summary>
-    /// On 1c61fa6 this saved a correct file by name coincidence: both documents embedded the same font
-    /// program as TT1, so the foreign handle's name resolved to the saving document's own embedding.
-    /// It keeps saving, and the glyphs the foreign handle registered reach the subset, which the
-    /// saving document never measured itself.
-    /// </summary>
+    /// <summary>Both documents embedded the same font program as TT1, so the foreign handle's name resolves to the saving document's own embedding, as in 2.3.3; the glyphs the foreign handle registered reach the subset.</summary>
     [Fact]
     public void ForeignHandle_ofTheSameFontProgramUnderTheSameName_saves_withItsGlyphsInTheSubset()
     {
@@ -167,10 +148,7 @@ public sealed class EmbeddedFontOwnershipTests
             Assert.Contains("<" + cp + ">", stream, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// The same font program under another resource name, with the handle's name defined nowhere in
-    /// this document: the content stream would name TT2 while the resources hold only TT1.
-    /// </summary>
+    /// <summary>The same font program under another resource name, with the handle's name defined nowhere in this document: the content stream would name TT2 while the resources hold only TT1.</summary>
     [Fact]
     public void ForeignHandle_ofTheSameFontProgramUnderAnotherName_isRefused()
     {
@@ -203,12 +181,7 @@ public sealed class EmbeddedFontOwnershipTests
         return (PdfTestUtil.DecompressAllFlatStreams(bytes), widths);
     }
 
-    /// <summary>
-    /// The glyph ids the foreign handle registered must be in the saving document's subset, not just
-    /// in its ToUnicode map. Drawing "Hello" through the foreign handle has to give the same /W
-    /// widths array and the same font program as drawing it through the document's own handle, which
-    /// registers the same glyphs itself. Dropping the merge of the glyph ids leaves both smaller.
-    /// </summary>
+    /// <summary>The glyph ids the foreign handle registered must be in the saving document's subset, not just its ToUnicode map: drawing "Hello" through it gives the same /W array and font program as the document's own handle.</summary>
     [Fact]
     public void ForeignHandle_drawnText_getsTheSameSubsetAsTheOwnHandleWould()
     {

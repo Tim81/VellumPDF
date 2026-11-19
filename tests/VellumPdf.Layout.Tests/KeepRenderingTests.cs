@@ -10,16 +10,7 @@ using VellumPdf.Layout.Elements.Table;
 
 namespace VellumPdf.Layout.Tests;
 
-/// <summary>
-/// A release before 3.0 may not turn a document that saved a valid file on 1c61fa6 into an exception
-/// (#484). A non-finite inset, indent, colour or band height is mostly not checked before the layout;
-/// the layout runs as it did and <c>PdfCanvas</c> refuses what would be written as <c>NaN</c> or
-/// <c>Infinity</c>. The few checks that do run first are listed in <see cref="Document"/>.
-/// Every expected outcome in this class was measured on 1c61fa6 and pins its output: the drawn text,
-/// the rectangle, image and curve counts, or the exception type. Where that output lost content, such
-/// as a table that is not drawn or text that wraps after every word, the test pins a known defect that
-/// is kept until 3.0 and reported by the diagnostics channel (#607).
-/// </summary>
+/// <summary>Non-finite insets, indents, colours and band heights saved on 2.3.3 unless <c>PdfCanvas</c> refused them, and every expected outcome here is 2.3.3's: the drawn text, the rectangle, image and curve counts, or the exception type.</summary>
 public sealed class KeepRenderingTests
 {
     private static string Normalise(string text) => Regex.Replace(text, @"[^\u0020-\u007E]", "?");
@@ -50,9 +41,8 @@ public sealed class KeepRenderingTests
         _ => double.NegativeInfinity,
     };
 
-    // Measured on 1c61fa6: element, edge, value, then what it did. SAVED rows list the drawn text
-    // (one entry per Tj, a non-ASCII byte shown as ?) and the re, Do and curve counts. INVALID rows
-    // wrote NaN or Infinity into the stream. THREW rows threw that type.
+    // 2.3.3's outcome per element, edge and value. SAVED rows list the drawn text (one entry per Tj, a non-ASCII byte shown as ?)
+    // and the re, Do and curve counts; INVALID rows wrote NaN or Infinity into the stream; THREW rows threw that type.
     private static readonly (string Element, string Edge, string Value, string Main)[] _margins =
     [
         ("paragraph first", "top", "NaN", "THREW InvalidOperationException"),
@@ -178,12 +168,7 @@ public sealed class KeepRenderingTests
         return PdfTestUtil.DecompressAllFlatStreams(ms.ToArray());
     }
 
-    /// <summary>
-    /// 72 shapes: six elements (a first paragraph, a last paragraph, a table, a list, an image and a pie
-    /// chart; there is no heading row), four edges, three values. What 1c61fa6 saved, this saves with the same
-    /// drawn output. What it wrote as an invalid token throws from <c>PdfCanvas</c> with
-    /// <see cref="ArgumentException"/>. What it threw, it throws, with the same exception type.
-    /// </summary>
+    /// <summary>72 shapes: six elements (first and last paragraph, table, list, image, pie chart), four edges, three values; each saves with 2.3.3's drawn output, throws <see cref="ArgumentException"/> from <c>PdfCanvas</c> where 2.3.3 wrote an invalid token, or throws 2.3.3's exception type.</summary>
     [Theory]
     [MemberData(nameof(MarginCases))]
     public void ElementMargin_nonFinite_gives1c61fa6Output(string element, string edge, string value, string main)
@@ -279,8 +264,7 @@ public sealed class KeepRenderingTests
         {
             foreach (var (edge, v) in new[] { ("left", double.NaN), ("left", double.NegativeInfinity), ("top", double.NegativeInfinity) })
             {
-                // An empty heading still writes its bookmark position through PdfReal, so a
-                // negative-infinity top margin throws on 1c61fa6 and here.
+                // An empty heading still writes its bookmark position through PdfReal, so a negative-infinity top margin throws.
                 if (element == "heading empty" && edge == "top") continue;
                 rows.Add(element, edge, v);
             }
@@ -291,10 +275,7 @@ public sealed class KeepRenderingTests
         return rows;
     }
 
-    /// <summary>
-    /// An element that draws nothing writes none of its insets, so a non-finite one saved a valid file
-    /// on 1c61fa6 and keeps saving. Each row was measured there.
-    /// </summary>
+    /// <summary>An element that draws nothing writes none of its insets, so a non-finite one saves, as in 2.3.3.</summary>
     [Theory]
     [MemberData(nameof(EmptyElementCases))]
     public void ElementThatDrawsNothing_savesWithANonFiniteInset(string element, string edge, double v)
@@ -328,10 +309,7 @@ public sealed class KeepRenderingTests
         Assert.StartsWith("PDF does not support NaN or Infinity as a real number value", ex.Message, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// U+00A0 counts as drawable text: 1c61fa6 wrote <c>1 0 0 1 NaN 757.89 Tm</c> for this shape, so the
-    /// canvas refuses it, where plain white space draws nothing and saves.
-    /// </summary>
+    /// <summary>U+00A0 counts as drawable text, so the canvas refuses the non-finite position, where plain white space draws nothing and saves.</summary>
     [Theory]
     [InlineData(" ", true)]
     [InlineData("   ", false)]
@@ -434,11 +412,7 @@ public sealed class KeepRenderingTests
         return doc;
     }
 
-    /// <summary>
-    /// 1c61fa6 saved these documents, a blank page, because the table never reaches the page and its
-    /// cell colour is never written. The colour was checked in Layout, so they were refused; it is
-    /// checked where it is written now.
-    /// </summary>
+    /// <summary>A table that never reaches the page writes no cell colour, so a non-finite one saves a blank page; the colour is checked where it is written.</summary>
     [Theory]
     [InlineData("document top -inf", true)]
     [InlineData("document top -inf", false)]
@@ -455,12 +429,7 @@ public sealed class KeepRenderingTests
         Assert.Equal(Summary(plain), Summary(doc));
     }
 
-    /// <summary>
-    /// A negative border width on a table that is laid out and not drawn. 1c61fa6 refused only a
-    /// non-finite width in Layout and wrote the width where a cell border is drawn, so these saved a
-    /// valid file. The negative width is refused where it is written, which a table that never reaches
-    /// the page does not do.
-    /// </summary>
+    /// <summary>A negative border width on a table that is laid out and not drawn saves; the width is refused where a cell border is written.</summary>
     [Theory]
     [InlineData("document top -inf")]
     [InlineData("empty header -inf")]
@@ -473,7 +442,7 @@ public sealed class KeepRenderingTests
         Assert.Equal(Summary(plain), Summary(doc));
     }
 
-    /// <summary>The non-finite width stays a Layout refusal, as on 1c61fa6, drawn or not.</summary>
+    /// <summary>The non-finite width is a Layout refusal, as in 2.3.3, drawn or not.</summary>
     [Fact]
     public void TableBorderWidth_nan_isRefusedEvenWhenTheTableIsNotDrawn()
     {

@@ -1926,16 +1926,11 @@ public sealed class Jbig2ImageTests
         return buf;
     }
 
-    // ── File header: flags byte, page count and the random-access organisation (#570) ──────────
+    // ── File header: flags byte, page count and the random-access organisation ──
     //
-    // ITU-T T.88 Annex D. After the 8-byte ID string a file has a flags byte (bit 0 set: sequential,
+    // ITU-T T.88 Annex D: after the 8-byte ID string a file has a flags byte (bit 0 set: sequential,
     // clear: random-access; bit 1 set: the number of pages is unknown) and, unless bit 1 is set, a
-    // 4-byte page count. The loader used to read only the ID string, so it took the flags byte and the
-    // count for the start of the first segment and refused every standard file, with an error about
-    // "segment 16777216". These fixtures are built by hand from Annex D, and the equivalence test
-    // below pins that every container form carries the same segments to the same PDF stream. A real
-    // sequential file from the ITU conformance data was also checked against its reference bitmap,
-    // pixel for pixel, but that data is licensed for conformance testing only and is not committed.
+    // 4-byte page count. The fixtures are built by hand from Annex D.
 
     private static readonly byte[] IdString = [0x97, 0x4A, 0x42, 0x32, 0x0D, 0x0A, 0x1A, 0x0A];
 
@@ -1944,11 +1939,7 @@ public sealed class Jbig2ImageTests
     // BuildSegment writes an 11-byte header (no referred-to segments, 1-byte page association).
     private const int PlainHeaderLength = 11;
 
-    /// <summary>
-    /// Five segments on one page: a global symbol dictionary (page 0, partitioned into the globals
-    /// stream), the page information, a generic region with recognisable data, end-of-page and
-    /// end-of-file. The data of each is distinct, so a segment given another's data shows.
-    /// </summary>
+    /// <summary>Five segments on one page, each with distinct data so a segment given another's data shows.</summary>
     private static byte[][] FiveSegments(int width, int height) =>
     [
         BuildSegment(0, type: 0, pageAssociation: 0, [0xA1, 0xA2, 0xA3, 0xA4]),
@@ -1989,11 +1980,7 @@ public sealed class Jbig2ImageTests
         Assert.Equal(123, img.Height);
     }
 
-    /// <summary>
-    /// The same five segments in every container form give the identical PDF stream and the identical
-    /// globals stream: sequential and random-access, page count known and unknown, the older bare ID
-    /// string, and the embedded form with no file header at all.
-    /// </summary>
+    /// <summary>The same five segments in every container form give the identical PDF stream and globals stream.</summary>
     [Fact]
     public void Load_EveryContainerForm_CarriesTheSameSegmentsToTheSamePdfStream()
     {
@@ -2022,11 +2009,7 @@ public sealed class Jbig2ImageTests
         }
     }
 
-    /// <summary>
-    /// In the random-access organisation the data parts follow all the headers, so a segment's data
-    /// is not beside its header. Each data part has to land on its own header, which the distinct
-    /// bytes in <see cref="FiveSegments"/> show.
-    /// </summary>
+    /// <summary>In the random-access organisation each data part has to land on its own header.</summary>
     [Fact]
     public void Load_RandomAccess_JoinsEachHeaderToItsOwnDataPart()
     {
@@ -2076,11 +2059,7 @@ public sealed class Jbig2ImageTests
         Assert.Contains("unknown data length", ex.Message, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// Bits 4 to 7 of the flags byte are reserved and must be zero, so a byte with one set is not a
-    /// flags byte. The loader falls back to reading the ID string followed by segments and, when that
-    /// fails too, reports an error rather than misreading.
-    /// </summary>
+    /// <summary>A flags byte with a reserved bit (4 to 7) set falls back to the ID string followed by segments.</summary>
     [Fact]
     public void Load_ReservedFlagBitsSet_IsNotReadAsAStandardHeader()
     {
@@ -2101,7 +2080,7 @@ public sealed class Jbig2ImageTests
         Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(file));
     }
 
-    /// <summary>The 8-byte-only form the loader always accepted still loads, so callers keep working.</summary>
+    /// <summary>The 8-byte ID-string-only form loads.</summary>
     [Fact]
     public void Load_TheOlderBareIdStringForm_StillLoads()
     {
@@ -2111,18 +2090,13 @@ public sealed class Jbig2ImageTests
         Assert.Equal(40, img.Height);
     }
 
-    // ── First page only, and unknown-length segments (#570) ──────────────────────────────────────
+    // ── First page only, and unknown-length segments ──
     //
-    // A PDF image is one page. A multi-page file embeds the page of its first page-information
-    // segment, with the segments that belong to no page, and drops every other page. A segment whose
-    // data length is unknown (0xFFFFFFFF) is dropped by passthrough, as it was on 1c61fa6, which can
-    // leave a blank image; a random-access file and DecodeToRaster still refuse it.
+    // A PDF image is one page: a multi-page file embeds the page of its first page-information segment
+    // and the segments of no page. Passthrough drops a segment of unknown length (0xFFFFFFFF), which can
+    // leave a blank image, as in 2.3.3; a random-access file and DecodeToRaster refuse it.
 
-    /// <summary>
-    /// Two pages in one file: a global symbol dictionary (page 0), then page 1 (64x48: page
-    /// information, a generic region, end-of-page), then page 2 (99x77: page information, a generic
-    /// region, a symbol dictionary, end-of-page), then end-of-file. Every segment's data is distinct.
-    /// </summary>
+    /// <summary>Two pages in one file, each segment with distinct data.</summary>
     private static byte[][] TwoPages() =>
     [
         BuildSegment(0, type: 0, pageAssociation: 0, [0xA1, 0xA2, 0xA3, 0xA4]),
@@ -2141,7 +2115,7 @@ public sealed class Jbig2ImageTests
     [InlineData(false)]
     public void Load_TwoPages_EmbedsOnlyTheFirstPage(bool withIdString)
     {
-        // Forms 1c61fa6 could read. The Annex D forms with two pages are refused; see below.
+        // The forms 2.3.3 could read.
         var pages = TwoPages();
         var body0 = pages.SelectMany(x => x).ToArray();
         var file = withIdString ? [.. IdString, .. body0] : body0;
@@ -2191,11 +2165,7 @@ public sealed class Jbig2ImageTests
         Assert.Equal(pages[0].Concat(pages[1]).ToArray(), ExtractStreamBody(Serialize(img)));
     }
 
-    /// <summary>
-    /// DecodeToRaster decodes the later pages too, as 1c61fa6 did, so a second page that holds a symbol
-    /// dictionary and an arithmetic-coded region refuses the file with NotSupportedException there and
-    /// here. Only the first page is kept when every page decodes.
-    /// </summary>
+    /// <summary>DecodeToRaster decodes later pages too, as 2.3.3 did, so an unsupported region on page 2 refuses the file with NotSupportedException.</summary>
     [Fact]
     public void Load_TwoPagesDecodeToRaster_RefusesWhatALaterPageCannotDecode_asOn1c61fa6()
     {
@@ -2227,13 +2197,7 @@ public sealed class Jbig2ImageTests
         Assert.Throws<NotSupportedException>(() => Jbig2ImageLoader.Load(Embedded(pages), opts));
     }
 
-    /// <summary>
-    /// A generic region of the first page whose data length is 0xFFFFFFFF, in a file 1c61fa6 could read.
-    /// The sequential parser takes it to run to the end of the data, and passthrough drops it, as
-    /// 1c61fa6 did, so the image is embedded with the page information and no region. The file is
-    /// valid, so it is not refused (#484); the image can be blank, which this test pins as a known
-    /// defect kept until 3.0, when the diagnostics channel (#607) will report it.
-    /// </summary>
+    /// <summary>A first-page generic region of unknown length is dropped by passthrough, so the image can be blank; the value is 2.3.3's.</summary>
     [Theory]
     [InlineData(false)]    // the embedded organisation, no file header
     [InlineData(true)]     // the ID string followed directly by segments
@@ -2253,12 +2217,7 @@ public sealed class Jbig2ImageTests
         Assert.Equal(segments[0], image.Jbig2Globals);
     }
 
-    /// <summary>
-    /// The same segment in a file with the flags byte and page count of T.88 Annex D. 1c61fa6 threw for
-    /// any such header, because it read the flags as the start of a segment, so what it refused stays
-    /// refused: dropping the segment would leave an image with no region, which this loader does not
-    /// handle correctly, since it does not scan for the end marker 7.2.7 describes.
-    /// </summary>
+    /// <summary>The same segment under an Annex D header stays refused, as in 2.3.3: dropping it would leave an image with no region.</summary>
     [Fact]
     public void Load_Passthrough_SegmentWithAnUnknownDataLength_inAnAnnexDFile_IsRefusedNamingIt()
     {
@@ -2272,11 +2231,7 @@ public sealed class Jbig2ImageTests
         Assert.Contains("does not scan the data for the end marker", ex.Message, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// In a file with an Annex D header every segment of unknown length is refused, whatever its page:
-    /// 1c61fa6 threw for the whole file, T.88 7.2.7 allows the length only on an immediate generic
-    /// region, and this loader cannot place where such a segment ends.
-    /// </summary>
+    /// <summary>With an Annex D header every segment of unknown length is refused, whatever its page (T.88 7.2.7 allows it only on an immediate generic region).</summary>
     [Fact]
     public void Load_Passthrough_UnknownDataLengthOnAnotherPage_inAnAnnexDFile_IsRefused()
     {
@@ -2292,12 +2247,7 @@ public sealed class Jbig2ImageTests
 
     // ── Page association 0 on the first page information, unknown length under DecodeToRaster ──
 
-    /// <summary>
-    /// A first page-information segment with page association 0 names no page, so no page is chosen
-    /// and every segment is kept, as the loader did before it chose a page: DecodeToRaster, which had
-    /// no page filter, decodes the region of a page the information does not name, and passthrough
-    /// embeds every segment.
-    /// </summary>
+    /// <summary>A first page-information segment with page association 0 names no page, so every segment is kept.</summary>
     [Fact]
     public void Load_PageInformationWithPageAssociationZero_KeepsEverySegment()
     {
@@ -2308,8 +2258,7 @@ public sealed class Jbig2ImageTests
             BuildSegment(2, type: 62, pageAssociation: 2, [0xC1, 0xC2]),
             BuildSegment(3, type: 51, pageAssociation: 0, []),
         ];
-        // Without the Annex D header: a file with it and a page-information segment on page 0 is refused
-        // (T.88 7.3.2), see Load_AnnexDFile_NonCompliantShapes_AreRefused.
+        // Without the Annex D header: with it, a page-information segment on page 0 is refused (T.88 7.3.2).
         var file = Embedded(segments);
 
         var passthrough = Jbig2ImageLoader.Load(file);
@@ -2332,10 +2281,7 @@ public sealed class Jbig2ImageTests
         return region;
     }
 
-    /// <summary>
-    /// DecodeToRaster refuses an unknown length only where it always did, on a generic region, which
-    /// used to be reported as "data too short"; the message now names the segment and the length.
-    /// </summary>
+    /// <summary>DecodeToRaster refuses an unknown length on a generic region, naming the segment and the length.</summary>
     [Theory]
     [InlineData(36)]   // an intermediate generic region
     [InlineData(38)]   // an immediate generic region
@@ -2357,7 +2303,7 @@ public sealed class Jbig2ImageTests
         Assert.Contains("0xFFFFFFFF", ex.Message, StringComparison.Ordinal);
     }
 
-    /// <summary>An unsupported type is still NotSupportedException, whatever its length.</summary>
+    /// <summary>An unsupported type is NotSupportedException, whatever its length.</summary>
     [Fact]
     public void Load_DecodeToRaster_TextRegionWithAnUnknownDataLength_IsStillNotSupported()
     {
@@ -2410,17 +2356,13 @@ public sealed class Jbig2ImageTests
         ];
         var opts = new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster };
 
-        // 1c61fa6 decoded every page's regions, so the unknown length on page 2 threw there; the other
-        // pages are decoded here too, into a raster that is thrown away, so it still does.
+        // Every page's regions are decoded into a discarded raster, so the unknown length on page 2 throws, as in 2.3.3.
         var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(Embedded(segments), opts));
 
         Assert.Contains("segment 3 (type 38)", ex.Message, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// A region 1c61fa6 could not decode on a later page, here an arithmetic-coded generic region on
-    /// page 2, refuses the file in DecodeToRaster as it did there. The first page alone is embedded.
-    /// </summary>
+    /// <summary>An unsupported region on a later page, here an arithmetic-coded generic region on page 2, refuses the file in DecodeToRaster, as in 2.3.3.</summary>
     [Fact]
     public void Load_DecodeToRaster_ArithmeticRegionOnAnotherPage_IsRefused_asOn1c61fa6()
     {
@@ -2436,14 +2378,10 @@ public sealed class Jbig2ImageTests
         var opts = new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster };
 
         Assert.Throws<NotSupportedException>(() => Jbig2ImageLoader.Load(Embedded(segments), opts));
-        Assert.Equal(8, Jbig2ImageLoader.Load(Embedded(segments)).Width);   // Passthrough: page 1, as ruled
+        Assert.Equal(8, Jbig2ImageLoader.Load(Embedded(segments)).Width);   // Passthrough: page 1
     }
 
-    /// <summary>
-    /// 1c61fa6 refused every file with the Annex D header, so one with more than one page is refused
-    /// here, in both modes, naming the page count: embedding the first page and dropping the rest is
-    /// not correct handling of it.
-    /// </summary>
+    /// <summary>An Annex D file with more than one page is refused in both modes, naming the page count, as 2.3.3 refused every Annex D file.</summary>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -2463,16 +2401,12 @@ public sealed class Jbig2ImageTests
         var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments), opts));
         Assert.Contains("2 pages", ex.Message, StringComparison.Ordinal);
 
-        // The same segments with one page load in Passthrough. DecodeToRaster refuses every Annex D file
-        // (see Load_AnnexDFile_UnderDecodeToRaster_IsRefused).
+        // The same segments with one page load in Passthrough; DecodeToRaster refuses every Annex D file.
         if (!raster)
             Assert.Equal(8, Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments.Take(3).ToArray()), opts).Width);
     }
 
-    /// <summary>
-    /// DecodeToRaster keeps page 1: a region on page 2, which it decodes and discards, does not reach
-    /// the raster. Page 1 has no region, so its raster is all 0 bits; page 2 is one black row.
-    /// </summary>
+    /// <summary>DecodeToRaster keeps page 1: a region on page 2 is decoded and discarded, so page 1's raster is all 0 bits.</summary>
     [Fact]
     public void Load_DecodeToRaster_TwoPageStream_KeepsPageOneAndNotPageTwo()
     {
@@ -2488,11 +2422,7 @@ public sealed class Jbig2ImageTests
         Assert.Equal([0x00], CcittImageTests.DecompressFlateStream(raster.BuildStream()));
     }
 
-    /// <summary>
-    /// DecodeToRaster refuses every file with the Annex D header, even a compliant one-page file: its
-    /// raster stores the decoded bits unchanged, so the page renders as a negative, and compliant input
-    /// handled wrongly stays refused. Passthrough loads the same file.
-    /// </summary>
+    /// <summary>DecodeToRaster refuses every Annex D file, even a compliant one: its raster keeps the decoded bits unchanged, so the page would render as a negative. Passthrough loads it.</summary>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -2513,17 +2443,15 @@ public sealed class Jbig2ImageTests
 
         Assert.Contains("not yet correct", ex.Message, StringComparison.Ordinal);
         Assert.Equal(8, Jbig2ImageLoader.Load(file).Width);
-        // The embedded form has no Annex D header, and its raster is unchanged from 1c61fa6.
+        // The embedded form has no Annex D header, and its raster is 2.3.3's.
         Assert.Equal([0xFF], CcittImageTests.DecompressFlateStream(
             Jbig2ImageLoader.Load(Embedded(segments), new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster }).BuildStream()));
     }
 
     /// <summary>
-    /// An Annex D file must comply with T.88 to load, because 1c61fa6 refused every one: the first
-    /// page-information segment is on page 1 (7.2.6), no segment is on another page (7.2.6), the first
-    /// segment on page 1 is its page information (7.4.8), a region is on a page (7.3.2), and a page
-    /// count in the header equals the one page (D.4.3). Each row breaks one rule only, so each check is
-    /// pinned on its own.
+    /// An Annex D file must meet T.88 to load: the first page-information segment is on page 1 (7.2.6), no segment
+    /// is on another page (7.2.6), page 1 starts with its page information (7.4.8), a region is on a page
+    /// (7.3.2), and a header page count equals the one page (D.4.3). Each row breaks one rule.
     /// </summary>
     [Theory]
     [InlineData("first page information on page 0", "not on page 1")]
@@ -2567,17 +2495,14 @@ public sealed class Jbig2ImageTests
 
         Assert.Contains(expectedMessage, sequential.Message, StringComparison.Ordinal);
         Assert.Contains(expectedMessage, randomAccess.Message, StringComparison.Ordinal);
-        // The same segments in the embedded form, which 1c61fa6 read, still load where the header was the
-        // only thing wrong; the rows whose segments are the fault are not asserted here.
+        // The same segments in the embedded form load where only the header was wrong; rows whose segments are the fault are not asserted.
         if (shape.StartsWith("page count", StringComparison.Ordinal))
             Assert.Equal(8, Jbig2ImageLoader.Load(Embedded(segments)).Width);
     }
 
     /// <summary>
-    /// The segment-order, segment-type and end-of-page rules of T.88 for an Annex D file: numbers
-    /// increase through the file (7.2, D.1, D.2), a repeated number is refused although T.88 does not
-    /// say numbers are unique, reserved types are not used (7.3), and a page ends with exactly one
-    /// end-of-page segment that is the last one associated with a page (7.4.9). Each row breaks one rule.
+    /// The T.88 segment-order, type and end-of-page rules for an Annex D file (7.2, D.1, D.2, 7.3, 7.4.9); each row
+    /// breaks one rule. A repeated segment number is refused although T.88 does not say numbers are unique.
     /// </summary>
     [Theory]
     [InlineData("decreasing numbers", "must increase")]
@@ -2653,11 +2578,7 @@ public sealed class Jbig2ImageTests
         Assert.Contains("unknown data length", ex.Message, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// A segment of no page with an unknown length, such as a trailing tables or extension segment, is
-    /// skipped as it always was in a file 1c61fa6 could read, which has no Annex D header: the image is
-    /// whole without it.
-    /// </summary>
+    /// <summary>A segment of no page with an unknown length, such as a trailing tables segment, is skipped in a file with no Annex D header, as in 2.3.3.</summary>
     [Theory]
     [InlineData(53)]   // tables
     [InlineData(62)]   // extension
@@ -2672,11 +2593,7 @@ public sealed class Jbig2ImageTests
         Assert.Null(img.Jbig2Globals);
     }
 
-    /// <summary>
-    /// The same segments in an Annex D file are refused, in both modes. 1c61fa6 threw for any such
-    /// header, and T.88 7.2.7 allows an unknown length only on an immediate generic region, so a tables
-    /// or extension segment with one is not compliant.
-    /// </summary>
+    /// <summary>The same segments in an Annex D file are refused in both modes: T.88 7.2.7 allows an unknown length only on an immediate generic region.</summary>
     [Theory]
     [InlineData(53, false)]
     [InlineData(62, false)]
@@ -2706,10 +2623,7 @@ public sealed class Jbig2ImageTests
 
     private static byte[] Embedded(byte[][] segments) => segments.SelectMany(x => x).ToArray();
 
-    /// <summary>
-    /// With no page selected (page information on association 0) the length is not looked at in a
-    /// file 1c61fa6 could read.
-    /// </summary>
+    /// <summary>With no page selected (page information on association 0) the length is not looked at, as in 2.3.3.</summary>
     [Fact]
     public void Load_Passthrough_UnknownDataLengthWhenNoPageIsSelected_IsSkipped()
     {
@@ -2720,10 +2634,7 @@ public sealed class Jbig2ImageTests
         Assert.Equal(segments[0], ExtractStreamBody(Serialize(img)));
     }
 
-    /// <summary>
-    /// In an Annex D file the same input is refused, in both modes: no page is selected, so the loader
-    /// would embed an image with no region, and 1c61fa6 threw for the header.
-    /// </summary>
+    /// <summary>In an Annex D file the same input is refused in both modes: no page is selected, so the image would have no region.</summary>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -2750,12 +2661,7 @@ public sealed class Jbig2ImageTests
 
     // ── Segment header forms (T.88 7.2) and the container edges, hand-built ─────────────────────
 
-    /// <summary>
-    /// One segment with every part of the header spelled out: the number, the flags (type, and bit 6
-    /// for a 4-byte page association), the referred-to count field with its retention bytes as given,
-    /// the referred-to numbers as given, the page association in the width the flag says, the data
-    /// length and the data.
-    /// </summary>
+    /// <summary>One segment with every part of the T.88 7.2 header spelled out, so each header form can be built.</summary>
     private static byte[] RawSegment(
         int number, int type, bool fourBytePageAssociation, byte[] countField, byte[] referredTo,
         int pageAssociation, byte[] data)
@@ -2970,10 +2876,7 @@ public sealed class Jbig2ImageTests
 
     // (f) The older reading: the ID string, then straight away a segment
 
-    /// <summary>
-    /// A segment number whose first byte has a high nibble set cannot be a flags byte, whose bits 4 to
-    /// 7 are reserved, so the file is read as the ID string followed by segments, as before.
-    /// </summary>
+    /// <summary>A segment number with a high nibble set cannot be a flags byte (bits 4 to 7 are reserved), so the file reads as the ID string followed by segments.</summary>
     [Fact]
     public void Load_IdStringThenASegmentWhoseFirstByteHasAHighNibble_StillLoadsAsSequential()
     {
@@ -2993,10 +2896,8 @@ public sealed class Jbig2ImageTests
     }
 
     /// <summary>
-    /// An ID string followed directly by segments, the form 1c61fa6 read, whose first segment is a tables
-    /// segment numbered 0x01000002: the byte after the ID string is 0x01, which also reads as the flags
-    /// byte of an Annex D header. Read that way, the file yields a page-information segment of its own
-    /// and the globals differ. 1c61fa6 read the file as it is, so it must still load as it did.
+    /// An ID string directly followed by segments, the first a tables segment numbered 0x01000002 whose leading
+    /// 0x01 also reads as an Annex D flags byte, still loads as the ID-string form, as in 2.3.3.
     /// </summary>
     [Fact]
     public void Load_IdStringThenSegmentsWhoseFirstNumberLooksLikeAFlagsByte_IsReadAsBefore()
@@ -3022,7 +2923,7 @@ public sealed class Jbig2ImageTests
 
         var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(file));
 
-        // 1c61fa6's reading is tried first and fails first; the header reading is last and leads the message.
+        // The ID-string reading is tried first and fails first; the header reading is last and leads the message.
         Assert.Contains("The data was read as the ID string followed directly by segments, which failed with:", ex.Message, StringComparison.Ordinal);
         Assert.EndsWith(", then as a sequential file (T.88 D.1).", ex.Message, StringComparison.Ordinal);
         Assert.NotNull(ex.InnerException);

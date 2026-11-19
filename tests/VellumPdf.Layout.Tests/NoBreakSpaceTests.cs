@@ -11,16 +11,7 @@ using VellumPdf.TestSupport;
 
 namespace VellumPdf.Layout.Tests;
 
-/// <summary>
-/// #562: <c>NormaliseWhitespace</c> kept U+00A0 and folded every other white-space character into a
-/// plain space, so U+202F NARROW NO-BREAK SPACE and U+2007 FIGURE SPACE, which are no-break spaces
-/// by definition (UAX #14 class GL), became places a paragraph could wrap. French puts U+202F before
-/// <c>; ? !</c>, so <c>Pourquoi ?</c> could wrap as <c>Pourquoi</c> and <c>?</c>.
-///
-/// Each test sets the page width from the text's own measured width, so "does not break here" is a
-/// property of the geometry and not of a hand-picked number. The break points are checked on the
-/// emitted lines, and the controls show that ordinary white space still breaks.
-/// </summary>
+/// <summary>U+202F NARROW NO-BREAK SPACE and U+2007 FIGURE SPACE are no-break spaces (UAX #14 class GL), so a paragraph does not wrap at them; each test sizes the page from the text's own measured width.</summary>
 public sealed class NoBreakSpaceTests
 {
     private const string Prefix = "pppp";
@@ -43,10 +34,7 @@ public sealed class NoBreakSpaceTests
         return PdfTestUtil.DecompressAllFlatStreams(ms.ToArray());
     }
 
-    /// <summary>
-    /// A page just wide enough for <c>AAAAAA{no-break space}BBBBBB</c> on its own, so that token fits
-    /// a line by itself but not beside the prefix word, and the prefix plus the first word does fit.
-    /// </summary>
+    /// <summary>A page just wide enough for <c>AAAAAA{no-break space}BBBBBB</c> on its own, so the token fits a line by itself but not beside the prefix word.</summary>
     private static double ContentWidth(TextStyle style)
     {
         var width = style.MeasureString(First + '\u00A0' + Second) + 0.5;
@@ -63,11 +51,7 @@ public sealed class NoBreakSpaceTests
 
     // ── Standard-14: the lines are readable ──────────────────────────────────
 
-    /// <summary>
-    /// The token stays whole on its own line. Standard-14 draws U+202F and U+2007 as the no-break
-    /// space (0xA0), because WinAnsiEncoding has no narrower one, so the line reads back with U+00A0
-    /// in the place of each.
-    /// </summary>
+    /// <summary>The token stays whole on its own line; Standard-14 draws U+202F and U+2007 as the no-break space (0xA0), because WinAnsiEncoding has no narrower one.</summary>
     [Theory]
     [MemberData(nameof(NoBreakSpaces))]
     public void Standard14_aNoBreakSpaceNeverBreaksTheLine(char space)
@@ -95,7 +79,7 @@ public sealed class NoBreakSpaceTests
         Assert.Equal([Prefix + " " + First, Second], lines);
     }
 
-    /// <summary>The French case from the issue, written as it would be.</summary>
+    /// <summary>The French case, written as it would be.</summary>
     [Fact]
     public void Standard14_pourquoiWithANarrowNoBreakSpace_doesNotWrapBeforeTheQuestionMark()
     {
@@ -140,7 +124,7 @@ public sealed class NoBreakSpaceTests
         Assert.Equal(0x416, Assert.Single(doc.TextEncodingWarnings).CodePoint);
     }
 
-    /// <summary>A table cell never folded these characters, and used to draw them as '?'.</summary>
+    /// <summary>A table cell draws these characters as a space, not as '?'.</summary>
     [Fact]
     public void Standard14_tableCell_drawsANarrowNoBreakSpaceAsASpace()
     {
@@ -158,12 +142,7 @@ public sealed class NoBreakSpaceTests
 
     // ── The list indent bound reads the same set ─────────────────────────────
 
-    /// <summary>
-    /// <c>ListRenderer.WidestWord</c> must split words as the wrap does. Same geometry as the
-    /// U+00A0 test in OffPagePlacementTests: 38 OrderedRoman items of "AAAA{space}AAAA", whose widths
-    /// are the same here because U+202F and U+2007 measure as U+00A0 in Standard-14. A bound that
-    /// split on the character saw only half of the token, widened the gutter, and hard-broke it.
-    /// </summary>
+    /// <summary><c>ListRenderer.WidestWord</c> must split words as the wrap does: 38 OrderedRoman items of "AAAA{space}AAAA" (the geometry of the U+00A0 test in OffPagePlacementTests), whose widths match because U+202F and U+2007 measure as U+00A0 in Standard-14.</summary>
     [Theory]
     [MemberData(nameof(NoBreakSpaces))]
     public void ListIndentBound_treatsEachNoBreakSpaceAsPartOfTheWord(char space)
@@ -191,12 +170,7 @@ public sealed class NoBreakSpaceTests
 
     // ── Justification does not stretch them ──────────────────────────────────
 
-    /// <summary>
-    /// <c>Tw</c> acts on the space byte (32) alone, so the word spacing has to be the slack divided
-    /// over plain spaces only. If a no-break space were counted in the divisor the line would stop
-    /// short of the right edge, as it did for every space before #548. The first line is read back
-    /// and its end position checked.
-    /// </summary>
+    /// <summary><c>Tw</c> acts on the space byte (32) alone, so the slack is divided over plain spaces only; the first line's end position shows it.</summary>
     [Theory]
     [MemberData(nameof(NoBreakSpaces))]
     public void Justified_aNoBreakSpaceIsNotCountedAsAStretchableSpace(char space)
@@ -230,10 +204,7 @@ public sealed class NoBreakSpaceTests
             .Select(m => m.Groups[1].Value.Length / 4)
             .ToArray();
 
-    /// <summary>
-    /// A font handle belongs to the document that embedded it (#544), so each measurement and each
-    /// rendering below embeds the font in its own document.
-    /// </summary>
+    /// <summary>A font handle belongs to the document that embedded it, so each measurement and rendering embeds the font in its own document.</summary>
     private static double MeasureEmbedded(byte[] font, string text)
     {
         using var doc = new Document();
@@ -249,12 +220,7 @@ public sealed class NoBreakSpaceTests
         return GlyphCountsPerLine(Render(doc));
     }
 
-    /// <summary>
-    /// With an embedded font the lines hold glyph ids, which carry no recoverable text, so the lines
-    /// are compared by length. The page is as wide as the U+00A0 token, so what is compared is where
-    /// each variant breaks: the no-break spaces must break exactly where U+00A0 does, and a plain
-    /// space must not.
-    /// </summary>
+    /// <summary>With an embedded font the lines hold glyph ids, so lines are compared by length: each no-break space must break exactly where U+00A0 does, and a plain space must not.</summary>
     [Theory]
     [MemberData(nameof(NoBreakSpaces))]
     public void Embedded_aNoBreakSpaceBreaksTheLineWhereU00A0Does_andOrdinaryWhiteSpaceDoesNot(char space)

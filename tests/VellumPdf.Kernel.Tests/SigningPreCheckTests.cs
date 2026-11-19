@@ -37,7 +37,7 @@ public sealed class SigningPreCheckTests
     [InlineData(-1)]
     [InlineData(int.MinValue)]
     [InlineData(MaxBytes + 1)]
-    [InlineData(1 << 29)]                                           // 536,870,912: used to be OutOfMemory after layout
+    [InlineData(1 << 29)]                                           // 536,870,912
     [InlineData((1 << 30) - 1)]
     [InlineData(1 << 30)]
     [InlineData(int.MaxValue)]

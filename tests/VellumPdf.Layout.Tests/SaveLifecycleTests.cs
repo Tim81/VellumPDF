@@ -14,15 +14,7 @@ using VellumPdf.TestSupport;
 
 namespace VellumPdf.Layout.Tests;
 
-/// <summary>
-/// #530 and #508: what a <see cref="Document"/> is left in by a save that threw, and what a failed
-/// save to a path does to the file that was already there.
-///
-/// Before, a document behaved three ways after a failed save and two were silent. A refusal that
-/// came after layout left the pages behind, so the next save laid everything out again on top of
-/// them and wrote several times the pages the caller asked for, with no exception. The page counts
-/// below are <c>/Type /Page</c> occurrences in the file, which is how the issue measured it.
-/// </summary>
+/// <summary>What a <see cref="Document"/> is left in by a save that threw, and what a failed save to a path does to the file that was already there.</summary>
 public sealed class SaveLifecycleTests
 {
     private static TextStyle Style(double size = 12) =>
@@ -34,7 +26,7 @@ public sealed class SaveLifecycleTests
         Margins = new EdgeInsets(10),
     };
 
-    /// <summary>The issue's own geometry: 300pt text on a 300x200pt page cannot be placed.</summary>
+    /// <summary>300pt text on a 300x200pt page cannot be placed.</summary>
     private static Document TooTall()
     {
         var doc = Good();
@@ -52,10 +44,7 @@ public sealed class SaveLifecycleTests
         return ms.ToArray();
     }
 
-    /// <summary>
-    /// Creates a symbolic link, or skips the test when the platform will not let this user make one.
-    /// Windows needs a privilege or developer mode for it, so the attempt decides, not the platform.
-    /// </summary>
+    /// <summary>Creates a symbolic link, or skips the test when this user may not make one (Windows needs a privilege or developer mode).</summary>
     private static void CreateLink(string link, string target)
     {
         try
@@ -83,7 +72,7 @@ public sealed class SaveLifecycleTests
         using var doc = TooTall();
         Assert.Throws<InvalidOperationException>(() => Save(doc));
 
-        // The caller enlarges the page and tries again, which used to give 4 pages.
+        // The caller enlarges the page and tries again.
         doc.PageSize = new PdfRectangle(0, 0, 600, 800);
         using var ms = new MemoryStream();
         var ex = Assert.Throws<InvalidOperationException>(() => doc.Save(ms));
@@ -127,7 +116,7 @@ public sealed class SaveLifecycleTests
         Assert.Equal(FreshOnePage().Length, recovered.Length);
     }
 
-    // ── Refusals that need no layout now come before it ──────────────────────
+    // ── Refusals that need no layout come before it ──────────────────────────
 
     [Fact]
     public void NullDestination_isRefusedBeforeLayout_soTheRetryWritesOnePage()
@@ -138,7 +127,7 @@ public sealed class SaveLifecycleTests
         var ex = Assert.Throws<ArgumentNullException>(() => doc.Save((Stream)null!));
         Assert.Equal("destination", ex.ParamName);
 
-        Assert.Equal(1, Pages(Save(doc)));    // used to be 2
+        Assert.Equal(1, Pages(Save(doc)));
     }
 
     [Fact]
@@ -151,7 +140,6 @@ public sealed class SaveLifecycleTests
         var ex = Assert.Throws<ArgumentException>(() => doc.Save(readOnly));
         Assert.Equal("destination", ex.ParamName);
 
-        // Used to throw "This document has already been written".
         Assert.Equal(1, Pages(Save(doc)));
     }
 
@@ -166,7 +154,7 @@ public sealed class SaveLifecycleTests
         Assert.Throws<NotSupportedException>(() => Save(doc));
 
         doc.UseObjectStreams = false;
-        Assert.Equal(1, Pages(Save(doc)));    // used to be 2
+        Assert.Equal(1, Pages(Save(doc)));
     }
 
     [Fact]
@@ -198,11 +186,7 @@ public sealed class SaveLifecycleTests
         Assert.Equal(1, Pages(ok.ToArray()));
     }
 
-    /// <summary>
-    /// A call with two defects, a save precondition and a layout defect, reports the precondition (the
-    /// maintainer's ruling for #530; 2.3.3 laid out first and reported the layout defect), because a
-    /// precondition is checked before anything is laid out and so stays retryable.
-    /// </summary>
+    /// <summary>A call with two defects, a save precondition and a layout defect, reports the precondition, because it is checked before anything is laid out and so stays retryable.</summary>
     [Fact]
     public void ANullDestination_isReportedBeforeALayoutDefect_asRuled()
     {
@@ -212,11 +196,7 @@ public sealed class SaveLifecycleTests
         Assert.Throws<ArgumentNullException>(() => doc.Save((Stream)null!));
     }
 
-    /// <summary>
-    /// A save that fails before any layout leaves the document usable, and the retry saves it once:
-    /// 2.3.3 laid out a second time and wrote two pages after a null destination (a deliberate output
-    /// change under #530), and threw "already written" after a stream that cannot be written to.
-    /// </summary>
+    /// <summary>A save that fails before any layout leaves the document usable, and the retry saves it once.</summary>
     [Fact]
     public void ARetryAfterAPreconditionFailure_savesTheDocumentOnce()
     {
@@ -230,7 +210,7 @@ public sealed class SaveLifecycleTests
         Assert.Equal(1, Pages(Save(doc)));
     }
 
-    // ── Unchanged: a document that was written is still written once ─────────
+    // ── A document that was written is written once ──────────────────────────
 
     [Fact]
     public void SavingTwice_stillThrowsTheAlreadyWrittenMessage()
@@ -244,7 +224,7 @@ public sealed class SaveLifecycleTests
         Assert.Contains("already been written", ex.Message, StringComparison.Ordinal);
     }
 
-    // ── #508: a failed save to a path leaves the file that was there ─────────
+    // ── A failed save to a path leaves the file that was there ───────────────
 
     private sealed class TempDir : IDisposable
     {
@@ -276,7 +256,7 @@ public sealed class SaveLifecycleTests
         using var bad = TooTall();
         Assert.Throws<InvalidOperationException>(() => bad.Save(target));
 
-        Assert.Equal(before, File.ReadAllBytes(target));   // used to be zero bytes
+        Assert.Equal(before, File.ReadAllBytes(target));
         Assert.Single(Directory.GetFiles(dir.Path));
     }
 
@@ -355,8 +335,8 @@ public sealed class SaveLifecycleTests
         Assert.Throws<ArgumentException>(() => doc.Save(string.Empty));
         Assert.Throws<DirectoryNotFoundException>(() => doc.Save(Path.Combine(dir.Path, "missing", "x.pdf")));
 
-        // A directory is refused by the open, as on main, not by a check of ours: the exception is
-        // the operating system's UnauthorizedAccessException and nothing was created or removed.
+        // A directory is refused by the open, not by a check of ours: the exception is the operating system's
+        // UnauthorizedAccessException and nothing was created or removed.
         var ex = Assert.Throws<UnauthorizedAccessException>(() => doc.Save(dir.Path));
         Assert.Contains(dir.Path, ex.Message, StringComparison.Ordinal);
         Assert.True(Directory.Exists(dir.Path));
@@ -381,12 +361,7 @@ public sealed class SaveLifecycleTests
         Assert.Equal(1, Pages(await File.ReadAllBytesAsync(ok, TestContext.Current.CancellationToken)));
     }
 
-    /// <summary>
-    /// A read-only file is refused if, and only if, the operating system refuses to open it for
-    /// writing. .NET reads a Unix file's read-only attribute from its mode bits, which ignore root, so
-    /// the test asks the open instead of assuming: as root the save overwrites the file, as main did,
-    /// and there is nothing to assert about a refusal.
-    /// </summary>
+    /// <summary>A read-only file is refused if, and only if, the operating system refuses to open it for writing; .NET reads a Unix read-only attribute from mode bits, which ignore root, so the test asks the open.</summary>
     [Fact]
     public void SaveToAReadOnlyFile_isRefusedExactlyWhenTheOpenRefusesIt()
     {
@@ -395,8 +370,7 @@ public sealed class SaveLifecycleTests
         File.WriteAllText(readOnly, "keep");
         File.SetAttributes(readOnly, FileAttributes.ReadOnly);
 
-        // On non-root CI the open is refused, so this takes the first branch below. Only a run as
-        // root (a container, say) reaches the overwrite branch.
+        // On non-root CI the open is refused; only a run as root (a container, say) reaches the overwrite branch.
         bool openRefused;
         try
         {
@@ -428,12 +402,7 @@ public sealed class SaveLifecycleTests
         }
     }
 
-    /// <summary>
-    /// 1c61fa6 opened the target with <c>FileMode.Create</c>, which Windows refuses for an existing
-    /// Hidden or System file with <see cref="UnauthorizedAccessException"/>. The open used now,
-    /// <c>OpenOrCreate</c>, accepts it, so the save refuses it itself, for both overloads, and leaves
-    /// the file as it was. Windows only: elsewhere the Hidden attribute is a leading dot in the name.
-    /// </summary>
+    /// <summary>A Hidden or System file at the path is refused by the save itself, for both overloads, and left as it was; Windows only, since elsewhere Hidden is a leading dot in the name.</summary>
     [Theory]
     [InlineData(FileAttributes.Hidden, false)]
     [InlineData(FileAttributes.System, false)]
@@ -473,11 +442,7 @@ public sealed class SaveLifecycleTests
         }
     }
 
-    /// <summary>
-    /// Through a symbolic link, 1c61fa6's <c>FileMode.Create</c> judged the final target's Hidden and
-    /// System attributes, not the link's: a normal link to a hidden or system file was refused, and a
-    /// hidden link to a normal file was saved. Measured on Windows against 1c61fa6 for both overloads.
-    /// </summary>
+    /// <summary>Through a symbolic link the final target's Hidden and System attributes decide, not the link's, for both overloads; the value is 2.3.3's.</summary>
     [Theory]
     [InlineData(FileAttributes.Normal, FileAttributes.Hidden, true, false)]
     [InlineData(FileAttributes.Normal, FileAttributes.System, true, true)]
@@ -658,12 +623,9 @@ public sealed class SaveLifecycleTests
         doc.Save(OperatingSystem.IsWindows() ? "NUL" : "/dev/null");
     }
 
-    // ── #530: a step after the layout can fail too ───────────────────────────
+    // ── A step after the layout can fail too ─────────────────────────────────
 
-    /// <summary>
-    /// Cancels the given source from inside the layout pass, so the token is already cancelled when
-    /// the layout returns and the next step that looks at it throws. No timing involved.
-    /// </summary>
+    /// <summary>Cancels the given source from inside the layout pass, so the next step that looks at the token throws; no timing involved.</summary>
     private sealed class CancelDuringLayoutRenderer(CancellationTokenSource cts) : IRenderer
     {
         public LayoutResult Layout(LayoutContext context)
@@ -697,7 +659,7 @@ public sealed class SaveLifecycleTests
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => doc.SaveAsync(second, TestContext.Current.CancellationToken));
 
         Assert.Contains("cannot be saved again", ex.Message, StringComparison.Ordinal);
-        Assert.Equal(0, second.Length);   // used to be a file with two layouts' pages
+        Assert.Equal(0, second.Length);
     }
 
     [Fact]
@@ -751,7 +713,7 @@ public sealed class SaveLifecycleTests
         Assert.Equal(0, signed.Length);
 
         // The refusal came before the layout, so the pages were not added twice.
-        Assert.Equal(1, Pages(Save(doc)));    // used to be 2
+        Assert.Equal(1, Pages(Save(doc)));
     }
 
     // ── Cancellation is a TaskCanceledException at every checkpoint ───────────
@@ -791,12 +753,7 @@ public sealed class SaveLifecycleTests
 
     // ── A symbolic link is followed before anything is created or deleted ─────
 
-    /// <summary>
-    /// A symbolic link counts as something at the path, a dangling one included, so a failed save
-    /// never deletes the link. The open follows the link and creates its destination, and the save
-    /// cannot tell that this call did, so the accepted gap is an empty file there. The test records
-    /// that state rather than hiding it.
-    /// </summary>
+    /// <summary>A symbolic link counts as something at the path, a dangling one included, so a failed save never deletes it; the open creates the link's destination, so an empty file there is the accepted gap.</summary>
     [Fact]
     public void FailedSaveThroughADanglingLink_keepsTheLink_andLeavesTheEmptyFileTheOpenCreated()
     {
@@ -861,12 +818,7 @@ public sealed class SaveLifecycleTests
         Assert.Equal(1, Pages(await File.ReadAllBytesAsync(real, TestContext.Current.CancellationToken)));
     }
 
-    /// <summary>
-    /// A relative link target is resolved by the operating system against the directory the link
-    /// really lives in, so <c>../out.pdf</c> below a symbolic link to a directory is that directory's
-    /// parent, not the parent of the path the caller wrote. Collapsing the <c>..</c> by string rules
-    /// writes a different file.
-    /// </summary>
+    /// <summary>A relative link target is resolved by the operating system against the directory the link lives in, so <c>../out.pdf</c> below a link to a directory is that directory's parent.</summary>
     [Fact]
     public void SaveThroughARelativeLinkWithDotDotBelowASymlinkedDirectory_writesTheFileTheOperatingSystemResolves()
     {
@@ -919,11 +871,7 @@ public sealed class SaveLifecycleTests
         }
     }
 
-    /// <summary>
-    /// A path that is a pipe is written into, as on main. A named pipe stands in for a link to
-    /// <c>/dev/stdout</c>; see the next test for the link itself. The save runs on its own task with a
-    /// timeout, because opening a pipe for writing blocks until a reader is there.
-    /// </summary>
+    /// <summary>A path that is a pipe is written into; the save runs on its own task with a timeout, because opening a pipe for writing blocks until a reader is there.</summary>
     [Fact]
     public async Task SaveToANamedPipe_writesTheWholePdfIntoIt()
     {
@@ -944,9 +892,8 @@ public sealed class SaveLifecycleTests
             OracleGate.Unavailable("mkfifo", "the program could not be started.");
         }
 
-        // Opening a pipe blocks until the other end is open, so the reader is a separate process.
-        // It is cat rather than a FileStream because .NET takes an advisory lock on every file it
-        // opens, and a reader in this process would conflict with the writer's.
+        // Opening a pipe blocks until the other end is open, so the reader is a separate process: cat, because .NET
+        // takes an advisory lock on every file it opens and a reader in this process would conflict.
         using var cat = StartCat(fifo);
         if (cat is null)
             OracleGate.Unavailable("cat", "the program could not be started; it reads the named pipe.");
@@ -989,13 +936,7 @@ public sealed class SaveLifecycleTests
         }
     }
 
-    /// <summary>
-    /// <c>/dev/stdout</c> is a link to <c>/proc/self/fd/1</c>, a magic link whose target reads
-    /// <c>pipe:[N]</c> and is not a file name. Resolving such a link by string rules joined that to
-    /// the link's directory and failed to open it; the operating system opens it. The test builds the
-    /// same chain: a symbolic link, in a temporary directory, to <c>/proc/self/fd/N</c> for the write
-    /// end of an anonymous pipe, then saves through it and reads the PDF from the read end.
-    /// </summary>
+    /// <summary><c>/dev/stdout</c> is a link to <c>/proc/self/fd/1</c>, a magic link whose target reads <c>pipe:[N]</c> and is not a file name, so the operating system must open it; the test builds the same chain over an anonymous pipe.</summary>
     [Fact]
     public async Task SaveThroughALinkToAProcFdPipe_writesTheWholePdfIntoThePipe()
     {
@@ -1051,11 +992,8 @@ public sealed class SaveLifecycleTests
 
     // ── A layout that started cannot be repeated, even before it added a page ──
 
-    // A renderer caches its wrap at the width it was first laid out at. A retry after a PageSize
-    // change would reuse that wrap. Probed on 2.3.3 with one "Hello" paragraph in 150pt Helvetica,
-    // 10pt margins and a 20pt header, first on a 300x200pt page and retried on 600x800pt, the retry
-    // hard-broke it as (Hell)/(o) where a fresh 600x800pt document wrote (Hello). So the document
-    // refuses the retry, and the way to recover is a new Document.
+    // A renderer caches its wrap at the width it was first laid out at, so a retry after a PageSize change
+    // would reuse it. The document refuses the retry; recover with a new Document.
     [Fact]
     public void TooTallElementWithAHeader_isRefusedByTheCountingPass_andTheRetryIsRefusedToo()
     {
@@ -1092,7 +1030,7 @@ public sealed class SaveLifecycleTests
     [Theory]
     [InlineData(-1, 8192)]       // a negative signature page
     [InlineData(0, -1)]          // a negative placeholder size
-    [InlineData(0, 536_870_895)] // one more than a placeholder can hold: used to be OutOfMemory after layout
+    [InlineData(0, 536_870_895)] // one more than a placeholder can hold
     public void SignWithAnOptionNoPageCountCouldMakeValid_isRefusedBeforeLayout_soTheDocumentStillSaves(
         int signaturePage, int estimatedSize)
     {
@@ -1110,7 +1048,7 @@ public sealed class SaveLifecycleTests
             }));
         Assert.Equal(0, signed.Length);
 
-        Assert.Equal(1, Pages(Save(doc)));    // used to be 2: the layout had run before the refusal
+        Assert.Equal(1, Pages(Save(doc)));
     }
 
     [Fact]
@@ -1126,7 +1064,7 @@ public sealed class SaveLifecycleTests
         Assert.Contains("1 page(s)", ex.Message, StringComparison.Ordinal);
     }
 
-    // ── An empty document keeps main's refusal when it is signed ──────────────
+    // ── An empty document is refused when it is signed ───────────────────────
 
     [Theory]
     [InlineData(-1, 8192)]       // a bad signature page
@@ -1252,7 +1190,7 @@ public sealed class SaveLifecycleTests
         Assert.Equal(new System.Text.Rune(0x2605), warning.Character);
     }
 
-    // ── Refusals that need no layout leave a file at the path alone (#508) ───
+    // ── Refusals that need no layout leave a file at the path alone ──────────
 
     [Fact]
     public void SaveToAPath_ofADisposedDocument_leavesTheExistingFileByteForByte()
@@ -1384,10 +1322,7 @@ public sealed class SaveLifecycleTests
 
     // ── A failure while the PDF is built, after the layout, keeps the old file ──
 
-    /// <summary>
-    /// Registers an annotation rectangle that is not a number. The layout accepts it; writing the PDF
-    /// is where it is refused, after the pages are laid out and the document is marked written.
-    /// </summary>
+    /// <summary>An annotation rectangle that is not a number: the layout accepts it and writing the PDF refuses it.</summary>
     private sealed class BadLinkRectangleRenderer : IRenderer
     {
         public LayoutResult Layout(LayoutContext context) =>

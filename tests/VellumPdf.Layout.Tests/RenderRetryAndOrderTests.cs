@@ -53,7 +53,7 @@ public sealed class RenderRetryAndOrderTests
         using var ok = new MemoryStream();
         renderer.Render(ok);
 
-        Assert.Equal(1, Pages(ok.ToArray()));         // used to be 2 pages, silently
+        Assert.Equal(1, Pages(ok.ToArray()));
     }
 
     [Fact]

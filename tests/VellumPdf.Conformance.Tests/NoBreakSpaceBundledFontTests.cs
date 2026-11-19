@@ -10,14 +10,9 @@ using Xunit;
 namespace VellumPdf.Conformance.Tests;
 
 /// <summary>
-/// #562, against fonts that really lack a glyph. Layout now keeps U+202F NARROW NO-BREAK SPACE in a
-/// paragraph's text instead of folding it into a plain space, so the embedded font has to be able to
-/// draw it. The Liberation Mono that <c>EmbedStandard14Font</c> bundles as the Courier substitute has
-/// no glyph for U+202F (it does have U+00A0 and U+2007), so without a fallback a Courier document
-/// containing one would have drawn the missing-glyph box where a space used to be. Liberation Sans,
-/// the Helvetica substitute, has all three, which shows the fallback leaves a glyph the font has alone.
-///
-/// The code points are numbers, not escapes or literals, so the test pins which characters these are.
+/// Liberation Mono, the Courier substitute <c>EmbedStandard14Font</c> bundles, has no glyph for U+202F (it has U+00A0
+/// and U+2007), so a fallback must stop it drawing the missing-glyph box; Liberation Sans has all three and keeps its
+/// own glyphs. The code points are numbers, not literals, so the test pins which characters these are.
 /// </summary>
 public sealed class NoBreakSpaceBundledFontTests
 {
@@ -111,11 +106,7 @@ public sealed class NoBreakSpaceBundledFontTests
             .ToList();
     }
 
-    /// <summary>
-    /// Liberation Mono has no U+202F, so it is drawn with the glyph of U+00A0. That glyph is also the
-    /// one a plain space uses where the font maps both to it, and the ToUnicode CMap holds one string
-    /// per glyph. The stand-in must not be the string a reader copies for the glyph.
-    /// </summary>
+    /// <summary>Liberation Mono has no U+202F, so it is drawn with the glyph of U+00A0; the ToUnicode CMap holds one string per glyph, and the stand-in must not be the string a reader copies for it.</summary>
     [Fact]
     public void LiberationMono_toUnicode_aStandInDoesNotSpeakForTheGlyphOfARealSpace()
     {
@@ -150,10 +141,7 @@ public sealed class NoBreakSpaceBundledFontTests
         Assert.Contains((narrow, NarrowNoBreakSpace), entries);
     }
 
-    /// <summary>
-    /// Characters the font lacks that are not one of the two spaces get no stand-in, so each keeps its
-    /// own glyph-0 entry in the CMap, as it always did. Dropping stand-ins must not touch them.
-    /// </summary>
+    /// <summary>Characters the font lacks that are not one of the two spaces get no stand-in, so each keeps its own glyph-0 entry in the CMap.</summary>
     [Fact]
     public void LiberationMono_toUnicode_missingCharactersThatAreNotSpacesKeepTheirNotdefEntries()
     {
@@ -168,7 +156,7 @@ public sealed class NoBreakSpaceBundledFontTests
         Assert.Contains((0, 0x4E01), entries);
     }
 
-    // ── A handle belongs to the document that embedded it (#544) ─────────────
+    // ── A handle belongs to the document that embedded it ────────────────────
 
     [Fact]
     public void RegisterEmbeddedFontUsage_withAHandleFromAnotherDocument_isRefusedBySaveNamingTheHandle()

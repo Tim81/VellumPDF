@@ -262,7 +262,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `Passthrough`, as on 2.3.3, and ends what is read of a sequential or embedded stream; nothing
   reports it yet (#607). **Attention**: a file with the Annex D header loads only if it complies
   with T.88 (first page-information segment on page 1, no segment on another page, page
-  information first on page 1, every region on a page, a header page count of 1), and otherwise
+  information first on page 1, every region on a page, a header page count of 1, increasing
+  segment numbers with none repeated, no reserved segment type, exactly one end-of-page segment
+  that is the last one on the page), and otherwise
   throws `InvalidDataException` naming the clause. It loads only under `Passthrough`:
   `DecodeToRaster` throws `InvalidDataException` for every file with that header, because its
   `/DeviceGray` output would render the page as a negative. A multi-page file with that header, and

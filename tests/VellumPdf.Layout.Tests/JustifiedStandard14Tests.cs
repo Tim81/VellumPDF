@@ -10,15 +10,7 @@ using VellumPdf.Layout.Elements;
 
 namespace VellumPdf.Layout.Tests;
 
-/// <summary>
-/// #548 and #555: a justified line in a standard-14 font. The word spacing was the slack divided by
-/// the number of word gaps, which counts every space twice, so half the slack was handed out and the
-/// line stopped short of the right edge. And each fragment of a line holding more than one
-/// <see cref="TextStyle"/> was placed at its unstretched width while its spaces were stretched, so it
-/// could overprint the text after it. The assertions are on the values <c>Tw</c> and <c>Tm</c> carry,
-/// not on the operator existing, which is all <c>JustificationTests</c> checks and which passed with
-/// both defects present.
-/// </summary>
+/// <summary>A justified line in a standard-14 font: Tw is the slack over the plain spaces and each fragment of a multi-style line is placed at its stretched width; the assertions are on the values Tw and Tm carry, not on the operator existing.</summary>
 public sealed class JustifiedStandard14Tests
 {
     private const double ContentLeft = 50;
@@ -45,13 +37,9 @@ public sealed class JustifiedStandard14Tests
 
     private static double D(string s) => double.Parse(s, CultureInfo.InvariantCulture);
 
-    // ── #548 ─────────────────────────────────────────────────────────────────
+    // ── Word spacing ─────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// 13 words, 12 spaces, Helvetica 12 in a 200pt box. The slack divided by 12 spaces is the Tw, and
-    /// the line then ends exactly at the right edge. Before the fix the Tw was slack / 24, and the
-    /// line ended at 243.37.
-    /// </summary>
+    /// <summary>13 words, 12 spaces, Helvetica 12 in a 200pt box: the slack divided by 12 spaces is the Tw, and the line ends exactly at the right edge.</summary>
     [Fact]
     public void SingleStyle_wordSpacingIsSlackOverSpaces_andLineEndsAtTheRightEdge()
     {
@@ -71,7 +59,7 @@ public sealed class JustifiedStandard14Tests
         Assert.Equal(ContentLeft + ContentWidth, ContentLeft + natural + (12 * tw), 3);
     }
 
-    // ── #555 ─────────────────────────────────────────────────────────────────
+    // ── Fragments of several styles ──────────────────────────────────────────
 
     /// <summary>
     /// Two <see cref="TextStyle"/> instances on one justified line. The second fragment must start where
@@ -101,7 +89,7 @@ public sealed class JustifiedStandard14Tests
         var expectedSecond = xs[0] + Helv().MeasureString(a) + (firstSpaces * tw);
         Assert.Equal(expectedSecond, xs[1], 3);
 
-        // The old placement, for contrast: unstretched, so it overprinted the first fragment's end.
+        // The unstretched placement, for contrast: it would overprint the first fragment's end.
         Assert.NotEqual(xs[0] + Helv().MeasureString(a), xs[1], 3);
     }
 
@@ -133,9 +121,8 @@ public sealed class JustifiedStandard14Tests
         Assert.True(tw > 0);
         Assert.NotEmpty(xs);
 
-        // The line ends where its last fragment is drawn to end: it starts at its Tm, runs for its
-        // measured width in the style that draws it, and is stretched by one Tw per space. That has
-        // to be the right edge of the box. The fragments of line one are the placements on the first
+        // The line ends where its last fragment is drawn to end: its Tm, its measured width in the style that draws it,
+        // and one Tw per space; that is the right edge of the box. Line one's fragments are the placements on the first
         // baseline; the second is the bold one.
         var placements = ContentStreamReadback.TextPlacements(stream);
         var lineOne = placements.Where(p => p.Y == placements[0].Y).ToList();
@@ -149,7 +136,7 @@ public sealed class JustifiedStandard14Tests
         Assert.Equal(ContentLeft + ContentWidth, rightEdge, 0.01);
     }
 
-    /// <summary>A line that is not justified advances exactly as before, with no Tw at all.</summary>
+    /// <summary>A line that is not justified advances by its natural width, with no Tw at all.</summary>
     [Fact]
     public void NotJustified_isUnchanged_andWritesNoWordSpacing()
     {
@@ -202,8 +189,8 @@ public sealed class JustifiedStandard14Tests
 
         // The linked fragment is the second Tm on the line.
         Assert.Equal(xs[1], D(rect.Groups[1].Value), 2);
-        // The space between two runs stays with the fragment before it, so the linked fragment is
-        // "ee ff gg hh " with a trailing space, and its rectangle covers that space as it always did.
+        // The space between two runs stays with the fragment before it, so the linked fragment is "ee ff gg hh "
+        // with a trailing space, and its rectangle covers that space.
         var drawn = b + " ";
         var linkWidth = Helv().MeasureString(drawn) + (drawn.Count(c => c == ' ') * tw);
         Assert.Equal(xs[1] + linkWidth, D(rect.Groups[3].Value), 2);
