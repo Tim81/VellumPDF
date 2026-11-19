@@ -26,6 +26,9 @@ public sealed class ScanModeParserTests
         "(abc)", "(a(b)c)", "(unterminated", "(a\\", "(\\", "<4142>", "<41 42>", "<GG>", "<41", "<4>",
         "true", "false", "null", "foo", "R", ">", "<", "{", "}", ")", "%c\n", "%unterminated",
         "\0", "ÿ", "\f",
+        "+", "-", "1.", "+.5", "-.", "1e5", "0x10", " 1", "12345678901234567890 0 R", "1 12345678901234567890 R",
+        "1 2", "1 2 3", "1 2 R R", "-5 0 R", "1 -5 R", "00000000000000000000001 0 R", "0.0000000000000000000001",
+        "<4 1 4 2>", "<41\t42\r\n>", "<41\0>", "(a\\\n b)", "(\\101\\7)", "/", "/A#", "/A#4",
     ];
 
     private static readonly string[] _separators = [" ", "", "", "\n", "\r\n", "\t", "%x\n"];
@@ -96,7 +99,7 @@ public sealed class ScanModeParserTests
         var rng = new Random(610);
         var ok = 0;
         var fail = 0;
-        for (var i = 0; i < 30_000; i++)
+        for (var i = 0; i < 60_000; i++)
         {
             var text = Build(rng);
             var data = Encoding.Latin1.GetBytes(text);

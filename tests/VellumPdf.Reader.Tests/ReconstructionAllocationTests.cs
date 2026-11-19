@@ -21,11 +21,11 @@ namespace VellumPdf.Reader.Tests;
 /// and no assertion here reads a clock.
 /// </para>
 /// <para>
-/// The ceilings are not all linear in input length, on purpose. For the shapes that carry a leaf at
-/// every level (<c>[1[1</c>, <c>&lt;&lt;/a&lt;&lt;/a</c>) each failed start still allocates the
-/// leaves it passed before failing, so allocation scales with starts times depth until the
-/// reconstruction budget stops the walk; the ceiling there is the measured plateau, not a multiple of
-/// the length. The linearity pin below covers the shapes for which linear holds.
+/// The linearity pin covers the shapes whose measured figures are linear in length. The
+/// <c>&lt;&lt;</c> shapes cost about 72 bytes per input byte, the fixed price of the parser and
+/// lexer objects each failed start constructs; the nesting shapes plateau once the 1 MiB budget
+/// floor stops the walk, so their per-byte figure falls as the input grows. Neither is a function of
+/// nesting depth, because scan mode recognises without building an integer, name or container.
 /// </para>
 /// </summary>
 public sealed class ReconstructionAllocationTests
@@ -77,12 +77,12 @@ public sealed class ReconstructionAllocationTests
         ["<<"] = [63_000, 476_000, 7_554_000, 30_204_000],
         ["trailer+["] = [122_000, 948_000, 946_000, 1_886_000],
         ["trailer+<<"] = [63_000, 476_000, 7_554_000, 30_204_000],
-        ["[1[1"] = [7_222_000, 107_459_000, 114_395_000, 228_729_000],
-        ["<</a<</a"] = [1_090_000, 29_617_000, 33_764_000, 67_488_000],
-        ["<</a[<</a["] = [1_383_000, 25_361_000, 27_171_000, 54_335_000],
+        ["[1[1"] = [63_000, 476_000, 477_000, 948_000],
+        ["<</a<</a"] = [34_000, 240_000, 242_000, 477_000],
+        ["<</a[<</a["] = [51_000, 621_000, 383_000, 760_000],
         ["balanced"] = [76_000, 489_000, 946_000, 1_886_000],
-        ["embedded"] = [336_000, 1_161_000, 953_000, 1_895_000],
-        ["hdr+[x300"] = [390_000, 4_391_000, 7_479_000, 15_120_000],
+        ["embedded"] = [139_000, 964_000, 953_000, 1_895_000],
+        ["hdr+[x300"] = [124_000, 940_000, 1_579_000, 3_176_000],
     };
 
     public static TheoryData<string, int> Cases()
@@ -134,6 +134,9 @@ public sealed class ReconstructionAllocationTests
     [InlineData("trailer+[")]
     [InlineData("trailer+<<")]
     [InlineData("balanced")]
+    [InlineData("[1[1")]
+    [InlineData("<</a<</a")]
+    [InlineData("hdr+[x300")]
     public void Open_WithReconstruction_GrowsAtMostLinearlyWithLength(string shape)
     {
         // 4 KiB is eight times 512 B. The constant is 64 KiB: the fixed cost of the walk's own

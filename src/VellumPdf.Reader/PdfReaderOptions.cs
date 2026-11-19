@@ -116,7 +116,7 @@ public sealed class PdfReaderOptions
     /// byte until the budget is spent: about 1 MiB of advance for any file up to 128 KiB at the
     /// default. Allocation per advanced byte depends on the input's shape, and this option does not
     /// bound it. Measured on net10.0 in Release, a 4 KiB run of <c>[</c> allocates about 0.6 MB and
-    /// a 4 KiB run of <c>[1[1</c> about 67 MB (v2.3.3: 293 MB and 192 MB). Do not rely on a
+    /// a 4 KiB run of <c>[1[1</c> about 0.3 MB (v2.3.3: 293 MB and 192 MB). Do not rely on a
     /// small file implying a small allocation: lowering this multiplier does not help for a file
     /// under 128 KiB, because the 1 MiB floor applies to it whatever the multiplier.
     /// </para>

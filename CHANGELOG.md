@@ -62,17 +62,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   starts: 293 MB for a 4 KiB run, about 304 MB for runs from 8 KiB to 64 KiB, and 609 MB at 256 KiB
   (measured on net10.0, Release, one `Open` call after a warm-up call). The same files now allocate
   592 KB, 591 KB and 1.18 MB. Allocation per failed start was already proportional to the bytes the
-  walk advanced; what changed is the constant, from about 72 KB to about 145 bytes per start on the
-  4 KiB run. The walk now parses in a scan mode that reports a malformed construct by return value, at
-  the same position and with the same charge, and allocates an array or dictionary only after its
-  first element has parsed. Which files open, what they open to, and which refuse (including the
-  "could not scan the file within its cost budget" refusal) are unchanged. Shapes that carry a leaf
-  at every nesting level (`[1[1...`, `<</a<</a...`) still allocate those leaves on every failed
-  start: 67 MB at 4 KiB for `[1[1`, down from 192 MB, and bounded by the same work budget, not
-  linear in length. Reconstruction's last-resort catalog search had the same cost: it parses every
-  object-stream member and fails once per member, so a 117 KB file whose members all point at a run of
-  `[` allocated 1.2 GB on v2.3.3 and now allocates 5.8 MB. `AllowReconstruction` and `ReconstructionBudgetMultiplier` now document that the
-  budget bounds bytes advanced, not allocation.
+  walk advanced; what changed is the constant, from about 280 bytes per byte advanced to a few. The
+  walk now parses in a scan mode that recognises a construct without building anything (no integer,
+  name or container) and reports a malformed one by return value, at the same position and with the
+  same charge; only a span it accepts is parsed again, once, by the ordinary parser. The shapes that
+  carry a leaf at every nesting level improve the most: `[1[1...` at 4 KiB went from 192 MB to 297 KB
+  and at 256 KiB from 414 MB to 592 KB. Which files open, what they open to, and which refuse
+  (including the "could not scan the file within its cost budget" refusal) are unchanged. Runs of
+  `<<` still cost about 72 bytes per input byte, the objects each failed start constructs, down from
+  about 416. Reconstruction's last-resort catalog search had the same cost: it parses every
+  object-stream member and fails once per member, so a 117 KB file whose members all point at a run
+  of `[` allocated 1.2 GB on v2.3.3 and now allocates 5.8 MB. `AllowReconstruction` and
+  `ReconstructionBudgetMultiplier` now document that the budget bounds bytes advanced, not
+  allocation.
 - **Cost-bound tests no longer assert on elapsed time (#400, #456).** A `Stopwatch` checked after a
   call returns cannot end a hang, and a 10 s bound fails on a loaded runner: the main CI run for
   1c61fa6 failed `FindingHigh_A4FlateBombPadding_refusesQuickly_viaCostBudget` at 11.79 s, and #400
