@@ -665,7 +665,7 @@ public static class Jbig2ImageLoader
     /// Whether a segment is part of the page being embedded: it is associated with that page, or with
     /// no page at all (association 0, the globally referenced segments). A first page-information
     /// segment that itself has association 0 names no page, so no page is selected and every segment
-    /// is kept, as this loader always did before it chose a page.
+    /// is kept.
     /// </summary>
     private static bool BelongsToPage(in SegmentHeader seg, int page)
         => page == 0 || seg.PageAssociation == page || seg.PageAssociation == 0;

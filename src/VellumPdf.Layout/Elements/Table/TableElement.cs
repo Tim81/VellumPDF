@@ -70,7 +70,7 @@ public sealed class TableElement
     /// stroked unconditionally and <see cref="BorderColor"/> is not nullable. If you need a
     /// gridless table, the nearest you can get is a border colour matching the page.</para>
     /// <para>A negative width is refused as well. ISO 32000-2, 8.4.3.2 says a line width
-    /// "shall be a non-negative number", and a negative one was written as <c>-3 w</c>. The save
+    /// "shall be a non-negative number", so a negative one would write an operand the standard forbids. The save
     /// throws <see cref="InvalidOperationException"/>, naming the table, the width and the clause.
     /// Zero stays accepted; see <see cref="LineSeparator.LineWidth"/> for why it is a caller
     /// warning and not a refusal.</para>

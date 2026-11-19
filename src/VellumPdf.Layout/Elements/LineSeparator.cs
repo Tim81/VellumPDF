@@ -33,8 +33,8 @@ public sealed class LineSeparator
     /// shrinks, so it reads as proportionally heavier the further the page is scaled down. If you
     /// want no rule, leave the element out.</para>
     /// <para>A negative width is refused as well. ISO 32000-2, 8.4.3.2 says a line width
-    /// "shall be a non-negative number", and a negative one was written as <c>-3 w</c>, an operand
-    /// the standard forbids. <see cref="Document.Save(System.IO.Stream)"/> throws
+    /// "shall be a non-negative number", so a negative one would write an operand the standard
+    /// forbids. <see cref="Document.Save(System.IO.Stream)"/> throws
     /// <see cref="InvalidOperationException"/>, naming the separator, the width and the clause.
     /// Zero stays accepted.</para>
     /// </remarks>

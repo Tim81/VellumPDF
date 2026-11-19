@@ -410,7 +410,7 @@ public sealed class SaveLifecycleTests
     [InlineData(FileAttributes.Hidden, true)]
     [InlineData(FileAttributes.System, true)]
     [InlineData(FileAttributes.Hidden | FileAttributes.System, true)]
-    public async Task SaveToAHiddenOrSystemFile_isRefused_asOn1c61fa6(FileAttributes attributes, bool async)
+    public async Task SaveToAHiddenOrSystemFile_isRefused(FileAttributes attributes, bool async)
     {
         if (!OperatingSystem.IsWindows())
             Assert.Skip("The Hidden and System file attributes refuse FileMode.Create on Windows only.");
@@ -449,7 +449,7 @@ public sealed class SaveLifecycleTests
     [InlineData(FileAttributes.Hidden, FileAttributes.Normal, false, false)]
     [InlineData(FileAttributes.Hidden, FileAttributes.Normal, false, true)]
     [InlineData(FileAttributes.Hidden, FileAttributes.Hidden, true, true)]
-    public async Task SaveThroughALink_judgesTheFinalTargetsAttributes_asOn1c61fa6(
+    public async Task SaveThroughALink_judgesTheFinalTargetsAttributes(
         FileAttributes linkAttributes, FileAttributes targetAttributes, bool refused, bool async)
     {
         if (!OperatingSystem.IsWindows())

@@ -48,15 +48,13 @@ public enum HorizontalAlignment
     /// space left on the line is divided evenly over the line's space characters, and a line ends at
     /// the right edge of its box, including a line that holds text in more than one
     /// <see cref="VellumPdf.Layout.Core.TextStyle"/> instance, where each instance starts at the
-    /// width the one before it is drawn to. Before that, the divisor counted every
-    /// space twice, so the line stopped short of the right edge, and each instance was placed at its
-    /// unstretched width, so it could overprint the text after it. Only the space character
+    /// width the one before it is drawn to. Only the space character
     /// (U+0020) is stretched; a no-break space and other white space are not.</para>
     /// <para><b>Attention</b>: <see cref="VellumPdf.Fonts.Standard14.Symbol"/> and
     /// <see cref="VellumPdf.Fonts.Standard14.ZapfDingbats"/> measure every glyph as zero (#470), so
     /// a justified line in either is stretched as though it held no text, and runs past the right
-    /// edge by the width of the text it does hold. A line that holds text in either keeps the space
-    /// divisor it had before #548, which counts every space twice, so it is no worse than it was.</para>
+    /// edge by the width of the text it does hold. The space divisor of a line that holds text in
+    /// either counts every space twice.</para>
     /// </remarks>
     Justify,
 }

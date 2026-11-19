@@ -66,7 +66,7 @@ public sealed class NonFiniteGeometryTests
 
     [Theory]
     [MemberData(nameof(DocumentMarginRows))]
-    public void DocumentMargin_nonFinite_givesWhat1c61fa6Gave(string edge, double value, string expectedName)
+    public void DocumentMargin_nonFinite_matchesTheRecordedOutcome(string edge, double value, string expectedName)
     {
         var expected = Enum.Parse<Outcome>(expectedName);
         using var doc = new Document { Margins = Edge(edge, value) };
@@ -150,7 +150,7 @@ public sealed class NonFiniteGeometryTests
 
     [Theory]
     [MemberData(nameof(BandRows))]
-    public void BandHeight_nonFinite_givesWhat1c61fa6Gave(string band, string template, double value, string expectedName)
+    public void BandHeight_nonFinite_matchesTheRecordedOutcome(string band, string template, double value, string expectedName)
     {
         var expected = Enum.Parse<BandOutcome>(expectedName);
         using var doc = new Document();

@@ -35,7 +35,7 @@ public sealed class CycleGuardTests
     [InlineData("two-element cycle registered")]
     [InlineData("cycle built, not registered")]
     [InlineData("tagged later, cycle registered while untagged")]
-    public void Save_withACyclicElementTheSaveNeverWalks_saves_asOn1c61fa6(string shape)
+    public void Save_withACyclicElementTheSaveNeverWalks_saves(string shape)
     {
         using var doc = new PdfDocument();
         doc.AddPage();

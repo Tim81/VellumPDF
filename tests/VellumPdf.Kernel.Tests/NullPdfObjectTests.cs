@@ -51,7 +51,7 @@ public sealed class NullPdfObjectTests
     }
 
     [Fact]
-    public void PdfDictionary_Set_nullValueThenARealOne_writesTheRealOne_asOn1c61fa6()
+    public void PdfDictionary_Set_nullValueThenARealOne_writesTheRealOne()
     {
         var dict = new PdfDictionary();
         dict.Set(new PdfName("K"), (PdfObject)null!);

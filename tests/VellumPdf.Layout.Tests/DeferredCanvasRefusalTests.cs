@@ -22,7 +22,7 @@ public sealed class DeferredCanvasRefusalTests
     [Theory]
     [InlineData(0)]
     [InlineData(72)]
-    public void TableAtANaNTopMargin_followedByAParagraph_isRefusedAsTooTall_asOn1c61fa6(double others)
+    public void TableAtANaNTopMargin_followedByAParagraph_isRefusedAsTooTall(double others)
     {
         using var doc = NanTopMargin(others);
         doc.Add(new Paragraph("after"));

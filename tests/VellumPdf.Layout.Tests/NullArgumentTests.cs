@@ -115,7 +115,7 @@ public sealed class NullArgumentTests
     // ── A null cell text: stored, and refused where a column is sized automatically ──
 
     [Fact]
-    public void NullCellText_isStoredAsGiven_asOn1c61fa6()
+    public void NullCellText_isStoredAsGiven()
     {
         Assert.Null(new Cell(null!).Content);
         Assert.Null(Assert.Single(new TableElement().AddRow().AddCell((string)null!).Cells).Content);
@@ -163,7 +163,7 @@ public sealed class NullArgumentTests
     }
 
     [Fact]
-    public void TextRun_withANullStyle_isStored_asOn1c61fa6()
+    public void TextRun_withANullStyle_isStored()
     {
         Assert.Null(new TextRun("b", null!).Style);
     }

@@ -73,8 +73,8 @@ public readonly struct FontReference
     /// the same font program under the
     /// same resource name; <see cref="VellumPdf.Document.PdfDocument.RegisterEmbeddedFontUsage"/>
     /// describes both cases. A handle's resource name is a counter local to the document that issued
-    /// it, so a page refers to a font by a name that means something only there; before this check
-    /// the page got whatever font the saving document had registered under that name, or none.
+    /// it, so a page refers to a font by a name that means something only there, and a foreign
+    /// handle would resolve to whatever font the saving document registered under that name, or none.
     /// <b>Do not pass</b> a handle from another document: 3.0 refuses it whatever the saving
     /// document holds.</para>
     /// <para>Text that holds an unpaired surrogate makes the save throw

@@ -68,7 +68,7 @@ public sealed class SaveGuardTests
     }
 
     [Fact]
-    public async Task SaveAsync_toANonWritableStream_throwsNotSupportedException_asOn1c61fa6_andTheDocumentIsStillSaveable()
+    public async Task SaveAsync_toANonWritableStream_throwsNotSupportedException_andTheDocumentIsStillSaveable()
     {
         using var doc = OnePage();
         using var readOnly = ReadOnlyStream();
@@ -82,7 +82,7 @@ public sealed class SaveGuardTests
     }
 
     [Fact]
-    public async Task SaveAsync_toAClosedStream_throwsObjectDisposedException_asOn1c61fa6_andTheDocumentIsStillSaveable()
+    public async Task SaveAsync_toAClosedStream_throwsObjectDisposedException_andTheDocumentIsStillSaveable()
     {
         using var doc = OnePage();
         var closed = new MemoryStream();
@@ -110,7 +110,7 @@ public sealed class SaveGuardTests
 
     /// <summary>A null destination is checked first and then the token is given to Task.Run, so a token that is already cancelled wins over everything else except the null, as in 2.3.3.</summary>
     [Fact]
-    public async Task PdfDocumentSaveAsync_withAnAlreadyCancelledToken_winsOverEveryDefectButTheNull_asOn1c61fa6()
+    public async Task PdfDocumentSaveAsync_withAnAlreadyCancelledToken_winsOverEveryDefectButTheNull()
     {
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();

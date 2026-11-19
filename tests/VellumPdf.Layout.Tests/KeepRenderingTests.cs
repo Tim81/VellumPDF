@@ -171,7 +171,7 @@ public sealed class KeepRenderingTests
     /// <summary>72 shapes: six elements (first and last paragraph, table, list, image, pie chart), four edges, three values; each saves with 2.3.3's drawn output, throws <see cref="ArgumentException"/> from <c>PdfCanvas</c> where 2.3.3 wrote an invalid token, or throws 2.3.3's exception type.</summary>
     [Theory]
     [MemberData(nameof(MarginCases))]
-    public void ElementMargin_nonFinite_gives1c61fa6Output(string element, string edge, string value, string main)
+    public void ElementMargin_nonFinite_matchesTheRecordedOutcomePerShape(string element, string edge, string value, string main)
     {
         using var doc = Build(element, Edge(edge, Value(value)));
 
@@ -420,7 +420,7 @@ public sealed class KeepRenderingTests
     [InlineData("empty header -inf", false)]
     [InlineData("empty paragraph top -inf", true)]
     [InlineData("empty paragraph top -inf", false)]
-    public void TableCellTextColour_nan_savesWhenTheTableIsNotDrawn_asOn1c61fa6(string setup, bool onTheCell)
+    public void TableCellTextColour_nan_savesWhenTheTableIsNotDrawn(string setup, bool onTheCell)
     {
         var nan = new TextStyle { Color = _nan };
         using var doc = TableUnder(setup, onTheCell ? nan : null, onTheCell ? null : nan);
@@ -434,7 +434,7 @@ public sealed class KeepRenderingTests
     [InlineData("document top -inf")]
     [InlineData("empty header -inf")]
     [InlineData("empty paragraph top -inf")]
-    public void TableBorderWidth_negative_savesWhenTheTableIsNotDrawn_asOn1c61fa6(string setup)
+    public void TableBorderWidth_negative_savesWhenTheTableIsNotDrawn(string setup)
     {
         using var doc = TableUnder(setup, null, null, borderWidth: -2);
         using var plain = TableUnder(setup, null, null);

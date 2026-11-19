@@ -118,7 +118,7 @@ public sealed class SaveAsyncCancellationTests
     [InlineData("null destination")]
     [InlineData("read-only stream")]
     [InlineData("no pages")]
-    public async Task APreCancelledToken_winsOverEveryOtherDefect_asOn1c61fa6(string defect)
+    public async Task APreCancelledToken_winsOverEveryOtherDefect(string defect)
     {
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();

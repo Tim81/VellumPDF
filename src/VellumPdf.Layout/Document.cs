@@ -1830,7 +1830,7 @@ public sealed class Document : IDisposable
     /// through <c>VellumPdf.Signing</c> check whether the document is disposed.
     /// <see cref="Encrypt"/> throws <see cref="ObjectDisposedException"/>, and so does a save,
     /// unless a check the save runs earlier fails first. A save to a path leaves the file at the path
-    /// untouched when it throws that. Every other member works as before.
+    /// untouched when it throws that. Every other member keeps working.
     /// </remarks>
     /// <exception cref="ObjectDisposedException">
     /// Raised from a later save or <see cref="Encrypt"/>, not from this call.

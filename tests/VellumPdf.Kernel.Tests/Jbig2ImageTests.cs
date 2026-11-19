@@ -2167,7 +2167,7 @@ public sealed class Jbig2ImageTests
 
     /// <summary>DecodeToRaster decodes later pages too, as 2.3.3 did, so an unsupported region on page 2 refuses the file with NotSupportedException.</summary>
     [Fact]
-    public void Load_TwoPagesDecodeToRaster_RefusesWhatALaterPageCannotDecode_asOn1c61fa6()
+    public void Load_TwoPagesDecodeToRaster_RefusesWhatALaterPageCannotDecode()
     {
         // Page 1: an 8x1 MMR region, one black run of 8 (horizontal mode, white run 0, black run 8).
         var mmr = PackMsbFirst((0b001, 3), (0b00110101, 8), (0b000101, 6));
@@ -2201,7 +2201,7 @@ public sealed class Jbig2ImageTests
     [Theory]
     [InlineData(false)]    // the embedded organisation, no file header
     [InlineData(true)]     // the ID string followed directly by segments
-    public void Load_Passthrough_SegmentWithAnUnknownDataLength_IsDropped_asOn1c61fa6(bool withIdString)
+    public void Load_Passthrough_SegmentWithAnUnknownDataLength_IsDropped(bool withIdString)
     {
         var segments = FiveSegments(64, 48);
         for (var i = 7; i < 11; i++) segments[2][i] = 0xFF;       // segment 2: length 0xFFFFFFFF
@@ -2343,7 +2343,7 @@ public sealed class Jbig2ImageTests
     }
 
     [Fact]
-    public void Load_DecodeToRaster_UnknownDataLengthOnAnotherPage_IsRefused_asOn1c61fa6()
+    public void Load_DecodeToRaster_UnknownDataLengthOnAnotherPage_IsRefused()
     {
         var lastRegion = BuildSegment(3, type: 38, pageAssociation: 2, [0xC1, 0xC2]);
         for (var i = 7; i < 11; i++) lastRegion[i] = 0xFF;
@@ -2364,7 +2364,7 @@ public sealed class Jbig2ImageTests
 
     /// <summary>An unsupported region on a later page, here an arithmetic-coded generic region on page 2, refuses the file in DecodeToRaster, as in 2.3.3.</summary>
     [Fact]
-    public void Load_DecodeToRaster_ArithmeticRegionOnAnotherPage_IsRefused_asOn1c61fa6()
+    public void Load_DecodeToRaster_ArithmeticRegionOnAnotherPage_IsRefused()
     {
         var arithmetic = MmrRegionData();
         arithmetic[17] = 0x00;                                      // not MMR

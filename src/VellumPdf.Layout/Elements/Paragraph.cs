@@ -100,8 +100,7 @@ public sealed class Paragraph
     /// with no space in it is not stretched. White space is drawn as the type remarks describe; see
     /// <see cref="HorizontalAlignment.Justify"/> for trailing line breaks. A justified line in the
     /// standard-14 text faces (every standard-14 font but Symbol and ZapfDingbats) ends at the right
-    /// edge, including one holding runs with different <see cref="TextStyle"/> instances (#548,
-    /// #555); see <see cref="HorizontalAlignment.Justify"/> for Symbol and ZapfDingbats.
+    /// edge, including one holding runs with different <see cref="TextStyle"/> instances; see <see cref="HorizontalAlignment.Justify"/> for Symbol and ZapfDingbats.
     /// </remarks>
     public HorizontalAlignment Alignment { get; init; } = HorizontalAlignment.Left;
 

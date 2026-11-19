@@ -94,7 +94,7 @@ public sealed class NullDeferralTests
 
     [Theory]
     [MemberData(nameof(Names))]
-    public void NullShape_savesWhere1c61fa6Saved_andIsRefusedWhereItThrew(string name)
+    public void NullShape_savesWhereTheDeferredNullSaved_andIsRefusedWhereItThrew(string name)
     {
         var row = _rows.Single(r => r.Name == name);
         using var ms = new MemoryStream();
