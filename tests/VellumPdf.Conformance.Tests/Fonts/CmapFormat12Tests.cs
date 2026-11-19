@@ -5,6 +5,7 @@ using System.IO.Compression;
 using System.Text;
 using VellumPdf.Canvas;
 using VellumPdf.Document;
+using VellumPdf.Fonts;
 using VellumPdf.Fonts.Sfnt;
 using VellumPdf.TestSupport;
 
@@ -14,8 +15,10 @@ namespace VellumPdf.Conformance.Tests.Fonts;
 using PdfConformance = VellumPdf.Document.PdfConformance;
 
 /// <summary>
-/// cmap format 12 against the two fonts already in the tree, a TrueType one (DejaVu Sans, glyf
-/// outlines) and an OpenType-CFF one (Source Sans 3 ExtraLight) (#595).
+/// cmap format 12 against the two fonts in the tree that carry a format 12 subtable, a TrueType
+/// one (DejaVu Sans, glyf outlines) and an OpenType-CFF one (Source Sans 3 ExtraLight) (#595). The
+/// other 12 fonts in the tree, the Liberation set, have formats 4 and 6 only (checked with
+/// fontTools 4.62.1 over all 14 files).
 ///
 /// Neither font is changed on disk. The "format 12 only" and "format 4 only" fonts are built in
 /// memory by appending a new cmap table to the asset's bytes and pointing the table directory at
@@ -293,6 +296,96 @@ public sealed class CmapFormat12Tests
         Assert.Equal(expectedSha256, digest);
     }
 
+    // ---------------------------------------------------------------- a format-12-only font must be sound
+
+    /// <summary>
+    /// A font whose only Unicode subtable is format 12 was refused with NotSupportedException on
+    /// 2.3.3, whatever else was wrong with it. It is accepted now only if it is sound, so damage
+    /// elsewhere is still NotSupportedException (with the reason in the message), not the type the
+    /// damaged read would raise. Each case damages one table of the format-12-only font and checks
+    /// that the same damage on the full font (format 4 present) is not reported as
+    /// NotSupportedException, so the test sees the damage and not a cmap refusal.
+    /// </summary>
+    [Theory]
+    [InlineData("DejaVuSans.ttf", "hmtx", 2)]       // advance widths truncated
+    [InlineData("DejaVuSans.ttf", "glyf", 100)]     // loca ranges lie outside glyf
+    [InlineData("SourceSans3-ExtraLight.otf", "CFF ", 8)]   // CFF table does not parse
+    public void FormatTwelveOnlyFont_damagedElsewhere_isRefusedAsNotSupported(string asset, string tag, int damagedLength)
+    {
+        var full = LoadAsset(asset);
+        var only12 = WithCmap(full, Subtables(full).Where(s => s.Platform == 3 && s.Format == 12));
+
+        var ex = Assert.Throws<NotSupportedException>(
+            () => new TrueTypeFontEmbedder(WithTableLength(only12, tag, damagedLength), "F1"));
+
+        Assert.Contains("only Unicode cmap subtable is format 12 and the font is malformed elsewhere", ex.Message);
+        Assert.NotNull(ex.InnerException);
+        // The same damage on a font with a format 4 subtable never surfaces as NotSupportedException.
+        var control = Record.Exception(() => new TrueTypeFontEmbedder(WithTableLength(full, tag, damagedLength), "F1"));
+        Assert.False(control is NotSupportedException, "the damage is not what is being refused");
+    }
+
+    /// <summary>
+    /// head.unitsPerEm of 0 made a format-12-only font load and then fail at save with
+    /// ArgumentException; a font that cannot be saved is not accepted, so load refuses it with the
+    /// type 2.3.3 gave every such font. (On a font with format 4 the failure stays at save.)
+    /// </summary>
+    [Theory]
+    [InlineData("DejaVuSans.ttf")]
+    [InlineData("SourceSans3-ExtraLight.otf")]
+    public void FormatTwelveOnlyFont_unitsPerEmZero_isRefusedAsNotSupported(string asset)
+    {
+        var full = LoadAsset(asset);
+        var only12 = WithCmap(full, Subtables(full).Where(s => s.Platform == 3 && s.Format == 12));
+        var (_, head, _) = FindTable(only12, "head");
+        var damaged = (byte[])only12.Clone();
+        Put16(damaged, head + 18, 0);   // unitsPerEm
+
+        var ex = Assert.Throws<NotSupportedException>(() => new TrueTypeFontEmbedder(damaged, "F1"));
+
+        Assert.Contains("unitsPerEm is 0", ex.Message);
+    }
+
+    [Fact]
+    public void FormatTwelveOnlyFont_missingTable_isRefusedAsNotSupported()
+    {
+        var full = LoadAsset("DejaVuSans.ttf");
+        var only12 = WithCmap(full, Subtables(full).Where(s => s.Platform == 3 && s.Format == 12));
+
+        var ex = Assert.Throws<NotSupportedException>(() => new TrueTypeFontEmbedder(WithTagRenamed(only12, "post"), "F1"));
+
+        Assert.IsType<InvalidOperationException>(ex.InnerException);
+    }
+
+    /// <summary>A format 12 subtable that maps a glyph the font does not hold, alone in the font, is refused at load.</summary>
+    [Fact]
+    public void FormatTwelveOnlyFont_mappingAGlyphPastNumGlyphs_isRefusedAsNotSupported()
+    {
+        var full = LoadAsset("DejaVuSans.ttf");
+        var format12 = Subtables(full).First(s => s.Format == 12 && s.Platform == 3);
+        var shifted = ShiftGroupContaining(format12, 'A', 60000 - 36);
+
+        var ex = Assert.Throws<NotSupportedException>(() => new TrueTypeFontEmbedder(WithCmap(full, [shifted]), "F1"));
+
+        Assert.Contains("maps glyph", ex.Message);
+        Assert.Contains("but the font has", ex.Message);
+    }
+
+    /// <summary>The same shifted subtable beside format 4 is ignored and the font loads, mapping 'A' through format 4.</summary>
+    [Fact]
+    public void FormatTwelveBesideFormat4_mappingAGlyphPastNumGlyphs_isIgnoredAndTheFontLoads()
+    {
+        var full = LoadAsset("DejaVuSans.ttf");
+        var format4 = Subtables(full).First(s => s.Format == 4 && s.Platform == 3);
+        var format12 = Subtables(full).First(s => s.Format == 12 && s.Platform == 3);
+        var shifted = ShiftGroupContaining(format12, 'A', 60000 - 36);
+
+        var embedder = new TrueTypeFontEmbedder(WithCmap(full, [format4, shifted]), "F1");
+
+        Assert.Equal(36, embedder.GetGlyphId('A'));
+        Assert.Equal(0, embedder.GetGlyphId(0x1F600));   // 2.3.3 read format 4 only: no supplementary plane
+    }
+
     // ---------------------------------------------------------------- fixtures
 
     private static CmapTable Parse(byte[] font) => CmapTable.Parse(SfntFont.Parse(font));
@@ -385,6 +478,24 @@ public sealed class CmapFormat12Tests
             pos = e + "\nendstream".Length;   // past the keyword, which itself contains "stream\n"
         }
         return all.ToArray();
+    }
+
+    /// <summary>The font with one table's directory length rewritten, so the table is cut short.</summary>
+    private static byte[] WithTableLength(byte[] font, string tag, int length)
+    {
+        var copy = (byte[])font.Clone();
+        var (entry, _, _) = FindTable(copy, tag);
+        Put32(copy, entry + 12, (uint)length);
+        return copy;
+    }
+
+    /// <summary>The font with one table's tag overwritten, so the table is missing from the directory.</summary>
+    private static byte[] WithTagRenamed(byte[] font, string tag)
+    {
+        var copy = (byte[])font.Clone();
+        var (entry, _, _) = FindTable(copy, tag);
+        Encoding.ASCII.GetBytes("zzzz").CopyTo(copy, entry);
+        return copy;
     }
 
     internal static byte[] LoadAsset(string logicalName)

@@ -10,19 +10,37 @@ namespace VellumPdf.Fonts.Sfnt;
 /// </summary>
 /// <remarks>
 /// A format 12 subtable on platform 3 / encoding 10, or platform 0 / encoding 4 or 10, adds the
-/// code points format 4 cannot hold, those above U+FFFF.
-/// <para>The 16-bit subtable keeps every code point it maps. The OpenType cmap chapter says the
-/// 32-bit subtable of a font that carries both should be a superset of the 16-bit one, so for a
-/// well-formed font the two agree on the BMP and this changes nothing. A font whose tables
-/// disagree keeps the BMP mapping 2.3.3 gave it, because 2.3.3 read only the 16-bit subtable and
-/// a document drawn from that font must not change glyphs. Format 12 contributes the code points
-/// the 16-bit subtable leaves unmapped: everything above U+FFFF, and any BMP code point the 16-bit
-/// subtable lacks. The 16-bit subtable is the one 2.3.3 selected (format 4 over formats 0 and 6,
-/// platform 3 / encoding 1 first).</para>
-/// <para>A malformed format 12 subtable is ignored when the font has a 16-bit subtable, which is
-/// how 2.3.3 loaded such a font. When format 12 is the font's only Unicode subtable and is
-/// malformed, <see cref="Parse"/> throws <see cref="InvalidDataException"/>; 2.3.3 threw
-/// <see cref="NotSupportedException"/> for every such font.</para>
+/// code points format 4 cannot hold, those above U+FFFF. The OpenType cmap chapter (OpenType 1.9.1,
+/// learn.microsoft.com, read 2026-11-19; not held under docs/iso) names platform 3 / encoding 10
+/// and platform 0 / encoding 4 for format 12. Platform 0 / encoding 10 is not in its list of
+/// Unicode-platform encoding IDs (0 to 6); it is read because real fonts carry it (DejaVu Sans
+/// does, with a format 12 subtable), not because the chapter lists it.
+/// <para><b>The 16-bit subtable keeps every code point it maps.</b> The OpenType cmap chapter says
+/// the 32-bit subtable of a font that carries both should be a superset of the 16-bit one, so for
+/// a well-formed font the two agree on the BMP. A font whose tables disagree keeps the BMP mapping
+/// the 16-bit subtable gives it, because releases through 2.3.3 read only that subtable and a
+/// document drawn from that font must not change glyphs. Format 12 contributes the code points the
+/// 16-bit subtable leaves unmapped: everything above U+FFFF, and any BMP code point the 16-bit
+/// subtable lacks, so a font whose format 4 or format 6 subtable covers less of the BMP than its
+/// format 12 one now draws the extra characters. The 16-bit subtable is the one 2.3.3 selected
+/// (format 4 over formats 0 and 6, platform 3 / encoding 1 first).</para>
+/// <para><b>A format 12 subtable is malformed</b> when a group is inverted, ends above U+10FFFF,
+/// is not after the group before it, maps a glyph ID at or beyond the font's <c>maxp</c>
+/// <c>numGlyphs</c> (or past 65535 when the font has no readable <c>maxp</c>), or when the group
+/// count does not fit the length the subtable declares. A malformed subtable beside a 16-bit one
+/// is ignored, which is how 2.3.3 loaded such a font. A malformed subtable that is the font's only
+/// Unicode subtable makes <see cref="Parse"/> throw <see cref="NotSupportedException"/>, the type
+/// 2.3.3 threw for every font in that position; the message names the rule, and the
+/// <see cref="InvalidDataException"/> that found it is the inner exception.</para>
+/// <para><b>Cost is bounded by the file.</b> Groups are sorted and disjoint, so a font maps at
+/// most 1,114,112 code points however it is built, and a group count must fit the declared length,
+/// so a subtable of 12 bytes a group costs at most what its groups hold. A group maps at most as
+/// many code points as the font has glyphs, so the worst case needs a font with close to 65,535
+/// of them: seventeen groups (a 220-byte subtable) over a font with no <c>maxp</c> to bound the
+/// glyph IDs cover 1,114,095 code points, which builds a dictionary of that many entries,
+/// 53,889,264 bytes allocated by <see cref="Parse"/>, measured with
+/// <c>GC.GetAllocatedBytesForCurrentThread</c> on net10.0. The 1,114,112 code points Unicode has
+/// are 17 more entries than that, and the cost is paid once per font load.</para>
 /// </remarks>
 internal sealed class CmapTable
 {
@@ -39,7 +57,18 @@ internal sealed class CmapTable
     // at the number of groups the subtable's declared length has room for.
     private const int MaxCodePoint = 0x10FFFF;
 
-    private CmapTable(Dictionary<int, ushort> map) => _map = map;
+    private CmapTable(Dictionary<int, ushort> map, bool onlyFormat12 = false)
+    {
+        _map = map;
+        OnlyFormat12 = onlyFormat12;
+    }
+
+    /// <summary>
+    /// <see langword="true"/> when format 12 is the font's only Unicode subtable, so the font was
+    /// accepted on the strength of a subtable 2.3.3 refused. The embedder uses it to hold such a
+    /// font to a stricter standard on its other tables.
+    /// </summary>
+    public bool OnlyFormat12 { get; }
 
     public bool TryGetGlyphId(int codePoint, out ushort glyphId) =>
         _map.TryGetValue(codePoint, out glyphId);
@@ -81,7 +110,8 @@ internal sealed class CmapTable
 
             if (fmt == 12)
             {
-                // Windows full repertoire, then Unicode platform full repertoire. Format 12 under
+                // Windows full repertoire, then Unicode platform full repertoire (encoding 4 as the
+                // chapter lists it; encoding 10 because fonts in the wild use it). Format 12 under
                 // any other record is not a Unicode subtable this class reads.
                 var widePrio = platform == 3 && encoding == 10 ? 2 :
                                platform == 0 && (encoding == 4 || encoding == 10) ? 1 : 0;
@@ -130,13 +160,20 @@ internal sealed class CmapTable
         Dictionary<int, ushort> full;
         try
         {
-            full = ParseFormat12(r, wide);
+            full = ParseFormat12(r, wide, ReadNumGlyphs(font));
         }
         catch (InvalidDataException) when (narrow is not null)
         {
             // The font loaded without this subtable before it was read, so a bad one costs the
             // supplementary planes and nothing else.
             return new CmapTable(narrow);
+        }
+        catch (InvalidDataException ex)
+        {
+            // Nothing else to read: this is a font 2.3.3 refused with NotSupportedException, and
+            // it is still refused, with the same type and a message that names the rule.
+            throw new NotSupportedException(
+                "font's only Unicode cmap subtable is format 12 and it is malformed: " + ex.Message, ex);
         }
 
         if (narrow is not null)
@@ -145,7 +182,21 @@ internal sealed class CmapTable
             foreach (var (cp, gid) in narrow)
                 full[cp] = gid;
         }
-        return new CmapTable(full);
+        return new CmapTable(full, onlyFormat12: narrow is null);
+    }
+
+    // maxp numGlyphs bounds every glyph ID a cmap may name. A font with no readable maxp has no
+    // bound but the 16-bit glyph ID itself; the embedder refuses such a font at its own maxp read.
+    private static int ReadNumGlyphs(SfntFont font)
+    {
+        try
+        {
+            return MaxpTable.Parse(font).NumGlyphs;
+        }
+        catch (Exception e) when (e is InvalidDataException or InvalidOperationException)
+        {
+            return 0x10000;
+        }
     }
 
     private static Dictionary<int, ushort> ParseFormat4(SfntReader r, int offset)
@@ -241,7 +292,7 @@ internal sealed class CmapTable
         return map;
     }
 
-    private static Dictionary<int, ushort> ParseFormat12(SfntReader r, int offset)
+    private static Dictionary<int, ushort> ParseFormat12(SfntReader r, int offset, int numGlyphs)
     {
         // Format 12: format(2) reserved(2) length(4) language(4) numGroups(4), then numGroups
         // groups of startCharCode(4) endCharCode(4) startGlyphID(4).
@@ -271,9 +322,13 @@ internal sealed class CmapTable
             if (start <= previousEnd)
                 throw new InvalidDataException(
                     $"Malformed font: cmap format-12 group {i} is not after the group before it.");
-            if ((long)startGlyph + (end - start) > 0xFFFF)
+            // The OpenType cmap chapter (OpenType 1.9.1, learn.microsoft.com, read 2026-11-19): "character
+            // codes that do not correspond to any glyph in the font should be mapped to glyph index 0", so a glyph ID the font does not hold is not
+            // a mapping. The last glyph of the group is the largest, and `end - start` cannot
+            // wrap because the inverted-group check above has already run.
+            if ((long)startGlyph + (end - start) >= numGlyphs)
                 throw new InvalidDataException(
-                    $"Malformed font: cmap format-12 group {i} maps past glyph 65535.");
+                    $"Malformed font: cmap format-12 group {i} maps glyph {(long)startGlyph + (end - start)}, but the font has {numGlyphs} glyph(s).");
             previousEnd = end;
 
             for (var cp = start; cp <= end; cp++)

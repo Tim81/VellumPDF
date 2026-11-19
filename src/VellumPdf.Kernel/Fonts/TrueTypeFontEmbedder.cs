@@ -47,14 +47,66 @@ public sealed class TrueTypeFontEmbedder
         _fontData = fontData;
 
         _cmap = CmapTable.Parse(_sfnt);
-        _head = HeadTable.Parse(_sfnt);
-        _hhea = HheaTable.Parse(_sfnt);
-        _maxp = MaxpTable.Parse(_sfnt);
-        _name = NameTable.Parse(_sfnt);
-        _os2 = Os2Table.Parse(_sfnt);
-        _post = PostTable.Parse(_sfnt);
-        _hmtx = HmtxTable.Parse(_sfnt, _hhea, _maxp.NumGlyphs);
+
+        // A font whose only Unicode cmap subtable is format 12 was refused with
+        // NotSupportedException before format 12 was read, whatever else was wrong with it. It is
+        // accepted now only if it is sound everywhere this class and its subsetters read, and
+        // every refusal keeps that exception type; see ParseOtherTables.
+        if (_cmap.OnlyFormat12)
+        {
+            try
+            {
+                (_head, _hhea, _maxp, _name, _os2, _post, _hmtx) = ParseOtherTables(_sfnt);
+                if (_head.UnitsPerEm == 0)
+                    throw new InvalidDataException("head.unitsPerEm is 0, so no metric can be scaled.");
+                ValidateOutlines(_sfnt);
+            }
+            catch (Exception ex) when (ex is not (NotSupportedException or OutOfMemoryException))
+            {
+                throw new NotSupportedException(
+                    "font's only Unicode cmap subtable is format 12 and the font is malformed elsewhere: " + ex.Message, ex);
+            }
+        }
+        else
+        {
+            (_head, _hhea, _maxp, _name, _os2, _post, _hmtx) = ParseOtherTables(_sfnt);
+        }
         ResourceName = resourceName;
+    }
+
+    private static (HeadTable, HheaTable, MaxpTable, NameTable, Os2Table, PostTable, HmtxTable) ParseOtherTables(
+        SfntFont sfnt)
+    {
+        var head = HeadTable.Parse(sfnt);
+        var hhea = HheaTable.Parse(sfnt);
+        var maxp = MaxpTable.Parse(sfnt);
+        var name = NameTable.Parse(sfnt);
+        var os2 = Os2Table.Parse(sfnt);
+        var post = PostTable.Parse(sfnt);
+        var hmtx = HmtxTable.Parse(sfnt, hhea, maxp.NumGlyphs);
+        return (head, hhea, maxp, name, os2, post, hmtx);
+    }
+
+    // What is checked for a format-12-only font, beyond the tables ParseOtherTables reads (each of
+    // which must be present and long enough): for glyf outlines, every glyph's loca range lies
+    // inside the glyf table (GlyfSubsetter reads exactly this, for each glyph it keeps); for CFF
+    // outlines, the CFF table parses. Not checked: the contents of any glyph or charstring,
+    // composite component references, table checksums, and the values (as opposed to the
+    // presence) of the name, OS/2 and post fields; and head.unitsPerEm other than 0 is the only
+    // value check (0 makes every metric non-finite and the save throw). A font that is wrong
+    // only in the unchecked places is accepted.
+    private static void ValidateOutlines(SfntFont sfnt)
+    {
+        if (sfnt.IsCff)
+        {
+            _ = CffFont.Parse(sfnt.GetTableBytes(new Tag("CFF ")));
+            return;
+        }
+
+        var subsetter = new GlyfSubsetter(sfnt);
+        var numGlyphs = MaxpTable.Parse(sfnt).NumGlyphs;
+        for (var gid = 0; gid < numGlyphs; gid++)
+            _ = subsetter.GetGlyphData(gid);
     }
 
     /// <summary>Returns the glyph ID for a Unicode code point, registering it for subsetting.</summary>

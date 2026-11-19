@@ -35,11 +35,13 @@ public sealed class CmapFormat12PreflightTests
     }
 
     /// <summary>
-    /// The format 12 subtable sends 'A' to glyph 60000, past the program's glyph count: the rule
-    /// reports the glyph as absent. On 2.3.3 the font did not parse and the rule was skipped.
+    /// The format 12 subtable sends 'A' to glyph 60000, past the program's glyph count. That makes
+    /// the subtable malformed (a glyph ID at or beyond numGlyphs), the font is refused as a
+    /// format-12-only font, and the rule skips it as it skipped every such font on 2.3.3: no
+    /// finding on either build. The rule is not asked to judge a program the cmap parser refuses.
     /// </summary>
     [Fact]
-    public void FormatTwelveOnlyProgram_mappingTheCodePointPastTheGlyphCount_isReported()
+    public void FormatTwelveOnlyProgram_mappingTheCodePointPastTheGlyphCount_isSkippedAsMalformed()
     {
         var bytes = FormatTwelveOnly(font =>
         {
@@ -48,7 +50,7 @@ public sealed class CmapFormat12PreflightTests
             return CmapFormat12Tests.WithCmap(font, [shifted]);
         });
 
-        Assert.Contains(GlyphPresent, RuleIds(bytes));
+        Assert.DoesNotContain(GlyphPresent, RuleIds(bytes));
     }
 
     /// <summary>

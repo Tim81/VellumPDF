@@ -302,15 +302,41 @@ public sealed class CmapTableTests
         Assert.Throws<NotSupportedException>(() => CmapTable.Parse(font));
     }
 
-    // Malformed format 12, alone in the font: refused with InvalidDataException, never read past
-    // the table and never expanded. Every case names the rule it breaks.
+    // Malformed format 12, alone in the font: refused with NotSupportedException, the type 2.3.3
+    // threw for every such font, and never read past the table or expanded. Each case is built so
+    // that it passes every guard but the one it names, and asserts that guard's message, so
+    // removing the guard fails the test instead of another guard catching the file.
+
+    /// <summary>The refusal a sole malformed format 12 subtable gets, and the rule it names.</summary>
+    private static void AssertRefusedAs(byte[] fontBytes, string rule)
+    {
+        var ex = Assert.Throws<NotSupportedException>(() => CmapTable.Parse(SfntFont.Parse(fontBytes)));
+        Assert.Contains("only Unicode cmap subtable is format 12 and it is malformed", ex.Message);
+        Assert.Contains(rule, ex.Message);
+        Assert.IsType<InvalidDataException>(ex.InnerException);
+    }
+
+    /// <summary>
+    /// The declared length is what makes numGroups a count the file backs. Here the groups are all
+    /// in the buffer (two real groups, passing every other guard) but the subtable declares a
+    /// length that holds one: only the length check can refuse it.
+    /// </summary>
     [Fact]
     public void CmapFormat12_groupCountBeyondTheDeclaredLength_isRefused()
     {
-        var sub12 = BuildSubtableFormat12([(0x41, 0x41, 5)], numGroupsOverride: 0xFFFF_FFFF);
-        var font = SfntFont.Parse(BuildFont(("cmap", BuildCmap((3, 10, sub12)))));
+        var sub12 = BuildSubtableFormat12([(0x41, 0x41, 5), (0x43, 0x43, 6)], lengthOverride: 16 + 12);
+        var font = BuildFont(("cmap", BuildCmap((3, 10, sub12))));
 
-        Assert.Throws<InvalidDataException>(() => CmapTable.Parse(font));
+        AssertRefusedAs(font, "declares 2 groups but only 28 bytes");
+    }
+
+    [Fact]
+    public void CmapFormat12_hugeGroupCount_isRefusedWithoutAllocatingForIt()
+    {
+        var sub12 = BuildSubtableFormat12([(0x41, 0x41, 5)], numGroupsOverride: 0xFFFF_FFFF);
+        var font = BuildFont(("cmap", BuildCmap((3, 10, sub12))));
+
+        AssertRefusedAs(font, "declares 4294967295 groups");
     }
 
     [Fact]
@@ -319,47 +345,148 @@ public sealed class CmapTableTests
         // The declared length matches the group count but claims far more than the font
         // holds; the first read past the buffer is the refusal.
         var sub12 = BuildSubtableFormat12([(0x41, 0x41, 5)], numGroupsOverride: 1_000_000, lengthOverride: 16 + 12_000_000);
-        var font = SfntFont.Parse(BuildFont(("cmap", BuildCmap((3, 10, sub12)))));
+        var font = BuildFont(("cmap", BuildCmap((3, 10, sub12))));
 
-        Assert.Throws<InvalidDataException>(() => CmapTable.Parse(font));
-    }
-
-    [Theory]
-    [InlineData(0u, 0xFFFF_FFFFu)]      // billions of code points in one group
-    [InlineData(0u, 0x110000u)]         // one past U+10FFFF
-    [InlineData(0x1F600u, 0x1F5FFu)]    // end before start
-    public void CmapFormat12_groupOutsideUnicodeOrInverted_isRefused(uint start, uint end)
-    {
-        var sub12 = BuildSubtableFormat12([(start, end, 1)]);
-        var font = SfntFont.Parse(BuildFont(("cmap", BuildCmap((3, 10, sub12)))));
-
-        Assert.Throws<InvalidDataException>(() => CmapTable.Parse(font));
+        var ex = Assert.Throws<NotSupportedException>(() => CmapTable.Parse(SfntFont.Parse(font)));
+        Assert.IsType<InvalidDataException>(ex.InnerException);
     }
 
     /// <summary>
-    /// Overlapping or unsorted groups: every group covers all of Unicode, so taking them at their
-    /// word is hundreds of millions of lookups from 52 bytes of subtable. The order rule refuses
-    /// the second group before it is expanded; this is the bound.
+    /// A group that ends above U+10FFFF. It starts at the last code point and maps glyph 1, so
+    /// the glyph guard and the order guard both pass it: only the Unicode-range check refuses it.
     /// </summary>
-    [Theory]
-    [InlineData(0u, 0u, 1u, 0x10FFFFu)]            // second starts at the first's start
-    [InlineData(0x100u, 0x200u, 0x200u, 0x300u)]   // second starts at the first's end
-    [InlineData(0x300u, 0x400u, 0x100u, 0x200u)]   // second is before the first
-    public void CmapFormat12_overlappingOrUnsortedGroups_areRefused(uint s1, uint e1, uint s2, uint e2)
+    [Fact]
+    public void CmapFormat12_groupEndingAboveU10FFFF_isRefused()
     {
-        var sub12 = BuildSubtableFormat12([(s1, e1, 1), (s2, e2, 1)]);
-        var font = SfntFont.Parse(BuildFont(("cmap", BuildCmap((3, 10, sub12)))));
+        var sub12 = BuildSubtableFormat12([(0x10FFFF, 0x110000, 1)]);
 
-        Assert.Throws<InvalidDataException>(() => CmapTable.Parse(font));
+        AssertRefusedAs(BuildFont(("cmap", BuildCmap((3, 10, sub12)))), "group 0 covers U+10FFFF..U+110000");
+    }
+
+    /// <summary>
+    /// An inverted group. Taken at its word, the unsigned span end - start wraps to a huge value
+    /// and the glyph guard would refuse it with a different message, so the message pins that the
+    /// inversion check ran first.
+    /// </summary>
+    [Fact]
+    public void CmapFormat12_invertedGroup_isRefused()
+    {
+        var sub12 = BuildSubtableFormat12([(0x1F600, 0x1F5FF, 1)]);
+
+        AssertRefusedAs(BuildFont(("cmap", BuildCmap((3, 10, sub12)))), "group 0 covers U+1F600..U+1F5FF");
     }
 
     [Fact]
-    public void CmapFormat12_groupMappingPastGlyph65535_isRefused()
+    public void CmapFormat12_groupSpanningAllOfUnicodeAndBeyond_isRefusedByTheRangeCheck()
     {
-        var sub12 = BuildSubtableFormat12([(0x41, 0x50, 0xFFF8)]);
-        var font = SfntFont.Parse(BuildFont(("cmap", BuildCmap((3, 10, sub12)))));
+        var sub12 = BuildSubtableFormat12([(0u, 0xFFFF_FFFFu, 1)]);
 
-        Assert.Throws<InvalidDataException>(() => CmapTable.Parse(font));
+        AssertRefusedAs(BuildFont(("cmap", BuildCmap((3, 10, sub12)))), "covers U+0..U+FFFFFFFF");
+    }
+
+    /// <summary>
+    /// Overlapping or unsorted groups. Every group here is small and maps glyphs the font holds,
+    /// so the glyph guard passes them and the order rule is the only thing refusing the second
+    /// group, before it is expanded.
+    /// </summary>
+    [Theory]
+    [InlineData(0x100u, 0x110u, 0x100u, 0x120u)]   // second starts at the first's start
+    [InlineData(0x100u, 0x200u, 0x200u, 0x210u)]   // second starts at the first's end
+    [InlineData(0x300u, 0x310u, 0x100u, 0x110u)]   // second is before the first
+    public void CmapFormat12_overlappingOrUnsortedGroups_areRefused(uint s1, uint e1, uint s2, uint e2)
+    {
+        var sub12 = BuildSubtableFormat12([(s1, e1, 1), (s2, e2, 1)]);
+
+        AssertRefusedAs(BuildFont(("cmap", BuildCmap((3, 10, sub12)))), "group 1 is not after the group before it");
+    }
+
+    /// <summary>
+    /// With no maxp the only bound on a glyph ID is the 16-bit field: a group whose last glyph is
+    /// 65535 loads, one whose last glyph is 65536 is refused. The first group has its last glyph
+    /// exactly at the boundary, so a bound off by one fails one of the two cases.
+    /// </summary>
+    [Fact]
+    public void CmapFormat12_glyph65535Boundary_withoutMaxp()
+    {
+        var atLimit = BuildSubtableFormat12([(0x41, 0x50, 0xFFF0)]);       // last glyph 0xFFFF
+        var pastLimit = BuildSubtableFormat12([(0x41, 0x50, 0xFFF1)]);     // last glyph 0x10000
+
+        var table = CmapTable.Parse(SfntFont.Parse(BuildFont(("cmap", BuildCmap((3, 10, atLimit))))));
+
+        Assert.Equal((ushort)0xFFFF, table.GetGlyphId(0x50));
+        AssertRefusedAs(BuildFont(("cmap", BuildCmap((3, 10, pastLimit)))), "maps glyph 65536, but the font has 65536 glyph(s)");
+    }
+
+    /// <summary>
+    /// A group whose glyph IDs reach maxp.numGlyphs is malformed: the OpenType chapter says
+    /// character codes without a glyph map to glyph 0, so a glyph the font does not hold is not a
+    /// mapping. numGlyphs is 100 here: a group ending at glyph 99 loads, one ending at glyph 100
+    /// does not.
+    /// </summary>
+    [Fact]
+    public void CmapFormat12_glyphReachingNumGlyphs_isMalformed()
+    {
+        var atLimit = BuildSubtableFormat12([(0x41, 0x44, 96)]);       // glyphs 96..99
+        var reaches = BuildSubtableFormat12([(0x41, 0x44, 97)]);       // glyphs 97..100
+
+        var table = CmapTable.Parse(SfntFont.Parse(BuildFont(("cmap", BuildCmap((3, 10, atLimit))), ("maxp", BuildMaxp(100)))));
+
+        Assert.Equal((ushort)99, table.GetGlyphId(0x44));
+        AssertRefusedAs(
+            BuildFont(("cmap", BuildCmap((3, 10, reaches))), ("maxp", BuildMaxp(100))),
+            "maps glyph 100, but the font has 100 glyph(s)");
+    }
+
+    /// <summary>
+    /// Beside a usable 16-bit subtable the same group is ignored, which is what 2.3.3 did with
+    /// every format 12 subtable: the code points above U+FFFF stay unmapped and the font loads.
+    /// </summary>
+    [Fact]
+    public void CmapFormat12_glyphReachingNumGlyphs_besideFormat4_isIgnored()
+    {
+        var sub4 = BuildSubtableFormat4(
+            [(0x0042, 0x0042, (short)(7 - 0x42), 0), (0xFFFF, 0xFFFF, 1, 0)]);
+        var sub12 = BuildSubtableFormat12([(0x1F600, 0x1F603, 97)]);
+        var font = SfntFont.Parse(BuildFont(("cmap", BuildCmap((3, 1, sub4), (3, 10, sub12))), ("maxp", BuildMaxp(100))));
+
+        var table = CmapTable.Parse(font);
+
+        Assert.Equal((ushort)7, table.GetGlyphId(0x42));
+        Assert.Equal((ushort)0, table.GetGlyphId(0x1F600));
+        Assert.False(table.OnlyFormat12);
+    }
+
+    [Fact]
+    public void CmapFormat12_soleSubtable_isReportedAsOnlyFormat12()
+    {
+        var sub12 = BuildSubtableFormat12([(0x41, 0x41, 5)]);
+
+        Assert.True(CmapTable.Parse(SfntFont.Parse(BuildFont(("cmap", BuildCmap((3, 10, sub12)))))).OnlyFormat12);
+    }
+
+    /// <summary>
+    /// The cost the class remarks state: 17 groups in a 220-byte subtable cover 1,114,095 code points.
+    /// Each group maps 65,535 glyphs from glyph 1, the most a 16-bit glyph ID allows, so the
+    /// subtable is well-formed and the parser builds every entry.
+    /// </summary>
+    [Fact]
+    public void CmapFormat12_seventeenGroups_expandToOverAMillionEntries()
+    {
+        var groups = new List<(uint, uint, uint)>();
+        for (uint i = 0; i < 17; i++)
+            groups.Add((i * 0xFFFF, i * 0xFFFF + 0xFFFE, 1));
+        var subtable = BuildSubtableFormat12([.. groups]);
+        var cmap = BuildCmap((3, 10, subtable));
+        Assert.Equal(220, subtable.Length);
+
+        var table = CmapTable.Parse(SfntFont.Parse(BuildFont(("cmap", cmap))));
+
+        var mapped = 0;
+        for (var cp = 0; cp <= 0x10FFFF; cp++)
+        {
+            if (table.TryGetGlyphId(cp, out _)) mapped++;
+        }
+        Assert.Equal(1_114_095, mapped);
     }
 
     /// <summary>
@@ -514,6 +641,15 @@ public sealed class CmapTableTests
             WriteU32Be(subtable, 24 + i * 12, groups[i].StartGlyph);
         }
         return subtable;
+    }
+
+    /// <summary>A maxp table of the given glyph count (version, then numGlyphs at offset 4).</summary>
+    private static byte[] BuildMaxp(ushort numGlyphs)
+    {
+        var maxp = new byte[6];
+        WriteU32Be(maxp, 0, 0x00005000);
+        WriteU16Be(maxp, 4, numGlyphs);
+        return maxp;
     }
 
     /// <summary>A cmap table holding the given subtables, one encoding record each, in order.</summary>

@@ -468,11 +468,20 @@ public sealed class Document : IDisposable
     /// <c>maxp</c>, <c>name</c>, <c>OS/2</c>, <c>post</c> and <c>hmtx</c> tables. It throws
     /// <see cref="InvalidDataException"/> for bytes it cannot read as a font,
     /// <see cref="InvalidOperationException"/> when a table from that list is missing, and
-    /// <see cref="NotSupportedException"/> when the <c>cmap</c> has no subtable in format 0, 4 or
-    /// 6.
-    /// <para>It does not check every value in those tables, and it does not read the outlines. Both
-    /// are used at save, for every font registered here whether or not text uses it, so a font this
-    /// call accepts can still make the save throw: <see cref="InvalidOperationException"/> for a
+    /// <see cref="NotSupportedException"/> when the <c>cmap</c> has no Unicode subtable this
+    /// library reads: format 0, 4 or 6, or format 12 on platform 3 / encoding 10 or on platform 0
+    /// / encoding 4 or 10.
+    /// <para><b>A font whose only readable subtable is format 12 is held to more.</b> This call
+    /// also refuses it, with <see cref="NotSupportedException"/> naming the reason, when that
+    /// subtable is malformed (a group that is inverted, unsorted or past U+10FFFF, a glyph ID at or
+    /// beyond <c>numGlyphs</c>, or a group count the declared length cannot hold), when any table
+    /// in the list above is missing or truncated, when <c>head</c>'s <c>unitsPerEm</c> is 0, when a
+    /// glyph's <c>loca</c> range lies outside <c>glyf</c>, or when the <c>CFF </c> table does not
+    /// parse. It does not check glyph or charstring contents, composite component references,
+    /// checksums, or any other value in <c>head</c>, <c>name</c>, <c>OS/2</c> and <c>post</c>.</para>
+    /// <para>For every other font, this call does not check every value in those tables, and it
+    /// does not read the outlines. Both are used at save, for every font registered here whether or
+    /// not text uses it, so a font this call accepts can still make the save throw: <see cref="InvalidOperationException"/> for a
     /// missing outline table, <see cref="InvalidDataException"/> for malformed outline data, and
     /// <see cref="ArgumentException"/> for a value that makes a font metric non-finite, such as a
     /// <c>unitsPerEm</c> of 0. An OpenType font with CFF outlines is accepted.</para>
@@ -485,7 +494,9 @@ public sealed class Document : IDisposable
     /// from the save instead.
     /// </exception>
     /// <exception cref="NotSupportedException">
-    /// The font's <c>cmap</c> table has no subtable in format 0, 4 or 6.
+    /// The font's <c>cmap</c> table has no Unicode subtable this library reads (format 0, 4 or 6,
+    /// or format 12 on platform 3 / encoding 10 or platform 0 / encoding 4 or 10), or the font's
+    /// only such subtable is format 12 and the font is malformed as the remarks describe.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// A table the parser needs is missing: from this call for the tables listed in the remarks,
@@ -536,8 +547,8 @@ public sealed class Document : IDisposable
     /// A table the parser needs is missing; see <see cref="UseTrueTypeFont"/>.
     /// </exception>
     /// <exception cref="NotSupportedException">
-    /// The font's <c>cmap</c> table has no subtable in format 0, 4 or 6; see
-    /// <see cref="UseTrueTypeFont"/>.
+    /// The font has no readable Unicode <c>cmap</c> subtable, or its only one is a malformed
+    /// format 12; see <see cref="UseTrueTypeFont"/>.
     /// </exception>
     public EmbeddedFontHandle LoadTrueTypeFont(string path) =>
         UseTrueTypeFont(File.ReadAllBytes(path));
@@ -585,8 +596,8 @@ public sealed class Document : IDisposable
     /// A table the parser needs is missing; see <see cref="UseTrueTypeFont"/>.
     /// </exception>
     /// <exception cref="NotSupportedException">
-    /// The font's <c>cmap</c> table has no subtable in format 0, 4 or 6; see
-    /// <see cref="UseTrueTypeFont"/>.
+    /// The font has no readable Unicode <c>cmap</c> subtable, or its only one is a malformed
+    /// format 12; see <see cref="UseTrueTypeFont"/>.
     /// </exception>
     /// <exception cref="OperationCanceledException">
     /// <paramref name="cancellationToken"/> was already cancelled when this method was called.

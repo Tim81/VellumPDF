@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **The boundaries Layout documents are now pinned as tests.** `BoundaryContractTests` holds 67
+  cases (5 facts and 62 theory rows), taken from the probes that produced the sentences in #542:
+  which null argument decides when two are null on `DrawContext` and `RendererContext`, that an
+  outline entry's save refuses the flipped Y, that a foreign page drops a link annotation while
+  keeping the outline entry, that the five `Document.Add` overloads that carry a `TextStyle` defer a
+  non-finite font size (NaN, positive and negative infinity) and an unnamed `Standard14` value to
+  the save, where a nested list's indent is refused (451.2799 saves, 451.28 throws, and the boundary
+  moves with the list's margins), how a heading's level places its bookmark (level 0 is always a
+  top-level entry, and any other level hangs under the most recent earlier entry at exactly one
+  level below it, or at the top level when there is none), and that Symbol and ZapfDingbats measure
+  every non-surrogate Basic Multilingual Plane character as zero at every size probed.
+
+  Documentation goes stale silently: #542's review rounds kept re-measuring partitions an earlier
+  round had already settled, because nothing held the figures. A boundary a test asserts fails
+  loudly instead. A refusal is asserted by exception type, `ParamName` or a fragment of the message,
+  an acceptance by the save completing or the call returning, and a placement by the bytes written.
+  The placement cases carry controls: a Helvetica line beside the Symbol one, and a default indent
+  beside the infinite one. They catch a change that always places the line at the Symbol position or
+  always drops the item text.
+
 ### Changed
 
 - **Every package now targets `net10.0` and `net11.0`, built with the .NET 11 SDK (`global.json`
@@ -52,6 +74,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   except two that were re-measured on 1.30.4 and came out the same: the language-tag table in
   `docs/conformance-divergences.md` and the profile clause counts in `eng/clause-coverage.py`.
 
+- **The roadmap table is generated from a snapshot of the GitHub milestones (#369).** The block was
+  copied by hand into the root README and the eight package READMEs, and had drifted twice.
+  `eng/generate-roadmap.py` now renders it between `roadmap:begin` and `roadmap:end` markers in all
+  nine files from `eng/roadmap/milestones.json`, using each milestone's description as the row text.
+  `--check` compares the files with the snapshot offline, requires exactly one marker pair per
+  file, and runs in the new `docs-roadmap.yml` workflow on pull requests. `--refresh` pulls titles,
+  descriptions and the latest release tag from GitHub and regenerates; it exits 1 if an open
+  milestone is missing from the snapshot, which needs a track added by hand. `--drift` reports a
+  snapshot that no longer matches the live milestones, weekly and on demand, never on a pull
+  request. The table follows the 2026-11-19 renumbering: v2.4 is hardening and navigable
+  documents, v2.5 is accessible documents, extraction and Reader graduation, and the former v2.5
+  to v2.13 are v2.6 to v2.14.
+- **The package READMEs link to the docs by absolute URL.** The roadmap block's links to
+  `docs/pdf20-conformance.md`, the Reader guide and the Layout guide were `../../docs/...`, which
+  rendered with an empty href on the nuget.org page for Reader 2.3.3 (observed in review); they now
+  point at `https://github.com/Tim81/VellumPDF/blob/main/docs/`. This fixes those three links on
+  the package pages. Other links in the package READMEs are
+  unchanged.
+- **Milestone references corrected after the renumbering.** Swept: `v2.N` and bare `2.N` mentions
+  and `Layout [A-I]` mentions in `*.md` outside `CHANGELOG.md`, `docs/iso` and
+  `docs/pdf20-conformance.md`, and in `src/**/*.cs`; each hit was read for whether it names a
+  milestone, a release or neither. Changed: `docs/architecture.md`, `docs/layout-guide.md`,
+  `docs/reader-guide.md`, the Layout and Reader READMEs (capability tables: PDF/A-1 and PDF/A-4
+  are v2.6, the ISO/TS extensions v2.7, Reader graduation v2.5, signature verification v2.14,
+  tables of contents, indexes and widow and orphan control v2.4, table header semantics v2.5),
+  and comments in `PdfReadPage.cs`, `PdfReaderDiagnostic.cs` and `PdfImageColorSpace.cs`. The
+  Reader README and `docs/architecture.md` now say that image extraction and text extraction from
+  simple fonts shipped in 2.3.2, and `docs/architecture.md` says the Layout track runs A to G.
+  Released CHANGELOG sections are unchanged.
+
 ### Fixed
 
 - **Embedded fonts can draw characters above U+FFFF: cmap format 12 is read (#595).** The cmap
@@ -59,33 +111,53 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   was read through format 4, which cannot hold a code point above U+FFFF, so every such character
   mapped to glyph 0; a font whose only Unicode subtable was format 12 threw
   `NotSupportedException`. The parser now adds the format 12 subtable on platform 3 / encoding 10
-  or platform 0 / encoding 4 or 10 to the 16-bit subtable it already read (layout and ordering
-  rules from the OpenType cmap chapter, OpenType 1.9.1, learn.microsoft.com, read 2026-11-19; it
-  is not held under `docs/iso`). Measured with the DejaVu Sans test font: U+1F600 drew glyph 0 and
-  its ToUnicode entry read `<0000> <D83DDE00>` on 2.3.3, and now draws glyph 5857 with
-  `<16E1> <D83DDE00>`; pdftotext returns the emoji from the page and veraPDF accepts the PDF/A-2u
-  build. Deliberate output changes: a document that draws a code point above U+FFFF from such a
-  font changes (those characters were glyph 0), and a font whose only Unicode subtable is format 12
-  now loads. A document that draws only BMP text is unchanged: the inflated stream bodies hash to
-  the same SHA-256 on 2.3.3 and now, for DejaVu Sans, DejaVu Sans cut to its format 4 subtable, and
-  Source Sans 3. The 16-bit subtable keeps every code point it maps, so a font whose format 4 and
-  format 12 subtables disagree on a BMP code point keeps the glyph 2.3.3 drew; format 12 supplies
-  only the code points the 16-bit subtable leaves unmapped. A malformed format 12 subtable beside a
-  usable 16-bit one is ignored, as 2.3.3 loaded such a font; when format 12 is the only Unicode
-  subtable and is malformed, the font is refused with `InvalidDataException` (2.3.3 threw
-  `NotSupportedException` for every such font). Format 12 groups must be sorted, must not overlap,
-  must end at or below U+10FFFF and must fit the length the subtable declares, which bounds the
-  work at the 1,114,112 code points Unicode has.
-- **Preflight now checks the glyph presence of simple TrueType fonts whose only Unicode cmap
-  subtable is format 12 (#595).** `GlyphPresenceRule` shares the cmap parser and skipped any font it
-  could not parse, so on 2.3.3 such a font was never checked. Measured by running `PdfPreflight`
-  (PDF/A-2b) over the same three PDFs on a detached `v2.3.3` build and on this one, each a
-  one-character simple-font file whose embedded DejaVu Sans program has only a format 12 subtable:
-  with the glyph present, both builds report no finding; with the code point mapped to glyph 60000,
-  past the program's glyph count, 2.3.3 reports nothing and this build reports
-  `ISO19005-2:6.2.11.4.1-glyph-present`; with the code point absent from the subtable, neither
-  reports anything, because the rule skips a code point it cannot resolve. The same file with the
-  unmodified DejaVu Sans program, format 4 included, reports nothing on both builds.
+  or platform 0 / encoding 4 or 10 to the 16-bit subtable it already read. Layout and ordering
+  rules are from the OpenType cmap chapter (OpenType 1.9.1, learn.microsoft.com, read 2026-11-19;
+  not held under `docs/iso`). Platform 0 / encoding 10 is read because real fonts carry it
+  (DejaVu Sans does), not because the chapter lists it: its Unicode-platform encoding IDs run 0 to
+  6. Measured with DejaVu Sans: U+1F600 drew glyph 0 and its ToUnicode entry read `<0000>
+  <D83DDE00>` on 2.3.3, and now draws glyph 5857 with `<16E1> <D83DDE00>`; pdftotext returns the
+  emoji from the page and veraPDF accepts the PDF/A-2u build.
+  **Deliberate output changes:** (1) a document that draws a code point above U+FFFF from a font
+  with a format 12 subtable now uses the real glyph. (2) A code point the 16-bit subtable leaves
+  unmapped but format 12 maps now draws its glyph, BMP included. The 16-bit subtable keeps every
+  code point it maps, so a code point both map keeps the glyph 2.3.3 drew. Measured on fonts
+  built from DejaVu Sans and Source Sans 3: with U+00E9 removed from format 4, U+00E9 drew glyph 0
+  and now draws glyph 171; with the Mac format 6 subtable as the 16-bit one, format 12 adds 5,180
+  BMP code points for DejaVu Sans and 1,410 for Source Sans 3. Across the 52 fonts of the
+  comparison that 2.3.3 loaded, every code point 2.3.3 mapped keeps its glyph. (3) A font whose
+  only Unicode subtable is format 12 now loads. A document that draws only BMP text is unchanged
+  when the 16-bit subtable covers that text: the inflated stream bodies hash to the same SHA-256
+  on 2.3.3 and now, for DejaVu Sans, DejaVu Sans cut to its format 4 subtable, and Source Sans 3.
+  **What is refused.** A format 12 subtable is malformed when a group is inverted, ends above
+  U+10FFFF, is not after the group before it, maps a glyph ID at or beyond `maxp.numGlyphs` (past
+  65535 when the font has no readable `maxp`), or when the group count does not fit the length the
+  subtable declares. The OpenType chapter says "character codes that do not correspond to any
+  glyph in the font should be mapped to glyph index 0", so a glyph the font lacks is not a
+  mapping. A malformed subtable beside a usable 16-bit one is ignored, as 2.3.3 loaded such a
+  font. When it is the only Unicode subtable, the font is refused with `NotSupportedException`,
+  the type 2.3.3 threw for every such font, with a message naming the rule. A font whose only
+  Unicode subtable is format 12 is also checked elsewhere, since it is accepted on the strength of
+  a subtable 2.3.3 refused: `head`, `hhea`, `maxp`, `name`, `OS/2`, `post` and `hmtx` must be
+  present and long enough, `head.unitsPerEm` must not be 0, every glyph's `loca` range must lie
+  inside `glyf`, and a CFF table must parse; any failure is `NotSupportedException` too. Not
+  checked: glyph and charstring contents, composite component references, checksums, and every
+  other value in those tables. **Cost:** groups are sorted and disjoint, so a font maps at most
+  1,114,112 code points; a 220-byte subtable of 17 groups over a font with no `maxp` covers
+  1,114,095 of them, which allocated 53,889,264 bytes (`GC.GetAllocatedBytesForCurrentThread`,
+  net10.0). `GlyphPresenceRule` shares the parser and skips a font whose parse throws, so it now
+  runs on well-formed format-12-only fonts it used to skip. Three PDFs built from DejaVu Sans cut to
+  its format 12 subtable (glyph present, code point absent, code point mapped past the glyph
+  count) raise no glyph assertion on this build; 2.3.3 raised none because it threw
+  `NotSupportedException` for each font and the rule skipped it.
+- **`ExternalToolTests.TryRun_CapturesOutputLargerThanTheOsPipeBuffer` no longer times out on a
+  loaded machine (test-only change).** Its child was a 20,000-iteration shell echo loop, which hit
+  the 30 s limit several times on a loaded Windows machine while passing alone. The child now copies
+  a temporary file of about 400KB with `cmd.exe /c type` (`/bin/cat` elsewhere), so the output still
+  exceeds the 64KB pipe buffer but the child does almost no work. The test also asserts the
+  captured stdout equals the file's content. Moving the drain after `WaitForExit` in
+  `ExternalTool.TryRun` still fails the test by timeout. No shipped package changes.
+
 - **Cost-bound tests no longer assert on elapsed time (#400, #456).** A `Stopwatch` checked after a
   call returns cannot end a hang, and a 10 s bound fails on a loaded runner: the main CI run for
   1c61fa6 failed `FindingHigh_A4FlateBombPadding_refusesQuickly_viaCostBudget` at 11.79 s, and #400
@@ -105,6 +177,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and keeps its token-count bound. The Layout cap tests use
   renderers that fail by name after 200,004 `Layout` calls. Remaining `Timeout` values are 300 s hang
   guards, except the `EncryptDictionaryDenialOfServiceTests` pin sized in #456. No public API changes.
+
+## [2.3.4] - 2026-11-19
+
+A security servicing release. VellumPdf's own code is unchanged: `git diff v2.3.3 -- src` is empty
+for the commit this release is built from. The one shipped change is the
+`System.Security.Cryptography.Pkcs` dependency of `VellumPdf.Signing`, raised from 10.0.12 to
+10.0.14. If you use `VellumPdf.Signing` 2.3.3 and do not reference a newer Pkcs yourself, NuGet
+resolves the lowest version the package declares, 10.0.12, so you stay on the vulnerable build
+until you update.
+
+### Security
+
+- **`VellumPdf.Signing` now depends on `System.Security.Cryptography.Pkcs` 10.0.14.** The 10.0.12
+  that 2.3.3 declares is inside the affected range of two advisories, both titled ".NET Denial of
+  Service Vulnerability" and both published 2026-10-13: GHSA-846f-f764-76mx (CVE-2026-84008, high)
+  and GHSA-2fmv-rv2c-59x7 (CVE-2026-70162, medium). Each covers 10.0.0 through 10.0.12 and is
+  patched in 10.0.13. This release declares 10.0.14, which is past both fixes. Test-only packages
+  and the SDK patch also moved; none of them ships in a package.
 
 ## [2.3.3] - 2026-09-20
 
@@ -3881,7 +3971,8 @@ few small additions. No public API was removed.
   headers, and no unbounded allocations driven by attacker-controlled length
   fields.
 
-[Unreleased]: https://github.com/Tim81/VellumPDF/compare/v2.3.3...HEAD
+[Unreleased]: https://github.com/Tim81/VellumPDF/compare/v2.3.4...HEAD
+[2.3.4]: https://github.com/Tim81/VellumPDF/releases/tag/v2.3.4
 [2.3.3]: https://github.com/Tim81/VellumPDF/releases/tag/v2.3.3
 [2.3.2]: https://github.com/Tim81/VellumPDF/releases/tag/v2.3.2
 [2.3.1]: https://github.com/Tim81/VellumPDF/releases/tag/v2.3.1
