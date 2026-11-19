@@ -216,12 +216,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   curves, which saved with no invalid token on 2.3.3 and keeps saving; `PieChart.Slices` says not to
   pass it. A `StartAngle`
   near `1e16` is further from its neighbours than a wedge's sweep, so `1e16` overlapped the wedges
-  and `1e17` collapsed them; the angle is now reduced to a turn with an exact remainder before any
-  sweep is added, and an angle already within a turn is unchanged, so ordinary documents write the
-  same bytes. Explicit column widths such as `1e308, 1e308, 1e308` sum to infinity, scale every
-  column to zero and draw an empty table. That saved with no invalid token on 2.3.3 and keeps
-  saving, so it is documented on `ColWidths` and listed for 3.0 (#484), as is a single
-  dominant finite width (`1e200, 60, 70`).
+  and `1e17` collapsed them; an angle of 1e12 or more in magnitude is now reduced to a turn with an
+  exact remainder before any sweep is added. A smaller angle is unchanged and writes the bytes 2.3.3
+  wrote: measured with three slices, the largest coordinate difference from the reduced angle is
+  2e-5 pt at 1e9 and 1.4e-3 pt at 1e11, and the drawing changes shape at 1e12. Explicit column
+  widths such as `1e308, 1e308, 1e308` sum to infinity, scale every column to zero and draw an empty
+  table. That saved with no invalid token on 2.3.3 and keeps saving, so it is documented on
+  `ColWidths` and listed for 3.0 (#484), as is a single dominant finite width (`1e200, 60, 70`).
 
 - **Justified text in a standard-14 font is stretched to the right edge, and a multi-style line
   no longer overprints (#548, #555).** The word spacing was the slack divided by `CountWordGaps`,

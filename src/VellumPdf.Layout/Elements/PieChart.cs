@@ -246,13 +246,13 @@ public sealed class PieChart
     /// <remarks>
     /// A non-finite angle is refused. Laying the chart out throws
     /// <see cref="ArgumentException"/> and names <c>StartAngle</c>.
-    /// <para>The unit is radians, not degrees. An angle of a full turn or more is reduced to the
-    /// equivalent angle before any wedge is drawn, so you do not have to normalise one yourself
+    /// <para>The unit is radians, not degrees. An angle of 1e12 or more in magnitude is reduced to
+    /// the equivalent angle before any wedge is drawn, so you do not have to normalise one yourself
     /// (#546). Before that, each wedge's end was computed by adding its sweep to the angle, and
     /// doubles near 1e16 are too far apart to hold a sweep: 1e16 overlapped the wedges and 1e17
-    /// collapsed every wedge to a line with no area. An angle already within a turn is used exactly
-    /// as given, so ordinary documents write the same bytes as before. The reduction takes the
-    /// remainder, so a negative angle stays negative.</para>
+    /// collapsed every wedge to a line with no area. A smaller angle is used exactly as given, so a
+    /// document that saved on 2.3.3 writes the same bytes. The reduction takes the remainder, so a
+    /// negative angle stays negative.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised while the chart is laid out, which happens inside

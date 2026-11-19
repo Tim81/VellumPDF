@@ -11,6 +11,9 @@ namespace VellumPdf.Layout.Rendering;
 /// <see cref="PieChart"/>.</remarks>
 public sealed class PieChartRenderer : IRenderer
 {
+    // See Draw: the magnitude of a start angle from which it is reduced to a full turn.
+    private const double NormaliseStartAngleFrom = 1e12;
+
     private readonly PieChart _chart;
     private LayoutBox _occupied;
 
@@ -213,12 +216,17 @@ public sealed class PieChartRenderer : IRenderer
         }
 
         var direction = _chart.Clockwise ? -1.0 : 1.0;
-        // Reduced to a full turn before any sweep is added. Doubles near 1e16 are further apart than
-        // a wedge's sweep, so adding one to such an angle loses it: 1e16 overlapped the wedges and
-        // 1e17 collapsed them to nothing (#546). The remainder is exact, and an angle already
-        // within a turn is unchanged, so the default and every ordinary start angle write the same
-        // bytes as before.
-        var angle = _chart.StartAngle % (2 * Math.PI);
+        // A start angle of 1e12 or more is reduced to a full turn before any sweep is added. Doubles
+        // near 1e16 are further apart than a wedge's sweep, so adding one to such an angle loses it:
+        // 1e16 overlapped the wedges and 1e17 collapsed them to nothing (#546). The remainder is
+        // exact. A smaller angle is left as it was, so that every kept input writes the bytes 2.3.3
+        // wrote. Measured against the reduced angle with three slices at 100 pt: the largest
+        // difference between any two coordinates is 2e-5 pt at 1e9, 1.4e-3 pt at 1e11, then the
+        // drawing changes shape at 1e12 (a different number of curves), 0.15 pt at 1e13, 9 pt at
+        // 1e15 and 105 pt at 1e16.
+        var angle = Math.Abs(_chart.StartAngle) >= NormaliseStartAngleFrom
+            ? _chart.StartAngle % (2 * Math.PI)
+            : _chart.StartAngle;
 
         // A lone drawable slice spans the whole circle; a 360° wedge has coincident radial
         // edges that show as a seam when stroked, so draw a seamless circle instead.
