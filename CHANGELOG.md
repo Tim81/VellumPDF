@@ -130,8 +130,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `PdfCanvas` method used to get a file with an invalid content stream and now gets the exception.
   `ParamName` is null where `PdfReal` reports `value`, and the message formats the value with the
   invariant culture, so positive infinity prints `Infinity`. `AppendArc` refuses a
-  non-finite centre only when it draws an arc: with a zero radius, or a zero or non-finite sweep or
-  radius, it returns without drawing and without throwing.
+  non-finite centre only when it draws an arc: with a zero radius, a `NaN` or positive-infinite
+  radius, or a zero or non-finite sweep, it returns without drawing and without throwing. A negative
+  radius, negative infinity included, throws `ArgumentOutOfRangeException` (`radius`).
 
 - **A non-finite number is mostly not checked before the layout.** An inset, indent, colour channel
   or band height of `NaN` or infinity is accepted by the member that holds it, and the layout runs
@@ -241,17 +242,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `SaveAsync` cancelled after the layout, leaves the document unusable, and every later save throws
   `InvalidOperationException` asking for a new `Document`. A call with two or more defects is
   refused as before, but which defect's exception is reported may differ from 2.3.3: a save
-  precondition is reported before a layout defect, and an already-cancelled token before either.
+  precondition is reported before a layout defect, and an already-cancelled token before both,
+  except that the path checks of `SaveAsync(string)` run at the open, before the token is looked at.
   **Attention**: retrying the same `Document` after a failed layout used to save, with pages doubled
   or lines broken at the first attempt's width, and now throws; build a new `Document`.
-  **Attention**: the destination is checked up front, so `SaveAsync` to a stream that cannot be
-  written to throws `ArgumentException` (parameter `destination`) where it threw
-  `NotSupportedException`, and a linearized `PdfDocument.Save` to a closed stream throws
-  `ArgumentException` where it threw `ObjectDisposedException`. A non-linearized `Save` to such a
-  stream reports `destination` where it reported `stream`. **Attention**: a bad
-  `EstimatedSignatureSizeBytes` throws `ArgumentOutOfRangeException` with `ParamName` `options`
-  before any page is added, where 2.3.3 threw it with `ParamName` `count`, or threw
-  `OutOfMemoryException` for sizes up to 2^30 - 1.
+  **Attention**: the destination is checked up front, so a linearized `PdfDocument.Save` to a
+  closed stream throws `ArgumentException` where it threw `ObjectDisposedException`. A
+  non-linearized `Save` to such a stream reports `destination` where it reported `stream`.
+  **Attention**: a bad `EstimatedSignatureSizeBytes` throws `ArgumentOutOfRangeException` with
+  `ParamName` `options` before any page is added, where 2.3.3 threw it with `ParamName` `count`, or
+  threw `OutOfMemoryException` for sizes up to 2^30 - 1.
 
 - **A failed `Save(string)` or `SaveAsync(string)` no longer destroys the file that was already
   there (#508).** Both used to truncate the path before the layout ran. They now open the target
@@ -298,11 +298,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **A paragraph no longer wraps at U+202F NARROW NO-BREAK SPACE or U+2007 FIGURE SPACE (#562).**
   With U+00A0 these are the white-space characters in UAX #14's GL class, but only U+00A0 was kept,
   so `Pourquoi ?` could wrap before the `?`. Paragraphs, headings and list items now treat all three
-  as part of a word; tables are unchanged. Standard-14 text shows U+202F and U+2007 as a U+00A0
-  space with no `TextEncodingWarning`, where it drew `?` with one, in paragraphs, table cells and
-  bands. An embedded font that lacks the glyph falls back to the glyph of U+00A0, then of a plain
-  space, instead of the missing-glyph box. **Attention**: the fallback space is as wide as U+00A0,
-  wider than a real narrow space.
+  as part of a word; tables are unchanged. This is a deliberate output change: standard-14 text
+  shows U+202F and U+2007 as a U+00A0 space with no `TextEncodingWarning`, where it drew `?` with
+  one, in paragraphs, table cells and bands, and an embedded font that lacks the glyph for U+202F
+  falls back to the glyph of U+00A0, then of a plain space, instead of glyph 0, the missing-glyph
+  box. **Attention**: the fallback space is as wide as U+00A0, wider than a real narrow space.
 
 - **`PdfReader.Open` with `AllowReconstruction = true` no longer allocates hundreds of megabytes on a
   short run of `[` (#610).** The reconstruction walk resumes one byte after a failed construct (two bytes

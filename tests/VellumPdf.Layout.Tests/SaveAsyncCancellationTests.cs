@@ -113,7 +113,7 @@ public sealed class SaveAsyncCancellationTests
         }
     }
 
-    /// <summary>A token that is already cancelled wins over every other defect, as in 2.3.3: a null destination, a stream that cannot be written to and a document with no pages all end with TaskCanceledException.</summary>
+    /// <summary>A token that is already cancelled wins over a null destination, a stream that cannot be written to and a document with no pages, as in 2.3.3: each ends with TaskCanceledException.</summary>
     [Theory]
     [InlineData("null destination")]
     [InlineData("read-only stream")]

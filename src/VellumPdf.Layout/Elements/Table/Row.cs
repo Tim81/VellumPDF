@@ -56,7 +56,7 @@ public sealed class Row
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not from
     /// this property, when a channel is <c>NaN</c> or infinite and the row's cell has no
     /// <see cref="Cell.Background"/> of its own. <see cref="VellumPdf.Canvas.PdfCanvas"/> refuses it
-    /// and <c>ParamName</c> is empty.
+    /// and <c>ParamName</c> is null.
     /// </exception>
     public ColorRgb? Background { get; init; }
 

@@ -15,12 +15,9 @@ namespace VellumPdf.Layout.Core;
 /// <c>NaN</c> or a <c>ColSpan</c> of zero that message is wrong: the input is unusable, and
 /// reducing the content or enlarging the page cannot help.
 ///
-/// Each check is narrower than the property it guards: <c>NaN</c>, positive infinity and negative
-/// infinity take different branches, so each boundary here was measured at the value stated.
-///
 /// A check is made in the layout only where the input yields an invalid file or an exception, the
 /// rule the <c>Document</c> remarks state, and it runs inside the element's own <c>Layout</c> call:
-/// a font size on text that is drawn, a <c>ColSpan</c> below one, a line separator's width, margins
+/// the font size and colour of text that is drawn, a <c>ColSpan</c> below one, a line separator's width, margins
 /// and colour, a table cell's padding, a non-finite table border width, an image extent that is
 /// zero or not finite. The other non-finite insets, indents, band heights and colours are not
 /// checked here. A negative table border width, a table cell's text colour and a running band's

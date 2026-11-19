@@ -43,8 +43,8 @@ public sealed class PdfCanvasNonFiniteTests
         new("TL", 1, (c, a) => c.SetTextLeading(a[0])),
         new("gs fill", 1, (c, a) => c.SetFillAlpha(a[0])),
         new("gs stroke", 1, (c, a) => c.SetStrokeAlpha(a[0])),
-        // AppendArc refuses a non-finite centre. A non-finite radius or angle is a sweep it skips, so those operands
-        // are not part of this theory.
+        // AppendArc refuses a non-finite centre. A NaN or positive-infinite radius and a non-finite sweep are skipped,
+        // so those operands are not part of this theory.
         new("c (arc centre x)", 1, (c, a) => c.AppendArc(a[0], 0, 10, 0, 1.5)),
         new("c (arc centre y)", 1, (c, a) => c.AppendArc(0, a[0], 10, 0, 1.5)),
         // The aligned text methods position through Tm, so their coordinates are refused too.

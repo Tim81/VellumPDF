@@ -87,7 +87,9 @@ internal sealed class ChunkedBufferStream : Stream
 
     /// <summary>
     /// Throws <see cref="TaskCanceledException"/> when <paramref name="cancellationToken"/> is
-    /// cancelled. The asynchronous path save throws this type, not its base type, at every point where it looks at the token, so a <c>catch (TaskCanceledException)</c> keeps working.
+    /// cancelled. The asynchronous saves throw this type, not its base type, at the points where they
+    /// look at the token themselves, so a <c>catch (TaskCanceledException)</c> keeps working. A write
+    /// into the destination receives the token too and raises what the stream raises.
     /// </summary>
     internal static void ThrowIfCanceled(CancellationToken cancellationToken)
     {

@@ -1074,19 +1074,21 @@ public sealed class PdfDocument : IDisposable
     /// the final copy, but does not abort serialisation already in progress.
     /// </para>
     /// </summary>
-    /// <exception cref="ObjectDisposedException">The document has been disposed.</exception>
+    /// <exception cref="ObjectDisposedException">
+    /// The document has been disposed, or <paramref name="destination"/> was already closed, which is
+    /// checked before anything is serialised.
+    /// </exception>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="destination"/> is <see langword="null"/>. A <see langword="null"/> value in a
     /// written <see cref="PdfDictionary"/> and a <see langword="null"/> child of a
     /// <see cref="PdfStructElem"/> are raised from the serialisation, with <c>ParamName</c>
     /// <c>value</c> or <c>child</c>; see <see cref="Save(System.IO.Stream)"/>.
     /// </exception>
-    /// <exception cref="ArgumentException">
-    /// <paramref name="destination"/> cannot be written to, which includes a stream that was already
-    /// closed. It is checked before anything is serialised, so the document is not marked as
-    /// written.
+    /// <exception cref="NotSupportedException">
+    /// <paramref name="destination"/> cannot be written to, which is checked before anything is
+    /// serialised, so the document is not marked as written. It is also thrown when
+    /// <see cref="UseObjectStreams"/> is combined with <see cref="Encrypt"/>.
     /// </exception>
-    /// <exception cref="NotSupportedException"><see cref="UseObjectStreams"/> is combined with <see cref="Encrypt"/>.</exception>
     /// <exception cref="InvalidOperationException">
     /// A PDF/A <see cref="Conformance"/> is set together with <see cref="Encrypt"/>, or
     /// <see cref="Conformance"/> is <see cref="PdfConformance.PdfUA1"/> together with
@@ -1100,15 +1102,18 @@ public sealed class PdfDocument : IDisposable
     /// <exception cref="OperationCanceledException">
     /// <paramref name="cancellationToken"/> is cancelled before the serialisation starts or before the
     /// copy into <paramref name="destination"/>: the task ends with <see cref="TaskCanceledException"/>
-    /// before anything is written. The token is not looked at while the serialisation runs, and during
-    /// the copy <paramref name="destination"/> receives it and decides.
+    /// before anything is written. A token that is already cancelled when the call starts is reported
+    /// ahead of every check except a <see langword="null"/> <paramref name="destination"/>. The token
+    /// is not looked at while the serialisation runs, and during the copy
+    /// <paramref name="destination"/> receives it and decides.
     /// </exception>
     public async Task SaveAsync(Stream destination, CancellationToken cancellationToken = default)
     {
         // The whole of the destination check, not only the null: Save runs against an in-memory
         // buffer here, so an unwritable destination would be found only after the document had been
         // written and marked.
-        // A token that is already cancelled wins over every other defect, with TaskCanceledException.
+        // A null destination is refused first; a token that is already cancelled comes next, with
+        // TaskCanceledException, ahead of the other checks.
         ArgumentNullException.ThrowIfNull(destination);
         if (cancellationToken.IsCancellationRequested)
             throw new TaskCanceledException(null, null, cancellationToken);

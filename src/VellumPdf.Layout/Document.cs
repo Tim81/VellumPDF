@@ -48,7 +48,8 @@ namespace VellumPdf.Layout;
 /// <para>A call with two or more defects is refused, but which defect's exception is reported can
 /// differ between releases. A save precondition (null destination, disposed document, an unwritable
 /// stream, an option conflict) is reported before a layout defect, and an already cancelled token
-/// before either.</para>
+/// before both. The exception is <see cref="SaveAsync(string, System.Threading.CancellationToken)"/>,
+/// whose path checks run when the file is opened, before the token is looked at.</para>
 /// <para><b>Do not pass</b> a non-finite number to any of these members. The saved cases are not
 /// reported yet, because there is no diagnostics channel (#607), and 3.0 refuses every non-finite
 /// value at the member that holds it.</para>
@@ -499,7 +500,8 @@ public sealed class Document : IDisposable
     /// font metric non-finite; see <see cref="UseTrueTypeFont"/>.
     /// </exception>
     /// <exception cref="OperationCanceledException">
-    /// <paramref name="cancellationToken"/> was already cancelled when this method was called.
+    /// <paramref name="cancellationToken"/> was already cancelled when this method was called, or is
+    /// cancelled while the file is being read.
     /// </exception>
     public async Task<EmbeddedFontHandle> LoadTrueTypeFontAsync(string path, CancellationToken cancellationToken = default)
     {
@@ -1418,11 +1420,18 @@ public sealed class Document : IDisposable
     /// <para>A document with no pages throws as well. Add at least one element before you
     /// save.</para>
     /// </remarks>
-    /// <inheritdoc cref="Save(System.IO.Stream)" path="/exception[@cref='T:System.ArgumentNullException' or @cref='T:System.InvalidOperationException' or @cref='T:System.IO.IOException' or @cref='T:System.ObjectDisposedException' or @cref='T:System.ArgumentOutOfRangeException' or @cref='T:System.NotSupportedException' or @cref='T:System.NullReferenceException' or @cref='T:System.IndexOutOfRangeException' or @cref='T:System.IO.InvalidDataException' or @cref='T:System.OverflowException' or @cref='T:System.OutOfMemoryException']"/>
+    /// <inheritdoc cref="Save(System.IO.Stream)" path="/exception[@cref='T:System.ArgumentNullException' or @cref='T:System.InvalidOperationException' or @cref='T:System.IO.IOException' or @cref='T:System.ArgumentOutOfRangeException' or @cref='T:System.NullReferenceException' or @cref='T:System.IndexOutOfRangeException' or @cref='T:System.IO.InvalidDataException' or @cref='T:System.OverflowException' or @cref='T:System.OutOfMemoryException']"/>
+    /// <exception cref="NotSupportedException">
+    /// <paramref name="destination"/> cannot be written to. That is refused before the layout runs, so
+    /// the document is untouched. It is also raised when <see cref="UseObjectStreams"/> is true and
+    /// <see cref="Encrypt"/> has been called.
+    /// </exception>
+    /// <exception cref="ObjectDisposedException">
+    /// <paramref name="destination"/> was already closed, which is refused before the layout runs, or
+    /// this <see cref="Document"/> was already disposed.
+    /// </exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="destination"/> cannot be written to, which includes a stream that was already
-    /// closed. That is refused before the layout runs and reports <c>destination</c>, so the
-    /// document is untouched. The margins, header and footer leave
+    /// The margins, header and footer leave
     /// the content area no positive size, or an element refuses its own input while being laid
     /// out. The boundary documentation on the individual
     /// properties says which inputs those are. A registered font with a value that makes a font
@@ -1432,12 +1441,14 @@ public sealed class Document : IDisposable
     /// see <see cref="Margins"/>.
     /// </exception>
     /// <exception cref="OperationCanceledException">
-    /// The token is looked at three times: before the layout starts, once it has finished, and once
-    /// serialisation has finished. A cancellation seen at one of those points ends the task with a
-    /// <see cref="TaskCanceledException"/> before anything is written. A failure that comes first
-    /// is reported instead, such as a refused page geometry, an exception from an element, a null
-    /// destination, or a closed or non-writable one, which is refused before the layout. During the
-    /// write, <paramref name="destination"/> receives the token and decides what to raise.
+    /// A token that is already cancelled when the call starts ends the task with a
+    /// <see cref="TaskCanceledException"/> whatever else is wrong, a null, closed or non-writable
+    /// <paramref name="destination"/> included. The token is then looked at when the layout is queued,
+    /// once it has finished, and once serialisation has finished; a cancellation seen at one of those
+    /// points ends the task the same way before anything is written. Only a failure inside the layout,
+    /// such as an element that refuses its input, is reported ahead of a cancellation seen after the
+    /// layout starts. During the write, <paramref name="destination"/> receives the token and
+    /// decides what to raise.
     /// </exception>
     // RS0026 flags multiple overloads with optional parameters as a future-ambiguity risk;
     // Stream and string share no implicit conversion, so overload resolution can never be
@@ -1446,7 +1457,7 @@ public sealed class Document : IDisposable
     public async Task SaveAsync(Stream destination, CancellationToken cancellationToken = default)
 #pragma warning restore RS0026
     {
-        // A token that is already cancelled wins over every other defect.
+        // Before every other check, so an already cancelled token wins over a null or closed destination.
         ChunkedBufferStream.ThrowIfCanceled(cancellationToken);
         BeginSave(destination, asynchronous: true);
         var renderer = CreateRenderer();
@@ -1491,10 +1502,11 @@ public sealed class Document : IDisposable
     /// <b>not</b> tell them apart by parameter name.
     /// </exception>
     /// <exception cref="OperationCanceledException">
-    /// The token is looked at four times, and a cancellation seen at any of them throws
-    /// <see cref="TaskCanceledException"/>: before the layout starts; once the
+    /// A cancellation seen at any point where the token is looked at throws
+    /// <see cref="TaskCanceledException"/>: before the layout starts, once the file is open; once the
     /// layout has finished, when the serialisation is queued; once the PDF is built, before the file is
-    /// emptied; and in the copy into the file, before each chunk. A cancellation seen at one of the
+    /// emptied; and in the copy into the file, before each chunk. The copy passes the token to each
+    /// write into the file as well, which decides what that write raises. A cancellation seen at one of the
     /// first three leaves the file that was there untouched; see the remarks. A failure that comes
     /// first, such as a refused page geometry or an exception from an element, is reported instead.
     /// While the PDF is being built the token is not looked at. The copy is the one point after the
@@ -1520,8 +1532,8 @@ public sealed class Document : IDisposable
         {
             try
             {
-                // After the open, which reports a bad path or a lock, and before
-                // anything else, so an already cancelled token wins over every other defect.
+                // After the open, which reports a bad path or a lock, and before the other
+                // checks, so a token that is already cancelled wins over those.
                 ChunkedBufferStream.ThrowIfCanceled(cancellationToken);
                 BeginSave(fs);
                 renderer = CreateRenderer();

@@ -25,8 +25,10 @@ namespace VellumPdf.Canvas;
 /// graphics-state, path, font-size and text-positioning operators alike. Zero, negative and out-of-range finite values
 /// are not refused here; for a colour component that is a "shall" in ISO 32000-2, 8.6.4.3 that
 /// this class does not enforce.
-/// <para><see cref="AppendArc"/> is the one exception to "writes nothing": a non-finite radius or angle gives a sweep it skips without drawing and without throwing. A non-finite
-/// centre is refused.</para>
+/// <para><see cref="AppendArc"/> is the one exception to "writes nothing": a <c>NaN</c> or
+/// positive-infinite radius, or an angle that makes the sweep non-finite, is skipped without drawing and
+/// without throwing. A non-finite centre is refused, and so is a negative radius, negative infinity
+/// included.</para>
 /// <para><b>Attention</b>: a non-finite operand is never written as the token <c>NaN</c> or
 /// <c>Infinity</c>; the call throws instead.</para>
 /// </remarks>
@@ -155,7 +157,10 @@ public sealed class PdfCanvas
     /// Emits <c>c1 c2 … scn</c>. Use with ICCBased or Separation colour spaces
     /// after calling <see cref="SetFillColorSpace"/>.
     /// </summary>
-    /// <inheritdoc cref="MoveTo(double, double)" path="/exception"/>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="components"/> is empty, reported with <c>ParamName</c> <c>components</c>, or a
+    /// component is <c>NaN</c> or infinite; see the type remarks.
+    /// </exception>
     public PdfCanvas SetFillColor(params ReadOnlySpan<double> components)
     {
         if (components.IsEmpty)
@@ -176,7 +181,10 @@ public sealed class PdfCanvas
     /// Emits <c>c1 c2 … SCN</c>. Use with ICCBased or Separation colour spaces
     /// after calling <see cref="SetStrokeColorSpace"/>.
     /// </summary>
-    /// <inheritdoc cref="MoveTo(double, double)" path="/exception"/>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="components"/> is empty, reported with <c>ParamName</c> <c>components</c>, or a
+    /// component is <c>NaN</c> or infinite; see the type remarks.
+    /// </exception>
     public PdfCanvas SetStrokeColor(params ReadOnlySpan<double> components)
     {
         if (components.IsEmpty)
@@ -329,8 +337,12 @@ public sealed class PdfCanvas
     /// </summary>
     /// <exception cref="ArgumentException">
     /// The centre is <c>NaN</c> or infinite and the arc is drawn; see the type remarks. A zero
-    /// radius, or a zero or non-finite sweep or radius, returns without drawing and without
-    /// checking the centre.
+    /// radius, a <c>NaN</c> or positive-infinite radius, or a zero or non-finite sweep, returns
+    /// without drawing and without checking the centre.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="radius"/> is negative, negative infinity included. It is checked before the
+    /// sweep, so a negative radius is refused even when the sweep is zero.
     /// </exception>
     public PdfCanvas AppendArc(double cx, double cy, double radius, double startAngle, double endAngle)
     {

@@ -122,12 +122,19 @@ public static class SigningExtensions
     /// <see cref="NotSupportedException"/> when <see cref="VellumPdf.Layout.Document.Encrypt"/>
     /// has been called.</para>
     /// </summary>
-    /// <inheritdoc cref="SigningExtensions.Sign(PdfDocument, Stream, PdfSignatureSettings)" path="/exception[@cref='T:System.ArgumentNullException']"/>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="doc"/>, <paramref name="output"/> or <paramref name="settings"/> is null. The
+    /// layout that runs inside this call also raises it for the nulls listed on
+    /// <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/>, and the document then cannot be
+    /// signed again.
+    /// </exception>
     /// <exception cref="ArgumentException">
     /// Thrown when the certificate in <paramref name="settings"/> does not include a private key
     /// and neither <see cref="PdfSignatureSettings.ExternalPrivateKey"/> nor
     /// <see cref="PdfSignatureSettings.ExternalSigner"/> is set, or when the chosen
-    /// <see cref="PadesLevel"/> requires a client that is not set.
+    /// <see cref="PadesLevel"/> requires a client that is not set. The layout that runs inside this
+    /// call raises it too, for the causes listed on
+    /// <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/>.
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// Thrown when encryption has already been configured on the document, or when
@@ -171,12 +178,19 @@ public static class SigningExtensions
     /// <see cref="Task.Run(Action)"/>, and any PAdES B-T/B-LT/B-LTA network calls (TSA
     /// timestamping, OCSP/CRL fetches) are awaited instead of blocking the calling thread.
     /// </summary>
-    /// <inheritdoc cref="SigningExtensions.Sign(PdfDocument, Stream, PdfSignatureSettings)" path="/exception[@cref='T:System.ArgumentNullException']"/>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="doc"/>, <paramref name="output"/> or <paramref name="settings"/> is null. The
+    /// layout that runs inside this call also raises it for the nulls listed on
+    /// <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/>, and the document then cannot be
+    /// signed again.
+    /// </exception>
     /// <exception cref="ArgumentException">
     /// Thrown when the certificate in <paramref name="settings"/> does not include a private key
     /// and none of <see cref="PdfSignatureSettings.ExternalPrivateKey"/> or
     /// <see cref="PdfSignatureSettings.ExternalSigner"/> is set, or when the chosen
-    /// <see cref="PadesLevel"/> requires a client that is not set.
+    /// <see cref="PadesLevel"/> requires a client that is not set. The layout that runs inside this
+    /// call raises it too, for the causes listed on
+    /// <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/>.
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// Thrown when encryption has already been configured on the document.

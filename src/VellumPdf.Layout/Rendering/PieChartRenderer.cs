@@ -129,7 +129,7 @@ public sealed class PieChartRenderer : IRenderer
     /// <remarks>See <see cref="IRenderer.Draw"/>.</remarks>
     /// <exception cref="ArgumentException">
     /// A slice or stroke colour with a <c>NaN</c> or infinite channel is refused by <see cref="VellumPdf.Canvas.PdfCanvas"/> where it
-    /// is written (<c>ParamName</c> is empty). It is written only for a slice with a positive angle.
+    /// is written (<c>ParamName</c> is null). It is written only for a slice with a positive angle.
     /// </exception>
     public void Draw(DrawContext ctx)
     {

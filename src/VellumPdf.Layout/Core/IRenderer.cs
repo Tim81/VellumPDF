@@ -60,7 +60,7 @@ public interface IRenderer
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// A coordinate or extent the renderer writes is <c>NaN</c> or infinite, which
-    /// <see cref="VellumPdf.Canvas.PdfCanvas"/> refuses (<c>ParamName</c> is empty). <see cref="Layout"/>
+    /// <see cref="VellumPdf.Canvas.PdfCanvas"/> refuses (<c>ParamName</c> is null). <see cref="Layout"/>
     /// does not check every box it hands to <c>Draw</c>, so such a value can reach it.
     /// </exception>
     void Draw(DrawContext context);

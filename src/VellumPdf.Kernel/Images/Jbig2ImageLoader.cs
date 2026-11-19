@@ -24,9 +24,8 @@ namespace VellumPdf.Images;
 /// embedded. The first page is the one named by the page association of the first
 /// page-information segment (type 48). Its segments are kept, with the segments that belong to no
 /// page (page association 0), and the segments of every other page are dropped. The width and height
-/// are the first page's. The page count in a file header is not checked against the pages the file
-/// holds. A first page-information segment with page association 0 names no page, so every segment is
-/// kept.</para>
+/// are the first page's. A first page-information segment with page association 0 names no page, so
+/// every segment is kept.</para>
 ///
 /// <para><see cref="ImageDecodeMode.DecodeToRaster"/> still decodes the regions of the other pages and
 /// discards the result, so a later page with a region this loader cannot decode, or whose data length
@@ -38,7 +37,7 @@ namespace VellumPdf.Images;
 /// <para><b>A file with the Annex D header is loaded only if it complies with T.88, and only in
 /// <see cref="ImageDecodeMode.Passthrough"/>.</b> A file that breaks T.88 is refused with
 /// <see cref="InvalidDataException"/> naming the clause: a page-information segment that is not on
-/// page 1 (7.2.6, 7.3.2), a segment on any other page (7.2.6), a first segment on page 1 that is not
+/// page 1 (7.2.6, 7.3.2), a segment on any other page (7.2.6, 7.4.8), a first segment on page 1 that is not
 /// the page information (7.4.8), a region on no page (7.3.2), a header page count other than 1
 /// (D.4.3), segment numbers that do not increase through the file (7.2, D.1, D.2; a repeated number
 /// is refused too, though T.88 does not say numbers are unique), a reserved segment type (7.3), or a
