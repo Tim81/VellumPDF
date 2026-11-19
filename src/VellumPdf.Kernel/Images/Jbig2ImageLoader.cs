@@ -35,6 +35,16 @@ namespace VellumPdf.Images;
 /// A multi-page file with that header, which 2.3.3 could not read, is refused with
 /// <see cref="InvalidDataException"/> naming the page count, in both modes.</para>
 ///
+/// <para><b>A file with the Annex D header is loaded only if it complies, and only in
+/// <see cref="ImageDecodeMode.Passthrough"/>.</b> 2.3.3 refused every such file, so a file that breaks
+/// T.88 is refused with <see cref="InvalidDataException"/> naming the clause: a page-information
+/// segment that is not on page 1 (7.2.6, 7.3.2), a segment on any other page (7.2.6), a first segment
+/// on page 1 that is not the page information (7.4.8), a region on no page (7.3.2), or a header page
+/// count other than 1 (D.4.3). <see cref="ImageDecodeMode.DecodeToRaster"/> refuses every such file,
+/// compliant or not, because the raster it writes would render as a negative: it stores the decoded
+/// bits unchanged as <c>/DeviceGray</c> without <c>/Decode</c>. That inversion is also in what 2.3.3
+/// wrote for the input it could read, and is not changed here.</para>
+///
 /// <para><b>Unknown segment length:</b> a segment whose data length field is 0xFFFFFFFF (ITU-T T.88
 /// 7.2.7) is not embedded. This loader does not scan the data for the end marker that clause
 /// describes, so it cannot say where such a segment ends. <see cref="ImageDecodeMode.Passthrough"/>
@@ -120,7 +130,8 @@ public static class Jbig2ImageLoader
     /// <see cref="InvalidDataException"/> naming it, because this loader does not scan for the end
     /// marker. Only the first page of a multi-page file is embedded, unless the first page-information
     /// segment has page association 0, which keeps every segment. A file with the Annex D header and
-    /// more than one page is refused, naming the page count.
+    /// more than one page is refused, naming the page count, and so is one that does not comply with
+    /// T.88 (see the remarks on this type).
     /// </exception>
     public static PdfImageXObject Load(byte[] jbig2)
         => Load(jbig2, ImageLoadOptions.Default);
@@ -157,7 +168,9 @@ public static class Jbig2ImageLoader
     /// mode, unless the first page-information segment has page association 0, which keeps every
     /// segment. Under <see cref="ImageDecodeMode.DecodeToRaster"/> the other pages are decoded and
     /// discarded, so what 2.3.3 refused on them is refused, and a file with the Annex D header and more
-    /// than one page is refused in both modes, naming the page count.
+    /// than one page is refused in both modes, naming the page count. Every file with that header is
+    /// refused under <see cref="ImageDecodeMode.DecodeToRaster"/>, and in either mode when it does not
+    /// comply with T.88; see the remarks on this type.
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// Thrown under <see cref="ImageDecodeMode.DecodeToRaster"/> when the file contains
