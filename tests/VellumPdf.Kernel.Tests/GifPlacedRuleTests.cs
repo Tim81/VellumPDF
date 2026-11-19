@@ -167,6 +167,121 @@ public sealed class GifPlacedRuleTests
         Assert.Equal((5, 4), (placed.Width, placed.Height));
     }
 
+    // ------------------------------------------------ Appendix F: the width of the final code
+
+    /// <summary>
+    /// A file whose LZW minimum code size is 2, so the code width starts at 3 and the widths in these
+    /// streams are small enough to write by hand as (code, width) pairs. The pairs are the output of
+    /// a standard LZW encoder over the colour indices named at each test, with the width the decoder
+    /// reads each code at.
+    /// </summary>
+    private static byte[] FileWithWidths(int width, int height, (int Code, int Width)[] codes)
+    {
+        var data = new List<byte>();
+        var buffer = 0;
+        var bits = 0;
+        foreach (var (code, codeWidth) in codes)
+        {
+            Assert.InRange(code, 0, (1 << codeWidth) - 1);
+            buffer |= code << bits;
+            bits += codeWidth;
+            while (bits >= 8)
+            {
+                data.Add((byte)buffer);
+                buffer >>= 8;
+                bits -= 8;
+            }
+        }
+
+        if (bits > 0)
+            data.Add((byte)buffer);
+
+        var bytes = new List<byte>();
+        bytes.AddRange("GIF89a"u8.ToArray());
+        bytes.AddRange([(byte)width, (byte)(width >> 8), (byte)height, (byte)(height >> 8)]);
+        bytes.AddRange([0x81, 0x00, 0x00]);
+        bytes.AddRange([200, 10, 20, 30, 220, 40, 50, 60, 230, 240, 250, 70]);
+        bytes.Add(0x2C);
+        bytes.AddRange([0, 0, 0, 0, (byte)width, (byte)(width >> 8), (byte)height, (byte)(height >> 8), 0x00]);
+        bytes.Add(2);
+        bytes.Add((byte)data.Count);
+        bytes.AddRange(data);
+        bytes.Add(0x00);
+        bytes.Add(0x3B);
+        return [.. bytes];
+    }
+
+    // Colour indices 0 1 2 3 repeated over 20 pixels (5 x 4). The 12th code, 8, adds table entry 15 and
+    // that makes the next entry 16, which widens the decoder from 4 bits to 5.
+    private static readonly (int Code, int Width)[] FiveByFourCodes =
+        [(4, 3), (0, 3), (1, 3), (2, 3), (3, 4), (6, 4), (8, 4), (10, 4), (9, 4), (7, 4), (13, 4), (8, 4)];
+
+    // Colour indices 0 3 2 1 1 2 3 0 2 1 0 3 (4 x 3). The last code, 6, leaves the width at 4 and the next
+    // table entry at 15, so code 13 is a valid table entry after the last pixel.
+    private static readonly (int Code, int Width)[] FourByThreeCodes =
+        [(4, 3), (0, 3), (3, 3), (2, 3), (1, 4), (1, 4), (2, 4), (3, 4), (0, 4), (8, 4), (6, 4)];
+
+    // Colour indices 0 2 0 2 1 3 1 3 2 0 2 0 (4 x 3). The last code, 7, leaves the next entry at 13, so code
+    // 13 is not in the table.
+    private static readonly (int Code, int Width)[] FourByThreeShortTableCodes =
+        [(4, 3), (0, 3), (2, 3), (6, 3), (1, 4), (3, 4), (9, 4), (7, 4), (7, 4)];
+
+    /// <summary>
+    /// Where the last data code's table entry widens the decoder, the End of Information code may be
+    /// written at the new width or one bit narrower (<see cref="GifEncoder"/> writes the narrower).
+    /// </summary>
+    [Theory]
+    [InlineData(5)]
+    [InlineData(4)]
+    public void Place_endOfInformationAtEitherWidthWhereTheLastCodeWidens_loads(int endWidth)
+    {
+        var gif = FileWithWidths(5, 4, [.. FiveByFourCodes, (5, endWidth)]);
+
+        Assert.Equal((5, 4), (GifImageLoader.Load(gif, Placed).Width, GifImageLoader.Load(gif, Placed).Height));
+    }
+
+    /// <summary>
+    /// Without a widening the width is not in doubt, so a data code after the last pixel is a data
+    /// code even when its low bits equal the End of Information code: code 13 is 1101 at width 4, and
+    /// read one bit narrower it would be 101, which is 5. With or without a real End of Information
+    /// code after it, the file carries more pixels than it declares.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Place_dataCodeWhoseLowBitsAreEndOfInformationAfterTheLastPixel_isRefusedAndDefaultLoads(bool thenEndOfInformation)
+    {
+        (int Code, int Width)[] tail = thenEndOfInformation ? [(13, 4), (5, 4)] : [(13, 4)];
+        var gif = FileWithWidths(4, 3, [.. FourByThreeCodes, .. tail]);
+
+        AssertRefusedOnlyWithTheOption(gif, "decodes more pixels than the 12 its descriptor declares: a code follows the last pixel");
+    }
+
+    /// <summary>The same with a code that is not in the table (next entry 13), which is junk at either width.</summary>
+    [Fact]
+    public void Place_codeNotInTheTableAfterTheLastPixelWhoseLowBitsAreEndOfInformation_isRefusedAndDefaultLoads()
+    {
+        var gif = FileWithWidths(4, 3, [.. FourByThreeShortTableCodes, (13, 4)]);
+
+        AssertRefusedOnlyWithTheOption(gif, "decodes more pixels than the 12 its descriptor declares: a code follows the last pixel");
+    }
+
+    /// <summary>
+    /// A Clear code after the last pixel resets the width to the minimum, so a second Clear and the End
+    /// of Information code behind it are read at 3 bits even though the width was 4 before the first.
+    /// </summary>
+    [Fact]
+    public void Place_clearClearEndOfInformationAfterTheWidthHasGrown_loads()
+    {
+        // 0 1 2 3 repeated over 12 pixels (4 x 3), then Clear at the grown width and Clear, End of
+        // Information at the reset width.
+        (int Code, int Width)[] codes =
+            [(4, 3), (0, 3), (1, 3), (2, 3), (3, 4), (6, 4), (8, 4), (10, 4), (3, 4), (4, 4), (4, 3), (5, 3)];
+        var gif = FileWithWidths(4, 3, codes);
+
+        Assert.Equal((4, 3), (GifImageLoader.Load(gif, Placed).Width, GifImageLoader.Load(gif, Placed).Height));
+    }
+
     // ------------------------------------------------ section 22.a and Appendix F: pixel count
 
     /// <summary>The reviewer's file: a 1x1 frame whose stream codes 4 pixels.</summary>

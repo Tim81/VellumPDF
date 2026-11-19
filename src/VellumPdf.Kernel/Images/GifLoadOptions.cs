@@ -26,8 +26,7 @@ public sealed record GifLoadOptions
     /// descriptor declares or that has no End of Information code or Block Terminator, a Graphic
     /// Control Extension that is not one sub-block of 4 bytes or a second one before the same
     /// image, and a top-level block that is not an extension, an image descriptor or the trailer.
-    /// Each message names the rule and its section. Without the option the same files load as on
-    /// 2.3.3.
+    /// Each message names the rule and its section. Without the option none of these is refused.
     /// <para>The canvas is allocated at the screen's size, 4 bytes a pixel, so the option costs up
     /// to about 400 MB for a file of a few dozen bytes. Do not enable it for untrusted files
     /// without checking the screen size first.</para>

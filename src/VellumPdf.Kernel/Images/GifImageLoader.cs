@@ -330,9 +330,10 @@ public static class GifImageLoader
         // checks run after the LZW decode, so a file that is malformed in the ways Load documents
         // is refused with those messages first.
         //
-        // Section 22.c shows the image data ending in a Block Terminator, and Appendix F says the
-        // code that terminates the data "must appear before Block Terminator". Running off the end
-        // of the file without one is accepted by default.
+        // Section 16 defines the Block Terminator as the zero-length sub-block that ends a sequence
+        // of Data Sub-blocks (section 22.c gives the image data as such a sequence), and the
+        // Appendix F raster-data diagram shows it after the code that "must appear before Block
+        // Terminator". Running off the end of the file without one is accepted by default.
         if (!terminated)
             throw new InvalidDataException(
                 "GIF image data is not ended by a Block Terminator (section 22.c, section 16).");
@@ -464,6 +465,7 @@ public static class GifImageLoader
         int codeMask = (1 << codeSize) - 1;
         int prevCode = -1;
         var sawEndOfInformation = false;
+        var lastCodeWidened = false;
 
         // Initialise root entries (palette indices 0..clearCode-1)
         for (var i = 0; i < clearCode; i++)
@@ -493,6 +495,7 @@ public static class GifImageLoader
             var code = bitBuf & codeMask;
             bitBuf >>= codeSize;
             bitsLeft -= codeSize;
+            lastCodeWidened = false;
 
             if (code == eoiCode) { sawEndOfInformation = true; break; }
 
@@ -596,6 +599,7 @@ public static class GifImageLoader
                 {
                     codeSize++;
                     codeMask = (1 << codeSize) - 1;
+                    lastCodeWidened = true;
                 }
             }
 
@@ -633,7 +637,7 @@ public static class GifImageLoader
                     : $"GIF image data ended after {outIdx} of {pixelCount} pixels.");
 
         if (strict)
-            RequireEndOfInformation(stream, minCodeSize, pixelCount, bitBuf, bitsLeft, streamPos, codeSize);
+            RequireEndOfInformation(stream, minCodeSize, pixelCount, bitBuf, bitsLeft, streamPos, codeSize, lastCodeWidened);
 
         return output;
     }
@@ -644,13 +648,17 @@ public static class GifImageLoader
     /// carries no pixel); a data code is more pixels than declared, and no End of Information at
     /// all is a missing terminating code. Padding bits after it in its last byte are not codes.
     ///
-    /// The first code after the last pixel is read at the decoder's current width and, when the
-    /// last code's table entry has just widened it, also one bit narrower. The specification does
-    /// not say which width the final code takes at that boundary, and <see cref="GifEncoder"/>
-    /// writes the narrower one, so both are accepted rather than refusing the library's own output.
+    /// The first code after the last pixel is read at the decoder's current width. When the table
+    /// entry added for the last data code is what widened that width, it is also read one bit
+    /// narrower: the specification does not say which width the final code takes at a widening,
+    /// and <see cref="GifEncoder"/> writes the narrower one, so both are accepted rather than
+    /// refusing the library's own output. Anywhere else the width is not in doubt, and a narrower
+    /// read would take a data code whose low bits equal the End of Information code for that
+    /// code.
     /// </summary>
     private static void RequireEndOfInformation(
-        byte[] stream, int minCodeSize, int pixelCount, int bitBuf, int bitsLeft, int streamPos, int codeSize)
+        byte[] stream, int minCodeSize, int pixelCount, int bitBuf, int bitsLeft, int streamPos, int codeSize,
+        bool lastCodeWidened)
     {
         var clearCode = 1 << minCodeSize;
         var eoiCode = clearCode + 1;
@@ -663,7 +671,7 @@ public static class GifImageLoader
                 bitsLeft += 8;
             }
 
-            var narrowest = first && codeSize > minCodeSize + 1 ? codeSize - 1 : codeSize;
+            var narrowest = first && lastCodeWidened ? codeSize - 1 : codeSize;
             var consumed = 0;
             for (var width = codeSize; width >= narrowest && consumed == 0; width--)
             {
