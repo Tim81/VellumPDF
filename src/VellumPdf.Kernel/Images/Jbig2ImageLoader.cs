@@ -46,7 +46,16 @@ namespace VellumPdf.Images;
 /// without decoding: a region segment of fewer than 17 bytes (7.4.1), a generic region segment whose
 /// flags set reserved bits 5-7, set GBTEMPLATE under MMR, or leave out its AT flags (7.4.6.2, 7.4.6.3),
 /// and a tables segment of fewer than 9 bytes or with reserved bit 7 of its flags set (B.2, B.2.1). The coded
-/// bytes after those fields are passed through unread, as are the data parts of every other segment type. <see cref="ImageDecodeMode.DecodeToRaster"/> refuses every file with that header, compliant or not,
+/// bytes after those fields are passed through unread, as are the data parts of every other segment type.
+/// The segment headers are checked too: a referred-to segment count subfield of 5 or 6, a retain bit set for a
+/// referral that is not there (7.2.4), a referral to a segment that does not have a lower number or is on another
+/// page (7.2.5, 7.2.6, 7.3.2), any referral from a page-information, end-of-page, end-of-stripe, end-of-file,
+/// profiles, tables or colour palette segment (7.3.1), page-information, end-of-page or end-of-stripe segments
+/// on no page and an end-of-file segment on a page (7.3.2), page-information data that is not 19 bytes, end-of-page
+/// or end-of-file data that is not empty, an end-of-file segment that is not last (7.4.8, 7.4.9, 7.4.11), and file
+/// header flags that leave bit 2 clear for a 12-pixel AT template or bit 3 clear for a coloured region (D.4.2).
+/// A file whose flags byte sets a reserved bit 4-7 is not read as an Annex D header at all, so it never reaches
+/// these checks. <see cref="ImageDecodeMode.DecodeToRaster"/> refuses every file with that header, compliant or not,
 /// because the raster it writes would render as a negative: it stores the decoded bits unchanged as
 /// <c>/DeviceGray</c> without <c>/Decode</c>, while T.88 (5.6, NOTE 1) gives 1 as black as the typical reading. A file without the header
 /// decodes to the same raster, with the same inversion.</para>
@@ -101,6 +110,7 @@ public static class Jbig2ImageLoader
     private const int SegmentTypeEndOfFile = 51;
     private const int SegmentTypeProfiles = 52;
     private const int SegmentTypeTables = 53;
+    private const int SegmentTypeColourPalette = 54;
     private const int SegmentTypeExtension = 62;
 
     /// <summary>
@@ -297,13 +307,19 @@ public static class Jbig2ImageLoader
                     $"JBIG2: the file header says {count} pages, and a PDF image holds one (T.88 D.4.3).");
         }
 
+        // D.4.2 "Bits 4-7 Reserved; must be 0" is not checked here: CandidateLayouts reads the bytes after
+        // the ID string as an Annex D header only when those bits are clear, so a file that sets one never
+        // reaches this gate and is read as the ID string followed directly by segments, as on 2.3.3.
+        var data = jbig2.AsSpan(dataStart);
+        var pageOfSegment = new Dictionary<uint, int>();
         var firstAssociated = true;
         var firstPageInformation = true;
         var endOfPageCount = 0;
         var lastPagedType = -1;
         long previousNumber = -1;
-        foreach (var seg in segments)
+        for (var index = 0; index < segments.Count; index++)
         {
+            var seg = segments[index];
             // 7.2 introduction, D.1 and D.2: "no segment may precede a segment having a lower number
             // than it". T.88 does not say whether two segments may share a number; a referred-to
             // segment is named by its number alone, so a repeat is refused too.
@@ -319,7 +335,7 @@ public static class Jbig2ImageLoader
                 throw new InvalidDataException(
                     $"JBIG2: segment {number} has type {seg.Type}, which T.88 reserves (T.88 7.3).");
 
-            RequireWellFormedSegmentData(seg, jbig2.AsSpan(dataStart));
+            RequireWellFormedSegmentData(seg, data);
 
             // 7.2.6: "The first page must be numbered 1"; this file has one page, so 0 or 1 only.
             if (seg.PageAssociation is not (0 or 1))
@@ -357,7 +373,12 @@ public static class Jbig2ImageLoader
                     $"JBIG2: region segment {seg.Number} (type {seg.Type}) is not associated with any " +
                     "page (T.88 7.3.2).");
             }
+
+            RequireWellFormedHeader(seg, index == segments.Count - 1, data, pageOfSegment);
+            pageOfSegment[number] = seg.PageAssociation;
         }
+
+        RequireFileFlagsToCoverTheFeaturesUsed(jbig2[FileHeader.Length], segments, data);
 
         // 7.4.9: "The last segment that is associated with any page must be an end of page segment.
         // Each page must have exactly one end of page segment associated with it."
@@ -366,6 +387,128 @@ public static class Jbig2ImageLoader
                 "JBIG2: page 1 must end with exactly one end-of-page segment, and the last segment " +
                 "associated with a page must be that segment (T.88 7.4.9).");
     }
+
+    /// <summary>
+    /// Refuses a segment header or fixed-length segment that breaks a T.88 rule readable without decoding:
+    /// the referred-to segment count, retention flags and referred-to segment numbers (7.2.4 to 7.2.6), the
+    /// page associations and references each type allows (7.3.1, 7.3.2), the length of the page-information,
+    /// end-of-page and end-of-file data parts (7.4.8, 7.4.9, 7.4.11), and the end-of-file segment being last.
+    /// </summary>
+    private static void RequireWellFormedHeader(
+        in SegmentHeader seg, bool isLast, ReadOnlySpan<byte> data, Dictionary<uint, int> pageOfSegment)
+    {
+        var refs = seg.References;
+
+        // 7.2.4: "This three-bit subfield must not contain values of 5 and 6."
+        if (refs.CountField is 5 or 6)
+            throw new InvalidDataException(
+                $"JBIG2: segment {seg.Number} has {refs.CountField} in the count subfield of its referred-to " +
+                "segment count and retention flags, which T.88 does not allow (7.2.4).");
+
+        // 7.2.4: the retain bits of referred-to segments that are not there "must contain 0". Bit 0 is for
+        // the segment itself and bit K for the Kth referred-to segment, so bits 0 to Count are in use.
+        var retentionBits = refs.CountField == 7 ? refs.RetentionLength * 8 : 5;
+        for (var bit = refs.Count + 1; bit < retentionBits; bit++)
+        {
+            if (((data[refs.RetentionOffset + bit / 8] >> (bit % 8)) & 1) != 0)
+                throw new InvalidDataException(
+                    $"JBIG2: segment {seg.Number} refers to {refs.Count} segments but sets the retain bit " +
+                    $"for referred-to segment {bit}, which T.88 requires to be 0 (7.2.4).");
+        }
+
+        var number = unchecked((uint)seg.Number);
+        for (var i = 0; i < refs.Count; i++)
+        {
+            var at = refs.EntryOffset + i * refs.EntryBytes;
+            uint target = 0;
+            for (var b = 0; b < refs.EntryBytes; b++)
+                target = (target << 8) | data[at + b];
+
+            // 7.2.5: "it must refer to only segments with lower segment numbers".
+            if (target >= number)
+                throw new InvalidDataException(
+                    $"JBIG2: segment {seg.Number} refers to segment {target}, but a segment may refer only " +
+                    "to segments with lower numbers (T.88 7.2.5).");
+
+            // 7.2.6 and 7.3.2: a segment on a page refers to segments of no page or of its own page; a
+            // segment of no page "must not refer to any segment that is associated with any page". A
+            // referred-to segment the file does not hold cannot be placed, so it is not judged here.
+            if (pageOfSegment.TryGetValue(target, out var targetPage)
+                && targetPage != 0 && targetPage != seg.PageAssociation)
+                throw new InvalidDataException(
+                    $"JBIG2: segment {seg.Number} on page {seg.PageAssociation} refers to segment {target}, " +
+                    $"which is on page {targetPage} (T.88 7.2.6, 7.3.2).");
+        }
+
+        // 7.3.1: these types "must not refer to any other segments".
+        if (seg.Type is >= SegmentTypePageInformation and <= SegmentTypeColourPalette && refs.Count != 0)
+            throw new InvalidDataException(
+                $"JBIG2: segment {seg.Number} (type {seg.Type}) refers to {refs.Count} segments, which T.88 " +
+                "does not allow for its type (7.3.1).");
+
+        // 7.3.2: page information, end of page and end of stripe "must be associated with some page"; end of
+        // file "must not be associated with any page". Profiles, tables and colour palette segments may be
+        // associated with a page or not.
+        if (seg.Type is SegmentTypePageInformation or SegmentTypeEndOfPage or SegmentTypeEndOfStripe
+            && seg.PageAssociation == 0)
+            throw new InvalidDataException(
+                $"JBIG2: segment {seg.Number} (type {seg.Type}) is not associated with a page, which T.88 " +
+                "requires of its type (7.3.2).");
+        if (seg.Type == SegmentTypeEndOfFile && seg.PageAssociation != 0)
+            throw new InvalidDataException(
+                $"JBIG2: end-of-file segment {seg.Number} is associated with page {seg.PageAssociation}, " +
+                "which T.88 does not allow (7.3.2).");
+
+        // 7.4.8: width, height, two resolutions (4 bytes each), flags (1) and striping information (2).
+        if (seg.Type == SegmentTypePageInformation && seg.DataLength != PageInformationLength)
+            throw new InvalidDataException(
+                $"JBIG2: page-information segment {seg.Number} has {seg.DataLength} bytes of data, but T.88 " +
+                $"7.4.8 defines {PageInformationLength}.");
+
+        // 7.4.9 and 7.4.11: "Its segment data length field must be zero."
+        if (seg.Type is SegmentTypeEndOfPage or SegmentTypeEndOfFile && seg.DataLength != 0)
+            throw new InvalidDataException(
+                $"JBIG2: segment {seg.Number} (type {seg.Type}) has {seg.DataLength} bytes of data, but T.88 " +
+                "gives it none (7.4.9, 7.4.11).");
+
+        // 7.4.11: "If a file contains an end of file segment, it must be the last segment."
+        if (seg.Type == SegmentTypeEndOfFile && !isLast)
+            throw new InvalidDataException(
+                $"JBIG2: end-of-file segment {seg.Number} is not the last segment (T.88 7.4.11).");
+    }
+
+    /// <summary>
+    /// D.4.2: file header flags bit 2 "must be 1" if a generic region uses the 12-pixel AT template, and bit 3
+    /// if a region is coloured. The segments say which: EXTTEMPLATE with GBTEMPLATE 0 and no MMR (7.4.6.2,
+    /// 7.4.6.3) and COLEXTFLAG in the region flags (7.4.1.5).
+    /// </summary>
+    private static void RequireFileFlagsToCoverTheFeaturesUsed(
+        byte fileFlags, List<SegmentHeader> segments, ReadOnlySpan<byte> data)
+    {
+        foreach (var seg in segments)
+        {
+            if (!IsRegionSegment(seg.Type)) continue;
+
+            // RequireWellFormedSegmentData has already shown the region information is there.
+            if ((data[seg.DataOffset + RegionInformationLength - 1] & 0x08) != 0 && (fileFlags & 0x08) == 0)
+                throw new InvalidDataException(
+                    $"JBIG2: region segment {seg.Number} is coloured, but bit 3 of the file header flags is 0 " +
+                    "(T.88 D.4.2).");
+
+            if (seg.Type is SegmentTypeIntermediateGenericRegion or SegmentTypeImmediateGenericRegion
+                or SegmentTypeImmediateLosslessGenericRegion)
+            {
+                var flags = data[seg.DataOffset + RegionInformationLength];
+                if ((flags & 0x01) == 0 && (flags & 0x06) == 0 && (flags & 0x10) != 0 && (fileFlags & 0x04) == 0)
+                    throw new InvalidDataException(
+                        $"JBIG2: generic region segment {seg.Number} uses the template with 12 AT pixels, but " +
+                        "bit 2 of the file header flags is 0 (T.88 D.4.2).");
+            }
+        }
+    }
+
+    // 7.4.8: width, height, X and Y resolution (4 bytes each), page flags (1), striping information (2).
+    private const int PageInformationLength = 19;
 
     /// <summary>
     /// Refuses a segment whose data part is too short for the fields T.88 puts at its start, or sets a
@@ -483,10 +626,13 @@ public static class Jbig2ImageLoader
         public readonly int DataOffset;
         /// <summary>Segment data length in bytes. -1 = unknown (variable-length).</summary>
         public readonly long DataLength;
+        /// <summary>The referred-to segment count and numbers (§7.2.4, §7.2.5), located in the header bytes.</summary>
+        public readonly ReferenceInfo References;
 
         public SegmentHeader(int number, int type, int pageAssociation,
-            int headerStart, int headerEnd, int dataOffset, long dataLength)
+            int headerStart, int headerEnd, int dataOffset, long dataLength, ReferenceInfo references)
         {
+            References = references;
             Number = number;
             Type = type;
             PageAssociation = pageAssociation;
@@ -503,7 +649,22 @@ public static class Jbig2ImageLoader
 
     /// <summary>One segment header as it is read, before it is known where the segment's data is.</summary>
     private readonly record struct RawHeader(
-        int Number, int Type, int PageAssociation, int HeaderStart, int HeaderEnd, long DataLength);
+        int Number, int Type, int PageAssociation, int HeaderStart, int HeaderEnd, long DataLength,
+        ReferenceInfo References);
+
+    /// <summary>
+    /// Where a segment header keeps its referred-to segment count, retention flags and referred-to segment
+    /// numbers (T.88 7.2.4, 7.2.5), as offsets into the span the header was read from, so the Annex D gate
+    /// can read them without the parser keeping a copy.
+    /// </summary>
+    /// <param name="CountField">The three most significant bits of the first count byte: 0 to 4 is the short form, 7 the long form, 5 and 6 are not allowed.</param>
+    /// <param name="Count">The number of referred-to segments.</param>
+    /// <param name="RetentionOffset">The offset of the first retention byte; in the short form it is the count byte, whose low five bits are the flags.</param>
+    /// <param name="RetentionLength">The number of retention bytes.</param>
+    /// <param name="EntryOffset">The offset of the first referred-to segment number.</param>
+    /// <param name="EntryBytes">The width of each referred-to segment number: 1, 2 or 4.</param>
+    private readonly record struct ReferenceInfo(
+        int CountField, int Count, int RetentionOffset, int RetentionLength, int EntryOffset, int EntryBytes);
 
     /// <summary>
     /// Reads one segment header (§7.2) at <paramref name="pos"/> and leaves <paramref name="pos"/> just
@@ -538,6 +699,9 @@ public static class Jbig2ImageLoader
             throw new InvalidDataException("JBIG2: truncated referred-to segment count.");
         var refFlagByte = data[pos];
         int refCount = (refFlagByte >> 5) & 0x7;
+        var countField = refCount;
+        var retentionOffset = pos;
+        var retentionLength = 1;
 
         if (refCount == 7)
         {
@@ -550,6 +714,8 @@ public static class Jbig2ImageLoader
             var retentionBytes = (refCount + 8) / 8;
             if (pos + retentionBytes > data.Length)
                 throw new InvalidDataException("JBIG2: truncated referred-to retention flags.");
+            retentionOffset = pos;
+            retentionLength = retentionBytes;
             pos += retentionBytes;
         }
         else
@@ -564,6 +730,7 @@ public static class Jbig2ImageLoader
         var refSectionBytes = (long)refCount * refEntryBytes;
         if (pos + refSectionBytes > data.Length)
             throw new InvalidDataException("JBIG2: truncated referred-to segment numbers.");
+        var entryOffset = pos;
         pos += (int)refSectionBytes;
 
         // §7.2.6 Segment page association.
@@ -592,7 +759,9 @@ public static class Jbig2ImageLoader
 
         long dataLength = rawLength == 0xFFFF_FFFF ? -1L : (long)rawLength;
 
-        return new RawHeader(segNumber, segType, pageAssociation, headerStart, pos, dataLength);
+        return new RawHeader(
+            segNumber, segType, pageAssociation, headerStart, pos, dataLength,
+            new ReferenceInfo(countField, refCount, retentionOffset, retentionLength, entryOffset, refEntryBytes));
     }
 
     /// <summary>
@@ -629,7 +798,7 @@ public static class Jbig2ImageLoader
 
             segments.Add(new SegmentHeader(
                 h.Number, h.Type, h.PageAssociation,
-                h.HeaderStart, h.HeaderEnd, dataOffset, h.DataLength));
+                h.HeaderStart, h.HeaderEnd, dataOffset, h.DataLength, h.References));
         }
 
         return segments;
@@ -691,7 +860,7 @@ public static class Jbig2ImageLoader
 
             segments.Add(new SegmentHeader(
                 h.Number, h.Type, h.PageAssociation,
-                h.HeaderStart, h.HeaderEnd, (int)dataPos, h.DataLength));
+                h.HeaderStart, h.HeaderEnd, (int)dataPos, h.DataLength, h.References));
             dataPos += h.DataLength;
         }
 

@@ -2625,8 +2625,234 @@ public sealed class Jbig2ImageTests
             BuildSegment(2, 49, 1, []),
         ];
 
-        Assert.Equal(8, Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments)).Width);
-        Assert.Equal(8, Jbig2ImageLoader.Load(RandomAccess(0x00, PageCountOne, [.. segments, BuildSegment(9, 51, 0, [])])).Width);
+        // D.4.2: bit 2 of the file flags must be 1 when a generic region uses the 12-pixel AT template.
+        var fileFlags = flags == 0x10 ? 0x04 : 0x00;
+        Assert.Equal(8, Jbig2ImageLoader.Load(Sequential((byte)(0x01 | fileFlags), PageCountOne, segments)).Width);
+        Assert.Equal(8, Jbig2ImageLoader.Load(RandomAccess((byte)fileFlags, PageCountOne, [.. segments, BuildSegment(9, 51, 0, [])])).Width);
+    }
+
+    // ── Annex D header rules readable without decoding: references, page associations, lengths, file flags ──
+
+    /// <summary>One segment as a header and a data part, so the random-access organisation can place them apart.</summary>
+    private static (byte[] Header, byte[] Data) Seg(
+        int number, int type, int page, byte[]? data = null, byte[]? countField = null, byte[]? referredTo = null)
+    {
+        data ??= [];
+        var whole = RawSegment(number, type, false, countField ?? [0x00], referredTo ?? [], page, data);
+        return (whole[..^data.Length], data);
+    }
+
+    private static byte[] SequentialOf(byte fileFlags, IEnumerable<(byte[] Header, byte[] Data)> segments) =>
+        [.. IdString, fileFlags, .. PageCountOne, .. segments.SelectMany(s => s.Header.Concat(s.Data))];
+
+    private static byte[] RandomAccessOf(byte fileFlags, IEnumerable<(byte[] Header, byte[] Data)> segments) =>
+    [
+        .. IdString, fileFlags, .. PageCountOne,
+        .. segments.SelectMany(s => s.Header),
+        .. segments.SelectMany(s => s.Data),
+    ];
+
+    private static List<(byte[] Header, byte[] Data)> ValidPage() =>
+    [
+        Seg(0, 53, 0, new byte[9]),
+        Seg(1, 48, 1, BuildPageInfoSegmentData(8, 1)),
+        Seg(2, 38, 1, MmrRegionData()),
+        Seg(3, 49, 1),
+    ];
+
+    /// <summary>A tables segment of no page, then <paramref name="offender"/> (number 1, page 0), then the page.</summary>
+    private static List<(byte[] Header, byte[] Data)> PageZeroOffender((byte[] Header, byte[] Data) offender) =>
+    [
+        Seg(0, 53, 0, new byte[9]),
+        offender,
+        Seg(2, 48, 1, BuildPageInfoSegmentData(8, 1)),
+        Seg(3, 38, 1, MmrRegionData()),
+        Seg(4, 49, 1),
+    ];
+
+    /// <summary>
+    /// Each row breaks one T.88 header rule: the count subfield (7.2.4), retain bits of absent referrals (7.2.4),
+    /// referred-to numbers (7.2.5), page associations and references by type (7.2.6, 7.3.1, 7.3.2), the data length
+    /// of page-information, end-of-page and end-of-file segments (7.4.8, 7.4.9, 7.4.11) and the position of the
+    /// end-of-file segment (7.4.11). The same segments without the Annex D header load, as on 2.3.3.
+    /// </summary>
+    [Theory]
+    [InlineData("count subfield 5", "count subfield")]
+    [InlineData("count subfield 6", "count subfield")]
+    [InlineData("retain bit of an absent referral, no referrals", "retain bit for referred-to segment 1")]
+    [InlineData("retain bit of an absent referral, one referral", "retain bit for referred-to segment 2")]
+    [InlineData("retain bit of an absent referral, three referrals", "retain bit for referred-to segment 4")]
+    [InlineData("retain bit of an absent referral, long form", "retain bit for referred-to segment 6")]
+    [InlineData("refers to a higher number", "lower numbers")]
+    [InlineData("refers to itself", "lower numbers")]
+    [InlineData("page 0 refers to a page 1 segment", "which is on page 1")]
+    [InlineData("page information refers", "does not allow for its type")]
+    [InlineData("end of page refers", "does not allow for its type")]
+    [InlineData("end of stripe refers", "does not allow for its type")]
+    [InlineData("end of file refers", "does not allow for its type")]
+    [InlineData("profiles refers", "does not allow for its type")]
+    [InlineData("tables refers", "does not allow for its type")]
+    [InlineData("colour palette refers", "does not allow for its type")]
+    [InlineData("end of page on page 0", "not associated with a page")]
+    [InlineData("end of stripe on page 0", "not associated with a page")]
+    [InlineData("end of file on page 1", "associated with page 1")]
+    [InlineData("page information of 20 bytes", "defines 19")]
+    [InlineData("end of page with data", "gives it none")]
+    [InlineData("end of file with data", "gives it none")]
+    [InlineData("colour region, file flags bit 3 clear", "bit 3 of the file header flags")]
+    [InlineData("12 AT template, file flags bit 2 clear", "bit 2 of the file header flags")]
+    public void Load_AnnexDFile_HeaderRuleBroken_IsRefused(string shape, string expectedMessage)
+    {
+        var segments = ValidPage();
+        byte[] colourRegion = MmrRegionData();
+        colourRegion[16] = 0x08;
+        var twelveAt = new byte[18 + 32];
+        WriteInt32(twelveAt, 0, 8);
+        WriteInt32(twelveAt, 4, 1);
+        twelveAt[17] = 0x10;
+        var endOfFile = Seg(9, 51, 0);
+        switch (shape)
+        {
+            case "count subfield 5": segments[2] = Seg(2, 38, 1, MmrRegionData(), [0xA0], new byte[5]); break;
+            case "count subfield 6": segments[2] = Seg(2, 38, 1, MmrRegionData(), [0xC0], new byte[6]); break;
+            case "retain bit of an absent referral, no referrals": segments[2] = Seg(2, 38, 1, MmrRegionData(), [0x02]); break;
+            case "retain bit of an absent referral, one referral": segments[2] = Seg(2, 62, 1, [], [0x24], [0]); break;
+            case "retain bit of an absent referral, three referrals": segments[2] = Seg(2, 62, 1, [], [0x70], [0, 0, 0]); break;
+            case "retain bit of an absent referral, long form":
+                segments[2] = Seg(2, 62, 1, [], [0xE0, 0, 0, 5, 0x40], [0, 0, 0, 0, 0]);
+                break;
+            case "refers to a higher number": segments[2] = Seg(2, 62, 1, [], [0x20], [5]); break;
+            case "refers to itself": segments[2] = Seg(2, 62, 1, [], [0x20], [2]); break;
+            case "page 0 refers to a page 1 segment":
+                segments.Insert(3, Seg(3, 62, 0, [], [0x20], [1]));
+                segments[4] = Seg(4, 49, 1);
+                break;
+            case "page information refers": segments[1] = Seg(1, 48, 1, BuildPageInfoSegmentData(8, 1), [0x20], [0]); break;
+            case "end of page refers": segments[3] = Seg(3, 49, 1, [], [0x20], [0]); break;
+            case "end of stripe refers": segments.Insert(3, Seg(3, 50, 1, new byte[4], [0x20], [0])); segments[4] = Seg(4, 49, 1); break;
+            case "end of file refers": endOfFile = Seg(9, 51, 0, [], [0x20], [0]); break;
+            case "profiles refers": segments = PageZeroOffender(Seg(1, 52, 0, [], [0x20], [0])); break;
+            case "tables refers": segments = PageZeroOffender(Seg(1, 53, 0, new byte[9], [0x20], [0])); break;
+            case "colour palette refers": segments = PageZeroOffender(Seg(1, 54, 0, [], [0x20], [0])); break;
+            case "end of page on page 0": segments[3] = Seg(3, 49, 0); break;
+            case "end of stripe on page 0": segments.Insert(3, Seg(3, 50, 0, new byte[4])); segments[4] = Seg(4, 49, 1); break;
+            case "end of file on page 1": endOfFile = Seg(9, 51, 1); break;
+            case "page information of 20 bytes": segments[1] = Seg(1, 48, 1, [.. BuildPageInfoSegmentData(8, 1), 0x00]); break;
+            case "end of page with data": segments[3] = Seg(3, 49, 1, [0x00]); break;
+            case "end of file with data": endOfFile = Seg(9, 51, 0, [0x00]); break;
+            case "colour region, file flags bit 3 clear": segments[2] = Seg(2, 38, 1, colourRegion); break;
+            default: segments[2] = Seg(2, 39, 1, twelveAt); break;
+        }
+
+        var all = segments;
+        var sequential = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(SequentialOf(0x01, [.. all, endOfFile])));
+        var randomAccess = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(RandomAccessOf(0x00, [.. all, endOfFile])));
+
+        Assert.True(sequential.Message.Contains(expectedMessage, StringComparison.Ordinal), $"{shape}: {sequential.Message}");
+        Assert.True(randomAccess.Message.Contains(expectedMessage, StringComparison.Ordinal), $"{shape}: {randomAccess.Message}");
+        // Without the Annex D header the same segments are 2.3.3's, which reads none of these fields.
+        Assert.Equal(8, Jbig2ImageLoader.Load(Embedded([.. all.Select(s => s.Header.Concat(s.Data).ToArray())])).Width);
+    }
+
+    /// <summary>
+    /// An end-of-file segment that is not the last (7.4.11) is refused in the sequential organisation; the
+    /// random-access organisation ends its headers at the end-of-file segment, so it cannot hold the shape.
+    /// </summary>
+    [Fact]
+    public void Load_AnnexDFile_SegmentAfterTheEndOfFile_IsRefused()
+    {
+        var segments = ValidPage();
+        segments.Add(Seg(8, 51, 0));
+        segments.Add(Seg(9, 53, 0, new byte[9]));
+
+        var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(SequentialOf(0x01, segments)));
+
+        Assert.Contains("is not the last segment", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>The same rules met load: lower referred-to numbers, retain bits within the count, flags that cover the features used.</summary>
+    [Theory]
+    [InlineData("referral to a page 0 segment, retain bits set", 0x00)]
+    [InlineData("referral to a page 1 segment", 0x00)]
+    [InlineData("long form with all retain bits", 0x00)]
+    [InlineData("four referrals with all retain bits", 0x00)]
+    [InlineData("profiles on page 1", 0x00)]
+    [InlineData("tables on page 1", 0x00)]
+    [InlineData("colour palette on page 1", 0x00)]
+    [InlineData("page 0 extension referring to page 0", 0x00)]
+    [InlineData("colour region, file flags bit 3 set", 0x08)]
+    [InlineData("12 AT template, file flags bit 2 set", 0x04)]
+    [InlineData("12 AT flag bit under MMR needs no file flag", 0x00)]
+    [InlineData("12 AT flag bit under template 1 needs no file flag", 0x00)]
+    public void Load_AnnexDFile_HeaderRulesMet_Loads(string shape, int extraFileFlags)
+    {
+        var segments = ValidPage();
+        switch (shape)
+        {
+            case "referral to a page 0 segment, retain bits set": segments[2] = Seg(2, 62, 1, [], [0x23], [0]); break;
+            case "referral to a page 1 segment": segments.Insert(3, Seg(3, 62, 1, [], [0x20], [1])); segments[4] = Seg(4, 49, 1); break;
+            case "four referrals with all retain bits": segments[2] = Seg(2, 62, 1, [], [0x9F], [0, 0, 0, 0]); break;
+            case "long form with all retain bits": segments[2] = Seg(2, 62, 1, [], [0xE0, 0, 0, 5, 0x3F], [0, 0, 0, 0, 0]); break;
+            case "profiles on page 1": segments.Insert(3, Seg(3, 52, 1)); segments[4] = Seg(4, 49, 1); break;
+            case "tables on page 1": segments.Insert(3, Seg(3, 53, 1, new byte[9])); segments[4] = Seg(4, 49, 1); break;
+            case "colour palette on page 1": segments.Insert(3, Seg(3, 54, 1)); segments[4] = Seg(4, 49, 1); break;
+            case "page 0 extension referring to page 0": segments = PageZeroOffender(Seg(1, 62, 0, [], [0x20], [0])); break;
+            case "colour region, file flags bit 3 set":
+                {
+                    var colour = MmrRegionData();
+                    colour[16] = 0x08;
+                    segments[2] = Seg(2, 38, 1, colour);
+                    break;
+                }
+            case "12 AT template, file flags bit 2 set":
+                {
+                    var twelveAt = new byte[18 + 32];
+                    WriteInt32(twelveAt, 0, 8);
+                    WriteInt32(twelveAt, 4, 1);
+                    twelveAt[17] = 0x10;
+                    segments[2] = Seg(2, 39, 1, twelveAt);
+                    break;
+                }
+            case "12 AT flag bit under template 1 needs no file flag":
+                {
+                    var template1 = new byte[18 + 2];
+                    WriteInt32(template1, 0, 8);
+                    WriteInt32(template1, 4, 1);
+                    template1[17] = 0x12;
+                    segments[2] = Seg(2, 38, 1, template1);
+                    break;
+                }
+            default:
+                {
+                    var mmr = MmrRegionData();
+                    mmr[17] = 0x11;
+                    segments[2] = Seg(2, 38, 1, mmr);
+                    break;
+                }
+        }
+
+        Assert.Equal(8, Jbig2ImageLoader.Load(SequentialOf((byte)(0x01 | extraFileFlags), [.. segments, Seg(9, 51, 0)])).Width);
+        Assert.Equal(8, Jbig2ImageLoader.Load(RandomAccessOf((byte)extraFileFlags, [.. segments, Seg(9, 51, 0)])).Width);
+    }
+
+    /// <summary>
+    /// A page height of 0xFFFFFFFF needs the striped bit (7.4.8.6, 7.4.8.2), but the loader cannot place the page
+    /// without a height, so such a page is refused with or without the bit and no separate rule is needed.
+    /// </summary>
+    [Theory]
+    [InlineData(0x00)]
+    [InlineData(0x80)]
+    public void Load_AnnexDFile_UnknownPageHeight_IsRefused(int stripeHighByte)
+    {
+        var pageInfo = BuildPageInfoSegmentData(8, 1);
+        pageInfo[4] = pageInfo[5] = pageInfo[6] = pageInfo[7] = 0xFF;
+        pageInfo[17] = (byte)stripeHighByte;
+        var segments = ValidPage();
+        segments[1] = Seg(1, 48, 1, pageInfo);
+
+        var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(SequentialOf(0x01, segments)));
+
+        Assert.Contains("invalid page dimensions", ex.Message, StringComparison.Ordinal);
     }
 
     /// <summary>

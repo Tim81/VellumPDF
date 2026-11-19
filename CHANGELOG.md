@@ -268,7 +268,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   that is the last one on the page, a region segment of at least 17 bytes, a generic region
   segment whose flags leave bits 5-7 clear, set no template under MMR and are followed by the AT
   flags that arithmetic coding needs, and a tables segment of at least 9 bytes with bit 7 of its
-  flags clear), and otherwise
+  flags clear; and in the headers a count subfield other than 5 or 6, clear retain bits for referrals
+  that are absent, referrals only to lower-numbered segments of the same page or of no page, no
+  referrals from page-information, end-of-page, end-of-stripe, end-of-file, profiles, tables or colour
+  palette segments, page-information, end-of-page and end-of-stripe segments on a page, the
+  end-of-file segment on none and last, exactly 19 bytes of page information, no data in end-of-page
+  and end-of-file segments, and file header flags bit 2 set for a 12-pixel AT template and bit 3 set
+  for a coloured region), and otherwise
   throws `InvalidDataException` naming the clause. It loads only under `Passthrough`:
   `DecodeToRaster` throws `InvalidDataException` for every file with that header, because its
   `/DeviceGray` output would render the page as a negative. A multi-page file with that header, and
