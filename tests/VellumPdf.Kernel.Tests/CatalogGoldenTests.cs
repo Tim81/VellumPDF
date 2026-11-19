@@ -1,6 +1,7 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -22,8 +23,8 @@ namespace VellumPdf.Kernel.Tests;
 /// <c>Save</c> also reserves the output-intent objects before the outline tree and the signing path
 /// reserves them after it, so a document with both an outline and a PDF/A claim numbers them
 /// differently on each path. A refactor that merges the blocks has to keep every one of those
-/// bytes, so each configuration below is pinned twice: by the SHA-256 of the whole file and by the
-/// exact text of the catalog object.
+/// bytes, so each classic-xref configuration below is pinned twice: by the SHA-256 of the whole
+/// file, normalised as described below, and by the exact text of the catalog object.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -32,14 +33,21 @@ namespace VellumPdf.Kernel.Tests;
 /// signature dictionary's <c>/M</c>, which otherwise defaults to the wall clock.
 /// </para>
 /// <para>
-/// The hashes differ by target framework: an empty page content stream is written as
-/// <c>/Filter /FlateDecode /Length 0</c> with no data on net10.0 and as the eight bytes of an empty
-/// zlib stream on net11.0, which moves every later offset. The catalog text is the same on both.
+/// The hash is taken over a normalised file, so it does not move with the runtime's Deflate
+/// output, which the library does not control. The two target frameworks already differ: an empty
+/// page content stream is written as <c>/Filter /FlateDecode /Length 0</c> with no data on net10.0
+/// and as the eight bytes of an empty zlib stream on net11.0, which moves every later offset. <see cref="Normalise"/> inflates every <c>/FlateDecode</c> stream, sets its
+/// <c>/Length</c> to the inflated length, and replaces what depends on a byte offset or on a
+/// compressed size: the cross-reference entries, <c>startxref</c>, <c>/Prev</c>, the numbers of
+/// the linearization dictionary, and the contents of a hint stream or a cross-reference stream.
+/// Everything else is hashed as written, so object order, object numbers, every dictionary key
+/// and every stream's decoded content stay pinned; what the normalisation drops, <c>qpdf --check</c>
+/// checks in the same file. One hash therefore serves both target frameworks.
 /// </para>
 /// <para>
 /// An encrypted file has no hash here: the file key, the <c>/U</c> and <c>/O</c> salts and every
 /// initialisation vector come from the system random number generator, so the same document saved
-/// twice differs in content and in length. Its catalog object and trailer are stable, and are pinned
+/// twice differs in content and can differ in length. Its catalog object and trailer are stable, and are pinned
 /// structurally instead.
 /// </para>
 /// </remarks>
@@ -48,91 +56,78 @@ public sealed class CatalogGoldenTests
     private static readonly DateTimeOffset Pinned = new(2026, 11, 19, 12, 0, 0, TimeSpan.Zero);
 
     /// <summary>
-    /// One configuration's expected output: SHA-256 (upper-case hex) and length for net10.0 and
-    /// net11.0, and the exact catalog object text (<see langword="null"/> where the catalog sits
-    /// inside an object stream and has no plain text).
+    /// One configuration's expected output: the SHA-256 (upper-case hex) of the normalised file, and
+    /// the exact catalog object text (<see langword="null"/> where the catalog sits inside an object
+    /// stream and has no plain text).
     /// </summary>
-    private sealed record Golden(string Sha10, int Length10, string Sha11, int Length11, string? CatalogText)
-    {
-#if NET11_0_OR_GREATER
-        public string Sha => Sha11;
-        public int Length => Length11;
-#else
-        public string Sha => Sha10;
-        public int Length => Length10;
-#endif
-    }
+    private sealed record Golden(string Sha, string? CatalogText);
 
     // The catalog object text is Latin-1 as written; "þÿ\0e\0n" is the UTF-16BE string for "en".
     private static readonly Dictionary<string, Golden> SaveGoldens = new()
     {
         ["plain"] = new(
-            "D3B7403960738BF223352FB2C3B41FA1A56E0334FD185A4E8EC4E387B198C704", 1446,
-            "19FD512B9280D8657B9488097D4E698C4FE0F2DCCDD3CFA0C010F5FC3931C416", 1454,
+            "27A0AE4F14A455A5A5B6F2FB5FE8CB5AE10529207D4E07EFE69ADE8D7C719B61",
             "5 0 obj\n<<\n/Type /Catalog\n/Pages 3 0 R\n/Metadata 6 0 R\n>>\nendobj"),
         ["outline"] = new(
-            "DAD50926A96CB23D7B54FBC5E9CA7E3244412BEE1A2511B6C1650BCB800C9D13", 1675,
-            "9F0108C7913E88F75D77EC75E3C5E2A30EE0456ECA176C722E4DEFCC46568833", 1683,
+            "852224F5B9DBE009F1DDAAA09E12202CA7C174F48EB728D296101E0480F3AAD3",
             "5 0 obj\n<<\n/Type /Catalog\n/Pages 3 0 R\n/Metadata 6 0 R\n/Outlines 8 0 R\n/PageMode /UseOutlines\n>>\nendobj"),
         ["tagged"] = new(
-            "A6E08830FF3A4D7C22D17E4FB737D70E047188BD38E5950F93925D1598B38151", 1747,
-            "BAD58EFC1115E2A3CC142F336E81398CEEC7FF56124DFD83840EF528FCC67D22", 1755,
+            "F48BAA375C14444797EBED06B7F6F9482C602FEFA4E662E3B7A1186E675292BA",
             "5 0 obj\n<<\n/Type /Catalog\n/Pages 3 0 R\n/Metadata 9 0 R\n/MarkInfo <<\n/Marked true\n>>\n/StructTreeRoot 7 0 R\n>>\nendobj"),
         ["pdfa2u"] = new(
-            "EBA9D8AA937522BE0A5A82BA88C520FA3F9E111448547B7A69F00E1C4A459C80", 2721,
-            "48709744F4FDC8802FE778D1CF3BA6502B7995ABFB32CB182976F080683BFFD3", 2729,
+            "4A7AB67B78496976DFDB8829826141AAA96CFB85E02335E3F3E894011494716E",
             "5 0 obj\n<<\n/Type /Catalog\n/Pages 3 0 R\n/Metadata 6 0 R\n/MarkInfo <<\n/Marked true\n>>\n/OutputIntents [8 0 R]\n>>\nendobj"),
         ["pdfua1"] = new(
-            "A71646C224F110AA4320E5FA03DA407A8EC5016CA252A306D208E92E4EAD4AF9", 3086,
-            "80416D381961886D3E9BD7AA5D3831EF739774AD42E12709C50CF40B14B4917D", 3094,
+            "8C75752DF6D452D77562D33D26FFA8CAE5E930E01B5AFF49E7C91AE1EFA26971",
             "5 0 obj\n<<\n/Type /Catalog\n/Pages 3 0 R\n/Metadata 9 0 R\n/MarkInfo <<\n/Marked true\n>>\n/StructTreeRoot 7 0 R\n/OutputIntents [11 0 R]\n/Lang (\u00FE\u00FF\0e\0n)\n/ViewerPreferences <<\n/DisplayDocTitle true\n>>\n>>\nendobj"),
         ["form"] = new(
-            "DD2004ECBF06EB08360ACCBF87D302A8A6FC330C8BA53DFF46BBC1BFE8889410", 2281,
-            "95C128C09A4F2352AC8F7F22846816E0270B6F507D7759B3994513EF10CCE8BC", 2289,
+            "DDE804CBD90758592C4995A53D28BC18E1641CC2BC37D9D6767BB97EE0D095FF",
             "5 0 obj\n<<\n/Type /Catalog\n/Pages 3 0 R\n/Metadata 10 0 R\n/AcroForm <<\n/Fields [9 0 R]\n/NeedAppearances false\n/DR <<\n/Font <<\n/Helv 6 0 R\n/ZaDb 7 0 R\n>>\n>>\n/DA (/Helv 0 Tf 0 g)\n>>\n>>\nendobj"),
+        ["lang"] = new(
+            "B913B1B4ACE57FD9FE1EB6B506D1016363CA5F765D88EB7091FFC1B3616B423C",
+            "5 0 obj\n<<\n/Type /Catalog\n/Pages 3 0 R\n/Metadata 6 0 R\n/Lang (\u00FE\u00FF\0e\0n)\n>>\nendobj"),
+        ["everything"] = new(
+            "E43F27B235F2C1FA4F405FA2C7FFE65B5726BE856DC0111C97C6AE15721176A4",
+            "5 0 obj\n<<\n/Type /Catalog\n/Pages 3 0 R\n/Metadata 13 0 R\n/Outlines 17 0 R\n/PageMode /UseOutlines\n/MarkInfo <<\n/Marked true\n>>\n/StructTreeRoot 7 0 R\n/AcroForm <<\n/Fields [12 0 R]\n/NeedAppearances false\n/DR <<\n/Font <<\n/Helv 9 0 R\n/ZaDb 10 0 R\n>>\n>>\n/DA (/Helv 0 Tf 0 g)\n>>\n/OutputIntents [15 0 R]\n/Lang (\u00FE\u00FF\0e\0n)\n/ViewerPreferences <<\n/DisplayDocTitle true\n>>\n>>\nendobj"),
         ["outline-pdfa2u"] = new(
-            "72ED988396C014C7BDC5B3931FC3C6154ACAF58B0C7B597F34E0477C6067B11D", 2955,
-            "5BEB191919719A0FF92AE5077AEDA3A29237E0913961C52285630253DC8E3A1B", 2963,
+            "21238A6A96E54C96E36C1EC884BF056CCFE8DF51C9ACA8112C4E27286A02E446",
             "5 0 obj\n<<\n/Type /Catalog\n/Pages 3 0 R\n/Metadata 6 0 R\n/Outlines 10 0 R\n/PageMode /UseOutlines\n/MarkInfo <<\n/Marked true\n>>\n/OutputIntents [8 0 R]\n>>\nendobj"),
         ["linearized"] = new(
-            "A8202FC588CA7925DC9B7E574A9A749A9F37A1A47DEC496851C56A866BA3095F", 1885,
-            "8F598D3957CD7F33F08EDC5E8A7F92CBC05CE47DE2EE9E3B375A77FD7516FD3E", 1894,
+            "67BE09CA85A64320B725122DC9492CD17D6D55312526ACAEA9A9FF1E98F75C36",
             "2 0 obj\n<<\n/Type /Catalog\n/Pages 3 0 R\n/Metadata 5 0 R\n>>\nendobj"),
         ["objstm"] = new(
-            "1CA3A482623F64F33E23F257BD6DF6045DC6365683302023CF1A78CD618304D0", 1398,
-            "11CA32D43304DA830DED7786FEC8556C6BDFA39A3480D6ED5FE83C4A81E71BAA", 1406,
+            "980C7AF6BEC4C6235C3E7928DC0AE339AD34EA08E0D148B1E5AB14628AED4EA8",
             null),
     };
 
     private static readonly Dictionary<string, Golden> SignGoldens = new()
     {
         ["plain"] = new(
-            "03456A2CEC99160624FAD8DF050274A618A9A1D47A3C75181C85B50649D11D7D", 18234,
-            "0983C06B5654C424F260B5BD437D605CE9A5238192CD0DD8EC96495BA6923968", 18242,
+            "67CDCDA5E54A4C4AB61656643F4EC41EF9107301F37A9E71C2CCF73DEC0EF760",
             "5 0 obj\n<<\n/Type /Catalog\n/Pages 3 0 R\n/Metadata 8 0 R\n/AcroForm <<\n/Fields [7 0 R]\n/SigFlags 3\n>>\n>>\nendobj"),
         ["outline"] = new(
-            "BED24DE0ACF917BAA4C16C11CC96C3FB5951760D4D04223909F1F3D362C5AA03", 18468,
-            "E8760F7739F94E56B1DFB1F9C827B190C2A33B020FB86EFB95C9C224DCEAAF5B", 18476,
+            "6C2607A7727298E53A03B1297861E0DB2FE3B2950CC0491C91B770B1591D1EB0",
             "5 0 obj\n<<\n/Type /Catalog\n/Pages 3 0 R\n/Metadata 8 0 R\n/AcroForm <<\n/Fields [7 0 R]\n/SigFlags 3\n>>\n/Outlines 10 0 R\n/PageMode /UseOutlines\n>>\nendobj"),
         ["tagged"] = new(
-            "32C29B1AC3929192377E3897427DF207B86104F8EB28562B85F47106CEA0EF00", 18539,
-            "A12DC4C1D26B3C5A7BF6841549F4B5E19CA1767170A6375937B78738E8EBE8DB", 18547,
+            "BD45B32C5D8CBD6CB10F3522A970046C94CA65FD2EA75116457AEB2CC03D047E",
             "5 0 obj\n<<\n/Type /Catalog\n/Pages 3 0 R\n/Metadata 11 0 R\n/AcroForm <<\n/Fields [7 0 R]\n/SigFlags 3\n>>\n/MarkInfo <<\n/Marked true\n>>\n/StructTreeRoot 9 0 R\n>>\nendobj"),
         ["pdfa2u"] = new(
-            "790BCD2D0A81ADD9D2A98F956C46A425AAD6D08D46D01B25E86C70E99A5C23D0", 19513,
-            "A4B157D7E31573C371A95E4D64B9746C3D42132E1995EEFD64491B9091600828", 19521,
+            "BC338C7A3A18909CBEC63B4E2C9817A353EE0EA446678BDE47046F7B33494229",
             "5 0 obj\n<<\n/Type /Catalog\n/Pages 3 0 R\n/Metadata 8 0 R\n/AcroForm <<\n/Fields [7 0 R]\n/SigFlags 3\n>>\n/MarkInfo <<\n/Marked true\n>>\n/OutputIntents [10 0 R]\n>>\nendobj"),
         ["pdfua1"] = new(
-            "40C689E8CE62DE5C55A2CA0BA587D921E56716F03F1777708BAAD67EBB85F37E", 19887,
-            "3F735FCDE995ABDBF8C49711AADEDD950C093C187AD675C46A1E56E96948FE03", 19895,
+            "045DC5F418BCB21D9313EDA5EA6C49F594410CC902B45775BA4B0CCFF9803AF9",
             "5 0 obj\n<<\n/Type /Catalog\n/Pages 3 0 R\n/Metadata 11 0 R\n/AcroForm <<\n/Fields [7 0 R]\n/SigFlags 3\n>>\n/MarkInfo <<\n/Marked true\n>>\n/StructTreeRoot 9 0 R\n/OutputIntents [13 0 R]\n/Lang (\u00FE\u00FF\0e\0n)\n/ViewerPreferences <<\n/DisplayDocTitle true\n>>\n>>\nendobj"),
         ["form"] = new(
-            "1F1266B5C02D5A89C26B033AE40154291BB408B9B815EC8BF26A5836F5397BD1", 19038,
-            "F5D7D9B7817BE52C7F70C14A807B0E8E4A87CE00B52429BB219B085BC1F968CC", 19046,
+            "15F36522C07DA2599C47F8C53AFE5782330090157A963486E216549E5E08D7CF",
             "5 0 obj\n<<\n/Type /Catalog\n/Pages 3 0 R\n/Metadata 12 0 R\n/AcroForm <<\n/Fields [11 0 R 7 0 R]\n/NeedAppearances false\n/DR <<\n/Font <<\n/Helv 8 0 R\n/ZaDb 9 0 R\n>>\n>>\n/DA (/Helv 0 Tf 0 g)\n/SigFlags 3\n>>\n>>\nendobj"),
+        ["lang"] = new(
+            "FC84865289F24A234E1BCAC6C2DF972BBE442992CA26D620AE859DE03EA2A532",
+            "5 0 obj\n<<\n/Type /Catalog\n/Pages 3 0 R\n/Metadata 8 0 R\n/AcroForm <<\n/Fields [7 0 R]\n/SigFlags 3\n>>\n/Lang (\u00FE\u00FF\0e\0n)\n>>\nendobj"),
+        ["everything"] = new(
+            "47E5E48C1842E9B346C3E504377723FD1E6EBFA0D651B04A5E1369BEE25DEB0C",
+            "5 0 obj\n<<\n/Type /Catalog\n/Pages 3 0 R\n/Metadata 15 0 R\n/AcroForm <<\n/Fields [14 0 R 7 0 R]\n/NeedAppearances false\n/DR <<\n/Font <<\n/Helv 11 0 R\n/ZaDb 12 0 R\n>>\n>>\n/DA (/Helv 0 Tf 0 g)\n/SigFlags 3\n>>\n/Outlines 17 0 R\n/PageMode /UseOutlines\n/MarkInfo <<\n/Marked true\n>>\n/StructTreeRoot 9 0 R\n/OutputIntents [19 0 R]\n/Lang (\u00FE\u00FF\0e\0n)\n/ViewerPreferences <<\n/DisplayDocTitle true\n>>\n>>\nendobj"),
         ["outline-pdfa2u"] = new(
-            "417267EA893A6B94F2A79DD3A2320C6BE90D1AE773A469B65102C9154D7C4516", 19747,
-            "E479713CA40692E646BB4114830DDEA1A5ABA87829E5EE39F073C71E7A10888E", 19755,
+            "D78353650BDC53DBE97D5721B0363C0AC63638F29D34069AF9EB91D18C03BB86",
             "5 0 obj\n<<\n/Type /Catalog\n/Pages 3 0 R\n/Metadata 8 0 R\n/AcroForm <<\n/Fields [7 0 R]\n/SigFlags 3\n>>\n/Outlines 10 0 R\n/PageMode /UseOutlines\n/MarkInfo <<\n/Marked true\n>>\n/OutputIntents [12 0 R]\n>>\nendobj"),
     };
 
@@ -168,6 +163,18 @@ public sealed class CatalogGoldenTests
             case "form":
                 document.AddTextField(page, "f1", new PdfRectangle(10, 10, 100, 30));
                 break;
+            case "lang":
+                // /Lang with no conformance level: written whenever Language is set.
+                document.Language = "en";
+                break;
+            case "everything":
+                // Every optional catalog key in one dictionary, so the order of any two shows.
+                document.AddOutlineEntry(new PdfOutlineEntry { Title = "A", DestPage = page, DestTop = 700 });
+                document.AddTextField(page, "f1", new PdfRectangle(10, 10, 100, 30));
+                document.Conformance = PdfConformance.PdfUA1;
+                document.Tagged = true;
+                document.Language = "en";
+                break;
             case "outline-pdfa2u":
                 // The one configuration in which the two paths number the output-intent object differently.
                 document.AddOutlineEntry(new PdfOutlineEntry { Title = "A", DestPage = page, DestTop = 700 });
@@ -201,6 +208,56 @@ public sealed class CatalogGoldenTests
 
     private static string Sha256(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes));
 
+    // An object whose dictionary is followed by a stream. The dictionary may not cross an endobj or a
+    // stream keyword, so it is always the one dictionary of one object.
+    private static readonly Regex StreamObject = new(
+        @"(?<head>\d+ 0 obj\n)(?<dict><<(?:(?!\nstream\n|endobj).)*?>>)(?<mid>\nstream\n)(?<data>.*?)(?<tail>\nendstream)",
+        RegexOptions.Singleline | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// The file with everything that depends on the runtime's compressor removed, as the type remarks
+    /// describe, as Latin-1 text (one char per byte).
+    /// </summary>
+    private static string Normalise(byte[] pdf)
+    {
+        var text = Encoding.Latin1.GetString(pdf);
+        text = StreamObject.Replace(text, m =>
+        {
+            var dictionary = m.Groups["dict"].Value;
+            if (!dictionary.Contains("/FlateDecode", StringComparison.Ordinal))
+                return m.Value;
+            string inflated;
+            if (Regex.IsMatch(dictionary, @"/S \d+"))
+                inflated = "<hint stream>";
+            else if (dictionary.Contains("/Type /XRef", StringComparison.Ordinal))
+                inflated = "<cross-reference stream>";
+            else
+                inflated = Inflate(Encoding.Latin1.GetBytes(m.Groups["data"].Value));
+            dictionary = Regex.Replace(dictionary, @"/Length \d+", "/Length " + inflated.Length);
+            dictionary = dictionary.Replace("/Filter /FlateDecode", "/Filter /FlateDecode (inflated)", StringComparison.Ordinal);
+            return m.Groups["head"].Value + dictionary + m.Groups["mid"].Value + inflated + m.Groups["tail"].Value;
+        });
+        text = Regex.Replace(text, @"\d{10} (\d{5}) ([nf])", "# $1 $2");
+        text = Regex.Replace(text, @"startxref\n\d+", "startxref\n#");
+        text = Regex.Replace(text, @"/Prev \d+", "/Prev #");
+        text = Regex.Replace(text, @"/L \d+ /H \[\d+ \d+\] /O (\d+) /E \d+ /N (\d+) /T \d+", "/L # /H [# #] /O $1 /E # /N $2 /T #");
+        return text;
+    }
+
+    // An empty stream has no zlib header on net10.0, so there is nothing to inflate.
+    private static string Inflate(byte[] data)
+    {
+        if (data.Length == 0)
+            return string.Empty;
+        using var input = new MemoryStream(data);
+        using var zlib = new ZLibStream(input, CompressionMode.Decompress);
+        using var output = new MemoryStream();
+        zlib.CopyTo(output);
+        return Encoding.Latin1.GetString(output.ToArray());
+    }
+
+    private static string NormalisedSha256(byte[] pdf) => Sha256(Encoding.Latin1.GetBytes(Normalise(pdf)));
+
     private static string CatalogObject(byte[] pdf)
     {
         var text = Encoding.Latin1.GetString(pdf);
@@ -211,11 +268,10 @@ public sealed class CatalogGoldenTests
 
     private static void AssertMatches(string label, Golden golden, byte[] first, byte[] second)
     {
-        var shaFirst = Sha256(first);
-        var shaSecond = Sha256(second);
-        Assert.True(shaFirst == shaSecond, $"{label}: two builds in one process differ ({shaFirst} vs {shaSecond}); a golden cannot be pinned.");
-        Assert.True(golden.Sha == shaFirst, $"{label}: expected sha256 {golden.Sha}, computed {shaFirst}.");
-        Assert.True(golden.Length == first.Length, $"{label}: expected {golden.Length} bytes, computed {first.Length}.");
+        var shaFirst = NormalisedSha256(first);
+        var shaSecond = NormalisedSha256(second);
+        Assert.True(shaFirst == shaSecond, $"{label}: two builds in one process differ after normalising ({shaFirst} vs {shaSecond}); a golden cannot be pinned.");
+        Assert.True(golden.Sha == shaFirst, $"{label}: expected normalised sha256 {golden.Sha}, computed {shaFirst}.");
     }
 
     [Theory]
@@ -246,7 +302,7 @@ public sealed class CatalogGoldenTests
         var plain = Sign("plain");
         var linearized = Sign("plain", d => d.Linearize = true);
         Assert.True(Sha256(plain) == Sha256(linearized), "Linearize changed the signing path's bytes.");
-        Assert.True(SignGoldens["plain"].Sha == Sha256(linearized), $"computed {Sha256(linearized)}");
+        Assert.True(SignGoldens["plain"].Sha == NormalisedSha256(linearized), $"computed {NormalisedSha256(linearized)}");
     }
 
     [Fact]
@@ -307,8 +363,8 @@ public sealed class CatalogGoldenTests
         AssertQpdfCheckClean(ms.ToArray(), password: "u");
     }
 
-    // Asserts on qpdf's own verdict line rather than the exit code: --check exits 0 for files it
-    // merely warns about.
+    // Asserts the exit code (qpdf exits 2 for an error and 3 for a warning) and qpdf's own verdict line,
+    // so a change to either shows here.
     private static void AssertQpdfCheckClean(byte[] pdf, string? password)
     {
         var dir = Path.Combine(Path.GetTempPath(), "vellum_catalog_golden_" + Guid.NewGuid().ToString("N"));
