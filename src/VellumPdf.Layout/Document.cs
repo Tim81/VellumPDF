@@ -1300,8 +1300,9 @@ public sealed class Document : IDisposable
     /// It is also raised, from the layout and not from the call that stored the null, for a null an
     /// element holds that is refused where it is used: a <see cref="TextRun"/> style that yields a
     /// word (<c>ParamName</c> <c>Style</c>), a <see cref="Cell"/> text in a table with an
-    /// automatically sized column (<c>content</c>), a <see cref="ListItem"/> child or text on a
-    /// top-level item or its child (<c>child</c>, <c>text</c>), and a <see cref="RunningBand"/>
+    /// automatically sized column (<c>content</c>), a <see cref="ListItem"/> null child held by a
+    /// top-level item (<c>child</c>), a <see cref="ListItem"/> null text on a top-level item or on a
+    /// child of one (<c>text</c>), and a <see cref="RunningBand"/>
     /// template that is drawn (<c>template</c>). A null value in a <see cref="PdfDictionary"/>, or a
     /// null child of a <see cref="PdfStructElem"/> in a tagged document, is refused when the PDF is
     /// written, with <c>ParamName</c> <c>value</c> or <c>child</c>; see
@@ -1581,8 +1582,9 @@ public sealed class Document : IDisposable
     /// It is also raised, from the layout and not from the call that stored the null, for a null an
     /// element holds that is refused where it is used: a <see cref="TextRun"/> style that yields a
     /// word (<c>ParamName</c> <c>Style</c>), a <see cref="Cell"/> text in a table with an
-    /// automatically sized column (<c>content</c>), a <see cref="ListItem"/> child or text on a
-    /// top-level item or its child (<c>child</c>, <c>text</c>), and a <see cref="RunningBand"/>
+    /// automatically sized column (<c>content</c>), a <see cref="ListItem"/> null child held by a
+    /// top-level item (<c>child</c>), a <see cref="ListItem"/> null text on a top-level item or on a
+    /// child of one (<c>text</c>), and a <see cref="RunningBand"/>
     /// template that is drawn (<c>template</c>). A null value in a <see cref="PdfDictionary"/>, or a
     /// null child of a <see cref="PdfStructElem"/> in a tagged document, is refused when the PDF is
     /// written, with <c>ParamName</c> <c>value</c> or <c>child</c>; see

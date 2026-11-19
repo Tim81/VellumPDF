@@ -94,13 +94,13 @@ public sealed class ListItem
     /// then inherits. An empty string is not null and is accepted.
     /// <para>A null <paramref name="text"/> is not refused by this call, because the call cannot
     /// know where the item will sit. <see cref="Text"/> becomes an empty string and the item is
-    /// marked. What happens at the save depends on the position, and it matches the version before
-    /// #547. On a grandchild, an item that is itself another item's child, nothing is read and the
-    /// list renders. On a top-level item, or a child of one, the save throws
+    /// marked. What happens at the save depends on the depth, and it matches the version before
+    /// #547. On a top-level item, or a child of one, the save throws
     /// <see cref="ArgumentNullException"/> naming <c>text</c> when it lays the list out, where it
-    /// used to throw <see cref="NullReferenceException"/>.</para>
-    /// <para><b>Do not pass a null text.</b> On a grandchild it is accepted today and not reported,
-    /// because there is no diagnostics channel yet. 3.0 will throw
+    /// used to throw <see cref="NullReferenceException"/>. On an item deeper than that, a child of a
+    /// child, nothing is read and the list renders.</para>
+    /// <para><b>Do not pass a null text.</b> On a child of a child it is accepted today and not
+    /// reported, because there is no diagnostics channel yet. 3.0 will throw
     /// <see cref="ArgumentNullException"/> from this constructor whatever the position, and the
     /// diagnostics channel will report it before then. <see cref="ListElement.Add(string, TextStyle?)"/>
     /// has no such leniency: its item is always top-level, so it throws from the call.</para>
@@ -146,12 +146,12 @@ public sealed class ListItem
     /// <para>A null <paramref name="child"/> is not refused by this call, because the call cannot
     /// know where this item will sit in the list. It is not added: <see cref="Children"/> never holds
     /// a null. What happens at the save depends on that position, and it matches what the version
-    /// before #523 did. On a grandchild, an item that is itself another item's child, the null is
-    /// never read and the list renders. On a top-level item the save throws
+    /// before #523 did. When this item is top-level the save throws
     /// <see cref="ArgumentNullException"/> naming <c>child</c> when it lays the list out, where it
-    /// used to throw <see cref="NullReferenceException"/>.</para>
-    /// <para><b>Do not pass a null child.</b> On a grandchild it is skipped today and not reported,
-    /// because there is no diagnostics channel yet. 3.0 will throw
+    /// used to throw <see cref="NullReferenceException"/>. When this item is itself another item's
+    /// child, or deeper, its children are never read and the list renders.</para>
+    /// <para><b>Do not pass a null child.</b> Held by a child item it is skipped today and not
+    /// reported, because there is no diagnostics channel yet. 3.0 will throw
     /// <see cref="ArgumentNullException"/> from this call whatever the position, and the diagnostics
     /// channel will report it before then.</para>
     /// </remarks>
@@ -159,7 +159,7 @@ public sealed class ListItem
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this call, when <paramref name="child"/> is <see langword="null"/> and this item is laid
     /// out as a top-level item. <c>ParamName</c> is <c>child</c>. It is not raised when this item is
-    /// a grandchild.
+    /// itself another item's child, whose own children are never read.
     /// </exception>
     public ListItem AddChild(ListItem child)
     {
@@ -186,8 +186,9 @@ public sealed class ListItem
     /// <exception cref="ArgumentNullException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this call, when <paramref name="text"/> is <see langword="null"/> and this item is laid
-    /// out as a top-level item. <c>ParamName</c> is <c>text</c>. It is not raised when this item is
-    /// a grandchild.
+    /// out as a top-level item, which makes the new item a child. <c>ParamName</c> is <c>text</c>. It
+    /// is not raised when this item is itself another item's child, which makes the new item a child
+    /// of a child, and that is never read.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not

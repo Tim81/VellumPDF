@@ -276,9 +276,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     that is replaced before the save never fails;
   - a `PdfStructElem.AddChild(null)` is refused where the structure tree is built, so an untagged
     document saves;
-  - a `ListItem` null child or null text, which `ListItem.AddChild` and the constructor store, is
-    refused only for a top-level item or a child of one, and an item that is itself another item's
-    child, a grandchild, is never read.
+  - a `ListItem` null child, which `ListItem.AddChild` stores, is refused when the item holding
+    it is top-level, and saves when that item is itself another item's child, because a child
+    item's own children are never read; a `ListItem` null text, which the constructor stores, is
+    refused for a top-level item and for a child of one, and saves for a child of a child, which is
+    never read.
   Each of these says not to pass the null, and that 3.0 refuses it at the call. Every other null in
   the list above is refused at the call, because 2.3.3 failed at the call too, or because it
   went into a collection that has no remove or replace member, so no document that held it saved
