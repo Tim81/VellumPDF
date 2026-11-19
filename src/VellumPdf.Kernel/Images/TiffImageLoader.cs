@@ -98,16 +98,12 @@ public static class TiffImageLoader
     /// <exception cref="InvalidDataException">
     /// The bytes are not a TIFF file, or the directory they carry does not describe an image this
     /// loader will read: truncated, a pixel count above the safety limit, a required tag missing,
-    /// or tags that disagree with each other.
+    /// a <c>ColorMap</c> it cannot use, or tags that disagree with each other.
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// The file is a well-formed TIFF using a baseline or extension feature this loader does not
     /// read, such as old-style JPEG compression, a bit depth other than 8 or 16, or an
     /// unsupported photometric interpretation.
-    /// </exception>
-    /// <exception cref="IndexOutOfRangeException">
-    /// A <c>ColorMap</c> tag whose value field is a negative offset, or whose count is zero
-    /// (#512, #534).
     /// </exception>
     /// <remarks>
     /// Treat the input as untrusted. A malformed file raises
@@ -124,27 +120,38 @@ public static class TiffImageLoader
     /// pre-multiplied alpha is emitted as a plain soft mask with no <c>/Matte</c> and
     /// composites wrong (#534). Read the directory yourself if you did not produce the
     /// file.</para>
-    /// <para>A <c>ColorMap</c> tag whose offset is negative, or whose count is zero, throws
-    /// <see cref="IndexOutOfRangeException"/> from an unguarded read (#512, #534). That type
-    /// is not a refusal this loader chose.</para>
+    /// <para>A <c>ColorMap</c> the loader cannot use is refused with
+    /// <see cref="InvalidDataException"/>. The tag is read whenever the directory carries it, under
+    /// every compression, so a negative offset on a tag with a nonzero count and an offset that
+    /// puts the map past the end of the file are refused under all of them. The map is expanded
+    /// only under Compression 1, 5 and 32773, the three that expand a palette, so an empty map on
+    /// a palette photometric is refused only there; under Compression 2, 3, 4 and 7 the same file
+    /// loads. A tag with a count of zero and a negative offset loads unless the empty map is
+    /// refused as above (#512, #534). A directory offset or a scalar tag's value offset within a
+    /// few bytes of <see cref="int.MaxValue"/> is refused with
+    /// <see cref="InvalidDataException"/>.</para>
     /// <para><see langword="null"/> is not checked. It raises
     /// <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>, so a caller
     /// guarding on the documented type will not catch it. You have to reject null yourself. A
     /// later major version will check it.</para>
     /// <para>One size limit applies: a declared pixel count above <b>100,000,000</b> is refused.
     /// Neither edge is limited on its own, so 2,000,000 by 1 is accepted and 10,001 by 10,001 is
-    /// not. The limit is internal and has no public setting. It bounds the damage a header can do
-    /// rather than preventing it: this loader sizes its buffer from the declared dimensions before
-    /// checking the strips are there. A 16-bit greyscale 10,000 by 10,000 header sizes a 200 MB
-    /// buffer before it refuses; four samples of the same size size 800 MB (#536).</para>
-    /// <para>Attention: the safety limit has a hole, and this loader carries it. A strip
-    /// compressed with new-style JPEG (Compression 7) is handed to
-    /// <see cref="JpegImageLoader.Load(byte[])"/>, which takes its dimensions from the JPEG frame
-    /// header and validates nothing. A TIFF declaring ImageWidth 8 and ImageLength 8, whose single
-    /// strip is a JPEG declaring 65535 by 65535, returns an image of 4,294,836,225 pixels. No
-    /// raster is allocated, since those bytes pass through as DCTDecode
-    /// data. But the dimensions reach the image dictionary, and a reader that trusts them can
-    /// be made to allocate from them. If the input is untrusted, check the result's <c>Width</c>
+    /// not. The limit is internal and has no public setting. For uncompressed strips the strip
+    /// list is checked against the file before the raster is allocated, so a header cannot cost
+    /// more than the file carries. Compressed strips are not pre-checked, because a PackBits or
+    /// LZW stream decodes to more bytes than it occupies: a short LZW strip under a large header
+    /// allocates memory sized from the header before it is refused, and a PackBits strip that
+    /// decodes to less than the image needs loads with the rest zero-filled (#536).</para>
+    /// <para>The limit is not checked for a JPEG strip. A strip compressed with new-style JPEG
+    /// (Compression 7) is handed to <see cref="JpegImageLoader.Load(byte[])"/> and passed through
+    /// as DCTDecode data, so the returned size is the one in the JPEG frame header. It is checked
+    /// neither against the limit nor against the directory's <c>ImageWidth</c> and
+    /// <c>ImageLength</c>: an 8 by 8 directory over a strip declaring 65535 by 65535 returns
+    /// 65535 by 65535, and over a 16 by 16 strip it returns 16 by 16, with the directory's size
+    /// dropped and nothing reported. No raster is allocated.</para>
+    /// <para>Do not pass a JPEG-compressed TIFF whose strip is larger than 100,000,000 pixels, or
+    /// whose size disagrees with its <c>ImageWidth</c> and <c>ImageLength</c>. Both are accepted
+    /// today and 3.0 will refuse them. If the input is untrusted, check the result's <c>Width</c>
     /// and <c>Height</c> yourself (#505).</para>
     /// </remarks>
     public static PdfImageXObject Load(byte[] tiff) => Load(tiff, ImageLoadOptions.Default);
@@ -152,27 +159,34 @@ public static class TiffImageLoader
     /// <summary>Decodes baseline TIFF file bytes into a FlateDecode Image XObject with the specified load options.</summary>
     /// <exception cref="InvalidDataException">
     /// The bytes are not a TIFF file, or the directory they carry does not describe an image this
-    /// loader will read: truncated, a pixel count above the safety limit, a required tag missing, or
-    /// tags that disagree with each other.
+    /// loader will read: truncated, a pixel count above the safety limit, a required tag missing,
+    /// a <c>ColorMap</c> it cannot use, or tags that disagree with each other.
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// The file is a well-formed TIFF using a feature this loader does not read.
     /// </exception>
-    /// <exception cref="IndexOutOfRangeException">
-    /// A <c>ColorMap</c> tag whose value field is a negative offset, or whose count is zero.
-    /// That read is unguarded where its siblings check, so the array indexer throws rather than
-    /// this loader refusing the file (#512, #534).
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="options"/> is <see langword="null"/> and the file reaches a read of it: a
+    /// Group 3 CCITT strip, or a 16-bit greyscale, RGB or RGBA image. A null changes the outcome
+    /// of no other file.
     /// </exception>
     /// <remarks>
     /// This overload carries the implementation. The single-argument overload delegates here.
-    /// A malformed file raises <see cref="InvalidDataException"/>. A well-formed file this
-    /// loader does not read raises <see cref="NotSupportedException"/>. A <c>ColorMap</c>
-    /// tag whose offset is negative, or whose count is zero, throws
-    /// <see cref="IndexOutOfRangeException"/>. None of those types derives from another. A
-    /// null array raises <see cref="NullReferenceException"/>, not
-    /// <see cref="ArgumentNullException"/>.
-    /// <para>The JPEG-strip hole on the other overload is this overload's. Compression 7 is
-    /// handed to <see cref="JpegImageLoader.Load(byte[])"/>, which validates nothing.</para>
+    /// A malformed file raises <see cref="InvalidDataException"/>, a <c>ColorMap</c> it cannot
+    /// use included. A well-formed file this loader does not read raises
+    /// <see cref="NotSupportedException"/>. Neither type derives from the other. A null array
+    /// raises <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>.
+    /// <para>A Compression 7 strip is passed through without a size check, exactly as the other
+    /// overload documents, and the same "Do not pass" applies (#505).</para>
+    /// <para><b>A null <paramref name="options"/> is refused only where it is read.</b>
+    /// <see cref="ArgumentNullException"/> is thrown for a Group 3 CCITT strip (Compression 2 or
+    /// 3) and for 16-bit greyscale, RGB and RGBA files, the three places the argument is
+    /// dereferenced. A null changes the outcome of no other file: 8-bit images, palette images and
+    /// Group 4 and JPEG strips load with it as they do without, so whether a null is refused
+    /// depends on the image and not on the call (#534).</para>
+    /// <para>Do not pass <see langword="null"/>. The parameter is not annotated nullable, and
+    /// 3.0 will refuse a null for every file. Pass <see cref="ImageLoadOptions.Default"/> or call
+    /// the single-argument overload.</para>
     /// <para><paramref name="options"/> reaches
     /// <see cref="ImageLoadOptions.DecodeMode"/> on one path only, a Group 3 CCITT strip
     /// (Compression 2 or 3), which you can ask to be decoded to a raster instead of passed
@@ -204,7 +218,7 @@ public static class TiffImageLoader
 
         // Offset to first IFD
         var ifdOffset = (int)ReadU32(tiff, 4, littleEndian);
-        if (ifdOffset < 8 || ifdOffset + 2 > tiff.Length)
+        if (ifdOffset < 8 || (long)ifdOffset + 2 > tiff.Length)
             throw new InvalidDataException($"TIFF IFD offset {ifdOffset} is out of bounds.");
 
         // Read IFD entry count
@@ -408,6 +422,10 @@ public static class TiffImageLoader
                 g3EndOfLine = true;
             }
 
+            // options is read from here on, and from nowhere earlier on this path. Null is refused
+            // at the read, as it was (as NullReferenceException) before #534, so a null still loads
+            // every file that never reaches one of the three reads: 2.3.3 loaded those.
+            ArgumentNullException.ThrowIfNull(options);
             if (options.DecodeMode == ImageDecodeMode.DecodeToRaster)
             {
                 var raster = CcittImageLoader.DecodeCcittToRaster(
@@ -535,6 +553,25 @@ public static class TiffImageLoader
             throw new InvalidDataException(
                 $"TIFF row byte count {rawRowBytesLong} exceeds int.MaxValue.");
         var rawRowBytes = (int)rawRowBytesLong;
+
+        // Uncompressed strips hold exactly the bytes they decode to, so a file that lacks them can
+        // be refused before a raster sized from the header is allocated: a 114-byte file declaring
+        // a 10,000 by 10,000 four-sample 16-bit image otherwise allocates about 800 MB (#536). The
+        // dry run walks the same checks, in the same order, as the decode below. PackBits and LZW
+        // are not pre-checked: their output size is not bounded by their input, and 2.3.3 loaded a
+        // PackBits strip that decodes to less than the image needs, zero-filling the rest.
+        if (compression == CompressionNone)
+        {
+            if (planarConfiguration == 1)
+                DecodeChunkyStrips(tiff, stripOffsets, stripByteCounts, compression, predictor,
+                    width, height, samplesPerPixel, bytesPerSample, rawRowBytes,
+                    (int)rowsPerStrip, rawBuffer: null);
+            else
+                DecodePlanarStrips(tiff, stripOffsets, stripByteCounts, compression, predictor,
+                    width, height, samplesPerPixel, bytesPerSample, rawRowBytes,
+                    (int)rowsPerStrip, rawBuffer: null);
+        }
+
         var rawBuffer = new byte[(long)height * rawRowBytes];
 
         if (planarConfiguration == 1)
@@ -581,8 +618,9 @@ public static class TiffImageLoader
         long[] stripOffsets, long[] stripByteCounts,
         int compression, int predictor,
         int width, int height, int samplesPerPixel, int bytesPerSample, int rawRowBytes,
-        int rowsPerStrip, byte[] rawBuffer)
+        int rowsPerStrip, byte[]? rawBuffer)
     {
+        // A null rawBuffer is the dry run: every check below runs, nothing is decoded or copied.
         var stripIndex = 0;
         var rowsDone = 0;
         while (rowsDone < height && stripIndex < stripOffsets.Length)
@@ -602,15 +640,23 @@ public static class TiffImageLoader
                 throw new InvalidDataException(
                     $"TIFF strip {stripIndex} data (offset={stripOffset}, length={stripByteCount}) extends beyond end of file.");
 
-            var stripData = DecodeStrip(tiff, stripOffset, stripByteCount, compression, expectedStripBytes);
+            byte[]? stripData = null;
+            if (rawBuffer is null)
+                RequireUncompressedStripLength(stripByteCount, expectedStripBytes);
+            else
+                stripData = DecodeStrip(tiff, stripOffset, stripByteCount, compression, expectedStripBytes);
 
             if (predictor == 2)
-                ApplyHorizontalPredictor(stripData, stripRowCount, width, samplesPerPixel, bytesPerSample);
+            {
+                if (stripData is not null)
+                    ApplyHorizontalPredictor(stripData, stripRowCount, width, samplesPerPixel, bytesPerSample);
+            }
             else if (predictor != 1)
                 throw new NotSupportedException(
                     $"TIFF Predictor={predictor} is not supported. Supported: 1 (None), 2 (Horizontal Differencing).");
 
-            Buffer.BlockCopy(stripData, 0, rawBuffer, rowsDone * rawRowBytes, expectedStripBytes);
+            if (stripData is not null && rawBuffer is not null)
+                Buffer.BlockCopy(stripData, 0, rawBuffer, rowsDone * rawRowBytes, expectedStripBytes);
             rowsDone += stripRowCount;
             stripIndex++;
         }
@@ -625,8 +671,9 @@ public static class TiffImageLoader
         long[] stripOffsets, long[] stripByteCounts,
         int compression, int predictor,
         int width, int height, int samplesPerPixel, int bytesPerSample, int rawRowBytes,
-        int rowsPerStrip, byte[] rawBuffer)
+        int rowsPerStrip, byte[]? rawBuffer)
     {
+        // A null rawBuffer is the dry run: every check below runs, nothing is decoded or copied.
         // Number of strips per plane.
         var stripsPerImage = (height + rowsPerStrip - 1) / rowsPerStrip;
 
@@ -644,7 +691,7 @@ public static class TiffImageLoader
         var planeRowBytes = (int)planeRowBytesLong;
 
         // Plane buffer: decoded rows for a single sample across all height rows.
-        var planeBuffer = new byte[(long)height * planeRowBytes];
+        var planeBuffer = rawBuffer is null ? null : new byte[(long)height * planeRowBytes];
 
         for (var plane = 0; plane < samplesPerPixel; plane++)
         {
@@ -667,21 +714,32 @@ public static class TiffImageLoader
                     throw new InvalidDataException(
                         $"TIFF planar strip {stripIndex} data (offset={stripOffset}, length={stripByteCount}) extends beyond end of file.");
 
-                var stripData = DecodeStrip(tiff, stripOffset, stripByteCount, compression, expectedStripBytes);
+                byte[]? stripData = null;
+                if (planeBuffer is null)
+                    RequireUncompressedStripLength(stripByteCount, expectedStripBytes);
+                else
+                    stripData = DecodeStrip(tiff, stripOffset, stripByteCount, compression, expectedStripBytes);
 
                 if (predictor == 2)
-                    ApplyHorizontalPredictor(stripData, stripRowCount, width, 1, bytesPerSample);
+                {
+                    if (stripData is not null)
+                        ApplyHorizontalPredictor(stripData, stripRowCount, width, 1, bytesPerSample);
+                }
                 else if (predictor != 1)
                     throw new NotSupportedException(
                         $"TIFF Predictor={predictor} is not supported. Supported: 1 (None), 2 (Horizontal Differencing).");
 
-                Buffer.BlockCopy(stripData, 0, planeBuffer, rowsDone * planeRowBytes, expectedStripBytes);
+                if (stripData is not null && planeBuffer is not null)
+                    Buffer.BlockCopy(stripData, 0, planeBuffer, rowsDone * planeRowBytes, expectedStripBytes);
                 rowsDone += stripRowCount;
             }
 
             if (rowsDone < height)
                 throw new InvalidDataException(
                     $"TIFF plane {plane} has only {rowsDone} decoded rows but ImageLength={height}.");
+
+            if (planeBuffer is null || rawBuffer is null)
+                continue;
 
             // Interleave plane bytes into rawBuffer (chunky layout).
             // For each pixel, the plane byte(s) sit at position: pixelIndex * samplesPerPixel * bytesPerSample + plane * bytesPerSample
@@ -711,10 +769,15 @@ public static class TiffImageLoader
 
     private static byte[] DecodeStripNone(byte[] tiff, int stripOffset, int stripByteCount, int expectedBytes)
     {
+        RequireUncompressedStripLength(stripByteCount, expectedBytes);
+        return tiff[stripOffset..(stripOffset + expectedBytes)];
+    }
+
+    private static void RequireUncompressedStripLength(int stripByteCount, int expectedBytes)
+    {
         if (stripByteCount < expectedBytes)
             throw new InvalidDataException(
                 $"TIFF uncompressed strip is too small ({stripByteCount} bytes; expected {expectedBytes}).");
-        return tiff[stripOffset..(stripOffset + expectedBytes)];
     }
 
     // ── Endian swap for 16-bit little-endian samples ─────────────────────────
@@ -757,6 +820,7 @@ public static class TiffImageLoader
                 grey16 = raw;
             }
 
+            ArgumentNullException.ThrowIfNull(options);
             if (options.BitDepth == ImageBitDepth.ReduceToEight)
             {
                 var grey8 = Downsample16(grey16);
@@ -815,6 +879,7 @@ public static class TiffImageLoader
                 rgb16 = raw;
             }
 
+            ArgumentNullException.ThrowIfNull(options);
             if (options.BitDepth == ImageBitDepth.ReduceToEight)
             {
                 var rgb8 = Downsample16(rgb16);
@@ -860,6 +925,14 @@ public static class TiffImageLoader
         // ColorMap layout: 3 * 2^bps entries of 16-bit values (range 0–65535).
         // First 2^bps entries are red, next 2^bps are green, last 2^bps are blue.
         // Scale 0–65535 → 0–255 by taking the high byte.
+        // Reached only under Compression 1, 5 and 32773. An empty map has nothing for index 0 to
+        // read, and the out-of-range clamp below maps to index 0, so it would throw
+        // IndexOutOfRangeException from the indexer (#512, #534). One or
+        // two entries do not reach that: paletteSize is then 0 as well, but colorMap[0] exists, so
+        // those files keep loading as they did, every pixel reading entry 0 for all three channels.
+        if (colorMap.Length == 0)
+            throw new InvalidDataException("TIFF palette photometric has an empty ColorMap.");
+
         var paletteSize = colorMap.Length / 3;
         var rgb = new byte[width * height * 3];
         for (var i = 0; i < width * height; i++)
@@ -989,7 +1062,7 @@ public static class TiffImageLoader
         {
             // Value is at the offset stored in the value/offset field
             var offset = (int)ReadU32(data, entryBase + 8, le);
-            if (offset < 0 || offset + typeSize > data.Length)
+            if (offset < 0 || (long)offset + typeSize > data.Length)
                 throw new InvalidDataException(
                     $"TIFF IFD value offset {offset} for type {type} is out of bounds.");
             return type switch
@@ -1055,6 +1128,18 @@ public static class TiffImageLoader
         var totalBytes = typeSize * count;
         var offset = (int)ReadU32(data, entryBase + 8, le);
 
+        // A value field of 0x80000000 or more reads as a negative int, and a negative offset plus
+        // the map's length passes the upper-bound test below whenever the sum stays inside the file.
+        // ReadTagValue and ReadTagArray refuse a negative offset; this reader did not, and the first
+        // array read then threw IndexOutOfRangeException after `new ushort[count]` had been sized
+        // from the tag (#512, #534). A negative offset whose sum ran past the end was already
+        // refused by the bound below. A count of zero never reads an element, so a negative offset
+        // with it keeps loading when nothing reads the map; a positive offset past the end is still
+        // refused by the bound below. Where the map is read, BuildPalette refuses an empty one.
+        if (count > 0 && offset < 0)
+            throw new InvalidDataException(
+                $"TIFF ColorMap offset {offset} is negative.");
+
         if ((long)offset + totalBytes > data.Length)
             throw new InvalidDataException(
                 $"TIFF ColorMap at offset {offset} (length {totalBytes}) extends beyond end of file.");
@@ -1083,7 +1168,9 @@ public static class TiffImageLoader
 
     private static ushort ReadU16(byte[] data, int offset, bool le)
     {
-        if (offset + 2 > data.Length)
+        // Both bounds, in long: a negative offset, or one near int.MaxValue whose sum wraps, passes
+        // a plain `offset + 2 > length` and then fails in the array indexer.
+        if (offset < 0 || (long)offset + 2 > data.Length)
             throw new InvalidDataException($"TIFF read U16 at offset {offset} is out of bounds.");
         return le
             ? (ushort)(data[offset] | (data[offset + 1] << 8))
@@ -1092,7 +1179,7 @@ public static class TiffImageLoader
 
     private static uint ReadU32(byte[] data, int offset, bool le)
     {
-        if (offset + 4 > data.Length)
+        if (offset < 0 || (long)offset + 4 > data.Length)
             throw new InvalidDataException($"TIFF read U32 at offset {offset} is out of bounds.");
         return le
             ? (uint)(data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24))

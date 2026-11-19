@@ -183,6 +183,80 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   renderers that fail by name after 200,004 `Layout` calls. Remaining `Timeout` values are 300 s hang
   guards, except the `EncryptDictionaryDenialOfServiceTests` pin sized in #456. No public API changes.
 
+- **`BmpImageLoader` checks that the pixel data is present before it allocates the raster (#536).**
+  The 8- and 24-bit paths sized the output from the declared dimensions first, so a 1,079-byte file
+  declaring 10,000 by 10,000 allocated about 300 MB on the calling thread before refusing. It now
+  allocates under 2 KB before the same refusal, with the same exception type and message. The
+  32-bit path already checked first. Every file that loaded before loads the same way.
+
+- **A 32-bit `BI_RGB` BMP no longer loads fully transparent (#535).** This is a deliberate output
+  change. `BmpImageLoader` read the fourth byte of each pixel as alpha and emitted a soft mask
+  whenever any byte was not 255. In the only 32-bit variant it accepts, `BI_RGB` with a 40-byte
+  header, Microsoft's `BITMAPINFOHEADER` reference says of that byte "The high byte in each DWORD is
+  not used", and writers commonly leave it at zero. A 4 by 4 file with the byte at 0 or 128 came
+  back with a soft mask of all 0s or all 128s; at 255 it had none. The byte is now ignored and no
+  soft mask is emitted, so such a file loads opaque with its colours unchanged. A file whose writer
+  stored real transparency there loses it: alpha lives in `BI_BITFIELDS`, `BI_ALPHABITFIELDS` and
+  the V4 and V5 headers, which this loader still refuses with `NotSupportedException`.
+
+- **`BmpImageLoader` loads a valid 8-bit BMP with a short palette (#533).** The loader never read
+  `biClrUsed` and demanded `54 + 256 * 4` bytes, so a conforming file declaring 4 or 16 entries
+  (86 and 134 bytes for a 4 by 4 image) was refused with "BMP file is truncated", which is not
+  what was wrong with it. It now reads the field, treats 0 as 256, caps it at 256 before
+  multiplying, and requires `54 + entries * 4` bytes. A file of 1,078 bytes or more loads exactly
+  as before, indexing the table as 256 entries whatever `biClrUsed` says. An 8-bit file under
+  1,078 bytes, which 2.3.3 always refused, loads only if its header conforms: `biPlanes` is 1, both
+  reserved words are zero, `biWidth` is positive, `bfSize` equals the file length, `biSizeImage` is
+  zero or between the pixel data the header implies and the bytes the file holds from `bfOffBits`,
+  and `biClrImportant` is zero or no more than the entries in use. It is also held to the entries
+  it declares, so a pixel pointing past them, or pixel data starting inside the palette, is
+  refused. Every refusal is still an `InvalidDataException`. A 24-bit or 32-bit file is never held
+  to these fields, whatever its size.
+
+- **`TiffImageLoader` refuses an unusable `ColorMap` with `InvalidDataException` (#512, #534).**
+  A `ColorMap` whose value field is a negative offset threw `IndexOutOfRangeException` when the
+  offset plus twice the count stayed inside the file, after allocating `new ushort[count]` from the
+  tag: about 1 GB for a count of 500,000,000 and about 2 GB for 1,073,741,823. A negative offset
+  whose sum ran past the end was already an `InvalidDataException`. A nonzero count with a negative
+  offset is now refused before the allocation. A palette image whose `ColorMap` is empty threw the
+  same exception from the palette expansion, with no negative value in the file, and is now
+  refused as an empty map. The map is expanded only under Compression 1, 5 and 32773, so the
+  empty-map refusal applies only there, and under Compression 2, 3, 4 and 7 the file loads as
+  before. The tag is read under every compression, so the negative-offset and past-the-end
+  refusals apply to all of them. A directory offset or a scalar tag's value offset near `int.MaxValue` also threw the
+  exception, because the bounds sum wrapped, and is refused too. Nothing that loaded before is
+  refused: a count of zero loads with a negative offset or with an offset inside the file (an
+  offset past the end was already refused) unless the empty map is refused as above, and one or
+  two entries still load. The XML documentation no longer lists `IndexOutOfRangeException`. No public API
+  changes.
+
+- **`TiffImageLoader` checks uncompressed strips before it allocates the raster (#536).** The
+  loader sized its buffer from the header and then read the strips, so a 114-byte file declaring a
+  10,000 by 10,000 image of four 16-bit samples allocated about 800 MB before it was refused. For
+  Compression 1 the strip list is now checked first, chunky and planar, with the same checks in
+  the same order, so that file allocates under 2 KB and raises the same exception. A file of
+  one-row strips with one strip present went from about 300 MB to under 2 KB. PackBits and LZW
+  strips are not pre-checked, because their output is not bounded by their input and 2.3.3 loaded
+  a PackBits strip that decodes short, zero-filling the rest. A 4-byte LZW strip on a 10,000 by
+  10,000 RGB header still allocates about 600 MB before it is refused.
+
+- **A null `options` to `TiffImageLoader.Load(byte[], ImageLoadOptions)` raises
+  `ArgumentNullException` where it is read (#534).** The argument was dereferenced in three
+  places only, a Group 3 CCITT strip and the 16-bit greyscale and RGB(A) builders, so a null
+  loaded most files and threw `NullReferenceException` on those. The three reads now throw
+  `ArgumentNullException` with `ParamName` `options`; every file that loaded with a null on 2.3.3
+  (8-bit, palette, Group 4, JPEG) still does. The exception type on the refused paths is the only
+  change. The XML documentation says 3.0 will refuse a null for every file.
+
+- **The JPEG-strip size boundary is documented, not changed (#505).** `JpegImageLoader` and
+  `TiffImageLoader` pass a JPEG through without checking its frame-header size against the
+  100,000,000-pixel limit, and `TiffImageLoader` does not compare it with `ImageWidth` and
+  `ImageLength`. Measured on 2.3.3 and kept: a 65535 by 65535 JPEG loads, the same strip in an 8
+  by 8 TIFF loads as 65535 by 65535, and an 8 by 8 TIFF over a 16 by 16 strip loads as 16 by 16.
+  The XML documentation now describes this once per loader, with a "Do not pass" paragraph naming
+  3.0 as the release that refuses all three. Three tests pin the shapes with exact dimensions.
+  No behaviour changes.
+
 ## [2.3.4] - 2026-11-19
 
 A security servicing release. VellumPdf's own code is unchanged: `git diff v2.3.3 -- src` is empty

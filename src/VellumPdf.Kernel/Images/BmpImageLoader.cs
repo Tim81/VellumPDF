@@ -23,6 +23,9 @@ public static class BmpImageLoader
     // BMP compression constants
     private const uint BiRgb = 0;
 
+    // An 8-bit pixel indexes at most 256 colours.
+    private const int MaxPaletteEntries = 256;
+
     /// <summary>Decodes BMP file bytes into a FlateDecode Image XObject.</summary>
     /// <exception cref="InvalidDataException">
     /// The bytes are not a BMP file, are truncated, or declare dimensions outside the safety
@@ -43,30 +46,42 @@ public static class BmpImageLoader
     /// later major version will check it.</para>
     /// <para>One size limit applies: a declared pixel count above <b>100,000,000</b> is refused.
     /// Neither edge is limited on its own, so 2,000,000 by 1 is accepted and 10,001 by 10,001 is
-    /// not. The limit is internal and has no public setting. It bounds the damage a header can do
-    /// rather than preventing it: the raster is sized from the declared dimensions before the
-    /// pixel data is checked, so a 1,079-byte file declaring 10,000 by 10,000 still allocates
-    /// 300 MB before it refuses (#536).</para>
+    /// not. The limit is internal and has no public setting. The pixel data is checked against the
+    /// file length before the raster is allocated, so a header cannot cost more than the file
+    /// carries. A file that does carry its pixel data still allocates the full raster, three bytes
+    /// per pixel, which is 300 MB at the limit. Per byte of pixel data the file carries, that is
+    /// up to three bytes allocated for an 8-bit file (one index byte becomes three of RGB), one for
+    /// a 24-bit file and three quarters for a 32-bit file; row padding lowers the 8-bit and 24-bit
+    /// ratios.</para>
     /// <para>This loader reads one variant: an uncompressed 40-byte BITMAPINFOHEADER bitmap at
     /// 8, 24 or 32 bits per pixel. Every other well-formed BMP raises
     /// <see cref="NotSupportedException"/>, compressed ones included, and there is no fallback
     /// path. Size is checked first, so a file shorter than 54 bytes is reported as truncated
     /// whatever variant it would have been.</para>
-    /// <para>Attention: one conforming 8-bit variant is refused. A bitmap may declare
-    /// <c>biClrUsed</c> and ship a palette shorter than 256 entries; this loader never reads that
-    /// field and tests the whole file against <b>1,078</b> bytes, so a short-palette file smaller
-    /// than that is reported as truncated. A larger one loads and decodes correctly, so the
-    /// refusal tracks the file's size and not its palette. If you hit it, pad the palette to 256
-    /// entries and move <c>bfOffBits</c> with it. Leaving the offset unmoved still reads pixel
-    /// data from the start of the palette (#533).</para>
-    /// <para>A BITMAPINFOHEADER field this loader does not read is neither honoured nor
+    /// <para>An 8-bit bitmap may carry fewer than 256 palette entries. This loader reads
+    /// <c>biClrUsed</c> (zero means 256, and a larger value is capped at 256) and requires the
+    /// file to hold that many entries after the header. A file declaring 4 entries is 86 bytes for
+    /// a 4 by 4 image and loads. A palette that does not fit raises
+    /// <see cref="InvalidDataException"/> as truncated, which is true of it. A file of 1,078
+    /// bytes or more indexes the table as 256 entries whatever <c>biClrUsed</c> says, so a pixel
+    /// pointing past <c>biClrUsed</c> reads whatever bytes lie in that slot. A smaller file is held
+    /// to the entries it declares: a pixel pointing past them, or pixel data starting inside the
+    /// palette, raises <see cref="InvalidDataException"/>.</para>
+    /// <para>An 8-bit file under 1,078 bytes is the only one held to header fields beyond the ones
+    /// needed to decode. It is accepted only if <c>biPlanes</c> is 1, both reserved words are zero,
+    /// <c>biWidth</c> is positive, <c>bfSize</c> equals the file length, <c>biSizeImage</c> is zero
+    /// or between the pixel data the header implies and the bytes the file holds from
+    /// <c>bfOffBits</c>, and <c>biClrImportant</c> is zero or no more than the entries in use. Any
+    /// other 8-bit file of that size raises <see cref="InvalidDataException"/>. An 8-bit file of
+    /// 1,078 bytes or more, and a 24-bit or 32-bit file of any size, is never held to these
+    /// fields.</para>
+    /// <para>Any other BITMAPINFOHEADER field this loader does not read is neither honoured nor
     /// refused.</para>
-    /// <para>Attention: a 32-bit bitmap loses its image entirely. The fourth byte of each pixel is
-    /// emitted as a soft mask, but in the only 32-bit variant this loader accepts, <c>BI_RGB</c>
-    /// with a 40-byte header, that byte is not alpha and the format says it is unused. Writers
-    /// commonly leave it at zero, which this loader reads as fully transparent, so the page shows
-    /// nothing and no exception is raised. Convert such a file to 24-bit before loading it
-    /// (#535).</para>
+    /// <para>A 32-bit bitmap is read as opaque. In <c>BI_RGB</c> with a 40-byte header the fourth
+    /// byte of each pixel is unused, so this loader ignores it and returns no soft mask. A file
+    /// whose writer filled that byte with transparency values loses them: alpha is carried by
+    /// <c>BI_BITFIELDS</c>, <c>BI_ALPHABITFIELDS</c> and the V4 and V5 headers, and this loader
+    /// refuses all four with <see cref="NotSupportedException"/>.</para>
     /// </remarks>
     public static PdfImageXObject Load(byte[] bmpBytes)
     {
@@ -112,18 +127,45 @@ public static class BmpImageLoader
         if (pixelOffset >= (uint)bmpBytes.Length)
             throw new InvalidDataException($"BMP pixel data offset {pixelOffset} is beyond the end of the file.");
 
-        // Validate the palette region (for 8-bit images) is within the file.
+        // 8-bit: the colour table follows the header and holds biClrUsed entries, or 256 when the
+        // field is zero. Source: Microsoft Learn, "BITMAPINFOHEADER structure" (Windows GDI,
+        // wingdi.h; learn.microsoft.com/en-us/previous-versions/dd183376(v=vs.85)), Members,
+        // biClrUsed: "If this value is zero, the bitmap uses the maximum number of colors
+        // corresponding to the value of the biBitCount member". The field is the writer's, so it
+        // is capped at 256 before it is multiplied.
+        var paletteLimit = 0;
         if (bitCount == 8)
         {
             const int paletteOffset = 54;
-            const int paletteSize = 256 * 4;
-            if (paletteOffset + paletteSize > bmpBytes.Length)
+            var clrUsed = ReadU32Le(bmpBytes, 46);
+            var entries = clrUsed is 0 or > MaxPaletteEntries ? MaxPaletteEntries : (int)clrUsed;
+            if (paletteOffset + entries * 4 > bmpBytes.Length)
                 throw new InvalidDataException("BMP file is truncated: palette extends beyond end of file.");
+
+            // 2.3.3 never read biClrUsed and accepted any file of at least 1,078 bytes, indexing
+            // the table as if it held 256 entries whatever the field said. Such a file keeps
+            // loading exactly as it did, so an index past biClrUsed still reads the bytes at that
+            // slot. Below 1,078 bytes the file was refused, and nothing that was refused is accepted
+            // unless the file shows it is a conforming bitmap: RequireConformingHeader. The table
+            // is also held to the entries it declares, so a pixel pointing past them, or pixel
+            // data that starts inside the table, is refused rather than read from the wrong place.
+            if (bmpBytes.Length >= paletteOffset + MaxPaletteEntries * 4)
+            {
+                paletteLimit = MaxPaletteEntries;
+            }
+            else
+            {
+                RequireConformingHeader(bmpBytes, rawWidth, height, entries, pixelOffset);
+                if (pixelOffset < (uint)(paletteOffset + entries * 4))
+                    throw new InvalidDataException(
+                        $"BMP pixel data offset {pixelOffset} lies inside the {entries}-entry palette.");
+                paletteLimit = entries;
+            }
         }
 
         return bitCount switch
         {
-            8 => Load8Bit(bmpBytes, width, height, bottomUp, pixelOffset),
+            8 => Load8Bit(bmpBytes, width, height, bottomUp, pixelOffset, paletteLimit),
             24 => Load24Bit(bmpBytes, width, height, bottomUp, pixelOffset),
             _ => Load32Bit(bmpBytes, width, height, bottomUp, pixelOffset),
         };
@@ -132,14 +174,14 @@ public static class BmpImageLoader
     // ── 8-bit palette-indexed ────────────────────────────────────────────────
 
     private static PdfImageXObject Load8Bit(
-        byte[] data, int width, int height, bool bottomUp, uint pixelOffset)
+        byte[] data, int width, int height, bool bottomUp, uint pixelOffset, int paletteLimit)
     {
         // Colour table starts at offset 54 (after BITMAPINFOHEADER).
         // Each entry is RGBQUAD: blue, green, red, reserved (4 bytes).
         var colorTableOffset = 54;
-        var rgb = new byte[width * height * 3];
         var rowStride = (width + 3) & ~3; // DWORD-aligned
         RequirePixelData(data, pixelOffset, height, rowStride);
+        var rgb = new byte[width * height * 3];
 
         for (var y = 0; y < height; y++)
         {
@@ -148,6 +190,9 @@ public static class BmpImageLoader
             for (var x = 0; x < width; x++)
             {
                 var idx = data[rowBase + x];
+                if (idx >= paletteLimit)
+                    throw new InvalidDataException(
+                        $"BMP pixel refers to palette entry {idx}, but the palette holds {paletteLimit} entries.");
                 var entry = colorTableOffset + idx * 4;
                 var dst = (y * width + x) * 3;
                 rgb[dst] = data[entry + 2];     // red
@@ -165,8 +210,8 @@ public static class BmpImageLoader
     {
         // Each row is padded to a DWORD boundary.
         var rowStride = (width * 3 + 3) & ~3;
-        var rgb = new byte[width * height * 3];
         RequirePixelData(data, pixelOffset, height, rowStride);
+        var rgb = new byte[width * height * 3];
 
         for (var y = 0; y < height; y++)
         {
@@ -185,7 +230,7 @@ public static class BmpImageLoader
         return new PdfImageXObject(width, height, rgb, PdfName.FlateDecode, ImageColorSpace.DeviceRgb, 8);
     }
 
-    // ── 32-bit BGRA ──────────────────────────────────────────────────────────
+    // ── 32-bit BGRx ──────────────────────────────────────────────────────────
 
     private static PdfImageXObject Load32Bit(
         byte[] data, int width, int height, bool bottomUp, uint pixelOffset)
@@ -194,8 +239,6 @@ public static class BmpImageLoader
         var rowStride = width * 4;
         RequirePixelData(data, pixelOffset, height, rowStride);
         var rgb = new byte[width * height * 3];
-        var alpha = new byte[width * height];
-        var hasNonOpaqueAlpha = false;
 
         for (var y = 0; y < height; y++)
         {
@@ -203,23 +246,72 @@ public static class BmpImageLoader
             var rowBase = (int)pixelOffset + srcRow * rowStride;
             for (var x = 0; x < width; x++)
             {
-                // BMP stores BGRA
+                // BI_RGB at 32 bits per pixel stores blue, green, red and then a byte the format
+                // leaves unused. Microsoft Learn, "BITMAPINFOHEADER structure" (Windows GDI, wingdi.h;
+                // learn.microsoft.com/en-us/previous-versions/dd183376(v=vs.85)), Members, biBitCount,
+                // value 32: "The high byte in each DWORD is not used". Writers leave whatever is there, and
+                // zero is common, so reading it as alpha made such a file fully transparent (#535).
+                // Alpha needs BI_BITFIELDS, BI_ALPHABITFIELDS or a V4/V5 header, none of which this
+                // loader accepts.
                 var src = rowBase + x * 4;
-                var dst = y * width + x;
-                rgb[dst * 3] = data[src + 2];     // R
-                rgb[dst * 3 + 1] = data[src + 1]; // G
-                rgb[dst * 3 + 2] = data[src];     // B
-                var a = data[src + 3];
-                alpha[dst] = a;
-                if (a != 255) hasNonOpaqueAlpha = true;
+                var dst = (y * width + x) * 3;
+                rgb[dst] = data[src + 2];     // R
+                rgb[dst + 1] = data[src + 1]; // G
+                rgb[dst + 2] = data[src];     // B
             }
         }
-
-        PdfStream? sMask = hasNonOpaqueAlpha ? new PdfStream(alpha) : null;
-        return new PdfImageXObject(width, height, rgb, PdfName.FlateDecode, ImageColorSpace.DeviceRgb, 8, sMask);
+        return new PdfImageXObject(width, height, rgb, PdfName.FlateDecode, ImageColorSpace.DeviceRgb, 8);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
+
+    // A file under 1,078 bytes was refused by 2.3.3 whatever it held, so reading it now is only
+    // right when it is a conforming bitmap that 2.3.3 refused because of the palette-size bug, not
+    // one that merely got past the old size test. Each check below is a field Microsoft's reference
+    // constrains. 2.3.3 ignored all of them, so a file of 1,078 bytes or more is never held to them.
+    //
+    // Sources, Microsoft Learn:
+    //   - "BITMAPFILEHEADER structure" (learn.microsoft.com/en-us/windows/win32/api/wingdi/
+    //     ns-wingdi-bitmapfileheader), Members: bfSize "The size, in bytes, of the bitmap file.";
+    //     bfReserved1 and bfReserved2 "Reserved; must be zero."
+    //   - "BITMAPINFOHEADER structure" (learn.microsoft.com/en-us/previous-versions/
+    //     dd183376(v=vs.85)), Members: biPlanes "This value must be set to 1."; biSizeImage "The
+    //     size, in bytes, of the image. This may be set to zero for BI_RGB bitmaps."; biClrImportant
+    //     "The number of color indexes that are required for displaying the bitmap. If this value
+    //     is zero, all colors are required."
+    //
+    // Three requirements are inferences, not quotations. biWidth must be positive: the page gives a
+    // sign convention for biHeight only, so a negative width has no defined meaning. biSizeImage,
+    // when not zero, must cover the pixel data the header implies and must fit in the bytes the
+    // file holds from bfOffBits, since a figure outside that range contradicts "the size, in
+    // bytes, of the image". biClrImportant must not exceed the entries in use, since it cannot
+    // require more colours than the table holds.
+    private static void RequireConformingHeader(
+        byte[] data, int rawWidth, int height, int paletteEntries, uint pixelOffset)
+    {
+        if (ReadU16Le(data, 26) != 1)
+            throw NonConforming("biPlanes is not 1");
+        if (ReadU16Le(data, 6) != 0 || ReadU16Le(data, 8) != 0)
+            throw NonConforming("a reserved field is not zero");
+        if (rawWidth <= 0)
+            throw NonConforming("biWidth is not positive");
+        if (ReadU32Le(data, 2) != (uint)data.Length)
+            throw NonConforming("bfSize is not the file length");
+        var rowStride = (rawWidth + 3) & ~3;
+        var sizeImage = ReadU32Le(data, 34);
+        if (sizeImage != 0 && sizeImage < (long)rowStride * height)
+            throw NonConforming("biSizeImage is smaller than the pixel data the header implies");
+        if (sizeImage > data.Length - pixelOffset)
+            throw NonConforming("biSizeImage is larger than the bytes the file holds after bfOffBits");
+        var clrImportant = ReadU32Le(data, 50);
+        if (clrImportant != 0 && clrImportant > (uint)paletteEntries)
+            throw NonConforming("biClrImportant exceeds the palette entries in use");
+    }
+
+    // The exception type 2.3.3 gave every file of this size, with the field named.
+    private static InvalidDataException NonConforming(string reason) =>
+        new("BMP file is truncated: palette extends beyond end of file. " +
+            $"A bitmap this small is read only when its header conforms, and {reason}.");
 
     private static uint ReadU32Le(byte[] data, int offset) =>
         (uint)(data[offset] | (data[offset + 1] << 8) |
