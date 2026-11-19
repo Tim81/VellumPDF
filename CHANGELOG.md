@@ -66,7 +66,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   it names a colour for the uncovered pixels and the transparent answer invents none. A screen
   smaller than the frame does not crop it: the result is widened to the frame's far edge, and a
   screen dimension of zero is handled the same way. A screen whose area would exceed the
-  100-million-pixel limit is not refused; the frame comes back at its own size, as on 2.3.3.
+  100-million-pixel limit is not refused; the frame comes back at its own size, as on 2.3.3, and
+  the XML doc says not to rely on it: 3.0 will refuse such a file.
   Only the first frame is decoded, as before.
 - **`GifImageLoader` no longer allocates the raster before the data has been shown to hold it
   (#536's class).** A 42-byte GIF declaring 10,000 x 10,000 is within the 100-million-pixel limit,

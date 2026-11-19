@@ -50,10 +50,14 @@ public static class GifImageLoader
     /// frame overflows. Version 2.3.3 returned the frame at its own size and ignored
     /// the screen and the position, so a file whose frame does not cover its screen decodes to a
     /// different size now.</para>
-    /// <para>The frame is bounded by <see cref="ImageLimits.ValidateDimensions"/>, as before. A
-    /// screen whose area would exceed the same limit is <b>not</b> refused: the frame is returned
-    /// at its own size, as 2.3.3 did for every file. Do not rely on that; a
-    /// later major may refuse a file whose screen it cannot place the frame on.</para>
+    /// <para><b>A logical screen over the pixel limit is not applied.</b> The frame is bounded by
+    /// <see cref="ImageLimits.ValidateDimensions"/>, as before. When the screen the frame would be
+    /// placed on has more than 100 million pixels, the call does not throw: the frame is returned
+    /// at its own size, with no /SMask from the screen, which is what 2.3.3 returned for every
+    /// file and what a caller of 2.x may keep relying on. <b>Do not pass a file whose screen is
+    /// over the limit and expect the frame to be placed.</b> Version 3.0 will refuse such a file
+    /// with <see cref="InvalidDataException"/>, because a result that silently ignores the
+    /// screen is the defect this member fixes for every smaller one.</para>
     /// <para>A stream carrying more pixels than the image descriptor promises is <b>not</b>
     /// refused: decoding stops once the promised count is produced, so trailing codes are never
     /// read. Do not rely on the overrun being rejected; a later major may make it one.</para>
