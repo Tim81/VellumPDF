@@ -54,7 +54,7 @@ a guard test keeps the two copies byte-identical.
 | Encryption via `Document.Encrypt` | ✅ Supported | ISO 32000-2 §7.6 (delegates to Kernel) |
 | Barcode symbols as a Layout element | ❌ Not yet (only an `IRenderer` extension seam exists) | no tracked milestone |
 | Form elements with their own labels; build-time accessibility diagnostics | ⏳ Planned | Layout C |
-| PDF/A-1 and PDF/A-4 | ⏳ Planned | v2.5 (#218, #222) |
+| PDF/A-1 and PDF/A-4 | ⏳ Planned | v2.6 (#218, #222) |
 | PDF/UA-2 element set (generated contents/indexes, captions, table header semantics) | ⏳ Planned | Layout B |
 | Footnotes and endnotes | ⏳ Planned | Layout B |
 | Floats and hyphenation | ⏳ Planned | Layout D |

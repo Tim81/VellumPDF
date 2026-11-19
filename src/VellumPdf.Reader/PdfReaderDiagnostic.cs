@@ -212,7 +212,7 @@ public enum PdfReaderDiagnosticCode
     /// </summary>
     DecodeParmsMalformed = 108,
 
-    /// <summary> No longer raised, since #98 (v2.4): the TIFF predictor (ISO 32000-2 §7.4.4.4,
+    /// <summary> No longer raised, since #98 (v2.5): the TIFF predictor (ISO 32000-2 §7.4.4.4,
     /// predictor value 2) now un-predicts <c>/BitsPerComponent</c> 1, 2, 4, and 16 the same way it
     /// already did 8, so the "these samples are copied through still differenced" condition this
     /// code named cannot occur any more. <c>ApplyPredictor</c> still throws <see

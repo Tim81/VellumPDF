@@ -52,6 +52,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   except two that were re-measured on 1.30.4 and came out the same: the language-tag table in
   `docs/conformance-divergences.md` and the profile clause counts in `eng/clause-coverage.py`.
 
+- **The roadmap table is generated from a snapshot of the GitHub milestones (#369).** The block was
+  copied by hand into the root README and the eight package READMEs, and had drifted twice.
+  `eng/generate-roadmap.py` now renders it between `roadmap:begin` and `roadmap:end` markers in all
+  nine files from `eng/roadmap/milestones.json`, using each milestone's description as the row text.
+  `--check` compares the files with the snapshot offline and runs in the new `docs-roadmap.yml`
+  workflow on pull requests; `--refresh` pulls titles, descriptions and the latest release tag from
+  GitHub; `--drift` reports a snapshot that no longer matches the live milestones, weekly and on
+  demand, never on a pull request. The table now follows the 2026-11-19 renumbering (v2.4 hardening
+  and navigable documents, v2.5 accessible documents, extraction and Reader graduation, and the old
+  v2.5 to v2.13 are v2.6 to v2.14). The version references this made stale in `docs/architecture.md`,
+  `docs/layout-guide.md`, `docs/reader-guide.md`, the Layout and Reader READMEs and two Reader
+  comments are corrected, as is the Layout track range in `docs/architecture.md` (A to G, not A to I).
+
 ### Fixed
 
 - **Cost-bound tests no longer assert on elapsed time (#400, #456).** A `Stopwatch` checked after a
