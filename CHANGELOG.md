@@ -81,6 +81,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   exception type and message. The 32-bit path already checked first. Every file that loaded before
   loads the same way.
 
+- **A 32-bit `BI_RGB` BMP no longer loads fully transparent (#535).** This is a deliberate output
+  change. `BmpImageLoader` read the fourth byte of each pixel as alpha and emitted a soft mask
+  whenever any byte was not 255. In the only 32-bit variant it accepts, `BI_RGB` with a 40-byte
+  header, Microsoft's `BITMAPINFOHEADER` reference says of that byte "The high byte in each DWORD is
+  not used", and writers commonly leave it at zero. A 4 by 4 file with the byte at 0 or 128 came
+  back with a soft mask of all 0s or all 128s; at 255 it had none. The byte is now ignored and no
+  soft mask is emitted, so such a file loads opaque with its colours unchanged. A file whose writer
+  stored real transparency there loses it: alpha lives in `BI_BITFIELDS`, `BI_ALPHABITFIELDS` and
+  the V4 and V5 headers, which this loader still refuses with `NotSupportedException`.
+
 ## [2.3.3] - 2026-09-20
 
 This release is led by documentation. Layout's public surface now states what each member

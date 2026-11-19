@@ -62,12 +62,12 @@ public static class BmpImageLoader
     /// data from the start of the palette (#533).</para>
     /// <para>A BITMAPINFOHEADER field this loader does not read is neither honoured nor
     /// refused.</para>
-    /// <para>Attention: a 32-bit bitmap loses its image entirely. The fourth byte of each pixel is
-    /// emitted as a soft mask, but in the only 32-bit variant this loader accepts, <c>BI_RGB</c>
-    /// with a 40-byte header, that byte is not alpha and the format says it is unused. Writers
-    /// commonly leave it at zero, which this loader reads as fully transparent, so the page shows
-    /// nothing and no exception is raised. Convert such a file to 24-bit before loading it
-    /// (#535).</para>
+    /// <para>A 32-bit bitmap is read as opaque. In <c>BI_RGB</c> with a 40-byte header the fourth
+    /// byte of each pixel is unused, so this loader ignores it and returns no soft mask. A file
+    /// whose writer filled that byte with transparency values loses them: alpha is carried by
+    /// <c>BI_BITFIELDS</c>, <c>BI_ALPHABITFIELDS</c> and the V4 and V5 headers, and this loader
+    /// refuses all four with <see cref="NotSupportedException"/>. Before 2.4 the byte was read as
+    /// alpha, so a file written with zero there loaded fully transparent (#535).</para>
     /// </remarks>
     public static PdfImageXObject Load(byte[] bmpBytes)
     {
@@ -186,7 +186,7 @@ public static class BmpImageLoader
         return new PdfImageXObject(width, height, rgb, PdfName.FlateDecode, ImageColorSpace.DeviceRgb, 8);
     }
 
-    // ── 32-bit BGRA ──────────────────────────────────────────────────────────
+    // ── 32-bit BGRx ──────────────────────────────────────────────────────────
 
     private static PdfImageXObject Load32Bit(
         byte[] data, int width, int height, bool bottomUp, uint pixelOffset)
@@ -195,8 +195,6 @@ public static class BmpImageLoader
         var rowStride = width * 4;
         RequirePixelData(data, pixelOffset, height, rowStride);
         var rgb = new byte[width * height * 3];
-        var alpha = new byte[width * height];
-        var hasNonOpaqueAlpha = false;
 
         for (var y = 0; y < height; y++)
         {
@@ -204,20 +202,20 @@ public static class BmpImageLoader
             var rowBase = (int)pixelOffset + srcRow * rowStride;
             for (var x = 0; x < width; x++)
             {
-                // BMP stores BGRA
+                // BI_RGB at 32 bits per pixel stores blue, green, red and then a byte the format
+                // leaves unused: the biBitCount 32 row of Microsoft's BITMAPINFOHEADER reference says
+                // "The high byte in each DWORD is not used". Writers leave whatever is there, and
+                // zero is common, so reading it as alpha made such a file fully transparent (#535).
+                // Alpha needs BI_BITFIELDS, BI_ALPHABITFIELDS or a V4/V5 header, none of which this
+                // loader accepts.
                 var src = rowBase + x * 4;
-                var dst = y * width + x;
-                rgb[dst * 3] = data[src + 2];     // R
-                rgb[dst * 3 + 1] = data[src + 1]; // G
-                rgb[dst * 3 + 2] = data[src];     // B
-                var a = data[src + 3];
-                alpha[dst] = a;
-                if (a != 255) hasNonOpaqueAlpha = true;
+                var dst = (y * width + x) * 3;
+                rgb[dst] = data[src + 2];     // R
+                rgb[dst + 1] = data[src + 1]; // G
+                rgb[dst + 2] = data[src];     // B
             }
         }
-
-        PdfStream? sMask = hasNonOpaqueAlpha ? new PdfStream(alpha) : null;
-        return new PdfImageXObject(width, height, rgb, PdfName.FlateDecode, ImageColorSpace.DeviceRgb, 8, sMask);
+        return new PdfImageXObject(width, height, rgb, PdfName.FlateDecode, ImageColorSpace.DeviceRgb, 8);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
