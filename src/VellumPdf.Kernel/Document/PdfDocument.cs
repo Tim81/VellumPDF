@@ -1216,13 +1216,13 @@ public sealed class PdfDocument : IDisposable
 
         // Optional fields — only include if non-null/non-empty
         if (!string.IsNullOrEmpty(options.SignerName))
-            sigDict.Set(new PdfName("Name"), new PdfLiteralString(System.Text.Encoding.Latin1.GetBytes(options.SignerName)));
+            sigDict.Set(new PdfName("Name"), PdfLiteralString.FromTextString(options.SignerName));
         if (!string.IsNullOrEmpty(options.Reason))
-            sigDict.Set(new PdfName("Reason"), new PdfLiteralString(System.Text.Encoding.Latin1.GetBytes(options.Reason)));
+            sigDict.Set(new PdfName("Reason"), PdfLiteralString.FromTextString(options.Reason));
         if (!string.IsNullOrEmpty(options.Location))
-            sigDict.Set(new PdfName("Location"), new PdfLiteralString(System.Text.Encoding.Latin1.GetBytes(options.Location)));
+            sigDict.Set(new PdfName("Location"), PdfLiteralString.FromTextString(options.Location));
         if (!string.IsNullOrEmpty(options.ContactInfo))
-            sigDict.Set(new PdfName("ContactInfo"), new PdfLiteralString(System.Text.Encoding.Latin1.GetBytes(options.ContactInfo)));
+            sigDict.Set(new PdfName("ContactInfo"), PdfLiteralString.FromTextString(options.ContactInfo));
 
         registry.SetValue(sigDictRef, sigDict);
 
@@ -1359,10 +1359,8 @@ public sealed class PdfDocument : IDisposable
         var intentDict = new PdfDictionary()
             .Set(PdfName.Type, new PdfName("OutputIntent"))
             .Set(new PdfName("S"), new PdfName("GTS_PDFA1"))
-            .Set(new PdfName("OutputConditionIdentifier"), new PdfLiteralString(
-                System.Text.Encoding.Latin1.GetBytes(identifier)))
-            .Set(new PdfName("Info"), new PdfLiteralString(
-                System.Text.Encoding.Latin1.GetBytes(infoText)))
+            .Set(new PdfName("OutputConditionIdentifier"), PdfLiteralString.FromTextString(identifier))
+            .Set(new PdfName("Info"), PdfLiteralString.FromTextString(infoText))
             .Set(new PdfName("DestOutputProfile"), iccRef);
 
         var intentRef = registry.Reserve();

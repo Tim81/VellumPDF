@@ -911,9 +911,13 @@ public sealed class Document : IDisposable
     /// left out of the file.</para>
     /// <para>The profile is not parsed, and <paramref name="componentCount"/> is not checked
     /// against it: any non-empty bytes are embedded as the profile.</para>
-    /// <para>The identifier and <paramref name="info"/> are written as Latin-1: a character outside
-    /// it becomes a best-fit Latin-1 character where there is one, such as <c>-</c> for an en dash,
-    /// and otherwise <c>?</c>, one for each UTF-16 code unit.</para>
+    /// <para>The identifier and <paramref name="info"/> are written as PDF text strings (ISO 32000-2,
+    /// Table 401): ASCII and Latin-1 text keeps one byte per character, and a value holding a
+    /// character PDFDocEncoding cannot carry as the same byte, such as an en dash, is written as
+    /// UTF-16BE and keeps that character. Up to 2.3.3 such a character was rewritten to a
+    /// best-fit Latin-1 look-alike (<c>-</c> for an en dash) or <c>?</c> without a report. ISO
+    /// 32000-2 expects a registered name here, so a character outside ASCII may be a mistake of a
+    /// different kind; it is not refused.</para>
     /// <para>Do not pass bytes that are not an ICC profile, or a count that does not match it. A
     /// later major version will refuse both.</para>
     /// </remarks>
@@ -944,8 +948,8 @@ public sealed class Document : IDisposable
     /// <remarks>
     /// Same identifier refusal as <see cref="SetPdfAOutputIntent"/>, and the same condition: the
     /// intent is written only when <see cref="Conformance"/> is not
-    /// <see cref="PdfConformance.None"/>. The identifier is written as Latin-1, as on
-    /// <see cref="SetPdfAOutputIntent"/>.
+    /// <see cref="PdfConformance.None"/>. The identifier is written as a text string,
+    /// as on <see cref="SetPdfAOutputIntent"/>.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="outputConditionIdentifier"/> is <see langword="null"/>.

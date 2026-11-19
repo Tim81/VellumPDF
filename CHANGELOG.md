@@ -86,6 +86,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the seven tokens the grammar distinguishes (960,800 strings) and finds the new pattern agrees
   with the old on all of them. No verdict changes. The date and integer patterns are linear and
   unchanged; no other `Regex` exists in `src/`.
+- **A signer's name, reason, location and contact are no longer transliterated into Latin-1
+  (#524).** `PdfDocument.PrepareForSigning` and `Sign` wrote `/Name`, `/Reason`, `/Location` and
+  `/ContactInfo`, and `SetPdfAOutputIntent` and `UseCmykOutputIntent` wrote
+  `/OutputConditionIdentifier` and `/Info`, with `Encoding.Latin1.GetBytes`, whose fallback
+  rewrites a character it cannot hold into a look-alike and reports nothing: `Łukasz Müller` was
+  signed as `Lukasz Müller`, an em dash as `-`, a euro sign or CJK character as `?`. ISO 32000-2
+  types these entries as text strings (Tables 255 and 401). They are now written as PDF text
+  strings: a value whose characters all have the same byte in Latin-1 and PDFDocEncoding keeps its
+  one-byte form, and any other value is written as UTF-16BE with a byte order mark. **Deliberate
+  output changes**, each measured on the 2.3.3 build and this one: a value with a character above
+  U+00FF now keeps it (`/Name` for the example above is `FE FF 01 41 00 75 ...` where it was `4C 75
+  ...`); a value with U+0080 to U+00A0, U+00AD, U+0018 to U+001F or U+007F, where Latin-1 and
+  PDFDocEncoding disagree or leave a code undefined, is now UTF-16BE where it was one byte a reader
+  shows as another character (0xA0 is the euro sign in PDFDocEncoding); a value starting with the
+  bytes of a byte order mark takes the UTF-16BE form; and a lone surrogate, which was `?`, is now
+  U+FFFD. ASCII values and the Latin-1 letters and symbols PDFDocEncoding shares are byte-identical to
+  2.3.3, and none of the 13 values probed fails to sign. `AcroFormBuilder` still writes field text strings its own way and is not changed here.
+  The public XML documentation on the four signing properties and the two output-intent methods
+  now says this, and replaces the sentence that described the best-fit substitution as the
+  behaviour.
 - **Cost-bound tests no longer assert on elapsed time (#400, #456).** A `Stopwatch` checked after a
   call returns cannot end a hang, and a 10 s bound fails on a loaded runner: the main CI run for
   1c61fa6 failed `FindingHigh_A4FlateBombPadding_refusesQuickly_viaCostBudget` at 11.79 s, and #400

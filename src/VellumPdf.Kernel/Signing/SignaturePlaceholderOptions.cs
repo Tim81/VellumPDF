@@ -58,15 +58,59 @@ public sealed class SignaturePlaceholderOptions
     public int EstimatedSignatureSizeBytes { get; init; } = 8192;
 
     /// <summary>Optional signer name written to /Name in the signature dictionary.</summary>
+    /// <remarks>
+    /// <strong>No character is transliterated, and no value is refused.</strong> The value is written as a PDF
+    /// text string (ISO 32000-2, Table 255). ASCII and Latin-1 text keeps one byte per character; a value
+    /// holding any character PDFDocEncoding cannot carry as the same byte, such as U+0141 or U+2014, is
+    /// written as UTF-16BE with a byte order mark and reaches the file as itself. Up to 2.3.3 the value was
+    /// encoded with <c>Encoding.Latin1</c>, whose fallback rewrote such a character into a look-alike
+    /// (U+0141 became <c>L</c>, U+2014 became <c>-</c>) without reporting it, so a signature could name a
+    /// different person than the caller gave.
+    /// <para><strong>Do not</strong> pass a lone UTF-16 surrogate: it is not a character, and it is written as
+    /// U+FFFD. A <see langword="null"/> or empty value omits the entry.</para>
+    /// </remarks>
     public string? SignerName { get; init; }
 
     /// <summary>Optional reason for signing, written to /Reason.</summary>
+    /// <remarks>
+    /// <strong>No character is transliterated, and no value is refused.</strong> The value is written as a PDF
+    /// text string (ISO 32000-2, Table 255). ASCII and Latin-1 text keeps one byte per character; a value
+    /// holding any character PDFDocEncoding cannot carry as the same byte, such as U+0141 or U+2014, is
+    /// written as UTF-16BE with a byte order mark and reaches the file as itself. Up to 2.3.3 the value was
+    /// encoded with <c>Encoding.Latin1</c>, whose fallback rewrote such a character into a look-alike
+    /// (U+0141 became <c>L</c>, U+2014 became <c>-</c>) without reporting it, so a signature could name a
+    /// different person than the caller gave.
+    /// <para><strong>Do not</strong> pass a lone UTF-16 surrogate: it is not a character, and it is written as
+    /// U+FFFD. A <see langword="null"/> or empty value omits the entry.</para>
+    /// </remarks>
     public string? Reason { get; init; }
 
     /// <summary>Optional signing location, written to /Location.</summary>
+    /// <remarks>
+    /// <strong>No character is transliterated, and no value is refused.</strong> The value is written as a PDF
+    /// text string (ISO 32000-2, Table 255). ASCII and Latin-1 text keeps one byte per character; a value
+    /// holding any character PDFDocEncoding cannot carry as the same byte, such as U+0141 or U+2014, is
+    /// written as UTF-16BE with a byte order mark and reaches the file as itself. Up to 2.3.3 the value was
+    /// encoded with <c>Encoding.Latin1</c>, whose fallback rewrote such a character into a look-alike
+    /// (U+0141 became <c>L</c>, U+2014 became <c>-</c>) without reporting it, so a signature could name a
+    /// different person than the caller gave.
+    /// <para><strong>Do not</strong> pass a lone UTF-16 surrogate: it is not a character, and it is written as
+    /// U+FFFD. A <see langword="null"/> or empty value omits the entry.</para>
+    /// </remarks>
     public string? Location { get; init; }
 
     /// <summary>Optional contact information, written to /ContactInfo.</summary>
+    /// <remarks>
+    /// <strong>No character is transliterated, and no value is refused.</strong> The value is written as a PDF
+    /// text string (ISO 32000-2, Table 255). ASCII and Latin-1 text keeps one byte per character; a value
+    /// holding any character PDFDocEncoding cannot carry as the same byte, such as U+0141 or U+2014, is
+    /// written as UTF-16BE with a byte order mark and reaches the file as itself. Up to 2.3.3 the value was
+    /// encoded with <c>Encoding.Latin1</c>, whose fallback rewrote such a character into a look-alike
+    /// (U+0141 became <c>L</c>, U+2014 became <c>-</c>) without reporting it, so a signature could name a
+    /// different person than the caller gave.
+    /// <para><strong>Do not</strong> pass a lone UTF-16 surrogate: it is not a character, and it is written as
+    /// U+FFFD. A <see langword="null"/> or empty value omits the entry.</para>
+    /// </remarks>
     public string? ContactInfo { get; init; }
 
     /// <summary>
