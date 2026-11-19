@@ -97,14 +97,20 @@ public sealed class RenderRetryAndOrderTests
     [Fact]
     public void Render_afterASuccessfulRender_isStillRefusedAsWritten()
     {
-        var (_, renderer) = OnePageRenderer();
+        var (pdf, renderer) = OnePageRenderer();
         using var first = new MemoryStream();
         renderer.Render(first);
+        var pagesAfterTheFirst = pdf.Pages.Count;
 
         using var second = new MemoryStream();
         var ex = Assert.Throws<InvalidOperationException>(() => renderer.Render(second));
         Assert.Contains("already been written", ex.Message, StringComparison.Ordinal);
         Assert.Equal(0, second.Length);
+
+        // The refusal comes before the layout, so the refused call has not appended a second copy of the page.
+        // PdfDocument.Save raises the same exception later, which is why the message alone cannot tell the two apart.
+        Assert.Equal(1, pagesAfterTheFirst);
+        Assert.Equal(pagesAfterTheFirst, pdf.Pages.Count);
     }
 
     // ── "No pages" is reported first ─────────────────────────────────────────
@@ -123,6 +129,22 @@ public sealed class RenderRetryAndOrderTests
         pdf.Encrypt(new PdfEncryptionSettings { UserPassword = "pw" });
         using var ms = new MemoryStream();
         Assert.Contains("no pages", Assert.Throws<InvalidOperationException>(() => renderer.Render(ms)).Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>With nothing added the layout still checks the geometry and the bands, so a band that consumes the page is refused as such and not as "no pages".</summary>
+    [Fact]
+    public void Render_withNothingAddedAndABandThatConsumesThePage_refusesTheGeometryBeforeNoPages()
+    {
+        var pdf = new PdfDocument();
+        var renderer = new DocumentRenderer(pdf, new PdfRectangle(0, 0, 300, 200), new EdgeInsets(10))
+        {
+            Header = new RunningBand("h") { Height = 300 },
+        };
+        using var ms = new MemoryStream();
+
+        var ex = Assert.Throws<ArgumentException>(() => renderer.Render(ms));
+
+        Assert.Equal("margins", ex.ParamName);
     }
 
     [Fact]

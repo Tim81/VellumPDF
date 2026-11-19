@@ -16,23 +16,38 @@ public sealed class ElementMarginNonFiniteTests
 
     // Only the line separator is refused before the layout, as in 2.3.3: it throws for every edge and every non-finite value,
     // with the same message. Every other element runs the layout and is covered by KeepRenderingTests.
-    public static TheoryData<double> Values() => new()
+    public static TheoryData<string, double> EdgesAndValues()
     {
-        double.NaN,
-        double.PositiveInfinity,
-        double.NegativeInfinity,
-    };
+        var data = new TheoryData<string, double>();
+        foreach (var edge in new[] { "top", "right", "bottom", "left" })
+        {
+            foreach (var value in new[] { double.NaN, double.PositiveInfinity, double.NegativeInfinity })
+            {
+                data.Add(edge, value);
+            }
+        }
+
+        return data;
+    }
+
+    // EdgeInsets takes (top, right, bottom, left); the non-finite value goes on one edge and the other three stay 0, so
+    // a check that skips that edge is the only thing that can let the document through.
+    private static EdgeInsets OneEdge(string edge, double value) => new(
+        edge == "top" ? value : 0,
+        edge == "right" ? value : 0,
+        edge == "bottom" ? value : 0,
+        edge == "left" ? value : 0);
 
     [Theory]
-    [MemberData(nameof(Values))]
-    public void LineSeparatorMargins_nonFinite_areRefusedByName(double value)
+    [MemberData(nameof(EdgesAndValues))]
+    public void LineSeparatorMargins_nonFinite_areRefusedByName(string edge, double value)
     {
         using var doc = new Document
         {
             PageSize = new PdfRectangle(0, 0, 300, 300),
             Margins = new EdgeInsets(10),
         };
-        doc.Add(new LineSeparator { Margins = new EdgeInsets(0, 0, 0, value) });
+        doc.Add(new LineSeparator { Margins = OneEdge(edge, value) });
 
         using var ms = new MemoryStream();
         var ex = Assert.Throws<InvalidOperationException>(() => doc.Save(ms));
@@ -40,7 +55,30 @@ public sealed class ElementMarginNonFiniteTests
         Assert.Equal("A line separator has a non-finite inset. Every inset must be a finite number.", ex.Message);
     }
 
-    /// <summary>A finite negative element margin saves.</summary>
+    [Theory]
+    [MemberData(nameof(EdgesAndValues))]
+    public void CellPadding_nonFinite_isRefusedByName(string edge, double value)
+    {
+        using var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, 300, 300),
+            Margins = new EdgeInsets(10),
+        };
+        var table = new TableElement { DefaultCellStyle = Style() };
+        table.AddRow().AddCell(new Cell("x") { Padding = OneEdge(edge, value) });
+        doc.Add(table);
+
+        using var ms = new MemoryStream();
+        var ex = Assert.Throws<InvalidOperationException>(() => doc.Save(ms));
+
+        Assert.Equal("Table row 0, cell 0 has a non-finite inset. Every inset must be a finite number.", ex.Message);
+    }
+
+    /// <summary>
+    /// A finite negative inset saves on each of the two members that <c>LayoutValidation.ValidateInsets</c> checks, a
+    /// line separator's margins and a cell's padding, and on a paragraph, which it never checks; a check that refused a
+    /// negative inset would fail the first two.
+    /// </summary>
     [Fact]
     public void ElementMargins_finiteNegative_stillSaves()
     {
@@ -50,10 +88,16 @@ public sealed class ElementMarginNonFiniteTests
             Margins = new EdgeInsets(10),
         };
         doc.Add(new Paragraph("x", Style()) { Margins = new EdgeInsets(0, 0, 0, -5) });
+        doc.Add(new LineSeparator { Margins = new EdgeInsets(-5, -5, -5, -5) });
+        var table = new TableElement { DefaultCellStyle = Style() };
+        table.AddRow().AddCell(new Cell("x") { Padding = new EdgeInsets(-1) });
+        doc.Add(table);
 
         using var ms = new MemoryStream();
-        var ex = Record.Exception(() => doc.Save(ms));
+        doc.Save(ms);
+        var stream = PdfTestUtil.DecompressAllFlatStreams(ms.ToArray());
 
-        Assert.Null(ex);
+        // The separator still draws its line.
+        Assert.Matches(@"(?m)^[-\d.]+ [-\d.]+ l\s*$", stream);
     }
 }

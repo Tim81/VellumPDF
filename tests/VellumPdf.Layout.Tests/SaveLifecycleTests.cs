@@ -116,6 +116,74 @@ public sealed class SaveLifecycleTests
         Assert.Equal(FreshOnePage().Length, recovered.Length);
     }
 
+    /// <summary>
+    /// The content-area refusal is raised inside the layout, after the constructor's checks, and is just as
+    /// recoverable: nothing was laid out, so shrinking the band and saving again writes the one page.
+    /// </summary>
+    [Fact]
+    public void BandThatConsumesThePage_isRefusedBeforeAnythingIsLaidOut_soShrinkingItRecovers()
+    {
+        using var doc = Good();
+        doc.Add(new Paragraph("Hello", Style()));
+        doc.Header = new RunningBand("h") { Height = 300 };      // taller than the 200pt page
+
+        var ex = Assert.Throws<ArgumentException>(() => Save(doc));
+        Assert.Equal("margins", ex.ParamName);
+
+        doc.Header = null;
+        var recovered = Save(doc);
+
+        Assert.Equal(1, Pages(recovered));
+        Assert.Equal(FreshOnePage().Length, recovered.Length);
+    }
+
+    /// <summary>
+    /// An empty document lays out no page, but its geometry and bands are checked, and that refusal comes
+    /// before "no pages". On 2.3.3 the same two documents threw this <see cref="ArgumentException"/>.
+    /// </summary>
+    [Fact]
+    public void EmptyDocument_withMarginsThatMeetThePageWidth_isRefusedForTheGeometry_notForHavingNoPages()
+    {
+        using var doc = Good();
+        doc.PageSize = new PdfRectangle(0, 0, 15, 200);
+
+        var ex = Assert.Throws<ArgumentException>(() => Save(doc));
+
+        Assert.Equal("margins", ex.ParamName);
+    }
+
+    [Fact]
+    public void EmptyDocument_withABandThatConsumesThePage_isRefusedForTheGeometry_notForHavingNoPages()
+    {
+        using var doc = Good();
+        doc.Header = new RunningBand("h") { Height = 300 };
+
+        var ex = Assert.Throws<ArgumentException>(() => Save(doc));
+
+        Assert.Equal("margins", ex.ParamName);
+    }
+
+    /// <summary>
+    /// A document whose layout already failed, saved to a stream that cannot be written: the stream is the
+    /// precondition and is reported first, as on 2.3.3, where the layout defect was still in the content and the
+    /// call reported the stream. The refusal "cannot be saved again" only follows once the destination is usable.
+    /// </summary>
+    [Fact]
+    public void LayoutThatThrew_thenAnUnwritableStream_reportsTheStreamBeforeTheBurnedDocument()
+    {
+        using var doc = TooTall();
+        Assert.Throws<InvalidOperationException>(() => Save(doc));
+        using var readOnly = new MemoryStream(new byte[8], writable: false);
+
+        var ex = Assert.Throws<ArgumentException>(() => doc.Save(readOnly));
+
+        Assert.Equal("destination", ex.ParamName);
+
+        using var ok = new MemoryStream();
+        var again = Assert.Throws<InvalidOperationException>(() => doc.Save(ok));
+        Assert.Contains("cannot be saved again", again.Message, StringComparison.Ordinal);
+    }
+
     // ── Refusals that need no layout come before it ──────────────────────────
 
     [Fact]

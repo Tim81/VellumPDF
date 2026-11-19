@@ -110,6 +110,10 @@ public sealed class NullArgumentTests
         _ = new Cell(string.Empty);
         _ = new RunningBand(string.Empty);
         _ = new TextRun(string.Empty, Style());
+
+        // ListElement.Add(string) has its own null check, and an empty string must pass it.
+        Assert.Single(new ListElement().Add(string.Empty).Items);
+        Assert.Single(new ListElement().Add(new ListItem(string.Empty)).Items);
     }
 
     // ── A null cell text: stored, and refused where a column is sized automatically ──

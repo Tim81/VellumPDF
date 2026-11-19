@@ -240,6 +240,32 @@ public sealed class RefusalMessageTests
     }
 
     /// <summary>
+    /// The threshold itself is accepted: 5e-6 is the smallest extent written as a non-zero token, so a
+    /// width or a height of exactly that value draws, and the matrix carries <c>0.00001</c> (the
+    /// five-decimal rounding of 5e-6). A guard written as "greater than" instead of "at least" would
+    /// refuse it.
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Image_extentExactlyAtTheThreshold_isDrawn(bool width)
+    {
+        using var doc = Page();
+        doc.Add(width
+            ? new LayoutImage(TwoByTwoImage()) { Width = 5e-6 }
+            : new LayoutImage(TwoByTwoImage()) { Height = 5e-6 });
+
+        var stream = Stream(doc);
+
+        // The matrix is a b c d e f cm, so the width is its first operand and the height its fourth.
+        Assert.Matches(
+            width
+                ? @"(?m)^0\.00001 0 0 [-\d.]+ [-\d.]+ [-\d.]+ cm\s*$"
+                : @"(?m)^[-\d.]+ 0 0 0\.00001 [-\d.]+ [-\d.]+ cm\s*$",
+            stream);
+    }
+
+/// <summary>
     /// Margins that consume the content box drive the drawn width to zero while the property itself
     /// was never set, which is why the message carries no advice to unset it.
     /// </summary>

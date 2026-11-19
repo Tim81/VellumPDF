@@ -62,6 +62,26 @@ public sealed class OverflowInputTests
         Assert.Equal(CurveCount(DefaultTwoSlices()), CurveCount(Stream(doc)));
     }
 
+    /// <summary>
+    /// Two slices of 8e307 total 1.6e308, which is finite, but 2 * pi * 8e307 is already infinity, so a sweep
+    /// computed as <c>2 * pi * value / total</c> instead of <c>2 * pi * (value / total)</c> loses every wedge.
+    /// </summary>
+    [Fact]
+    public void Pie_totalBelowTheLargestFinite_stillDrawsEveryWedge_whereTwoPiTimesAValueOverflows()
+    {
+        Assert.True(double.IsFinite(8e307 + 8e307));
+        Assert.True(double.IsInfinity(2 * Math.PI * 8e307));
+
+        using var doc = Page();
+        doc.Add(new PieChart { Slices = [new PieSlice(8e307, ColorRgb.Black), new PieSlice(8e307, ColorRgb.White)] });
+
+        var stream = Stream(doc);
+
+        Assert.Equal(4, CurveCount(stream));
+        Assert.DoesNotContain("NaN", stream, StringComparison.Ordinal);
+        Assert.DoesNotContain("Infinity", stream, StringComparison.Ordinal);
+    }
+
     private static string DefaultTwoSlices()
     {
         using var doc = Page();
@@ -90,16 +110,10 @@ public sealed class OverflowInputTests
         Assert.Equal(expected, CurveCount(Stream(doc)));
     }
 
-    /// <summary>An angle already within a turn is not changed, so ordinary documents write the same bytes.</summary>
-    [Theory]
-    [InlineData(0.0)]
-    [InlineData(0.5)]
-    [InlineData(-0.5)]
-    [InlineData(Math.PI / 2)]
-    public void Pie_startAngleWithinATurn_isUnchanged(double angle)
-    {
-        Assert.Equal(angle, angle % (2 * Math.PI));
-    }
+    // An angle already within a turn is not changed, so ordinary documents write the same bytes. The
+    // check that pins the bytes 2.3.3 wrote for 0, 0.5, -0.5 and pi/2 is
+    // PieStartAngleTests.AnAngleBelowTheThreshold_writesTheBytes2_3_3Wrote: it draws the chart, which a
+    // comparison of the angle with itself cannot do.
 
     [Fact]
     public void Pie_startAngleAnExactTurnApart_startsAtTheSameVertex()
@@ -156,6 +170,11 @@ public sealed class OverflowInputTests
         table.AddRow().AddCell("a").AddCell("b").AddCell("c");
         doc.Add(table);
 
-        Assert.Contains("100 ", Stream(doc), StringComparison.Ordinal);
+        var widths = Regex.Matches(Stream(doc), @"(?m)^[-\d.]+ [-\d.]+ ([-\d.]+) [-\d.]+ re\s*$")
+            .Select(m => double.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture))
+            .ToArray();
+
+        // One cell rectangle per column, at the width given: 2.3.3 drew 100, 60 and 70 here.
+        Assert.Equal([100.0, 60.0, 70.0], widths);
     }
 }

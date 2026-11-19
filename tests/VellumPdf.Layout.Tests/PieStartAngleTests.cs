@@ -28,6 +28,10 @@ public sealed class PieStartAngleTests
     [InlineData(65.3, "297.64 663.89 m", "219.47227 726.25831 l")]
     [InlineData(12345.678, "297.64 663.89 m", "368.65194 593.48187 l")]
     [InlineData(1e11, "297.64 663.89 m", "334.72478 756.75937 l")]
+    [InlineData(0.0, "297.64 663.89 m", "397.64 663.89 l")]
+    [InlineData(0.5, "297.64 663.89 m", "385.39826 711.83255 l")]
+    [InlineData(-0.5, "297.64 663.89 m", "385.39826 615.94745 l")]
+    [InlineData(Math.PI / 2, "297.64 663.89 m", "297.64 763.89 l")]
     public void AnAngleBelowTheThreshold_writesTheBytes2_3_3Wrote(double angle, string first, string second)
     {
         var lines = PathLines(angle);
