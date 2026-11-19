@@ -43,15 +43,67 @@ public sealed class PdfSignatureSettings
     public IExternalSigner? ExternalSigner { get; init; }
 
     /// <summary>Optional signer name written to /Name in the signature dictionary.</summary>
+    /// <remarks>
+    /// <strong>No value is refused, and no character is rewritten into another.</strong> The value
+    /// is written as a PDF text string (ISO 32000-2, Table 255). A value made only of U+0020 to
+    /// U+007E, U+00A1 to U+00FF except U+00AD, and U+0000 to U+0017 is written one byte per
+    /// character, unless it begins with U+00FE U+00FF or U+00EF U+00BB U+00BF. Any other
+    /// value, including one with a character above U+00FF, is written as UTF-16BE with a byte
+    /// order mark and reaches the file as written.
+    /// <para><strong>Do not</strong> pass a lone UTF-16 surrogate or U+001B. A lone surrogate is
+    /// not a character and is written as U+FFFD. U+001B is written as it stands, and a reader takes
+    /// U+001B inside a UTF-16BE string for the start of a language escape sequence (7.9.2.2.2).
+    /// Version 3.0 will refuse both.</para>
+    /// <para>A <see langword="null"/> or empty value is ignored: the entry is not written.</para>
+    /// </remarks>
     public string? SignerName { get; init; }
 
     /// <summary>Optional reason for signing, written to /Reason.</summary>
+    /// <remarks>
+    /// <strong>No value is refused, and no character is rewritten into another.</strong> The value
+    /// is written as a PDF text string (ISO 32000-2, Table 255). A value made only of U+0020 to
+    /// U+007E, U+00A1 to U+00FF except U+00AD, and U+0000 to U+0017 is written one byte per
+    /// character, unless it begins with U+00FE U+00FF or U+00EF U+00BB U+00BF. Any other
+    /// value, including one with a character above U+00FF, is written as UTF-16BE with a byte
+    /// order mark and reaches the file as written.
+    /// <para><strong>Do not</strong> pass a lone UTF-16 surrogate or U+001B. A lone surrogate is
+    /// not a character and is written as U+FFFD. U+001B is written as it stands, and a reader takes
+    /// U+001B inside a UTF-16BE string for the start of a language escape sequence (7.9.2.2.2).
+    /// Version 3.0 will refuse both.</para>
+    /// <para>A <see langword="null"/> or empty value is ignored: the entry is not written.</para>
+    /// </remarks>
     public string? Reason { get; init; }
 
     /// <summary>Optional signing location, written to /Location.</summary>
+    /// <remarks>
+    /// <strong>No value is refused, and no character is rewritten into another.</strong> The value
+    /// is written as a PDF text string (ISO 32000-2, Table 255). A value made only of U+0020 to
+    /// U+007E, U+00A1 to U+00FF except U+00AD, and U+0000 to U+0017 is written one byte per
+    /// character, unless it begins with U+00FE U+00FF or U+00EF U+00BB U+00BF. Any other
+    /// value, including one with a character above U+00FF, is written as UTF-16BE with a byte
+    /// order mark and reaches the file as written.
+    /// <para><strong>Do not</strong> pass a lone UTF-16 surrogate or U+001B. A lone surrogate is
+    /// not a character and is written as U+FFFD. U+001B is written as it stands, and a reader takes
+    /// U+001B inside a UTF-16BE string for the start of a language escape sequence (7.9.2.2.2).
+    /// Version 3.0 will refuse both.</para>
+    /// <para>A <see langword="null"/> or empty value is ignored: the entry is not written.</para>
+    /// </remarks>
     public string? Location { get; init; }
 
     /// <summary>Optional contact information, written to /ContactInfo.</summary>
+    /// <remarks>
+    /// <strong>No value is refused, and no character is rewritten into another.</strong> The value
+    /// is written as a PDF text string (ISO 32000-2, Table 255). A value made only of U+0020 to
+    /// U+007E, U+00A1 to U+00FF except U+00AD, and U+0000 to U+0017 is written one byte per
+    /// character, unless it begins with U+00FE U+00FF or U+00EF U+00BB U+00BF. Any other
+    /// value, including one with a character above U+00FF, is written as UTF-16BE with a byte
+    /// order mark and reaches the file as written.
+    /// <para><strong>Do not</strong> pass a lone UTF-16 surrogate or U+001B. A lone surrogate is
+    /// not a character and is written as U+FFFD. U+001B is written as it stands, and a reader takes
+    /// U+001B inside a UTF-16BE string for the start of a language escape sequence (7.9.2.2.2).
+    /// Version 3.0 will refuse both.</para>
+    /// <para>A <see langword="null"/> or empty value is ignored: the entry is not written.</para>
+    /// </remarks>
     public string? ContactInfo { get; init; }
 
     /// <summary>

@@ -1037,6 +1037,43 @@ public sealed class PdfObjectParserTests
         Assert.Equal(new byte[] { 0x41, 0x42 }, ls.Bytes.ToArray());
     }
 
+    // ISO 32000-2 7.3.4.2: an unescaped end-of-line marker inside a literal string is one 0Ah,
+    // whether the file carries CR, LF or CRLF. Known answers are the exact decoded bytes.
+    [Theory]
+    [InlineData("(en\r\n)", new byte[] { 0x65, 0x6E, 0x0A })]
+    [InlineData("(en\n)", new byte[] { 0x65, 0x6E, 0x0A })]
+    [InlineData("(en\r)", new byte[] { 0x65, 0x6E, 0x0A })]
+    [InlineData("(a\r\nb)", new byte[] { 0x61, 0x0A, 0x62 })]
+    [InlineData("(a\r\r\nb)", new byte[] { 0x61, 0x0A, 0x0A, 0x62 })]
+    [InlineData("(a\n\rb)", new byte[] { 0x61, 0x0A, 0x0A, 0x62 })]
+    [InlineData("(a\r\n\r\nb)", new byte[] { 0x61, 0x0A, 0x0A, 0x62 })]
+    [InlineData("(a\\\r\nb)", new byte[] { 0x61, 0x62 })]
+    [InlineData("(a\\r\\nb)", new byte[] { 0x61, 0x0D, 0x0A, 0x62 })]
+    [InlineData("(a\\015\\012b)", new byte[] { 0x61, 0x0D, 0x0A, 0x62 })]
+    public void LiteralStringEndOfLineMarkerDecodesToOneLineFeed(string token, byte[] expected)
+    {
+        var ls = PdfObjectParser.DecodeLiteralString(System.Text.Encoding.Latin1.GetBytes(token));
+        Assert.Equal(expected, ls.Bytes.ToArray());
+
+        // The same bytes through the full parse path, as a dictionary value.
+        var bytes = System.Text.Encoding.Latin1.GetBytes("<< /Lang " + token + " >>");
+        var dict = Assert.IsType<PdfDictionary>(new PdfObjectParser(bytes) { NormalizeEndOfLine = true }.ParseObject());
+        var parsed = Assert.IsType<PdfLiteralString>(dict.Get(new PdfName("Lang")));
+        Assert.Equal(expected, parsed.Bytes.ToArray());
+    }
+
+    /// <summary>
+    /// A parser that is not told the strings are plain text keeps every byte between the
+    /// parentheses, which is what an encrypted file's strings need (they are ciphertext).
+    /// </summary>
+    [Fact]
+    public void LiteralString_keepsRawBytes_whenEndOfLineNormalisationIsOff()
+    {
+        var bytes = System.Text.Encoding.Latin1.GetBytes("(a\r\nb\rc)");
+        var parsed = Assert.IsType<PdfLiteralString>(new PdfObjectParser(bytes).ParseObject());
+        Assert.Equal(new byte[] { 0x61, 0x0D, 0x0A, 0x62, 0x0D, 0x63 }, parsed.Bytes.ToArray());
+    }
+
     // ── Empty / edge input ─────────────────────────────────────────────────
 
     [Fact]

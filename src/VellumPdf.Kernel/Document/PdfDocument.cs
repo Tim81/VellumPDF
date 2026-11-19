@@ -318,6 +318,15 @@ public sealed class PdfDocument : IDisposable
     /// operators requires an RGB output intent (<paramref name="componentCount"/> = 3).
     /// </para>
     /// </summary>
+    /// <remarks>
+    /// <strong>The identifier is written as a PDF text string.</strong> The identifier and
+    /// <paramref name="info"/> (ISO 32000-2, Table 401) made only of U+0020 to U+007E, U+00A1 to
+    /// U+00FF except U+00AD, and U+0000 to U+0017 are written one byte per character, unless the
+    /// value begins with U+00FE U+00FF or U+00EF U+00BB U+00BF; any other value is written as
+    /// UTF-16BE with a byte order mark and keeps its characters. Nothing is refused on this
+    /// account, though Table 401 gives the name of a condition in an industry-standard registry as
+    /// the typical value.
+    /// </remarks>
     /// <param name="iccProfile">The raw ICC profile bytes. Must be non-null and non-empty.</param>
     /// <param name="componentCount">Number of colour components: 1 (Gray), 3 (RGB), or 4 (CMYK).</param>
     /// <param name="outputConditionIdentifier">The OutputConditionIdentifier string (e.g. "sRGB IEC61966-2.1"). Must be non-null.</param>
@@ -342,6 +351,14 @@ public sealed class PdfDocument : IDisposable
     /// ICC profile (4 components). Use this when the document uses DeviceCMYK
     /// (<c>k</c>/<c>K</c>) operators under a PDF/A conformance level.
     /// </summary>
+    /// <remarks>
+    /// <strong>The identifier is written as a PDF text string.</strong> The identifier (ISO
+    /// 32000-2, Table 401), when made only of U+0020 to U+007E, U+00A1 to U+00FF except U+00AD, and
+    /// U+0000 to U+0017 is written one byte per character, unless it begins with U+00FE U+00FF or
+    /// U+00EF U+00BB U+00BF; any other value is written as UTF-16BE with a byte order mark and keeps
+    /// its characters. Nothing is refused on this account, though Table 401 gives the name of a
+    /// condition in an industry-standard registry as the typical value.
+    /// </remarks>
     /// <param name="outputConditionIdentifier">The OutputConditionIdentifier string written to the OutputIntent dictionary.</param>
     public void UseCmykOutputIntent(string outputConditionIdentifier = "Generic CMYK") =>
         SetPdfAOutputIntent(CmykIccProfile.Bytes, 4, outputConditionIdentifier);
@@ -1216,13 +1233,13 @@ public sealed class PdfDocument : IDisposable
 
         // Optional fields — only include if non-null/non-empty
         if (!string.IsNullOrEmpty(options.SignerName))
-            sigDict.Set(new PdfName("Name"), new PdfLiteralString(System.Text.Encoding.Latin1.GetBytes(options.SignerName)));
+            sigDict.Set(new PdfName("Name"), PdfLiteralString.FromTextString(options.SignerName));
         if (!string.IsNullOrEmpty(options.Reason))
-            sigDict.Set(new PdfName("Reason"), new PdfLiteralString(System.Text.Encoding.Latin1.GetBytes(options.Reason)));
+            sigDict.Set(new PdfName("Reason"), PdfLiteralString.FromTextString(options.Reason));
         if (!string.IsNullOrEmpty(options.Location))
-            sigDict.Set(new PdfName("Location"), new PdfLiteralString(System.Text.Encoding.Latin1.GetBytes(options.Location)));
+            sigDict.Set(new PdfName("Location"), PdfLiteralString.FromTextString(options.Location));
         if (!string.IsNullOrEmpty(options.ContactInfo))
-            sigDict.Set(new PdfName("ContactInfo"), new PdfLiteralString(System.Text.Encoding.Latin1.GetBytes(options.ContactInfo)));
+            sigDict.Set(new PdfName("ContactInfo"), PdfLiteralString.FromTextString(options.ContactInfo));
 
         registry.SetValue(sigDictRef, sigDict);
 
@@ -1359,10 +1376,8 @@ public sealed class PdfDocument : IDisposable
         var intentDict = new PdfDictionary()
             .Set(PdfName.Type, new PdfName("OutputIntent"))
             .Set(new PdfName("S"), new PdfName("GTS_PDFA1"))
-            .Set(new PdfName("OutputConditionIdentifier"), new PdfLiteralString(
-                System.Text.Encoding.Latin1.GetBytes(identifier)))
-            .Set(new PdfName("Info"), new PdfLiteralString(
-                System.Text.Encoding.Latin1.GetBytes(infoText)))
+            .Set(new PdfName("OutputConditionIdentifier"), PdfLiteralString.FromTextString(identifier))
+            .Set(new PdfName("Info"), PdfLiteralString.FromTextString(infoText))
             .Set(new PdfName("DestOutputProfile"), iccRef);
 
         var intentRef = registry.Reserve();
