@@ -84,7 +84,7 @@ public sealed class BoundaryContractTests
     [Theory]
     [InlineData(true, true, "ArgumentNullException")] // page null, handle null: the page wins
     [InlineData(true, false, "ArgumentNullException")] // page null, handle given
-    [InlineData(false, true, "NullReferenceException")] // page given, handle null
+    [InlineData(false, true, "ArgumentNullException")] // page given, handle null
     [InlineData(false, false, null)] // neither null
     public void UseEmbeddedFont_nullPageOutranksNullHandle(bool pageNull, bool handleNull, string? expected)
     {
@@ -107,7 +107,10 @@ public sealed class BoundaryContractTests
         var ex = Record.Exception(() => ctx.UseEmbeddedFont(handle));
         Assert.NotNull(ex);
         Assert.Equal(expected, ex.GetType().Name);
-        if (ex is ArgumentNullException ane) Assert.Equal("key", ane.ParamName);
+        // The null is refused by the kernel call and names the argument (#547). 2.3.3 raised
+        // NullReferenceException for a null handle and named "key" for a null page; a fault becoming
+        // ArgumentNullException is allowed (R2), and the message may improve.
+        if (ex is ArgumentNullException ane) Assert.Equal(pageNull ? "page" : "handle", ane.ParamName);
     }
 
     /// <summary>
@@ -377,7 +380,6 @@ public sealed class BoundaryContractTests
     [InlineData(0)]
     [InlineData(451.28)]
     [InlineData(1e308)]
-    [InlineData(double.NaN)]
     [InlineData(double.PositiveInfinity)]
     [InlineData(double.NegativeInfinity)]
     public void FlatListIndent_withUnlinkedText_isNeverRefused(double indent)
@@ -386,6 +388,20 @@ public sealed class BoundaryContractTests
         doc.Add(new ListElement { Indent = indent }.Add(new ListItem("flat")));
 
         Assert.NotEmpty(Render(doc));
+    }
+
+    /// <summary>
+    /// A NaN indent on a flat list is refused by the canvas with <see cref="ArgumentException"/>: 2.3.3
+    /// saved it with the token NaN in the content stream, which is not a PDF number (ISO 32000-2
+    /// 7.3.3), so the save refuses it (#532).
+    /// </summary>
+    [Fact]
+    public void FlatListIndent_atNaN_isRefusedByTheCanvas_where2_3_3WroteAnInvalidToken()
+    {
+        using var doc = new LayoutDocument();
+        doc.Add(new ListElement { Indent = double.NaN }.Add(new ListItem("flat")));
+
+        Assert.Throws<ArgumentException>(() => Render(doc));
     }
 
     /// <summary>
