@@ -64,12 +64,7 @@ public sealed class RunningBand
     /// from this property, when the style's size or leading is refused; see
     /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
     /// </exception>
-    /// <exception cref="IndexOutOfRangeException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the style holds a <see cref="VellumPdf.Fonts.Standard14"/> value
-    /// the enumeration does not name and the font is selected on a page; see
-    /// <see cref="TextStyle.FontRef"/>.
-    /// </exception>
+    /// <inheritdoc cref="Heading.Style" path="/exception[@cref='T:System.IndexOutOfRangeException']"/>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when the band measures text that holds an unpaired surrogate in an

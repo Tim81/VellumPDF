@@ -310,32 +310,8 @@ public sealed class Document : IDisposable
     /// Set via <see cref="SetFooter"/> for a fluent API.
     /// Supports {page} and {pages} tokens.
     /// </summary>
-    /// <remarks>
-    /// A band whose <see cref="RunningBand.Template"/> is null is refused when the band is drawn,
-    /// not when it is assigned. The band's height and style carry
-    /// refusals of their own; see <see cref="RunningBand.Height"/>,
-    /// <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/> and
-    /// <see cref="TextStyle.FontRef"/>.
-    /// </remarks>
-    /// <exception cref="ArgumentException">
-    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
-    /// band's height leaves the content area no positive size, or when <c>Height</c> is null and
-    /// its style's size or leading does; see <see cref="RunningBand.Height"/> and
-    /// <see cref="RunningBand.Style"/>. It is also raised when the band measures text that holds an
-    /// unpaired surrogate in an embedded font, which can include part of the template it then does
-    /// not draw; see <see cref="TextStyle.FontRef"/>.
-    /// </exception>
-    /// <exception cref="InvalidOperationException">
-    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
-    /// band's height, or its style's size or leading, is refused; see
-    /// <see cref="RunningBand.Height"/>, <see cref="TextStyle.FontSize"/> and
-    /// <see cref="TextStyle.Leading"/>.
-    /// </exception>
-    /// <exception cref="IndexOutOfRangeException">
-    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
-    /// band's style holds a <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not
-    /// name and the band draws text; see <see cref="TextStyle.FontRef"/>.
-    /// </exception>
+    /// <inheritdoc cref="Header" path="/remarks"/>
+    /// <inheritdoc cref="Header" path="/exception"/>
     public RunningBand? Footer { get; set; }
 
     /// <summary>
@@ -386,25 +362,7 @@ public sealed class Document : IDisposable
     /// <exception cref="ArgumentNullException">
     /// <paramref name="template"/> is <see langword="null"/>.
     /// </exception>
-    /// <exception cref="ArgumentException">
-    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
-    /// band's height leaves the content area no positive size, or when <c>Height</c> is null and
-    /// its style's size or leading does; see <see cref="RunningBand.Height"/> and
-    /// <see cref="RunningBand.Style"/>. It is also raised when the band measures text that holds an
-    /// unpaired surrogate in an embedded font, which can include part of the template it then does
-    /// not draw; see <see cref="TextStyle.FontRef"/>.
-    /// </exception>
-    /// <exception cref="InvalidOperationException">
-    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
-    /// band's height, or its style's size or leading, is refused; see
-    /// <see cref="RunningBand.Height"/>, <see cref="TextStyle.FontSize"/> and
-    /// <see cref="TextStyle.Leading"/>.
-    /// </exception>
-    /// <exception cref="IndexOutOfRangeException">
-    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
-    /// band's style holds a <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not
-    /// name and the band draws text; see <see cref="TextStyle.FontRef"/>.
-    /// </exception>
+    /// <inheritdoc cref="Header" path="/exception[@cref='T:System.ArgumentException' or @cref='T:System.InvalidOperationException' or @cref='T:System.IndexOutOfRangeException']"/>
     public Document SetHeader(string template, TextStyle? style = null, HorizontalAlignment alignment = HorizontalAlignment.Center)
     {
         Header = new RunningBand(template, style, alignment);
@@ -426,25 +384,7 @@ public sealed class Document : IDisposable
     /// <exception cref="ArgumentNullException">
     /// <paramref name="template"/> is <see langword="null"/>.
     /// </exception>
-    /// <exception cref="ArgumentException">
-    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
-    /// band's height leaves the content area no positive size, or when <c>Height</c> is null and
-    /// its style's size or leading does; see <see cref="RunningBand.Height"/> and
-    /// <see cref="RunningBand.Style"/>. It is also raised when the band measures text that holds an
-    /// unpaired surrogate in an embedded font, which can include part of the template it then does
-    /// not draw; see <see cref="TextStyle.FontRef"/>.
-    /// </exception>
-    /// <exception cref="InvalidOperationException">
-    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
-    /// band's height, or its style's size or leading, is refused; see
-    /// <see cref="RunningBand.Height"/>, <see cref="TextStyle.FontSize"/> and
-    /// <see cref="TextStyle.Leading"/>.
-    /// </exception>
-    /// <exception cref="IndexOutOfRangeException">
-    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
-    /// band's style holds a <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not
-    /// name and the band draws text; see <see cref="TextStyle.FontRef"/>.
-    /// </exception>
+    /// <inheritdoc cref="Header" path="/exception[@cref='T:System.ArgumentException' or @cref='T:System.InvalidOperationException' or @cref='T:System.IndexOutOfRangeException']"/>
     public Document SetFooter(string template, TextStyle? style = null, HorizontalAlignment alignment = HorizontalAlignment.Center)
     {
         Footer = new RunningBand(template, style, alignment);
@@ -550,37 +490,13 @@ public sealed class Document : IDisposable
     /// holds, so it pre-empts the refusals above. The token is passed only to the file read. A
     /// cancellation after the read has no effect, and a font the parse accepts stays registered.
     /// </remarks>
-    /// <exception cref="ArgumentNullException">
-    /// <paramref name="path"/> is <see langword="null"/>.
-    /// </exception>
+    /// <inheritdoc cref="LoadTrueTypeFont" path="/exception[@cref='T:System.ArgumentNullException' or @cref='T:System.IO.FileNotFoundException' or @cref='T:System.IO.DirectoryNotFoundException' or @cref='T:System.UnauthorizedAccessException' or @cref='T:System.IO.IOException' or @cref='T:System.IO.InvalidDataException' or @cref='T:System.InvalidOperationException' or @cref='T:System.NotSupportedException']"/>
     /// <exception cref="ArgumentException">
     /// <paramref name="path"/> is empty, holds a null character, or, on Windows, holds only spaces.
     /// Other characters the file system refuses raise <see cref="IOException"/>.
     /// <see cref="Save(System.IO.Stream)"/> and the other save overloads also raise
     /// <see cref="ArgumentException"/>, not the returned task, for a value in the font that makes a
     /// font metric non-finite; see <see cref="UseTrueTypeFont"/>.
-    /// </exception>
-    /// <exception cref="FileNotFoundException">
-    /// <paramref name="path"/> names a file that does not exist.
-    /// </exception>
-    /// <exception cref="DirectoryNotFoundException">
-    /// The directory named in <paramref name="path"/> does not exist.
-    /// </exception>
-    /// <exception cref="UnauthorizedAccessException">
-    /// <paramref name="path"/> names a directory, or a file you may not read.
-    /// </exception>
-    /// <exception cref="IOException">
-    /// The file cannot be read for another reason the file system reports.
-    /// </exception>
-    /// <exception cref="InvalidDataException">
-    /// The file's bytes are malformed or truncated; see <see cref="UseTrueTypeFont"/>.
-    /// </exception>
-    /// <exception cref="InvalidOperationException">
-    /// A table the parser needs is missing; see <see cref="UseTrueTypeFont"/>.
-    /// </exception>
-    /// <exception cref="NotSupportedException">
-    /// The font's <c>cmap</c> table has no subtable in format 0, 4 or 6; see
-    /// <see cref="UseTrueTypeFont"/>.
     /// </exception>
     /// <exception cref="OperationCanceledException">
     /// <paramref name="cancellationToken"/> was already cancelled when this method was called.
@@ -804,11 +720,7 @@ public sealed class Document : IDisposable
     /// <exception cref="ArgumentNullException">
     /// <paramref name="text"/> is <see langword="null"/>.
     /// </exception>
-    /// <exception cref="ArgumentException">
-    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
-    /// call, when the text holds an unpaired surrogate and is measured in an embedded font; see
-    /// <see cref="TextStyle.FontRef"/>.
-    /// </exception>
+    /// <inheritdoc cref="Paragraph.Add(string, TextStyle)" path="/exception[@cref='T:System.ArgumentException']"/>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
     /// call, when the style used has a size or leading that is refused; see
@@ -1389,11 +1301,7 @@ public sealed class Document : IDisposable
     /// object holds is refused from the layout or the write, as it is by
     /// <see cref="Save(System.IO.Stream)"/>; see there for the shapes and the parameter names.
     /// </exception>
-    /// <exception cref="ObjectDisposedException">
-    /// This <see cref="Document"/> was already disposed. It derives from
-    /// <see cref="InvalidOperationException"/>, so a catch written for the base type also
-    /// catches it.
-    /// </exception>
+    /// <inheritdoc cref="Save(System.IO.Stream)" path="/exception[@cref='T:System.ObjectDisposedException' or @cref='T:System.ArgumentOutOfRangeException' or @cref='T:System.NotSupportedException' or @cref='T:System.NullReferenceException' or @cref='T:System.IndexOutOfRangeException' or @cref='T:System.IO.InvalidDataException' or @cref='T:System.OverflowException' or @cref='T:System.OutOfMemoryException']"/>
     /// <exception cref="ArgumentException">
     /// <paramref name="path"/> is empty, holds a null character, or, on Windows, holds only spaces.
     /// It is raised while the file is opened. The layout and writing causes listed on
@@ -1406,7 +1314,9 @@ public sealed class Document : IDisposable
     /// <exception cref="UnauthorizedAccessException">
     /// <paramref name="path"/> names a directory rather than a file, an existing file at
     /// <paramref name="path"/> is read-only, or, on Windows, hidden or a system file, or you may not
-    /// write to that location.
+    /// write to that location. Through a symbolic link, the file the link resolves to decides
+    /// whether it is hidden or a system file, unless the chain cannot be resolved, when the link's
+    /// own attributes do.
     /// </exception>
     /// <exception cref="IOException">
     /// A file at <paramref name="path"/> is already open elsewhere with no sharing allowed, which is
@@ -1420,32 +1330,6 @@ public sealed class Document : IDisposable
     /// PDF/UA-1 when the settings leave out <see cref="PdfPermissions.Extract"/>, or a registered
     /// font lacks a table the save needs. None of these touches the file at the path; see the
     /// remarks.
-    /// </exception>
-    /// <exception cref="ArgumentOutOfRangeException">
-    /// <see cref="PageSize"/> has a width or height that is not a positive finite number.
-    /// </exception>
-    /// <exception cref="NotSupportedException">
-    /// <see cref="UseObjectStreams"/> was set and <see cref="Encrypt"/> was called.
-    /// </exception>
-    /// <exception cref="NullReferenceException">
-    /// A null that a member still stores without a check: a null <see cref="PageSize"/>. A custom
-    /// renderer that returns a null result, or a null renderer inside one, raises it too; see
-    /// <see cref="IRenderer.Layout"/>. An element, text or item passed to an
-    /// <c>Add</c> overload is refused where it is passed instead.
-    /// </exception>
-    /// <exception cref="IndexOutOfRangeException">
-    /// A <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name is selected
-    /// on a page; see <see cref="TextStyle.FontRef"/>.
-    /// </exception>
-    /// <exception cref="InvalidDataException">
-    /// A font registered with <see cref="UseTrueTypeFont"/> has malformed outline data.
-    /// </exception>
-    /// <exception cref="OverflowException">
-    /// A row's <see cref="Cell.ColSpan"/> values sum past <see cref="int.MaxValue"/>.
-    /// </exception>
-    /// <exception cref="OutOfMemoryException">
-    /// A column count resolved from <see cref="Cell.ColSpan"/> asks for a per-column width array
-    /// too large to allocate.
     /// </exception>
     public void Save(string path)
     {
@@ -1534,34 +1418,7 @@ public sealed class Document : IDisposable
     /// <para>A document with no pages throws as well. Add at least one element before you
     /// save.</para>
     /// </remarks>
-    /// <exception cref="ArgumentNullException">
-    /// <paramref name="destination"/> is <see langword="null"/>. This is checked before the layout
-    /// runs, so the document is untouched and can be saved again; see the remarks.
-    /// It is also raised, from the layout and not from the call that stored the null, for a null an
-    /// element holds that is refused where it is used: a <see cref="TextRun"/> style that yields a
-    /// word (<c>ParamName</c> <c>Style</c>), a <see cref="Cell"/> text in a table with an
-    /// automatically sized column (<c>content</c>), a <see cref="ListItem"/> null child held by a
-    /// top-level item (<c>child</c>), a <see cref="ListItem"/> null text on a top-level item or on a
-    /// child of one (<c>text</c>), and a <see cref="RunningBand"/>
-    /// template that is drawn (<c>template</c>). A null value in a <see cref="PdfDictionary"/>, or a
-    /// null child of a <see cref="PdfStructElem"/> in a tagged document, is refused when the PDF is
-    /// written, with <c>ParamName</c> <c>value</c> or <c>child</c>; see
-    /// <see cref="PdfDocument.Save(System.IO.Stream)"/>. The layout had started, so the document
-    /// cannot be saved again.
-    /// </exception>
-    /// <exception cref="ObjectDisposedException">
-    /// This <see cref="Document"/> was already disposed. It derives from
-    /// <see cref="InvalidOperationException"/>, so a catch written for the base type also catches it.
-    /// </exception>
-    /// <exception cref="InvalidOperationException">
-    /// The document has already been written, or has no pages, or an element's input cannot be laid
-    /// out, or <see cref="Encrypt"/> is combined with a PDF/A <see cref="Conformance"/>, or with
-    /// PDF/UA-1 when the settings leave out <see cref="PdfPermissions.Extract"/>; see
-    /// <see cref="Conformance"/>. It is also raised when a font registered with
-    /// <see cref="UseTrueTypeFont"/> lacks a table the save needs, and by every save after one whose
-    /// save threw once its layout had started. For the element inputs, the boundary
-    /// documentation on the property you set says which values reach this.
-    /// </exception>
+    /// <inheritdoc cref="Save(System.IO.Stream)" path="/exception[@cref='T:System.ArgumentNullException' or @cref='T:System.InvalidOperationException' or @cref='T:System.IO.IOException' or @cref='T:System.ObjectDisposedException' or @cref='T:System.ArgumentOutOfRangeException' or @cref='T:System.NotSupportedException' or @cref='T:System.NullReferenceException' or @cref='T:System.IndexOutOfRangeException' or @cref='T:System.IO.InvalidDataException' or @cref='T:System.OverflowException' or @cref='T:System.OutOfMemoryException']"/>
     /// <exception cref="ArgumentException">
     /// <paramref name="destination"/> cannot be written to, which includes a stream that was already
     /// closed. That is refused before the layout runs and reports <c>destination</c>, so the
@@ -1574,34 +1431,6 @@ public sealed class Document : IDisposable
     /// in an embedded font, and a non-finite position the save writes outside the content stream;
     /// see <see cref="Margins"/>.
     /// </exception>
-    /// <exception cref="ArgumentOutOfRangeException">
-    /// <see cref="PageSize"/> has a width or height that is not a positive finite number.
-    /// </exception>
-    /// <exception cref="NotSupportedException">
-    /// <see cref="UseObjectStreams"/> was set and <see cref="Encrypt"/> was called, which cannot be
-    /// combined.
-    /// </exception>
-    /// <exception cref="NullReferenceException">
-    /// A null that a member still stores without a check: a null <see cref="PageSize"/>. A custom
-    /// renderer that returns a null result, or a null renderer inside one, raises it too; see
-    /// <see cref="IRenderer.Layout"/>. An element, text or item passed to an
-    /// <c>Add</c> overload is refused where it is passed instead.
-    /// </exception>
-    /// <exception cref="IndexOutOfRangeException">
-    /// A <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name is selected
-    /// on a page; see <see cref="TextStyle.FontRef"/>.
-    /// </exception>
-    /// <exception cref="InvalidDataException">
-    /// A font registered with <see cref="UseTrueTypeFont"/> has malformed outline data.
-    /// </exception>
-    /// <exception cref="OverflowException">
-    /// A row's <see cref="Cell.ColSpan"/> values sum past <see cref="int.MaxValue"/> while a
-    /// table's column count is resolved.
-    /// </exception>
-    /// <exception cref="OutOfMemoryException">
-    /// A table's column count, resolved by <see cref="Cell.ColSpan"/> to something near
-    /// <see cref="int.MaxValue"/>, asks for a per-column width array too large to allocate.
-    /// </exception>
     /// <exception cref="OperationCanceledException">
     /// The token is looked at three times: before the layout starts, once it has finished, and once
     /// serialisation has finished. A cancellation seen at one of those points ends the task with a
@@ -1609,10 +1438,6 @@ public sealed class Document : IDisposable
     /// is reported instead, such as a refused page geometry, an exception from an element, a null
     /// destination, or a closed or non-writable one, which is refused before the layout. During the
     /// write, <paramref name="destination"/> receives the token and decides what to raise.
-    /// </exception>
-    /// <exception cref="IOException">
-    /// Writing to <paramref name="destination"/> failed, such as on a full disk. The stream's own
-    /// exception reaches you unchanged.
     /// </exception>
     // RS0026 flags multiple overloads with optional parameters as a future-ambiguity risk;
     // Stream and string share no implicit conversion, so overload resolution can never be
@@ -1656,69 +1481,14 @@ public sealed class Document : IDisposable
     /// about symbolic links, permissions, the advisory lock, the extra in-memory copy of the PDF, which
     /// has no 2 GB limit, and the final copy not being atomic applies here too.</para>
     /// </remarks>
-    /// <exception cref="ArgumentNullException">
-    /// <paramref name="path"/> is <see langword="null"/>. A null that an element or a written Kernel
-    /// object holds is refused from the layout or the write, as it is by
-    /// <see cref="Save(System.IO.Stream)"/>; see there for the shapes and the parameter names.
-    /// </exception>
-    /// <exception cref="ObjectDisposedException">
-    /// This <see cref="Document"/> was already disposed. It derives from
-    /// <see cref="InvalidOperationException"/>, so a catch written for the base type also
-    /// catches it.
-    /// </exception>
+    /// <inheritdoc cref="Save(string)" path="/exception[@cref='T:System.ArgumentNullException' or @cref='T:System.IO.DirectoryNotFoundException' or @cref='T:System.UnauthorizedAccessException' or @cref='T:System.IO.IOException' or @cref='T:System.InvalidOperationException']"/>
+    /// <inheritdoc cref="Save(System.IO.Stream)" path="/exception[@cref='T:System.ObjectDisposedException' or @cref='T:System.ArgumentOutOfRangeException' or @cref='T:System.NotSupportedException' or @cref='T:System.NullReferenceException' or @cref='T:System.IndexOutOfRangeException' or @cref='T:System.IO.InvalidDataException' or @cref='T:System.OverflowException' or @cref='T:System.OutOfMemoryException']"/>
     /// <exception cref="ArgumentException">
     /// <paramref name="path"/> is empty, holds a null character, or, on Windows, holds only spaces.
     /// It is raised while the file is opened. The layout and writing causes listed on
     /// <see cref="SaveAsync(System.IO.Stream, System.Threading.CancellationToken)"/> reach here
     /// too, once it is open. These are unrelated conditions that happen to share a type, so do
     /// <b>not</b> tell them apart by parameter name.
-    /// </exception>
-    /// <exception cref="DirectoryNotFoundException">
-    /// The directory named in <paramref name="path"/> does not exist.
-    /// </exception>
-    /// <exception cref="UnauthorizedAccessException">
-    /// <paramref name="path"/> names a directory rather than a file, an existing file at
-    /// <paramref name="path"/> is read-only, or, on Windows, hidden or a system file, or you may not
-    /// write to that location.
-    /// </exception>
-    /// <exception cref="IOException">
-    /// A file at <paramref name="path"/> is already open elsewhere with no sharing allowed, which is
-    /// found before the layout runs, or <paramref name="path"/> is otherwise invalid for the file
-    /// system, being over-long or holding a character the file system refuses, such as
-    /// <c>&lt;</c> or <c>|</c>. It is also raised when writing the file fails.
-    /// </exception>
-    /// <exception cref="InvalidOperationException">
-    /// The document has already been written, or has no pages, or an element's input cannot be laid
-    /// out, or <see cref="Encrypt"/> is combined with a PDF/A <see cref="Conformance"/>, or with
-    /// PDF/UA-1 when the settings leave out <see cref="PdfPermissions.Extract"/>, or a registered
-    /// font lacks a table the save needs. None of these touches the file at the path; see the
-    /// remarks.
-    /// </exception>
-    /// <exception cref="ArgumentOutOfRangeException">
-    /// <see cref="PageSize"/> has a width or height that is not a positive finite number.
-    /// </exception>
-    /// <exception cref="NotSupportedException">
-    /// <see cref="UseObjectStreams"/> was set and <see cref="Encrypt"/> was called.
-    /// </exception>
-    /// <exception cref="NullReferenceException">
-    /// A null that a member still stores without a check: a null <see cref="PageSize"/>. A custom
-    /// renderer that returns a null result, or a null renderer inside one, raises it too; see
-    /// <see cref="IRenderer.Layout"/>. An element, text or item passed to an
-    /// <c>Add</c> overload is refused where it is passed instead.
-    /// </exception>
-    /// <exception cref="IndexOutOfRangeException">
-    /// A <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name is selected
-    /// on a page; see <see cref="TextStyle.FontRef"/>.
-    /// </exception>
-    /// <exception cref="InvalidDataException">
-    /// A font registered with <see cref="UseTrueTypeFont"/> has malformed outline data.
-    /// </exception>
-    /// <exception cref="OverflowException">
-    /// A row's <see cref="Cell.ColSpan"/> values sum past <see cref="int.MaxValue"/>.
-    /// </exception>
-    /// <exception cref="OutOfMemoryException">
-    /// A column count resolved from <see cref="Cell.ColSpan"/> asks for a per-column width array
-    /// too large to allocate.
     /// </exception>
     /// <exception cref="OperationCanceledException">
     /// The token is looked at four times, and a cancellation seen at any of them throws

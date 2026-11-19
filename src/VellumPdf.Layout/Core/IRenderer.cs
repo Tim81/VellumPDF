@@ -58,5 +58,10 @@ public interface IRenderer
     /// built-in renderers draw nothing, draw a zero-size or off-page mark, or throw; see
     /// <see cref="VellumPdf.Layout.Rendering.Table.TableRenderer.Draw"/>.
     /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// A coordinate or extent the renderer writes is <c>NaN</c> or infinite, which
+    /// <see cref="VellumPdf.Canvas.PdfCanvas"/> refuses (<c>ParamName</c> is empty). <see cref="Layout"/>
+    /// does not check every box it hands to <c>Draw</c>, so such a value can reach it.
+    /// </exception>
     void Draw(DrawContext context);
 }

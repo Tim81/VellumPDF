@@ -186,35 +186,8 @@ public sealed class DocumentRenderer
     public RunningBand? Header { get; set; }
 
     /// <summary>Footer band drawn at the bottom of every page. Optional.</summary>
-    /// <remarks>
-    /// A band whose <see cref="RunningBand.Template"/> is null makes <see cref="Render"/> throw
-    /// (#531). Pages the kernel document already held when <see cref="Render"/> runs get no band,
-    /// and <c>{page}</c> counts those pages while <c>{pages}</c> does not. The band's height and
-    /// style refusals also come from <see cref="Render"/>; see <see cref="RunningBand.Height"/>,
-    /// <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/> and
-    /// <see cref="TextStyle.FontRef"/>.
-    /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Render"/>, not from this property, when the band's
-    /// <see cref="RunningBand.Template"/> is <see langword="null"/>.
-    /// </exception>
-    /// <exception cref="ArgumentException">
-    /// Raised from <see cref="Render"/>, when the band's height leaves the content area no positive
-    /// size, or when <c>Height</c> is null and its style's size or leading does; see
-    /// <see cref="RunningBand.Height"/> and <see cref="RunningBand.Style"/>. It is also raised when
-    /// the band measures text that holds an unpaired surrogate in an embedded font, which can
-    /// include part of the template it then does not draw; see <see cref="TextStyle.FontRef"/>.
-    /// </exception>
-    /// <exception cref="InvalidOperationException">
-    /// Raised from <see cref="Render"/>, when the band's height, or its style's size or leading, is
-    /// refused; see <see cref="RunningBand.Height"/>, <see cref="TextStyle.FontSize"/> and
-    /// <see cref="TextStyle.Leading"/>.
-    /// </exception>
-    /// <exception cref="IndexOutOfRangeException">
-    /// Raised from <see cref="Render"/>, when the band's style holds a
-    /// <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name and the band
-    /// draws text.
-    /// </exception>
+    /// <inheritdoc cref="Header" path="/remarks"/>
+    /// <inheritdoc cref="Header" path="/exception"/>
     public RunningBand? Footer { get; set; }
 
     // Pending bookmarks: queued by Document.AddBookmark, drained on next Draw.

@@ -82,33 +82,8 @@ public sealed class Heading
     public string? BookmarkTitle { get; init; }
 
     /// <summary>Margins around the heading.</summary>
-    /// <remarks>
-    /// A non-finite edge is not checked before the layout; see <see cref="Document"/>. The save throws <see cref="ArgumentException"/> from
-    /// <see cref="VellumPdf.Canvas.PdfCanvas"/> only where it would write the value.
-    /// <b>Do not pass</b> a
-    /// non-finite edge: 3.0 refuses it.
-    /// <para><b>Attention</b>: no other edge is checked. Each finite edge is taken off the area this
-    /// element is given, and the element is laid out in whatever box is left, even when that box is
-    /// empty or inverted. A negative edge, or edges wider than the area, can therefore make the save throw an exception
-    /// about something else, re-wrap, move or mirror the content, or leave the element off the page. The bottom edge
-    /// only limits that box: it adds no space before the next element. A negative top edge can also move the elements
-    /// placed after this one.</para>
-    /// <para>Do not pass a negative edge. 3.0 will refuse it.</para>
-    /// </remarks>
-    /// <exception cref="InvalidOperationException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the box the edges leave is too small for the element, in
-    /// which case the message says the element is too tall to fit on a page and does not name the
-    /// margins.
-    /// </exception>
-    /// <exception cref="ArgumentException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when a non-finite edge, or finite edges whose arithmetic overflows, put a
-    /// value the save writes at <c>NaN</c> or infinity, or leave a later element at a
-    /// non-finite position, and the save writes that position outside the content stream, as a
-    /// heading's bookmark or the rectangle of a link from <see cref="TextStyle.LinkUri"/>. The
-    /// message says PDF does not support NaN or Infinity as a real number.
-    /// </exception>
+    /// <inheritdoc cref="Paragraph.Margins" path="/remarks"/>
+    /// <inheritdoc cref="Paragraph.Margins" path="/exception"/>
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 
     /// <summary>Horizontal alignment of the heading text.</summary>
@@ -139,23 +114,7 @@ public sealed class Heading
     /// <exception cref="ArgumentNullException">
     /// <paramref name="text"/> is <see langword="null"/>.
     /// </exception>
-    /// <exception cref="ArgumentException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this constructor, when the text holds an unpaired surrogate and is measured in an
-    /// embedded font; see <see cref="TextStyle.FontRef"/>.
-    /// </exception>
-    /// <exception cref="InvalidOperationException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this constructor, when the style's size or leading is refused, or a channel of its text
-    /// colour is not finite; see <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/>
-    /// and <see cref="TextStyle.Color"/>.
-    /// </exception>
-    /// <exception cref="IndexOutOfRangeException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this constructor, when the style holds a <see cref="VellumPdf.Fonts.Standard14"/> value
-    /// the enumeration does not name and the font is selected on a page; see
-    /// <see cref="TextStyle.FontRef"/>.
-    /// </exception>
+    /// <inheritdoc cref="Paragraph.Paragraph(string, TextStyle)" path="/exception[@cref='T:System.ArgumentException' or @cref='T:System.IndexOutOfRangeException' or @cref='T:System.InvalidOperationException']"/>
     public Heading(string text, TextStyle? style = null)
     {
         ArgumentNullException.ThrowIfNull(text);

@@ -25,11 +25,7 @@ public sealed class Cell
     /// glyph the font's character map gives it, which is .notdef (glyph 0) when the map has no
     /// entry.
     /// </remarks>
-    /// <exception cref="ArgumentException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the text holds an unpaired surrogate and is measured in an embedded
-    /// font; see <see cref="TextStyle.FontRef"/>.
-    /// </exception>
+    /// <inheritdoc cref="Heading.Text" path="/exception[@cref='T:System.ArgumentException']"/>
     public string Content { get; }
 
     /// <summary>
@@ -103,23 +99,8 @@ public sealed class Cell
     /// <see cref="TextStyle"/> and are raised from the save. A <see cref="TextStyle.LinkUri"/> in
     /// it is ignored (#475).
     /// </remarks>
-    /// <exception cref="InvalidOperationException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the style's size or leading is refused, or a channel of its text
-    /// colour is not finite; see <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/>
-    /// and <see cref="TextStyle.Color"/>.
-    /// </exception>
-    /// <exception cref="IndexOutOfRangeException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the style holds a <see cref="VellumPdf.Fonts.Standard14"/> value
-    /// the enumeration does not name and the font is selected on a page; see
-    /// <see cref="TextStyle.FontRef"/>.
-    /// </exception>
-    /// <exception cref="ArgumentException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when text in this style holds an unpaired surrogate and is measured in
-    /// an embedded font; see <see cref="TextStyle.FontRef"/>.
-    /// </exception>
+    /// <inheritdoc cref="Heading.Style" path="/exception[@cref='T:System.InvalidOperationException' or @cref='T:System.IndexOutOfRangeException']"/>
+    /// <inheritdoc cref="ListElement.DefaultStyle" path="/exception[@cref='T:System.ArgumentException']"/>
     public TextStyle? Style { get; init; }
 
     /// <summary>Inner padding between the cell border and its content.</summary>
@@ -201,11 +182,7 @@ public sealed class Cell
     /// this call, when <paramref name="content"/> is <see langword="null"/> and a column is sized
     /// automatically. The document cannot be saved again.
     /// </exception>
-    /// <exception cref="ArgumentException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when the text holds an unpaired surrogate and is measured in an embedded
-    /// font; see <see cref="TextStyle.FontRef"/>.
-    /// </exception>
+    /// <inheritdoc cref="Paragraph.Add(string, TextStyle)" path="/exception[@cref='T:System.ArgumentException']"/>
     public Cell(string content)
     {
         Content = content;

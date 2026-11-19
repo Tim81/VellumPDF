@@ -168,7 +168,7 @@ public sealed class KeepRenderingTests
         return PdfTestUtil.DecompressAllFlatStreams(ms.ToArray());
     }
 
-    /// <summary>72 shapes: six elements (first and last paragraph, table, list, image, pie chart), four edges, three values; each saves with 2.3.3's drawn output, throws <see cref="ArgumentException"/> from <c>PdfCanvas</c> where 2.3.3 wrote an invalid token, or throws 2.3.3's exception type.</summary>
+    /// <summary>Each element, edge and value saves with 2.3.3's drawn output, throws <see cref="ArgumentException"/> from <c>PdfCanvas</c> where 2.3.3 wrote an invalid token, or throws 2.3.3's exception type.</summary>
     [Theory]
     [MemberData(nameof(MarginCases))]
     public void ElementMargin_nonFinite_matchesTheRecordedOutcomePerShape(string element, string edge, string value, string main)

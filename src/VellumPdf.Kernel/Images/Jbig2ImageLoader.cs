@@ -15,8 +15,8 @@ namespace VellumPdf.Images;
 /// is followed by its data. In the <i>random-access</i> organisation (D.2) all the segment headers
 /// come first, the last of them the end-of-file segment, and the data parts follow in the same
 /// order. Both are read. PDF <c>/JBIG2Decode</c> uses the <i>embedded</i> organisation (D.3):
-/// no file header; page-associated segments go in the image stream; globally-referenced segments
-/// (symbol dictionaries, pattern dictionaries, tables) go in a separate stream referenced as
+/// no file header; the segments of the page go in the image stream; the global segments (page
+/// association 0, such as symbol dictionaries, pattern dictionaries and tables) go in a separate stream referenced as
 /// <c>/DecodeParms &lt;&lt; /JBIG2Globals &lt;ref&gt; &gt;&gt;</c>. A random-access file is written out in
 /// that embedded form, each header joined to its own data.</para>
 ///
@@ -44,7 +44,7 @@ namespace VellumPdf.Images;
 /// is refused too, though T.88 does not say numbers are unique), a reserved segment type (7.3), or a
 /// page that does not end with exactly one end-of-page segment (7.4.9). <see cref="ImageDecodeMode.DecodeToRaster"/> refuses every such file, compliant or not,
 /// because the raster it writes would render as a negative: it stores the decoded bits unchanged as
-/// <c>/DeviceGray</c> without <c>/Decode</c>, where T.88 reads 1 as black. A file without the header
+/// <c>/DeviceGray</c> without <c>/Decode</c>, while T.88 (5.6, NOTE 1) gives 1 as black as the typical reading. A file without the header
 /// decodes to the same raster, with the same inversion.</para>
 ///
 /// <para><b>Unknown segment length:</b> a segment whose data length field is 0xFFFFFFFF (ITU-T T.88
@@ -256,7 +256,7 @@ public static class Jbig2ImageLoader
             RequireCompliantSinglePage(jbig2, dataStart, segments);
 
             // The raster this mode writes is not correct for these files: it stores the decoded bits,
-            // where T.88 reads 1 as black (clause 3 NOTE 1, 5.6), as /DeviceGray 1 bpc with no
+            // where T.88 gives 1 as black as the typical reading (5.6, NOTE 1), as /DeviceGray 1 bpc with no
             // /Decode, whose default maps sample 0 to black (ISO 32000-2 8.9.5.2). A page that
             // renders as a negative is not correct handling of compliant input, so it is refused.
             if (options.DecodeMode == ImageDecodeMode.DecodeToRaster)

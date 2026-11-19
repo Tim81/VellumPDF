@@ -936,7 +936,7 @@ public sealed class SaveLifecycleTests
         }
     }
 
-    /// <summary><c>/dev/stdout</c> is a link to <c>/proc/self/fd/1</c>, a magic link whose target reads <c>pipe:[N]</c> and is not a file name, so the operating system must open it; the test builds the same chain over an anonymous pipe.</summary>
+    /// <summary>On Linux, <c>/dev/stdout</c> resolves through <c>/proc/self/fd/1</c> to a target that is not a file name, so the operating system must open the link itself; the test builds the same chain over an anonymous pipe.</summary>
     [Fact]
     public async Task SaveThroughALinkToAProcFdPipe_writesTheWholePdfIntoThePipe()
     {

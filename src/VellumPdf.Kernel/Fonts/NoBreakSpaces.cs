@@ -7,7 +7,7 @@ namespace VellumPdf.Fonts;
 /// The no-break spaces, and what stands in for the two that a font may not be able to show.
 ///
 /// <para>A no-break space is a character that is white space to <see cref="char.IsWhiteSpace(char)"/>
-/// and that UAX #14 puts in line-breaking class GL, which "prohibits breaks on either side". Exactly
+/// and that UAX #14 puts in line-breaking class GL, whose characters "prohibit breaks on either side". Exactly
 /// three characters are both: U+00A0 NO-BREAK SPACE, U+2007 FIGURE SPACE and U+202F NARROW NO-BREAK
 /// SPACE. Checked against LineBreak.txt for Unicode 15.1: U+180E is GL but is not white space in
 /// .NET, and U+2060 and U+FEFF are class WJ and not white space, so none of those needs handling.</para>

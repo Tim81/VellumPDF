@@ -101,10 +101,7 @@ public sealed class LayoutImageRenderer : IRenderer
 
     /// <summary>Draws the image XObject, emitting a tagged Figure struct element when tagging is enabled.</summary>
     /// <remarks>See <see cref="IRenderer.Draw"/>.</remarks>
-    /// <exception cref="ArgumentException">
-    /// A coordinate or extent written here is <c>NaN</c> or infinite, which <see cref="VellumPdf.Canvas.PdfCanvas"/> refuses
-    /// (<c>ParamName</c> is empty).
-    /// </exception>
+    /// <inheritdoc cref="IRenderer.Draw" path="/exception"/>
     public void Draw(DrawContext ctx)
     {
         var area = _occupied.Deflate(_img.Margins);

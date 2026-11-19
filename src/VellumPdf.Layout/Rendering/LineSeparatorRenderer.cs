@@ -57,10 +57,7 @@ public sealed class LineSeparatorRenderer : IRenderer
 
     /// <summary>Strokes the separator line at the configured colour and width.</summary>
     /// <remarks>See <see cref="IRenderer.Draw"/>.</remarks>
-    /// <exception cref="ArgumentException">
-    /// A coordinate or extent written here is <c>NaN</c> or infinite, which <see cref="VellumPdf.Canvas.PdfCanvas"/> refuses
-    /// (<c>ParamName</c> is empty).
-    /// </exception>
+    /// <inheritdoc cref="IRenderer.Draw" path="/exception"/>
     public void Draw(DrawContext ctx)
     {
         var (x, y, w, h) = ctx.ToPdfRect(_occupied);

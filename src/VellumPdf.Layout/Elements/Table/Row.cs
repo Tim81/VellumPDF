@@ -86,10 +86,6 @@ public sealed class Row
     /// in order, and a cell past the last column is not drawn, though its text is still measured
     ///.
     /// </remarks>
-    /// <exception cref="ArgumentException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when the text holds an unpaired surrogate and is measured in an embedded
-    /// font; see <see cref="TextStyle.FontRef"/>.
-    /// </exception>
+    /// <inheritdoc cref="Paragraph.Add(string, TextStyle)" path="/exception[@cref='T:System.ArgumentException']"/>
     public Row AddCell(string text) => AddCell(new Cell(text));
 }

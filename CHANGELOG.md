@@ -115,8 +115,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   would be written as `NaN` or infinity. **Attention**: a caller that passed a non-finite value to a
   `PdfCanvas` method used to get a file with an invalid content stream and now gets the exception.
   `ParamName` is null where `PdfReal` reports `value`, and the message formats the value with the
-  invariant culture, so positive infinity prints `Infinity`. `AppendArc` still returns without
-  drawing for a non-finite radius or angle and refuses a non-finite centre.
+  invariant culture, so positive infinity prints `Infinity`. `AppendArc` refuses a
+  non-finite centre only when it draws an arc: with a zero radius, or a zero or non-finite sweep or
+  radius, it returns without drawing and without throwing.
 
 - **A non-finite number is mostly not checked before the layout.** An inset, indent, colour channel
   or band height of `NaN` or infinity is accepted by the member that holds it, and the layout runs

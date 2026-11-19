@@ -47,11 +47,7 @@ public sealed class TextRun(string Text, TextStyle Style)
     /// <remarks>
     /// <b>Never null; the constructor refuses a null.</b> See the type remarks.
     /// </remarks>
-    /// <exception cref="ArgumentException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the text holds an unpaired surrogate and is measured in an embedded
-    /// font; see <see cref="TextStyle.FontRef"/>.
-    /// </exception>
+    /// <inheritdoc cref="Heading.Text" path="/exception[@cref='T:System.ArgumentException']"/>
     public string Text { get; } = Text ?? throw new ArgumentNullException(nameof(Text));
 
     /// <summary>The run's text style.</summary>
@@ -63,18 +59,7 @@ public sealed class TextRun(string Text, TextStyle Style)
     /// from this property, when the run's text holds an unpaired surrogate and is measured in an
     /// embedded font; see <see cref="TextStyle.FontRef"/>.
     /// </exception>
-    /// <exception cref="InvalidOperationException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the style's size or leading is refused, or a channel of its text
-    /// colour is not finite; see <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/>
-    /// and <see cref="TextStyle.Color"/>.
-    /// </exception>
-    /// <exception cref="IndexOutOfRangeException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the style holds a <see cref="VellumPdf.Fonts.Standard14"/> value
-    /// the enumeration does not name and the font is selected on a page; see
-    /// <see cref="TextStyle.FontRef"/>.
-    /// </exception>
+    /// <inheritdoc cref="Heading.Style" path="/exception[@cref='T:System.InvalidOperationException' or @cref='T:System.IndexOutOfRangeException']"/>
     /// <exception cref="ArgumentNullException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not from
     /// the constructor or this property, by the layout of the paragraph that holds the run, when the run

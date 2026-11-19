@@ -83,10 +83,7 @@ public static class SigningExtensions
     /// <see cref="Task.Run(Action)"/>, and any PAdES B-T/B-LT/B-LTA network calls (TSA
     /// timestamping, OCSP/CRL fetches) are awaited instead of blocking the calling thread.
     /// </summary>
-    /// <exception cref="ArgumentNullException">
-    /// Thrown when <paramref name="doc"/>, <paramref name="output"/>, or
-    /// <paramref name="settings"/> is null.
-    /// </exception>
+    /// <inheritdoc cref="SigningExtensions.Sign(PdfDocument, Stream, PdfSignatureSettings)" path="/exception[@cref='T:System.ArgumentNullException' or @cref='T:System.InvalidOperationException']"/>
     /// <exception cref="ArgumentException">
     /// Thrown when the certificate in <paramref name="settings"/> does not include a private key
     /// and <see cref="PdfSignatureSettings.ExternalPrivateKey"/> is not set, or when the chosen
@@ -94,10 +91,6 @@ public static class SigningExtensions
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// Thrown when encryption has already been configured on the document.
-    /// </exception>
-    /// <exception cref="InvalidOperationException">
-    /// A registered form field's <see cref="FormFieldOptions.FontSize"/> is not finite. That
-    /// property's boundary documentation names the value and the field.
     /// </exception>
     // RS0026 flags multiple overloads with optional parameters as a future-ambiguity risk;
     // PdfDocument and Layout.Document share no implicit conversion, so overload resolution
@@ -129,10 +122,7 @@ public static class SigningExtensions
     /// <see cref="NotSupportedException"/> when <see cref="VellumPdf.Layout.Document.Encrypt"/>
     /// has been called.</para>
     /// </summary>
-    /// <exception cref="ArgumentNullException">
-    /// Thrown when <paramref name="doc"/>, <paramref name="output"/>, or
-    /// <paramref name="settings"/> is null.
-    /// </exception>
+    /// <inheritdoc cref="SigningExtensions.Sign(PdfDocument, Stream, PdfSignatureSettings)" path="/exception[@cref='T:System.ArgumentNullException']"/>
     /// <exception cref="ArgumentException">
     /// Thrown when the certificate in <paramref name="settings"/> does not include a private key
     /// and neither <see cref="PdfSignatureSettings.ExternalPrivateKey"/> nor
@@ -181,10 +171,7 @@ public static class SigningExtensions
     /// <see cref="Task.Run(Action)"/>, and any PAdES B-T/B-LT/B-LTA network calls (TSA
     /// timestamping, OCSP/CRL fetches) are awaited instead of blocking the calling thread.
     /// </summary>
-    /// <exception cref="ArgumentNullException">
-    /// Thrown when <paramref name="doc"/>, <paramref name="output"/>, or
-    /// <paramref name="settings"/> is null.
-    /// </exception>
+    /// <inheritdoc cref="SigningExtensions.Sign(PdfDocument, Stream, PdfSignatureSettings)" path="/exception[@cref='T:System.ArgumentNullException']"/>
     /// <exception cref="ArgumentException">
     /// Thrown when the certificate in <paramref name="settings"/> does not include a private key
     /// and none of <see cref="PdfSignatureSettings.ExternalPrivateKey"/> or
@@ -194,16 +181,7 @@ public static class SigningExtensions
     /// <exception cref="NotSupportedException">
     /// Thrown when encryption has already been configured on the document.
     /// </exception>
-    /// <exception cref="InvalidOperationException">
-    /// The layout runs inside this call, so every <see cref="InvalidOperationException"/> listed on
-    /// <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> applies, including a document
-    /// whose earlier save or signing call stopped after its layout had started.
-    /// </exception>
-    /// <exception cref="ArgumentOutOfRangeException">
-    /// The signature page is negative or past the last page, or the reserve computed from
-    /// <paramref name="settings"/> is negative or above 536,870,894 bytes. <c>ParamName</c> is
-    /// <c>options</c>. Everything but a page past the last page is raised before anything is laid out.
-    /// </exception>
+    /// <inheritdoc cref="SigningExtensions.Sign(VellumPdf.Layout.Document, Stream, PdfSignatureSettings)" path="/exception[@cref='T:System.ArgumentOutOfRangeException' or @cref='T:System.InvalidOperationException']"/>
 #pragma warning disable RS0026
     public static async Task SignAsync(this VellumPdf.Layout.Document doc, Stream output, PdfSignatureSettings settings, CancellationToken cancellationToken = default)
 #pragma warning restore RS0026

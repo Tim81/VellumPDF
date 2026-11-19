@@ -9,7 +9,7 @@ namespace VellumPdf.Layout.Elements;
 /// A single item in a <see cref="ListElement"/>, with optional nested children.
 /// </summary>
 /// <remarks>
-/// Nesting is one level. An item reached only as a grandchild is not measured or drawn, so nothing
+/// Nesting is one level. An item reached only as a child of a child is not measured or drawn, so nothing
 /// it holds makes the save throw; see <see cref="Children"/>.
 /// </remarks>
 public sealed class ListItem
@@ -26,7 +26,7 @@ public sealed class ListItem
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when the text holds an unpaired surrogate and is measured in an embedded
     /// font; see <see cref="TextStyle.FontRef"/>. It is not raised for an item reached only as a
-    /// grandchild.
+    /// child of a child.
     /// </exception>
     public string Text { get; }
 
@@ -42,20 +42,20 @@ public sealed class ListItem
     /// from this property, when the style's size or leading is refused, or a channel of its text
     /// colour is not finite; see <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/>
     /// and <see cref="TextStyle.Color"/>. It is not raised for an item reached only as a
-    /// grandchild.
+    /// child of a child.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when the style holds a <see cref="VellumPdf.Fonts.Standard14"/> value
     /// the enumeration does not name and the font is selected on a page; see
     /// <see cref="TextStyle.FontRef"/>.
-    /// It is not raised for an item reached only as a grandchild.
+    /// It is not raised for an item reached only as a child of a child.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when text in this style holds an unpaired surrogate and is measured in
     /// an embedded font; see <see cref="TextStyle.FontRef"/>.
-    /// It is not raised for an item reached only as a grandchild.
+    /// It is not raised for an item reached only as a child of a child.
     /// </exception>
     public TextStyle? Style { get; init; }
 
@@ -75,7 +75,7 @@ public sealed class ListItem
     /// <summary>The nested child items, or null if this item has no children.</summary>
     /// <remarks>
     /// One level of nesting is supported, and only one. A child's own <see cref="Children"/>
-    /// is read by <b>nothing</b>. A grandchild is not measured, not drawn and not reported, and
+    /// is read by <b>nothing</b>. A child of a child is not measured, not drawn and not reported, and
     /// its text is absent from the document. The scope of that claim: the renderer reads
     /// <c>item.Children</c> and takes each child's style, marker and content, and never reads
     /// <c>child.Children</c>.
@@ -108,27 +108,27 @@ public sealed class ListItem
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this constructor, when <paramref name="text"/> is <see langword="null"/> and the item is
     /// laid out as a top-level item or as a child of one. <c>ParamName</c> is <c>text</c>. It is not
-    /// raised for an item reached only as a grandchild.
+    /// raised for an item reached only as a child of a child.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this constructor, when the text holds an unpaired surrogate and is measured in an
     /// embedded font; see <see cref="TextStyle.FontRef"/>.
-    /// It is not raised for an item reached only as a grandchild.
+    /// It is not raised for an item reached only as a child of a child.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this constructor, when the style's size or leading is refused, or a channel of its text
     /// colour is not finite; see <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/>
     /// and <see cref="TextStyle.Color"/>. It is not raised for an item reached only as a
-    /// grandchild.
+    /// child of a child.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this constructor, when the style holds a <see cref="VellumPdf.Fonts.Standard14"/> value
     /// the enumeration does not name and the font is selected on a page; see
     /// <see cref="TextStyle.FontRef"/>.
-    /// It is not raised for an item reached only as a grandchild.
+    /// It is not raised for an item reached only as a child of a child.
     /// </exception>
     public ListItem(string text, TextStyle? style = null)
     {

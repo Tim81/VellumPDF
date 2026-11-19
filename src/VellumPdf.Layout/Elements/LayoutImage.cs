@@ -126,14 +126,7 @@ public sealed class LayoutImage
     /// 5e-6 in magnitude, or not finite, and so is a height derived from it that is under 5e-6 or not
     /// finite. The message then names that width or height instead.
     /// </exception>
-    /// <exception cref="ArgumentException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when a non-finite edge, or finite edges whose arithmetic overflows, put a
-    /// value the save writes at <c>NaN</c> or infinity, or leave a later element at a
-    /// non-finite position, and the save writes that position outside the content stream, as a
-    /// heading's bookmark or the rectangle of a link from <see cref="TextStyle.LinkUri"/>. The
-    /// message says PDF does not support NaN or Infinity as a real number.
-    /// </exception>
+    /// <inheritdoc cref="Paragraph.Margins" path="/exception[@cref='T:System.ArgumentException']"/>
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 
     /// <summary>
