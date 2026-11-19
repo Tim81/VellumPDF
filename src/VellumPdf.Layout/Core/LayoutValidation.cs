@@ -21,15 +21,15 @@ namespace VellumPdf.Layout.Core;
 /// positive infinity and negative infinity take three different branches here, and an earlier draft
 /// of this file measured one of them and asserted all three.
 ///
-/// A check is made before the layout only where no content on 2.3.3 produced a valid file with the
-/// input, the rule the <c>Document</c> remarks state: a font size on text that is drawn, a
-/// <c>ColSpan</c> below one, a line separator's margins, colour and line width, a table cell's
-/// padding, a non-finite table border width, an image extent that is zero or not finite. The other
-/// non-finite insets, indents, band heights and colours are not checked here. A negative table
-/// border width and a table cell's text colour are refused where they are drawn, because 2.3.3
-/// saved a valid file when the table or cell was laid out and not drawn. The layout runs as it did
-/// on that version and <c>PdfCanvas</c> refuses what would be written as <c>NaN</c> or
-/// <c>Infinity</c>.
+/// A check is made in the layout only where no content on 2.3.3 produced a valid file with the
+/// input, the rule the <c>Document</c> remarks state, and it runs inside the element's own
+/// <c>Layout</c> call: a font size on text that is drawn, a <c>ColSpan</c> below one, a line
+/// separator's width, margins and colour, a table cell's padding, a non-finite table border width,
+/// an image extent that is zero or not finite. The other non-finite insets, indents, band heights
+/// and colours are not checked here. A negative table border width, a table cell's text colour and
+/// a running band's font size are refused where they are drawn, because 2.3.3 saved a valid file
+/// when the table or cell was laid out and not drawn. The layout runs as it did on that version and
+/// <c>PdfCanvas</c> refuses what would be written as <c>NaN</c> or <c>Infinity</c>.
 ///
 /// What is left alone, each rendering valid content today, because refusing it would turn a working
 /// document into an exception: a font size of zero or less, a <c>RowSpan</c> below one, a negative
@@ -70,8 +70,8 @@ internal static class LayoutValidation
     /// <summary>
     /// The font-size half of <see cref="ValidateStyle"/>, for the callers that decide where a colour is
     /// checked themselves: a running band and a table cell. 2.3.3 refused a non-finite size there
-    /// and wrote no colour for text that is never drawn, so the size is checked before the layout and
-    /// the colour only where it is written.
+    /// and wrote no colour for text that is never drawn, so a cell's size is checked in the layout
+    /// and its colour, like the band's size, only where it is written.
     /// </summary>
     internal static void ValidateFontSize(TextStyle style, string owner)
     {

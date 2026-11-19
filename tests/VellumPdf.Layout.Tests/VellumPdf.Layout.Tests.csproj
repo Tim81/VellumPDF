@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- InternalsVisibleTo friend of Layout (#53) — must match its public key. -->
+  <!-- InternalsVisibleTo friend of Layout (#53); must match its public key. -->
   <Import Project="$(MSBuildThisFileDirectory)../../eng/StrongNameTestFriend.props" />
 
   <ItemGroup>

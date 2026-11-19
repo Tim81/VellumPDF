@@ -7,7 +7,10 @@ using VellumPdf.Layout.Elements;
 namespace VellumPdf.Layout.Rendering;
 
 /// <summary>Renders a <see cref="LineSeparator"/> as a horizontal rule spanning the content width.</summary>
-/// <remarks>Does not split. Non-finite width or inset is refused from Layout.</remarks>
+/// <remarks>
+/// Does not split. A line width that is not finite or is negative (#557), an inset that is not
+/// finite and a colour channel that is not finite are refused from <see cref="Layout"/>.
+/// </remarks>
 public sealed class LineSeparatorRenderer : IRenderer
 {
     private readonly LineSeparator _sep;
@@ -29,12 +32,14 @@ public sealed class LineSeparatorRenderer : IRenderer
 
     /// <summary>Reserves the separator's line width plus margins and reports the occupied region.</summary>
     /// <remarks>
-    /// This renderer does not split. It refuses a non-finite line width or inset itself. When the
-    /// document calls this method, the refusal reaches you from the save.
+    /// This renderer does not split. It refuses the line width, the insets and the colour itself,
+    /// in that order. When the document calls this method, the refusal reaches you from the save.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
-    /// <see cref="LineSeparator.LineWidth"/> or an edge of <see cref="LineSeparator.Margins"/> is
-    /// not finite.
+    /// <see cref="LineSeparator.LineWidth"/> is not finite or is negative (#557), an edge of
+    /// <see cref="LineSeparator.Margins"/> is not finite, or a channel of
+    /// <see cref="LineSeparator.Color"/> is not finite. The message names the line separator and
+    /// the value.
     /// </exception>
     public LayoutResult Layout(LayoutContext ctx)
     {

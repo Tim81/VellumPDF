@@ -98,8 +98,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   value, through `new PdfReal`, with `ParamName` `value`; the check is now the canvas's own and the
   `ParamName` is null. One defect went with it: `SetFillAlpha(double.NaN)` registered a graphics
   state name before `PdfReal` threw, so a second identical call returned that name without
-  throwing and wrote `/GSn gs` to an ExtGState that was never defined, and later names shifted. Every
-  such call now throws and registers nothing.
+  throwing and wrote `/GSn gs` to an ExtGState that was never defined, and later names shifted.
+  Every such call now throws and registers nothing.
 
 - **A non-finite number is mostly not checked before the layout.** An inset, indent, colour channel
   or band height of `NaN` or infinity is accepted by the member that holds it. The layout then runs
@@ -115,30 +115,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   2.3.3 saved it (#484); the XML doc of each member says not to pass such a value and that 3.0
   refuses it, and the diagnostics channel (#607) will report it. A few checks do run in the
   layout and name the element, each for input that made 2.3.3 throw or write an invalid token in
-  every shape measured: the font size and colour of a paragraph run, heading or list item, the font
-  size of a table cell and of a band, a line separator's margins, colour and line width, a table
-  cell's padding, a table's border width when it is not finite, an image extent that is zero or not
-  finite, and a `ColSpan` below one. Two are made where the value is written, because 2.3.3 saved a
-  valid file when the table or cell was laid out and not drawn: a table cell's text colour and a
-  negative table border width. Those raise `InvalidOperationException`, which a caller that catches
-  `ArgumentException` around a save does not see. `KeepRenderingTests`, `NonFiniteGeometryTests` and
+  every shape measured. Each runs inside the element's own `Layout` call, in document order, so an
+  earlier element that is too tall for the page is reported first: the font size and colour of a
+  paragraph run, heading or list item, the font size of a table cell, a line separator's width,
+  margins and colour, a table cell's padding, a table's border width when it is not finite, an
+  image extent that is zero or not finite, and a `ColSpan` below one. Three are made where the
+  value is written, because 2.3.3 saved a valid file when the element was laid out and not drawn:
+  a table cell's text colour, a negative table border width, and a running band's font size.
+  Those raise `InvalidOperationException`, which a caller that catches `ArgumentException` around
+  a save does not see. `KeepRenderingTests`, `NonFiniteGeometryTests` and
   `NullDeferralTests` pin what 2.3.3 did, row by row.
 
 - **A non-finite colour channel no longer reaches the content stream (#509).** A `ColorRgb` with a
   `NaN` or infinite channel on a text style, a running band, a table cell's style or background, a
   table border, a line separator or a pie slice or stroke reached the content stream as
-  `NaN 0 0 rg`, which is not a PDF number. Text colour on a paragraph run, heading or list item, and a
-  line separator's colour, now throw `InvalidOperationException` from the layout, and a table cell's
-  text colour does where the cell is drawn, naming the element and the channel. Every other colour
-  is refused where it is written, by `PdfCanvas` with `ArgumentException`. A finite channel outside
-  0 to 1 is **not** refused. It renders today, a patch does not turn that into an exception, and it is documented on `ColorRgb`
-  and `ColorCmyk` with the refusal listed in #484. A colour that is not written saves, as on
-  2.3.3: a `NaN` colour on a zero-value pie slice, on a running band whose template is empty, or
-  on a table cell that a span from an earlier row pushes past the last column. A table cell's empty
-  or white-space text with a `NaN` style colour wrote `NaN 0 0 rg` on 2.3.3 and is refused. The
-  `PdfCanvas` and `PdfReal` message ends with the value formatted with the invariant culture: on
-  2.3.3 it used the current culture, and positive infinity printed as `∞` under `nl-NL`, `en-US`,
-  `fr-FR` and `de-DE` on .NET 10.0.15 (measured), where it now prints `Infinity`.
+  `NaN 0 0 rg`, which is not a PDF number. Text colour on a paragraph run, heading or list item, and
+  a line separator's colour, now throw `InvalidOperationException` from the layout, and a table
+  cell's text colour does where the cell is drawn, naming the element and the channel. Every other
+  colour is refused where it is written, by `PdfCanvas` with `ArgumentException`. A finite channel
+  outside 0 to 1 is **not** refused. It renders today, a patch does not turn that into an exception,
+  and it is documented on `ColorRgb` and `ColorCmyk` with the refusal listed in #484. A colour that
+  is not written saves, as on 2.3.3: a `NaN` colour on a zero-value pie slice, on a running band
+  whose template is empty, or on a table cell that a span from an earlier row pushes past the last
+  column. A table cell's empty or white-space text with a `NaN` style colour wrote `NaN 0 0 rg` on
+  2.3.3 and is refused. The `PdfCanvas` and `PdfReal` message ends with the value formatted with the
+  invariant culture: on 2.3.3 it used the current culture, and positive infinity printed as `∞`
+  under `nl-NL`, `en-US`, `fr-FR` and `de-DE` on .NET 10.0.15 (measured), where it now prints
+  `Infinity`.
 
 - **A `NaN` or negative-infinity `Document.Margins` inset is no longer written as a token (#502).**
   The only margin check compared the axis sums against the page, and a comparison against `NaN` is
@@ -162,35 +165,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   page continuations. A band with an empty template draws nothing, so negative infinity on its
   footer saves when the body fits, and still does.
 
-- **A `NaN` or negative-infinity `ListElement.Indent` no longer reaches the content stream (#532).** A
-  nested child's marker, and a flat item whose longest word will not fit beside its marker, take the
-  indent as their left inset directly, so negative infinity wrote `1 0 0 1 -Infinity 263.6 Tm` and
-  `NaN` wrote the same operand with `NaN`. `PdfCanvas` now refuses both with `ArgumentException`. A
-  flat list whose words fit saved with no invalid token on 2.3.3 under negative infinity, because
-  the gutter widens to the marker's own width, and it keeps saving; so does a list with no items,
-  which writes nothing. Positive infinity is deliberately unchanged, because it writes no invalid
-  token and its text loss on a flat list is tracked in #476, and a finite negative indent still
-  renders.
+- **A `NaN` or negative-infinity `ListElement.Indent` no longer reaches the content stream (#532).**
+  A nested child's marker, and a flat item whose longest word will not fit beside its marker, take
+  the indent as their left inset directly, so negative infinity wrote `1 0 0 1 -Infinity 263.6 Tm`
+  and `NaN` wrote the same operand with `NaN`. `PdfCanvas` now refuses both with
+  `ArgumentException`. A flat list whose words fit saved with no invalid token on 2.3.3 under
+  negative infinity, because the gutter widens to the marker's own width, and it keeps saving; so
+  does a list with no items, which writes nothing. Positive infinity is deliberately unchanged,
+  because it writes no invalid token and its text loss on a flat list is tracked in #476, and a
+  finite negative indent still renders.
 
 - **Layout sweep for the comparison-shaped clamps behind #519: an element margin that would be
-  written as `NaN` or Infinity is refused by `PdfCanvas`.** The sweep read all 24 `Math.Max`,
-  `Math.Min` and `Math.Clamp` sites in `VellumPdf.Layout`. Twenty-one take values that are derived,
-  integer, or a value whose non-finite case `PdfCanvas` now refuses where it is written (colour,
-  document margins, band height), or one with its own check (font size, line width, cell padding,
-  image extent). One is `ColorCmyk.FromRgb`, a pure conversion
-  that is documented rather than refused. The two that read a raw caller value without a check were
-  the list gutter, fixed in #532, and the element `Margins`. A `Paragraph`, `Heading`,
-  `ListElement`, `TableElement`, `LayoutImage` or `PieChart` with a `NaN` or infinite edge was laid
-  out in a box that could be `NaN`, and reached the content stream, or an unrelated "too tall"
-  message. The canvas guard from #519 now refuses what would be written, with `ArgumentException`.
-  The layout is otherwise as it was on 2.3.3, so an edge that is not written saves: a paragraph
-  with a `NaN` right edge, a table with an infinite top edge (not drawn), a pie chart with an
-  infinite right edge, an image with a `NaN` right edge and a list with no items and a `NaN` left
-  edge all saved with no invalid token and still do. A line separator's margins and a table cell's
-  padding threw for every non-finite edge on 2.3.3 (measured with a separator after a paragraph
-  and a one-cell table) and are refused by name before the layout. Individual non-finite explicit
-  table column widths were already treated as auto (#477), so they needed no change. A finite
-  negative margin still renders and is documented as a boundary.
+  written as `NaN` or Infinity is refused by `PdfCanvas`.** The sweep read the 24 lines in
+  `VellumPdf.Layout` that call `Math.Max`, `Math.Min` or `Math.Clamp` (a search of that package
+  at 1c61fa6, the 2.3.3 source, comment-only matches left out). Twenty-one take values that are
+  derived, integer, or a value whose non-finite case `PdfCanvas` now refuses where it is written
+  (colour, document margins, band height), or one with its own check (font size, line width, cell
+  padding, image extent). One is `ColorCmyk.FromRgb`, a pure conversion that is documented rather
+  than refused. The two that read a raw caller value without a check were the list gutter, fixed in
+  #532, and the element `Margins`. A `Paragraph`, `Heading`, `ListElement`, `TableElement`,
+  `LayoutImage` or `PieChart` with a `NaN` or infinite edge was laid out in a box that could be
+  `NaN`, and reached the content stream, or an unrelated "too tall" message. The canvas guard from
+  #519 now refuses what would be written, with `ArgumentException`. The layout is otherwise as it
+  was on 2.3.3, so an edge that is not written saves: a paragraph with a `NaN` right edge, a table
+  with an infinite top edge (not drawn), a pie chart with an infinite right edge, an image with a
+  `NaN` right edge and a list with no items and a `NaN` left edge all saved with no invalid token
+  and still do. A line separator's margins and a table cell's padding threw for every non-finite
+  edge on 2.3.3 (measured with a separator after a paragraph and a one-cell table) and are refused
+  by name when the element is laid out. Individual non-finite explicit table column widths were
+  already treated as auto (#477), so they needed no change. A finite negative margin still renders
+  and is documented as a boundary.
 
 - **A negative line width is refused (#557).** ISO 32000-2, 8.4.3.2 says a line width "shall be a
   non-negative number", and `LineSeparator.LineWidth` and `TableElement.BorderWidth` wrote a
@@ -254,16 +258,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   constructor, `DocumentRenderer.Add`, `Paragraph`, `Paragraph.Add`, `Heading`, `TextRun`'s text,
   `ListElement.Add(string)`, `ListElement`'s constructor and `Add`, `Row.AddCell(Cell)`,
   `LayoutImage`, `PieChart.Slices`,
-  every `Document.Add` overload, and the public renderer constructors now throw from the call, naming
-  the parameter. A null inside a sequence names its index. `new
-  Paragraph((IEnumerable<TextRun>)null)` already threw `ArgumentNullException` on 2.3.3, with
+  every `Document.Add` overload, and the public renderer constructors now throw from the call,
+  naming the parameter. A null inside a sequence names its index.
+  `new Paragraph((IEnumerable<TextRun>)null)` already threw `ArgumentNullException` on 2.3.3, with
   `ParamName` `source`; it is now `runs`. `new DocumentRenderer(null)` threw
   `NullReferenceException` and now throws `ArgumentNullException` naming `pdf`. An empty string is
-  not null and is
-  accepted. **Attention**: code that passed a null and caught the later `NullReferenceException`
-  now gets `ArgumentNullException`, from the call where 2.3.3 failed at the call or where no
-  sequence that reaches a saved document survived it. Where 2.3.3 stored the null and failed only
-  when it was used, the null is stored again and refused at the same place, with
+  not null and is accepted. **Attention**: code that passed a null and caught the later
+  `NullReferenceException` now gets `ArgumentNullException`, from the call where 2.3.3 failed at the
+  call or where no sequence that reaches a saved document survived it. Where 2.3.3 stored the null
+  and failed only when it was used, the null is stored again and refused at the same place, with
   `ArgumentNullException` naming the parameter, and a shape that saved still saves (#484):
   - a `TextRun` with a null style is refused by the layout of the paragraph when the run yields a
     word (a non-white-space character, U+00A0 included), and saves for empty text, white space, a
@@ -313,38 +316,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `PdfDocument.Save` and `PrepareForSigning` throw `ArgumentException` (parameter `handle`) for a
   handle from another document whose resource name this document defines no font under, before
   anything is written. The registration itself accepts it, because whether the name is defined
-  depends on a `UseTrueTypeFont` call that may come after it, and 2.3.3 saved that order. When the saving document embedded the same font program under
-  that name, the handle resolves to its own embedding. That case saved on 2.3.3, but its subset
-  held only the glyphs the saving document had registered itself, so text drawn through the foreign
-  handle extracted as other characters and veraPDF's PDF/A-2b profile failed. The glyphs the foreign
-  handle registered are now added to the subset at save, and the same file passes PDF/A-2b.
-  Measured with LiberationSans-Regular, drawing "Hello" through the foreign handle alone, the
-  `FontFile2` stream was 51,030 bytes before and 51,585 after. When the saving document defines
-  that name for a different font program, which includes the case where it holds the same program
-  under another name, 2.3.3 saved a valid file in which the text takes the other font with the wrong
-  glyphs. It still saves, with no merge of glyphs, and nothing reports it yet (#607). The XML doc of
-  `RegisterEmbeddedFontUsage` says not to pass a foreign handle and that 3.0 refuses it.
+  depends on a `UseTrueTypeFont` call that may come after it, and 2.3.3 saved that order. When the
+  saving document embedded the same font program under that name, the handle resolves to its own
+  embedding. That case saved on 2.3.3, but its subset held only the glyphs the saving document had
+  registered itself, so text drawn through the foreign handle extracted as other characters and
+  veraPDF's PDF/A-2b profile failed. The glyphs the foreign handle registered are now added to the
+  subset at save, and the same file passes PDF/A-2b. Measured with LiberationSans-Regular, drawing
+  "Hello" through the foreign handle alone, the `FontFile2` stream was 51,030 bytes before and
+  51,585 after. When the saving document defines that name for a different font program, which
+  includes the case where it holds the same program under another name, 2.3.3 saved a valid file in
+  which the text takes the other font with the wrong glyphs. It still saves, with no merge of
+  glyphs, and nothing reports it yet (#607). The XML doc of `RegisterEmbeddedFontUsage` says not to
+  pass a foreign handle and that 3.0 refuses it.
 
 - **A cycle in a structure tree, array, dictionary or stream is refused instead of overflowing the
   stack (#521).** `array.Add(array)`, `dictionary.Set(key, dictionary)`, `stream.Dictionary.Set(key,
   stream)` and `element.AddChild(element)` on a
-  tagged document each recursed with no guard until the process died with a `StackOverflowException`,
-  which no application can catch, and the structure-element form needed nothing but `Tagged = true`
-  and one `AddChild`. `PdfStructElem.AddChild` still accepts such a child, as 2.3.3 did, and
-  the save refuses the cycle: `Save` throws `InvalidOperationException` for a tagged document whose
-  structure tree reaches it. A document that is not tagged never builds the tree, and saves as it
-  did, with a cyclic element registered or not.
-  `PdfWriter` keeps the arrays, dictionaries and streams on its current path, so `PdfArray.WriteTo`,
-  `PdfDictionary.WriteTo` and the stream `WriteTo` throw `InvalidOperationException` for one that
-  contains itself. A stream needs its own entry, because it serialises a fresh copy of its dictionary
-  on every call and the dictionary guard never sees the same one twice. A search of `src` for every
-  `PdfObject` subclass and every `.WriteTo(` call found no other container: `PdfIndirectObject` is
-  built fresh around its value on each write, and the three stream classes share the same guard.
-  The three structure-tree walks keep their current path to do that. There is no depth
-  cap: a deep acyclic structure saves as before, and an object placed twice side by side, or
-  referred to through an indirect reference, is not a cycle. `ListItem.AddChild` has the same shape
-  but is unchanged, because a self-referencing item renders today with one level of nesting; it is
-  closed with #483, which is what makes it reachable.
+  tagged document each recursed with no guard until the process died with a
+  `StackOverflowException`, which no application can catch, and the structure-element form needed
+  nothing but `Tagged = true` and one `AddChild`. `PdfStructElem.AddChild` still accepts such a
+  child, as 2.3.3 did, and the save refuses the cycle: `Save` throws `InvalidOperationException` for
+  a tagged document whose structure tree reaches it. A document that is not tagged never builds the
+  tree, and saves as it did, with a cyclic element registered or not. `PdfWriter` keeps the arrays,
+  dictionaries and streams on its current path, so `PdfArray.WriteTo`, `PdfDictionary.WriteTo` and
+  the stream `WriteTo` throw `InvalidOperationException` for one that contains itself. A stream
+  needs its own entry, because it serialises a fresh copy of its dictionary on every call and the
+  dictionary guard never sees the same one twice. A search of `src` for every `PdfObject` subclass
+  and every `.WriteTo(` call found no other container: `PdfIndirectObject` is built fresh around its
+  value on each write, and the three stream classes share the same guard. The three structure-tree
+  walks keep their current path to do that. There is no depth cap: a deep acyclic structure saves as
+  before, and an object placed twice side by side, or referred to through an indirect reference, is
+  not a cycle. `ListItem.AddChild` has the same shape but is unchanged, because a self-referencing
+  item renders today with one level of nesting; it is closed with #483, which is what makes it
+  reachable.
 
 - **A `Document` that failed to save no longer silently appends a second layout on the next save
   (#530).** It behaved three ways after a failed save and two were silent. A layout that threw left
@@ -365,63 +369,62 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `ArgumentOutOfRangeException` (parameter `options`) before any page is added; a page index past
   the last page can only be judged after the layout. The size limit is 536,870,894 bytes, the most
   whose `/Contents` placeholder fits in a string; a size between that and 2^30 used to throw
-  `OutOfMemoryException` after the layout. A `SaveAsync(string)` cancelled at any of the four points where it looks at the
-  token ends with `TaskCanceledException`, as on 2.3.3. With a header or footer set, the counting pass refuses a
-  too-tall element before any page is added, but the document still cannot be saved again:
-  an element keeps the line breaks it measured at the first page width, so a retry after changing
-  `PageSize` reused them and wrote a different page from a fresh document's (a 150 pt Helvetica
-  "Hello" with 10 pt margins and a 20 pt header, first on a 300 by 200 pt page and retried on 600 by
-  800 pt, was hard-broken into `(Hell)` and `(o)` where a fresh 600 by 800 pt document wrote
-  `(Hello)`). **Attention**: that
-  retry used to save with the wrong wrap and now throws `InvalidOperationException` asking for a
-  new `Document`, as every save after a layout that started does. A refused page geometry is
-  raised before the layout starts, adds no pages and stays recoverable. Through `Document`, where the
-  pages are not known yet, the message for a negative `SignaturePage` says the index cannot be
-  negative instead of naming the page count; a `PdfDocument` caller gets the old message. A
-  `PdfDocument` with no pages, and a `Document` with no content, still report "The document has no
-  pages." first, whatever the options, and are left unchanged. **Attention**: the `ParamName` of the
-  `EstimatedSignatureSizeBytes` refusal changes. On a negative size, or one of 2^30 or more, the BCL
-  `ArgumentOutOfRangeException` from `new string(...)` used to come from the writer with `ParamName`
-  `count`; it is now a refusal with its own message and `ParamName` `options`, raised before the
-  layout. A size between 536,870,895 and 2^30 - 1 used to throw `OutOfMemoryException` after the
-  layout and is now that same `ArgumentOutOfRangeException`. **Attention**: refusing a retry after
-  a failed layout turns the silent wrong file into an exception for code that caught a failure
-  after the layout and retried the same `Document`; build a new one instead. **Attention**: two exception types change
-  because the
-  destination is now checked up front. `PdfDocument.SaveAsync` (and `Document.SaveAsync`) given a
-  stream that cannot be written to now throws `ArgumentException` (parameter `destination`) where it
-  threw `NotSupportedException` from the final copy, and a linearized `PdfDocument.Save` to a closed
-  stream throws `ArgumentException` where it threw `ObjectDisposedException`. A non-linearized
-  `Save` to such a stream already threw `ArgumentException`, with the parameter name `stream`; it is
-  now `destination`. Because the checks come first, a few precedences change. On a disposed
-  `Document`, `ObjectDisposedException` now comes before an element or geometry error from the
-  layout. A `SaveAsync` given an already-cancelled token together with a bad destination or a
+  `OutOfMemoryException` after the layout. A `SaveAsync(string)` cancelled at any of the four points
+  where it looks at the token ends with `TaskCanceledException`, as on 2.3.3. With a header or
+  footer set, the counting pass refuses a too-tall element before any page is added, but the
+  document still cannot be saved again: an element keeps the line breaks it measured at the first
+  page width, so a retry after changing `PageSize` reused them and wrote a different page from a
+  fresh document's (a 150 pt Helvetica "Hello" with 10 pt margins and a 20 pt header, first on a 300
+  by 200 pt page and retried on 600 by 800 pt, was hard-broken into `(Hell)` and `(o)` where a fresh
+  600 by 800 pt document wrote `(Hello)`). **Attention**: that retry used to save with the wrong
+  wrap and now throws `InvalidOperationException` asking for a new `Document`, as every save after a
+  layout that started does. A refused page geometry is raised before the layout starts, adds no
+  pages and stays recoverable. Through `Document`, where the pages are not known yet, the message
+  for a negative `SignaturePage` says the index cannot be negative instead of naming the page count;
+  a `PdfDocument` caller gets the old message. A `PdfDocument` with no pages, and a `Document` with
+  no content, still report "The document has no pages." first, whatever the options, and are left
+  unchanged. **Attention**: the `ParamName` of the `EstimatedSignatureSizeBytes` refusal changes. On
+  a negative size, or one of 2^30 or more, the BCL `ArgumentOutOfRangeException` from
+  `new string(...)` used to come from the writer with `ParamName` `count`; it is now a refusal with
+  its own message and `ParamName` `options`, raised before the layout. A size between 536,870,895
+  and 2^30 - 1 used to throw `OutOfMemoryException` after the layout and is now that same
+  `ArgumentOutOfRangeException`. **Attention**: refusing a retry after a failed layout turns the
+  silent wrong file into an exception for code that caught a failure after the layout and retried
+  the same `Document`; build a new one instead. **Attention**: two exception types change because
+  the destination is now checked up front. `PdfDocument.SaveAsync` (and `Document.SaveAsync`) given
+  a stream that cannot be written to now throws `ArgumentException` (parameter `destination`) where
+  it threw `NotSupportedException` from the final copy, and a linearized `PdfDocument.Save` to a
+  closed stream throws `ArgumentException` where it threw `ObjectDisposedException`. A
+  non-linearized `Save` to such a stream already threw `ArgumentException`, with the parameter name
+  `stream`; it is now `destination`. Because the checks come first, a few precedences change. On a
+  disposed `Document`, `ObjectDisposedException` now comes before an element or geometry error from
+  the layout. A `SaveAsync` given an already-cancelled token together with a bad destination or a
   document in a state that cannot be saved reports the argument or state exception, not the
   cancellation. A `Document` with no content, and a `PdfDocument` with no pages, still report "The
   document has no pages." before a bad destination or options, as before. Two precedences were
   measured against 2.3.3 and differ. `PdfDocument.Save` on a document with pages and an unwritable
   stream now throws `ArgumentException` (parameter `destination`) before an incompatible option such
   as `UseObjectStreams` with `Encrypt`, which threw `NotSupportedException` first. Signing a
-  `Document` with no content, through `VellumPdf.Signing`, now reports "The document has no
-  pages." before margins that meet the page, which threw `ArgumentException` (parameter `margins`)
-  first; a `NaN` header height already reported "no pages" first on both. `DocumentRenderer.Render`
-  runs the same checks before its layout, so a failed render to an unwritable stream no longer
-  leaves pages behind for a retry to write twice.
+  `Document` with no content, through `VellumPdf.Signing`, now reports "The document has no pages."
+  before margins that meet the page, which threw `ArgumentException` (parameter `margins`) first; a
+  `NaN` header height already reported "no pages" first on both. `DocumentRenderer.Render` runs the
+  same checks before its layout, so a failed render to an unwritable stream no longer leaves pages
+  behind for a retry to write twice.
 
 - **A failed `Save(string)` or `SaveAsync(string)` no longer destroys the file that was already
   there (#508).** Both opened the path with `FileMode.Create`, which truncates it, before the layout
   ran, so a regenerated report with one bad value replaced the previous report with a zero-byte
   file, and the exception was about layout and gave no hint a file was gone. They now open the
   target first, before anything is laid out, without emptying it, build the PDF in memory, and only
-  then empty the file and copy the bytes in. A failure at layout or at building the PDF, or a `SaveAsync` cancelled
-  before the copy, leaves the previous file byte for byte and creates nothing at a new path. Opening
-  first also means a lock or a permission error surfaces before the layout, while the `Document` is
-  still usable. The existing file is rewritten in place, so it keeps its permissions, owner, hard
-  links and extended attributes. The path is opened as given, so the operating system follows a
-  symbolic link, a chain of them or a link to another directory included, as before, and the link
-  stays; a device or pipe such as `/dev/stdout` is written into, and a link whose target does not
-  exist yet gets that target created. Nothing is checked before the open: the operating system
-  decides whether the path can be written, so a directory still throws
+  then empty the file and copy the bytes in. A failure at layout or at building the PDF, or a
+  `SaveAsync` cancelled before the copy, leaves the previous file byte for byte and creates nothing
+  at a new path. Opening first also means a lock or a permission error surfaces before the layout,
+  while the `Document` is still usable. The existing file is rewritten in place, so it keeps its
+  permissions, owner, hard links and extended attributes. The path is opened as given, so the
+  operating system follows a symbolic link, a chain of them or a link to another directory included,
+  as before, and the link stays; a device or pipe such as `/dev/stdout` is written into, and a link
+  whose target does not exist yet gets that target created. Nothing is checked before the open: the
+  operating system decides whether the path can be written, so a directory still throws
   `UnauthorizedAccessException` before the layout, and root or a supplementary-group user can
   overwrite a file whose mode bits say read-only, as before. A failed save deletes a file only if
   nothing, a symbolic link included, was at the path when it started, so it never deletes a file it
@@ -430,21 +433,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   call created is deleted, one that was already there is not restored), and a file another process
   creates between the existence check and the open is taken for one the call created, so it is
   deleted if the save then fails. A failed save through a dangling link can leave an empty file at
-  the link's destination, because the open created it. `SaveAsync(string)` looks at its
-  cancellation token before the layout, when the serialisation is queued, once the PDF is built
-  and before the file is emptied (new: 2.3.3 first looked at it in the copy, after emptying the
-  file), and in the copy into the file; each throws `TaskCanceledException`. Only a cancellation
-  during the copy leaves the file truncated or incomplete. On Windows an existing hidden or system file, which `FileMode.Create`
-  refused with `UnauthorizedAccessException`, is still refused with it, checked before the file is
-  opened. The file is held open with `FileShare.None` from before the layout until the save
-  returns, which excludes other openers on Windows but is only an advisory lock on Linux and macOS.
-  The PDF is built in memory in a list of 1 MiB chunks, with no single array, so there is no 2 GB
-  limit on `Save(string)` or `SaveAsync(string)`. The cost is that the finished PDF is held in memory
-  once more until it is copied to the file, which 2.3.3's `Save(string)` did not do: it wrote to the
-  file as it went. Passing a `FileStream` to `Save(Stream)` avoids that copy. `SaveAsync(Stream)` and
-  a linearized `PdfDocument.Save` still buffer the whole file in a `MemoryStream`, about 2 GB at
-  most, as on 2.3.3.
-  `VellumPdf.Signing` writes to a stream you pass and was not affected.
+  the link's destination, because the open created it. `SaveAsync(string)` looks at its cancellation
+  token before the layout, when the serialisation is queued, once the PDF is built and before the
+  file is emptied (new: 2.3.3 first looked at it in the copy, after emptying the file), and in the
+  copy into the file; each throws `TaskCanceledException`. Only a cancellation during the copy
+  leaves the file truncated or incomplete. On Windows an existing hidden or system file, which
+  `FileMode.Create` refused with `UnauthorizedAccessException`, is still refused with it, checked
+  before the file is opened. The file is held open with `FileShare.None` from before the layout
+  until the save returns, which excludes other openers on Windows but is only an advisory lock on
+  Linux and macOS. The PDF is built in memory in a list of 1 MiB chunks, with no single array, so
+  there is no 2 GB limit on `Save(string)` or `SaveAsync(string)`. The cost is that the finished PDF
+  is held in memory once more until it is copied to the file, which 2.3.3's `Save(string)` did not
+  do: it wrote to the file as it went. Passing a `FileStream` to `Save(Stream)` avoids that copy.
+  `SaveAsync(Stream)` and a linearized `PdfDocument.Save` still buffer the whole file in a
+  `MemoryStream`, about 2 GB at most, as on 2.3.3. `VellumPdf.Signing` writes to a stream you pass
+  and was not affected.
 
 - **`Jbig2ImageLoader` reads the file header's flags byte and page count, and the random-access
   organisation (#570).** A JBIG2 file as ITU-T T.88 Annex D defines it has more after the 8-byte ID
@@ -461,59 +464,58 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   byte after the ID string could also be a flags byte; the header reading is tried only when that
   fails. Checked against the ten sequential files in the ITU T.88 conformance data: nine now
   load under `Passthrough` at the size of their reference bitmaps, and the tenth, a file of three
-  pages, is refused (see below). That data is licensed for conformance testing only and is not in the repository,
-  so the committed tests use fixtures built by hand from Annex D. Found while exporting images from a
-  PDF with the PowerShell wrapper PSVellumPDF. A PDF image is one page, so a file with several pages
-  embeds the first: the page named by the first page-information segment, with the segments that
-  belong to no page, under both `Passthrough` and `DecodeToRaster`, and the size is that page's.
-  A segment whose data length is unknown (0xFFFFFFFF, T.88 7.2.7) is dropped under `Passthrough`, as
-  on 2.3.3, because this loader does not scan for the end marker T.88 7.2.7 describes and so
-  cannot say where the segment ends. The image is embedded without it, which can leave it blank:
-  for an 8 by 1 immediate generic region (type 38, MMR, end marker and row count present), 2.3.3
-  and this loader both embed a 30-byte stream holding only the page-information segment, where the
-  same image with a known length embeds 62 bytes, and `pdftoppm` draws the first all white and the
-  second with dark pixels. Four inputs were compared against 2.3.3 and give the same image stream:
-  type 38 and type 53 segments, each in the headerless embedded organisation and after the ID
-  string. A file with the Annex D flags byte and page count and such a segment, of any type and
-  on any page or none, is refused with `InvalidDataException` naming the segment, under both modes,
-  as 2.3.3 refused every such file, reading the flags as the start of a segment. Nothing reports
-  the dropped segment yet (#607), and 3.0 refuses it. `DecodeToRaster` keeps refusing an unknown
-  length on a generic region (types 36, 38 and 39), as before, now with a message naming the segment, and
-  every other segment behaves as it did. A random-access file refuses an unknown length on any page,
-  because its data parts cannot be located without the length. If the first page-information
-  segment has page association 0 it names no page, and every segment is kept, as before pages were
-  chosen. **Attention**: a segment whose length is unknown ends what this loader reads of a
-  sequential or embedded stream, so what follows one is not seen. A file with more than one page
-  used to embed every page's segments into one image stream and now embeds only the first page.
-  `DecodeToRaster` composited every page into one raster on 2.3.3 and now keeps the first page, a
-  deliberate output change. It still decodes the later pages and discards them, so what 2.3.3
-  refused on a later page (a region it cannot decode, an unknown length) is refused. A multi-page
-  file with the Annex D header, which 2.3.3 could not read, is refused in both modes with
-  `InvalidDataException` naming the page count. Do not pass a multi-page file; 3.0 refuses it.
-  A file with the Annex D header loads only if it complies with T.88, because 2.3.3 refused every
-  such file and only compliant input may be accepted now: its first page-information segment is on
-  page 1 (7.2.6), no segment is on another page (7.2.6), the first segment on page 1 is the page
+  pages, is refused (see below). That data is licensed for conformance testing only and is not in
+  the repository, so the committed tests use fixtures built by hand from Annex D. Found while
+  exporting images from a PDF with the PowerShell wrapper PSVellumPDF. A PDF image is one page, so a
+  file with several pages embeds the first: the page named by the first page-information segment,
+  with the segments that belong to no page, under both `Passthrough` and `DecodeToRaster`, and the
+  size is that page's. A segment whose data length is unknown (0xFFFFFFFF, T.88 7.2.7) is dropped
+  under `Passthrough`, as on 2.3.3, because this loader does not scan for the end marker T.88 7.2.7
+  describes and so cannot say where the segment ends. The image is embedded without it, which can
+  leave it blank: for an 8 by 1 immediate generic region (type 38, MMR, end marker and row count
+  present), 2.3.3 and this loader both embed a 30-byte stream holding only the page-information
+  segment, where the same image with a known length embeds 62 bytes, and `pdftoppm` draws the first
+  all white and the second with dark pixels. Four inputs were compared against 2.3.3 and give the
+  same image stream: type 38 and type 53 segments, each in the headerless embedded organisation and
+  after the ID string. A file with the Annex D flags byte and page count and such a segment, of any
+  type and on any page or none, is refused with `InvalidDataException` naming the segment, under
+  both modes, as 2.3.3 refused every such file, reading the flags as the start of a segment. Nothing
+  reports the dropped segment yet (#607), and 3.0 refuses it. `DecodeToRaster` keeps refusing an
+  unknown length on a generic region (types 36, 38 and 39), as before, now with a message naming the
+  segment, and every other segment behaves as it did. A random-access file refuses an unknown length
+  on any page, because its data parts cannot be located without the length. If the first
+  page-information segment has page association 0 it names no page, and every segment is kept, as
+  before pages were chosen. **Attention**: a segment whose length is unknown ends what this loader
+  reads of a sequential or embedded stream, so what follows one is not seen. A file with more than
+  one page used to embed every page's segments into one image stream and now embeds only the first
+  page. `DecodeToRaster` composited every page into one raster on 2.3.3 and now keeps the first
+  page, a deliberate output change. It still decodes the later pages and discards them, so what
+  2.3.3 refused on a later page (a region it cannot decode, an unknown length) is refused. A
+  multi-page file with the Annex D header, which 2.3.3 could not read, is refused in both modes with
+  `InvalidDataException` naming the page count. Do not pass a multi-page file; 3.0 refuses it. A
+  file with the Annex D header loads only if it complies with T.88, because 2.3.3 refused every such
+  file and only compliant input may be accepted now: its first page-information segment is on page 1
+  (7.2.6), no segment is on another page (7.2.6), the first segment on page 1 is the page
   information (7.4.8), every region is on a page (7.3.2), and a page count in the header is 1
-  (D.4.3). Any other such file is refused with `InvalidDataException` naming the clause. **`DecodeToRaster`
-  refuses every file with the Annex D header, compliant or not**, with `InvalidDataException`, as 2.3.3 did:
-  the raster it writes stores the decoded bits unchanged as `/DeviceGray` 1 bit per component with no
-  `/Decode`, whose default maps sample 0 to black, while T.88 treats 1 as black, so the page would
-  render as a negative. That inversion is in what 2.3.3 wrote for the files it could read, is not
-  changed here.
-  When no reading of the data is accepted, the `InvalidDataException` says which readings were
-  tried (a sequential or random-access file, the ID string followed directly by segments, or the
-  embedded form) after the last reading's message, so a broken older file is not described only
-  in the terms of the header reading.
+  (D.4.3). Any other such file is refused with `InvalidDataException` naming the clause.
+  **`DecodeToRaster` refuses every file with the Annex D header, compliant or not**, with
+  `InvalidDataException`, as 2.3.3 did: the raster it writes stores the decoded bits unchanged as
+  `/DeviceGray` 1 bit per component with no `/Decode`, whose default maps sample 0 to black, while
+  T.88 treats 1 as black, so the page would render as a negative. That inversion is in what 2.3.3
+  wrote for the files it could read, is not changed here. When no reading of the data is accepted,
+  the `InvalidDataException` says which readings were tried (a sequential or random-access file, the
+  ID string followed directly by segments, or the embedded form) after the last reading's message,
+  so a broken older file is not described only in the terms of the header reading.
 
 - **A paragraph no longer wraps at U+202F NARROW NO-BREAK SPACE or U+2007 FIGURE SPACE (#562).**
   `NormaliseWhitespace` kept only U+00A0 and folded every other white-space character into a plain
-  space, but these two are no-break spaces too: with U+00A0 they are the three white-space characters
-  in UAX #14's GL class (checked against `LineBreak.txt` for Unicode 15.1; U+180E is GL but not white
-  space in .NET, and U+2060 and U+FEFF are class WJ). French puts U+202F before `; ? !`, so
-  `Pourquoi ?` could wrap as `Pourquoi` and `?`. Paragraphs, headings and list items now treat all
-  three as part of a word, and `ListRenderer`'s indent bound reads the same definition, which now
-  lives in one internal place (`NoBreakSpaces`) instead of a literal in two files. Tables never
-  folded them and are unchanged in how they break. **Attention**: keeping the characters meant
+  space, but these two are no-break spaces too: with U+00A0 they are the three white-space
+  characters in UAX #14's GL class (checked against `LineBreak.txt` for Unicode 15.1; U+180E is GL
+  but not white space in .NET, and U+2060 and U+FEFF are class WJ). French puts U+202F before
+  `; ? !`, so `Pourquoi ?` could wrap as `Pourquoi` and `?`. Paragraphs, headings and list items now
+  treat all three as part of a word, and `ListRenderer`'s indent bound reads the same definition,
+  which now lives in one internal place (`NoBreakSpaces`) instead of a literal in two files. Tables
+  never folded them and are unchanged in how they break. **Attention**: keeping the characters meant
   deciding how a font draws them, because folding had hidden that. WinAnsiEncoding has U+00A0 but
   not these two, so `PdfCanvas.ShowText` would have drawn `?` with a `TextEncodingWarning`, and
   `Standard14Metrics` would have measured that `?`. Both now treat U+202F and U+2007 as U+00A0, so
@@ -524,9 +526,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   fallback space is as wide as U+00A0, wider than a real narrow space. The font's `/ToUnicode` CMap
   does not name the stand-in as the text of that glyph while a code point the font really maps to it
   is in use, so copying an ordinary space or U+00A0 out of the PDF still gives that character and
-  not U+202F; a stand-in alone on its glyph is still listed. Everything else is unchanged:
-  tab, en and em space and thin space still break, and a token wider than the line still hard-breaks
-  as it does for U+00A0.
+  not U+202F; a stand-in alone on its glyph is still listed. Everything else is unchanged: tab, en
+  and em space and thin space still break, and a token wider than the line still hard-breaks as it
+  does for U+00A0.
 
 - **Cost-bound tests no longer assert on elapsed time (#400, #456).** A `Stopwatch` checked after a
   call returns cannot end a hang, and a 10 s bound fails on a loaded runner: the main CI run for

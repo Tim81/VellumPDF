@@ -39,13 +39,16 @@ namespace VellumPdf.Layout;
 /// writes <c>NaN</c> and the canvas refuses it. An infinite top margin on a table saves a page with
 /// the table not drawn.</para>
 /// <para>A few checks do run in the layout and name the element, each for input that made 2.3.3
-/// throw or write an invalid token in every shape measured: the font size and colour of a paragraph
-/// run, heading or list item, the font size of a table cell and of a band, a line separator's
-/// margins, colour and line width, a table cell's padding, a table's border width when it is not
-/// finite, an image extent that is zero or not finite, and a <c>ColSpan</c> below one. Two are made
-/// where the value is written, because 2.3.3 saved a valid file when the table or cell was laid out
-/// and not drawn: a table cell's text colour, and a negative table border width. A caller that
-/// catches <see cref="ArgumentException"/> around a save does not see any of these, which are
+/// throw or write an invalid token in every shape measured. Each runs inside the element's own
+/// <c>Layout</c> call, in document order, so an earlier element that is too tall for the page is
+/// reported first and a later element's own refusal is not reached: the font size and colour of a
+/// paragraph run, heading or list item, the font size of a table cell, a line separator's width,
+/// margins and colour, a table cell's padding, a table's border width when it is not finite, an
+/// image extent that is zero or not finite, and a <c>ColSpan</c> below one. Three are made where
+/// the value is written, because 2.3.3 saved a valid file when the element was laid out and not
+/// drawn: a table cell's text colour, a negative table border width, and a running band's font
+/// size, which is checked when the band's text is drawn. A caller that catches
+/// <see cref="ArgumentException"/> around a save does not see any of these, which are
 /// <see cref="InvalidOperationException"/>.</para>
 /// <para><b>Do not pass</b> a non-finite number to any of these members. The saved cases are not
 /// reported yet, because there is no diagnostics channel (#607), and 3.0 refuses every non-finite
