@@ -1,0 +1,188 @@
+{
+  "latestRelease": "2.3.4",
+  "parallelFrom": "2.5",
+  "milestones": [
+    {
+      "number": 16,
+      "track": "kernel",
+      "title": "v2.3 — Reader robustness",
+      "description": "Cross-reference reconstruction for damaged files (#184), a decrypted-copy writer (#186), the /XRefStm precedence decision (#206), reader fuzzing (#99), and the CI and oracle debt that makes all of it verifiable.",
+      "released": true
+    },
+    {
+      "number": 21,
+      "track": "kernel",
+      "title": "v2.4 — Hardening and navigable documents",
+      "description": "Hardening across the packages (non-finite and null arguments, image loaders, table and list layout, resource bounds) and navigable documents that stay within PDF/A-2u: internal links, named destinations, page labels, a table of contents and an index with page numbers, leaders, page breaks and keep-with-next, preformatted text, font fallback, and a diagnostics channel with an opt-in strict mode.",
+      "released": false
+    },
+    {
+      "number": 53,
+      "track": "kernel",
+      "title": "v2.5 — Accessible documents, extraction and Reader graduation",
+      "description": "PDF/A-2a and PDF/UA-1 tagging fixes (links, artifacts, one structure element per logical element, table headers, language changes, list labels), text and image extraction (#98, #394), graduating VellumPdf.Reader from Preview to Stable (#187), image encoders (#491, #495), and settling whether a CCITT Group 4 encoder is worth building (#494).",
+      "released": false
+    },
+    {
+      "number": 19,
+      "track": "kernel",
+      "title": "v2.6 — PDF/A-4 and PDF/A-1 profiles",
+      "description": "PDF/A-4 (ISO 19005-4, PDF 2.0; #222) so conformance output stops downgrading to %PDF-1.7, PDF/A-1 (ISO 19005-1; #218) to unblock recursive validation of embedded PDF/A-1 files, and dropping the keys ISO 32000-2 deprecates (#325).",
+      "released": false
+    },
+    {
+      "number": 22,
+      "track": "kernel",
+      "title": "v2.7 — ISO/TS extensions to PDF 2.0",
+      "description": "The four Technical Specifications that amend PDF 2.0, on the ISO 32000-2 §7.12 developer-extensions foundation: SHA-3 (TS 32001, #238), EdDSA and the extended curve set (TS 32002, #239), AES-GCM (TS 32003, #236) and PDF MAC integrity (TS 32004, #237). Security-relevant: the reader rejects every AES-GCM file today.",
+      "released": false
+    },
+    {
+      "number": 23,
+      "track": "kernel",
+      "title": "v2.8 — Embedded files and associated files",
+      "description": "File specifications and embedded file streams, on the /Names name tree that v2.4 adds (#241); the missing annotation subtypes; and §14.13 associated files. Unblocks PDF/A-4F.",
+      "released": false
+    },
+    {
+      "number": 24,
+      "track": "kernel",
+      "title": "v2.9 — Colour and paint",
+      "description": "PDF functions, the full shading model, tiling and shading patterns, and the colour spaces beyond Device* and ICCBased.",
+      "released": false
+    },
+    {
+      "number": 25,
+      "track": "kernel",
+      "title": "v2.10 — Rendering and resources",
+      "description": "Transparency and blend modes, the complete ExtGState, public form XObjects, inline images, optional content, the missing content-stream operators, and the page boundary boxes.",
+      "released": false
+    },
+    {
+      "number": 26,
+      "track": "kernel",
+      "title": "v2.11 — Font completeness",
+      "description": "Type 1, bare CFF, simple TrueType and Type 3 fonts (the programs and encodings ISO 32000-2 §9.6–9.9 defines that the writer cannot produce); predefined CMaps and vertical writing; kerning; a real /StemV; and enforcing the fsType embedding permission the library currently parses and ignores.",
+      "released": false
+    },
+    {
+      "number": 27,
+      "track": "kernel",
+      "title": "v2.12 — Tagged PDF 2.0 writer",
+      "description": "Structure namespaces, the PdfStructElem surface PDF/UA-2 needs, structure destinations, and the ISO/TS 32005 containment matrix as generated data.",
+      "released": false
+    },
+    {
+      "number": 28,
+      "track": "kernel",
+      "title": "v2.13 — PDF/UA-2 and WTPDF",
+      "description": "The ua2, wt1a and wt1r rule sets, consuming the containment matrix from v2.12.",
+      "released": false
+    },
+    {
+      "number": 29,
+      "track": "kernel",
+      "title": "v2.14 — Signature verification",
+      "description": "Verifying signatures, not just producing them: integrity, coverage, chain building, revocation and PAdES level detection. Independent of the editing line.",
+      "released": false
+    },
+    {
+      "number": 30,
+      "track": "layout",
+      "title": "Layout A — Foundations",
+      "description": "The structural blockers in the layout engine: no containment model (sections with their own bands, numbering and page size) and table cells that hold strings, not elements. Plus the API shape everything later inherits, since retrofitting it gets more expensive with each issue: a unit type, named styles and renderer extensibility. Everything else in the Layout track depends on these.",
+      "released": false
+    },
+    {
+      "number": 31,
+      "track": "layout",
+      "title": "Layout B — Accessibility structure",
+      "description": "The PDF/UA-2 element set, and the layout behaviour that makes it usable: lists of figures and tables and the full index range (#599), captions as a real containment relationship, footnotes and endnotes, automatic numbering counters, and internal links as PDF 2.0 structure destinations (#600). The table of contents, the index, leaders and internal links ship in v2.4; table header semantics in v2.5.",
+      "released": false
+    },
+    {
+      "number": 32,
+      "track": "layout",
+      "title": "Layout C — Forms and semantics",
+      "description": "Form elements that place their own widgets and carry the labels PDF/UA-2 requires, and build-time accessibility diagnostics with a strict mode (#304), on the general diagnostics channel that v2.4 adds (#607).",
+      "released": false
+    },
+    {
+      "number": 33,
+      "track": "layout",
+      "title": "Layout D — Typography",
+      "description": "Text decoration and scripts, optional paragraph-optimal line breaking, hyphenation and floats, per-cell borders and vertical alignment, plus inline content: images in a line of text, and convenience image loading.",
+      "released": false
+    },
+    {
+      "number": 34,
+      "track": "layout",
+      "title": "Layout E — Composition",
+      "description": "Composite elements and document templates, fit modes, anchored elements and rotation, page backgrounds and borders, running bands that hold more than one string, and prepress bleed and printer marks.",
+      "released": false
+    },
+    {
+      "number": 35,
+      "track": "layout",
+      "title": "Layout F — Advanced layout",
+      "description": "Multi-column flow, nested and richer tables, a chart family, streaming generation for very large documents, and the SVG import epic, which lands on the v2.9 and v2.10 graphics work.",
+      "released": false
+    },
+    {
+      "number": 36,
+      "track": "layout",
+      "title": "Layout G — International text",
+      "description": "Unicode bidi and RTL, vertical writing and CJK line breaking, culture-aware formatting, and the complex-script shaping epic.",
+      "released": false
+    },
+    {
+      "number": 17,
+      "track": "editing",
+      "title": "v3.0 — Round-trip document model",
+      "description": "Two things, not one. The new round-trip document type alongside the write-once PdfDocument, the memory-mapped backing store, save modes, and the VellumPdf.Editing package. And the library's breaking changes generally, not only the editing ones: the contract tightening the 2.3.x patches can only report rather than refuse, collected in #484. The only breaking milestone in the line, so everything after it is additive.",
+      "released": false
+    },
+    {
+      "number": 38,
+      "track": "editing",
+      "title": "v3.1 — Sign and fill existing documents",
+      "description": "Signing a PDF the library did not write, and filling its form fields, both as incremental updates. Plus /SV seed values, /Lock, /FieldMDP and /DocMDP enforcement.",
+      "released": false
+    },
+    {
+      "number": 39,
+      "track": "editing",
+      "title": "v3.2 — Append-only content edits",
+      "description": "Annotations, metadata and XMP, watermark overlay, attachments, and appending flowed Layout content to an existing document.",
+      "released": false
+    },
+    {
+      "number": 40,
+      "track": "editing",
+      "title": "v3.3 — Full-rewrite operations",
+      "description": "Grouped by blast radius: revision-history discard, changing encryption, preserving linearization, and removing a signature. None can be an incremental update.",
+      "released": false
+    },
+    {
+      "number": 41,
+      "track": "editing",
+      "title": "v3.4 — Structural editing",
+      "description": "Page operations, merge and split, optimise and sanitise, and page geometry.",
+      "released": false
+    },
+    {
+      "number": 42,
+      "track": "editing",
+      "title": "v3.5 — Redaction",
+      "description": "Marking regions and applying them. Deliberately isolated so a half-implementation never ships — marking alone is not redaction.",
+      "released": false
+    },
+    {
+      "number": 43,
+      "track": "editing",
+      "title": "v3.6 — Content editing",
+      "description": "Reflowing text edits over a parsed content stream, structure-tree round-trip for tagged documents, and the editing CLI.",
+      "released": false
+    }
+  ]
+}
