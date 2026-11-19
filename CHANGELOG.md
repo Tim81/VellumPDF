@@ -100,6 +100,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   to the entries it declares, so a pixel pointing past them, or pixel data starting inside the
   palette, is refused with `InvalidDataException`.
 
+- **`TiffImageLoader` refuses an unusable `ColorMap` with `InvalidDataException` (#512, #534).**
+  A `ColorMap` whose value field is a negative offset threw `IndexOutOfRangeException` after
+  allocating `new ushort[count]` from the tag: 1,000,002,480 bytes for a count of 500,000,000 and
+  2,147,486,368 for 1,073,741,823, on the calling thread. It is now refused before the allocation.
+  A palette image whose `ColorMap` has a count of zero threw the same exception from `BuildPalette`
+  with no negative value in the file, and is now refused as an empty map. A directory offset or a
+  scalar tag's value offset near `int.MaxValue` also threw it, because the bounds sum wrapped, and
+  is refused too. Nothing that loaded before is refused: a count of zero on a non-palette image
+  still loads, with a negative offset or without, and one or two entries still load. The XML
+  documentation no longer lists `IndexOutOfRangeException`. No public API changes.
+
 ## [2.3.3] - 2026-09-20
 
 This release is led by documentation. Layout's public surface now states what each member

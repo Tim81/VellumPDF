@@ -98,16 +98,12 @@ public static class TiffImageLoader
     /// <exception cref="InvalidDataException">
     /// The bytes are not a TIFF file, or the directory they carry does not describe an image this
     /// loader will read: truncated, a pixel count above the safety limit, a required tag missing,
-    /// or tags that disagree with each other.
+    /// a <c>ColorMap</c> it cannot use, or tags that disagree with each other.
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// The file is a well-formed TIFF using a baseline or extension feature this loader does not
     /// read, such as old-style JPEG compression, a bit depth other than 8 or 16, or an
     /// unsupported photometric interpretation.
-    /// </exception>
-    /// <exception cref="IndexOutOfRangeException">
-    /// A <c>ColorMap</c> tag whose value field is a negative offset, or whose count is zero
-    /// (#512, #534).
     /// </exception>
     /// <remarks>
     /// Treat the input as untrusted. A malformed file raises
@@ -124,9 +120,15 @@ public static class TiffImageLoader
     /// pre-multiplied alpha is emitted as a plain soft mask with no <c>/Matte</c> and
     /// composites wrong (#534). Read the directory yourself if you did not produce the
     /// file.</para>
-    /// <para>A <c>ColorMap</c> tag whose offset is negative, or whose count is zero, throws
-    /// <see cref="IndexOutOfRangeException"/> from an unguarded read (#512, #534). That type
-    /// is not a refusal this loader chose.</para>
+    /// <para>A <c>ColorMap</c> the loader cannot use is a malformed file, not a crash. A negative
+    /// offset, an offset that puts the map past the end of the file, and an empty map on a palette
+    /// photometric all raise <see cref="InvalidDataException"/>. Before 2.4 the first and the
+    /// last raised <see cref="IndexOutOfRangeException"/> from an unguarded read, and the first
+    /// allocated an array sized from the tag's count before it did (#512, #534). A tag
+    /// whose offset is negative but whose count is zero, on a photometric that does not read the
+    /// map, still loads. A directory offset or a scalar tag's value offset within a few bytes of
+    /// <see cref="int.MaxValue"/> raised the same exception, because the bounds sum wrapped
+    /// negative; it now raises <see cref="InvalidDataException"/> too.</para>
     /// <para><see langword="null"/> is not checked. It raises
     /// <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>, so a caller
     /// guarding on the documented type will not catch it. You have to reject null yourself. A
@@ -158,19 +160,12 @@ public static class TiffImageLoader
     /// <exception cref="NotSupportedException">
     /// The file is a well-formed TIFF using a feature this loader does not read.
     /// </exception>
-    /// <exception cref="IndexOutOfRangeException">
-    /// A <c>ColorMap</c> tag whose value field is a negative offset, or whose count is zero.
-    /// That read is unguarded where its siblings check, so the array indexer throws rather than
-    /// this loader refusing the file (#512, #534).
-    /// </exception>
     /// <remarks>
     /// This overload carries the implementation. The single-argument overload delegates here.
-    /// A malformed file raises <see cref="InvalidDataException"/>. A well-formed file this
-    /// loader does not read raises <see cref="NotSupportedException"/>. A <c>ColorMap</c>
-    /// tag whose offset is negative, or whose count is zero, throws
-    /// <see cref="IndexOutOfRangeException"/>. None of those types derives from another. A
-    /// null array raises <see cref="NullReferenceException"/>, not
-    /// <see cref="ArgumentNullException"/>.
+    /// A malformed file raises <see cref="InvalidDataException"/>, a <c>ColorMap</c> it cannot
+    /// use included. A well-formed file this loader does not read raises
+    /// <see cref="NotSupportedException"/>. Neither type derives from the other. A null array
+    /// raises <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>.
     /// <para>The JPEG-strip hole on the other overload is this overload's. Compression 7 is
     /// handed to <see cref="JpegImageLoader.Load(byte[])"/>, which validates nothing.</para>
     /// <para><paramref name="options"/> reaches
@@ -204,7 +199,7 @@ public static class TiffImageLoader
 
         // Offset to first IFD
         var ifdOffset = (int)ReadU32(tiff, 4, littleEndian);
-        if (ifdOffset < 8 || ifdOffset + 2 > tiff.Length)
+        if (ifdOffset < 8 || (long)ifdOffset + 2 > tiff.Length)
             throw new InvalidDataException($"TIFF IFD offset {ifdOffset} is out of bounds.");
 
         // Read IFD entry count
@@ -860,6 +855,13 @@ public static class TiffImageLoader
         // ColorMap layout: 3 * 2^bps entries of 16-bit values (range 0–65535).
         // First 2^bps entries are red, next 2^bps are green, last 2^bps are blue.
         // Scale 0–65535 → 0–255 by taking the high byte.
+        // An empty map has nothing for index 0 to read, and the out-of-range clamp below maps to
+        // index 0, so it would throw IndexOutOfRangeException from the indexer (#512, #534). One or
+        // two entries do not reach that: paletteSize is then 0 as well, but colorMap[0] exists, so
+        // those files keep loading as they did, every pixel reading entry 0 for all three channels.
+        if (colorMap.Length == 0)
+            throw new InvalidDataException("TIFF palette photometric has an empty ColorMap.");
+
         var paletteSize = colorMap.Length / 3;
         var rgb = new byte[width * height * 3];
         for (var i = 0; i < width * height; i++)
@@ -989,7 +991,7 @@ public static class TiffImageLoader
         {
             // Value is at the offset stored in the value/offset field
             var offset = (int)ReadU32(data, entryBase + 8, le);
-            if (offset < 0 || offset + typeSize > data.Length)
+            if (offset < 0 || (long)offset + typeSize > data.Length)
                 throw new InvalidDataException(
                     $"TIFF IFD value offset {offset} for type {type} is out of bounds.");
             return type switch
@@ -1055,6 +1057,16 @@ public static class TiffImageLoader
         var totalBytes = typeSize * count;
         var offset = (int)ReadU32(data, entryBase + 8, le);
 
+        // A value field of 0x80000000 or more reads as a negative int, and a negative offset plus
+        // any length still passes the upper-bound test below. ReadTagValue and ReadTagArray refuse
+        // it; this reader did not, and the first array read then threw IndexOutOfRangeException
+        // after `new ushort[count]` had already been sized from the tag (#512, #534). A count of
+        // zero never reads an element, so it keeps loading as it did: the file is judged by what
+        // BuildPalette needs from the map, not by an offset nothing dereferences.
+        if (count > 0 && offset < 0)
+            throw new InvalidDataException(
+                $"TIFF ColorMap offset {offset} is negative.");
+
         if ((long)offset + totalBytes > data.Length)
             throw new InvalidDataException(
                 $"TIFF ColorMap at offset {offset} (length {totalBytes}) extends beyond end of file.");
@@ -1083,7 +1095,9 @@ public static class TiffImageLoader
 
     private static ushort ReadU16(byte[] data, int offset, bool le)
     {
-        if (offset + 2 > data.Length)
+        // Both bounds, in long: a negative offset, or one near int.MaxValue whose sum wraps, passes
+        // a plain `offset + 2 > length` and then fails in the array indexer.
+        if (offset < 0 || (long)offset + 2 > data.Length)
             throw new InvalidDataException($"TIFF read U16 at offset {offset} is out of bounds.");
         return le
             ? (ushort)(data[offset] | (data[offset + 1] << 8))
@@ -1092,7 +1106,7 @@ public static class TiffImageLoader
 
     private static uint ReadU32(byte[] data, int offset, bool le)
     {
-        if (offset + 4 > data.Length)
+        if (offset < 0 || (long)offset + 4 > data.Length)
             throw new InvalidDataException($"TIFF read U32 at offset {offset} is out of bounds.");
         return le
             ? (uint)(data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24))
