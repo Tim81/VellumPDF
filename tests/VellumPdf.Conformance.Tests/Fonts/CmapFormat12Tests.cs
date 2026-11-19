@@ -1,0 +1,429 @@
+// Copyright © Timothy van der Ham (@Tim81)
+// SPDX-License-Identifier: Apache-2.0
+
+using System.IO.Compression;
+using System.Text;
+using VellumPdf.Canvas;
+using VellumPdf.Document;
+using VellumPdf.Fonts.Sfnt;
+using VellumPdf.TestSupport;
+
+namespace VellumPdf.Conformance.Tests.Fonts;
+
+// The enclosing VellumPdf.Conformance namespace has its own PdfConformance; this file means the document one.
+using PdfConformance = VellumPdf.Document.PdfConformance;
+
+/// <summary>
+/// cmap format 12 against the two fonts already in the tree, a TrueType one (DejaVu Sans, glyf
+/// outlines) and an OpenType-CFF one (Source Sans 3 ExtraLight) (#595).
+///
+/// Neither font is changed on disk. The "format 12 only" and "format 4 only" fonts are built in
+/// memory by appending a new cmap table to the asset's bytes and pointing the table directory at
+/// it, so the glyph data is the asset's own and no font file is added to the repository.
+///
+/// The expected glyph ids are known answers read from the fonts with fontTools 4.62.1 (the cmap
+/// subtables, then the glyph order), not computed by the code under test: DejaVu maps U+1F600 to
+/// glyph 5857, U+10300 to 5373 and U+1F643 to 5920, has 548 code points above U+FFFF and 5370
+/// below it, and Source Sans maps U+1F10D to 1481 and U+1F916 to 2251 with 14 above U+FFFF and
+/// 1600 below. The OpenType cmap chapter (OpenType 1.9.1, format 12 and the platform and encoding
+/// tables) is not held under docs/iso, so the layout rules these tests pin come from that page on
+/// learn.microsoft.com, fetched 2026-11-19.
+/// </summary>
+[Collection("veraPDF")]
+public sealed class CmapFormat12Tests
+{
+    private const int DejaVuBmpCount = 5370;
+    private const int DejaVuSupplementaryCount = 548;
+
+    // ---------------------------------------------------------------- the fonts as they are
+
+    [Fact]
+    public void DejaVu_withBothSubtables_mapsTheSupplementaryPlanes()
+    {
+        var table = Parse(LoadAsset("DejaVuSans.ttf"));
+
+        Assert.Equal(36, table.GetGlyphId('A'));
+        Assert.Equal(5857, table.GetGlyphId(0x1F600));
+        Assert.Equal(5373, table.GetGlyphId(0x10300));
+        Assert.Equal(5920, table.GetGlyphId(0x1F643));
+        Assert.Equal((DejaVuBmpCount, DejaVuSupplementaryCount), Count(table));
+    }
+
+    [Fact]
+    public void SourceSans_withBothSubtables_mapsTheSupplementaryPlanes()
+    {
+        var table = Parse(LoadAsset("SourceSans3-ExtraLight.otf"));
+
+        Assert.Equal(2, table.GetGlyphId('A'));
+        Assert.Equal(1481, table.GetGlyphId(0x1F10D));
+        Assert.Equal(2251, table.GetGlyphId(0x1F916));
+        Assert.Equal(0, table.GetGlyphId(0x1F600));   // the font has no U+1F600
+        Assert.Equal((1600, 14), Count(table));
+    }
+
+    // ---------------------------------------------------------------- one subtable of each kind
+
+    /// <summary>
+    /// The font whose only Unicode subtable is the platform 3 / encoding 10 format 12 one loads and
+    /// maps every code point the full font does. 2.3.3 threw NotSupportedException here.
+    /// </summary>
+    [Theory]
+    [InlineData("DejaVuSans.ttf", 3, 10)]
+    [InlineData("DejaVuSans.ttf", 0, 10)]
+    [InlineData("SourceSans3-ExtraLight.otf", 3, 10)]
+    [InlineData("SourceSans3-ExtraLight.otf", 0, 4)]
+    public void FontWithOnlyAFormat12Subtable_loadsAndMapsEveryCodePointTheFullFontDoes(
+        string asset, int platform, int encoding)
+    {
+        var full = LoadAsset(asset);
+        var only12 = WithCmap(full, Subtables(full).Where(s => s.Platform == platform && s.Encoding == encoding && s.Format == 12));
+
+        var reference = Parse(full);
+        var table = Parse(only12);
+
+        for (var cp = 0; cp <= 0x10FFFF; cp++)
+        {
+            var expected = reference.TryGetGlyphId(cp, out var g) ? g : (ushort)0;
+            var actual = table.TryGetGlyphId(cp, out var h) ? h : (ushort)0;
+            if (expected != actual)
+                Assert.Fail($"U+{cp:X}: full font maps to {expected}, format-12-only font to {actual}.");
+        }
+    }
+
+    /// <summary>The same two format 12 fonts, one KAT each, so a failure above names a value.</summary>
+    [Fact]
+    public void Format12OnlyDejaVu_mapsU1F600ToGlyph5857()
+    {
+        var full = LoadAsset("DejaVuSans.ttf");
+        var table = Parse(WithCmap(full, Subtables(full).Where(s => s.Platform == 3 && s.Format == 12)));
+
+        Assert.Equal(5857, table.GetGlyphId(0x1F600));
+        Assert.Equal((DejaVuBmpCount, DejaVuSupplementaryCount), Count(table));
+    }
+
+    /// <summary>
+    /// A font with no format 12 subtable behaves as it did: format 4 for the BMP, nothing above it.
+    /// </summary>
+    [Fact]
+    public void FontWithOnlyFormat4_isUnchanged()
+    {
+        var full = LoadAsset("DejaVuSans.ttf");
+        var only4 = WithCmap(full, Subtables(full).Where(s => s.Platform == 3 && s.Encoding == 1));
+
+        var table = Parse(only4);
+
+        Assert.Equal(36, table.GetGlyphId('A'));
+        Assert.Equal(0, table.GetGlyphId(0x1F600));
+        Assert.Equal((DejaVuBmpCount, 0), Count(table));
+    }
+
+    // ---------------------------------------------------------------- the whole path, with oracles
+
+    /// <summary>
+    /// U+1F600 drawn with DejaVu: the content stream names glyph 5857 (0x16E1) and the ToUnicode
+    /// map has <c>&lt;16E1&gt; &lt;D83DDE00&gt;</c>, the surrogate pair, for it. Run with the font
+    /// whole and with its cmap cut to the format 12 subtable alone; the two files must carry the
+    /// same pair, since the glyph data is the same.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void EmbeddedDejaVu_drawsU1F600WithItsRealGlyph_andToUnicodeHasTheSurrogatePair(bool format12Only)
+    {
+        var font = LoadAsset("DejaVuSans.ttf");
+        if (format12Only)
+            font = WithCmap(font, Subtables(font).Where(s => s.Platform == 3 && s.Format == 12));
+
+        var pdf = DrawText(font, "A\U0001F600", PdfConformance.None);
+
+        var all = Encoding.Latin1.GetString(Inflated(pdf));
+        Assert.Contains("<16E1> <D83DDE00>", all);
+        Assert.Contains("<0024> <0041>", all);        // 'A' is glyph 36
+        Assert.Contains("<002416E1>", all);           // the content stream's glyph run
+    }
+
+    /// <summary>
+    /// The same file read back by independent tools: pdftotext extracts the emoji from the page,
+    /// and veraPDF accepts the PDF/A-2u build of it. pdftotext reads the text through the
+    /// ToUnicode map, so it fails if that holds anything but the surrogate pair for the glyph.
+    /// </summary>
+    [Fact]
+    public void EmbeddedDejaVu_u1F600_isExtractedByPdftotext()
+    {
+        var font = LoadAsset("DejaVuSans.ttf");
+        font = WithCmap(font, Subtables(font).Where(s => s.Platform == 3 && s.Format == 12));
+        var pdf = DrawText(font, "A\U0001F600B", PdfConformance.None);
+        var path = Path.Combine(Path.GetTempPath(), $"vellum-cmap12-{Guid.NewGuid():N}.pdf");
+        File.WriteAllBytes(path, pdf);
+        try
+        {
+            ExternalTool.TryRun("pdftotext", [path, "-"], out _, out var text, out var stderr, out _,
+                outputEncoding: Encoding.UTF8);
+
+            Assert.True(text.Contains("A\U0001F600B", StringComparison.Ordinal),
+                $"pdftotext did not return the text.\nstdout: {text}\nstderr: {stderr}");
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void EmbeddedDejaVu_u1F600_pdfA2uBuildIsAcceptedByVeraPdf()
+    {
+        VeraPdf.EnsureAvailable();
+        var font = LoadAsset("DejaVuSans.ttf");
+        font = WithCmap(font, Subtables(font).Where(s => s.Platform == 3 && s.Format == 12));
+        var pdf = DrawText(font, "A\U0001F600B", PdfConformance.PdfA2u);
+        var path = Path.Combine(Path.GetTempPath(), $"vellum-cmap12-{Guid.NewGuid():N}.pdf");
+        File.WriteAllBytes(path, pdf);
+        try
+        {
+            Assert.True(VeraPdf.Validate(path, "2u"));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    /// <summary>The CFF path: Source Sans draws U+1F916 with glyph 2251 (0x08CB) and a ToUnicode pair for it.</summary>
+    [Fact]
+    public void EmbeddedSourceSans_drawsU1F916WithItsRealGlyph()
+    {
+        var font = LoadAsset("SourceSans3-ExtraLight.otf");
+        font = WithCmap(font, Subtables(font).Where(s => s.Platform == 3 && s.Format == 12));
+
+        var pdf = DrawText(font, "A\U0001F916", PdfConformance.None);
+
+        var all = Encoding.Latin1.GetString(Inflated(pdf));
+        Assert.Contains("D83EDD16>", all);   // U+1F916 as a surrogate pair
+    }
+
+    // ---------------------------------------------------------------- BMP-only output is unchanged
+
+    /// <summary>
+    /// A document that draws only BMP text must come out as it did on 2.3.3, whichever subtables
+    /// the font has. The digests are SHA-256 over the inflated stream bodies of a document with the
+    /// clock and document id pinned, taken from the 2.3.3 build (informational version
+    /// <c>2.3.3+cbbf7d5136f640d0a5b2a9bc8b5ded298bc7d1f2</c>, a detached worktree at <c>v2.3.3</c>)
+    /// and found equal on this build. They are over inflated bodies, not the file, so a different
+    /// zlib on another platform cannot move them. A change to which glyph a BMP code point maps to,
+    /// or to what is embedded for it, changes a digest.
+    /// </summary>
+    [Theory]
+    [InlineData("DejaVuSans.ttf", "intact", "B8C90319B5BEAE5E48F7E18B8B0ECF44D360E942C70FD100F9603D187B675617")]
+    [InlineData("DejaVuSans.ttf", "format4Only", "C9964F54FB78A50F0BC43245007F360CD980A02E091B8D3460D4EB36FB9EBC4B")]
+    [InlineData("SourceSans3-ExtraLight.otf", "intact", "CA40E77EF8B02C1F69BF577246FDA4E000FB5B7479575AA88717EB78646A82AF")]
+    public void BmpOnlyDocument_hasTheStreamBodiesItHadOn233(string asset, string variant, string expectedSha256)
+    {
+        var font = LoadAsset(asset);
+        if (variant == "format4Only")
+            font = WithCmap(font, Subtables(font).Where(s => s.Platform == 3 && s.Encoding == 1));
+
+        using var doc = new PdfDocument
+        {
+            Timestamp = new DateTimeOffset(2026, 1, 2, 3, 4, 5, TimeSpan.Zero),
+            DocumentId = new byte[16],
+        };
+        var page = doc.AddPage();
+        var handle = doc.UseTrueTypeFont(font);
+        doc.RegisterEmbeddedFontUsage(page, handle);
+        var canvas = new PdfCanvas(page);
+        canvas.BeginText().SetFontByName(handle.ResourceName, 12).SetTextMatrix(1, 0, 0, 1, 72, 720);
+        var gids = new ushort[5];
+        var count = handle.GetGlyphIds("Hello", gids);
+        canvas.ShowGlyphs(gids.AsSpan(0, count));
+        canvas.EndText();
+        canvas.Finish();
+        using var ms = new MemoryStream();
+        doc.Save(ms);
+
+        var digest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(StreamBodies(ms.ToArray())));
+        Assert.Equal(expectedSha256, digest);
+    }
+
+    // ---------------------------------------------------------------- fixtures
+
+    private static CmapTable Parse(byte[] font) => CmapTable.Parse(SfntFont.Parse(font));
+
+    /// <summary>(code points at or below U+FFFF, code points above) the table maps.</summary>
+    private static (int Bmp, int Supplementary) Count(CmapTable table)
+    {
+        int bmp = 0, supplementary = 0;
+        for (var cp = 0; cp <= 0x10FFFF; cp++)
+        {
+            if (!table.TryGetGlyphId(cp, out _)) continue;
+            if (cp <= 0xFFFF) bmp++; else supplementary++;
+        }
+        return (bmp, supplementary);
+    }
+
+    private static byte[] DrawText(byte[] font, string text, PdfConformance conformance)
+    {
+        using var doc = new PdfDocument { Conformance = conformance, Language = "en-US" };
+        doc.Info.Title = "cmap format 12";
+        var page = doc.AddPage();
+        var handle = doc.UseTrueTypeFont(font);
+        doc.RegisterEmbeddedFontUsage(page, handle);
+        var canvas = new PdfCanvas(page);
+        canvas.BeginText().SetFontByName(handle.ResourceName, 12).SetTextMatrix(1, 0, 0, 1, 72, 720);
+        var gids = new ushort[text.Length];
+        var count = handle.GetGlyphIds(text, gids);
+        canvas.ShowGlyphs(gids.AsSpan(0, count));
+        canvas.EndText();
+        canvas.Finish();
+        using var ms = new MemoryStream();
+        doc.Save(ms);
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// The PDF with every FlateDecode stream inflated in place, as one Latin-1-safe byte array, so
+    /// a test can search the ToUnicode map and the content stream for text.
+    /// </summary>
+    private static byte[] Inflated(byte[] pdf)
+    {
+        var text = Encoding.Latin1.GetString(pdf);
+        var output = new MemoryStream();
+        var pos = 0;
+        while (true)
+        {
+            var s = text.IndexOf("stream\n", pos, StringComparison.Ordinal);
+            if (s < 0) break;
+            s += "stream\n".Length;
+            var e = text.IndexOf("\nendstream", s, StringComparison.Ordinal);
+            if (e < 0) break;
+            output.Write(pdf, pos, s - pos);
+            try
+            {
+                using var z = new ZLibStream(new MemoryStream(pdf, s, e - s), CompressionMode.Decompress);
+                z.CopyTo(output);
+            }
+            catch (InvalidDataException)
+            {
+                output.Write(pdf, s, e - s);   // not deflated; keep the raw bytes
+            }
+            pos = e + "\nendstream".Length;   // past the keyword, which itself contains "stream\n"
+        }
+        output.Write(pdf, pos, pdf.Length - pos);
+        return output.ToArray();
+    }
+
+    /// <summary>Every stream body of the PDF, inflated where it is deflated, concatenated.</summary>
+    private static byte[] StreamBodies(byte[] pdf)
+    {
+        var text = Encoding.Latin1.GetString(pdf);
+        var all = new MemoryStream();
+        var pos = 0;
+        while (true)
+        {
+            var s = text.IndexOf("stream\n", pos, StringComparison.Ordinal);
+            if (s < 0) break;
+            s += "stream\n".Length;
+            var e = text.IndexOf("\nendstream", s, StringComparison.Ordinal);
+            if (e < 0) break;
+            try
+            {
+                using var z = new ZLibStream(new MemoryStream(pdf, s, e - s), CompressionMode.Decompress);
+                z.CopyTo(all);
+            }
+            catch (InvalidDataException)
+            {
+                all.Write(pdf, s, e - s);
+            }
+            pos = e + "\nendstream".Length;   // past the keyword, which itself contains "stream\n"
+        }
+        return all.ToArray();
+    }
+
+    private static byte[] LoadAsset(string logicalName)
+    {
+        using var s = typeof(CmapFormat12Tests).Assembly.GetManifestResourceStream(logicalName)
+            ?? throw new InvalidOperationException($"Embedded asset '{logicalName}' not found.");
+        using var ms = new MemoryStream();
+        s.CopyTo(ms);
+        return ms.ToArray();
+    }
+
+    private sealed record Subtable(int Platform, int Encoding, int Format, byte[] Bytes);
+
+    private static ushort U16(byte[] d, int o) => (ushort)((d[o] << 8) | d[o + 1]);
+
+    private static uint U32(byte[] d, int o) =>
+        ((uint)d[o] << 24) | ((uint)d[o + 1] << 16) | ((uint)d[o + 2] << 8) | d[o + 3];
+
+    private static void Put16(byte[] d, int o, int v) { d[o] = (byte)(v >> 8); d[o + 1] = (byte)v; }
+
+    private static void Put32(byte[] d, int o, uint v)
+    {
+        d[o] = (byte)(v >> 24); d[o + 1] = (byte)(v >> 16); d[o + 2] = (byte)(v >> 8); d[o + 3] = (byte)v;
+    }
+
+    /// <summary>Finds a table's directory entry: (entry offset, table offset, table length).</summary>
+    private static (int Entry, int Offset, int Length) FindTable(byte[] font, string tag)
+    {
+        var count = U16(font, 4);
+        for (var i = 0; i < count; i++)
+        {
+            var e = 12 + i * 16;
+            if (Encoding.ASCII.GetString(font, e, 4) == tag)
+                return (e, (int)U32(font, e + 8), (int)U32(font, e + 12));
+        }
+        throw new InvalidOperationException($"no '{tag}' table");
+    }
+
+    /// <summary>The font's cmap subtables, each with the bytes the encoding record points at.</summary>
+    private static List<Subtable> Subtables(byte[] font)
+    {
+        var (_, cmap, _) = FindTable(font, "cmap");
+        var count = U16(font, cmap + 2);
+        var result = new List<Subtable>();
+        for (var i = 0; i < count; i++)
+        {
+            var rec = cmap + 4 + i * 8;
+            var at = cmap + (int)U32(font, rec + 4);
+            var format = U16(font, at);
+            // Formats 0, 4 and 6 carry a 16-bit length at +2; format 12 a 32-bit one at +4.
+            var length = format == 12 ? (int)U32(font, at + 4) : U16(font, at + 2);
+            result.Add(new Subtable(U16(font, rec), U16(font, rec + 2), format, font[at..(at + length)]));
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// The font with a new cmap table holding only <paramref name="keep"/>. The table is appended to
+    /// the file and the directory entry repointed; the old bytes stay where they are, unreferenced.
+    /// Table checksums are not recomputed, which this project's parser does not check.
+    /// </summary>
+    private static byte[] WithCmap(byte[] font, IEnumerable<Subtable> keep)
+    {
+        var tables = keep.ToList();
+        Assert.NotEmpty(tables);
+
+        var headerSize = 4 + 8 * tables.Count;
+        var cmap = new List<byte>();
+        cmap.AddRange(new byte[headerSize]);
+        var header = new byte[headerSize];
+        Put16(header, 2, tables.Count);
+        for (var i = 0; i < tables.Count; i++)
+        {
+            Put16(header, 4 + i * 8, tables[i].Platform);
+            Put16(header, 6 + i * 8, tables[i].Encoding);
+            Put32(header, 8 + i * 8, (uint)(cmap.Count));
+            cmap.AddRange(tables[i].Bytes);
+        }
+        var body = cmap.ToArray();
+        header.CopyTo(body, 0);
+
+        var padded = (font.Length + 3) & ~3;
+        var result = new byte[padded + body.Length];
+        font.CopyTo(result, 0);
+        body.CopyTo(result, padded);
+        var (entry, _, _) = FindTable(font, "cmap");
+        Put32(result, entry + 8, (uint)padded);
+        Put32(result, entry + 12, (uint)body.Length);
+        return result;
+    }
+}

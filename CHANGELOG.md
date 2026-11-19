@@ -54,6 +54,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Embedded fonts can draw characters above U+FFFF: cmap format 12 is read (#595).** The cmap
+  parser read formats 0, 4 and 6 only. A font with a format 12 subtable beside its format 4 one
+  was read through format 4, which cannot hold a code point above U+FFFF, so every such character
+  mapped to glyph 0; a font whose only Unicode subtable was format 12 threw
+  `NotSupportedException`. The parser now uses a format 12 subtable on platform 3 / encoding 10 or
+  platform 0 / encoding 4 or 10 when the font has one (OpenType cmap chapter: the 32-bit subtable
+  is the one applications should use). Measured with the DejaVu Sans test font: U+1F600 drew glyph
+  0 and its ToUnicode entry read `<0000> <D83DDE00>` on 2.3.3, and now draws glyph 5857 with
+  `<16E1> <D83DDE00>`; pdftotext returns the emoji from the page and veraPDF accepts the PDF/A-2u
+  build. Deliberate output changes: a document that draws a code point above U+FFFF from such a
+  font changes (those characters were glyph 0), and a font whose only Unicode subtable is format 12
+  now loads. A document that draws only BMP text is unchanged: the inflated stream bodies hash to
+  the same SHA-256 on 2.3.3 and now, for DejaVu Sans, DejaVu Sans cut to its format 4 subtable, and
+  Source Sans 3. A code point that the 16-bit subtable maps and the format 12 one does not keeps
+  its mapping, and where both map it format 12 wins. A malformed format 12 subtable beside a usable
+  16-bit one is ignored, as before; alone it is refused with `InvalidDataException`. Format 12
+  groups must be sorted, must not overlap, must end at or below U+10FFFF and must fit the length the
+  subtable declares, which bounds the work at the 1,114,112 code points Unicode has.
 - **Cost-bound tests no longer assert on elapsed time (#400, #456).** A `Stopwatch` checked after a
   call returns cannot end a hang, and a 10 s bound fails on a loaded runner: the main CI run for
   1c61fa6 failed `FindingHigh_A4FlateBombPadding_refusesQuickly_viaCostBudget` at 11.79 s, and #400

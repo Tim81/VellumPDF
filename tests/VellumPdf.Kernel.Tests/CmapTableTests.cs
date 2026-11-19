@@ -7,8 +7,9 @@ using VellumPdf.Fonts.Sfnt;
 namespace VellumPdf.Kernel.Tests;
 
 /// <summary>
-/// Unit tests for cmap subtable formats 0 (byte encoding) and 6 (trimmed array),
-/// and for the selection-priority logic that keeps format 4 strictly preferred.
+/// Unit tests for cmap subtable formats 0 (byte encoding), 6 (trimmed array) and 12 (segmented
+/// coverage), and for the selection-priority logic that keeps format 4 strictly preferred over
+/// formats 0 and 6.
 /// All inputs are synthesised in-memory — no real font required.
 /// </summary>
 public sealed class CmapTableTests
@@ -190,6 +191,188 @@ public sealed class CmapTableTests
         Assert.Throws<InvalidDataException>(() => CmapTable.Parse(font));
     }
 
+    // ── Format 12 (#595) ─────────────────────────────────────────────────────────
+    //
+    // Layout and ordering rules are those of the OpenType cmap chapter's format 12: a 16-byte
+    // header (format, reserved, 32-bit length, 32-bit language, 32-bit numGroups) then 12-byte
+    // groups sorted by startCharCode, each group's end below the next group's start.
+
+    [Fact]
+    public void CmapFormat12_onlySubtable_mapsGroupsIncludingSupplementaryPlanes()
+    {
+        var sub12 = BuildSubtableFormat12([(0x41, 0x43, 10), (0x1F600, 0x1F601, 100)]);
+        var font = SfntFont.Parse(BuildFont(("cmap", BuildCmap((3, 10, sub12)))));
+
+        var table = CmapTable.Parse(font);
+
+        Assert.Equal((ushort)10, table.GetGlyphId(0x41));
+        Assert.Equal((ushort)12, table.GetGlyphId(0x43));
+        Assert.Equal((ushort)100, table.GetGlyphId(0x1F600));
+        Assert.Equal((ushort)101, table.GetGlyphId(0x1F601));
+        Assert.Equal((ushort)0, table.GetGlyphId(0x44));
+        Assert.Equal((ushort)0, table.GetGlyphId(0x1F602));
+    }
+
+    [Fact]
+    public void CmapFormat12_gidZeroInAGroup_isNotMapped()
+    {
+        // A group that starts at glyph 0 maps its first code point to .notdef, which the other
+        // formats leave unmapped; U+0041 must read as missing, not as an entry for glyph 0.
+        var sub12 = BuildSubtableFormat12([(0x41, 0x42, 0)]);
+        var font = SfntFont.Parse(BuildFont(("cmap", BuildCmap((3, 10, sub12)))));
+
+        var table = CmapTable.Parse(font);
+
+        Assert.False(table.TryGetGlyphId(0x41, out _));
+        Assert.Equal((ushort)1, table.GetGlyphId(0x42));
+    }
+
+    [Fact]
+    public void CmapFormat12_bothSubtables_formatTwelveWinsWhereTheyDisagree()
+    {
+        var sub4 = BuildSubtableFormat4(
+            [(0x0041, 0x0041, (short)(99 - 0x41), 0), (0xFFFF, 0xFFFF, 1, 0)]);   // 'A' -> 99
+        var sub12 = BuildSubtableFormat12([(0x41, 0x41, 5)]);                      // 'A' -> 5
+        var font = SfntFont.Parse(BuildFont(("cmap", BuildCmap((3, 1, sub4), (3, 10, sub12)))));
+
+        Assert.Equal((ushort)5, CmapTable.Parse(font).GetGlyphId(0x41));
+    }
+
+    /// <summary>
+    /// The OpenType chapter says a font's 32-bit subtable should be a superset of its 16-bit one.
+    /// A font that breaks that keeps what 2.3.3 mapped for it: 'B' is in format 4 only here, and
+    /// still resolves.
+    /// </summary>
+    [Fact]
+    public void CmapFormat12_codePointOnlyFormatFourMaps_isKept()
+    {
+        var sub4 = BuildSubtableFormat4(
+            [(0x0042, 0x0042, (short)(7 - 0x42), 0), (0xFFFF, 0xFFFF, 1, 0)]);     // 'B' -> 7
+        var sub12 = BuildSubtableFormat12([(0x41, 0x41, 5), (0x1F600, 0x1F600, 9)]);
+        var font = SfntFont.Parse(BuildFont(("cmap", BuildCmap((3, 1, sub4), (3, 10, sub12)))));
+
+        var table = CmapTable.Parse(font);
+
+        Assert.Equal((ushort)7, table.GetGlyphId(0x42));
+        Assert.Equal((ushort)5, table.GetGlyphId(0x41));
+        Assert.Equal((ushort)9, table.GetGlyphId(0x1F600));
+    }
+
+    [Fact]
+    public void CmapFormat12_windowsFullRepertoireBeatsUnicodePlatform()
+    {
+        var a = BuildSubtableFormat12([(0x41, 0x41, 5)]);
+        var b = BuildSubtableFormat12([(0x41, 0x41, 6)]);
+        var font = SfntFont.Parse(BuildFont(("cmap", BuildCmap((0, 4, b), (3, 10, a)))));
+
+        Assert.Equal((ushort)5, CmapTable.Parse(font).GetGlyphId(0x41));
+    }
+
+    [Theory]
+    [InlineData(0, 4)]
+    [InlineData(0, 10)]
+    [InlineData(3, 10)]
+    public void CmapFormat12_acceptedRecords_load(int platform, int encoding)
+    {
+        var sub12 = BuildSubtableFormat12([(0x41, 0x41, 5)]);
+        var font = SfntFont.Parse(BuildFont(("cmap", BuildCmap(((ushort)platform, (ushort)encoding, sub12)))));
+
+        Assert.Equal((ushort)5, CmapTable.Parse(font).GetGlyphId(0x41));
+    }
+
+    /// <summary>
+    /// A format 12 subtable under a record that is not a Unicode full-repertoire one (here the
+    /// Windows BMP record) is not read, and with nothing else to use the font is refused as it
+    /// was: NotSupportedException.
+    /// </summary>
+    [Fact]
+    public void CmapFormat12_underAnUnrelatedRecord_isNotUsed()
+    {
+        var sub12 = BuildSubtableFormat12([(0x41, 0x41, 5)]);
+        var font = SfntFont.Parse(BuildFont(("cmap", BuildCmap((3, 1, sub12)))));
+
+        Assert.Throws<NotSupportedException>(() => CmapTable.Parse(font));
+    }
+
+    // Malformed format 12, alone in the font: refused with InvalidDataException, never read past
+    // the table and never expanded. Every case names the rule it breaks.
+    [Fact]
+    public void CmapFormat12_groupCountBeyondTheDeclaredLength_isRefused()
+    {
+        var sub12 = BuildSubtableFormat12([(0x41, 0x41, 5)], numGroupsOverride: 0xFFFF_FFFF);
+        var font = SfntFont.Parse(BuildFont(("cmap", BuildCmap((3, 10, sub12)))));
+
+        Assert.Throws<InvalidDataException>(() => CmapTable.Parse(font));
+    }
+
+    [Fact]
+    public void CmapFormat12_groupCountBackedByLengthButNotByTheTable_isRefused()
+    {
+        // The declared length is honest about the group count but claims far more than the font
+        // holds; the first read past the buffer is the refusal.
+        var sub12 = BuildSubtableFormat12([(0x41, 0x41, 5)], numGroupsOverride: 1_000_000, lengthOverride: 16 + 12_000_000);
+        var font = SfntFont.Parse(BuildFont(("cmap", BuildCmap((3, 10, sub12)))));
+
+        Assert.Throws<InvalidDataException>(() => CmapTable.Parse(font));
+    }
+
+    [Theory]
+    [InlineData(0u, 0xFFFF_FFFFu)]      // billions of code points in one group
+    [InlineData(0u, 0x110000u)]         // one past U+10FFFF
+    [InlineData(0x1F600u, 0x1F5FFu)]    // end before start
+    public void CmapFormat12_groupOutsideUnicodeOrInverted_isRefused(uint start, uint end)
+    {
+        var sub12 = BuildSubtableFormat12([(start, end, 1)]);
+        var font = SfntFont.Parse(BuildFont(("cmap", BuildCmap((3, 10, sub12)))));
+
+        Assert.Throws<InvalidDataException>(() => CmapTable.Parse(font));
+    }
+
+    /// <summary>
+    /// Overlapping or unsorted groups: every group covers all of Unicode, so taking them at their
+    /// word is hundreds of millions of lookups from 52 bytes of subtable. The order rule refuses
+    /// the second group before it is expanded; this is the bound.
+    /// </summary>
+    [Theory]
+    [InlineData(0u, 0u, 1u, 0x10FFFFu)]            // second starts at the first's start
+    [InlineData(0x100u, 0x200u, 0x200u, 0x300u)]   // second starts at the first's end
+    [InlineData(0x300u, 0x400u, 0x100u, 0x200u)]   // second is before the first
+    public void CmapFormat12_overlappingOrUnsortedGroups_areRefused(uint s1, uint e1, uint s2, uint e2)
+    {
+        var sub12 = BuildSubtableFormat12([(s1, e1, 1), (s2, e2, 1)]);
+        var font = SfntFont.Parse(BuildFont(("cmap", BuildCmap((3, 10, sub12)))));
+
+        Assert.Throws<InvalidDataException>(() => CmapTable.Parse(font));
+    }
+
+    [Fact]
+    public void CmapFormat12_groupMappingPastGlyph65535_isRefused()
+    {
+        var sub12 = BuildSubtableFormat12([(0x41, 0x50, 0xFFF8)]);
+        var font = SfntFont.Parse(BuildFont(("cmap", BuildCmap((3, 10, sub12)))));
+
+        Assert.Throws<InvalidDataException>(() => CmapTable.Parse(font));
+    }
+
+    /// <summary>
+    /// A font 2.3.3 loaded through its format 4 subtable keeps loading when its format 12 subtable
+    /// is malformed: it costs the supplementary planes and nothing else. Without this, a font that
+    /// worked would start throwing.
+    /// </summary>
+    [Fact]
+    public void CmapFormat12_malformedButFormatFourPresent_fallsBackToFormatFour()
+    {
+        var sub4 = BuildSubtableFormat4(
+            [(0x0042, 0x0042, (short)(7 - 0x42), 0), (0xFFFF, 0xFFFF, 1, 0)]);
+        var sub12 = BuildSubtableFormat12([(0, 0xFFFF_FFFF, 1)]);
+        var font = SfntFont.Parse(BuildFont(("cmap", BuildCmap((3, 1, sub4), (3, 10, sub12)))));
+
+        var table = CmapTable.Parse(font);
+
+        Assert.Equal((ushort)7, table.GetGlyphId(0x42));
+        Assert.Equal((ushort)0, table.GetGlyphId(0x1F600));
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────────
 
     /// <summary>Build a minimal sfnt with the given tables (mirrors MalformedInputTests.BuildFont).</summary>
@@ -303,6 +486,45 @@ public sealed class CmapTableTests
         for (var i = 0; i < glyphIds.Length; i++)
             WriteU16Be(subtable, 10 + i * 2, glyphIds[i]);
         return subtable;
+    }
+
+    /// <summary>
+    /// Build a raw format-12 subtable (no cmap header). The overrides let a test claim a group
+    /// count or a length the bytes do not back.
+    /// </summary>
+    private static byte[] BuildSubtableFormat12(
+        (uint Start, uint End, uint StartGlyph)[] groups, uint? numGroupsOverride = null, uint? lengthOverride = null)
+    {
+        var subtable = new byte[16 + groups.Length * 12];
+        WriteU16Be(subtable, 0, 12);
+        WriteU32Be(subtable, 4, lengthOverride ?? (uint)subtable.Length);
+        WriteU32Be(subtable, 12, numGroupsOverride ?? (uint)groups.Length);
+        for (var i = 0; i < groups.Length; i++)
+        {
+            WriteU32Be(subtable, 16 + i * 12, groups[i].Start);
+            WriteU32Be(subtable, 20 + i * 12, groups[i].End);
+            WriteU32Be(subtable, 24 + i * 12, groups[i].StartGlyph);
+        }
+        return subtable;
+    }
+
+    /// <summary>A cmap table holding the given subtables, one encoding record each, in order.</summary>
+    private static byte[] BuildCmap(params (ushort Platform, ushort Encoding, byte[] Subtable)[] subtables)
+    {
+        var headerSize = 4 + 8 * subtables.Length;
+        var total = headerSize + subtables.Sum(s => s.Subtable.Length);
+        var cmap = new byte[total];
+        WriteU16Be(cmap, 2, (ushort)subtables.Length);
+        var at = headerSize;
+        for (var i = 0; i < subtables.Length; i++)
+        {
+            WriteU16Be(cmap, 4 + i * 8, subtables[i].Platform);
+            WriteU16Be(cmap, 6 + i * 8, subtables[i].Encoding);
+            WriteU32Be(cmap, 8 + i * 8, (uint)at);
+            subtables[i].Subtable.CopyTo(cmap, at);
+            at += subtables[i].Subtable.Length;
+        }
+        return cmap;
     }
 
     private static void WriteU16Be(byte[] buf, int offset, ushort value)

@@ -5,9 +5,20 @@ namespace VellumPdf.Fonts.Sfnt;
 
 /// <summary>
 /// Parses the 'cmap' table to map Unicode code points → glyph IDs.
-/// Supports subtable formats 0 (byte encoding), 4 (segmented BMP), and 6 (trimmed array).
-/// Format 4 is strictly preferred over formats 0 and 6.
+/// Supports subtable formats 0 (byte encoding), 4 (segmented BMP), 6 (trimmed array), and
+/// 12 (segmented coverage, the full Unicode range).
 /// </summary>
+/// <remarks>
+/// A format 12 subtable on platform 3 / encoding 10, or platform 0 / encoding 4, is used when
+/// the font has one, because format 4 cannot hold a code point above U+FFFF. The OpenType cmap
+/// chapter says the 32-bit subtable of a font that carries both should be a superset of the
+/// 16-bit one and be the one applications use. Any code point the 16-bit subtable maps and the
+/// format 12 one does not is kept, so a font whose two subtables disagree loses nothing it
+/// mapped before format 12 was read. Where both map a code point, format 12 wins. A format 12
+/// subtable that is malformed is ignored in favour of the 16-bit subtable when the font has
+/// one, as it was before format 12 was read; without one the font is refused.
+/// Format 4 is strictly preferred over formats 0 and 6.
+/// </remarks>
 internal sealed class CmapTable
 {
     private readonly Dictionary<int, ushort> _map;
@@ -16,6 +27,12 @@ internal sealed class CmapTable
     // maps at most 0x10000 code points. Budget 2x that and reject hostile subtables whose
     // overlapping segments would otherwise span billions of iterations.
     private const int Format4CodePointBudget = 0x20000;
+
+    // Format 12 groups are sorted by start code and may not overlap (OpenType cmap, format 12),
+    // so the codes they name are distinct and at most 0x110000 of them exist. The parser
+    // enforces both rules before it expands a group, which bounds the work at that count and
+    // at the number of groups the subtable's declared length has room for.
+    private const int MaxCodePoint = 0x10FFFF;
 
     private CmapTable(Dictionary<int, ushort> map) => _map = map;
 
@@ -49,12 +66,23 @@ internal sealed class CmapTable
             throw new InvalidDataException("cmap: implausible subtable count.");
 
         int best = -1; int bestPriority = -1; int bestFormat = -1;
+        int wide = -1; int widePriority = -1;
         for (var i = 0; i < numTabs; i++)
         {
             var platform = r.ReadU16(4 + i * 8);
             var encoding = r.ReadU16(4 + i * 8 + 2);
             var offset = (int)r.ReadU32(4 + i * 8 + 4);
             var fmt = r.ReadU16(offset);
+
+            if (fmt == 12)
+            {
+                // Windows full repertoire, then Unicode platform full repertoire. Format 12 under
+                // any other record is not a Unicode subtable this class reads.
+                var widePrio = platform == 3 && encoding == 10 ? 2 :
+                               platform == 0 && (encoding == 4 || encoding == 10) ? 1 : 0;
+                if (widePrio > widePriority) { widePriority = widePrio; wide = offset; }
+                continue;
+            }
 
             int priority;
             if (fmt == 4)
@@ -75,18 +103,43 @@ internal sealed class CmapTable
             if (priority > bestPriority) { bestPriority = priority; best = offset; bestFormat = fmt; }
         }
 
-        if (best < 0)
-            // Formats 0, 4, and 6 are supported. Format 12 (full Unicode) is not yet supported.
+        if (best < 0 && widePriority < 1)
             throw new NotSupportedException(
-                "font has no supported (format 0, 4, or 6) Unicode cmap subtable");
+                "font has no supported (format 0, 4, 6, or 12) Unicode cmap subtable");
 
-        return bestFormat switch
+        Dictionary<int, ushort>? narrow = null;
+        if (best >= 0)
         {
-            0 => new CmapTable(ParseFormat0(r, best)),
-            4 => new CmapTable(ParseFormat4(r, best)),
-            6 => new CmapTable(ParseFormat6(r, best)),
-            _ => throw new NotSupportedException($"cmap subtable format {bestFormat} is not supported"),
-        };
+            narrow = bestFormat switch
+            {
+                0 => ParseFormat0(r, best),
+                4 => ParseFormat4(r, best),
+                6 => ParseFormat6(r, best),
+                _ => throw new NotSupportedException($"cmap subtable format {bestFormat} is not supported"),
+            };
+        }
+
+        if (widePriority < 1)
+            return new CmapTable(narrow!);
+
+        Dictionary<int, ushort> full;
+        try
+        {
+            full = ParseFormat12(r, wide);
+        }
+        catch (InvalidDataException) when (narrow is not null)
+        {
+            // The font loaded without this subtable before it was read, so a bad one costs the
+            // supplementary planes and nothing else.
+            return new CmapTable(narrow);
+        }
+
+        if (narrow is not null)
+        {
+            foreach (var (cp, gid) in narrow)
+                full.TryAdd(cp, gid);
+        }
+        return new CmapTable(full);
     }
 
     private static Dictionary<int, ushort> ParseFormat4(SfntReader r, int offset)
@@ -178,6 +231,50 @@ internal sealed class CmapTable
         {
             var gid = r.ReadU16(offset + 10 + i * 2);
             if (gid != 0) map[firstCode + i] = gid;
+        }
+        return map;
+    }
+
+    private static Dictionary<int, ushort> ParseFormat12(SfntReader r, int offset)
+    {
+        // Format 12: format(2) reserved(2) length(4) language(4) numGroups(4), then numGroups
+        // groups of startCharCode(4) endCharCode(4) startGlyphID(4).
+        const int headerSize = 16;
+        const int groupSize = 12;
+        var length = r.ReadU32(offset + 4);
+        var numGroups = r.ReadU32(offset + 12);
+
+        // The groups have to fit in the length the subtable declares, which is what makes
+        // numGroups a count the file can back rather than a number to allocate for.
+        if ((long)numGroups * groupSize + headerSize > length)
+            throw new InvalidDataException(
+                $"Malformed font: cmap format-12 subtable declares {numGroups} groups but only {length} bytes.");
+
+        var map = new Dictionary<int, ushort>();
+        long previousEnd = -1;
+        for (var i = 0; i < numGroups; i++)
+        {
+            var at = offset + headerSize + i * groupSize;
+            var start = r.ReadU32(at);
+            var end = r.ReadU32(at + 4);
+            var startGlyph = r.ReadU32(at + 8);
+
+            if (start > end || end > MaxCodePoint)
+                throw new InvalidDataException(
+                    $"Malformed font: cmap format-12 group {i} covers U+{start:X}..U+{end:X}.");
+            if (start <= previousEnd)
+                throw new InvalidDataException(
+                    $"Malformed font: cmap format-12 group {i} is not after the group before it.");
+            if ((long)startGlyph + (end - start) > 0xFFFF)
+                throw new InvalidDataException(
+                    $"Malformed font: cmap format-12 group {i} maps past glyph 65535.");
+            previousEnd = end;
+
+            for (var cp = start; cp <= end; cp++)
+            {
+                var gid = (ushort)(startGlyph + (cp - start));
+                if (gid != 0) map[(int)cp] = gid;
+            }
         }
         return map;
     }
