@@ -264,14 +264,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   threw once its layout had started, and the first `Save` already threw on 2.3.3, so no document
   that saved there now throws (#484). 2.3.3 wrote the second call with pages doubled or with the
   line breaks of the first attempt's width. Build a fresh `Document` to retry. A foreign font
-  handle whose font program the saving document did not embed under the same name wrote a page that
-  named a font its resources did not define, an invalid file. A negative line width saved as
+  handle whose resource name the saving document defines no font under wrote a page that named a
+  font its resources did not define, an invalid file. A negative line width saved as
   `-3 w`, an invalid operand under ISO 32000-2, 8.4.3.2. The save-check precedence changes are
   listed with the save checks. Nothing else in this section was checked for this, so it is not a
   claim that the list is complete.
 
-- **An embedded font handle from another `Document` is refused unless the saving document embedded
-  the same font program under the same name (#544).** A handle's resource name (`TT1`) is a counter
+- **An embedded font handle from another `Document` is refused when the saving document defines no
+  font under its resource name (#544).** A handle's resource name (`TT1`) is a counter
   local to the document that issued it, and page usage was recorded by that name without asking
   which document embedded the font. A handle from a different `Document` therefore saved without an
   exception and wrote a page whose content named a font its resources did not define (measured:
@@ -279,16 +279,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   document had its own different `TT1`, quietly used that other font. Each handle now remembers the
   `PdfDocument` that returned it and the SHA-256 of its font program.
   `PdfDocument.RegisterEmbeddedFontUsage` throws `ArgumentException` (parameter `handle`) for a
-  handle from another document, so the save fails where the text is drawn, except when the saving
-  document embedded the same font program and the resource names match, using the saving
-  document's own embedding. That case saved on 2.3.3, but its subset held only the glyphs the
-  saving document had registered itself, so text drawn through the foreign handle extracted as other
-  characters and veraPDF's PDF/A-2b profile failed. The glyphs the foreign handle registered are now
-  added to the subset at save, and the same file passes PDF/A-2b. Measured with
-  LiberationSans-Regular, drawing "Hello" through the foreign handle alone, the `FontFile2` stream
-  was 51,030 bytes before and 51,585 after. The same font program under a
-  different resource name is refused. The XML doc of `RegisterEmbeddedFontUsage` says not to pass a
-  foreign handle and that 3.0 refuses it.
+  handle from another document whose resource name this document defines no font under, so the
+  save fails where the text is drawn. When the saving document embedded the same font program under
+  that name, the handle resolves to its own embedding. That case saved on 2.3.3, but its subset
+  held only the glyphs the saving document had registered itself, so text drawn through the foreign
+  handle extracted as other characters and veraPDF's PDF/A-2b profile failed. The glyphs the foreign
+  handle registered are now added to the subset at save, and the same file passes PDF/A-2b.
+  Measured with LiberationSans-Regular, drawing "Hello" through the foreign handle alone, the
+  `FontFile2` stream was 51,030 bytes before and 51,585 after. When the saving document defines
+  that name for a different font program, which includes the case where it holds the same program
+  under another name, 2.3.3 saved a valid file in which the text takes the other font with the wrong
+  glyphs. It still saves, with no merge of glyphs, and nothing reports it yet (#607). The XML doc of
+  `RegisterEmbeddedFontUsage` says not to pass a foreign handle and that 3.0 refuses it.
 
 - **A cycle in a structure tree, array, dictionary or stream is refused instead of overflowing the
   stack (#521).** `array.Add(array)`, `dictionary.Set(key, dictionary)`, `stream.Dictionary.Set(key,
