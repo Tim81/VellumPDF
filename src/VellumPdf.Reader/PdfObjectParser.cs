@@ -44,6 +44,9 @@ internal sealed class PdfObjectParser
     // than InvalidDataException still propagates unchanged.
     private readonly bool _scan;
 
+    // Set by RecognizeDictionary(topLevel: true); read by TryParseCatalogScan.
+    private bool _typeIsCatalog;
+
     private PdfObjectParser(PdfLexer lexer, bool scan)
     {
         _lexer = lexer;
@@ -143,22 +146,52 @@ internal sealed class PdfObjectParser
     }
 
     /// <summary>
-    /// Whether the next token is <c>&lt;&lt;</c>, after whitespace and comments, without consuming
-    /// anything past them. A parse that returns a <see cref="PdfDictionary"/> must start with it, so a
-    /// caller that wants only dictionaries can refuse everything else without parsing. A lexer failure
-    /// while skipping counts as "no", as it does for <see cref="TryParseObjectScan"/>.
+    /// For a parser made by <see cref="CreateForScan"/>: returns a dictionary only when
+    /// <see cref="TryParseObjectScan"/> would return one whose own <c>/Type</c> is the name
+    /// <c>/Catalog</c>, and <see langword="false"/> otherwise (a malformed span, a value that is not a
+    /// dictionary, or a dictionary of another type). It decides that by recognising the span without
+    /// building anything, from the dictionary's own keys, and builds the dictionary only when it is a
+    /// catalog. Nested values are never built for a span that is not one, so a dictionary that carries
+    /// a large nested value at every level costs nothing to refuse, however many spans a caller asks
+    /// about. A caller that wants only a catalog (reconstruction's last-resort search) uses it in place
+    /// of <see cref="TryParseObjectScan"/>.
     /// </summary>
-    internal bool StartsWithDictionary()
+    internal bool TryParseCatalogScan(out PdfDictionary? catalog)
     {
+        catalog = null;
+        var start = _lexer.Position;
+        _depth = 0;
+        _typeIsCatalog = false;
         try
         {
             _lexer.SkipWhitespaceAndComments();
-            return !_lexer.AtEnd && _lexer.TryPeek() == (byte)'<' && PeekIsDict();
+            if (_lexer.AtEnd || _lexer.NextToken().Kind != TokenKind.DictBegin)
+                return false;
         }
         catch (InvalidDataException)
         {
             return false;
         }
+
+        if (!RecognizeDictionary(topLevel: true) || !_typeIsCatalog)
+            return false;
+
+        _lexer.Seek(start);
+        _depth = 0;
+        try
+        {
+            _lexer.SkipWhitespaceAndComments();
+            _lexer.NextToken(); // the '<<' recognised above
+            catalog = ParseDictionary();
+        }
+        catch (InvalidDataException)
+        {
+            // As in TryParseObjectScan: if the recognizer and the parser ever diverge, the answer is
+            // the throwing parser's.
+            return false;
+        }
+
+        return true;
     }
 
     // The probe's caller catches InvalidDataException and reads Position, so a recognizer failure is
@@ -307,7 +340,10 @@ internal sealed class PdfObjectParser
         return true;
     }
 
-    private bool RecognizeDictionary()
+    // topLevel is set only for the dictionary TryParseCatalogScan starts from: it records, in
+    // _typeIsCatalog, whether that dictionary's own /Type is the name /Catalog. A later /Type replaces
+    // an earlier one, as PdfDictionary.Set does when ParseDictionary builds the same span.
+    private bool RecognizeDictionary(bool topLevel = false)
     {
         if (++_depth > MaxNestingDepth)
             return false;
@@ -323,6 +359,8 @@ internal sealed class PdfObjectParser
                     break;
                 if (tok.Kind != TokenKind.Name || tok.Raw.Length <= 1)
                     return false;
+                if (topLevel && NameTokenEquals(tok.Raw.Span, "Type"u8))
+                    _typeIsCatalog = NextTokenIsCatalogName();
             }
             catch (InvalidDataException)
             {
@@ -335,6 +373,29 @@ internal sealed class PdfObjectParser
 
         _depth--;
         return true;
+    }
+
+    // Whether the value that follows is the name /Catalog. Reads one token and puts the lexer back, so
+    // the caller recognises the value in full afterwards, as it does for every other key.
+    private bool NextTokenIsCatalogName()
+    {
+        var saved = _lexer.Position;
+        try
+        {
+            _lexer.SkipWhitespaceAndComments();
+            if (_lexer.AtEnd)
+                return false;
+            var token = _lexer.NextToken();
+            return token.Kind == TokenKind.Name && NameTokenEquals(token.Raw.Span, "Catalog"u8);
+        }
+        catch (InvalidDataException)
+        {
+            return false;
+        }
+        finally
+        {
+            _lexer.Seek(saved);
+        }
     }
 
     private static bool TryParseLong(ReadOnlyMemory<byte> raw, out long value) =>
@@ -603,16 +664,11 @@ internal sealed class PdfObjectParser
     /// private, so <c>ContentInterpreter</c>'s own name-operand decoding shares this rather than
     /// duplicating it.
     /// </summary>
-    internal static PdfName ParseName(Token token)
+    // Decodes the #XX escapes of a name's bytes (without the leading '/') into buf, which must be at
+    // least as long as raw, and returns the decoded length. ParseName and the allocation-free name
+    // comparison of the catalog probe both use it, so they cannot disagree about what a name is.
+    private static int DecodeNameBytes(ReadOnlySpan<byte> raw, Span<byte> buf)
     {
-        // token.Raw includes the leading '/'
-        var raw = token.Raw.Span[1..]; // skip '/'
-        if (raw.IsEmpty)
-            throw new InvalidDataException(
-                "Malformed PDF: a name object must have at least one character after '/'.");
-
-        // Decode #XX escapes
-        var buf = new byte[raw.Length]; // at most as long as raw
         var len = 0;
         var i = 0;
         while (i < raw.Length)
@@ -632,6 +688,31 @@ internal sealed class PdfObjectParser
             buf[len++] = c;
             i++;
         }
+        return len;
+    }
+
+    // Whether a name token (raw includes the leading '/') decodes to expected, without allocating. A
+    // name decodes to at least a third of its raw length, so a longer one cannot match.
+    private static bool NameTokenEquals(ReadOnlySpan<byte> rawWithSlash, ReadOnlySpan<byte> expected)
+    {
+        var raw = rawWithSlash[1..];
+        if (raw.Length > expected.Length * 3)
+            return false;
+        Span<byte> buf = stackalloc byte[expected.Length * 3];
+        var len = DecodeNameBytes(raw, buf);
+        return len == expected.Length && buf[..len].SequenceEqual(expected);
+    }
+
+    internal static PdfName ParseName(Token token)
+    {
+        // token.Raw includes the leading '/'
+        var raw = token.Raw.Span[1..]; // skip '/'
+        if (raw.IsEmpty)
+            throw new InvalidDataException(
+                "Malformed PDF: a name object must have at least one character after '/'.");
+
+        var buf = new byte[raw.Length]; // at most as long as raw
+        var len = DecodeNameBytes(raw, buf);
         // Names are ISO Latin-1 bytes decoded as UTF-8 when possible; store as string
         return new PdfName(Encoding.Latin1.GetString(buf, 0, len));
     }

@@ -254,4 +254,106 @@ public sealed class ScanModeParserTests
             Assert.Equal(expected, RunScan(data, 0));
         }
     }
+
+    // ---- TryParseCatalogScan (#610, Phase B3's accept path) -----------------------------------------
+
+    private static readonly string[] _catalogKeys =
+    [
+        "/Type", "/Type", "/Type", "/T#79pe", "/#54ype", "/Pages", "/A", "/Types", "/Typ", "/Type#", "/Kids",
+    ];
+
+    private static readonly string[] _catalogValues =
+    [
+        "/Catalog", "/Catalog", "/Cat#61log", "/#43atalog", "/Catalo", "/Catalogs", "/Pages", "/",
+        "2 0 R", "5 0 R", "(Catalog)", "<41>", "[/Catalog]", "<</Type/Catalog>>", "<</Type /Pages /Kids [1 0 R]>>",
+        "null", "1", "1.5", "[1 [2 [3]]]", "<</Type/Catalog/Pages 2 0 R>>", "[", "<<", "(", "<4G>", "99999999999999999999",
+    ];
+
+    private static string BuildCatalogLike(Random rng)
+    {
+        var sb = new StringBuilder();
+        if (rng.Next(8) == 0)
+            sb.Append(rng.Next(3) == 0 ? "%c\n" : " ");
+        sb.Append(rng.Next(14) == 0 ? "[" : "<<");
+        var pairs = rng.Next(0, 6);
+        for (var i = 0; i < pairs; i++)
+        {
+            sb.Append(_catalogKeys[rng.Next(_catalogKeys.Length)]);
+            sb.Append(rng.Next(2) == 0 ? " " : "\n");
+            sb.Append(_catalogValues[rng.Next(_catalogValues.Length)]);
+            sb.Append(_separators[rng.Next(_separators.Length)]);
+        }
+        if (rng.Next(10) != 0)
+            sb.Append(">>");
+        if (rng.Next(6) == 0)
+            sb.Append(" junk");
+        return sb.ToString();
+    }
+
+    // The answer the old Phase B3 reached: scan-parse the span, keep it when it is a dictionary whose
+    // top-level /Type is the name /Catalog. Compared byte for byte with TryParseCatalogScan.
+    private static string? CatalogViaFullParse(byte[] data)
+    {
+        var parser = PdfObjectParser.CreateForScan(data, 0);
+        return parser.TryParseObjectScan(out var v)
+            && v is PdfDictionary d && d.Get(PdfName.Type) is PdfName t && t.Equals(PdfName.Catalog)
+            ? Convert.ToHexString(XrefReconstructionTests.WriteToBytes(d))
+            : null;
+    }
+
+    private static string? CatalogViaScan(byte[] data)
+    {
+        var parser = PdfObjectParser.CreateForScan(data, 0);
+        return parser.TryParseCatalogScan(out var d)
+            ? Convert.ToHexString(XrefReconstructionTests.WriteToBytes(d!))
+            : null;
+    }
+
+    [Fact]
+    public void CatalogScan_AgreesWithAFullScanParseAndATypeCheck_OnSeededInputs()
+    {
+        var rng = new Random(6100);
+        int catalogs = 0, wellFormedOthers = 0, malformed = 0;
+        for (var i = 0; i < 60_000; i++)
+        {
+            var text = BuildCatalogLike(rng);
+            var data = Encoding.Latin1.GetBytes(text);
+            var expected = CatalogViaFullParse(data);
+            var actual = CatalogViaScan(data);
+            Assert.True(expected == actual, $"input #{i}: full parse gave {expected ?? "none"}, catalog scan gave {actual ?? "none"}. Input: {text}");
+            if (expected is not null)
+                catalogs++;
+            else if (RunScan(data, 0).Outcome == "ok")
+                wellFormedOthers++;
+            else
+                malformed++;
+        }
+
+        // Each side must be reached often, or agreement proves nothing.
+        Assert.True(catalogs > 1_000, $"only {catalogs} inputs were catalogs.");
+        Assert.True(wellFormedOthers > 1_000, $"only {wellFormedOthers} inputs parsed without being a catalog.");
+        Assert.True(malformed > 1_000, $"only {malformed} inputs were malformed.");
+    }
+
+    [Theory]
+    [InlineData("<</Type/Catalog/Pages 2 0 R>>", true)]
+    [InlineData("<</Pages 2 0 R/Type/Catalog>>", true)]
+    [InlineData("<< /T#79pe /Cat#61log >>", true)]
+    [InlineData("<</Type/Pages/Type/Catalog>>", true)]            // a later /Type replaces an earlier one
+    [InlineData("<</Type/Catalog/Type/Pages>>", false)]
+    [InlineData("<</Type 5 0 R>>", false)]                         // a reference is not the name
+    [InlineData("<</A<</Type/Catalog>>>>", false)]                 // /Type of a nested dictionary
+    [InlineData("<</A[/Type/Catalog]>>", false)]
+    [InlineData("<</Type/Catalog/B(unterminated>>", false)]        // malformed after /Type: not accepted
+    [InlineData("<</Type/Catalog", false)]
+    [InlineData("[<</Type/Catalog>>]", false)]                     // not a dictionary
+    [InlineData("/Catalog", false)]
+    [InlineData("<</Type /Catalogue>>", false)]
+    public void CatalogScan_NamedCases(string text, bool isCatalog)
+    {
+        var data = Encoding.Latin1.GetBytes(text);
+        Assert.Equal(isCatalog, CatalogViaFullParse(data) is not null);
+        Assert.Equal(isCatalog, CatalogViaScan(data) is not null);
+        Assert.Equal(CatalogViaFullParse(data), CatalogViaScan(data));
+    }
 }

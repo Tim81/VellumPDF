@@ -63,29 +63,40 @@ public sealed class PdfReaderOptions
     /// <c>/Prev</c> to point at, and the recovered trailer's <c>/ID</c> is not reliable enough to
     /// carry into a new revision.
     /// <para>
-    /// <strong>The work budget bounds bytes the scan advances, not bytes it allocates or CPU per
-    /// byte.</strong> See <see cref="ReconstructionBudgetMultiplier"/>. A hostile file therefore
-    /// costs up to the budget's worth of scanning even when it recovers nothing.
+    /// <strong>The work budget bounds the bytes the scan advances over, not the memory or CPU each byte
+    /// costs.</strong> See <see cref="ReconstructionBudgetMultiplier"/>. A hostile file's scan stops
+    /// once that budget is spent whether or not it recovers anything, but how much memory the bytes it
+    /// advanced over cost depends on the input's shape, and the budget does not bound that.
     /// </para>
     /// <para>
-    /// <strong>Two exceptions come out of a failed reconstruction, and which one depends on whether the
-    /// file carries encryption evidence.</strong> <see cref="PdfReader.Open(byte[], PdfReaderOptions)"/>
-    /// throws <see cref="InvalidDataException"/> when the scan finds no object headers, runs out of
-    /// budget with no encryption evidence anywhere in the file, or finds no usable document catalog.
-    /// It throws <see cref="UnsupportedPdfFeatureException"/> instead when the file has an
-    /// <c>/Encrypt</c> that reconstruction cannot attach to a Standard security handler (a public-key
-    /// handler, or a dictionary it cannot classify), because carrying on would hand back ciphertext as
-    /// if it were content. A caller that catches only <see cref="InvalidDataException"/> will miss the
-    /// second.
+    /// <strong>The exception a failed reconstruction throws follows from what the scan found, not from
+    /// whether it ran out of budget.</strong> <see cref="PdfReader.Open(byte[], PdfReaderOptions)"/>
+    /// throws <see cref="UnsupportedPdfFeatureException"/> when the file shows evidence of encryption
+    /// that reconstruction cannot turn into an <c>/Encrypt</c> entry in the recovered trailer for a
+    /// Standard security handler: an encryption dictionary for a public-key or unclassifiable handler, or
+    /// evidence only in a region the scan set aside as untrustworthy or never tokenized, so that there is
+    /// no object to point <c>/Encrypt</c> at. Carrying on would hand back ciphertext as if it were
+    /// content. It throws <see cref="InvalidDataException"/> for every other failure: the scan finds no
+    /// object headers, the scan finds no usable document catalog, the budget runs out with no such
+    /// evidence in the file, or the budget runs out while the scan is verifying the cross-reference
+    /// streams of a file whose recovered trailer does carry <c>/Encrypt</c>, which fails closed because
+    /// a skipped check could decrypt a cross-reference stream as ordinary content. Evidence the scan can
+    /// carry, a declared <c>/Encrypt</c> or a Standard-handler dictionary it can point at, is not a
+    /// reason to throw: reconstruction goes on and the document is read as an encrypted one, so the
+    /// password rules of the Standard handler apply. A caller that catches only
+    /// <see cref="InvalidDataException"/> will miss the first exception.
     /// </para>
     /// </summary>
     /// <exception cref="InvalidDataException">
     /// Thrown by <see cref="PdfReader.Open(byte[], PdfReaderOptions)"/> when reconstruction is on and
-    /// recovers nothing usable and the file has no encryption evidence.
+    /// fails for any reason other than encryption evidence it cannot carry: no object headers, no usable
+    /// document catalog, or the budget running out (including while verifying the cross-reference
+    /// streams of an encrypted file).
     /// </exception>
     /// <exception cref="UnsupportedPdfFeatureException">
     /// Thrown by <see cref="PdfReader.Open(byte[], PdfReaderOptions)"/> when reconstruction is on and
-    /// the file has encryption evidence that cannot be carried into the recovered trailer.
+    /// the file shows encryption evidence that cannot be carried into the recovered trailer as a
+    /// Standard-handler <c>/Encrypt</c>, whether or not the budget ran out.
     /// </exception>
     public bool AllowReconstruction { get; init; }
 
@@ -134,7 +145,7 @@ public sealed class PdfReaderOptions
     /// again from every byte until the budget is spent: about 1 MiB of advance for any file up to 128 KiB at the
     /// default. Allocation per advanced byte depends on the input's shape, and this option does not
     /// bound it. Measured on net10.0 in Release, a 4 KiB run of <c>[</c> allocates about 0.6 MB and
-    /// a 4 KiB run of <c>[1[1</c> about 0.3 MB (v2.3.3: 293 MB and 192 MB). Do not rely on a
+    /// a 4 KiB run of <c>[1[1</c> about 0.3 MB. Do not rely on a
     /// small file implying a small allocation: lowering this multiplier does not help for a file
     /// under 128 KiB, because the 1 MiB floor applies to it whatever the multiplier.
     /// </para>

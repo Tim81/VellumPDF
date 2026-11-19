@@ -299,4 +299,72 @@ public sealed class ReconstructionAllocationTests
         var catalog = Assert.IsType<VellumPdf.Core.PdfDictionary>(reader.Resolve(9));
         Assert.Equal("Catalog", ((VellumPdf.Core.PdfName)catalog.Get(VellumPdf.Core.PdfName.Type)!).Value);
     }
+
+    // Phase B3's accept path with a nested value at EVERY level. Member i points at the i-th opener of a
+    // chain ("<</a" repeated, or "[" repeated), so each member is a distinct span that parses, and each
+    // span contains the whole flat array at the bottom. On v2.3.3, and on this branch before the
+    // catalog was decided from the member's own keys, every such member was built in full: levels x
+    // array size, 989 MB from 1,323 bytes of FlateDecode data at 255 levels and 50,000 elements.
+    // A trailing catalog member (object 9, after the chain) is added when asked for. The ceilings are 1.6
+    // times the figures measured on this build (Release, net10.0). The "[" chain is the one a check of
+    // the first token alone settles: a member that is not a dictionary is refused without being built.
+    private static byte[] ObjectStreamWithNestedMembers(
+        int levels, int elements, string open, string close, bool catalogAfter = false)
+    {
+        var chain = string.Concat(Enumerable.Repeat(open, levels))
+            + "[" + string.Concat(Enumerable.Repeat("0 ", elements)) + "]"
+            + string.Concat(Enumerable.Repeat(close, levels));
+        var header = new StringBuilder();
+        for (var i = 0; i < levels; i++)
+            header.Append(i + 10).Append(' ').Append(i * open.Length).Append(' ');
+        if (catalogAfter)
+            header.Append("9 ").Append(chain.Length + 1).Append(' ');
+        var body = header + chain + (catalogAfter ? " <</Type/Catalog/Pages 2 0 R>>" : "");
+        return Encoding.Latin1.GetBytes(
+            "%PDF-1.5\n1 0 obj\n<</Type/ObjStm/N " + (levels + (catalogAfter ? 1 : 0)) + "/First " + header.Length
+            + "/Length " + body.Length + ">>\nstream\n" + body
+            + "\nendstream\nendobj\ntrailer\n<</Size 5>>\nstartxref\n0\n%%EOF\n");
+    }
+
+    [Theory]
+    [InlineData(255, 5000, "<</a", ">>", 248_000L)] // 13,586 B, measured 154,720; 112,622,160 on v2.3.3
+    [InlineData(64, 5000, "<</a", ">>", 78_000L)]   // 10,931 B, measured 48,448
+    [InlineData(255, 5000, "[", "]", 246_000L)]     // 12,479 B, measured 153,552 (987,557,944 at 50,000 elements on v2.3.3)
+    public void Open_ObjectStreamMembersThatNestAValueAtEveryLevel_AllocateWithinTheCeiling(
+        int levels, int elements, string open, string close, long ceiling)
+    {
+        var input = ObjectStreamWithNestedMembers(levels, elements, open, close);
+        var allocated = Measure(input, new PdfReaderOptions { AllowReconstruction = true }, out var outcome);
+
+        Assert.StartsWith("InvalidDataException: Malformed PDF: reconstruction could not find a usable document catalog", outcome);
+        Assert.True(allocated <= ceiling, $"{levels} levels of {open}, {elements} elements, {input.Length} bytes: allocated {allocated:N0} (ceiling {ceiling:N0}).");
+    }
+
+    [Theory]
+    [InlineData("<</a", ">>")]
+    [InlineData("[", "]")]
+    public void Open_ObjectStreamMembersThatNestAValueAtEveryLevel_StillElectsALaterCatalog(string open, string close)
+    {
+        using var reader = PdfReader.Open(
+            ObjectStreamWithNestedMembers(100, 500, open, close, catalogAfter: true),
+            new PdfReaderOptions { AllowReconstruction = true });
+
+        Assert.True(reader.WasReconstructed);
+        Assert.Equal(new VellumPdf.Core.PdfIndirectReference(9, 0), reader.Trailer.Get(VellumPdf.Core.PdfName.Root));
+    }
+
+    [Fact]
+    public void Open_NestedDictionaryMembersThatAreAllCatalogs_ElectsTheOneAtTheLowestOffset()
+    {
+        // Every level opens with /Type/Catalog, so every member qualifies and one is built: the one at
+        // the lowest offset, member 10, which is the member v2.3.3 elects.
+        using var reader = PdfReader.Open(
+            ObjectStreamWithNestedMembers(60, 500, "<</Type/Catalog/a", ">>"),
+            new PdfReaderOptions { AllowReconstruction = true });
+
+        Assert.True(reader.WasReconstructed);
+        Assert.Equal(new VellumPdf.Core.PdfIndirectReference(10, 0), reader.Trailer.Get(VellumPdf.Core.PdfName.Root));
+        var catalog = Assert.IsType<VellumPdf.Core.PdfDictionary>(reader.Resolve(10));
+        Assert.Equal("Catalog", ((VellumPdf.Core.PdfName)catalog.Get(VellumPdf.Core.PdfName.Type)!).Value);
+    }
 }

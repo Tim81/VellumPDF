@@ -127,10 +127,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   about 416. Reconstruction's last-resort catalog search had the same cost: it parsed every
   object-stream member, so a 117 KB file whose members all point at a run of `[` allocated 1.2 GB on
   v2.3.3 and now allocates 4.5 MB, and 4,000 members pointing at one 4,000-element array (35 KB)
-  allocated 1.16 GB and now allocate 1.09 MB. It now skips a member that does not start with `<<`
-  (it keeps only a catalog, which is a dictionary) and parses each distinct member offset once. `AllowReconstruction` and
-  `ReconstructionBudgetMultiplier` now document that the budget bounds bytes advanced, not
-  allocation.
+  allocated 1.16 GB and now allocate 1.09 MB. The search keeps only a dictionary whose own `/Type`
+  is `/Catalog`, so it now decides that from the member's top-level keys without building any
+  nested value, and builds only a member that is one. A member that is not a dictionary, is
+  malformed, or is a dictionary of another type is no longer built, and each distinct member
+  offset is looked at once. A dictionary that nests a 50,000-element array at each of 255 levels
+  (1,323 bytes of FlateDecode data, one member per level) allocated 989.6 MB on v2.3.3, because
+  every member was built in full, and now allocates 509 KB. A run of 255 array openers around the
+  same array (102 KB, uncompressed) went from 987.6 MB to 243 KB. Which files open, and
+  what they open to, are unchanged. `AllowReconstruction` and `ReconstructionBudgetMultiplier` now
+  document that the budget bounds bytes advanced, not allocation, and `AllowReconstruction`
+  documents which exception a failed reconstruction throws by what the scan found: encryption
+  evidence it cannot carry gives `UnsupportedPdfFeatureException`, and every other failure,
+  including the budget running out while it verifies an encrypted file's cross-reference streams,
+  gives `InvalidDataException`.
 - **`ExternalToolTests.TryRun_CapturesOutputLargerThanTheOsPipeBuffer` no longer times out on a
   loaded machine (test-only change).** Its child was a 20,000-iteration shell echo loop, which hit
   the 30 s limit several times on a loaded Windows machine while passing alone. The child now copies

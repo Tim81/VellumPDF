@@ -493,15 +493,15 @@ public sealed partial class PdfDocumentReader : IDisposable
         if (parsedAt.TryGetValue(absoluteOffset, out var seen))
             return seen;
 
-        // B3 keeps only a catalog, and a catalog is a dictionary, so a member that does not start
-        // with '<<' cannot be one and is not parsed at all. For one that does, scan mode (#610)
-        // recognises it before building it, so a failing member costs a few objects instead of an
-        // exception from nesting depth 257 (75 KB each, 1.2 GB for a 117 KB file on v2.3.3).
+        // B3 keeps only a catalog: a dictionary whose own /Type is /Catalog. TryParseCatalogScan (#610)
+        // decides that by recognising the member without building it, and builds only a member that
+        // is one, so a member that is not a dictionary, is malformed, or is a dictionary of another
+        // type costs no allocation in proportion to its size, whatever it nests (75 KB per failing
+        // member and 1.2 GB for a 117 KB file on v2.3.3; a nested value at every level of a
+        // dictionary was built once per level).
         var mem = new ReadOnlyMemory<byte>(body, absoluteOffset, body.Length - absoluteOffset);
         var parser = PdfObjectParser.CreateForScan(mem, 0);
-        PdfObject? result = null;
-        if (parser.StartsWithDictionary() && parser.TryParseObjectScan(out var value))
-            result = value;
+        PdfObject? result = parser.TryParseCatalogScan(out var catalog) ? catalog : null;
 
         parsedAt[absoluteOffset] = result;
         return result;
