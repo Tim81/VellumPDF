@@ -23,16 +23,15 @@ public static class JpegImageLoader
     /// This loader decodes nothing. The bytes are embedded verbatim as DCTDecode data and only
     /// the frame header is read. A file this accepts is therefore not necessarily a file a reader
     /// can render: corruption past the header passes straight into the document.
-    /// <para>Attention: this loader does not check the declared size. A file carrying nothing but
-    /// a frame header saying 65535 by 65535 returns an image of <b>4,294,836,225</b> pixels. The
-    /// same declaration through <see cref="PngImageLoader"/> is refused at the 100,000,000 safety
-    /// limit. That difference is not idle. <see cref="TiffImageLoader"/> validates its own directory
-    /// and
-    /// then hands a JPEG-compressed strip here, and the image TIFF returns carries the JPEG's
-    /// dimensions rather than the ones TIFF checked. Nothing allocates a raster, since the bytes
-    /// pass through, but the width and height reach the image dictionary and a reader that trusts
-    /// them can be made to allocate from them. If the input is untrusted, check the dimensions
-    /// yourself (#505).</para>
+    /// <para>The 100,000,000-pixel limit is not checked for a JPEG. A file carrying nothing but a
+    /// frame header saying 65535 by 65535 returns an image of <b>4,294,836,225</b> pixels, where
+    /// <see cref="PngImageLoader"/> refuses the same declaration. Nothing allocates a raster,
+    /// since the bytes pass through, but the width and height reach the image dictionary.</para>
+    /// <para>Do not pass a JPEG larger than 100,000,000 pixels, or rely on this loader to refuse
+    /// one. It is accepted today and 3.0 will refuse it, as the other loaders do. If the input is
+    /// untrusted, check <c>Width</c> and <c>Height</c> on the result yourself. The same applies to
+    /// a JPEG reached through <see cref="TiffImageLoader"/>, which also does not compare it with
+    /// the TIFF's own size (#505).</para>
     /// <para><see langword="null"/> is not checked either. It raises
     /// <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>.</para>
     /// </remarks>
