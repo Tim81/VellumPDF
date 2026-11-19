@@ -14,8 +14,8 @@ for the signing LTV path (#49); it now also backs the conformance validator and
 handles cross-reference streams, object streams, hybrid-reference files, and encrypted
 documents (the Standard security handler, given the password), including
 cross-reference reconstruction for damaged files and writing a decrypted copy of an
-encrypted document (v2.3). Text and image
-extraction is the next reader milestone, v2.5 (#98); see the roadmap table in
+encrypted document (v2.3), and extracting images and text from simple fonts (2.3.2).
+Text extraction from composite fonts is milestone v2.5 (#394); see the roadmap table in
 [README.md](../README.md#roadmap) for current status rather than a version list here,
 which only drifts (as this one did). Editing existing PDFs lands at v3.0 as a
 unified read-modify-write model that supersedes the write-once document API

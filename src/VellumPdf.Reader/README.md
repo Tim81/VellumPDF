@@ -18,14 +18,15 @@ The PDF reader of **[VellumPdf](https://github.com/Tim81/VellumPDF)**, a depende
   `ReconstructionBudgetMultiplier`, `MaxDiagnostics`, `MaxFormXObjectDepth`) for a caller hardening
   against a decompression bomb, a file engineered to burn CPU, or a deeply nested Form XObject
   graph: each can only lower the shipped default, never raise it.
-- Exposes the document catalog and digital signatures. Stream decoding is internal for now: the
-  public surface reads structure and signatures, not page content — see the roadmap below.
+- Exposes the document catalog and digital signatures, and extracts images (`ExtractImages`, since
+  2.3.2) and text from pages that use simple fonts (`ExtractText`, since 2.3.2).
 - Writes a decrypted copy of an encrypted document (`PdfDocumentReader.SaveDecrypted`), refusing a
   signed document unless the caller opts into invalidating its signatures.
 - The foundation for the signing long-term-validation path, the `VellumPdf.Conformance` validator, and a growing general reader.
 
-> **Preview.** The public surface is still settling; text and image extraction is the next reader
-> milestone, v2.5 (#98). See the roadmap below, and the [Reader guide](https://github.com/Tim81/VellumPDF/blob/main/docs/reader-guide.md) for a capability table and worked examples.
+> **Preview.** The public surface is still settling; image extraction and text extraction from
+> simple fonts shipped in 2.3.2; text extraction from composite fonts (#394) and graduation from
+> Preview (#187) are milestone v2.5. See the roadmap below, and the [Reader guide](https://github.com/Tim81/VellumPDF/blob/main/docs/reader-guide.md) for a capability table and worked examples.
 
 ## Install
 
@@ -75,7 +76,7 @@ for the narrative walkthrough this table summarizes.
 | Text extraction (`ExtractText`) | ⚠️ Partial — simple fonts (Type1, MMType1, TrueType) only, positioned per ISO 32000-2 §9.4.4, page content only (not annotation appearances); line grouping is rotation-aware; no space is synthesised for a positioning gap (`[(Hello) -500 (World)] TJ` extracts as `HelloWorld`); `/ToUnicode`, predefined CMaps, Type0/Type3 fonts, `/ActualText`, `/ReversedChars`, and word/paragraph-aware line grouping not yet implemented | ISO 32000-2 §9.4.4 (#98) |
 | Image extraction (`ExtractImages`; DCT, JPX, JBIG2 and CCITT payloads returned undecoded) | ✅ Supported | ISO 32000-2 §8.9, §7.4.7, §7.4.9 (#98) |
 | Graduating `VellumPdf.Reader` from Preview to Stable | ⏳ Planned | v2.5 (#187) |
-| Reading a document that uses an ISO/TS 32001–32004 extension (AES-GCM, PDF-MAC, SHA-3, EdDSA) | ⚠️ Partial — AES-GCM is rejected (`UnsupportedPdfFeatureException`); PDF-MAC is ignored and SHA-3/EdDSA signatures read as opaque, none verified | v2.6 (#236, #237, #238, #239) |
+| Reading a document that uses an ISO/TS 32001–32004 extension (AES-GCM, PDF-MAC, SHA-3, EdDSA) | ⚠️ Partial — AES-GCM is rejected (`UnsupportedPdfFeatureException`); PDF-MAC is ignored and SHA-3/EdDSA signatures read as opaque, none verified | v2.7 (#236, #237, #238, #239) |
 | Signature verification (integrity, coverage, certificate chains, revocation, achieved PAdES level) | ⏳ Planned | v2.14 |
 | Round-trip editing of an existing document | ⏳ Planned | v3.0, `VellumPdf.Editing` (Epic #101) |
 <!-- capability-table:reader:end -->
@@ -109,8 +110,8 @@ work than the PDF 2.0 conformance gap did. Both ship from the same version numbe
 | Milestone | Scope |
 | --- | --- |
 | **2.3 — Reader robustness** *(released)* | Cross-reference reconstruction for damaged files (#184), a decrypted-copy writer (#186), the /XRefStm precedence decision (#206), reader fuzzing (#99), and the CI and oracle debt that makes all of it verifiable. |
-| **2.4 — Hardening and navigable documents** | Hardening (the issues of the v2.3.4 to v2.3.9 patch milestones) and navigable documents that stay within PDF/A-2u: internal links, named destinations, page labels, a table of contents and an index with page numbers, leaders, page breaks and keep-with-next, preformatted text, font fallback, and a diagnostics channel with an opt-in strict mode. |
-| **2.5 — Accessible documents, extraction and Reader graduation** | PDF/A-2a and PDF/UA-1 tagging fixes (links, artifacts, one structure element per logical element, table headers, language changes, list labels), text and image extraction (#98, #394), graduating VellumPdf.Reader from Preview to Stable (#187), and image encoders (#491, #494, #495). |
+| **2.4 — Hardening and navigable documents** | Hardening across the packages (non-finite and null arguments, image loaders, table and list layout, resource bounds) and navigable documents that stay within PDF/A-2u: internal links, named destinations, page labels, a table of contents and an index with page numbers, leaders, page breaks and keep-with-next, preformatted text, font fallback, and a diagnostics channel with an opt-in strict mode. |
+| **2.5 — Accessible documents, extraction and Reader graduation** | PDF/A-2a and PDF/UA-1 tagging fixes (links, artifacts, one structure element per logical element, table headers, language changes, list labels), text and image extraction (#98, #394), graduating VellumPdf.Reader from Preview to Stable (#187), image encoders (#491, #495), and settling whether a CCITT Group 4 encoder is worth building (#494). |
 | **2.6 — PDF/A-4 and PDF/A-1 profiles** | PDF/A-4 (ISO 19005-4, PDF 2.0; #222) so conformance output stops downgrading to %PDF-1.7, PDF/A-1 (ISO 19005-1; #218) to unblock recursive validation of embedded PDF/A-1 files, and dropping the keys ISO 32000-2 deprecates (#325). |
 | **2.7 — ISO/TS extensions to PDF 2.0** | The four Technical Specifications that amend PDF 2.0, on the ISO 32000-2 §7.12 developer-extensions foundation: SHA-3 (TS 32001, #238), EdDSA and the extended curve set (TS 32002, #239), AES-GCM (TS 32003, #236) and PDF MAC integrity (TS 32004, #237). Security-relevant: the reader rejects every AES-GCM file today. |
 | **2.8 — Embedded files and associated files** | File specifications and embedded file streams, on the /Names name tree that v2.4 adds (#241); the missing annotation subtypes; and §14.13 associated files. Unblocks PDF/A-4F. |
@@ -118,7 +119,7 @@ work than the PDF 2.0 conformance gap did. Both ship from the same version numbe
 | **2.10 — Rendering and resources** | Transparency and blend modes, the complete ExtGState, public form XObjects, inline images, optional content, the missing content-stream operators, and the page boundary boxes. |
 | **2.11 — Font completeness** | Type 1, bare CFF, simple TrueType and Type 3 fonts (the programs and encodings ISO 32000-2 §9.6–9.9 defines that the writer cannot produce); predefined CMaps and vertical writing; kerning; a real /StemV; and enforcing the fsType embedding permission the library currently parses and ignores. |
 | **2.12 — Tagged PDF 2.0 writer** | Structure namespaces, the PdfStructElem surface PDF/UA-2 needs, structure destinations, and the ISO/TS 32005 containment matrix as generated data. |
-| **2.13 — PDF/UA-2 and WTPDF** | The ua2, wt1a and wt1r rule sets, consuming the containment matrix from v2.12. Measured at 1727 rules, of which 1648 are containment. |
+| **2.13 — PDF/UA-2 and WTPDF** | The ua2, wt1a and wt1r rule sets, consuming the containment matrix from v2.12. |
 | **2.14 — Signature verification** | Verifying signatures, not just producing them: integrity, coverage, chain building, revocation and PAdES level detection. Independent of the editing line. |
 
 **Layout**
@@ -146,9 +147,9 @@ work than the PDF 2.0 conformance gap did. Both ship from the same version numbe
 | **3.6 — Content editing** | Reflowing text edits over a parsed content stream, structure-tree round-trip for tagged documents, and the editing CLI. |
 
 What this library implements of ISO 32000-2 today is inventoried, reference by reference, in
-[PDF 2.0 conformance](../../docs/pdf20-conformance.md). It emits a `%PDF-2.0` header, which is not the
-same as conformance, and the table says which is which. The [Reader guide](../../docs/reader-guide.md)
-and [Layout guide](../../docs/layout-guide.md) each carry a capability table doing the same job for
+[PDF 2.0 conformance](https://github.com/Tim81/VellumPDF/blob/main/docs/pdf20-conformance.md). It emits a `%PDF-2.0` header, which is not the
+same as conformance, and the table says which is which. The [Reader guide](https://github.com/Tim81/VellumPDF/blob/main/docs/reader-guide.md)
+and [Layout guide](https://github.com/Tim81/VellumPDF/blob/main/docs/layout-guide.md) each carry a capability table doing the same job for
 their own package, checked against the code and test suite rather than against this roadmap.
 
 `VellumPdf.Reader` is marked Preview in the table above; expect its public surface to settle

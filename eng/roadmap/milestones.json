@@ -13,14 +13,14 @@
       "number": 21,
       "track": "kernel",
       "title": "v2.4 — Hardening and navigable documents",
-      "description": "Hardening (the issues of the v2.3.4 to v2.3.9 patch milestones) and navigable documents that stay within PDF/A-2u: internal links, named destinations, page labels, a table of contents and an index with page numbers, leaders, page breaks and keep-with-next, preformatted text, font fallback, and a diagnostics channel with an opt-in strict mode.",
+      "description": "Hardening across the packages (non-finite and null arguments, image loaders, table and list layout, resource bounds) and navigable documents that stay within PDF/A-2u: internal links, named destinations, page labels, a table of contents and an index with page numbers, leaders, page breaks and keep-with-next, preformatted text, font fallback, and a diagnostics channel with an opt-in strict mode.",
       "released": false
     },
     {
       "number": 53,
       "track": "kernel",
       "title": "v2.5 — Accessible documents, extraction and Reader graduation",
-      "description": "PDF/A-2a and PDF/UA-1 tagging fixes (links, artifacts, one structure element per logical element, table headers, language changes, list labels), text and image extraction (#98, #394), graduating VellumPdf.Reader from Preview to Stable (#187), and image encoders (#491, #494, #495).",
+      "description": "PDF/A-2a and PDF/UA-1 tagging fixes (links, artifacts, one structure element per logical element, table headers, language changes, list labels), text and image extraction (#98, #394), graduating VellumPdf.Reader from Preview to Stable (#187), image encoders (#491, #495), and settling whether a CCITT Group 4 encoder is worth building (#494).",
       "released": false
     },
     {
@@ -76,7 +76,7 @@
       "number": 28,
       "track": "kernel",
       "title": "v2.13 — PDF/UA-2 and WTPDF",
-      "description": "The ua2, wt1a and wt1r rule sets, consuming the containment matrix from v2.12. Measured at 1727 rules, of which 1648 are containment.",
+      "description": "The ua2, wt1a and wt1r rule sets, consuming the containment matrix from v2.12.",
       "released": false
     },
     {

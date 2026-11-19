@@ -56,14 +56,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   copied by hand into the root README and the eight package READMEs, and had drifted twice.
   `eng/generate-roadmap.py` now renders it between `roadmap:begin` and `roadmap:end` markers in all
   nine files from `eng/roadmap/milestones.json`, using each milestone's description as the row text.
-  `--check` compares the files with the snapshot offline and runs in the new `docs-roadmap.yml`
-  workflow on pull requests; `--refresh` pulls titles, descriptions and the latest release tag from
-  GitHub; `--drift` reports a snapshot that no longer matches the live milestones, weekly and on
-  demand, never on a pull request. The table now follows the 2026-11-19 renumbering (v2.4 hardening
-  and navigable documents, v2.5 accessible documents, extraction and Reader graduation, and the old
-  v2.5 to v2.13 are v2.6 to v2.14). The version references this made stale in `docs/architecture.md`,
-  `docs/layout-guide.md`, `docs/reader-guide.md`, the Layout and Reader READMEs and two Reader
-  comments are corrected, as is the Layout track range in `docs/architecture.md` (A to G, not A to I).
+  `--check` compares the files with the snapshot offline, requires exactly one marker pair per
+  file, and runs in the new `docs-roadmap.yml` workflow on pull requests. `--refresh` pulls titles,
+  descriptions and the latest release tag from GitHub and regenerates; it exits 1 if an open
+  milestone is missing from the snapshot, which needs a track added by hand. `--drift` reports a
+  snapshot that no longer matches the live milestones, weekly and on demand, never on a pull
+  request. The table follows the 2026-11-19 renumbering: v2.4 is hardening and navigable
+  documents, v2.5 is accessible documents, extraction and Reader graduation, and the former v2.5
+  to v2.13 are v2.6 to v2.14.
+- **The package READMEs link to the docs by absolute URL.** The roadmap block's links to
+  `docs/pdf20-conformance.md`, the Reader guide and the Layout guide were `../../docs/...`, which
+  rendered with an empty href on the nuget.org page for Reader 2.3.3 (observed in review); they now
+  point at `https://github.com/Tim81/VellumPDF/blob/main/docs/`. This fixes those three links on
+  the package pages. Other links in the package READMEs are
+  unchanged.
+- **Milestone references corrected after the renumbering.** Swept: `v2.N` and bare `2.N` mentions
+  and `Layout [A-I]` mentions in `*.md` outside `CHANGELOG.md`, `docs/iso` and
+  `docs/pdf20-conformance.md`, and in `src/**/*.cs`; each hit was read for whether it names a
+  milestone, a release or neither. Changed: `docs/architecture.md`, `docs/layout-guide.md`,
+  `docs/reader-guide.md`, the Layout and Reader READMEs (capability tables: PDF/A-1 and PDF/A-4
+  are v2.6, the ISO/TS extensions v2.7, Reader graduation v2.5, signature verification v2.14,
+  tables of contents, indexes and widow and orphan control v2.4, table header semantics v2.5),
+  and comments in `PdfReadPage.cs`, `PdfReaderDiagnostic.cs` and `PdfImageColorSpace.cs`. The
+  Reader README and `docs/architecture.md` now say that image extraction and text extraction from
+  simple fonts shipped in 2.3.2, and `docs/architecture.md` says the Layout track runs A to G.
+  Released CHANGELOG sections are unchanged.
 
 ### Fixed
 

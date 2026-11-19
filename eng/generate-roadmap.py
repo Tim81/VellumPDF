@@ -11,7 +11,10 @@
 #   --check    offline; fails if any of the nine files differs from what the snapshot renders.
 #              This is the CI gate (docs-roadmap.yml).
 #   --refresh  maintainer action; rewrites title, description and released state of every snapshot
-#              entry, and latestRelease, from the live milestones via `gh api`, then regenerates.
+#              entry, and latestRelease, from the live milestones via `gh api`, then regenerates the
+#              nine files. It still exits 1 when an open live milestone is missing from the snapshot
+#              (or a snapshot entry is gone from GitHub): the files are regenerated from what the
+#              snapshot has, and the new milestone needs a track and a position added by hand.
 #   --drift    read-only; exits 1 if the snapshot differs from the live milestones. Run weekly by
 #              docs-roadmap.yml, never on a pull request.
 #
@@ -35,6 +38,9 @@ FILES = ["README.md"] + [
     for d in ("VellumPdf.Barcodes", "VellumPdf.Cli", "VellumPdf.Conformance", "VellumPdf.Fonts.Standard14",
               "VellumPdf.Kernel", "VellumPdf.Layout", "VellumPdf.Reader", "VellumPdf.Signing")
 ]
+# The package READMEs are shown on nuget.org, which renders a repository-relative link with an
+# empty href, so they link to the docs by absolute URL. The root README is read in the repository.
+DOCS_URL = "https://github.com/Tim81/VellumPDF/blob/main/docs/"
 TRACKS = ("kernel", "layout", "editing")
 
 
@@ -108,13 +114,19 @@ def validate(snap):
         if m.get("track") not in TRACKS:
             errs.append(f"milestone {n}: track must be one of {TRACKS}")
         if not m.get("title") or not m.get("description"):
-            errs.append(f"milestone {n}: title or description is empty; run --refresh")
+            errs.append(f"milestone {n}: the snapshot has no title or description for it. If the live "
+                        "milestone has both, run --refresh; if its description is empty, write one on "
+                        "GitHub first, since the table renders descriptions verbatim")
     return errs
 
 
 def apply(text, block):
+    # Exactly one pair: a duplicated block would otherwise be half-replaced and pass --check once
+    # regenerated, hiding the stray copy.
+    if text.count(BEGIN) != 1 or text.count(END) != 1:
+        return None
     i, j = text.find(BEGIN), text.find(END)
-    if i < 0 or j < 0 or j < i:
+    if j < i:
         return None
     return text[:i] + block + text[j + len(END):]
 
@@ -126,7 +138,7 @@ def read(path):
 
 def targets(snap):
     for p in FILES:
-        yield p, render(snap, "docs/" if p == "README.md" else "../../docs/")
+        yield p, render(snap, "docs/" if p == "README.md" else DOCS_URL)
 
 
 def gh(path):
@@ -180,13 +192,12 @@ def main():
         for p in problems:
             print(p, file=sys.stderr)
         return 1 if problems else 0
+    refresh_problems = []
     if "--refresh" in args:
-        snap, problems = refreshed(snap)
+        snap, refresh_problems = refreshed(snap)
         save(snap)
-        for p in problems:
+        for p in refresh_problems:
             print(p, file=sys.stderr)
-        if problems:
-            return 1
     errs = validate(snap)
     if errs:
         for e in errs:
@@ -197,7 +208,7 @@ def main():
         old = read(path)
         new = apply(old, block)
         if new is None:
-            print(f"{path}: roadmap markers not found", file=sys.stderr)
+            print(f"{path}: expected exactly one roadmap:begin and one roadmap:end marker, in that order", file=sys.stderr)
             return 1
         if new != old:
             if "--check" in args:
@@ -208,7 +219,7 @@ def main():
     if stale:
         print("roadmap block is out of date in: " + ", ".join(stale) + f"; run python {sys.argv[0]}", file=sys.stderr)
         return 1
-    return 0
+    return 1 if refresh_problems else 0
 
 
 if __name__ == "__main__":
