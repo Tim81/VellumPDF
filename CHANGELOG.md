@@ -360,8 +360,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `ArgumentOutOfRangeException` (parameter `options`) before any page is added; a page index past
   the last page can only be judged after the layout. The size limit is 536,870,894 bytes, the most
   whose `/Contents` placeholder fits in a string; a size between that and 2^30 used to throw
-  `OutOfMemoryException` after the layout. A `SaveAsync` cancelled at any checkpoint ends with
-  `TaskCanceledException`, as documented. With a header or footer set, the counting pass refuses a
+  `OutOfMemoryException` after the layout. A `SaveAsync(string)` cancelled at any of the four points where it looks at the
+  token ends with `TaskCanceledException`, as on 2.3.3. With a header or footer set, the counting pass refuses a
   too-tall element before any page is added, but the document still cannot be saved again:
   an element keeps the line breaks it measured at the first page width, so a retry after changing
   `PageSize` reused them and wrote a different page from a fresh document's (a 150 pt Helvetica
@@ -408,8 +408,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   ran, so a regenerated report with one bad value replaced the previous report with a zero-byte
   file, and the exception was about layout and gave no hint a file was gone. They now open the
   target first, before anything is laid out, without emptying it, build the PDF in memory, and only
-  then empty the file and copy the bytes in. A failure at layout, at building the PDF or by
-  cancellation leaves the previous file byte for byte and creates nothing at a new path. Opening
+  then empty the file and copy the bytes in. A failure at layout or at building the PDF, or a `SaveAsync` cancelled
+  before the copy, leaves the previous file byte for byte and creates nothing at a new path. Opening
   first also means a lock or a permission error surfaces before the layout, while the `Document` is
   still usable. The existing file is rewritten in place, so it keeps its permissions, owner, hard
   links and extended attributes. The path is opened as given, so the operating system follows a
@@ -426,9 +426,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   creates between the existence check and the open is taken for one the call created, so it is
   deleted if the save then fails. A failed save through a dangling link can leave an empty file at
   the link's destination, because the open created it. `SaveAsync(string)` looks at its
-  cancellation token before the layout, when the serialisation is queued and during the copy into
-  the file, as on 2.3.3; a cancellation during the copy throws after the file was emptied and leaves
-  it truncated or incomplete. On Windows an existing hidden or system file, which `FileMode.Create`
+  cancellation token before the layout, when the serialisation is queued, once the PDF is built
+  and before the file is emptied (new: 2.3.3 first looked at it in the copy, after emptying the
+  file), and in the copy into the file; each throws `TaskCanceledException`. Only a cancellation
+  during the copy leaves the file truncated or incomplete. On Windows an existing hidden or system file, which `FileMode.Create`
   refused with `UnauthorizedAccessException`, is still refused with it, checked before the file is
   opened. The file is held open with `FileShare.None` from before the layout until the save
   returns, which excludes other openers on Windows but is only an advisory lock on Linux and macOS.

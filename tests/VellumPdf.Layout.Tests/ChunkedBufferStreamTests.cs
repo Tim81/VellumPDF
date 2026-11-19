@@ -83,7 +83,7 @@ public sealed class ChunkedBufferStreamTests
         await cts.CancelAsync();
         using var copy = new MemoryStream();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => buffer.CopyContentsToAsync(copy, cts.Token));
+        await Assert.ThrowsAsync<TaskCanceledException>(() => buffer.CopyContentsToAsync(copy, cts.Token));
 
         Assert.Equal(0, copy.Length);
     }
@@ -102,7 +102,8 @@ public sealed class ChunkedBufferStreamTests
 
     /// <summary>
     /// A path save through a buffer of 7-byte chunks, which a PDF of a few kilobytes crosses hundreds of
-    /// times, writes a PDF that is whole: it ends in the end-of-file marker and holds the page.
+    /// times, writes a PDF that is whole: it ends in the end-of-file marker and holds the page. The
+    /// chunk count is asserted, so a save that ignored the size would fail here: it would copy in one.
     /// </summary>
     [Theory]
     [InlineData(false)]
@@ -110,11 +111,10 @@ public sealed class ChunkedBufferStreamTests
     public async Task SaveToAPath_throughTinyChunks_writesAWholePdf(bool async)
     {
         var path = Path.Combine(Path.GetTempPath(), "chunked-" + Guid.NewGuid().ToString("N") + ".pdf");
-        var before = Document.SaveBufferChunkSize;
-        Document.SaveBufferChunkSize = 7;
+        var chunks = 0;
         try
         {
-            using var doc = new Document();
+            using var doc = new Document { SaveBufferChunkSize = 7, BeforeSaveCopy = b => chunks = b.ChunkCount };
             doc.Add(new Paragraph("Hello chunks", new TextStyle { FontSize = 12 }));
             if (async)
                 await doc.SaveAsync(path, TestContext.Current.CancellationToken);
@@ -123,15 +123,95 @@ public sealed class ChunkedBufferStreamTests
 
             var bytes = await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken);
             var text = System.Text.Encoding.Latin1.GetString(bytes);
-            Assert.True(bytes.Length > 7 * 50);
+            Assert.Equal((bytes.Length + 6) / 7, chunks);
+            Assert.True(chunks > 50);
             Assert.StartsWith("%PDF-", text, StringComparison.Ordinal);
             Assert.EndsWith("%%EOF", text.TrimEnd(), StringComparison.Ordinal);
             Assert.Contains("Hello chunks", PdfTestUtil.DecompressAllFlatStreams(bytes), StringComparison.Ordinal);
         }
         finally
         {
-            Document.SaveBufferChunkSize = before;
             File.Delete(path);
         }
+    }
+
+    /// <summary>
+    /// The first chunk is small and each next one doubles, up to the chunk size, so a PDF of a few
+    /// kilobytes does not allocate a whole 1 MiB chunk on the large object heap (its threshold is
+    /// 85,000 bytes). The bytes still come back exactly.
+    /// </summary>
+    [Fact]
+    public void Chunks_startSmall_andDoubleUpToTheChunkSize()
+    {
+        var small = new ChunkedBufferStream();
+        small.Write(Pattern(1500));
+        Assert.Equal(1, small.ChunkCount);
+        Assert.Equal(ChunkedBufferStream.FirstChunkSize, small.LargestChunkAllocated);
+
+        var grown = new ChunkedBufferStream();
+        var data = Pattern(40_000);
+        grown.Write(data);
+        // 4096 + 8192 + 16384 = 28672 < 40000 <= 28672 + 32768
+        Assert.Equal(4, grown.ChunkCount);
+        Assert.Equal(32768, grown.LargestChunkAllocated);
+
+        var capped = new ChunkedBufferStream(chunkSize: 10_000);
+        capped.Write(Pattern(25_000));
+        Assert.Equal(10_000, capped.LargestChunkAllocated);
+
+        using var copy = new MemoryStream();
+        grown.CopyContentsTo(copy);
+        Assert.Equal(data, copy.ToArray());
+    }
+
+    /// <summary>
+    /// A cancellation that arrives while the last chunk is being written is not reported: the file is
+    /// whole by then. One that arrives with a chunk still to write is, as a TaskCanceledException, and
+    /// the chunks after it are not written.
+    /// </summary>
+    [Theory]
+    [InlineData(3, false)]
+    [InlineData(2, true)]
+    public async Task CopyContentsToAsync_reportsACancellationOnlyWhileAChunkIsStillToWrite(int cancelOnWrite, bool throws)
+    {
+        var buffer = new ChunkedBufferStream(chunkSize: 8);
+        buffer.Write(Pattern(24));                    // three chunks of 8
+        using var cts = new CancellationTokenSource();
+        using var destination = new CancelOnNthWrite(cancelOnWrite, cts);
+
+        if (throws)
+        {
+            await Assert.ThrowsAsync<TaskCanceledException>(() => buffer.CopyContentsToAsync(destination, cts.Token));
+            Assert.Equal(16, destination.Written);
+        }
+        else
+        {
+            await buffer.CopyContentsToAsync(destination, cts.Token);
+            Assert.Equal(24, destination.Written);
+        }
+    }
+
+    private sealed class CancelOnNthWrite(int n, CancellationTokenSource cts) : Stream
+    {
+        private int _writes;
+        public long Written { get; private set; }
+
+        public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            Written += buffer.Length;
+            if (++_writes == n) cts.Cancel();
+            return ValueTask.CompletedTask;
+        }
+
+        public override bool CanRead => false;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 }

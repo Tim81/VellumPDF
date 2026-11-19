@@ -1105,9 +1105,6 @@ public sealed class Document : IDisposable
         }
     }
 
-    // Empties the file the PDF is about to be copied into. Skipped when there is nothing to remove,
-    // which is also what keeps a device file working: /dev/null reports that it can seek and a
-    // length of 0, and then refuses ftruncate with EINVAL.
     /// <summary>
     /// Windows refuses to open an existing Hidden or System file with <c>FileMode.Create</c>, which
     /// is what 2.3.3 used, and throws <see cref="UnauthorizedAccessException"/>; <c>OpenOrCreate</c>
@@ -1127,8 +1124,18 @@ public sealed class Document : IDisposable
     /// The chunk size of the buffer a path save builds the PDF in; a test lowers it to copy in several
     /// pieces.
     /// </summary>
-    internal static int SaveBufferChunkSize { get; set; } = ChunkedBufferStream.DefaultChunkSize;
+    internal int SaveBufferChunkSize { get; set; } = ChunkedBufferStream.DefaultChunkSize;
 
+    /// <summary>
+    /// Called with the finished buffer once the target is emptied and before the copy starts, so a test
+    /// can look at the buffer or cancel a token at the one point where the copy is the next thing to
+    /// look at it. Null outside the tests; it belongs to this instance, not to the process.
+    /// </summary>
+    internal Action<ChunkedBufferStream>? BeforeSaveCopy { get; set; }
+
+    // Empties the file the PDF is about to be copied into. Skipped when there is nothing to remove,
+    // which is also what keeps a device file working: /dev/null reports that it can seek and a
+    // length of 0, and then refuses ftruncate with EINVAL.
     private static void EmptyTarget(FileStream fs)
     {
         if (!fs.CanSeek) return;
@@ -1355,7 +1362,7 @@ public sealed class Document : IDisposable
     /// <para>The file is opened for writing first, before anything is laid out, without emptying it,
     /// and the PDF is built in memory. Only when the whole PDF is ready is the file emptied and the
     /// bytes copied in (#508). A lock or a permission error therefore surfaces while the document is
-    /// still usable, and a save that fails at layout, at building the PDF or by cancellation leaves
+    /// still usable, and a save that fails at layout or at building the PDF leaves
     /// whatever the path held exactly as it was, byte for byte, and creates nothing at a path that
     /// did not exist. It used to open the path with truncation first, so a layout failure left a
     /// zero-byte file in place of the previous report.</para>
@@ -1481,6 +1488,7 @@ public sealed class Document : IDisposable
 
                 EmptyTarget(fs);
 
+                BeforeSaveCopy?.Invoke(buffer);
                 buffer.CopyContentsTo(fs);
                 fs.Flush();
             }
@@ -1661,9 +1669,10 @@ public sealed class Document : IDisposable
     /// because the PDF goes into a file rather than a caller's stream: the
     /// <see cref="OperationCanceledException"/> tag below lists them.
     /// <para>The file is opened first and emptied only once the PDF is built in memory, as on
-    /// <see cref="Save(string)"/> (#508). A save that fails, at layout, at building the PDF or by
-    /// cancellation, therefore leaves whatever the path held exactly as it was, byte for byte, and
-    /// creates nothing at a path that did not exist. Everything <see cref="Save(string)"/> says
+    /// <see cref="Save(string)"/> (#508). A save that fails at layout or at building the PDF, or that
+    /// is cancelled before the copy starts, therefore leaves whatever the path held exactly as it
+    /// was, byte for byte, and creates nothing at a path that did not exist. Only a cancellation
+    /// during the copy can leave the file truncated. Everything <see cref="Save(string)"/> says
     /// about symbolic links, permissions, the advisory lock, the extra in-memory copy of the PDF, which
     /// has no 2 GB limit, and the final copy not being atomic applies here too.</para>
     /// </remarks>
@@ -1732,16 +1741,16 @@ public sealed class Document : IDisposable
     /// too large to allocate.
     /// </exception>
     /// <exception cref="OperationCanceledException">
-    /// The token is looked at three times: before the layout starts, once it has finished, when the
-    /// serialisation is queued, and during the copy into the file. A cancellation seen at either of
-    /// the first two ends the task with a <see cref="TaskCanceledException"/> before the file is
-    /// emptied, so the file that was there is untouched; see the remarks. A failure that comes first,
-    /// such as a refused page geometry or an exception from an element, is reported instead. Once the
-    /// serialisation is under way the token is not looked at until the copy, and a cancellation
-    /// during the copy throws <see cref="OperationCanceledException"/> after the file was emptied,
-    /// as it did on 2.3.3, which leaves it truncated or incomplete. A cancellation after the layout
-    /// has run also means this
-    /// <see cref="Document"/> cannot be saved again; see
+    /// The token is looked at four times, and a cancellation seen at any of them throws
+    /// <see cref="TaskCanceledException"/>, the type 2.3.3 threw: before the layout starts; once the
+    /// layout has finished, when the serialisation is queued; once the PDF is built, before the file is
+    /// emptied; and in the copy into the file, before each chunk. A cancellation seen at one of the
+    /// first three leaves the file that was there untouched; see the remarks. A failure that comes
+    /// first, such as a refused page geometry or an exception from an element, is reported instead.
+    /// While the PDF is being built the token is not looked at. The copy is the one point after the
+    /// file was emptied, so a cancellation there leaves it truncated or incomplete, as it did on
+    /// 2.3.3; one seen after the last chunk was written is not reported. A cancellation after the
+    /// layout has run also means this <see cref="Document"/> cannot be saved again; see
     /// <see cref="SaveAsync(System.IO.Stream, System.Threading.CancellationToken)"/>.
     /// </exception>
 #pragma warning disable RS0026
@@ -1774,6 +1783,11 @@ public sealed class Document : IDisposable
                     // leave a truncated file over a good one. A cancelled queue throws
                     // TaskCanceledException, as the point before the layout does.
                     await Task.Run(() => _pdf.Save(buffer), cancellationToken).ConfigureAwait(false);
+
+                    // The PDF is built and the file is not yet emptied: the last point where stopping
+                    // costs nothing. 2.3.3 looked at the token here too, in the copy, but after
+                    // FileMode.Create had emptied the file.
+                    ChunkedBufferStream.ThrowIfCanceled(cancellationToken);
                 }
                 catch
                 {
@@ -1783,6 +1797,7 @@ public sealed class Document : IDisposable
 
                 EmptyTarget(fs);
 
+                BeforeSaveCopy?.Invoke(buffer);
                 await buffer.CopyContentsToAsync(fs, cancellationToken).ConfigureAwait(false);
                 await fs.FlushAsync(CancellationToken.None).ConfigureAwait(false);
             }
