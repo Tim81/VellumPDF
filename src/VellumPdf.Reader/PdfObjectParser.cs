@@ -152,9 +152,10 @@ internal sealed class PdfObjectParser
     /// dictionary, or a dictionary of another type). It decides that by recognising the span without
     /// building anything, from the dictionary's own keys, and builds the dictionary only when it is a
     /// catalog. Nested values are never built for a span that is not one, so a dictionary that carries
-    /// a large nested value at every level costs nothing to refuse, however many spans a caller asks
-    /// about. A caller that wants only a catalog (reconstruction's last-resort search) uses it in place
-    /// of <see cref="TryParseObjectScan"/>.
+    /// a large nested value at every level allocates nothing in proportion to that value when it is
+    /// refused. The CPU time is still proportional to the nesting levels times the span. A caller
+    /// that wants only a catalog (reconstruction's last-resort search) uses it in place of
+    /// <see cref="TryParseObjectScan"/>.
     /// </summary>
     internal bool TryParseCatalogScan(out PdfDictionary? catalog)
     {

@@ -76,7 +76,14 @@ public sealed class PdfReaderOptions
     /// Standard security handler: an encryption dictionary for a public-key or unclassifiable handler, or
     /// evidence only in a region the scan set aside as untrustworthy or never tokenized, so that there is
     /// no object to point <c>/Encrypt</c> at. Carrying on would hand back ciphertext as if it were
-    /// content. It throws <see cref="InvalidDataException"/> for every other failure: the scan finds no
+    /// content. <strong>The sweep that looks for the last kind of evidence matches bytes, not
+    /// structure, so a file that is not encrypted can be refused too.</strong> When the scan has found
+    /// no declared <c>/Encrypt</c> and no Standard-handler dictionary to point at, it counts any of
+    /// these anywhere in the file, a string or a comment included: a name token <c>/Encrypt</c>; each
+    /// of the name tokens <c>/O</c>, <c>/U</c> and <c>/R</c>, which need not be in one dictionary; or
+    /// one of <c>/adbe.pkcs7.s3</c>, <c>/adbe.pkcs7.s4</c> and <c>/adbe.pkcs7.s5</c>. A name written
+    /// with <c>#XX</c> escapes counts as its decoded form. The file is then refused with
+    /// <see cref="UnsupportedPdfFeatureException"/> even when it has a usable catalog. It throws <see cref="InvalidDataException"/> for every other failure: the scan finds no
     /// object headers, the scan finds no usable document catalog, the budget runs out with no such
     /// evidence in the file, or the budget runs out while the scan is verifying the cross-reference
     /// streams of a file whose recovered trailer does carry <c>/Encrypt</c>, which fails closed because
@@ -96,7 +103,9 @@ public sealed class PdfReaderOptions
     /// <exception cref="UnsupportedPdfFeatureException">
     /// Thrown by <see cref="PdfReader.Open(byte[], PdfReaderOptions)"/> when reconstruction is on and
     /// the file shows encryption evidence that cannot be carried into the recovered trailer as a
-    /// Standard-handler <c>/Encrypt</c>, whether or not the budget ran out.
+    /// Standard-handler <c>/Encrypt</c>, whether or not the budget ran out. That includes a file that is
+    /// not encrypted but contains, anywhere, a byte pattern the whole-file sweep counts as evidence (see
+    /// the remarks), when the scan has no declared <c>/Encrypt</c> or Standard-handler dictionary.
     /// </exception>
     public bool AllowReconstruction { get; init; }
 

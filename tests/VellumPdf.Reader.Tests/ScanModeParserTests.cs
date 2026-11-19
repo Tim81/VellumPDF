@@ -349,9 +349,30 @@ public sealed class ScanModeParserTests
     [InlineData("[<</Type/Catalog>>]", false)]                     // not a dictionary
     [InlineData("/Catalog", false)]
     [InlineData("<</Type /Catalogue>>", false)]
+    [InlineData("<</Type/#43#61#74#61#6C#6F#67>>", true)]          // /Catalog, every byte escaped: raw length is exactly 3 x 7
+    [InlineData("<</#54#79#70#65/Catalog>>", true)]                // /Type, every byte escaped: raw length is exactly 3 x 4
     public void CatalogScan_NamedCases(string text, bool isCatalog)
     {
         var data = Encoding.Latin1.GetBytes(text);
+        Assert.Equal(isCatalog, CatalogViaFullParse(data) is not null);
+        Assert.Equal(isCatalog, CatalogViaScan(data) is not null);
+        Assert.Equal(CatalogViaFullParse(data), CatalogViaScan(data));
+    }
+
+    // The nesting limit is 256 levels counting the catalog dictionary itself, so a value nested 255 deep
+    // inside it parses and one nested 256 deep does not. Each case is compared with "parse fully, then
+    // test /Type" as well as with the expected answer.
+    [Theory]
+    [InlineData(255, false, true)]
+    [InlineData(256, false, false)]
+    [InlineData(255, true, true)]
+    [InlineData(256, true, false)]
+    public void CatalogScan_NestingBoundaryInsideACatalog(int levels, bool dictionaries, bool isCatalog)
+    {
+        var nested = dictionaries
+            ? string.Concat(Enumerable.Repeat("<</A", levels - 1)) + "<<" + string.Concat(Enumerable.Repeat(">>", levels))
+            : new string('[', levels) + new string(']', levels);
+        var data = Encoding.Latin1.GetBytes("<</Type/Catalog/V" + nested + ">>");
         Assert.Equal(isCatalog, CatalogViaFullParse(data) is not null);
         Assert.Equal(isCatalog, CatalogViaScan(data) is not null);
         Assert.Equal(CatalogViaFullParse(data), CatalogViaScan(data));
