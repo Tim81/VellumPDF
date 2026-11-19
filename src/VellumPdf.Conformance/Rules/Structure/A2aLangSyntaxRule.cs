@@ -26,13 +26,12 @@ namespace VellumPdf.Conformance.Rules.Structure;
 ///         (veraPDF explicitly allows it per the predicate <c>unicodeValue == ''</c>).</item>
 /// </list>
 ///
-///
-/// Attention: this pattern and that predicate disagree on a whole family of inputs, any tag
-/// followed by a line feed. .NET's <c>$</c> matches
-/// before a single trailing newline, so a <c>/Lang</c> of <c>en</c> followed by a line feed is
-/// accepted here and rejected by the predicate, where ECMAScript's <c>$</c> asserts end of
-/// input. The divergence is a false accept and is recorded as D6 in
-/// <c>docs/conformance-divergences.md</c>. Replacing <c>$</c> with <c>\z</c> closes it (#507).
+/// <para><b>A tag ending in a line feed is reported.</b> The pattern ends in <c>\z</c> rather than
+/// <c>$</c>: .NET's <c>$</c> also matches before a single trailing newline, where the cited
+/// predicate's ECMAScript <c>$</c> asserts end of input, so <c>$</c> accepted <c>en</c> followed by
+/// a line feed (#507). A reader delivers that value from <c>/Lang (en\012)</c> or from a raw
+/// end-of-line inside the parentheses (ISO 32000-2, 7.3.4.2). A preflight reports 6.7.4-1 for such a
+/// file.</para>
 /// <para>Cross-validated against veraPDF 1.30.2:
 /// <list type="bullet">
 ///   <item><c>/Lang (invalid!!bad)</c> on the document catalog: 6.7.4-1 fires.</item>
@@ -108,7 +107,7 @@ internal sealed class A2aLangSyntaxRule : IConformanceRule
     // only two uses of this field in src/ are IsMatch calls. An edit that starts reading Captures
     // needs to know.
     private static readonly Regex _bcp47 =
-        new(@"^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*$", RegexOptions.NonBacktracking);
+        new(@"^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*\z", RegexOptions.NonBacktracking);
 
     private static readonly PdfName _lang = new("Lang");
 
