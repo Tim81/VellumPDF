@@ -194,8 +194,9 @@ internal sealed class CmapTable
         }
         catch (InvalidDataException ex)
         {
-            // Nothing else to read: this is a font 2.3.3 refused with NotSupportedException, and
-            // it is still refused, with the same type and a message that names the rule.
+            // Nothing else to read: this is a font that was refused with NotSupportedException before
+            // format 12 was read, and it is still refused, with the same type and a message that
+            // names the rule.
             throw new NotSupportedException(
                 "font's only Unicode cmap subtable is format 12 and it is malformed: " + ex.Message, ex);
         }
@@ -215,8 +216,8 @@ internal sealed class CmapTable
     // A font whose only Unicode subtable is format 12 was refused before format 12 was read, so
     // accepting it is new, and what is new is held to the chapter's own rules (R2: input that does
     // not comply never gets the exception for bugs). Each failure is NotSupportedException, the type
-    // 2.3.3 threw for every such font. Fonts that also carry a 16-bit subtable loaded on 2.3.3 and
-    // are not held to these.
+    // every such font was refused with. Fonts that also carry a 16-bit subtable loaded before format 12
+    // was read and are not held to these.
     //
     // OpenType cmap chapter (OpenType 1.9.1, learn.microsoft.com/typography/opentype/spec/cmap, read
     // 2026-11-19): "The encoding record entries in the 'cmap' header must be sorted first by

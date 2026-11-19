@@ -426,7 +426,7 @@ public sealed class CmapFormat12Tests
         Assert.Contains($"composite glyph {gid} names component glyph {numGlyphs}, but the font has {numGlyphs} glyph(s)", ex.Message);
         _ = new TrueTypeFontEmbedder(lastGlyph, "F1");
         var control = Record.Exception(() => new TrueTypeFontEmbedder(WithComponent(full, gid, componentIndex, numGlyphs), "F1"));
-        Assert.False(control is NotSupportedException, "the damage is not what is being refused");
+        Assert.Null(control);
     }
 
     /// <summary>
@@ -527,7 +527,7 @@ public sealed class CmapFormat12Tests
         var secondEx = Assert.Throws<NotSupportedException>(() => new TrueTypeFontEmbedder(viaSecond, "F1"));
         Assert.Contains($"composite glyph {a} names component glyph {a}, which is already being expanded above it", secondEx.Message);
         var control = Record.Exception(() => new TrueTypeFontEmbedder(WithComponent(full, a, 0, a), "F1"));
-        Assert.False(control is NotSupportedException, "a font with a 16-bit subtable is not held to the cycle rule");
+        Assert.Null(control);
     }
 
     /// <summary>
