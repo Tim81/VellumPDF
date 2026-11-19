@@ -3,7 +3,7 @@
 [![NuGet](https://img.shields.io/nuget/v/VellumPdf.Layout.svg)](https://www.nuget.org/packages/VellumPdf.Layout)
 [![CI](https://github.com/Tim81/VellumPDF/actions/workflows/ci.yml/badge.svg)](https://github.com/Tim81/VellumPDF/actions/workflows/ci.yml)
 
-The high-level document builder of **[VellumPdf](https://github.com/Tim81/VellumPDF)**, a dependency-free PDF library for .NET 10 implemented clean-room from ISO 32000. It pulls in `VellumPdf.Kernel`, so for most applications this is the only package you need to add.
+The high-level document builder of **[VellumPdf](https://github.com/Tim81/VellumPDF)**, a dependency-free PDF library for .NET 10 and .NET 11 implemented clean-room from ISO 32000. It pulls in `VellumPdf.Kernel`, so for most applications this is the only package you need to add.
 
 - Paragraphs, headings, lists, tables, images, pie charts, header/footer bands, and bookmarks.
 - Automatic pagination and tagged content for accessible, archival output.

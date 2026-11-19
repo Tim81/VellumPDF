@@ -5,8 +5,10 @@ build, test, and submit changes to VellumPdf.
 
 ## Prerequisites
 
-- **.NET 10 SDK**, feature band 10.0.4xx — the exact pin is in `global.json`;
-  earlier feature bands are rejected.
+- **.NET 11 SDK**, feature band 11.0.1xx — the exact pin is in `global.json`;
+  earlier feature bands are rejected. The libraries and tests target both `net10.0` and
+  `net11.0`, so the **.NET 10 runtime** must be installed too: the 11.0 SDK does not carry it, and a
+  `net10.0` test host cannot start without it.
 - Before tagging a release: merge and CI-validate any `global.json`
   feature-band bump first. `release.yml` reads `global.json` from the tag's
   tree, so a stale pin ships a release built on a superseded SDK band.
@@ -14,9 +16,9 @@ build, test, and submit changes to VellumPdf.
 - **qpdf** and **poppler-utils** — needed to run the structural-validator,
   text-extraction, signature, and barcode-rasterization oracle tests locally
   (`qpdf`, `pdftotext`, `pdfsig`, `pdftoppm`). CI pins these (#230) rather than taking whatever
-  the runner image ships, so matching CI locally means matching its versions: qpdf 12.4.1
+  the runner image ships, so matching CI locally means matching its versions: qpdf 12.4.2
   (installed in CI from the [official release
-  artifact](https://github.com/qpdf/qpdf/releases/tag/v12.4.1), since apt's qpdf on
+  artifact](https://github.com/qpdf/qpdf/releases/tag/v12.4.2), since apt's qpdf on
   `ubuntu-24.04` is 11.9.0 and `--check`'s output has changed across qpdf majors), poppler-utils
   24.02.0-1ubuntu9.9, fonts-dejavu-core 2.37-8, and fonts-texgyre 20180621-6. On Debian/Ubuntu,
   install qpdf from the same release artifact and pin the rest with
@@ -52,8 +54,8 @@ build, test, and submit changes to VellumPdf.
   the directory holding the executable directly, its parent with a `bin`
   subdirectory under it, or its grandparent with a `Library\bin` subdirectory
   under it (the shape a Windows poppler build installed via winget uses) — so
-  `QPDF_HOME` can name either `...\qpdf-12.4.1-msvc64` or
-  `...\qpdf-12.4.1-msvc64\bin`, and `POPPLER_HOME` can name either the
+  `QPDF_HOME` can name either `...\qpdf-12.4.2-msvc64` or
+  `...\qpdf-12.4.2-msvc64\bin`, and `POPPLER_HOME` can name either the
   poppler install root or its `Library\bin` folder directly. A `*_HOME` that
   is set but does not resolve through any of these is reported as a
   misconfiguration (the same skip-locally/fail-on-CI outcome a wrong-tool
@@ -161,12 +163,14 @@ that gap from the workflow side rather than in-process, since the suite runs
 each test assembly as its own process and nothing guarantees which one runs
 last. `ci.yml`'s Test step sets `ORACLE_INVOCATION_LOG`, which makes
 `ExternalTool.RunProcess` append one `tool<TAB>first-argument` line per
-successful, non-probe call to a per-process file — an identity probe and a
-launch that never started are both excluded, so neither can pad a tool's
-count without the tool having actually validated anything; a step after
-Test concatenates those files, sums a count per tool, and fails the build if
-any tool falls below a floor pinned next to that count. The env var is
-unset locally, so this is a no-op outside CI.
+successful, non-probe call to a per-process, per-target-framework file named
+`<base>.<tfm>.<pid>`. An identity probe and a launch that never started are both
+excluded, so neither can pad a tool's count without the tool having actually
+validated anything. A step after Test concatenates each target framework's
+files, sums a count per tool, and fails the build if any tool falls below a
+floor pinned next to that count under either `net10.0` or `net11.0`; a
+framework with no log files at all fails too. The env var is unset locally, so
+this is a no-op outside CI.
 
 A tool that runs and answers is not the same as a tool that discriminated.
 `qpdf --show-linearization` exits 0 and prints no `WARNING` for both a
@@ -191,8 +195,16 @@ own output directory as `testconfig.json` by `tests/Directory.Build.props`) rath
 switch:
 
 ```bash
-dotnet test VellumPdf.slnx -c Release --results-directory <dir> -- --coverlet
+dotnet test VellumPdf.slnx -c Release --results-directory-layout per-module \
+    --results-directory <dir> -- --coverlet
 ```
+
+Without `--results-directory-layout per-module` the gate cannot attribute a report: every test
+project now runs once per target framework, and coverlet.MTP names a report only by its write
+timestamp, so the flat layout puts the net10.0 and net11.0 reports of one project in the same
+directory, where two that finish in the same millisecond could overwrite each other. Per-module
+writes
+`<dir>/<project>/<tfm>_<arch>/`, which is also how the gate tells the reports apart.
 
 `coverlet.testconfig.json` scopes instrumentation to the eight shipping assemblies, the same
 scope `coverlet.runsettings` held under the old VSTest collector (#229), as an include allow-list

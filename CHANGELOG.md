@@ -28,6 +28,74 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   beside the infinite one. They catch a change that always places the line at the Symbol position or
   always drops the item text.
 
+### Changed
+
+- **Every package now targets `net10.0` and `net11.0`, built with the .NET 11 SDK (`global.json`
+  pins 11.0.100, latest patch).** The seven library nupkgs carry `lib/net10.0` and `lib/net11.0`;
+  the `VellumPdf.Cli` tool package carries `tools/net10.0/any` and `tools/net11.0/any`. The public
+  API files are shared by both frameworks and no source file branches on the target framework. The
+  language version is now pinned to C# 14 rather than following the SDK. Both runtimes reach end of
+  support on 2028-11-14, and VellumPdf keeps both targets until that date. `VellumPdf.Signing` takes
+  `System.Security.Cryptography.Pkcs` 10.0.14 on `net10.0` and 11.0.0 on `net11.0`, so a `net10.0`
+  consumer does not pick up the 11.0.0 package's `System.Formats.Asn1` 11 dependency. Contributors
+  need the .NET 10 runtime installed beside the 11.0 SDK to run the `net10.0` test assemblies.
+- **The native `vellum-preflight` binaries on the GitHub Release are published from `net10.0`.**
+  Publishing a multi-targeted executable needs an explicit `-f`, and the LTS target is the one
+  chosen.
+- **CI gates run per target framework.** Each test project runs on both frameworks and writes its
+  coverage report to `<project>/<tfm>_<arch>/` (`--results-directory-layout per-module`). The
+  coverage gate requires exactly one report in each of the 14 expected directories, checks every
+  report against the assemblies its project must instrument, applies the assembly-name,
+  per-assembly-floor, valid-line and 84% threshold checks to each framework and the assembly-name,
+  per-assembly-floor, valid-line, 84% threshold and total-line checks to the merge, and fails on a
+  report anywhere else. The oracle invocation floors are checked per framework, and a framework
+  whose runs logged nothing fails; the verapdf and qpdf floors are now 279 and 51, 90% of the
+  counts the first Linux CI run measured. A new Pack-time check fails the build if the `net10.0`
+  package group of `VellumPdf.Signing` names a Pkcs version outside 10.x. The job timeout stays at
+  60 minutes: the first CI run on both frameworks took 29 minutes, 23 of them in the Test step.
+  The per-package README is now attached
+  with remove-then-include, because an update matches nothing in the outer build that packs a
+  multi-targeted project.
+
+- **CI's oracles move to veraPDF 1.30.4 and qpdf 12.4.2.** `VERAPDF_TAG` was v1.30.2 and
+  `QPDF_VERSION` was 12.4.1 (#230); the qpdf checksum moves with it. The veraPDF release notes
+  for 1.30.3 and 1.30.4 list changes that can move a verdict on the PDF/A-2a, 2b, 2u and PDF/UA-1
+  flavours this suite runs: a fix to AES-256 revision 6 password hashing that could reject valid
+  passwords, the PDF 1.7 table-header-scope algorithm restored for PDF/UA-1, PDF/UA-1 rule 7.18.1-3
+  now limited to Widget annotations tied to form fields, and a fix to the missing-parent-element
+  rule. The qpdf 12.4.2 notes say linearized output may differ for some rare files. A local Release
+  run on Windows, using the Windows builds of veraPDF 1.30.4 and qpdf 12.4.2 with
+  `REQUIRE_ORACLES=1`, had no failures: Conformance 1325 of 1325, Kernel 1525 of 1525, Layout 412
+  of 412, Barcodes 1051 of 1051, Cli 908 of 908, TestSupport 17 of 17, and Reader 1857 passed
+  with 12 skipped, the same count as under veraPDF 1.30.2 and qpdf 12.4.1. The R6 fix means the
+  comments and `Assets/README.md` that describe veraPDF refusing about one in ten freshly built R6
+  files now attribute that to 1.30.2. Statements elsewhere that a behaviour was measured on
+  veraPDF 1.30.2 or qpdf 12.4.1 are left as written, since they record what was measured then,
+  except two that were re-measured on 1.30.4 and came out the same: the language-tag table in
+  `docs/conformance-divergences.md` and the profile clause counts in `eng/clause-coverage.py`.
+
+### Fixed
+
+- **Cost-bound tests no longer assert on elapsed time (#400, #456).** A `Stopwatch` checked after a
+  call returns cannot end a hang, and a 10 s bound fails on a loaded runner: the main CI run for
+  1c61fa6 failed `FindingHigh_A4FlateBombPadding_refusesQuickly_viaCostBudget` at 11.79 s, and #400
+  records two 10 s `Timeout` cancellations of the #208 encrypt-dictionary pin. Most sites now pin
+  something the code decides, or a bound on bytes allocated on the calling thread.
+  `PageTreeTests`' deep malformed-ancestor walk drops its clock without a replacement, because a
+  quiet per-leaf rescan changes nothing a test can observe without a src hook. A4 flate-bomb padding
+  checks the budget's own message and a 5 MiB allocation bound (about 2.15 MB measured when the
+  budget works, 42.1 MB when it is charged after the loop), using a 4 MiB bomb against a 1 MiB decode
+  cap instead of 600 MiB. PNG zlib bombs bound `Load` at 256 KiB (91,224 bytes measured, 10.5 MB when
+  the cap is checked after the loop). `PdfDictionary` gains an internal `IsIndexed`, so the #208
+  tests assert that the index exists and that `ShallowCopy` carries it, and an entry-swap check
+  shows that `TryGet` follows the index and does not scan. The `ManyStreamsWithNoEol` parser test
+  ends with one well-formed stream, so a scan that skips EOL-less terminators returns a wrong body.
+  The parser, reader and content-interpreter fuzz targets check a per-sample allocation ceiling
+  that scales with input length, so CsCheck's seed still prints; the lexer target drops its clock
+  and keeps its token-count bound. The Layout cap tests use
+  renderers that fail by name after 200,004 `Layout` calls. Remaining `Timeout` values are 300 s hang
+  guards, except the `EncryptDictionaryDenialOfServiceTests` pin sized in #456. No public API changes.
+
 ## [2.3.3] - 2026-09-20
 
 This release is led by documentation. Layout's public surface now states what each member

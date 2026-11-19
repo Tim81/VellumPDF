@@ -697,11 +697,14 @@ public sealed class SignatureTests
 
         var signing = SignOnePageDocAsync(publicOnlyCert, "VELLUM_EXTERNAL_SIGNER_DELAY", settings);
 
-        await signerEntered.Task.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+        // Both waits are hang guards on tasks this test controls, not timing assertions (#400): the
+        // pins are the IsCompleted check and the signature verification. 300 s so a loaded runner
+        // cannot cancel a signing that is merely slow.
+        await signerEntered.Task.WaitAsync(TimeSpan.FromSeconds(300), TestContext.Current.CancellationToken);
         Assert.False(signing.IsCompleted, "SignAsync produced a document while the external signer was still outstanding.");
 
         releaseSigner.SetResult();
-        var bytes = await signing.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+        var bytes = await signing.WaitAsync(TimeSpan.FromSeconds(300), TestContext.Current.CancellationToken);
 
         VerifySignatureOrThrow(bytes);
     }

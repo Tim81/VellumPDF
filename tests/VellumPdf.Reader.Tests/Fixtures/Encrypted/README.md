@@ -1,10 +1,11 @@
 # Encrypted reader fixtures
 
-Generated once with qpdf and checked in, rather than generated at test time. CI and local
-development both use qpdf 12.4.1 (#230 pins CI to the official release artifact instead of apt,
-whose `ubuntu-24.04` version was 11.9.0); checking the files in makes the corpus
-byte-identical everywhere and keeps qpdf out of the test-execution path, so there is no
-`OracleGate` skip hole on the core corpus.
+Generated once with qpdf and checked in, rather than generated at test time. All of them predate
+#230's pin: nine arrived with #195 and nine with #212, and at both points this README recorded
+local development as qpdf 12.3.2. CI now pins qpdf 12.4.2 from the official release artifact
+instead of apt (whose `ubuntu-24.04` version was 11.9.0), and the checked-in bytes do not depend on
+it. Checking the files in makes the corpus byte-identical everywhere and keeps qpdf out of the
+test-execution path, so there is no `OracleGate` skip hole on the core corpus.
 
 Tracked in #99. Used by the decryption work in #97.
 

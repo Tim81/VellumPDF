@@ -5,7 +5,7 @@
 
 ## Goal
 
-A full-featured PDF **generation** library for .NET 10, comparable in capability
+A full-featured PDF **generation** library for .NET 10 and .NET 11, comparable in capability
 to a mature commercial PDF SDK, implemented **clean-room** from the open
 **ISO 32000** standard.
 
@@ -168,7 +168,9 @@ to retrofit:
 ## Defaults & conventions
 
 - Default page size **A4**; default units **metric (millimetres)**.
-- Target framework **net10.0** only (and later).
+- Target frameworks **net10.0** and **net11.0**, built from one SDK (11.0.1xx). Both ship in every
+  package: under `lib/` for the seven libraries, under `tools/` for `VellumPdf.Cli`; no source file
+  branches on the target framework.
 - Modern C# 14: `readonly record struct` for value types (Rect/Matrix/Color),
   `ReadOnlySpan<byte>` + UTF-8 (`u8`) literals for fixed tokens,
   `SearchValues<byte>` for delimiter scanning, `FrozenDictionary` for metric
@@ -181,7 +183,7 @@ to retrofit:
   (CsCheck) on escaping and cross-reference offsets.
 - **External validators as oracles in CI** (invoked as tools, never linked or
   shipped, so they do not affect the library's license-clean runtime):
-  veraPDF 1.30.2 (PDF/A-2b/2u/2a + PDF/UA-1, via the official Docker image),
+  veraPDF 1.30.4 (PDF/A-2b/2u/2a + PDF/UA-1, via the official Docker image),
   `qpdf --check` and `--show-linearization` (structural and linearization),
   `pdftotext` (text round-trip → proves `ToUnicode`), `pdfsig` (PAdES signature
   validity), and zxing-cpp (decode round-trip for every barcode symbology, via a

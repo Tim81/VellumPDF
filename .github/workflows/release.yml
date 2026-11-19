@@ -148,10 +148,12 @@ jobs:
             --add Microsoft.VisualStudio.Component.VC.Tools.ARM64 --quiet --norestart | Out-Null
           Write-Host "ARM64 VC toolset install requested for $vsPath"
 
+      # -f net10.0: VellumPdf.Cli multi-targets, and publishing a multi-targeted Exe without -f
+      # fails with NETSDK1129. The native binary ships from the LTS target.
       - name: Publish native AOT binary
         shell: bash
         run: >
-          dotnet publish src/VellumPdf.Cli -c Release -r ${{ matrix.rid }}
+          dotnet publish src/VellumPdf.Cli -c Release -r ${{ matrix.rid }} -f net10.0
           -p:PublishAot=true
           -p:Version="${{ steps.version.outputs.version }}"
           -o publish-out
