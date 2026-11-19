@@ -13,5 +13,10 @@ public abstract class PdfObject
     /// <c>ParamName</c> is <c>value</c>. The null was stored without a check, so this is raised here
     /// and not from <see cref="PdfDictionary.Set(PdfName, PdfObject)"/>.
     /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from the save that writes this object, not from this call, when a container it holds contains itself,
+    /// directly or through other arrays, dictionaries and streams. Refer to the object through an
+    /// indirect reference to break the cycle.
+    /// </exception>
     public abstract void WriteTo(PdfWriter writer);
 }

@@ -38,6 +38,11 @@ public sealed class PdfArray : PdfObject
     /// A null <paramref name="obj"/> is refused. A PDF null is <see cref="PdfNull"/>.
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="obj"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from the save that writes this object, not from this call, when it contains itself,
+    /// directly or through other arrays, dictionaries and streams. Refer to the object through an
+    /// indirect reference to break the cycle.
+    /// </exception>
     public PdfArray Add(PdfObject obj)
     {
         // Refused here, not in WriteTo, so the failure lands on the call that passed the null.

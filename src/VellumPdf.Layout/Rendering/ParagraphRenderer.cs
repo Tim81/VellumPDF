@@ -173,6 +173,12 @@ public sealed class ParagraphRenderer : IRenderer
     /// <exception cref="ArgumentOutOfRangeException">
     /// The renderer was constructed with a negative start line.
     /// </exception>
+    /// <exception cref="ArgumentException">
+    /// A <see cref="TextStyle.FontRef"/> holds an embedded-font handle from a different
+    /// <see cref="Document"/>, under a resource name this document has no font under
+    /// (<c>ParamName</c> <c>handle</c>), or a position written here is <c>NaN</c> or infinite, which
+    /// <see cref="VellumPdf.Canvas.PdfCanvas"/> refuses (<c>ParamName</c> is empty).
+    /// </exception>
     public void Draw(DrawContext ctx)
     {
         if (_lines is null) return;

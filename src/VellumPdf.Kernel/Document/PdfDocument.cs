@@ -1097,6 +1097,12 @@ public sealed class PdfDocument : IDisposable
     /// structure element in the document holds itself. Serialisation runs on a thread-pool
     /// thread, so the exception is rethrown here when the wrapping task is awaited.
     /// </exception>
+    /// <exception cref="OperationCanceledException">
+    /// <paramref name="cancellationToken"/> is cancelled before the serialisation starts or before the
+    /// copy into <paramref name="destination"/>: the task ends with <see cref="TaskCanceledException"/>
+    /// before anything is written. The token is not looked at while the serialisation runs, and during
+    /// the copy <paramref name="destination"/> receives it and decides.
+    /// </exception>
     public async Task SaveAsync(Stream destination, CancellationToken cancellationToken = default)
     {
         // The whole of the destination check, not only the null: Save runs against an in-memory

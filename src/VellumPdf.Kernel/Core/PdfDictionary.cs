@@ -43,6 +43,11 @@ public sealed class PdfDictionary : PdfObject
     /// <paramref name="key"/> is <see langword="null"/>. A null <paramref name="value"/> is raised from
     /// <see cref="WriteTo"/>, not from this call.
     /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from the save that writes this dictionary, not from this call, when it contains itself,
+    /// directly or through other arrays, dictionaries and streams. Refer to the object through an
+    /// indirect reference to break the cycle.
+    /// </exception>
     public PdfDictionary Set(PdfName key, PdfObject value)
     {
         // Without this, a null key would behave differently depending on which side of

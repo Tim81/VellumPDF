@@ -143,6 +143,16 @@ public static class SigningExtensions
     /// Thrown when encryption has already been configured on the document, or when
     /// <see cref="PdfSignatureSettings.ExternalSigner"/> is set (it requires <c>SignAsync</c>).
     /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// The layout runs inside this call, so every <see cref="InvalidOperationException"/> listed on
+    /// <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> applies, including a document
+    /// whose earlier save or signing call stopped after its layout had started.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// The signature page is negative or past the last page, or the reserve computed from
+    /// <paramref name="settings"/> is negative or above 536,870,894 bytes. <c>ParamName</c> is
+    /// <c>options</c>. Everything but a page past the last page is raised before anything is laid out.
+    /// </exception>
     public static void Sign(this VellumPdf.Layout.Document doc, Stream output, PdfSignatureSettings settings)
     {
         ArgumentNullException.ThrowIfNull(doc);
@@ -183,6 +193,16 @@ public static class SigningExtensions
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// Thrown when encryption has already been configured on the document.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// The layout runs inside this call, so every <see cref="InvalidOperationException"/> listed on
+    /// <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> applies, including a document
+    /// whose earlier save or signing call stopped after its layout had started.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// The signature page is negative or past the last page, or the reserve computed from
+    /// <paramref name="settings"/> is negative or above 536,870,894 bytes. <c>ParamName</c> is
+    /// <c>options</c>. Everything but a page past the last page is raised before anything is laid out.
     /// </exception>
 #pragma warning disable RS0026
     public static async Task SignAsync(this VellumPdf.Layout.Document doc, Stream output, PdfSignatureSettings settings, CancellationToken cancellationToken = default)

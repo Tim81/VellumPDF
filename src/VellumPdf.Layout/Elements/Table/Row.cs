@@ -52,6 +52,12 @@ public sealed class Row
     /// and this property can only be set when a row is constructed. Set
     /// <see cref="Cell.Background"/> on each cell instead (#543).
     /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not from
+    /// this property, when a channel is <c>NaN</c> or infinite and the row's cell has no
+    /// <see cref="Cell.Background"/> of its own. <see cref="VellumPdf.Canvas.PdfCanvas"/> refuses it
+    /// and <c>ParamName</c> is empty.
+    /// </exception>
     public ColorRgb? Background { get; init; }
 
     /// <summary>Adds a cell to the row. Returns this row.</summary>

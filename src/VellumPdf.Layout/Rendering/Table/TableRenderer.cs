@@ -206,6 +206,18 @@ public sealed class TableRenderer : IRenderer
     /// This method is called before <see cref="Layout"/> on a table that has a header row; see
     /// <see cref="IRenderer.Draw"/>.
     /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// <b>A cell's text colour with a non-finite channel, and a negative table border width, are refused
+    /// here and not in <see cref="Layout"/>,</b> because each is checked where it is written; a table
+    /// that is laid out and not drawn is not refused for either. See <see cref="Document"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// A cell or row background, the table's border colour or a coordinate written here is <c>NaN</c> or
+    /// infinite, which <see cref="VellumPdf.Canvas.PdfCanvas"/> refuses (<c>ParamName</c> is empty). A text
+    /// <see cref="TextStyle.FontRef"/> holding an embedded-font handle from a different
+    /// <see cref="Document"/>, under a resource name this document has no font under, is refused with
+    /// <c>ParamName</c> <c>handle</c>.
+    /// </exception>
     public void Draw(DrawContext ctx)
     {
         // Layout already deflated context.Area by _table.Margins and stored the result in

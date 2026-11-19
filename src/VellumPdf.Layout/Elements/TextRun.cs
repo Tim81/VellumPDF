@@ -75,5 +75,11 @@ public sealed class TextRun(string Text, TextStyle Style)
     /// the enumeration does not name and the font is selected on a page; see
     /// <see cref="TextStyle.FontRef"/>.
     /// </exception>
+    /// <exception cref="ArgumentNullException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not from
+    /// the constructor or this property, by the layout of the paragraph that holds the run, when the run
+    /// has text that yields a word (a non-white-space character, U+00A0 included). <c>ParamName</c> is
+    /// <c>Style</c>. A run with empty or white-space-only text saves.
+    /// </exception>
     public TextStyle Style { get; } = Style;
 }
