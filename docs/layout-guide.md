@@ -54,11 +54,13 @@ a guard test keeps the two copies byte-identical.
 | Encryption via `Document.Encrypt` | ✅ Supported | ISO 32000-2 §7.6 (delegates to Kernel) |
 | Barcode symbols as a Layout element | ❌ Not yet (only an `IRenderer` extension seam exists) | no tracked milestone |
 | Form elements with their own labels; build-time accessibility diagnostics | ⏳ Planned | Layout C |
-| PDF/A-1 and PDF/A-4 | ⏳ Planned | v2.5 (#218, #222) |
-| PDF/UA-2 element set (generated contents/indexes, captions, table header semantics) | ⏳ Planned | Layout B |
+| PDF/A-1 and PDF/A-4 | ⏳ Planned | v2.6 (#218, #222) |
+| PDF/UA-2 element set, captions, lists of figures and tables (#293, #295, #599) | ⏳ Planned | Layout B |
+| Tables of contents and indexes (#294) | ⏳ Planned | v2.4 |
+| Table header semantics (#296) | ⏳ Planned | v2.5 |
 | Footnotes and endnotes | ⏳ Planned | Layout B |
 | Floats and hyphenation | ⏳ Planned | Layout D |
-| Widow and orphan control | ⏳ Planned | Layout D |
+| Widow and orphan control (#306) | ⏳ Planned | v2.4 |
 | Multi-column flow | ⏳ Planned | Layout F |
 | Additional chart types beyond pie | ⏳ Planned | Layout F |
 | SVG import | ⏳ Planned | Layout F (epic) |

@@ -7,7 +7,7 @@ namespace VellumPdf.Reader;
 /// cref="ColorSpaceReader"/> exposes (#98). <see cref="Base"/>, <see cref="HighValue"/>, and <see
 /// cref="Lookup"/> apply only to <see cref="PdfImageColorSpaceFamily.Indexed"/>; <see
 /// cref="IccProfile"/> only to <see cref="PdfImageColorSpaceFamily.IccBased"/>. Colorants, tint
-/// transforms, Lab ranges and white points, and CalGray/CalRgb gamma are not exposed in 2.4: a
+/// transforms, Lab ranges and white points, and CalGray/CalRgb gamma are not exposed: a
 /// colorant list without its tint transform, or a Lab range without its white point, is half a
 /// description, and each can be added beside the consumer that turns out to need it.
 /// </summary>

@@ -52,6 +52,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   except two that were re-measured on 1.30.4 and came out the same: the language-tag table in
   `docs/conformance-divergences.md` and the profile clause counts in `eng/clause-coverage.py`.
 
+- **The roadmap table is generated from a snapshot of the GitHub milestones (#369).** The block was
+  copied by hand into the root README and the eight package READMEs, and had drifted twice.
+  `eng/generate-roadmap.py` now renders it between `roadmap:begin` and `roadmap:end` markers in all
+  nine files from `eng/roadmap/milestones.json`, using each milestone's description as the row text.
+  `--check` compares the files with the snapshot offline, requires exactly one marker pair per
+  file, and runs in the new `docs-roadmap.yml` workflow on pull requests. `--refresh` pulls titles,
+  descriptions and the latest release tag from GitHub and regenerates; it exits 1 if an open
+  milestone is missing from the snapshot, which needs a track added by hand. `--drift` reports a
+  snapshot that no longer matches the live milestones, weekly and on demand, never on a pull
+  request. The table follows the 2026-11-19 renumbering: v2.4 is hardening and navigable
+  documents, v2.5 is accessible documents, extraction and Reader graduation, and the former v2.5
+  to v2.13 are v2.6 to v2.14.
+- **The package READMEs link to the docs by absolute URL.** The roadmap block's links to
+  `docs/pdf20-conformance.md`, the Reader guide and the Layout guide were `../../docs/...`, which
+  rendered with an empty href on the nuget.org page for Reader 2.3.3 (observed in review); they now
+  point at `https://github.com/Tim81/VellumPDF/blob/main/docs/`. This fixes those three links on
+  the package pages. Other links in the package READMEs are
+  unchanged.
+- **Milestone references corrected after the renumbering.** Swept: `v2.N` and bare `2.N` mentions
+  and `Layout [A-I]` mentions in `*.md` outside `CHANGELOG.md`, `docs/iso` and
+  `docs/pdf20-conformance.md`, and in `src/**/*.cs`; each hit was read for whether it names a
+  milestone, a release or neither. Changed: `docs/architecture.md`, `docs/layout-guide.md`,
+  `docs/reader-guide.md`, the Layout and Reader READMEs (capability tables: PDF/A-1 and PDF/A-4
+  are v2.6, the ISO/TS extensions v2.7, Reader graduation v2.5, signature verification v2.14,
+  tables of contents, indexes and widow and orphan control v2.4, table header semantics v2.5),
+  and comments in `PdfReadPage.cs`, `PdfReaderDiagnostic.cs` and `PdfImageColorSpace.cs`. The
+  Reader README and `docs/architecture.md` now say that image extraction and text extraction from
+  simple fonts shipped in 2.3.2, and `docs/architecture.md` says the Layout track runs A to G.
+  Released CHANGELOG sections are unchanged.
+
 ### Fixed
 
 - **`PdfCanvas` refuses NaN and infinity in every operand it writes (#519).** The canvas has one
@@ -501,6 +531,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and keeps its token-count bound. The Layout cap tests use
   renderers that fail by name after 200,004 `Layout` calls. Remaining `Timeout` values are 300 s hang
   guards, except the `EncryptDictionaryDenialOfServiceTests` pin sized in #456. No public API changes.
+
+## [2.3.4] - 2026-11-19
+
+A security servicing release. VellumPdf's own code is unchanged: `git diff v2.3.3 -- src` is empty
+for the commit this release is built from. The one shipped change is the
+`System.Security.Cryptography.Pkcs` dependency of `VellumPdf.Signing`, raised from 10.0.12 to
+10.0.14. If you use `VellumPdf.Signing` 2.3.3 and do not reference a newer Pkcs yourself, NuGet
+resolves the lowest version the package declares, 10.0.12, so you stay on the vulnerable build
+until you update.
+
+### Security
+
+- **`VellumPdf.Signing` now depends on `System.Security.Cryptography.Pkcs` 10.0.14.** The 10.0.12
+  that 2.3.3 declares is inside the affected range of two advisories, both titled ".NET Denial of
+  Service Vulnerability" and both published 2026-10-13: GHSA-846f-f764-76mx (CVE-2026-84008, high)
+  and GHSA-2fmv-rv2c-59x7 (CVE-2026-70162, medium). Each covers 10.0.0 through 10.0.12 and is
+  patched in 10.0.13. This release declares 10.0.14, which is past both fixes. Test-only packages
+  and the SDK patch also moved; none of them ships in a package.
 
 ## [2.3.3] - 2026-09-20
 
@@ -4277,7 +4325,8 @@ few small additions. No public API was removed.
   headers, and no unbounded allocations driven by attacker-controlled length
   fields.
 
-[Unreleased]: https://github.com/Tim81/VellumPDF/compare/v2.3.3...HEAD
+[Unreleased]: https://github.com/Tim81/VellumPDF/compare/v2.3.4...HEAD
+[2.3.4]: https://github.com/Tim81/VellumPDF/releases/tag/v2.3.4
 [2.3.3]: https://github.com/Tim81/VellumPDF/releases/tag/v2.3.3
 [2.3.2]: https://github.com/Tim81/VellumPDF/releases/tag/v2.3.2
 [2.3.1]: https://github.com/Tim81/VellumPDF/releases/tag/v2.3.1

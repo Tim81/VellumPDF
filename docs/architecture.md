@@ -14,8 +14,8 @@ for the signing LTV path (#49); it now also backs the conformance validator and
 handles cross-reference streams, object streams, hybrid-reference files, and encrypted
 documents (the Standard security handler, given the password), including
 cross-reference reconstruction for damaged files and writing a decrypted copy of an
-encrypted document (v2.3, merged to main and pending release). Text and image
-extraction is the next reader milestone, v2.4 (#98); see the roadmap table in
+encrypted document (v2.3), and extracting images and text from simple fonts (2.3.2).
+Text extraction from composite fonts is milestone v2.5 (#394); see the roadmap table in
 [README.md](../README.md#roadmap) for current status rather than a version list here,
 which only drifts (as this one did). Editing existing PDFs lands at v3.0 as a
 unified read-modify-write model that supersedes the write-once document API
@@ -222,8 +222,8 @@ Everything the paragraph above used to list as open is now tracked. Complex-scri
 and SVG→PDF are epics in the Layout track; HTML→PDF is a Backlog epic with its dependencies
 named; the reader work leads into the v3.x editing line.
 
-Scope past 2.5 runs as **two parallel tracks**: Kernel and conformance (v2.6 to v2.13), and
-Layout (A to I). Auditing the layout engine turned up more work than the PDF 2.0 conformance
+Scope past 2.5 runs as **two parallel tracks**: Kernel and conformance (v2.6 to v2.14), and
+Layout (A to G). Auditing the layout engine turned up more work than the PDF 2.0 conformance
 gap did, and splitting them keeps either from blocking the other. Both ship from the same
 version numbers, since the packages version in lockstep.
 
