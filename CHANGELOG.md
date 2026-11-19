@@ -91,6 +91,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   stored real transparency there loses it: alpha lives in `BI_BITFIELDS`, `BI_ALPHABITFIELDS` and
   the V4 and V5 headers, which this loader still refuses with `NotSupportedException`.
 
+- **`BmpImageLoader` loads a valid 8-bit BMP with a short palette (#533).** The loader never read
+  `biClrUsed` and demanded `54 + 256 * 4` bytes, so a conforming file declaring 4 or 16 entries
+  (86 and 134 bytes for a 4 by 4 image) was refused with "BMP file is truncated", which is not
+  what was wrong with it. It now reads the field, treats 0 as 256, caps it at 256 before
+  multiplying, and requires `54 + entries * 4` bytes. A file of 1,078 bytes or more loads exactly
+  as before, indexing the table as 256 entries whatever `biClrUsed` says. A smaller file is held
+  to the entries it declares, so a pixel pointing past them, or pixel data starting inside the
+  palette, is refused with `InvalidDataException`.
+
 ## [2.3.3] - 2026-09-20
 
 This release is led by documentation. Layout's public surface now states what each member

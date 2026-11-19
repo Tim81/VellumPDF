@@ -23,6 +23,9 @@ public static class BmpImageLoader
     // BMP compression constants
     private const uint BiRgb = 0;
 
+    // An 8-bit pixel indexes at most 256 colours.
+    private const int MaxPaletteEntries = 256;
+
     /// <summary>Decodes BMP file bytes into a FlateDecode Image XObject.</summary>
     /// <exception cref="InvalidDataException">
     /// The bytes are not a BMP file, are truncated, or declare dimensions outside the safety
@@ -53,13 +56,16 @@ public static class BmpImageLoader
     /// <see cref="NotSupportedException"/>, compressed ones included, and there is no fallback
     /// path. Size is checked first, so a file shorter than 54 bytes is reported as truncated
     /// whatever variant it would have been.</para>
-    /// <para>Attention: one conforming 8-bit variant is refused. A bitmap may declare
-    /// <c>biClrUsed</c> and ship a palette shorter than 256 entries; this loader never reads that
-    /// field and tests the whole file against <b>1,078</b> bytes, so a short-palette file smaller
-    /// than that is reported as truncated. A larger one loads and decodes correctly, so the
-    /// refusal tracks the file's size and not its palette. If you hit it, pad the palette to 256
-    /// entries and move <c>bfOffBits</c> with it. Leaving the offset unmoved still reads pixel
-    /// data from the start of the palette (#533).</para>
+    /// <para>An 8-bit bitmap may carry fewer than 256 palette entries. This loader reads
+    /// <c>biClrUsed</c> (zero means 256, and a larger value is capped at 256) and requires the
+    /// file to hold that many entries after the header. A file declaring 4 entries is 86 bytes for
+    /// a 4 by 4 image and loads. A palette that does not fit raises
+    /// <see cref="InvalidDataException"/> as truncated, which is true of it. Before 2.4 the field
+    /// was ignored and any 8-bit file under 1,078 bytes was refused as truncated whatever it
+    /// declared (#533). A file of 1,078 bytes or more still loads as it did then, indexing the
+    /// table as 256 entries, so a pixel pointing past <c>biClrUsed</c> reads whatever bytes lie in
+    /// that slot. A smaller file is held to the entries it declares: a pixel pointing past them, or
+    /// pixel data starting inside the palette, raises <see cref="InvalidDataException"/>.</para>
     /// <para>A BITMAPINFOHEADER field this loader does not read is neither honoured nor
     /// refused.</para>
     /// <para>A 32-bit bitmap is read as opaque. In <c>BI_RGB</c> with a 40-byte header the fourth
@@ -113,18 +119,41 @@ public static class BmpImageLoader
         if (pixelOffset >= (uint)bmpBytes.Length)
             throw new InvalidDataException($"BMP pixel data offset {pixelOffset} is beyond the end of the file.");
 
-        // Validate the palette region (for 8-bit images) is within the file.
+        // 8-bit: the colour table follows the header and holds biClrUsed entries, or 256 when the
+        // field is zero (Microsoft's BITMAPINFOHEADER reference, biClrUsed: "If biClrUsed is zero,
+        // the array contains the maximum number of colors for the given bitdepth"). The field is
+        // the writer's, so it is capped at 256 before it is multiplied.
+        var paletteLimit = 0;
         if (bitCount == 8)
         {
             const int paletteOffset = 54;
-            const int paletteSize = 256 * 4;
-            if (paletteOffset + paletteSize > bmpBytes.Length)
+            var clrUsed = ReadU32Le(bmpBytes, 46);
+            var entries = clrUsed is 0 or > MaxPaletteEntries ? MaxPaletteEntries : (int)clrUsed;
+            if (paletteOffset + entries * 4 > bmpBytes.Length)
                 throw new InvalidDataException("BMP file is truncated: palette extends beyond end of file.");
+
+            // 2.3.3 never read biClrUsed and accepted any file of at least 1,078 bytes, indexing
+            // the table as if it held 256 entries whatever the field said. Such a file keeps
+            // loading exactly as it did, so an index past biClrUsed still reads the bytes at that
+            // slot. Below 1,078 bytes the file was refused, and the table is held to the entries it
+            // declares: a pixel pointing past them, or pixel data that starts inside the table, is
+            // refused rather than read from the wrong place.
+            if (bmpBytes.Length >= paletteOffset + MaxPaletteEntries * 4)
+            {
+                paletteLimit = MaxPaletteEntries;
+            }
+            else
+            {
+                if (pixelOffset < (uint)(paletteOffset + entries * 4))
+                    throw new InvalidDataException(
+                        $"BMP pixel data offset {pixelOffset} lies inside the {entries}-entry palette.");
+                paletteLimit = entries;
+            }
         }
 
         return bitCount switch
         {
-            8 => Load8Bit(bmpBytes, width, height, bottomUp, pixelOffset),
+            8 => Load8Bit(bmpBytes, width, height, bottomUp, pixelOffset, paletteLimit),
             24 => Load24Bit(bmpBytes, width, height, bottomUp, pixelOffset),
             _ => Load32Bit(bmpBytes, width, height, bottomUp, pixelOffset),
         };
@@ -133,7 +162,7 @@ public static class BmpImageLoader
     // ── 8-bit palette-indexed ────────────────────────────────────────────────
 
     private static PdfImageXObject Load8Bit(
-        byte[] data, int width, int height, bool bottomUp, uint pixelOffset)
+        byte[] data, int width, int height, bool bottomUp, uint pixelOffset, int paletteLimit)
     {
         // Colour table starts at offset 54 (after BITMAPINFOHEADER).
         // Each entry is RGBQUAD: blue, green, red, reserved (4 bytes).
@@ -149,6 +178,9 @@ public static class BmpImageLoader
             for (var x = 0; x < width; x++)
             {
                 var idx = data[rowBase + x];
+                if (idx >= paletteLimit)
+                    throw new InvalidDataException(
+                        $"BMP pixel refers to palette entry {idx}, but the palette holds {paletteLimit} entries.");
                 var entry = colorTableOffset + idx * 4;
                 var dst = (y * width + x) * 3;
                 rgb[dst] = data[entry + 2];     // red
