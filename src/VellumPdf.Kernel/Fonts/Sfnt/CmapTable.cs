@@ -36,7 +36,8 @@ namespace VellumPdf.Fonts.Sfnt;
 /// rules too</b>, because accepting it is new. <see cref="Parse"/> throws
 /// <see cref="NotSupportedException"/> naming the rule when two encoding records share a platform,
 /// encoding and language, when the records are not sorted by platform, encoding and language, when
-/// a subtable on a platform other than Macintosh has a non-zero language field, or when the only
+/// a subtable on a platform other than Macintosh has a non-zero language field, when a format 8, 10,
+/// 12 or 13 subtable has a non-zero reserved field, or when the only
 /// format 12 record is platform 0 / encoding 10 (the chapter defines platform 0 encodings 0 to 6
 /// only). A font that also has a 16-bit subtable is not held to these, as on 2.3.3.</para>
 /// <para><b>Cost is bounded by the file.</b> Groups are sorted and disjoint, so a font maps at
@@ -226,7 +227,8 @@ internal sealed class CmapTable
     // be set to zero for all 'cmap' subtables whose platform IDs are other than Macintosh
     // (platform ID 1)." Its Unicode-platform encoding IDs are 0 to 6, so platform 0 / encoding 10
     // is not one the chapter defines; platform 3 / encoding 10 and platform 0 / encoding 4 are the
-    // chapter's full-repertoire records.
+    // chapter's full-repertoire records. The format 8, 10, 12 and 13 headers have a "uint16
+    // reserved" field, "Reserved; set to 0".
     private static void RequireSoundRecordsForSoleFormat12(SfntReader r, int numTabs, bool chapterWide)
     {
         if (!chapterWide)
@@ -242,7 +244,13 @@ internal sealed class CmapTable
                 var platform = r.ReadU16(4 + i * 8);
                 var encoding = r.ReadU16(4 + i * 8 + 2);
                 var offset = (int)r.ReadU32(4 + i * 8 + 4);
-                var language = r.ReadU16(offset) switch
+                var format = r.ReadU16(offset);
+                // Formats 8, 10, 12 and 13 have a uint16 "reserved" field after the format, "set to 0".
+                if (format is 8 or 10 or 12 or 13 && r.ReadU16(offset + 2) != 0)
+                    throw new NotSupportedException(
+                        $"font's only Unicode cmap subtable is format 12 and the format {format} subtable for platform {platform} / encoding {encoding} has a non-zero reserved field; the OpenType cmap chapter says to set it to 0");
+
+                var language = format switch
                 {
                     0 or 2 or 4 or 6 => r.ReadU16(offset + 4),
                     8 or 10 or 12 or 13 => r.ReadU32(offset + 8),

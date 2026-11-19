@@ -570,6 +570,15 @@ public sealed class CmapTableTests
     }
 
     [Fact]
+    public void CmapFormat12Only_nonZeroReservedField_isRefusedButBesideA16BitSubtableItLoads()
+    {
+        var sub = Sub12();
+        WriteU16Be(sub, 2, 7);
+        AssertSoleFormat12Refused(BuildCmap((3, 10, sub)), "format 12 subtable for platform 3 / encoding 10 has a non-zero reserved field");
+        Assert.False(ParseLoaded(BuildCmap((3, 1, BuildSubtableFormat6(0x41, [1])), (3, 10, sub))).OnlyFormat12);
+    }
+
+    [Fact]
     public void CmapFormat12Only_nonZeroLanguageOffMacintosh_isRefused()
     {
         AssertSoleFormat12Refused(BuildCmap((3, 10, Sub12(language: 1))), "has language 1; the OpenType cmap chapter requires 0 on every platform but Macintosh");

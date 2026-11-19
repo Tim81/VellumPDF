@@ -476,7 +476,8 @@ public sealed class Document : IDisposable
     /// subtable is malformed (a group that is inverted, unsorted or past U+10FFFF, a glyph ID at or
     /// beyond <c>numGlyphs</c>, or a group count the declared length cannot hold); when two
     /// encoding records share a platform, encoding and language, or the records are not sorted by
-    /// them; when a subtable outside the Macintosh platform has a non-zero language; when the only
+    /// them; when a subtable outside the Macintosh platform has a non-zero language, or a format 12
+    /// subtable a non-zero reserved field; when the only
     /// format 12 record is platform 0 / encoding 10; when any table in the list above is missing or
     /// truncated; when <c>head</c>'s <c>unitsPerEm</c> is 0; when a glyph's <c>loca</c> range lies
     /// outside <c>glyf</c>; when a composite glyph names a component at or past <c>numGlyphs</c>;
