@@ -807,9 +807,14 @@ public sealed class Document : IDisposable
     /// left out of the file.</para>
     /// <para>The profile is not parsed, and <paramref name="componentCount"/> is not checked
     /// against it: any non-empty bytes are embedded as the profile.</para>
-    /// <para>The identifier and <paramref name="info"/> are written as Latin-1: a character outside
-    /// it becomes a best-fit Latin-1 character where there is one, such as <c>-</c> for an en dash,
-    /// and otherwise <c>?</c>, one for each UTF-16 code unit.</para>
+    /// <para>The identifier and <paramref name="info"/> are written as PDF text strings (ISO 32000-2,
+    /// Table 401). A value made only of U+0020 to U+007E, U+00A1 to U+00FF except U+00AD, and
+    /// U+0000 to U+0017 is written one byte per character, unless it begins with U+00FE U+00FF or
+    /// U+00EF U+00BB U+00BF; any other value is written as UTF-16BE with a byte order mark and keeps
+    /// its characters.
+    /// Table 401 describes the identifier as a text string identifying the output device or
+    /// production condition, and gives the name of a condition in an industry-standard registry as
+    /// a typical value, so a character outside ASCII is unusual there; it is not refused.</para>
     /// <para>Do not pass bytes that are not an ICC profile, or a count that does not match it. A
     /// later major version will refuse both.</para>
     /// </remarks>
@@ -840,8 +845,8 @@ public sealed class Document : IDisposable
     /// <remarks>
     /// Same identifier refusal as <see cref="SetPdfAOutputIntent"/>, and the same condition: the
     /// intent is written only when <see cref="Conformance"/> is not
-    /// <see cref="PdfConformance.None"/>. The identifier is written as Latin-1, as on
-    /// <see cref="SetPdfAOutputIntent"/>.
+    /// <see cref="PdfConformance.None"/>. The identifier is written as a text string,
+    /// as on <see cref="SetPdfAOutputIntent"/>.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="outputConditionIdentifier"/> is <see langword="null"/>.
