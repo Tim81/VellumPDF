@@ -347,7 +347,7 @@ internal static class XrefReconstructor
         // when what follows it doesn't parse.
         xref[objNum] = XrefEntry.Uncompressed(start, generation);
 
-        var probeParser = new PdfObjectParser(data, start);
+        var probeParser = PdfObjectParser.CreateForScan(data, start);
         HeaderProbeResult probe;
         try
         {
@@ -687,7 +687,7 @@ internal static class XrefReconstructor
 
             if (IsDigitByte(b) && TryMatchObjectHeaderShape(span, pos, out var objNum, out var generation, out _))
             {
-                var probeParser = new PdfObjectParser(data, pos);
+                var probeParser = PdfObjectParser.CreateForScan(data, pos);
                 try
                 {
                     var probe = probeParser.ProbeIndirectObjectHeader();
@@ -1708,14 +1708,15 @@ internal static class XrefReconstructor
         if (startPos >= data.Length)
             return (data.Length, null);
 
-        var parser = new PdfObjectParser(data, startPos);
-        try
+        // Scan mode (#610): this call fails at nearly every byte of a hostile run, so the failure
+        // is reported by return value instead of by an exception unwound through every nesting level.
+        var parser = PdfObjectParser.CreateForScan(data, startPos);
+        if (parser.TryParseObjectScan(out var value))
         {
-            var value = parser.ParseObject();
             charge(Math.Max(0, parser.Position - startPos));
             return (parser.Position, value);
         }
-        catch (InvalidDataException)
+        else
         {
             charge(Math.Max(1, parser.Position - startPos));
             // Resync minimally past the failure — +2 past a failed '<<' start, +1 otherwise —
