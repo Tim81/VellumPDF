@@ -121,11 +121,48 @@ internal static class PdfTreeNodes
     /// stream must be indirect (ISO 32000-2, 7.9.6: "Stream objects shall be specified by indirect object
     /// references"), so a <see cref="PdfStream"/> passed directly is refused too; pass the reference the
     /// registry returned for it. A <see cref="PdfIndirectObject"/> is the "N G obj … endobj" wrapper, which
-    /// cannot be written inside an array, so it is refused as well.
+    /// cannot be written inside an array, so it is refused as well. The same two rules apply at any depth of
+    /// a direct array or dictionary, so a direct <see cref="PdfStream"/> or wrapper nested inside one is
+    /// refused; the walk stops at an indirect reference, whose target it does not follow, and visits a shared
+    /// or cyclic object once.
     /// </summary>
     internal static void ValidateValue(PdfObject? value, string parameterName)
     {
         ArgumentNullException.ThrowIfNull(value, parameterName);
+
+        // A scalar value, the usual case, needs no walk and no allocation.
+        if (value is not (PdfArray or PdfDictionary))
+        {
+            RefuseIfNotAllowedDirect(value, parameterName);
+            return;
+        }
+
+        // Iterative, with a visited set: a direct array can be nested to any depth and can contain itself.
+        var pending = new Stack<PdfObject>();
+        var seen = new HashSet<PdfObject>(ReferenceEqualityComparer.Instance);
+        pending.Push(value);
+        while (pending.Count > 0)
+        {
+            var current = pending.Pop();
+            switch (current)
+            {
+                case PdfArray array when seen.Add(array):
+                    for (var i = 0; i < array.Count; i++)
+                        pending.Push(array[i]);
+                    break;
+                case PdfDictionary dictionary when seen.Add(dictionary):
+                    foreach (var entry in dictionary.Entries)
+                        pending.Push(entry.Value);
+                    break;
+                default:
+                    RefuseIfNotAllowedDirect(current, parameterName); // does nothing for a scalar or a visited container
+                    break;
+            }
+        }
+    }
+
+    private static void RefuseIfNotAllowedDirect(PdfObject value, string parameterName)
+    {
         if (value is PdfStream)
             throw new ArgumentException(
                 "A stream value must be passed as an indirect reference: ISO 32000-2, 7.9.6 requires stream objects in a tree to be indirect.",

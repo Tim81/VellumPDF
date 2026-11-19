@@ -18,7 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   entries are three levels deep. Keys sort by unsigned byte value, and `/Limits` sit on every
   node except the root, which both editions of the standard require. A duplicate key, a null key or
   value, a name-tree key over 32,767 bytes, a number-tree key outside the 32-bit signed range, and a
-  direct stream value are refused. An empty tree is written as a root with an empty array.
+  stream value that is direct, or nested inside a direct array or dictionary value, are refused. An empty tree is written as a root with an empty array.
   `qpdf` 12.4.2 `--check` orders name-tree keys after converting them to UTF-8 rather than byte by
   byte, so it reports a tree in correct byte order as unsorted for some keys outside printable
   ASCII; the tests check that range by reading the file back instead.

@@ -5,7 +5,8 @@ namespace VellumPdf.Core;
 
 /// <summary>
 /// Builds a number tree (ISO 32000-2:2020, 7.9.7): keys are integers in ascending numerical order, and the
-/// entries array is named <c>/Nums</c>. Internal: page labels and the structure parent tree call it.
+/// entries array is named <c>/Nums</c>. Internal. Nothing calls it yet; it will be used by named destinations
+/// and page labels (#262) and embedded files (#242).
 /// </summary>
 /// <remarks>
 /// Node layout, <c>/Limits</c> and the no-limits-on-the-root rule are as for <see cref="NameTreeWriter"/>
@@ -26,16 +27,17 @@ internal static class NumberTreeWriter
     /// <b>No entries.</b> The result is a root holding an empty <c>/Nums</c> array; a caller with
     /// nothing to map should leave the catalog entry out instead.
     /// <para>The key range is that of a 32-bit signed integer: ISO 32000-1 Table C.1 gives -2,147,483,648 to
-    /// 2,147,483,647, and ISO 19005-2, 6.1.13 holds a PDF/A-2 file to it (summarised in this repository's
-    /// notes on that part). ISO 32000-2, C.2 no longer states the figure. Value rules are those of
-    /// <see cref="NameTreeWriter"/>.</para>
+    /// 2,147,483,647, and ISO 19005-2, 6.1.13 holds a PDF/A-2 file to it. The repository does not hold that
+    /// part, but its own <c>NumericLimitsRule</c> enforces the same range. ISO 32000-2, C.2 no longer states
+    /// the figure; its Table C.1 says only that integer values "can often be expressed within 32 bits".
+    /// Value rules are those of <see cref="NameTreeWriter"/>.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="entries"/> or <paramref name="registry"/>
     /// is <see langword="null"/>, or an entry's value is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">A key is below -2,147,483,648 or above
     /// 2,147,483,647.</exception>
-    /// <exception cref="ArgumentException">Two entries have the same key, or a value is a direct
-    /// <see cref="PdfStream"/> or a <see cref="PdfIndirectObject"/>.</exception>
+    /// <exception cref="ArgumentException">Two entries have the same key, or a value is, or directly
+    /// contains, a <see cref="PdfStream"/> or a <see cref="PdfIndirectObject"/>.</exception>
     internal static PdfDictionary Write(IEnumerable<KeyValuePair<long, PdfObject>> entries, PdfObjectRegistry registry)
     {
         ArgumentNullException.ThrowIfNull(entries);

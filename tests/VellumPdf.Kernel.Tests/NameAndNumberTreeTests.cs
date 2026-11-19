@@ -60,7 +60,7 @@ public sealed class NameAndNumberTreeTests
     // byte as 7.9.6 says. Measured: --check reports "keys are not sorted" for a tree whose two keys are
     // the single bytes 0x7F and 0x80, which is byte order, and for 20 of the 254 adjacent single-byte
     // pairs 0x01..0xFF (24, 25, 28, 29, 31, 127, 128, 131, 132, 133, 135, 138, 139, 140, 142, 148, 153,
-    // 159, 160 and 173 as the lower byte). Printable ASCII is the range where both orders agree, so the
+    // 159, 160 and 173 as the lower byte). Printable ASCII is a range where both orders agree, so the
     // qpdf fixture stays inside it; the byte-order claim for the rest is pinned by the Reader walk above.
     private static List<byte[]> PrintableAsciiKeys(int count, int seed)
     {
@@ -364,6 +364,36 @@ public sealed class NameAndNumberTreeTests
         // The reference to the same stream is what is allowed.
         var root = NameTreeWriter.Write([new([1], registry.Add(stream))], registry);
         Assert.IsType<PdfIndirectReference>(((PdfArray)root.Get(new PdfName("Names"))!)[1]);
+    }
+
+    [Fact]
+    public void Trees_refuseAStreamOrWrapperNestedInADirectArrayOrDictionary()
+    {
+        var registry = new PdfObjectRegistry();
+        var stream = new PdfStream([1, 2, 3]);
+        var wrapper = new PdfIndirectObject(7, new PdfInteger(1));
+        PdfObject[] nested =
+        [
+            new PdfArray([new PdfInteger(1), stream]),
+            new PdfDictionary().Set(new PdfName("S"), stream),
+            new PdfArray([new PdfDictionary().Set(new PdfName("D"), new PdfArray([stream]))]),
+            new PdfArray([wrapper]),
+        ];
+        foreach (var value in nested)
+        {
+            Assert.Throws<ArgumentException>(() => NameTreeWriter.Write([new([1], value)], registry));
+            Assert.Throws<ArgumentException>(() => NumberTreeWriter.Write([new(1, value)], registry));
+        }
+
+        // A reference to the stream, at any depth, is what is allowed.
+        var reference = registry.Add(stream);
+        var ok = new PdfArray([new PdfDictionary().Set(new PdfName("D"), new PdfArray([reference]))]);
+        NameTreeWriter.Write([new([1], ok)], registry);
+
+        // A direct array that contains itself is visited once rather than looped on.
+        var cycle = new PdfArray();
+        cycle.Add(cycle);
+        NameTreeWriter.Write([new([1], cycle)], registry);
     }
 
     [Fact]
