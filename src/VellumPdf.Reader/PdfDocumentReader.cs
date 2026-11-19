@@ -439,6 +439,9 @@ public sealed partial class PdfDocumentReader : IDisposable
         foreach (var containerObjNum in _objStmCache.Keys.Order())
         {
             var cached = _objStmCache[containerObjNum];
+            // Members whose header offsets coincide would otherwise each parse the same bytes again:
+            // one parse per absolute offset, whatever the member count (#610).
+            var parsedAt = new Dictionary<int, PdfObject?>();
             var orderedMembers = cached.OffsetMap
                 .OrderBy(kv => kv.Value)
                 .ThenBy(kv => kv.Key)
@@ -446,7 +449,7 @@ public sealed partial class PdfDocumentReader : IDisposable
 
             foreach (var objNum in orderedMembers)
             {
-                if (TryParseObjectStreamMemberDirect(cached, objNum) is not PdfDictionary d || !IsCatalogType(d))
+                if (TryParseObjectStreamMemberDirect(cached, objNum, parsedAt) is not PdfDictionary d || !IsCatalogType(d))
                     continue;
 
                 _xref[objNum] = XrefEntry.InObjStm(containerObjNum, 0);
@@ -477,7 +480,8 @@ public sealed partial class PdfDocumentReader : IDisposable
     /// what it cannot reach.
     /// </summary>
     private static PdfObject? TryParseObjectStreamMemberDirect(
-        (byte[] Body, int First, int N, Dictionary<int, int> OffsetMap) cached, int objNum)
+        (byte[] Body, int First, int N, Dictionary<int, int> OffsetMap) cached, int objNum,
+        Dictionary<int, PdfObject?> parsedAt)
     {
         var (body, first, _, offsetMap) = cached;
         if (!offsetMap.TryGetValue(objNum, out var relOffset))
@@ -486,12 +490,21 @@ public sealed partial class PdfDocumentReader : IDisposable
             return null;
 
         var absoluteOffset = first + relOffset;
+        if (parsedAt.TryGetValue(absoluteOffset, out var seen))
+            return seen;
+
+        // B3 keeps only a catalog, and a catalog is a dictionary, so a member that does not start
+        // with '<<' cannot be one and is not parsed at all. For one that does, scan mode (#610)
+        // recognises it before building it, so a failing member costs a few objects instead of an
+        // exception from nesting depth 257 (75 KB each, 1.2 GB for a 117 KB file on v2.3.3).
         var mem = new ReadOnlyMemory<byte>(body, absoluteOffset, body.Length - absoluteOffset);
-        // Scan mode (#610): B3 tries every member of every container, so a container whose header
-        // points many members at one run of '[' fails once per member, and failing by exception
-        // from nesting depth 257 cost about 75 KB each (1.2 GB for a 117 KB file on v2.3.3).
         var parser = PdfObjectParser.CreateForScan(mem, 0);
-        return parser.TryParseObjectScan(out var value) ? value : null;
+        PdfObject? result = null;
+        if (parser.StartsWithDictionary() && parser.TryParseObjectScan(out var value))
+            result = value;
+
+        parsedAt[absoluteOffset] = result;
+        return result;
     }
 
     /// <summary>

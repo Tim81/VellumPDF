@@ -139,7 +139,9 @@ public sealed class ScanModeParserTests
         { "stray dict close", "[>>]" },
         { "out-of-range reference object", "[4294967297 0 R]" },
         { "valid nested", "[1 [2 <</A [3]>>] (s) <41> /N 1 0 R null true]" },
-        { "depth 256 closes", "[[[[" },
+        { "unterminated nested arrays", "[[[[" },
+        { "256 deep, all closed", new string('[', 256) + new string(']', 256) },
+        { "257 deep, all closed", new string('[', 257) + new string(']', 257) },
     };
 
     [Theory]

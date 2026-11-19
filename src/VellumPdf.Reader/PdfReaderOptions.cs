@@ -65,11 +65,28 @@ public sealed class PdfReaderOptions
     /// <para>
     /// <strong>The work budget bounds bytes the scan advances, not bytes it allocates or CPU per
     /// byte.</strong> See <see cref="ReconstructionBudgetMultiplier"/>. A hostile file therefore
-    /// costs up to the budget's worth of scanning even when it recovers nothing, and
-    /// <see cref="PdfReader.Open(byte[], PdfReaderOptions)"/> then throws
-    /// <see cref="InvalidDataException"/>.
+    /// costs up to the budget's worth of scanning even when it recovers nothing.
+    /// </para>
+    /// <para>
+    /// <strong>Two exceptions come out of a failed reconstruction, and which one depends on whether the
+    /// file carries encryption evidence.</strong> <see cref="PdfReader.Open(byte[], PdfReaderOptions)"/>
+    /// throws <see cref="InvalidDataException"/> when the scan finds no object headers, runs out of
+    /// budget with no encryption evidence anywhere in the file, or finds no usable document catalog.
+    /// It throws <see cref="UnsupportedPdfFeatureException"/> instead when the file has an
+    /// <c>/Encrypt</c> that reconstruction cannot attach to a Standard security handler (a public-key
+    /// handler, or a dictionary it cannot classify), because carrying on would hand back ciphertext as
+    /// if it were content. A caller that catches only <see cref="InvalidDataException"/> will miss the
+    /// second.
     /// </para>
     /// </summary>
+    /// <exception cref="InvalidDataException">
+    /// Thrown by <see cref="PdfReader.Open(byte[], PdfReaderOptions)"/> when reconstruction is on and
+    /// recovers nothing usable and the file has no encryption evidence.
+    /// </exception>
+    /// <exception cref="UnsupportedPdfFeatureException">
+    /// Thrown by <see cref="PdfReader.Open(byte[], PdfReaderOptions)"/> when reconstruction is on and
+    /// the file has encryption evidence that cannot be carried into the recovered trailer.
+    /// </exception>
     public bool AllowReconstruction { get; init; }
 
     /// <summary>
@@ -112,8 +129,9 @@ public sealed class PdfReaderOptions
     /// <para>
     /// <strong>The budget counts bytes the scan advances over, one charge per parse attempt, not
     /// bytes allocated.</strong> A malformed construct is charged the bytes its failed parse
-    /// consumed and the scan resumes one byte later, so a run of openers is parsed again from every
-    /// byte until the budget is spent: about 1 MiB of advance for any file up to 128 KiB at the
+    /// consumed and the scan resumes one byte after the start (two bytes after a failed <c>&lt;&lt;</c>,
+    /// and just after <c>obj</c> for a failed <c>N G obj</c> header), so a run of openers is parsed
+    /// again from every byte until the budget is spent: about 1 MiB of advance for any file up to 128 KiB at the
     /// default. Allocation per advanced byte depends on the input's shape, and this option does not
     /// bound it. Measured on net10.0 in Release, a 4 KiB run of <c>[</c> allocates about 0.6 MB and
     /// a 4 KiB run of <c>[1[1</c> about 0.3 MB (v2.3.3: 293 MB and 192 MB). Do not rely on a

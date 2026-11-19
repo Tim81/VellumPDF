@@ -27,18 +27,20 @@ internal sealed class PdfObjectParser
     private int _depth;
 
     // Scan mode (#610), used only by the cross-reference reconstruction walk. A failed parse there
-    // is the ordinary case, not the exceptional one: the walk resyncs one byte later and parses
-    // again, so a run of '[' fails at every byte of the run. Failing by exception from nesting
-    // depth d unwinds about 2d frames and the runtime allocates a stack-trace record for each, which
-    // measured at roughly 250-300 bytes per nesting level per failed start (293 MB for a 4 KiB run
-    // of '[' before this change), and building the objects the failed parse passed (an integer, a
-    // name, a list) cost a further 50 to 150 bytes per level.
+    // is the ordinary case, not the exceptional one: the walk resyncs after the failure and parses
+    // again, so a run of '[' fails at every byte of the run. Failing by exception from nesting depth
+    // d costs allocation in proportion to d: a parse of 300 '[' (it fails at the 257th) measured
+    // 291 bytes per level, 100 unterminated '[' measured 205, and a successful 256-deep '[...]'
+    // measured 175 (direct calls to ParseObject, net10.0 Release). Those totals are what was
+    // measured; how much of a failing parse's figure is the exception and how much the objects it
+    // built before failing was not separated. On v2.3.3 a 4 KiB run of '[' therefore allocated 293 MB.
     //
     // Scan mode is therefore a recognizer: it walks the same tokens and nesting, applies exactly the
     // checks the throwing parser applies, and builds nothing. A failure is a return value, at the
     // lexer position the throw would have left. Only when the recognizer accepts does
-    // TryParseObjectScan parse the same span again with the ordinary parser to build the object,
-    // which is the one place that allocates in proportion to what it keeps. Any exception type other
+    // TryParseObjectScan parse the same span again with the ordinary parser to build the object, so
+    // allocation on the accept path is in proportion to the span accepted: the walk then advances
+    // past that span, and Phase B3 parses each distinct member offset once. Any exception type other
     // than InvalidDataException still propagates unchanged.
     private readonly bool _scan;
 
@@ -123,8 +125,40 @@ internal sealed class PdfObjectParser
 
         _lexer.Seek(start);
         _depth = 0;
-        value = ParseObject();
+        try
+        {
+            value = ParseObject();
+        }
+        catch (InvalidDataException)
+        {
+            // The recognizer accepted what the parser refuses. They are meant to agree exactly, and a
+            // test pins that, but if a later edit lets them diverge, the answer must still be the one
+            // the throwing parser gives: a failure, at the position it threw from, as in v2.3.3. Without
+            // this the divergence would escape from PdfReader.Open instead of being resynced past.
+            value = null;
+            return false;
+        }
+
         return true;
+    }
+
+    /// <summary>
+    /// Whether the next token is <c>&lt;&lt;</c>, after whitespace and comments, without consuming
+    /// anything past them. A parse that returns a <see cref="PdfDictionary"/> must start with it, so a
+    /// caller that wants only dictionaries can refuse everything else without parsing. A lexer failure
+    /// while skipping counts as "no", as it does for <see cref="TryParseObjectScan"/>.
+    /// </summary>
+    internal bool StartsWithDictionary()
+    {
+        try
+        {
+            _lexer.SkipWhitespaceAndComments();
+            return !_lexer.AtEnd && _lexer.TryPeek() == (byte)'<' && PeekIsDict();
+        }
+        catch (InvalidDataException)
+        {
+            return false;
+        }
     }
 
     // The probe's caller catches InvalidDataException and reads Position, so a recognizer failure is

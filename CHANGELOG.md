@@ -55,14 +55,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - **`PdfReader.Open` with `AllowReconstruction = true` no longer allocates hundreds of megabytes on a
-  short run of `[` (#610).** The reconstruction walk resyncs one byte after a failed construct, so a run
-  of `[` starts a fresh parse at every byte, and each parse failed by an exception raised at nesting
-  depth 257 and unwound through two frames per level. On v2.3.3 that cost about 72 KB per start and the
+  short run of `[` (#610).** The reconstruction walk resumes one byte after a failed construct (two bytes
+  after a failed `<<`, and just after `obj` for a failed `N G obj` header), so a run of `[` starts a
+  fresh parse at every byte, and each parse failed by an exception raised at nesting depth 257 and
+  unwound through every level. On v2.3.3 that cost about 72 KB per start and the
   1 MiB work budget, which counts bytes advanced rather than bytes allocated, allowed about 4,000
   starts: 293 MB for a 4 KiB run, about 304 MB for runs from 8 KiB to 64 KiB, and 609 MB at 256 KiB
   (measured on net10.0, Release, one `Open` call after a warm-up call). The same files now allocate
   592 KB, 591 KB and 1.18 MB. Allocation per failed start was already proportional to the bytes the
-  walk advanced; what changed is the constant, from about 280 bytes per byte advanced to a few. The
+  walk advanced; what changed is the constant, from about 280 bytes allocated per byte advanced (293
+  MB over the 1 MiB budget) to about 0.56 for a run of `[`. The
   walk now parses in a scan mode that recognises a construct without building anything (no integer,
   name or container) and reports a malformed one by return value, at the same position and with the
   same charge; only a span it accepts is parsed again, once, by the ordinary parser. The shapes that
@@ -70,9 +72,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and at 256 KiB from 414 MB to 592 KB. Which files open, what they open to, and which refuse
   (including the "could not scan the file within its cost budget" refusal) are unchanged. Runs of
   `<<` still cost about 72 bytes per input byte, the objects each failed start constructs, down from
-  about 416. Reconstruction's last-resort catalog search had the same cost: it parses every
-  object-stream member and fails once per member, so a 117 KB file whose members all point at a run
-  of `[` allocated 1.2 GB on v2.3.3 and now allocates 5.8 MB. `AllowReconstruction` and
+  about 416. Reconstruction's last-resort catalog search had the same cost: it parsed every
+  object-stream member, so a 117 KB file whose members all point at a run of `[` allocated 1.2 GB on
+  v2.3.3 and now allocates 4.5 MB, and 4,000 members pointing at one 4,000-element array (35 KB)
+  allocated 1.16 GB and now allocate 1.09 MB. It now skips a member that does not start with `<<`
+  (it keeps only a catalog, which is a dictionary) and parses each distinct member offset once. `AllowReconstruction` and
   `ReconstructionBudgetMultiplier` now document that the budget bounds bytes advanced, not
   allocation.
 - **Cost-bound tests no longer assert on elapsed time (#400, #456).** A `Stopwatch` checked after a
