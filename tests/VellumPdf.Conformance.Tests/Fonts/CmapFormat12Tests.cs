@@ -404,30 +404,39 @@ public sealed class CmapFormat12Tests
 
     /// <summary>
     /// The glyf chapter's composite record names a component glyph by index, so an index at or past
-    /// numGlyphs names nothing. The first component of U+00E9 is rewritten to numGlyphs (refused) and
-    /// to numGlyphs - 1 (accepted), in the format-12-only font; the same rewrite on the full font is
-    /// not reported as NotSupportedException.
+    /// numGlyphs names nothing. A component of U+00E9 is rewritten to numGlyphs (refused) and to
+    /// numGlyphs - 1 (accepted), for the first component and for the second, which the walk reaches
+    /// only by stepping over the first record's arguments and transform; the same rewrite on the
+    /// full font (format 4 present) is not reported as NotSupportedException.
     /// </summary>
-    [Fact]
-    public void FormatTwelveOnlyFont_compositeComponentPastNumGlyphs_isRefusedAsNotSupported()
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public void FormatTwelveOnlyFont_compositeComponentPastNumGlyphs_isRefusedAsNotSupported(int componentIndex)
     {
         var full = LoadAsset("DejaVuSans.ttf");
         var only12 = WithCmap(full, Subtables(full).Where(s => s.Platform == 3 && s.Format == 12));
         var numGlyphs = U16(only12, FindTable(only12, "maxp").Offset + 4);
         var gid = new TrueTypeFontEmbedder(only12, "F1").GetGlyphId(0xE9);
 
-        var atEnd = WithFirstComponent(only12, gid, numGlyphs);
-        var lastGlyph = WithFirstComponent(only12, gid, numGlyphs - 1);
+        var atEnd = WithComponent(only12, gid, componentIndex, numGlyphs);
+        var lastGlyph = WithComponent(only12, gid, componentIndex, numGlyphs - 1);
 
         var ex = Assert.Throws<NotSupportedException>(() => new TrueTypeFontEmbedder(atEnd, "F1"));
         Assert.Contains($"composite glyph {gid} names component glyph {numGlyphs}, but the font has {numGlyphs} glyph(s)", ex.Message);
         _ = new TrueTypeFontEmbedder(lastGlyph, "F1");
-        var control = Record.Exception(() => new TrueTypeFontEmbedder(WithFirstComponent(full, gid, numGlyphs), "F1"));
+        var control = Record.Exception(() => new TrueTypeFontEmbedder(WithComponent(full, gid, componentIndex, numGlyphs), "F1"));
         Assert.False(control is NotSupportedException, "the damage is not what is being refused");
     }
 
-    /// <summary>The font with the first component of composite glyph <paramref name="gid"/> rewritten to name <paramref name="component"/>.</summary>
-    private static byte[] WithFirstComponent(byte[] font, int gid, int component)
+    /// <summary>
+    /// The font with the glyphIndex of component <paramref name="componentIndex"/> of composite glyph
+    /// <paramref name="gid"/> rewritten to <paramref name="component"/>. Written from the glyf
+    /// chapter's record layout (flags, glyphIndex, two arguments of 2 or 4 bytes, an optional
+    /// transform of 2, 4 or 8 bytes, repeated while MORE_COMPONENTS is set), independently of the
+    /// walk in the embedder.
+    /// </summary>
+    private static byte[] WithComponent(byte[] font, int gid, int componentIndex, int component)
     {
         var copy = (byte[])font.Clone();
         var head = FindTable(copy, "head").Offset;
@@ -437,7 +446,17 @@ public sealed class CmapFormat12Tests
         var start = shortOffsets ? U16(copy, loca + 2 * gid) * 2 : (int)U32(copy, loca + 4 * gid);
         var at = glyf + start;
         Assert.True((short)U16(copy, at) < 0, $"glyph {gid} is not composite");
-        Put16(copy, at + 12, component);   // 10-byte header, then flags(2), then glyphIndex(2)
+
+        var record = at + 10;
+        for (var i = 0; i < componentIndex; i++)
+        {
+            var flags = U16(copy, record);
+            Assert.True((flags & 0x0020) != 0, $"glyph {gid} has no component {componentIndex}");
+            record += 4 + ((flags & 0x0001) != 0 ? 4 : 2);
+            record += (flags & 0x0008) != 0 ? 2 : (flags & 0x0040) != 0 ? 4 : (flags & 0x0080) != 0 ? 8 : 0;
+        }
+
+        Put16(copy, record + 2, component);
         return copy;
     }
 
