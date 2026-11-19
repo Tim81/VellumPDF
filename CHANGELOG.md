@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Internal name tree and number tree writers (#241).** `NameTreeWriter` and `NumberTreeWriter`
+  in `VellumPdf.Kernel` build the structures ISO 32000-2, 7.9.6 and 7.9.7 define, which the
+  catalog's `/Names` and `/PageLabels` entries, and later named destinations and embedded files,
+  will hang from. They are `internal`, so there is no public API change and no output change: no
+  document member calls them yet, and wiring them into the catalog is left to the work that
+  consumes them. Up to 64 entries make a root that holds `/Names` (`/Nums`) itself; more are cut
+  into evenly sized leaves of at most 64 entries under groups of at most 64 kids, so 100,000
+  entries are three levels deep. Keys sort by unsigned byte value, and `/Limits` sit on every
+  node except the root, which both editions of the standard require. A duplicate key, a null key or
+  value, a name-tree key over 32,767 bytes, a number-tree key outside the 32-bit signed range, and a
+  direct stream value are refused. An empty tree is written as a root with an empty array.
+  `qpdf` 12.4.2 `--check` orders name-tree keys after converting them to UTF-8 rather than byte by
+  byte, so it reports a tree in correct byte order as unsorted for some keys outside printable
+  ASCII; the tests check that range by reading the file back instead.
+
 ### Changed
 
 - **Every package now targets `net10.0` and `net11.0`, built with the .NET 11 SDK (`global.json`
