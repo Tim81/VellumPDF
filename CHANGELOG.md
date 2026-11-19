@@ -363,7 +363,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   on a good stream threw "already written". Those checks now run **before** the layout, through
   internal members on `PdfDocument` that `VellumPdf.Layout` can now reach, so a refusal leaves the
   document untouched and recoverable, and the kernel's `SaveAsync` checks the destination the same
-  way. A save that threw after its layout had started cannot be undone, so every later save
+  way. A call with two defects, one a save precondition (a null
+  destination, a disposed document, an option conflict, a stream that cannot be written to) and
+  one a layout defect, now reports the precondition, because the precondition is checked before
+  anything is laid out and so stays retryable; 2.3.3 laid out first and reported the layout
+  defect. A retry after such a precondition failure saves the document once: 2.3.3 laid it out a
+  second time and wrote two pages after a null destination or an option conflict, which is a
+  deliberate output change, and threw "already written" after a stream that cannot be written to.
+  A save that threw after its layout had started cannot be undone, so every later save
   throws `InvalidOperationException` asking for a new `Document`. That covers a layout that threw,
   and also a step after it: a `SaveAsync` cancelled once the layout had run, or a signature
   placeholder that failed to build. Signing also refuses encryption before the layout now, so

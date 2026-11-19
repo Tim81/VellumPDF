@@ -198,6 +198,38 @@ public sealed class SaveLifecycleTests
         Assert.Equal(1, Pages(ok.ToArray()));
     }
 
+    /// <summary>
+    /// A call with two defects, a save precondition and a layout defect, reports the precondition (the
+    /// maintainer's ruling for #530; 2.3.3 laid out first and reported the layout defect), because a
+    /// precondition is checked before anything is laid out and so stays retryable.
+    /// </summary>
+    [Fact]
+    public void ANullDestination_isReportedBeforeALayoutDefect_asRuled()
+    {
+        using var doc = new Document();
+        doc.Add(new Paragraph("x", new TextStyle { FontSize = double.NaN }));
+
+        Assert.Throws<ArgumentNullException>(() => doc.Save((Stream)null!));
+    }
+
+    /// <summary>
+    /// A save that fails before any layout leaves the document usable, and the retry saves it once:
+    /// 2.3.3 laid out a second time and wrote two pages after a null destination (a deliberate output
+    /// change under #530), and threw "already written" after a stream that cannot be written to.
+    /// </summary>
+    [Fact]
+    public void ARetryAfterAPreconditionFailure_savesTheDocumentOnce()
+    {
+        using var doc = Good();
+        doc.Add(new Paragraph("Hello", Style()));
+        using var readOnly = new MemoryStream(new byte[8], writable: false);
+
+        Assert.Throws<ArgumentNullException>(() => doc.Save((Stream)null!));
+        Assert.Throws<ArgumentException>(() => doc.Save(readOnly));
+
+        Assert.Equal(1, Pages(Save(doc)));
+    }
+
     // ── Unchanged: a document that was written is still written once ─────────
 
     [Fact]
