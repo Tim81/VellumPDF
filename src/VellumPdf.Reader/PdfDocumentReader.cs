@@ -75,6 +75,9 @@ public sealed partial class PdfDocumentReader : IDisposable
     private readonly Dictionary<string, CryptFilterMethod> _cryptFilterTable = new(StringComparer.Ordinal);
     private readonly bool _encryptMetadata = true;
 
+    // False when the trailer carries /Encrypt: file-level strings are then ciphertext.
+    private readonly bool _normalizeEndOfLine;
+
     // Resolved from PdfReaderOptions by ReaderLimits.Resolve (see PdfReader.Open) — the same values
     // XrefParser.Parse and XrefReconstructor.Reconstruct were already handed for this read, so every
     // decode and reconstruction budget check made through this instance agrees with the caller's
@@ -193,6 +196,11 @@ public sealed partial class PdfDocumentReader : IDisposable
         _xref = parseResult.Xref;
         var trailer = parseResult.Trailer;
         Trailer = trailer;
+
+        // Strings that are still ciphertext must keep their bytes (see PdfObjectParser.NormalizeEndOfLine),
+        // and this is the earliest point the trailer says whether the file is encrypted. Every
+        // object-level parse below reads the field, so it is set before any of them runs.
+        _normalizeEndOfLine = !trailer.TryGet(new PdfName("Encrypt"), out var encryptEntry) || encryptEntry is null;
         StartXrefOffset = parseResult.StartXrefOffset;
         Revisions = parseResult.Revisions;
         _crossReferenceStreamOffsets = parseResult.CrossReferenceStreamOffsets;
@@ -499,6 +507,8 @@ public sealed partial class PdfDocumentReader : IDisposable
         // type costs no allocation in proportion to its size, whatever it nests (75 KB per failing
         // member and 1.2 GB for a 117 KB file on v2.3.3; a nested value at every level of a
         // dictionary was built once per level).
+        // The scan reads no string value (only /Type, a name) and the dictionary it returns is
+        // tested for /Type and dropped, so this site has no end-of-line flag to set (#511).
         var mem = new ReadOnlyMemory<byte>(body, absoluteOffset, body.Length - absoluteOffset);
         var parser = PdfObjectParser.CreateForScan(mem, 0);
         PdfObject? result = parser.TryParseCatalogScan(out var catalog) ? catalog : null;
@@ -615,7 +625,7 @@ public sealed partial class PdfDocumentReader : IDisposable
             int actualGeneration;
             if (entry.Kind == XrefEntryKind.Uncompressed)
             {
-                var parser = new PdfObjectParser(Bytes, CheckedOffset(entry.Offset), ResolveLength);
+                var parser = new PdfObjectParser(Bytes, CheckedOffset(entry.Offset), ResolveLength) { NormalizeEndOfLine = _normalizeEndOfLine };
                 var result = parser.ParseIndirectObject();
 
                 if (result.ObjectNumber != objectNumber)
@@ -727,7 +737,7 @@ public sealed partial class PdfDocumentReader : IDisposable
             return null;
         }
 
-        var parser = new PdfObjectParser(Bytes, CheckedOffset(entry.Offset), ResolveLength);
+        var parser = new PdfObjectParser(Bytes, CheckedOffset(entry.Offset), ResolveLength) { NormalizeEndOfLine = _normalizeEndOfLine };
         var result = parser.ParseIndirectObject();
 
         if (result.ObjectNumber != objectNumber)
@@ -1095,7 +1105,7 @@ public sealed partial class PdfDocumentReader : IDisposable
         var absoluteOffset = first + relOffset;
 
         var mem = new ReadOnlyMemory<byte>(body, absoluteOffset, body.Length - absoluteOffset);
-        var parser = new PdfObjectParser(mem);
+        var parser = new PdfObjectParser(mem) { NormalizeEndOfLine = true };
         return parser.ParseObject();
     }
 
@@ -1121,7 +1131,7 @@ public sealed partial class PdfDocumentReader : IDisposable
     private (byte[] Body, int First, int N, Dictionary<int, int> OffsetMap) LoadObjectStreamCore(
         int containerObjNum, XrefEntry containerEntry)
     {
-        var parser = new PdfObjectParser(Bytes, CheckedOffset(containerEntry.Offset), ResolveLength);
+        var parser = new PdfObjectParser(Bytes, CheckedOffset(containerEntry.Offset), ResolveLength) { NormalizeEndOfLine = _normalizeEndOfLine };
         var result = parser.ParseIndirectObject();
 
         if (!result.IsStream)
