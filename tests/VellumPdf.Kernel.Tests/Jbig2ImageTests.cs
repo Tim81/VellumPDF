@@ -2453,8 +2453,10 @@ public sealed class Jbig2ImageTests
         [
             BuildSegment(0, type: 48, pageAssociation: 1, BuildPageInfoSegmentData(8, 1)),
             BuildSegment(1, type: 38, pageAssociation: 1, MmrRegionData()),
-            BuildSegment(2, type: 48, pageAssociation: 2, BuildPageInfoSegmentData(8, 1)),
-            BuildSegment(3, type: 38, pageAssociation: 2, MmrRegionData()),
+            BuildSegment(2, type: 49, pageAssociation: 1, []),
+            BuildSegment(3, type: 48, pageAssociation: 2, BuildPageInfoSegmentData(8, 1)),
+            BuildSegment(4, type: 38, pageAssociation: 2, MmrRegionData()),
+            BuildSegment(5, type: 49, pageAssociation: 2, []),
         ];
         var opts = new ImageLoadOptions { DecodeMode = raster ? ImageDecodeMode.DecodeToRaster : ImageDecodeMode.Passthrough };
 
@@ -2464,7 +2466,7 @@ public sealed class Jbig2ImageTests
         // The same segments with one page load in Passthrough. DecodeToRaster refuses every Annex D file
         // (see Load_AnnexDFile_UnderDecodeToRaster_IsRefused).
         if (!raster)
-            Assert.Equal(8, Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments.Take(2).ToArray()), opts).Width);
+            Assert.Equal(8, Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments.Take(3).ToArray()), opts).Width);
     }
 
     /// <summary>
@@ -2500,10 +2502,11 @@ public sealed class Jbig2ImageTests
         [
             BuildSegment(0, type: 48, pageAssociation: 1, BuildPageInfoSegmentData(8, 1)),
             BuildSegment(1, type: 38, pageAssociation: 1, MmrRegionData()),
+            BuildSegment(2, type: 49, pageAssociation: 1, []),
         ];
         // A random-access file ends with the end-of-file segment, whose header is the last of the headers.
         var file = randomAccess
-            ? RandomAccess(0x00, PageCountOne, [.. segments, BuildSegment(2, 51, 0, [])])
+            ? RandomAccess(0x00, PageCountOne, [.. segments, BuildSegment(3, 51, 0, [])])
             : Sequential(0x01, PageCountOne, segments);
 
         var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(file, new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster }));
@@ -2568,6 +2571,56 @@ public sealed class Jbig2ImageTests
         // only thing wrong; the rows whose segments are the fault are not asserted here.
         if (shape.StartsWith("page count", StringComparison.Ordinal))
             Assert.Equal(8, Jbig2ImageLoader.Load(Embedded(segments)).Width);
+    }
+
+    /// <summary>
+    /// The segment-order, segment-type and end-of-page rules of T.88 for an Annex D file: numbers
+    /// increase through the file (7.2, D.1, D.2), a repeated number is refused although T.88 does not
+    /// say numbers are unique, reserved types are not used (7.3), and a page ends with exactly one
+    /// end-of-page segment that is the last one associated with a page (7.4.9). Each row breaks one rule.
+    /// </summary>
+    [Theory]
+    [InlineData("decreasing numbers", "must increase")]
+    [InlineData("repeated number", "must increase")]
+    [InlineData("reserved type", "reserves")]
+    [InlineData("no end of page", "end-of-page")]
+    [InlineData("two end of page", "end-of-page")]
+    [InlineData("end of page not last", "end-of-page")]
+    public void Load_AnnexDFile_OrderTypeAndEndOfPageShapes_AreRefused(string shape, string expectedMessage)
+    {
+        var page = BuildSegment(0, 48, 1, BuildPageInfoSegmentData(8, 1));
+        byte[][] segments = shape switch
+        {
+            "decreasing numbers" =>
+                [BuildSegment(5, 48, 1, BuildPageInfoSegmentData(8, 1)), BuildSegment(3, 38, 1, MmrRegionData()), BuildSegment(7, 49, 1, [])],
+            "repeated number" => [page, BuildSegment(1, 38, 1, MmrRegionData()), BuildSegment(1, 49, 1, [])],
+            "reserved type" => [page, BuildSegment(1, 46, 1, [0x00]), BuildSegment(2, 38, 1, MmrRegionData()), BuildSegment(3, 49, 1, [])],
+            "no end of page" => [page, BuildSegment(1, 38, 1, MmrRegionData())],
+            "two end of page" => [page, BuildSegment(1, 38, 1, MmrRegionData()), BuildSegment(2, 49, 1, []), BuildSegment(3, 49, 1, [])],
+            _ => [page, BuildSegment(1, 49, 1, []), BuildSegment(2, 38, 1, MmrRegionData())],
+        };
+
+        var sequential = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments)));
+        var randomAccess = Assert.Throws<InvalidDataException>(
+            () => Jbig2ImageLoader.Load(RandomAccess(0x00, PageCountOne, [.. segments, BuildSegment(9, 51, 0, [])])));
+
+        Assert.Contains(expectedMessage, sequential.Message, StringComparison.Ordinal);
+        Assert.Contains(expectedMessage, randomAccess.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>The same segments with all of the rules met load, so the rows above fail for their one rule.</summary>
+    [Fact]
+    public void Load_AnnexDFile_WithIncreasingNumbersAndOneEndOfPage_Loads()
+    {
+        byte[][] segments =
+        [
+            BuildSegment(0, 48, 1, BuildPageInfoSegmentData(8, 1)),
+            BuildSegment(4, 38, 1, MmrRegionData()),
+            BuildSegment(9, 49, 1, []),
+        ];
+
+        Assert.Equal(8, Jbig2ImageLoader.Load(Sequential(0x01, PageCountOne, segments)).Width);
+        Assert.Equal(8, Jbig2ImageLoader.Load(RandomAccess(0x00, PageCountOne, [.. segments, BuildSegment(10, 51, 0, [])])).Width);
     }
 
     /// <summary>The end-of-page segment is framing and stays exempt under DecodeToRaster too.</summary>
@@ -2748,7 +2801,8 @@ public sealed class Jbig2ImageTests
         [
             RawSegment(0, 48, true, [0x00], [], pageAssociation: 1, BuildPageInfoSegmentData(77, 55)),
             RawSegment(1, 38, true, [0x00], [], pageAssociation: 1, [0xB1, 0xB2, 0xB3]),
-            RawSegment(2, 51, true, [0x00], [], pageAssociation: 0, []),
+            RawSegment(2, 49, true, [0x00], [], pageAssociation: 1, []),
+            RawSegment(3, 51, true, [0x00], [], pageAssociation: 0, []),
         ];
         var file = Sequential(0x01, PageCountOne, segments);
 
@@ -2803,12 +2857,14 @@ public sealed class Jbig2ImageTests
             BuildSegment(0, 48, 1, BuildPageInfoSegmentData(64, 48)),
             RawSegment(40, 6, false, LongFormCount(count), referred, pageAssociation: 1, [0xC1, 0xC2]),
             BuildSegment(41, 38, 1, [0xB1, 0xB2, 0xB3]),
+            BuildSegment(42, 49, 1, []),
         ];
 
         var body = BodyOf(Sequential(0x01, PageCountOne, segments));
 
-        // All three came through whole, which they only do if the long header was read to its end.
-        Assert.Equal(segments.SelectMany(x => x).ToArray(), body);
+        // Every segment but the end-of-page framing came through whole, which they only do if the long
+        // header was read to its end.
+        Assert.Equal(segments[..^1].SelectMany(x => x).ToArray(), body);
     }
 
     [Fact]
@@ -2843,11 +2899,12 @@ public sealed class Jbig2ImageTests
             BuildSegment(0, 48, 1, BuildPageInfoSegmentData(64, 48)),
             RawSegment(segmentNumber, 6, false, [0x20], entry, pageAssociation: 1, [0xC1, 0xC2]),
             BuildSegment(segmentNumber + 1, 38, 1, [0xB1, 0xB2, 0xB3]),
+            BuildSegment(segmentNumber + 2, 49, 1, []),
         ];
 
         var body = BodyOf(Sequential(0x01, PageCountOne, segments));
 
-        Assert.Equal(segments.SelectMany(x => x).ToArray(), body);
+        Assert.Equal(segments[..^1].SelectMany(x => x).ToArray(), body);
     }
 
     // (d) Random-access data parts against the end of the file

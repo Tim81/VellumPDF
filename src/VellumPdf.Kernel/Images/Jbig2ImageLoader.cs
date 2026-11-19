@@ -39,8 +39,10 @@ namespace VellumPdf.Images;
 /// <see cref="ImageDecodeMode.Passthrough"/>.</b> A file that breaks T.88 is refused with
 /// <see cref="InvalidDataException"/> naming the clause: a page-information segment that is not on
 /// page 1 (7.2.6, 7.3.2), a segment on any other page (7.2.6), a first segment on page 1 that is not
-/// the page information (7.4.8), a region on no page (7.3.2), or a header page count other than 1
-/// (D.4.3). <see cref="ImageDecodeMode.DecodeToRaster"/> refuses every such file, compliant or not,
+/// the page information (7.4.8), a region on no page (7.3.2), a header page count other than 1
+/// (D.4.3), segment numbers that do not increase through the file (7.2, D.1, D.2; a repeated number
+/// is refused too, though T.88 does not say numbers are unique), a reserved segment type (7.3), or a
+/// page that does not end with exactly one end-of-page segment (7.4.9). <see cref="ImageDecodeMode.DecodeToRaster"/> refuses every such file, compliant or not,
 /// because the raster it writes would render as a negative: it stores the decoded bits unchanged as
 /// <c>/DeviceGray</c> without <c>/Decode</c>, where T.88 reads 1 as black. A file without the header
 /// decodes to the same raster, with the same inversion.</para>
@@ -293,8 +295,26 @@ public static class Jbig2ImageLoader
 
         var firstAssociated = true;
         var firstPageInformation = true;
+        var endOfPageCount = 0;
+        var lastPagedType = -1;
+        long previousNumber = -1;
         foreach (var seg in segments)
         {
+            // 7.2 introduction, D.1 and D.2: "no segment may precede a segment having a lower number
+            // than it". T.88 does not say whether two segments may share a number; a referred-to
+            // segment is named by its number alone, so a repeat is refused too.
+            var number = unchecked((uint)seg.Number);
+            if (number <= previousNumber)
+                throw new InvalidDataException(
+                    $"JBIG2: segment {number} follows segment {previousNumber}, but segment numbers must " +
+                    "increase through the file (T.88 7.2, D.1, D.2).");
+            previousNumber = number;
+
+            // 7.3: "All other segment types are reserved and must not be used."
+            if (!IsAllowedSegmentType(seg.Type))
+                throw new InvalidDataException(
+                    $"JBIG2: segment {number} has type {seg.Type}, which T.88 reserves (T.88 7.3).");
+
             // 7.2.6: "The first page must be numbered 1"; this file has one page, so 0 or 1 only.
             if (seg.PageAssociation is not (0 or 1))
                 throw new InvalidDataException(
@@ -321,6 +341,8 @@ public static class Jbig2ImageLoader
                         $"JBIG2: segment {seg.Number} (type {seg.Type}) is the first segment on page 1, " +
                         "and it is not the page-information segment (T.88 7.4.8).");
                 firstAssociated = false;
+                lastPagedType = seg.Type;
+                if (seg.Type == SegmentTypeEndOfPage) endOfPageCount++;
             }
             else if (IsRegionSegment(seg.Type))
             {
@@ -330,7 +352,18 @@ public static class Jbig2ImageLoader
                     "page (T.88 7.3.2).");
             }
         }
+
+        // 7.4.9: "The last segment that is associated with any page must be an end of page segment.
+        // Each page must have exactly one end of page segment associated with it."
+        if (endOfPageCount != 1 || lastPagedType != SegmentTypeEndOfPage)
+            throw new InvalidDataException(
+                "JBIG2: page 1 must end with exactly one end-of-page segment, and the last segment " +
+                "associated with a page must be that segment (T.88 7.4.9).");
     }
+
+    private static bool IsAllowedSegmentType(int type) => type is
+        0 or 4 or 6 or 7 or 16 or 20 or 22 or 23 or 36 or 38 or 39 or 40 or 42 or 43
+        or 48 or 49 or 50 or 51 or 52 or 53 or 54 or 62;
 
     private static bool IsRegionSegment(int type) => type is
         SegmentTypeIntermediateTextRegion or SegmentTypeImmediateTextRegion
