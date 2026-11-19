@@ -14,8 +14,7 @@ namespace VellumPdf.Document;
 /// <remarks>
 /// <b>What is refused.</b> <see cref="Add"/> throws at the call for a name that breaks the rule of
 /// <see cref="DestinationName"/>, a name already in the table, a <see langword="null"/> page, and a
-/// coordinate that is NaN, infinite or larger in magnitude than 3.403e38 (ISO 32000-1, Table C.1 gives that
-/// as the largest real, and ISO 19005-2, 6.1.13 holds a PDF/A-2 file to it). <see cref="Build"/> throws
+/// coordinate that is not finite or lies beyond ±2,147,483,647. <see cref="Build"/> throws
 /// <see cref="InvalidOperationException"/> for a page the document does not own, because that needs the
 /// document and cannot be known at <see cref="Add"/>.
 /// <para><see cref="Build"/> reads the table and never changes it, so a save that is retried after a
@@ -23,8 +22,11 @@ namespace VellumPdf.Document;
 /// </remarks>
 internal sealed class NamedDestinationTable
 {
-    /// <summary>The largest magnitude of a coordinate, ISO 32000-1 Table C.1 (3.403 x 10^38).</summary>
-    private const double MaxCoordinate = 3.403e38;
+    // PdfReal writes a whole value with no decimal point, so it reaches the file as an integer token, and
+    // Table C.1 of ISO 32000-1 limits an integer to 2,147,483,647 (2^31 - 1). A larger token is out of range
+    // for a reader: qpdf drops the destination and veraPDF fails 6.1.13 of ISO 19005-2 for it. The real
+    // limit of Table C.1 (3.403e38) is therefore not the bound that matters here.
+    private const double MaxCoordinate = 2_147_483_647;
 
     private readonly Dictionary<string, (PdfPage Page, double Left, double Top)> _entries = new(StringComparer.Ordinal);
 
@@ -37,7 +39,7 @@ internal sealed class NamedDestinationTable
     /// </summary>
     /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="page"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="name"/> breaks the rule of <see cref="DestinationName"/>, or is already in the table.</exception>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="left"/> or <paramref name="top"/> is NaN, infinite, or has a magnitude above 3.403e38.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="left"/> or <paramref name="top"/> is not finite or lies beyond ±2,147,483,647.</exception>
     internal void Add(string name, PdfPage page, double left, double top)
     {
         DestinationName.Validate(name, nameof(name));
@@ -99,6 +101,6 @@ internal sealed class NamedDestinationTable
     private static void CheckCoordinate(double value, string paramName)
     {
         if (double.IsNaN(value) || double.IsInfinity(value) || Math.Abs(value) > MaxCoordinate)
-            throw new ArgumentOutOfRangeException(paramName, value, "A destination coordinate must be finite and at most 3.403e38 in magnitude.");
+            throw new ArgumentOutOfRangeException(paramName, value, "A destination coordinate must be finite and within ±2,147,483,647.");
     }
 }

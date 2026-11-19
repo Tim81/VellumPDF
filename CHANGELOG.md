@@ -32,8 +32,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   because 12.4.2 requires a value for page index 0. Letters repeat (27 is `AA`, 53 is `AAA`) rather than
   counting in base 26, as Table 161 describes, and Roman numerals above 3999 add one `M` per thousand,
   a choice of this library because 12.4.2 sets no rule there. An empty table builds nothing and leaves
-  the object numbers alone. A bad name, a duplicate, a coordinate that is not a finite real, a first
-  number below 1, an unpaired surrogate in a prefix and a label over 32,767 characters are refused.
+  the object numbers alone. A bad name, a duplicate, a coordinate that is not finite or lies beyond
+  ±2,147,483,647 (the largest integer of ISO 32000-1, Table C.1; a whole coordinate is written as
+  an integer), a first number below 1, an unpaired surrogate in a prefix and a label over 32,767
+  characters are refused.
 - **The boundaries Layout documents are now pinned as tests.** `BoundaryContractTests` holds 67
   cases (5 facts and 62 theory rows), taken from the probes that produced the sentences in #542:
   which null argument decides when two are null on `DrawContext` and `RendererContext`, that an

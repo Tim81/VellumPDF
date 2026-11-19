@@ -32,6 +32,8 @@ internal static class DestinationName
     /// </summary>
     /// <param name="name">The name to check.</param>
     /// <param name="paramName">The parameter name carried by the exception.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="name"/> is empty, is longer than <see cref="MaxLength"/> characters, or holds a character outside <c>A-Z a-z 0-9 . _ - :</c>.</exception>
     internal static void Validate(string? name, string paramName)
     {
         ArgumentNullException.ThrowIfNull(name, paramName);
@@ -57,6 +59,9 @@ internal static class DestinationName
     /// The name as the bytes of its ASCII characters, which is the key the name tree stores. Applies
     /// <see cref="Validate"/> first, so it throws what that method throws, with the parameter name <c>name</c>.
     /// </summary>
+    /// <param name="name">The name to encode.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="name"/> is empty, is longer than <see cref="MaxLength"/> characters, or holds a character outside <c>A-Z a-z 0-9 . _ - :</c>.</exception>
     internal static byte[] Encode(string name)
     {
         Validate(name, nameof(name));

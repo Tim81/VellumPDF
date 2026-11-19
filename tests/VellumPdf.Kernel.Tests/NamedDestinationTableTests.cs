@@ -70,6 +70,11 @@ public sealed class NamedDestinationTableTests
     [InlineData("a b", "index 1 is U+0020")]
     [InlineData("é", "index 0 is U+00E9")]
     [InlineData("a#b", "index 1 is U+0023")]
+    [InlineData("a/b", "index 1 is U+002F")]
+    [InlineData("a(b", "index 1 is U+0028")]
+    [InlineData("a)b", "index 1 is U+0029")]
+    [InlineData("a%b", "index 1 is U+0025")]
+    [InlineData("a<b", "index 1 is U+003C")]
     [InlineData("a\U0001F600", "index 1 is U+1F600")]
     public void Name_breakingTheRule_isRefused_andTheMessageNamesTheDefect(string name, string expected)
     {
@@ -124,17 +129,36 @@ public sealed class NamedDestinationTableTests
         Assert.Equal(1, table.Count);
     }
 
+    [Fact]
+    public void Add_checksInTheOrderNamePageLeftTopDuplicate()
+    {
+        var table = new NamedDestinationTable();
+        var page = NewPage();
+        table.Add("a", page, 0, 0);
+
+        // Both coordinates bad: left is reported.
+        var both = Assert.Throws<ArgumentOutOfRangeException>(() => table.Add("b", page, double.NaN, double.NaN));
+        Assert.Equal("left", both.ParamName);
+        // A duplicate name with a bad coordinate: the coordinate is reported, not the duplicate.
+        var duplicate = Assert.Throws<ArgumentOutOfRangeException>(() => table.Add("a", page, double.NaN, 0));
+        Assert.Equal("left", duplicate.ParamName);
+        // A bad name with a null page: the name is reported (ArgumentException, not ArgumentNullException).
+        var name = Assert.Throws<ArgumentException>(() => table.Add("a b", null!, 0, 0));
+        Assert.Equal("name", name.ParamName);
+        Assert.Equal(1, table.Count);
+    }
+
     [Theory]
     [InlineData(double.NaN, 0.0, "left")]
     [InlineData(double.PositiveInfinity, 0.0, "left")]
     [InlineData(double.NegativeInfinity, 0.0, "left")]
-    [InlineData(3.404e38, 0.0, "left")]
-    [InlineData(-3.404e38, 0.0, "left")]
+    [InlineData(2147483648.0, 0.0, "left")]
+    [InlineData(-2147483648.0, 0.0, "left")]
     [InlineData(0.0, double.NaN, "top")]
     [InlineData(0.0, double.PositiveInfinity, "top")]
     [InlineData(0.0, double.NegativeInfinity, "top")]
-    [InlineData(0.0, 3.404e38, "top")]
-    [InlineData(0.0, -3.404e38, "top")]
+    [InlineData(0.0, 2147483648.0, "top")]
+    [InlineData(0.0, -2147483648.0, "top")]
     public void Add_refusesACoordinateThatIsNotAFiniteReal(double left, double top, string paramName)
     {
         var table = new NamedDestinationTable();
@@ -144,14 +168,29 @@ public sealed class NamedDestinationTableTests
     }
 
     [Theory]
-    [InlineData(3.403e38)]
-    [InlineData(-3.403e38)]
-    [InlineData(float.MaxValue)]
-    public void Add_acceptsTheLargestRealTheStandardGives(double value)
+    [InlineData(2147483647.0)]
+    [InlineData(-2147483647.0)]
+    public void Add_acceptsTheLargestIntegerTheStandardGives(double value)
     {
         var table = new NamedDestinationTable();
         table.Add("a", NewPage(), value, value);
         Assert.Equal(1, table.Count);
+    }
+
+    [Fact]
+    public void Build_writesTheBoundaryCoordinatesAsIntegerTokensInRange()
+    {
+        // PdfReal writes a whole value with no decimal point, so the file holds an integer token, and
+        // Table C.1 of ISO 32000-1 stops an integer at 2,147,483,647.
+        var registry = new PdfObjectRegistry();
+        var page = NewPage();
+        var pageRef = ReservePage(registry);
+        var table = new NamedDestinationTable();
+        table.Add("a", page, 2147483647.0, -2147483647.0);
+
+        table.Build(registry, new Dictionary<PdfPage, PdfIndirectReference> { [page] = pageRef });
+
+        Assert.Equal("[1 0 R /XYZ 2147483647 -2147483647 null]", ObjectText(registry, 2));
     }
 
     // ---- exact bytes --------------------------------------------------------------------------
@@ -402,9 +441,9 @@ public sealed class NamedDestinationTableTests
             Assert.False(timedOut);
             Assert.True(exit == 0, $"pdfinfo -dests exit {exit}\n{stdout}\n{stderr}");
             var lines = stdout.Split('\n', StringSplitOptions.TrimEntries);
-            Assert.Contains(lines, l => l.StartsWith("1 ", StringComparison.Ordinal) && l.Contains("intro", StringComparison.Ordinal));
-            Assert.Contains(lines, l => l.StartsWith("2 ", StringComparison.Ordinal) && l.Contains("chap-2", StringComparison.Ordinal));
-            Assert.Contains(lines, l => l.StartsWith("3 ", StringComparison.Ordinal) && l.Contains("A.end:3", StringComparison.Ordinal));
+            Assert.True(lines.Any(l => l.StartsWith("1 ", StringComparison.Ordinal) && l.Contains("intro", StringComparison.Ordinal)), stdout);
+            Assert.True(lines.Any(l => l.StartsWith("2 ", StringComparison.Ordinal) && l.Contains("chap-2", StringComparison.Ordinal)), stdout);
+            Assert.True(lines.Any(l => l.StartsWith("3 ", StringComparison.Ordinal) && l.Contains("A.end:3", StringComparison.Ordinal)), stdout);
         }
         finally
         {

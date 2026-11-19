@@ -39,7 +39,7 @@ internal enum PageLabelNumbering
 /// below 1, a style that is not a defined <see cref="PageLabelNumbering"/>, a second range at a start already
 /// in the table, and a prefix that holds an unpaired surrogate or encodes to more than 32,767 bytes.
 /// <see cref="Build"/> throws <see cref="InvalidOperationException"/> for a range that starts at or after the
-/// last page, because that needs the page count.
+/// page count (past the last page), because that needs the page count.
 /// <para><see cref="Build"/> reads the table and never changes it, so a save that is retried after a
 /// precondition failure builds the same objects again.</para>
 /// </remarks>

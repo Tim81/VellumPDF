@@ -76,6 +76,27 @@ public sealed class PageLabelTableTests
     }
 
     [Fact]
+    public void Build_firstNumberTwo_writesSt2()
+    {
+        var table = new PageLabelTable();
+        table.Set(0, PageLabelNumbering.Decimal, null, 2);
+        Assert.Equal("<<\n/Nums [0 <<\n/S /D\n/St 2\n>>]\n>>", Build(table, 1));
+    }
+
+    [Theory]
+    [InlineData((int)PageLabelNumbering.Decimal, "/D")]
+    [InlineData((int)PageLabelNumbering.UpperRoman, "/R")]
+    [InlineData((int)PageLabelNumbering.LowerRoman, "/r")]
+    [InlineData((int)PageLabelNumbering.UpperLetters, "/A")]
+    [InlineData((int)PageLabelNumbering.LowerLetters, "/a")]
+    public void Build_writesTheStyleNameOfTable161(int style, string name)
+    {
+        var table = new PageLabelTable();
+        table.Set(0, (PageLabelNumbering)style, null, 1);
+        Assert.Equal($"<<\n/Nums [0 <<\n/S {name}\n>>]\n>>", Build(table, 1));
+    }
+
+    [Fact]
     public void Build_firstNumberOne_writesNoSt()
     {
         var table = new PageLabelTable();
@@ -273,8 +294,10 @@ public sealed class PageLabelTableTests
     public void Format_knownAnswers(int style, string? prefix, long number, string expected)
         => Assert.Equal(expected, PageLabelFormatter.Format((PageLabelNumbering)style, prefix, number));
 
-    [Fact]
-    public void Format_romanFollowsTheSubtractiveFormForEveryNumberUpTo3999()
+    [Theory]
+    [InlineData((int)PageLabelNumbering.LowerRoman)]
+    [InlineData((int)PageLabelNumbering.UpperRoman)]
+    public void Format_romanFollowsTheSubtractiveFormForEveryNumberUpTo3999(int style)
     {
         // An independent reference: greedy subtraction over the full table, written separately from the formatter.
         (int, string)[] digits = [(1000, "m"), (900, "cm"), (500, "d"), (400, "cd"), (100, "c"), (90, "xc"), (50, "l"), (40, "xl"), (10, "x"), (9, "ix"), (5, "v"), (4, "iv"), (1, "i")];
@@ -290,7 +313,8 @@ public sealed class PageLabelTableTests
                     remaining -= value;
                 }
             }
-            Assert.Equal(expected.ToString(), PageLabelFormatter.Format(PageLabelNumbering.LowerRoman, null, n));
+            var reference = (PageLabelNumbering)style == PageLabelNumbering.UpperRoman ? expected.ToString().ToUpperInvariant() : expected.ToString();
+            Assert.Equal(reference, PageLabelFormatter.Format((PageLabelNumbering)style, null, n));
         }
     }
 
@@ -337,6 +361,11 @@ public sealed class PageLabelTableTests
         // Thousands are one M each: 32,767 M, plus nothing for a remainder of 0.
         Assert.Equal(32_767, PageLabelFormatter.Format(PageLabelNumbering.UpperRoman, null, 32_767_000).Length);
         Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PageLabelNumbering.UpperRoman, null, 32_768_000));
+        // The remainder counts too: 32,766 M and one I fill the bound, 32,767 M and one I pass it, and
+        // 32,766 M with CMXCIX (6 characters) passes it.
+        Assert.Equal(32_767, PageLabelFormatter.Format(PageLabelNumbering.UpperRoman, null, 32_766_001).Length);
+        Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PageLabelNumbering.UpperRoman, null, 32_767_001));
+        Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PageLabelNumbering.UpperRoman, null, 32_766_999));
         Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PageLabelNumbering.LowerRoman, null, long.MaxValue));
     }
 
@@ -345,8 +374,31 @@ public sealed class PageLabelTableTests
     {
         var prefix = new string('p', 32_000);
         Assert.Equal(32_000 + 767, PageLabelFormatter.Format(PageLabelNumbering.UpperLetters, prefix, 19_942).Length);
-        Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PageLabelNumbering.UpperLetters, prefix, 19_943));
-        Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PageLabelNumbering.None, new string('p', 32_768), 1));
+        var over = Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PageLabelNumbering.UpperLetters, prefix, 19_943));
+        Assert.Equal("number", over.ParamName);
+    }
+
+    [Fact]
+    public void Format_decimalCountsItsDigits_againstThePrefix()
+    {
+        var prefix = new string('p', 32_766);
+        Assert.Equal(32_767, PageLabelFormatter.Format(PageLabelNumbering.Decimal, prefix, 1).Length);
+        Assert.Equal("number", Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PageLabelNumbering.Decimal, prefix, 10)).ParamName);
+
+        // The widest long has 19 digits.
+        Assert.Equal(32_767, PageLabelFormatter.Format(PageLabelNumbering.Decimal, new string('p', 32_748), long.MaxValue).Length);
+        Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PageLabelNumbering.Decimal, new string('p', 32_749), long.MaxValue));
+    }
+
+    [Fact]
+    public void Format_prefixAloneOverTheBound_isRefusedWithTheParameterPrefix()
+    {
+        Assert.Equal(32_767, PageLabelFormatter.Format(PageLabelNumbering.None, new string('p', 32_767), 1).Length);
+        foreach (var style in Enum.GetValues<PageLabelNumbering>())
+        {
+            var ex = Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(style, new string('p', 32_768), 1));
+            Assert.Equal("prefix", ex.ParamName);
+        }
     }
 
     [Fact]
@@ -403,7 +455,7 @@ public sealed class PageLabelTableTests
     }
 
     [Fact]
-    public void Build_roundTripsThroughReader_andEveryPageGetsTheLabelItsRangeComputes()
+    public void Build_roundTripsThroughReader_everyRangeKeepsItsStyleAndPrefixAndFirstNumber()
     {
         var (table, pageCount) = FrontMatter();
         var registry = new PdfObjectRegistry();
@@ -431,6 +483,12 @@ public sealed class PageLabelTableTests
             Assert.Equal(range.Prefix, value.Get(new PdfName("P")) is PdfLiteralString p ? Encoding.BigEndianUnicode.GetString(p.Bytes.Span[2..]) : null);
             Assert.Equal(range.First, value.Get(new PdfName("St")) is PdfInteger st ? (int)st.Value : 1);
         }
+    }
+
+    [Fact]
+    public void Format_givesEachPageOfTheFrontMatterRangesItsLabel()
+    {
+        var (_, pageCount) = FrontMatter();
         Assert.Equal(
             ["i", "ii", "iii", "iv", "A-8", "A-9", "A-10", "A-11", "A-12", "A", "B", "Index", "Index", "Index"],
             ExpectedLabels(FrontMatterRanges, pageCount));

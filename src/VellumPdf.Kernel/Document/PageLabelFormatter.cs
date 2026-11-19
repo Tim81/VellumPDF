@@ -7,14 +7,14 @@ namespace VellumPdf.Document;
 
 /// <summary>
 /// Computes the label a reader shows for a page, from the numbering style, prefix and number of its
-/// range (ISO 32000-2, 12.4.2). Internal: Layout calls it for page-number references and turns a refusal
-/// into its own save-time refusal; the Kernel itself never formats a label.
+/// range (ISO 32000-2, 12.4.2). Internal.
 /// </summary>
 /// <remarks>
 /// <b>What is refused.</b> <see cref="Format"/> throws <see cref="ArgumentOutOfRangeException"/> for a number
 /// below 1, for a style that is not a defined <see cref="PageLabelNumbering"/>, and for a label longer than
-/// <see cref="MaxLength"/> characters. The length is worked out arithmetically before anything is allocated,
-/// so a number near <see cref="int.MaxValue"/> in letters (82,595,525 characters) costs nothing.
+/// <see cref="MaxLength"/> characters. The length is worked out arithmetically before anything is allocated
+/// (the digits of a decimal number are counted, not formatted), so a number near <see cref="int.MaxValue"/>
+/// in letters (82,595,525 characters) allocates no buffer for it.
 /// <para><see cref="MaxLength"/> is an allocation bound, chosen to match the string length ISO 19005-2,
 /// 6.1.13 allows for a one-byte encoding. It does not by itself keep a string in a content stream within
 /// that clause when the font uses a two-byte encoding, so a caller that shows the label must apply its own
@@ -45,7 +45,7 @@ internal static class PageLabelFormatter
     /// <para>The number is a <see cref="long"/> because the caller works it out as the range's first number plus
     /// the offset of the page, which passes <see cref="int.MaxValue"/> for a range that starts near it.</para>
     /// </remarks>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="number"/> is below 1, <paramref name="style"/> is not a defined value, or the label, prefix included, is longer than <see cref="MaxLength"/> characters.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="number"/> is below 1, <paramref name="style"/> is not a defined value, or the label, prefix included, is longer than <see cref="MaxLength"/> characters. The parameter name is <c>prefix</c> when the prefix alone is longer than that, and <c>number</c> when the number is what makes the label too long.</exception>
     internal static string Format(PageLabelNumbering style, string? prefix, long number)
     {
         if (!Enum.IsDefined(style))
@@ -54,18 +54,16 @@ internal static class PageLabelFormatter
             throw new ArgumentOutOfRangeException(nameof(number), number, "A page label number must be 1 or more.");
 
         prefix ??= string.Empty;
+        if (prefix.Length > MaxLength)
+            throw new ArgumentOutOfRangeException(nameof(prefix), prefix.Length, $"The label prefix has {prefix.Length} characters; the limit is {MaxLength}.");
         if (style == PageLabelNumbering.None)
-        {
-            CheckLength(prefix.Length, 0, number);
             return prefix;
-        }
 
         string numeric;
         switch (style)
         {
             case PageLabelNumbering.Decimal:
-                // At most 19 digits for a long, so there is nothing to bound before building it.
-                CheckLength(prefix.Length, 0, number);
+                CheckLength(prefix.Length, DigitCount(number), number);
                 numeric = number.ToString(CultureInfo.InvariantCulture);
                 break;
             case PageLabelNumbering.UpperRoman:
@@ -91,6 +89,15 @@ internal static class PageLabelFormatter
     {
         if (prefixLength + numericLength > MaxLength)
             throw new ArgumentOutOfRangeException(nameof(number), number, $"The label would be longer than {MaxLength} characters.");
+    }
+
+    // The number of decimal digits of a positive value.
+    private static int DigitCount(long value)
+    {
+        var digits = 0;
+        for (; value > 0; value /= 10)
+            digits++;
+        return digits;
     }
 
     // 0 to 999 in the subtractive form.
