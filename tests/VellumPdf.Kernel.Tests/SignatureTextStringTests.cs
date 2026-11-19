@@ -207,6 +207,40 @@ public sealed class SignatureTextStringTests
         Assert.Equal(Utf16(name), LiteralAfter(pdf, "/Name"));
     }
 
+    /// <summary>
+    /// U+0000 to U+0017 other than the three the table defines are undefined in PDFDocEncoding
+    /// (Table D.3) and stay one byte, as 2.3.3 wrote them; U+0009, U+000A and U+000D are defined.
+    /// </summary>
+    [Theory]
+    [InlineData(0x01)]
+    [InlineData(0x09)]
+    [InlineData(0x0A)]
+    [InlineData(0x0D)]
+    [InlineData(0x17)]
+    public void ControlBelowU0018_staysOneByte(int codeUnit)
+    {
+        using var cert = CreateTestCertificate();
+
+        var pdf = Sign(With(cert, name: "a" + S(codeUnit) + "b"));
+
+        Assert.Equal(new byte[] { 0x61, (byte)codeUnit, 0x62 }, LiteralAfter(pdf, "/Name"));
+    }
+
+    /// <summary>
+    /// U+001B is not special-cased: it takes the UTF-16BE form like any code in U+0018 to U+001F
+    /// and is written as it stands, which a reader takes for a language escape (7.9.2.2.2). A
+    /// test records the behaviour the documentation describes.
+    /// </summary>
+    [Fact]
+    public void Escape_isWrittenAsItStands_inTheUtf16Form()
+    {
+        using var cert = CreateTestCertificate();
+
+        var pdf = Sign(With(cert, name: "a" + S(0x1B) + "b"));
+
+        Assert.Equal(new byte[] { 0xFE, 0xFF, 0x00, 0x61, 0x00, 0x1B, 0x00, 0x62 }, LiteralAfter(pdf, "/Name"));
+    }
+
     [Fact]
     public void SupplementaryCharacter_isWrittenAsASurrogatePair()
     {

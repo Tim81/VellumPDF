@@ -912,12 +912,13 @@ public sealed class Document : IDisposable
     /// <para>The profile is not parsed, and <paramref name="componentCount"/> is not checked
     /// against it: any non-empty bytes are embedded as the profile.</para>
     /// <para>The identifier and <paramref name="info"/> are written as PDF text strings (ISO 32000-2,
-    /// Table 401): ASCII and Latin-1 text keeps one byte per character, and a value holding a
-    /// character PDFDocEncoding cannot carry as the same byte, such as an en dash, is written as
-    /// UTF-16BE and keeps that character. Up to 2.3.3 such a character was rewritten to a
-    /// best-fit Latin-1 look-alike (<c>-</c> for an en dash) or <c>?</c> without a report. ISO
-    /// 32000-2 expects a registered name here, so a character outside ASCII may be a mistake of a
-    /// different kind; it is not refused.</para>
+    /// Table 401). A value made only of U+0020 to U+007E, U+00A1 to U+00FF except U+00AD, and
+    /// U+0000 to U+0017 is written one byte per character; any other value is written as UTF-16BE
+    /// with a byte order mark and keeps its characters. Up to 2.3.3 a character that Latin-1 cannot
+    /// hold was rewritten to a look-alike (<c>-</c> for an en dash) or to <c>?</c>, with no report.
+    /// Table 401 describes the identifier as a text string identifying the output device or
+    /// production condition, and gives the name of a condition in an industry-standard registry as
+    /// a typical value, so a character outside ASCII is unusual there; it is not refused.</para>
     /// <para>Do not pass bytes that are not an ICC profile, or a count that does not match it. A
     /// later major version will refuse both.</para>
     /// </remarks>

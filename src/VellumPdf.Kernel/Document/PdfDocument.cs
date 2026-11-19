@@ -318,6 +318,15 @@ public sealed class PdfDocument : IDisposable
     /// operators requires an RGB output intent (<paramref name="componentCount"/> = 3).
     /// </para>
     /// </summary>
+    /// <remarks>
+    /// <strong>The identifier is written as a PDF text string.</strong> The identifier and
+    /// <paramref name="info"/> (ISO 32000-2, Table 401) made only of U+0020 to U+007E, U+00A1 to
+    /// U+00FF except U+00AD, and U+0000 to U+0017 are written one byte per character; any other
+    /// value is written as UTF-16BE with a byte order mark and keeps its characters. Up to 2.3.3 a
+    /// character that Latin-1 cannot hold was rewritten to a look-alike (<c>-</c> for an en dash)
+    /// or to <c>?</c>, with no report. Nothing is refused on this account, though Table 401 gives
+    /// the name of a condition in an industry-standard registry as the typical value.
+    /// </remarks>
     /// <param name="iccProfile">The raw ICC profile bytes. Must be non-null and non-empty.</param>
     /// <param name="componentCount">Number of colour components: 1 (Gray), 3 (RGB), or 4 (CMYK).</param>
     /// <param name="outputConditionIdentifier">The OutputConditionIdentifier string (e.g. "sRGB IEC61966-2.1"). Must be non-null.</param>
@@ -342,6 +351,15 @@ public sealed class PdfDocument : IDisposable
     /// ICC profile (4 components). Use this when the document uses DeviceCMYK
     /// (<c>k</c>/<c>K</c>) operators under a PDF/A conformance level.
     /// </summary>
+    /// <remarks>
+    /// <strong>The identifier is written as a PDF text string.</strong> The identifier (ISO
+    /// 32000-2, Table 401), when made only of U+0020 to U+007E, U+00A1 to U+00FF except U+00AD, and
+    /// U+0000 to U+0017 is written one byte per character; any other value is written as UTF-16BE
+    /// with a byte order mark and keeps its characters. Up to 2.3.3 a character that Latin-1 cannot
+    /// hold was rewritten to a look-alike (<c>-</c> for an en dash) or to <c>?</c>, with no report.
+    /// Nothing is refused on this account, though Table 401 gives the name of a condition in an
+    /// industry-standard registry as the typical value.
+    /// </remarks>
     /// <param name="outputConditionIdentifier">The OutputConditionIdentifier string written to the OutputIntent dictionary.</param>
     public void UseCmykOutputIntent(string outputConditionIdentifier = "Generic CMYK") =>
         SetPdfAOutputIntent(CmykIccProfile.Bytes, 4, outputConditionIdentifier);

@@ -31,9 +31,9 @@ public sealed class PdfLiteralString : PdfObject
     }
 
     /// <summary>
-    /// Encodes <paramref name="value"/> as a PDF text string (ISO 32000-2, 7.9.2.2): the compact
-    /// PDFDocEncoding form when every character means the same byte there as in Latin-1, otherwise
-    /// UTF-16BE with a byte order mark.
+    /// Encodes <paramref name="value"/> as a PDF text string (ISO 32000-2, 7.9.2.2): one byte per
+    /// character when every character is U+0000 to U+0017, U+0020 to U+007E, or U+00A1 to U+00FF
+    /// except U+00AD, otherwise UTF-16BE with a byte order mark.
     /// </summary>
     /// <remarks>
     /// No well-formed character is substituted, which is what separates this from
@@ -41,13 +41,23 @@ public sealed class PdfLiteralString : PdfObject
     /// encode into a look-alike (U+0141 becomes <c>L</c>, U+2014 becomes <c>-</c>) and reports
     /// nothing. A lone surrogate, which is not a character, is written as U+FFFD.
     ///
-    /// Latin-1 and PDFDocEncoding (Annex D.2) give the same byte for 0x20 to 0x7E and for 0xA1 to
-    /// 0xFF except 0xAD, so ASCII and Western European text keeps the bytes it always had. The
-    /// codes 0x00 to 0x17 are undefined in PDFDocEncoding and keep their Latin-1 byte, as before.
-    /// The two differ on 0x18 to 0x1F, 0x7F, 0x80 to 0xA0 and 0xAD; a value holding one of those
-    /// takes the UTF-16BE form rather than a byte a reader would show as another character. So
-    /// does a value that starts with the bytes of a byte order mark (U+00FE U+00FF, or U+00EF
-    /// U+00BB U+00BF), since PDFDocEncoding cannot begin that way (7.9.2.2.1, NOTE 3 and 4).
+    /// Latin-1 and PDFDocEncoding give the same byte for U+0020 to U+007E and for U+00A1 to U+00FF
+    /// except U+00AD, so ASCII and Western European text keeps the bytes it always had. Table D.3
+    /// of ISO 32000-2 lists the differences: 0x18 to 0x1F are BREVE through SMALL TILDE, 0x80 to
+    /// 0x9E are BULLET through the z with caron, 0xA0 is U+20AC ("0xa0 0240 U+20AC") where Latin-1
+    /// has the no-break space, 0xAD is marked Undefined, and 0x7F and 0x9F have no character in
+    /// the table. A value holding U+0018 to U+001F, U+007F, U+0080 to U+00A0 or U+00AD takes the
+    /// UTF-16BE form rather than a byte a reader would show as another character, or as none.
+    ///
+    /// The codes 0x00 to 0x17 are a third case. Table D.3 marks them Undefined, except 0x09, 0x0A
+    /// and 0x0D, which are defined (CHARACTER TABULATION, LINE FEED, CARRIAGE RETURN, each with the
+    /// note SR). The undefined ones, such as U+0001, stay one byte as 2.3.3 wrote them; the table
+    /// gives those bytes no other character, so a reader has nothing to mistake them for.
+    ///
+    /// A value that starts with the bytes of a byte order mark (U+00FE U+00FF, or U+00EF U+00BB
+    /// U+00BF) also takes the UTF-16BE form, since PDFDocEncoding cannot begin that way (7.9.2.2.1,
+    /// NOTE 3 and 4). U+001B is not special-cased: in the UTF-16BE form it is written as it stands,
+    /// and a reader takes it for the start of a language escape sequence (7.9.2.2.2).
     /// </remarks>
     internal static PdfLiteralString FromTextString(string value)
     {
@@ -63,7 +73,8 @@ public sealed class PdfLiteralString : PdfObject
         // guillemotright, questiondown) the UTF-8 one: a reader would take either for the mark.
         if (value.Length >= 2 && value[0] == (char)0xFE && value[1] == (char)0xFF)
             return Utf16WithMark(value);
-        if (value.Length >= 3 && value[0] == (char)0xEF && value[1] == (char)0xBB && value[2] == (char)0xBF)
+        if (value.Length >= 3 && value[0] == (char)0xEF && value[1] == (char)0xBB
+            && value[2] == (char)0xBF)
             return Utf16WithMark(value);
 
         return new PdfLiteralString(System.Text.Encoding.Latin1.GetBytes(value));

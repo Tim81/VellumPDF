@@ -91,15 +91,16 @@ public sealed class PropertyValueTypeRealPatternTests
     /// <summary>
     /// The rewrite must accept and refuse exactly what the pattern it replaced did. Every string up
     /// to length 7 over an alphabet holding each token the grammar distinguishes (a digit, the
-    /// point, both exponent letters, both signs, and one character it never accepts): 7^7 =
-    /// 823,543 strings plus the shorter ones.
+    /// point, both exponent letters, both signs, one character it never accepts, and ARABIC-INDIC
+    /// DIGIT THREE, which .NET's <c>\d</c> matches and <c>[0-9]</c> would not): 8^7 = 2,097,152
+    /// strings plus the shorter ones, 2,396,745 in all.
     /// </summary>
     [Fact]
     public void RealPattern_agreesWithThePreviousPatternOnEveryShortString()
     {
         var previous = new Regex(PreviousPattern, RegexOptions.CultureInvariant);
         var current = Current();
-        char[] alphabet = ['0', '.', 'e', 'E', '+', '-', '!'];
+        char[] alphabet = ['0', '.', 'e', 'E', '+', '-', '!', (char)0x0663];
 
         var buffer = new char[7];
         var checkedCount = 0;
@@ -122,7 +123,7 @@ public sealed class PropertyValueTypeRealPatternTests
             }
         }
 
-        Assert.Equal(960_800, checkedCount); // 7^0 + ... + 7^7
+        Assert.Equal(2_396_745, checkedCount); // 8^0 + ... + 8^7
     }
 
     /// <summary>
