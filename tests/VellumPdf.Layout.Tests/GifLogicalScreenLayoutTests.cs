@@ -57,16 +57,21 @@ public sealed class GifLogicalScreenLayoutTests
         Assert.Contains("/Count 1", pdf);
     }
 
+    /// <summary>
+    /// The option is what changes the image's size, so it is what changes whether Layout can place
+    /// it: a 40x2000 image is taller than a page, and Layout refuses an element too tall for one.
+    /// This is the consequence a caller opts into, pinned so the documentation's warning has a
+    /// measurement behind it.
+    /// </summary>
     [Theory]
     [InlineData(null)]
     [InlineData(100.0)]
-    public void PlacedLoad_frameOnATallScreen_isTheScreensSize(double? width)
+    public void PlacedLoad_frameOnATallScreen_isTheScreensSize_andLayoutRefusesItAsTooTall(double? width)
     {
         var image = GifImageLoader.Load(FrameOnATallScreen(), new GifLoadOptions { PlaceOnLogicalScreen = true });
 
-        var pdf = Save(image, width);
-
         Assert.Equal((40, 2000), (image.Width, image.Height));
-        Assert.Contains("/Height 2000", pdf);
+        var ex = Assert.Throws<InvalidOperationException>(() => Save(image, width));
+        Assert.Contains("too tall to fit on a single page", ex.Message);
     }
 }

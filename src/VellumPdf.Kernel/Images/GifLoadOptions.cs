@@ -24,6 +24,10 @@ public sealed record GifLoadOptions
     /// <para>The canvas is allocated at the screen's size, 4 bytes a pixel, so the option costs up
     /// to about 400 MB for a file of a few dozen bytes. Do not enable it for untrusted files
     /// without checking the screen size first.</para>
+    /// <para>The image is as large as the screen, so a Layout document that places it changes
+    /// size with it. A placed image too tall for a page makes the document's save throw
+    /// <see cref="InvalidOperationException"/> (measured with a 40 x 2,000 screen, with and without
+    /// an explicit width).</para>
     /// <para><b>Do not rely on the default being <see langword="false"/>.</b> Version 3.0 may
     /// place the frame by default.</para>
     /// </remarks>
