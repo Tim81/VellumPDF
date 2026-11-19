@@ -54,6 +54,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`GifImageLoader` places the frame on the logical screen (#498).** It decoded the first frame
+  at the frame's own size and read neither the Logical Screen Descriptor's size nor the Image
+  Descriptor's left and top position, so a GIF whose frame covers part of a larger screen came
+  back at a different size and aspect ratio from the one a viewer shows. This is a deliberate
+  output change for those files and no others: the result is now as large as the screen
+  (GIF89a section 18), with the frame at its position (section 20.c.ii and 20.c.iii), and the
+  pixels the frame does not cover are transparent, through an 8-bit `/SMask` with alpha 0 and
+  black stored under it. A frame that fills the screen from the origin decodes to the same bytes
+  as 2.3.3 and gets no soft mask. The Background Color Index (section 18.f) is not used, because
+  it names a colour for the uncovered pixels and the transparent answer invents none. A screen
+  smaller than the frame does not crop it: the result is widened to the frame's far edge, and a
+  screen dimension of zero is handled the same way. A screen whose area would exceed the
+  100-million-pixel limit is not refused; the frame comes back at its own size, as on 2.3.3.
+  Only the first frame is decoded, as before.
 - **`GifEncoder` writes `GIF87a` when it writes only 87a blocks (#499).** It wrote `GIF89a` over a
   Global Color Table, an Image Descriptor, Table Based Image Data and a Trailer, each of which
   lists 87a as its required version, and GIF89a section 17.d.ii says an encoder should use the

@@ -13,6 +13,8 @@ namespace VellumPdf.Images;
 ///   • Global and local colour tables.
 ///   • Interlaced images, deinterlaced to display order (Appendix E).
 ///   • Graphic Control Extension: transparent index → 8-bit /SMask.
+///   • Logical screen: a frame that does not cover the logical screen is placed on it at its
+///     Image Left/Top Position, and the pixels it does not cover are transparent (8-bit /SMask).
 ///   • Animated GIFs: only the first image descriptor is decoded; subsequent frames are ignored.
 ///
 /// Rejected: a file with no image descriptor, an image descriptor truncated before its own fields
@@ -33,6 +35,25 @@ public static class GifImageLoader
     /// read from, a colour table or sub-block chain that runs past the end of the file, a truncated
     /// extension, or dimensions <see cref="ImageLimits.ValidateDimensions"/> refuses. A caller
     /// can guard on the one exception type for all of them rather than several.
+    /// <para><b>The frame is placed on the logical screen.</b> The result is as large as the
+    /// Logical Screen Descriptor says (GIF89a section 18), with the frame at its Image Left and Top
+    /// Position (section 20.c.ii and 20.c.iii). The pixels the frame does not cover are
+    /// transparent: the result carries an /SMask whose alpha is 0 there, and the colour stored
+    /// under them is black. The Background Color Index (section 18.f) is not read and plays no
+    /// part, because it names a colour for those pixels and the transparent answer invents none.
+    /// A frame that fills the screen from its origin, which is what a single-image file from an
+    /// ordinary encoder looks like, is decoded exactly as before and gets no /SMask it did not
+    /// already have from a Graphic Control Extension.</para>
+    /// <para>A screen smaller than the frame it carries is not refused and does not crop the
+    /// frame: the result is widened to the right and bottom edge of the frame, so every pixel the
+    /// file holds is kept. A screen dimension of zero is treated the same way, as a screen the
+    /// frame overflows. Version 2.3.3 returned the frame at its own size and ignored
+    /// the screen and the position, so a file whose frame does not cover its screen decodes to a
+    /// different size now.</para>
+    /// <para>The frame is bounded by <see cref="ImageLimits.ValidateDimensions"/>, as before. A
+    /// screen whose area would exceed the same limit is <b>not</b> refused: the frame is returned
+    /// at its own size, as 2.3.3 did for every file. Do not rely on that; a
+    /// later major may refuse a file whose screen it cannot place the frame on.</para>
     /// <para>A stream carrying more pixels than the image descriptor promises is <b>not</b>
     /// refused: decoding stops once the promised count is produced, so trailing codes are never
     /// read. Do not rely on the overrun being rejected; a later major may make it one.</para>
@@ -56,7 +77,11 @@ public static class GifImageLoader
             gifBytes[5] != 'a')
             throw new InvalidDataException("Not a GIF file.");
 
-        // Logical screen descriptor
+        // Logical screen descriptor, section 18: width(2), height(2), packed(1), background(1),
+        // aspect(1). The background index (byte 11) is deliberately not read; see the remarks on
+        // Load for why the uncovered area is transparent rather than that colour.
+        var screenWidth = gifBytes[6] | (gifBytes[7] << 8);
+        var screenHeight = gifBytes[8] | (gifBytes[9] << 8);
         var globalColorTableFlag = (gifBytes[10] & 0x80) != 0;
         var globalColorTableSize = 2 << (gifBytes[10] & 0x07); // 2^(n+1) entries
 
@@ -84,7 +109,7 @@ public static class GifImageLoader
 
             if (blockType == 0x2C) // Image Descriptor
             {
-                return DecodeImage(gifBytes, ref pos, globalPalette, transparentIndex);
+                return DecodeImage(gifBytes, ref pos, globalPalette, transparentIndex, screenWidth, screenHeight);
             }
 
             if (blockType == 0x21) // Extension
@@ -155,13 +180,15 @@ public static class GifImageLoader
 
     private static PdfImageXObject DecodeImage(
         byte[] data, ref int pos,
-        byte[]? globalPalette, int transparentIndex)
+        byte[]? globalPalette, int transparentIndex, int screenWidth, int screenHeight)
     {
         if (pos + 9 > data.Length)
             throw new InvalidDataException("Truncated GIF image descriptor.");
 
         // Image descriptor layout (pos already pointing past the 0x2C separator):
         //   left(2), top(2), width(2), height(2), packed(1)
+        var left = data[pos] | (data[pos + 1] << 8);
+        var top = data[pos + 2] | (data[pos + 3] << 8);
         var width = data[pos + 4] | (data[pos + 5] << 8);
         var height = data[pos + 6] | (data[pos + 7] << 8);
         var packed = data[pos + 8];
@@ -210,6 +237,27 @@ public static class GifImageLoader
         if (interlaced)
             indices = Deinterlace(indices, width, height);
 
+        // The frame goes on the logical screen (section 18) at its Left/Top Position (section 20).
+        // A screen smaller than the frame's far edge is widened to it rather than cropping, so no
+        // pixel the file holds is lost, and a screen of zero is the same case.
+        var canvasWidth = Math.Max(screenWidth, left + width);
+        var canvasHeight = Math.Max(screenHeight, top + height);
+        if (canvasWidth == width && canvasHeight == height)
+            return FrameOnly(indices, width, height, palette, transparentIndex);
+
+        // Version 2.3.3 returned the frame at its own size for every file, and refusing
+        // one now would turn a file that loaded into one that does not. A screen that cannot be
+        // built within the pixel limit therefore gets the frame as it always did.
+        if ((long)canvasWidth * canvasHeight > ImageLimits.MaxPixels)
+            return FrameOnly(indices, width, height, palette, transparentIndex);
+
+        return FrameOnScreen(
+            indices, width, height, left, top, canvasWidth, canvasHeight, palette, transparentIndex);
+    }
+
+    private static PdfImageXObject FrameOnly(
+        byte[] indices, int width, int height, byte[] palette, int transparentIndex)
+    {
         // Expand indices to RGB. Section 22.a requires every index to be within the active
         // colour table's range, so one that is not makes this a malformed file, and the class
         // contract is InvalidDataException for that. This is a deliberate departure from it: the
@@ -236,6 +284,36 @@ public static class GifImageLoader
         }
 
         return new PdfImageXObject(width, height, rgb, PdfName.FlateDecode, ImageColorSpace.DeviceRgb, 8, sMask);
+    }
+
+    /// <summary>
+    /// Composes the frame onto a larger canvas. Uncovered pixels keep alpha 0 and black colour
+    /// (both arrays start zeroed); covered pixels are opaque unless they carry the transparent
+    /// index. The /SMask is always written here, since the uncovered area needs it.
+    /// </summary>
+    private static PdfImageXObject FrameOnScreen(
+        byte[] indices, int width, int height, int left, int top,
+        int canvasWidth, int canvasHeight, byte[] palette, int transparentIndex)
+    {
+        var rgb = new byte[canvasWidth * canvasHeight * 3];
+        var alpha = new byte[canvasWidth * canvasHeight];
+        for (var y = 0; y < height; y++)
+        {
+            for (var x = 0; x < width; x++)
+            {
+                var src = y * width + x;
+                var dst = (top + y) * canvasWidth + left + x;
+                alpha[dst] = indices[src] == transparentIndex ? (byte)0 : (byte)255;
+                var idx = indices[src] * 3;
+                if (idx + 2 >= palette.Length) continue; // out-of-range index, leave black
+                rgb[dst * 3] = palette[idx];
+                rgb[dst * 3 + 1] = palette[idx + 1];
+                rgb[dst * 3 + 2] = palette[idx + 2];
+            }
+        }
+
+        return new PdfImageXObject(
+            canvasWidth, canvasHeight, rgb, PdfName.FlateDecode, ImageColorSpace.DeviceRgb, 8, new PdfStream(alpha));
     }
 
     // ── GIF LZW decoder ──────────────────────────────────────────────────────
