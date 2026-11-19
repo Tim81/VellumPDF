@@ -171,14 +171,17 @@ public sealed class NoBreakSpaceBundledFontTests
     // ── A handle belongs to the document that embedded it (#544) ─────────────
 
     [Fact]
-    public void RegisterEmbeddedFontUsage_withAHandleFromAnotherDocument_isRefusedNamingTheHandle()
+    public void RegisterEmbeddedFontUsage_withAHandleFromAnotherDocument_isRefusedBySaveNamingTheHandle()
     {
         using var owner = new PdfDocument();
         var foreign = owner.EmbedStandard14Font(Standard14.Courier);
         using var pdf = new PdfDocument();
         var page = pdf.AddPage();
 
-        var ex = Assert.Throws<ArgumentException>(() => pdf.RegisterEmbeddedFontUsage(page, foreign));
+        // The registration is accepted: whether the name is defined is decided at save, once every
+        // UseTrueTypeFont call has been made.
+        pdf.RegisterEmbeddedFontUsage(page, foreign);
+        var ex = Assert.Throws<ArgumentException>(() => pdf.Save(new MemoryStream()));
 
         Assert.Equal("handle", ex.ParamName);
         Assert.Contains("belongs to a different document", ex.Message, StringComparison.Ordinal);
