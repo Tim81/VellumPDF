@@ -18,6 +18,9 @@ namespace VellumPdf.Reader.Tests;
 /// the object-stream container read; the last is equivalent to the stream read, since both take
 /// the flag from the same field and parse the same kind of top-level object, so a stream-dictionary
 /// test stands for both.
+/// Reconstruction's last-resort catalog search (<c>TryParseCatalogScan</c>) has no flag and no
+/// test: it reads only whether a member's own <c>/Type</c> is <c>/Catalog</c>, a name, and the
+/// catalog it binds is read again through the object-stream member site above.
 /// </summary>
 public sealed class PdfReaderEndOfLineNormalisationTests
 {

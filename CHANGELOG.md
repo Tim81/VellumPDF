@@ -8,6 +8,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Internal name tree and number tree writers (#241).** `NameTreeWriter` and `NumberTreeWriter`
+  in `VellumPdf.Kernel` build the structures ISO 32000-2, 7.9.6 and 7.9.7 define, which the
+  catalog's `/Names` and `/PageLabels` entries, and later named destinations and embedded files,
+  will hang from. They are `internal`, so there is no public API change and no output change: no
+  document member calls them yet, and wiring them into the catalog is left to the work that
+  consumes them. Up to 64 entries make a root that holds `/Names` (`/Nums`) itself; more are cut
+  into evenly sized leaves of at most 64 entries under groups of at most 64 kids, so 100,000
+  entries are three levels deep. Keys sort by unsigned byte value, and `/Limits` sit on every
+  node except the root, which both editions of the standard require. A duplicate key, a null key or
+  value, a name-tree key over 32,767 bytes, a number-tree key outside the 32-bit signed range, and a
+  stream value that is direct, or nested inside a direct array or dictionary value, are refused. An empty tree is written as a root with an empty array.
+  `qpdf` 12.4.2 `--check` orders name-tree keys after converting them to UTF-8 rather than byte by
+  byte, so it reports a tree in correct byte order as unsorted for some keys outside printable
+  ASCII; the tests check that range by reading the file back instead.
 - **The boundaries Layout documents are now pinned as tests.** `BoundaryContractTests` holds 67
   cases (5 facts and 62 theory rows), taken from the probes that produced the sentences in #542:
   which null argument decides when two are null on `DrawContext` and `RendererContext`, that an
@@ -106,6 +120,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`PdfReader.Open` with `AllowReconstruction = true` no longer allocates hundreds of megabytes on a
+  short run of `[` (#610).** The reconstruction walk resumes one byte after a failed construct (two bytes
+  after a failed `<<`, and just after `obj` for a failed `N G obj` header), so a run of `[` starts a
+  fresh parse at every byte, and each parse failed by an exception raised at nesting depth 257 and
+  unwound through every level. On v2.3.3 that cost about 72 KB per start and the
+  1 MiB work budget, which counts bytes advanced rather than bytes allocated, allowed about 4,000
+  starts: 293 MB for a 4 KiB run, about 304 MB for runs from 8 KiB to 64 KiB, and 609 MB at 256 KiB
+  (measured on net10.0, Release, one `Open` call after a warm-up call). The same files now allocate
+  592 KB, 591 KB and 1.18 MB. Allocation per failed start was already proportional to the bytes the
+  walk advanced; what changed is the constant, from about 280 bytes allocated per byte advanced (293
+  MB over the 1 MiB budget) to about 0.56 for a run of `[`. The
+  walk now parses in a scan mode that recognises a construct without building anything (no integer,
+  name or container) and reports a malformed one by return value, at the same position and with the
+  same charge; only a span it accepts is parsed again, once, by the ordinary parser. The shapes that
+  carry a leaf at every nesting level improve the most: `[1[1...` at 4 KiB went from 192 MB to 297 KB
+  and at 256 KiB from 414 MB to 592 KB. Which files open, what they open to, and which refuse
+  (including the "could not scan the file within its cost budget" refusal) are unchanged. Runs of
+  `<<` still cost about 72 bytes per input byte, the objects each failed start constructs, down from
+  about 416. Reconstruction's last-resort catalog search had the same cost: it parsed every
+  object-stream member, so a 117 KB file whose members all point at a run of `[` allocated 1.2 GB on
+  v2.3.3 and now allocates 4.5 MB, and 4,000 members pointing at one 4,000-element array (35 KB)
+  allocated 1.16 GB and now allocate 1.09 MB. The search keeps only a dictionary whose own `/Type`
+  is `/Catalog`, so it now decides that from the member's top-level keys without building any
+  nested value, and builds only a member that is one. A member that is not a dictionary, is
+  malformed, or is a dictionary of another type is no longer built, and each distinct member
+  offset is looked at once. A dictionary that nests a 50,000-element array at each of 255 levels
+  (1,323 bytes of FlateDecode data, one member per level) allocated 989.6 MB on v2.3.3, because
+  every member was built in full, and now allocates 509 KB. A run of 255 array openers around the
+  same array (102 KB, uncompressed) went from 987.6 MB to 243 KB. Which files open, and
+  what they open to, are unchanged. `AllowReconstruction` and `ReconstructionBudgetMultiplier` now
+  document that the budget bounds bytes advanced, not allocation, and `AllowReconstruction`
+  documents which exception a failed reconstruction throws by what the scan found: encryption
+  evidence it cannot carry gives `UnsupportedPdfFeatureException`, and every other failure,
+  including the budget running out while it verifies an encrypted file's cross-reference streams,
+  gives `InvalidDataException`.
 - **A raw CRLF, or a raw CR, inside a literal string now reads back as one line feed (#511).** ISO
   32000-2, 7.3.4.2 says an unescaped end-of-line marker in a literal string "shall be treated as a
   byte value of (0Ah), irrespective of whether the end-of-line marker was a CARRIAGE RETURN (0Dh), a
@@ -194,7 +243,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `AcroFormBuilder` writes field text strings its own way and is not changed here. The public XML
   documentation on the four signing properties and the output-intent methods now says all this, and
   replaces the sentence that described the best-fit substitution as the behaviour.
-
 - **`ExternalToolTests.TryRun_CapturesOutputLargerThanTheOsPipeBuffer` no longer times out on a
   loaded machine (test-only change).** Its child was a 20,000-iteration shell echo loop, which hit
   the 30 s limit several times on a loaded Windows machine while passing alone. The child now copies

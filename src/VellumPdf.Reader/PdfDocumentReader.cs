@@ -447,6 +447,9 @@ public sealed partial class PdfDocumentReader : IDisposable
         foreach (var containerObjNum in _objStmCache.Keys.Order())
         {
             var cached = _objStmCache[containerObjNum];
+            // Members whose header offsets coincide would otherwise each parse the same bytes again:
+            // one parse per absolute offset, whatever the member count (#610).
+            var parsedAt = new Dictionary<int, PdfObject?>();
             var orderedMembers = cached.OffsetMap
                 .OrderBy(kv => kv.Value)
                 .ThenBy(kv => kv.Key)
@@ -454,7 +457,7 @@ public sealed partial class PdfDocumentReader : IDisposable
 
             foreach (var objNum in orderedMembers)
             {
-                if (TryParseObjectStreamMemberDirect(cached, objNum) is not PdfDictionary d || !IsCatalogType(d))
+                if (TryParseObjectStreamMemberDirect(cached, objNum, parsedAt) is not PdfDictionary d || !IsCatalogType(d))
                     continue;
 
                 _xref[objNum] = XrefEntry.InObjStm(containerObjNum, 0);
@@ -485,7 +488,8 @@ public sealed partial class PdfDocumentReader : IDisposable
     /// what it cannot reach.
     /// </summary>
     private static PdfObject? TryParseObjectStreamMemberDirect(
-        (byte[] Body, int First, int N, Dictionary<int, int> OffsetMap) cached, int objNum)
+        (byte[] Body, int First, int N, Dictionary<int, int> OffsetMap) cached, int objNum,
+        Dictionary<int, PdfObject?> parsedAt)
     {
         var (body, first, _, offsetMap) = cached;
         if (!offsetMap.TryGetValue(objNum, out var relOffset))
@@ -494,16 +498,23 @@ public sealed partial class PdfDocumentReader : IDisposable
             return null;
 
         var absoluteOffset = first + relOffset;
+        if (parsedAt.TryGetValue(absoluteOffset, out var seen))
+            return seen;
+
+        // B3 keeps only a catalog: a dictionary whose own /Type is /Catalog. TryParseCatalogScan (#610)
+        // decides that by recognising the member without building it, and builds only a member that
+        // is one, so a member that is not a dictionary, is malformed, or is a dictionary of another
+        // type costs no allocation in proportion to its size, whatever it nests (75 KB per failing
+        // member and 1.2 GB for a 117 KB file on v2.3.3; a nested value at every level of a
+        // dictionary was built once per level).
+        // The scan reads no string value (only /Type, a name) and the dictionary it returns is
+        // tested for /Type and dropped, so this site has no end-of-line flag to set (#511).
         var mem = new ReadOnlyMemory<byte>(body, absoluteOffset, body.Length - absoluteOffset);
-        var parser = new PdfObjectParser(mem) { NormalizeEndOfLine = true };
-        try
-        {
-            return parser.ParseObject();
-        }
-        catch (InvalidDataException)
-        {
-            return null;
-        }
+        var parser = PdfObjectParser.CreateForScan(mem, 0);
+        PdfObject? result = parser.TryParseCatalogScan(out var catalog) ? catalog : null;
+
+        parsedAt[absoluteOffset] = result;
+        return result;
     }
 
     /// <summary>
