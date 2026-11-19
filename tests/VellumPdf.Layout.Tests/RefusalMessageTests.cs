@@ -265,7 +265,7 @@ public sealed class RefusalMessageTests
             stream);
     }
 
-/// <summary>
+    /// <summary>
     /// Margins that consume the content box drive the drawn width to zero while the property itself
     /// was never set, which is why the message carries no advice to unset it.
     /// </summary>
