@@ -34,13 +34,14 @@ public sealed class TableElement
     /// <summary>Text style applied to cells that have no explicit style.</summary>
     /// <remarks>
     /// Null means <see cref="TextStyle.Default"/> for cells that have no style of their own.
-    /// Refusals on size, leading and font are on <see cref="TextStyle"/> and are raised from the
-    /// save. A <see cref="TextStyle.LinkUri"/> in it is ignored (#475).
+    /// Refusals on size, leading, font and text colour are on <see cref="TextStyle"/> and are
+    /// raised from the save. A <see cref="TextStyle.LinkUri"/> in it is ignored (#475).
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the style's size or leading is refused; see
-    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
+    /// from this property, when the style's size or leading is refused, or a channel of its text
+    /// colour is not finite; see <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/>
+    /// and <see cref="TextStyle.Color"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not

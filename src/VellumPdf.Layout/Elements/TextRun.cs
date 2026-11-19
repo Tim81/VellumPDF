@@ -19,9 +19,9 @@ namespace VellumPdf.Layout.Elements;
 /// tab or line breaks alone. The save throws <see cref="NullReferenceException"/> there on 2.3.3.
 /// <b>Do not pass a null style.</b> 3.0 refuses it from the constructor, whatever the text, and the
 /// diagnostics channel (#607) will report the saved cases before then.</para>
-/// Refusals on size, leading and font are on <see cref="TextStyle"/> and are raised from the save.
-/// The boundary between this run and the next is drawn as a space unless a line break falls on it;
-/// see <see cref="Paragraph"/>.
+/// Refusals on size, leading, font and text colour are on <see cref="TextStyle"/> and are raised
+/// from the save. The boundary between this run and the next is drawn as a space unless a line
+/// break falls on it; see <see cref="Paragraph"/>.
 /// </remarks>
 /// <exception cref="ArgumentNullException">
 /// The text is <see langword="null"/>. <c>ParamName</c> is <c>Text</c>, the name of the
@@ -35,8 +35,9 @@ namespace VellumPdf.Layout.Elements;
 /// </exception>
 /// <exception cref="InvalidOperationException">
 /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not from
-/// the constructor, when the style's size or leading is refused; see
-/// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
+/// the constructor, when the style's size or leading is refused, or a channel of its text colour is
+/// not finite; see <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/> and
+/// <see cref="TextStyle.Color"/>.
 /// </exception>
 /// <exception cref="IndexOutOfRangeException">
 /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not from
@@ -68,8 +69,9 @@ public sealed class TextRun(string Text, TextStyle Style)
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the style's size or leading is refused; see
-    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
+    /// from this property, when the style's size or leading is refused, or a channel of its text
+    /// colour is not finite; see <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/>
+    /// and <see cref="TextStyle.Color"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not

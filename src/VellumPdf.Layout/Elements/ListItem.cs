@@ -34,14 +34,15 @@ public sealed class ListItem
     /// <remarks>
     /// On a top-level item, null means the list's <see cref="ListElement.DefaultStyle"/>, then
     /// <see cref="TextStyle.Default"/>. On a child, null means the parent item's style after that
-    /// same fallback. Refusals on size, leading and font are on <see cref="TextStyle"/> and are
-    /// raised from the save.
+    /// same fallback. Refusals on size, leading, font and text colour are on
+    /// <see cref="TextStyle"/> and are raised from the save.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the style's size or leading is refused; see
-    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
-    /// It is not raised for an item reached only as a grandchild.
+    /// from this property, when the style's size or leading is refused, or a channel of its text
+    /// colour is not finite; see <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/>
+    /// and <see cref="TextStyle.Color"/>. It is not raised for an item reached only as a
+    /// grandchild.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -119,9 +120,10 @@ public sealed class ListItem
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this constructor, when the style's size or leading is refused; see
-    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
-    /// It is not raised for an item reached only as a grandchild.
+    /// from this constructor, when the style's size or leading is refused, or a channel of its text
+    /// colour is not finite; see <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/>
+    /// and <see cref="TextStyle.Color"/>. It is not raised for an item reached only as a
+    /// grandchild.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -198,9 +200,10 @@ public sealed class ListItem
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when the style's size or leading is refused; see
-    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
-    /// It is raised only when this item is laid out as a top-level item.
+    /// from this call, when the style's size or leading is refused, or a channel of its text colour
+    /// is not finite; see <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/> and
+    /// <see cref="TextStyle.Color"/>. It is raised only when this item is laid out as a top-level
+    /// item.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not

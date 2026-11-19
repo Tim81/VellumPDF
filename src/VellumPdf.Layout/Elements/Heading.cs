@@ -33,13 +33,14 @@ public sealed class Heading
     /// <summary>The heading's text style.</summary>
     /// <remarks>
     /// A null style passed to the constructor becomes 14pt Helvetica; any other is stored as given.
-    /// Refusals on size, leading and font are on <see cref="TextStyle"/> and are raised from the
-    /// save.
+    /// Refusals on size, leading, font and text colour are on <see cref="TextStyle"/> and are
+    /// raised from the save.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the style's size or leading is refused; see
-    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
+    /// from this property, when the style's size or leading is refused, or a channel of its text
+    /// colour is not finite; see <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/>
+    /// and <see cref="TextStyle.Color"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -148,8 +149,9 @@ public sealed class Heading
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this constructor, when the style's size or leading is refused; see
-    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
+    /// from this constructor, when the style's size or leading is refused, or a channel of its text
+    /// colour is not finite; see <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/>
+    /// and <see cref="TextStyle.Color"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not

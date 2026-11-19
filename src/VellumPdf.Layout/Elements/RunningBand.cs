@@ -54,8 +54,9 @@ public sealed class RunningBand
     /// <summary>The text style of the band.</summary>
     /// <remarks>
     /// A null style passed to the constructor is replaced by <see cref="TextStyle.Default"/>; any
-    /// other is stored as given. Refusals on size, leading and font are on <see cref="TextStyle"/>
-    /// and are raised from the save. A <see cref="TextStyle.LinkUri"/> in it is ignored (#475).
+    /// other is stored as given. Refusals on size, leading, font and text colour are on
+    /// <see cref="TextStyle"/> and are raised from the save. A <see cref="TextStyle.LinkUri"/> in
+    /// it is ignored (#475).
     /// <para>A non-finite channel in <see cref="TextStyle.Color"/> is refused where it is written; see
     /// <see cref="Document"/>. A band that draws nothing, because its template is empty or no part of
     /// it fits the content width, writes no colour, so the channel is not refused there: that saved a
@@ -80,7 +81,9 @@ public sealed class RunningBand
     /// <see cref="TextStyle.FontRef"/>. It is also raised when <see cref="Height"/> is null and the
     /// style's size, positive infinity included, or a finite leading is large enough to leave the
     /// page's content area no positive size; see <see cref="TextStyle.FontSize"/> and
-    /// <see cref="TextStyle.Leading"/>.
+    /// <see cref="TextStyle.Leading"/>. A channel of <see cref="TextStyle.Color"/> that is not finite
+    /// raises it too, when the band is drawn and writes a colour (see the remarks), because the
+    /// canvas refuses the value.
     /// </exception>
     public TextStyle Style { get; }
 

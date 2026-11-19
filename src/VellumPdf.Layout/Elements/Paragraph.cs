@@ -10,8 +10,8 @@ namespace VellumPdf.Layout.Elements;
 /// Wraps text across lines and paginates automatically.
 /// </summary>
 /// <remarks>
-/// Refusals on size, leading and font are on <see cref="TextStyle"/> and are raised from the save.
-/// Null text and a null run are refused where they are passed, with
+/// Refusals on size, leading, font and text colour are on <see cref="TextStyle"/> and are raised
+/// from the save. Null text and a null run are refused where they are passed, with
 /// <see cref="ArgumentNullException"/>; see the constructors and <see cref="Add"/> (#547).
 /// <para>Text is laid out word by word. A carriage return, a line feed, or a carriage return
 /// followed by a line feed starts a new line. One before the first word leaves an empty first line;
@@ -140,8 +140,9 @@ public sealed class Paragraph
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this constructor, when the style's size or leading is refused; see
-    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
+    /// from this constructor, when the style's size or leading is refused, or a channel of its text
+    /// colour is not finite; see <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/>
+    /// and <see cref="TextStyle.Color"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -213,8 +214,9 @@ public sealed class Paragraph
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when the style's size or leading is refused; see
-    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
+    /// from this call, when the style's size or leading is refused, or a channel of its text colour
+    /// is not finite; see <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/> and
+    /// <see cref="TextStyle.Color"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
