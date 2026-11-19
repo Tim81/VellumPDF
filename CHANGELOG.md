@@ -54,6 +54,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`PdfReader.Open` with `AllowReconstruction = true` no longer allocates hundreds of megabytes on a
+  short run of `[` (#610).** The reconstruction walk resyncs one byte after a failed construct, so a run
+  of `[` starts a fresh parse at every byte, and each parse failed by an exception raised at nesting
+  depth 257 and unwound through two frames per level. On v2.3.3 that cost about 72 KB per start and the
+  1 MiB work budget, which counts bytes advanced rather than bytes allocated, allowed about 4,000
+  starts: 293 MB for a 4 KiB run, about 304 MB for runs from 8 KiB to 64 KiB, and 609 MB at 256 KiB
+  (measured on net10.0, Release, one `Open` call after a warm-up call). The same files now allocate
+  592 KB, 591 KB and 1.18 MB. Allocation per failed start was already proportional to the bytes the
+  walk advanced; what changed is the constant, from about 72 KB to about 145 bytes per start on the
+  4 KiB run. The walk now parses in a scan mode that reports a malformed construct by return value, at
+  the same position and with the same charge, and allocates an array or dictionary only after its
+  first element has parsed. Which files open, what they open to, and which refuse (including the
+  "could not scan the file within its cost budget" refusal) are unchanged. Shapes that carry a leaf
+  at every nesting level (`[1[1...`, `<</a<</a...`) still allocate those leaves on every failed
+  start: 67 MB at 4 KiB for `[1[1`, down from 192 MB, and bounded by the same work budget, not
+  linear in length. Reconstruction's last-resort catalog search had the same cost: it parses every
+  object-stream member and fails once per member, so a 117 KB file whose members all point at a run of
+  `[` allocated 1.2 GB on v2.3.3 and now allocates 5.8 MB. `AllowReconstruction` and `ReconstructionBudgetMultiplier` now document that the
+  budget bounds bytes advanced, not allocation.
 - **Cost-bound tests no longer assert on elapsed time (#400, #456).** A `Stopwatch` checked after a
   call returns cannot end a hang, and a 10 s bound fails on a loaded runner: the main CI run for
   1c61fa6 failed `FindingHigh_A4FlateBombPadding_refusesQuickly_viaCostBudget` at 11.79 s, and #400

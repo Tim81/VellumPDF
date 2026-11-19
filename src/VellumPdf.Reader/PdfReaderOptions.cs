@@ -62,6 +62,13 @@ public sealed class PdfReaderOptions
     /// incremental update (<c>AppendRevision</c>): there is no real <c>startxref</c> chain left for
     /// <c>/Prev</c> to point at, and the recovered trailer's <c>/ID</c> is not reliable enough to
     /// carry into a new revision.
+    /// <para>
+    /// <strong>The work budget bounds bytes the scan advances, not bytes it allocates or CPU per
+    /// byte.</strong> See <see cref="ReconstructionBudgetMultiplier"/>. A hostile file therefore
+    /// costs up to the budget's worth of scanning even when it recovers nothing, and
+    /// <see cref="PdfReader.Open(byte[], PdfReaderOptions)"/> then throws
+    /// <see cref="InvalidDataException"/>.
+    /// </para>
     /// </summary>
     public bool AllowReconstruction { get; init; }
 
@@ -102,6 +109,17 @@ public sealed class PdfReaderOptions
     /// C.4 — the same rationale as <see cref="MaxDecodedStreamBytes"/> above; a caller hardening
     /// against a file engineered to burn CPU across many decoy candidates may lower it. Raising it
     /// above the default is refused for the same reason.
+    /// <para>
+    /// <strong>The budget counts bytes the scan advances over, one charge per parse attempt, not
+    /// bytes allocated.</strong> A malformed construct is charged the bytes its failed parse
+    /// consumed and the scan resumes one byte later, so a run of openers is parsed again from every
+    /// byte until the budget is spent: about 1 MiB of advance for any file up to 128 KiB at the
+    /// default. Allocation per advanced byte depends on the input's shape, and this option does not
+    /// bound it. Measured on net10.0 in Release, a 4 KiB run of <c>[</c> allocates about 0.6 MB and
+    /// a 4 KiB run of <c>[1[1</c> about 67 MB (v2.3.3: 293 MB and 192 MB). Do not rely on a
+    /// small file implying a small allocation: lowering this multiplier does not help for a file
+    /// under 128 KiB, because the 1 MiB floor applies to it whatever the multiplier.
+    /// </para>
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">
     /// Thrown by <see cref="PdfReader.Open(byte[], PdfReaderOptions)"/> when set above the default of

@@ -487,15 +487,11 @@ public sealed partial class PdfDocumentReader : IDisposable
 
         var absoluteOffset = first + relOffset;
         var mem = new ReadOnlyMemory<byte>(body, absoluteOffset, body.Length - absoluteOffset);
-        var parser = new PdfObjectParser(mem);
-        try
-        {
-            return parser.ParseObject();
-        }
-        catch (InvalidDataException)
-        {
-            return null;
-        }
+        // Scan mode (#610): B3 tries every member of every container, so a container whose header
+        // points many members at one run of '[' fails once per member, and failing by exception
+        // from nesting depth 257 cost about 75 KB each (1.2 GB for a 117 KB file on v2.3.3).
+        var parser = PdfObjectParser.CreateForScan(mem, 0);
+        return parser.TryParseObjectScan(out var value) ? value : null;
     }
 
     /// <summary>

@@ -26,6 +26,31 @@ internal sealed class PdfObjectParser
     private const int MaxNestingDepth = 256;
     private int _depth;
 
+    // Scan mode (#610), used only by the cross-reference reconstruction walk. A failed parse there
+    // is the ordinary case, not the exceptional one: the walk resyncs one byte later and parses
+    // again, so a run of '[' fails at every byte of the run. Failing by exception from nesting
+    // depth d unwinds about 2d frames and the runtime allocates a stack-trace record for each, which
+    // measured at roughly 250-300 bytes per nesting level per failed start (293 MB for a 4 KiB run
+    // of '[' before this change). Scan mode reports the same failure by returning null
+    // from each level, so nothing unwinds, and it allocates a container only once its first child has
+    // parsed. Every failure the throwing parser reports as InvalidDataException is a failure here,
+    // at the same lexer position; any other exception type still propagates unchanged.
+    private readonly bool _scan;
+
+    private PdfObjectParser(PdfLexer lexer, bool scan)
+    {
+        _lexer = lexer;
+        _scan = scan;
+    }
+
+    /// <summary>
+    /// Creates a parser over <paramref name="data"/> at <paramref name="offset"/> whose
+    /// <see cref="TryParseObjectScan"/> and <see cref="ProbeIndirectObjectHeader"/> report a
+    /// malformed construct without throwing from nested frames. For the reconstruction walk only.
+    /// </summary>
+    internal static PdfObjectParser CreateForScan(ReadOnlyMemory<byte> data, int offset) =>
+        new(new PdfLexer(data, offset), scan: true);
+
     /// <summary>Creates a parser backed by <paramref name="lexer"/>.</summary>
     public PdfObjectParser(PdfLexer lexer, Func<PdfIndirectReference, long?>? lengthResolver = null)
     {
@@ -73,6 +98,137 @@ internal sealed class PdfObjectParser
             _ => throw new InvalidDataException(
                 $"Unexpected token {token.Kind} at offset {_lexer.Position}."),
         };
+    }
+
+    /// <summary>
+    /// <see cref="ParseObject"/> for a parser made by <see cref="CreateForScan"/>: returns
+    /// <see langword="false"/> where <see cref="ParseObject"/> would throw
+    /// <see cref="InvalidDataException"/>, leaving <see cref="Position"/> exactly where that throw
+    /// would have left it.
+    /// </summary>
+    internal bool TryParseObjectScan(out PdfObject? value)
+    {
+        value = ScanObject();
+        return value is not null;
+    }
+
+    private static PdfObject? Fail() => null;
+
+    private PdfObject? ScanObject()
+    {
+        Token token;
+        try
+        {
+            _lexer.SkipWhitespaceAndComments();
+            if (_lexer.AtEnd)
+                return Fail();
+            token = _lexer.NextToken();
+        }
+        catch (InvalidDataException)
+        {
+            return Fail();
+        }
+
+        switch (token.Kind)
+        {
+            case TokenKind.ArrayBegin:
+                return ScanArray();
+            case TokenKind.DictBegin:
+                return ScanDictionary();
+            case TokenKind.EndOfInput:
+                return Fail();
+        }
+
+        try
+        {
+            return token.Kind switch
+            {
+                TokenKind.Keyword => ParseKeywordObject(token),
+                TokenKind.Integer => ParseIntegerOrReference(token),
+                TokenKind.Real => ParseReal(token),
+                TokenKind.Name => ParseName(token),
+                TokenKind.LiteralString => DecodeLiteralString(token.Raw),
+                TokenKind.HexString => DecodeHexString(token.Raw),
+                _ => Fail(),
+            };
+        }
+        catch (InvalidDataException)
+        {
+            return Fail();
+        }
+    }
+
+    private PdfObject? ScanArray()
+    {
+        if (++_depth > MaxNestingDepth)
+            return Fail();
+        try
+        {
+            List<PdfObject>? items = null;
+            while (true)
+            {
+                try
+                {
+                    _lexer.SkipWhitespaceAndComments();
+                    if (_lexer.AtEnd)
+                        return Fail();
+                    if (_lexer.TryPeek() == (byte)']')
+                    {
+                        _lexer.NextToken(); // consume ArrayEnd
+                        break;
+                    }
+                }
+                catch (InvalidDataException)
+                {
+                    return Fail();
+                }
+
+                var child = ScanObject();
+                if (child is null)
+                    return null;
+                (items ??= []).Add(child);
+            }
+            return new PdfArray(items ?? []);
+        }
+        finally { _depth--; }
+    }
+
+    private PdfObject? ScanDictionary()
+    {
+        if (++_depth > MaxNestingDepth)
+            return Fail();
+        try
+        {
+            PdfDictionary? dict = null;
+            while (true)
+            {
+                Token tok;
+                PdfName key;
+                try
+                {
+                    _lexer.SkipWhitespaceAndComments();
+                    if (_lexer.AtEnd)
+                        return Fail();
+                    tok = _lexer.NextToken();
+                    if (tok.Kind == TokenKind.DictEnd)
+                        break;
+                    if (tok.Kind != TokenKind.Name)
+                        return Fail();
+                    key = ParseName(tok);
+                }
+                catch (InvalidDataException)
+                {
+                    return Fail();
+                }
+
+                var value = ScanObject();
+                if (value is null)
+                    return null;
+                (dict ??= new PdfDictionary()).Set(key, value);
+            }
+            return dict ?? new PdfDictionary();
+        }
+        finally { _depth--; }
     }
 
     /// <summary>
@@ -168,7 +324,7 @@ internal sealed class PdfObjectParser
         if (_lexer.TryPeek() == (byte)'<' && PeekIsDict())
         {
             _lexer.NextToken(); // consumes <<, returns DictBegin
-            var dict = ParseDictionary();
+            var dict = _scan ? ScanDictionaryOrThrow() : ParseDictionary();
 
             _lexer.SkipWhitespaceAndComments();
             if (!_lexer.AtEnd && TryPeekKeyword("stream"u8))
@@ -183,12 +339,23 @@ internal sealed class PdfObjectParser
             return new HeaderProbeResult(objectNumber, generation, dict, false, 0);
         }
 
-        var value = ParseObject();
+        var value = _scan ? ScanObjectOrThrow() : ParseObject();
         ExpectEndobj();
         return new HeaderProbeResult(objectNumber, generation, value, false, 0);
     }
 
     // ── Private helpers ────────────────────────────────────────────────────
+
+    // The probe's caller catches InvalidDataException and reads Position, so a scan-mode failure is
+    // turned back into one here, at the top of the probe where it costs three frames, not 2d.
+    private PdfObject ScanObjectOrThrow() =>
+        ScanObject() ?? throw new InvalidDataException(
+            $"Malformed PDF object at offset {_lexer.Position}.");
+
+    private PdfDictionary ScanDictionaryOrThrow() =>
+        (PdfDictionary?)ScanDictionary() ?? throw new InvalidDataException(
+            $"Malformed PDF dictionary at offset {_lexer.Position}.");
+
 
     private bool PeekIsDict()
     {
