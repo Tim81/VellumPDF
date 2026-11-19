@@ -143,14 +143,17 @@ public static class TiffImageLoader
     /// 10,000 by 10,000 three-sample 8-bit file with a 4-byte LZW strip allocates about 600 MB
     /// before it is refused, and a PackBits strip that decodes to less than the image needs loads
     /// with the rest zero-filled (#536).</para>
-    /// <para>Attention: the safety limit has a hole, and this loader carries it. A strip
+    /// <para>The limit covers the rasters this loader decodes, and a JPEG strip is not one. A strip
     /// compressed with new-style JPEG (Compression 7) is handed to
-    /// <see cref="JpegImageLoader.Load(byte[])"/>, which takes its dimensions from the JPEG frame
-    /// header and validates nothing. A TIFF declaring ImageWidth 8 and ImageLength 8, whose single
-    /// strip is a JPEG declaring 65535 by 65535, returns an image of 4,294,836,225 pixels. No
-    /// raster is allocated, since those bytes pass through as DCTDecode
-    /// data. But the dimensions reach the image dictionary, and a reader that trusts them can
-    /// be made to allocate from them. If the input is untrusted, check the result's <c>Width</c>
+    /// <see cref="JpegImageLoader.Load(byte[])"/> and passed through as DCTDecode data, so the
+    /// returned size is the one in the JPEG frame header. It is checked neither against the limit
+    /// nor against the directory's <c>ImageWidth</c> and <c>ImageLength</c>. Measured: an 8 by 8
+    /// directory over a strip declaring 65535 by 65535 returns 65535 by 65535, which is
+    /// 4,294,836,225 pixels; an 8 by 8 directory over a 16 by 16 strip returns 16 by 16, and the
+    /// directory's size is dropped without a report. No raster is allocated.</para>
+    /// <para>Do not pass a JPEG-compressed TIFF whose strip is larger than 100,000,000 pixels, or
+    /// whose size disagrees with its <c>ImageWidth</c> and <c>ImageLength</c>. Both are accepted
+    /// today and 3.0 will refuse them. If the input is untrusted, check the result's <c>Width</c>
     /// and <c>Height</c> yourself (#505).</para>
     /// </remarks>
     public static PdfImageXObject Load(byte[] tiff) => Load(tiff, ImageLoadOptions.Default);
@@ -174,8 +177,8 @@ public static class TiffImageLoader
     /// use included. A well-formed file this loader does not read raises
     /// <see cref="NotSupportedException"/>. Neither type derives from the other. A null array
     /// raises <see cref="NullReferenceException"/>, not <see cref="ArgumentNullException"/>.
-    /// <para>The JPEG-strip hole on the other overload is this overload's. Compression 7 is
-    /// handed to <see cref="JpegImageLoader.Load(byte[])"/>, which validates nothing.</para>
+    /// <para>A Compression 7 strip is passed through without a size check, exactly as the other
+    /// overload documents, and the same "Do not pass" applies (#505).</para>
     /// <para><b>A null <paramref name="options"/> is refused only where it is read.</b>
     /// <see cref="ArgumentNullException"/> is thrown for a Group 3 CCITT strip (Compression 2 or
     /// 3) and for 16-bit greyscale, RGB and RGBA files, the three places the argument is

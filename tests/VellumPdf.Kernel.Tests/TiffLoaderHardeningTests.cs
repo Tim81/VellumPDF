@@ -311,6 +311,54 @@ public sealed class TiffLoaderHardeningTests
         Assert.Equal(new byte[3_000_000], RgbBytes(img));
     }
 
+    // ── #505: a JPEG strip is passed through, unchecked, and keeps loading ────
+    //
+    // The maintainer ruled that 2.3.3's behaviour stays through 2.x and that the documentation
+    // states it. These pin the three shapes, with exact dimensions, so a 3.0 tightening shows up
+    // as a change to these tests and not as a surprise.
+
+    [Fact]
+    public void JpegLoader_aFrameHeaderOver100MPixels_keepsLoading_withItsDeclaredSize()
+    {
+        var img = JpegImageLoader.Load(Jpeg(65535, 65535));
+
+        Assert.Equal(65535, img.Width);
+        Assert.Equal(65535, img.Height);
+    }
+
+    [Fact]
+    public void TiffLoader_aJpegStripOver100MPixels_keepsLoading_withTheJpegsSize()
+    {
+        // 8 x 8 directory, strip declaring 65535 x 65535 (4,294,836,225 pixels).
+        var tiff = Image(8, 8, photometric: 1, bps: 8, strip: Jpeg(65535, 65535), compression: 7);
+
+        var img = TiffImageLoader.Load(tiff);
+
+        Assert.Equal(65535, img.Width);
+        Assert.Equal(65535, img.Height);
+    }
+
+    [Fact]
+    public void TiffLoader_aJpegStripDisagreeingWithTheDirectory_keepsLoading_withTheJpegsSize()
+    {
+        // 8 x 8 directory over a 16 x 16 strip: the directory's size is dropped.
+        var tiff = Image(8, 8, photometric: 1, bps: 8, strip: Jpeg(16, 16), compression: 7);
+
+        var img = TiffImageLoader.Load(tiff);
+
+        Assert.Equal(16, img.Width);
+        Assert.Equal(16, img.Height);
+    }
+
+    // A SOI, one SOF0 segment (length 11, 8-bit, one component) and EOI: enough for the frame
+    // header read, which is all the loader does.
+    private static byte[] Jpeg(int width, int height) =>
+    [
+        0xFF, 0xD8, 0xFF, 0xC0, 0x00, 0x0B, 0x08,
+        (byte)(height >> 8), (byte)height, (byte)(width >> 8), (byte)width,
+        0x01, 0x01, 0x11, 0x00, 0xFF, 0xD9,
+    ];
+
     private static long AllocatedWhileRefusing(byte[] tiff, out InvalidDataException ex)
     {
         // Warm-up, so one-time JIT and static-initialiser allocations are not charged below.

@@ -129,6 +129,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (8-bit, palette, Group 4, JPEG) still does. The exception type on the refused paths is the only
   change. The XML documentation says 3.0 will refuse a null for every file.
 
+- **The JPEG-strip size boundary is documented, not changed (#505).** `JpegImageLoader` and
+  `TiffImageLoader` pass a JPEG through without checking its frame-header size against the
+  100,000,000-pixel limit, and `TiffImageLoader` does not compare it with `ImageWidth` and
+  `ImageLength`. Measured on 2.3.3 and kept: a 65535 by 65535 JPEG loads, the same strip in an 8
+  by 8 TIFF loads as 65535 by 65535, and an 8 by 8 TIFF over a 16 by 16 strip loads as 16 by 16.
+  The XML documentation now describes this once per loader, with a "Do not pass" paragraph naming
+  3.0 as the release that refuses all three. Three tests pin the shapes with exact dimensions.
+  No behaviour changes.
+
 ## [2.3.3] - 2026-09-20
 
 This release is led by documentation. Layout's public surface now states what each member
