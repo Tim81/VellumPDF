@@ -190,10 +190,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Unicode subtable is format 12 is also checked elsewhere, since it is accepted on the strength of
   a subtable 2.3.3 refused. It is refused with `NotSupportedException` naming the rule when two
   encoding records share a platform, encoding and language, when the records are not sorted by
-  them, when a subtable outside the Macintosh platform has a non-zero language field or a format 12 subtable a non-zero reserved field (the cmap
-  chapter's own requirements), when its only format 12 record is platform 0 / encoding
-  10, which the chapter does not define, and when a composite glyph names a component at or past
-  `numGlyphs` (the glyf chapter's component record, walked without decoding outlines). Fonts with
+  them, when a subtable outside the Macintosh platform has a non-zero language field or a format 8, 10, 12 or 13 subtable a non-zero reserved field (the
+  cmap chapter's own requirements), when its only format 12 record is platform 0 / encoding
+  10, which the chapter does not define, when a composite glyph names a component at or past
+  `numGlyphs` (the glyf chapter's component record, walked without decoding outlines), and when
+  the composite glyphs form a cycle (the glyf chapter: the graph "must be acyclic"; the walk is
+  depth-first with an explicit stack and visits each glyph once, so it is bounded by the glyphs
+  and components the font holds). Fonts with
   a usable 16-bit subtable keep 2.3.3's behaviour. Besides those, `head`, `hhea`, `maxp`, `name`, `OS/2`, `post` and `hmtx` must be
   present and long enough, `head.unitsPerEm` must not be 0, every glyph's `loca` range must lie
   inside `glyf`, and a CFF table must parse; any failure is `NotSupportedException` too. Not
@@ -201,8 +204,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   1,114,112 code points; a 220-byte subtable of 17 groups over a font with no `maxp` covers
   1,114,095 of them, which allocated 53,889,264 bytes (`GC.GetAllocatedBytesForCurrentThread`,
   net10.0). `GlyphPresenceRule` shares the parser, and looks a character up in the 16-bit subtable
-  only, as ISO 32000-2 9.6.5.4 does ((3,1), then post), so its findings are those 2.3.3 gave: it
-  skips a font that has no 16-bit subtable. With the merged map it raised a width finding for a
+  only, so its findings are those 2.3.3 gave: it skips a font that has no 16-bit subtable. ISO
+  32000-2 9.6.5.4 maps a non-symbolic character through the (3,1) subtable when the font has one
+  (the (1,0) subtable otherwise) and falls back to the `post` table only when the glyph name has
+  no mapping; the rule looks in the 16-bit subtable alone and makes no `post` fallback. With the merged map it raised a width finding for a
   code point only format 12 maps.
 - **`ExternalToolTests.TryRun_CapturesOutputLargerThanTheOsPipeBuffer` no longer times out on a
   loaded machine (test-only change).** Its child was a 20,000-iteration shell echo loop, which hit

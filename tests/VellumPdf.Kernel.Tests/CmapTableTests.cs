@@ -578,6 +578,34 @@ public sealed class CmapTableTests
         Assert.False(ParseLoaded(BuildCmap((3, 1, BuildSubtableFormat6(0x41, [1])), (3, 10, sub))).OnlyFormat12);
     }
 
+    /// <summary>
+    /// The OpenType cmap chapter gives formats 8, 10, 12 and 13 a "uint16 reserved" field, "Reserved;
+    /// set to 0". A format 8, 10 or 13 record is one this class does not read, so the font stays
+    /// format-12-only and the record is only looked at. The same record with the field at 0 loads,
+    /// and beside a 16-bit subtable the defect is not refused.
+    /// </summary>
+    [Theory]
+    [InlineData(8)]
+    [InlineData(10)]
+    [InlineData(13)]
+    public void CmapFormat12Only_nonZeroReservedFieldInAnotherFormat_isRefusedButBesideA16BitSubtableItLoads(int format)
+    {
+        static byte[] Stub(int format, ushort reserved)
+        {
+            var stub = new byte[16];
+            WriteU16Be(stub, 0, (ushort)format);
+            WriteU16Be(stub, 2, reserved);
+            WriteU32Be(stub, 4, 16);
+            return stub;
+        }
+
+        AssertSoleFormat12Refused(
+            BuildCmap((0, 3, Stub(format, 7)), (3, 10, Sub12())),
+            $"format {format} subtable for platform 0 / encoding 3 has a non-zero reserved field");
+        Assert.True(ParseLoaded(BuildCmap((0, 3, Stub(format, 0)), (3, 10, Sub12()))).OnlyFormat12);
+        Assert.False(ParseLoaded(BuildCmap((0, 3, Stub(format, 7)), (3, 1, BuildSubtableFormat6(0x41, [1])), (3, 10, Sub12()))).OnlyFormat12);
+    }
+
     [Fact]
     public void CmapFormat12Only_nonZeroLanguageOffMacintosh_isRefused()
     {

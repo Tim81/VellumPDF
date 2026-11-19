@@ -497,6 +497,36 @@ public sealed class CmapFormat12Tests
     }
 
     /// <summary>
+    /// The glyf chapter: a composite glyph description "is a directed graph. This graph must be
+    /// acyclic". A composite that names itself, and two composites that name each other, are refused
+    /// for a format-12-only font with the rule in the message. A composite that names another
+    /// composite which does not lead back (a nested composite) loads, and so does the same cycle
+    /// beside a 16-bit subtable, which is not held to the chapter's other rules.
+    /// </summary>
+    [Fact]
+    public void FormatTwelveOnlyFont_compositeCycle_isRefusedAsNotSupported()
+    {
+        var full = LoadAsset("DejaVuSans.ttf");
+        var only12 = WithCmap(full, Subtables(full).Where(s => s.Platform == 3 && s.Format == 12));
+        var probe = new TrueTypeFontEmbedder(only12, "F1");
+        var a = probe.GetGlyphId(0xE9);
+        var b = probe.GetGlyphId(0xE8);
+        Assert.NotEqual(a, b);
+
+        var self = WithComponent(only12, a, 0, a);
+        var pair = WithComponent(WithComponent(only12, a, 0, b), b, 0, a);
+        var nested = WithComponent(only12, a, 0, b);
+
+        var selfEx = Assert.Throws<NotSupportedException>(() => new TrueTypeFontEmbedder(self, "F1"));
+        Assert.Contains($"composite glyph {a} names component glyph {a}, which is already being expanded above it, so the composite glyphs form a cycle", selfEx.Message);
+        var pairEx = Assert.Throws<NotSupportedException>(() => new TrueTypeFontEmbedder(pair, "F1"));
+        Assert.Contains("so the composite glyphs form a cycle (OpenType glyf chapter: the graph of composite glyphs must be acyclic)", pairEx.Message);
+        _ = new TrueTypeFontEmbedder(nested, "F1");
+        var control = Record.Exception(() => new TrueTypeFontEmbedder(WithComponent(full, a, 0, a), "F1"));
+        Assert.False(control is NotSupportedException, "a font with a 16-bit subtable is not held to the cycle rule");
+    }
+
+    /// <summary>
     /// The font with the glyphIndex of component <paramref name="componentIndex"/> of composite glyph
     /// <paramref name="gid"/> rewritten to <paramref name="component"/>. Written from the glyf
     /// chapter's record layout (flags, glyphIndex, two arguments of 2 or 4 bytes, an optional

@@ -18,28 +18,27 @@ namespace VellumPdf.Fonts.Sfnt;
 /// <para><b>The 16-bit subtable keeps every code point it maps.</b> The OpenType cmap chapter says
 /// the 32-bit subtable of a font that carries both should be a superset of the 16-bit one, so for
 /// a well-formed font the two agree on the BMP. A font whose tables disagree keeps the BMP mapping
-/// the 16-bit subtable gives it, because releases through 2.3.3 read only that subtable and a
-/// document drawn from that font must not change glyphs. Format 12 contributes the code points the
-/// 16-bit subtable leaves unmapped: everything above U+FFFF, and any BMP code point the 16-bit
-/// subtable lacks, so a font whose format 4 or format 6 subtable covers less of the BMP than its
-/// format 12 one now draws the extra characters. The 16-bit subtable is the one 2.3.3 selected
-/// (format 4 over formats 0 and 6, platform 3 / encoding 1 first).</para>
+/// the 16-bit subtable gives it. Format 12 contributes the code points the 16-bit subtable leaves
+/// unmapped: everything above U+FFFF, and any BMP code point the 16-bit subtable lacks, so a font
+/// whose format 4 or format 6 subtable covers less of the BMP than its format 12 one draws the
+/// extra characters. The 16-bit subtable is chosen by format (4 over 0 and 6), then by record
+/// (platform 3 / encoding 1 first).</para>
 /// <para><b>A format 12 subtable is malformed</b> when a group is inverted, ends above U+10FFFF,
 /// is not after the group before it, maps a glyph ID at or beyond the font's <c>maxp</c>
 /// <c>numGlyphs</c> (or past 65535 when the font has no readable <c>maxp</c>), or when the group
 /// count does not fit the length the subtable declares. A malformed subtable beside a 16-bit one
-/// is ignored, which is how 2.3.3 loaded such a font. A malformed subtable that is the font's only
-/// Unicode subtable makes <see cref="Parse"/> throw <see cref="NotSupportedException"/>, the type
-/// 2.3.3 threw for every font in that position; the message names the rule, and the
+/// is ignored, and the font maps from the 16-bit subtable alone. A malformed subtable that is the
+/// font's only Unicode subtable makes <see cref="Parse"/> throw
+/// <see cref="NotSupportedException"/>; the message names the rule, and the
 /// <see cref="InvalidDataException"/> that found it is the inner exception.</para>
 /// <para><b>A font whose only Unicode subtable is format 12 is held to the chapter's other
-/// rules too</b>, because accepting it is new. <see cref="Parse"/> throws
+/// rules too.</b> <see cref="Parse"/> throws
 /// <see cref="NotSupportedException"/> naming the rule when two encoding records share a platform,
 /// encoding and language, when the records are not sorted by platform, encoding and language, when
 /// a subtable on a platform other than Macintosh has a non-zero language field, when a format 8, 10,
 /// 12 or 13 subtable has a non-zero reserved field, or when the only
 /// format 12 record is platform 0 / encoding 10 (the chapter defines platform 0 encodings 0 to 6
-/// only). A font that also has a 16-bit subtable is not held to these, as on 2.3.3.</para>
+/// only). A font that also has a 16-bit subtable is not held to these.</para>
 /// <para><b>Cost is bounded by the file.</b> Groups are sorted and disjoint, so a font maps at
 /// most 1,114,112 code points however it is built, and a group count must fit the declared length,
 /// so a subtable of 12 bytes a group costs at most what its groups hold. A group maps at most as
@@ -74,9 +73,8 @@ internal sealed class CmapTable
     }
 
     /// <summary>
-    /// <see langword="true"/> when format 12 is the font's only Unicode subtable, so the font was
-    /// accepted on the strength of a subtable 2.3.3 refused. The embedder uses it to hold such a
-    /// font to a stricter standard on its other tables.
+    /// <see langword="true"/> when format 12 is the font's only Unicode subtable. The embedder uses
+    /// it to hold such a font to a stricter standard on its other tables.
     /// </summary>
     public bool OnlyFormat12 { get; }
 
@@ -84,10 +82,11 @@ internal sealed class CmapTable
         _map.TryGetValue(codePoint, out glyphId);
 
     /// <summary>
-    /// Looks the code point up in the 16-bit subtable alone, which is all releases through 2.3.3
-    /// read. ISO 32000-2 9.6.5.4 resolves a non-symbolic TrueType character through the (3,1)
-    /// subtable, so a check that follows that clause uses this rather than <see cref="TryGetGlyphId"/>,
-    /// which also sees format 12. A font with no 16-bit subtable maps nothing here.
+    /// Looks the code point up in the 16-bit subtable alone, the one <see cref="Parse"/> selects
+    /// (format 4 over 0 and 6, platform 3 / encoding 1 first). ISO 32000-2 9.6.5.4 maps a
+    /// non-symbolic TrueType character through the (3,1) subtable when the font has one, so a check
+    /// that follows that clause uses this rather than <see cref="TryGetGlyphId"/>, which also sees
+    /// format 12. A font with no 16-bit subtable maps nothing here.
     /// </summary>
     public bool TryGetSixteenBitGlyphId(int codePoint, out ushort glyphId)
     {

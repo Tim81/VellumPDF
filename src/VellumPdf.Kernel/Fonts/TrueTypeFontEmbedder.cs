@@ -46,10 +46,10 @@ public sealed class TrueTypeFontEmbedder
     /// format 12 on platform 3 / encoding 10 or platform 0 / encoding 4, or on platform 0 / encoding 10 beside a 16-bit subtable). Also, when format
     /// 12 is the only such subtable, the font is refused if that subtable is malformed, if its
     /// encoding records repeat or are out of order, if a non-Macintosh subtable has a non-zero
-    /// language, if a format 12 subtable has a non-zero reserved field, if the only format 12
+    /// language, if a format 8, 10, 12 or 13 subtable has a non-zero reserved field, if the only format 12
     /// record is platform 0 / encoding 10, if a required table is
     /// missing or short, if <c>unitsPerEm</c> is 0, if a <c>loca</c> range lies outside
-    /// <c>glyf</c>, if a composite glyph names a component at or past <c>numGlyphs</c>, or if the
+    /// <c>glyf</c>, if a composite glyph names a component at or past <c>numGlyphs</c>, if the composite glyphs form a cycle, or if the
     /// <c>CFF </c> table does not parse; the message names the rule.
     /// </exception>
     public TrueTypeFontEmbedder(ReadOnlyMemory<byte> fontData, string resourceName)
@@ -102,7 +102,7 @@ public sealed class TrueTypeFontEmbedder
     // which must be present and long enough): for glyf outlines, every glyph's loca range lies
     // inside the glyf table (GlyfSubsetter reads exactly this, for each glyph it keeps); for CFF
     // outlines, the CFF table parses; and no composite glyph names a component at or past
-    // numGlyphs. Not checked: the contents of any glyph or charstring, table checksums, and the
+    // numGlyphs and no composite glyph reaches itself through its components. Not checked: the contents of any glyph or charstring, table checksums, and the
     // values (as opposed to the presence) of the name, OS/2 and post fields; and head.unitsPerEm other than 0 is the only
     // value check (0 makes every metric non-finite and the save throw). A font that is wrong
     // only in the unchecked places is accepted.
@@ -116,8 +116,50 @@ public sealed class TrueTypeFontEmbedder
 
         var subsetter = new GlyfSubsetter(sfnt);
         var numGlyphs = MaxpTable.Parse(sfnt).NumGlyphs;
+        var components = new int[numGlyphs][];
         for (var gid = 0; gid < numGlyphs; gid++)
-            RequireComponentsInTheFont(gid, subsetter.GetGlyphData(gid), numGlyphs);
+            components[gid] = ReadComponents(gid, subsetter.GetGlyphData(gid), numGlyphs);
+        RequireNoCompositeCycle(components);
+    }
+
+    // The glyf chapter: "a composite glyph description is a directed graph. This graph must be
+    // acyclic, with every path through the graph leading to a simple glyph as a leaf node." A
+    // depth-first walk with an explicit stack, so a chain of 65,535 composites cannot overflow the
+    // call stack, and each glyph is entered once (state 1 while on the stack, 2 when finished), so
+    // the work is bounded by the glyphs and components the font holds. A glyph reached while it is
+    // still on the stack closes a cycle; a glyph that is its own component is the shortest one.
+    private static void RequireNoCompositeCycle(int[][] components)
+    {
+        var state = new byte[components.Length];
+        var stack = new Stack<(int Gid, int Next)>();
+        for (var root = 0; root < components.Length; root++)
+        {
+            if (state[root] != 0)
+                continue;
+            state[root] = 1;
+            stack.Push((root, 0));
+            while (stack.Count > 0)
+            {
+                var (gid, next) = stack.Pop();
+                var children = components[gid];
+                if (next == children.Length)
+                {
+                    state[gid] = 2;
+                    continue;
+                }
+
+                stack.Push((gid, next + 1));
+                var child = children[next];
+                if (state[child] == 1)
+                    throw new InvalidDataException(
+                        $"composite glyph {gid} names component glyph {child}, which is already being expanded above it, so the composite glyphs form a cycle (OpenType glyf chapter: the graph of composite glyphs must be acyclic).");
+                if (state[child] == 0)
+                {
+                    state[child] = 1;
+                    stack.Push((child, 0));
+                }
+            }
+        }
     }
 
     // OpenType glyf chapter (OpenType 1.9.1, learn.microsoft.com/typography/opentype/spec/glyf,
@@ -129,26 +171,29 @@ public sealed class TrueTypeFontEmbedder
     // component", and glyph IDs run from 0 to numGlyphs - 1, so an index at or past numGlyphs names
     // no glyph. The records are walked here without decoding any outline. A record that runs past
     // the glyph's data ends the walk, as it does in GlyfSubsetter.ExpandComposites.
-    private static void RequireComponentsInTheFont(int gid, ReadOnlySpan<byte> data, int numGlyphs)
+    private static int[] ReadComponents(int gid, ReadOnlySpan<byte> data, int numGlyphs)
     {
         if (data.Length < 10 || (short)((data[0] << 8) | data[1]) >= 0)
-            return;
+            return [];
 
+        var components = new List<int>();
         var offset = 10;
         int flags;
         do
         {
             if (offset + 4 > data.Length)
-                return;
+                return [.. components];
             flags = (data[offset] << 8) | data[offset + 1];
             var component = (data[offset + 2] << 8) | data[offset + 3];
             if (component >= numGlyphs)
                 throw new InvalidDataException(
                     $"composite glyph {gid} names component glyph {component}, but the font has {numGlyphs} glyph(s) (OpenType glyf chapter: glyphIndex is the glyph index of the component).");
+            components.Add(component);
             offset += 4 + ((flags & 0x0001) != 0 ? 4 : 2);
             offset += (flags & 0x0008) != 0 ? 2 : (flags & 0x0040) != 0 ? 4 : (flags & 0x0080) != 0 ? 8 : 0;
         }
         while ((flags & 0x0020) != 0);
+        return [.. components];
     }
 
     /// <summary>Returns the glyph ID for a Unicode code point, registering it for subsetting.</summary>
