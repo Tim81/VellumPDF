@@ -3,6 +3,7 @@
 
 using System.Text;
 using VellumPdf.Core;
+using VellumPdf.Encryption;
 using VellumPdf.Reader.Tests.Text;
 
 namespace VellumPdf.Reader.Tests;
@@ -13,6 +14,10 @@ namespace VellumPdf.Reader.Tests;
 /// at every place the reader decodes a string it knows is plaintext: an object parsed from the
 /// file body of an unencrypted file, a member of an object stream, and a content-stream operand.
 /// Each test fails when the normalisation is switched off at the site it names.
+/// The file-level sites are the object read in <c>Resolve</c>, the one in <c>ResolveStream</c> and
+/// the object-stream container read; the last is equivalent to the stream read, since both take
+/// the flag from the same field and parse the same kind of top-level object, so a stream-dictionary
+/// test stands for both.
 /// </summary>
 public sealed class PdfReaderEndOfLineNormalisationTests
 {
@@ -119,5 +124,52 @@ public sealed class PdfReaderEndOfLineNormalisationTests
     public void ContentStreamTjArrayOperand_readsOneLineFeedForAnEndOfLineMarker(string content, string expected)
     {
         Assert.Equal(expected, ExtractFrom(content));
+    }
+
+    private static readonly PdfName Probe = new("Probe");
+
+    /// <summary>
+    /// A stream dictionary is read by <c>ResolveStream</c>, a separate file-level site from the one
+    /// <c>Resolve</c> uses for a plain object, so it needs its own test.
+    /// </summary>
+    [Theory]
+    [InlineData("(a\r\nb)", new byte[] { 0x61, 0x0A, 0x62 })]
+    [InlineData("(a\rb)", new byte[] { 0x61, 0x0A, 0x62 })]
+    public void StreamDictionaryString_readsOneLineFeedForAnEndOfLineMarker(string literal, byte[] expected)
+    {
+        var pdf = TextTestSupport.BuildPdf(
+            1,
+            new TextTestSupport.Obj(1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            new TextTestSupport.Obj(2, "<< /Type /Pages /Kids [] /Count 0 >>"),
+            new TextTestSupport.Obj(3, $"<< /Probe {literal} >>", "x"u8.ToArray()));
+
+        using var reader = PdfReader.Open(pdf);
+
+        var stream = reader.ResolveStream(3)!;
+        Assert.Equal(expected, Assert.IsType<PdfLiteralString>(stream.Dictionary.Get(Probe)).Bytes.ToArray());
+    }
+
+    /// <summary>
+    /// The flag is set by whether <c>/Encrypt</c> is present, not by what <c>/StrF</c> names. Under
+    /// <c>/StrF /Identity</c> the strings are plaintext, yet they keep a raw CR exactly as on 2.3.3:
+    /// they are not normalised.
+    /// </summary>
+    [Fact]
+    public void EncryptedFileWithStrFIdentity_keepsARawCarriageReturnInAString()
+    {
+        var doc = EncryptionParameterTests.BuildWithEncryptDict(
+            "<< /Filter /Standard /V 4 /R 4 /Length 128 "
+            + "/CF << /StdCF << /CFM /V2 /Length 16 >> >> /StmF /Identity /StrF /Identity /EFF /StdCF "
+            + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
+            + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>",
+            "<< /Probe (a\rb) >>");
+
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
+
+        Assert.Equal(PdfCipherAlgorithm.Identity, reader.Encryption!.StringCipher);
+        var dict = Assert.IsType<PdfDictionary>(reader.Resolve(new PdfIndirectReference(3, 0)));
+        Assert.Equal(
+            new byte[] { 0x61, 0x0D, 0x62 },
+            Assert.IsType<PdfLiteralString>(dict.Get(Probe)).Bytes.ToArray());
     }
 }

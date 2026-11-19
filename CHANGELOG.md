@@ -112,17 +112,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   LINE FEED (0Ah), or both". `PdfObjectParser.DecodeLiteralString` kept both bytes of a CRLF and
   kept a lone CR as 0Dh. A hand-assembled `/Lang (en<CR><LF>)` read back as `65 6E 0D 0A`, and now
   reads `65 6E 0A`. **This changes what the reader returns for such a string**, in strings parsed
-  from an unencrypted file, from an object stream body and from a content stream. **Strings stored
-  directly in an encrypted file's objects (ciphertext, `/Encrypt`, the trailer) keep their raw
-  bytes; object-stream members and content streams are plaintext and are normalised.** Those strings
-  are ciphertext (the encrypted strings) or key-derivation input (the `/Encrypt` dictionary's `/O`,
-  `/U`, `/OE` and `/UE`, and the trailer `/ID`), and a writer that escapes only parentheses and the
-  backslash puts a raw 0Dh in them as data; folding it would corrupt the bytes before decryption. In three runs over 300 AES-256 files from this library's writer, each with every \r
-  escape turned into a raw 0Dh, 2.3.3 opened all 53 files that carried one in a string with the same
-  `/Lang`, and with the end-of-line rule applied to every string, 28 of 70 failed to decrypt and 13
-  more read a different `/Lang`. A backslash before the end-of-line marker is still a line
-  continuation, and the escapes `\r`, `\n` and the octal forms still produce 0Dh and 0Ah exactly as
-  written. The added branch throws nothing, so no input that decoded on 2.3.3 stops decoding.
+  from the objects of an unencrypted file (not its trailer), from an object stream body and from a
+  content stream. **Strings stored directly in an encrypted file's objects (ciphertext, `/Encrypt`,
+  the trailer) keep their raw bytes; object-stream members and content streams are plaintext and are
+  normalised.** Under a `/StrF` other than `/Identity` those strings are ciphertext, or
+  key-derivation input (the `/Encrypt` dictionary's `/O`, `/U`, `/OE` and `/UE`, and the trailer
+  `/ID`), and a writer that escapes only parentheses and the backslash puts a raw 0Dh in them as
+  data; folding it would corrupt the bytes before decryption. **Under `/StrF /Identity` the strings
+  are plaintext and are still not normalised, as on 2.3.3**, because the reader decides from the
+  presence of `/Encrypt` alone. Folding every string failed to decrypt 28 of 70 AES-256 files that
+  carried a raw 0Dh in a string and changed `/Lang` in 13 more; 2.3.3 and this fix opened all of
+  them with the same `/Lang` (measurement in the PR). A backslash before the end-of-line marker is
+  still a line continuation, and the escapes `\r`, `\n` and the octal forms still produce 0Dh and
+  0Ah exactly as written. The added branch throws nothing, so no input that decoded on 2.3.3 stops
+  decoding.
 - **The two font rules that scan content streams now decode literal strings as the reader does
   (#511).** `CidRangeRule` and `GlyphPresenceRule` each kept a private decoder that stopped at the
   first closing parenthesis, so `(a(b)c)` was read as `a(b`, and that kept a raw CR. Both now call the
@@ -140,23 +143,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `UaGlyphPresence`, `UaGlyphWidth`, `UaNotdefGlyph`, `UaToUnicodeCharMapping`, `UaFontEmbedding`
   and `UaToUnicodeForbidden`, so a string that holds a raw CR is now checked as code 0Ah where it
   was checked as code 0Dh. The `BDC` strings reach only a null test (`UaMarkedContentLang` asks
-  whether `/Lang`, `/ActualText` or `/Alt` is present), so no verdict depends on their value. Measured as the two
-  font rules were: a temporary check that compared the old and new decode of every literal string
-  this scan decoded in the Conformance tests on net10.0 with the oracles enabled found no
-  difference except in the new tests' own strings, so no verdict in that suite changed. Four tests
-  pin the change, and they fail when the decode is told not to fold the marker.
+  whether `/Lang`, `/ActualText` or `/Alt` is present), so no verdict depends on their value.
+  Measured as the two font rules were: a temporary check that compared the old and new decode of
+  every literal string this scan decoded in the Conformance tests on net10.0 with the oracles
+  enabled found no difference except in the new tests' own strings, so no verdict in that suite
+  changed. Four tests pin the change, and they fail when the decode is told not to fold the marker.
 - **A `/Lang` tag ending in a line feed is now reported by both language rules (#507).** The
   patterns of `A2aLangSyntaxRule` (6.7.4-1) and `UaLangSyntaxRule` (7.2-29) ended in `$`, which in
   .NET also matches before a single trailing newline, where the ECMAScript predicate the rules cite
   asserts end of input. They now end in `\z`. **A preflight that passed on 2.3.3 can now report a
   failure**: a file whose `/Lang` is `(en\012)`, or has a raw line feed before the closing
-  parenthesis, was accepted on 2.3.3 and is now reported, as veraPDF 1.30.2 and 1.30.4 did all along.
-  A raw CR or CRLF there already fired on 2.3.3, because the reader kept the CR in the tag; the #511
-  fix would have turned those two forms into false accepts without this change, which is why the two
-  ship together. This is a new finding on non-compliant input; preflight reports compliance and
-  neither produces nor refuses a document. Row D6 is removed from `docs/conformance-divergences.md`,
-  since the divergence it recorded is gone. The other `Regex` fields in `src/` are the three XMP
-  value patterns, whose input is trimmed before the match, so a trailing newline never reaches them.
+  parenthesis, was accepted on 2.3.3 and is now reported, as veraPDF 1.30.2 and 1.30.4 did all
+  along. A raw CR or CRLF there already fired on 2.3.3, because the reader kept the CR in the tag;
+  the #511 fix would have turned those two forms into false accepts without this change, which is
+  why the two ship together. This is a new finding on non-compliant input; preflight reports
+  compliance and neither produces nor refuses a document. Row D6 is removed from
+  `docs/conformance-divergences.md`, since the divergence it recorded is gone. The other `Regex`
+  fields in `src/` are the three XMP value patterns, whose input is trimmed before the match, so a
+  trailing newline never reaches them.
 - **An XMP `Real` value can no longer take seconds to check (#506).** `PropertyValueTypeRule`'s
   real-number pattern split a run of digits between `\d+` and `\d*` at every position when no
   decimal point was present, so a failing match was quadratic in the length of the run, with no

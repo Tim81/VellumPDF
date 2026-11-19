@@ -10,9 +10,9 @@ namespace VellumPdf.Conformance.Tests;
 /// <summary>
 /// <c>ContentStreamUsage</c> decodes the strings of a page's content stream with the reader's
 /// literal-string decode, so an unescaped end-of-line marker reads as one 0Ah (ISO 32000-2, 7.3.4.2,
-/// #511). Those bytes feed the PDF/UA font rules through <c>ContentUsage.TextShows</c>, and the
-/// decoded text of an inline marked-content property dictionary feeds the language and alternate-text
-/// rules.
+/// #511). Those bytes feed the PDF/UA font rules through <c>ContentUsage.TextShows</c>. The decoded
+/// text of an inline marked-content property dictionary is read only by
+/// <c>UaMarkedContentLangRule</c>, which tests whether the entry is present.
 /// </summary>
 public sealed class ContentStreamUsageStringDecodeTests
 {
