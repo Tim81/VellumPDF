@@ -69,7 +69,7 @@ public readonly struct FontReference
     /// is drawn in Helvetica.
     /// <para>The handle is checked against the document that saves it (#544). A handle from a
     /// <see cref="VellumPdf.Layout.Document"/> other than the one that saves the text is refused, with
-    /// <see cref="ArgumentException"/> when the text is drawn, unless the saving document embedded
+    /// <see cref="ArgumentException"/> by the save that draws the text, unless the saving document embedded
     /// the same font program under the
     /// same resource name; <see cref="VellumPdf.Document.PdfDocument.RegisterEmbeddedFontUsage"/>
     /// describes both cases. A handle's resource name is a counter local to the document that issued

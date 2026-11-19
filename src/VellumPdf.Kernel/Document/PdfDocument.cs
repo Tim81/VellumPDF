@@ -31,10 +31,11 @@ public sealed class PdfDocument : IDisposable
     // Dedup cache: font content hash → handle, so loading the same font twice shares one subset.
     private readonly Dictionary<string, EmbeddedFontHandle> _embeddedFontByHash = new();
 
-    // Handles from another document that were resolved to this document's own embedding of the same
-    // font program (#544), as (own, foreign) pairs. The foreign embedder keeps registering glyphs
-    // while the pages are laid out, so they are merged into the own one when the fonts are written.
-    private readonly List<(EmbeddedFontHandle Own, EmbeddedFontHandle Foreign)> _foreignFontHandles = [];
+    // Handles from another document that pages here were registered with, in the order they were
+    // first registered (#544). Whether each is resolved to one of this document's own embeddings is
+    // decided at save, so it does not depend on whether UseTrueTypeFont ran before or after the
+    // registration, as it did not on 2.3.3.
+    private readonly List<EmbeddedFontHandle> _foreignFontHandles = [];
 
     // Per-page embedded font usage: page → set of handle resource names
     private readonly Dictionary<PdfPage, HashSet<string>> _pageEmbeddedFonts = new();
@@ -251,10 +252,46 @@ public sealed class PdfDocument : IDisposable
         return handle;
     }
 
+    /// <summary>
+    /// The own embedding of the font program of <paramref name="foreign"/>, when this document embedded
+    /// that program under the same resource name; otherwise <see langword="null"/>.
+    /// </summary>
+    private EmbeddedFontHandle? OwnEmbeddingOf(EmbeddedFontHandle foreign) =>
+        _embeddedFontByHash.TryGetValue(foreign.FontHash, out var own) && own.ResourceName == foreign.ResourceName
+            ? own
+            : null;
+
+    /// <summary>
+    /// Refuses, before anything is written, a handle from another document whose resource name this
+    /// document defines no font under: the page would name a font its resources do not hold (#544).
+    /// It runs at save, once every <c>UseTrueTypeFont</c> call has been made, so the order of those
+    /// calls and the registration does not matter.
+    /// </summary>
+    private void RefuseUndefinedForeignFonts()
+    {
+        foreach (var foreign in _foreignFontHandles)
+        {
+            if (OwnEmbeddingOf(foreign) is null && !_embeddedFonts.Exists(f => f.ResourceName == foreign.ResourceName))
+            {
+                throw new ArgumentException(
+                    $"The embedded font {foreign.ResourceName} belongs to a different document, and this " +
+                    "document defines no font under that resource name. A handle returned by one " +
+                    "document's UseTrueTypeFont cannot be used on another; embed the font through the " +
+                    "document that saves the page.",
+                    "handle");
+            }
+        }
+    }
+
+    // The same font program embedded here under the same resource name: the content stream names the
+    // foreign handle's resource, and this document's own embedding defines that name, so the glyphs
+    // the foreign embedder registered are added to this subset. Where the name is defined here for a
+    // different program, 2.3.3 saved a valid file whose text shows the wrong glyphs, and that is kept
+    // (#484) without a merge, since the subsets are of different fonts.
     private void MergeForeignFontUsage()
     {
-        foreach (var (own, foreign) in _foreignFontHandles)
-            own.Embedder.AddUsageFrom(foreign.Embedder);
+        foreach (var foreign in _foreignFontHandles)
+            OwnEmbeddingOf(foreign)?.Embedder.AddUsageFrom(foreign.Embedder);
     }
 
     /// <summary>
@@ -263,15 +300,17 @@ public sealed class PdfDocument : IDisposable
     /// so that <see cref="Save"/> can register the font reference on the correct pages.
     /// </summary>
     /// <remarks>
-    /// <b>A handle from another document is refused when this document defines no font under its
-    /// resource name.</b> Usage is recorded by resource name, and that name is a counter local to the
-    /// document that issued it, so a name this document never issued would be saved on the page with
-    /// no <c>/Font</c> entry to define it (#544). <see cref="ArgumentException"/> names the handle.
-    /// When this document has embedded the same font program under that name, the foreign handle is
-    /// resolved to this document's own embedding, and the glyphs the foreign handle registered are
-    /// added to its subset at save. On 2.3.3 that case saved a file whose subset held only the glyphs
-    /// this document had registered itself, so the text drawn through the foreign handle extracted as
-    /// other characters and veraPDF's PDF/A-2b profile failed.
+    /// <b>A handle from another document is refused at <see cref="Save"/> when this document defines
+    /// no font under its resource name.</b> Usage is recorded by resource name, and that name is a
+    /// counter local to the document that issued it, so a name this document never issued would be
+    /// saved on the page with no <c>/Font</c> entry to define it (#544). <see cref="Save"/> throws
+    /// <see cref="ArgumentException"/> naming the handle, before anything is written, and not this
+    /// call: whether the name is defined is decided once every <see cref="UseTrueTypeFont"/> call has
+    /// been made, so registering the handle before this document embeds its own font is accepted, as
+    /// on 2.3.3. When this document has embedded the same font program under that name, the glyphs the
+    /// foreign handle registered are added to this document's subset at save. On 2.3.3 that case saved
+    /// a file whose subset held only the glyphs this document had registered itself, so the text drawn
+    /// through the foreign handle extracted as other characters and veraPDF's PDF/A-2b profile failed.
     /// <para><b>Do not pass</b> a handle from another document. When this document defines the name
     /// for a different font program, the call is accepted as on 2.3.3: the page is saved with a
     /// valid font dictionary, and the text drawn through the handle is shown in this document's font
@@ -281,39 +320,12 @@ public sealed class PdfDocument : IDisposable
     /// <exception cref="ArgumentNullException">
     /// <paramref name="page"/> or <paramref name="handle"/> is <see langword="null"/>.
     /// </exception>
-    /// <exception cref="ArgumentException">
-    /// <paramref name="handle"/> was returned by a different <see cref="PdfDocument"/>, and this
-    /// document has embedded no font under its resource name through <see cref="UseTrueTypeFont"/>.
-    /// </exception>
     public void RegisterEmbeddedFontUsage(PdfPage page, EmbeddedFontHandle handle)
     {
         ArgumentNullException.ThrowIfNull(page);
         ArgumentNullException.ThrowIfNull(handle);
-        if (!ReferenceEquals(handle.Owner, this))
-        {
-            // Same font program embedded here under the same resource name: the content stream names
-            // the foreign handle's resource, and this document's own embedding defines that name, so
-            // the page is correct, and the foreign glyphs are merged into that subset. When the name
-            // is defined here for another program, 2.3.3 saved a valid file whose text shows the wrong
-            // glyphs, and that is kept (#484) without a merge, since the subsets are of different
-            // fonts. A name defined nowhere here would have no /Font entry: that is refused.
-            if (_embeddedFontByHash.TryGetValue(handle.FontHash, out var own) &&
-                own.ResourceName == handle.ResourceName)
-            {
-                if (!_foreignFontHandles.Contains((own, handle)))
-                    _foreignFontHandles.Add((own, handle));
-                handle = own;
-            }
-            else if (!_embeddedFonts.Exists(f => f.ResourceName == handle.ResourceName))
-            {
-                throw new ArgumentException(
-                    $"The embedded font {handle.ResourceName} belongs to a different document, and this " +
-                    "document defines no font under that resource name. A handle returned by one " +
-                    "document's UseTrueTypeFont cannot be used on another; embed the font through the " +
-                    "document that saves the page.",
-                    nameof(handle));
-            }
-        }
+        if (!ReferenceEquals(handle.Owner, this) && !_foreignFontHandles.Contains(handle))
+            _foreignFontHandles.Add(handle);
 
         if (!_pageEmbeddedFonts.TryGetValue(page, out var set))
         {
@@ -678,7 +690,9 @@ public sealed class PdfDocument : IDisposable
     /// <exception cref="ArgumentException">
     /// <paramref name="destination"/> cannot be written to, which includes a stream that was already
     /// closed. A linearized save to a closed stream used to throw <see cref="ObjectDisposedException"/>
-    /// after the document had been marked as written.
+    /// after the document had been marked as written. It is also thrown, naming the handle, when a page
+    /// was registered with an <see cref="EmbeddedFontHandle"/> from another document and this document
+    /// defines no font under its resource name; see <see cref="RegisterEmbeddedFontUsage"/>.
     /// </exception>
     /// <exception cref="NotSupportedException"><see cref="UseObjectStreams"/> is combined with
     /// <see cref="Encrypt"/>.</exception>
@@ -700,6 +714,7 @@ public sealed class PdfDocument : IDisposable
             throw new InvalidOperationException("The document has no pages.");
 
         ValidateSaveOptions();
+        RefuseUndefinedForeignFonts();
 
         // All preconditions passed — mark written only now, so a recoverable precondition
         // failure (no pages, incompatible options) leaves the document usable for a retry.
@@ -1190,6 +1205,8 @@ public sealed class PdfDocument : IDisposable
 
         if (_pages.Count == 0)
             throw new InvalidOperationException("The document has no pages.");
+
+        RefuseUndefinedForeignFonts();
 
         // All preconditions passed — mark written only now, so a recoverable precondition
         // failure leaves the document usable for a retry.

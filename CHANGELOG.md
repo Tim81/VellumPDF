@@ -308,9 +308,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `Tf` name `TT1`, an empty `/Font` resource dictionary, no `FontFile2`), or, when the saving
   document had its own different `TT1`, quietly used that other font. Each handle now remembers the
   `PdfDocument` that returned it and the SHA-256 of its font program.
-  `PdfDocument.RegisterEmbeddedFontUsage` throws `ArgumentException` (parameter `handle`) for a
-  handle from another document whose resource name this document defines no font under, so the
-  save fails where the text is drawn. When the saving document embedded the same font program under
+  `PdfDocument.Save` and `PrepareForSigning` throw `ArgumentException` (parameter `handle`) for a
+  handle from another document whose resource name this document defines no font under, before
+  anything is written. The registration itself accepts it, because whether the name is defined
+  depends on a `UseTrueTypeFont` call that may come after it, and 2.3.3 saved that order. When the saving document embedded the same font program under
   that name, the handle resolves to its own embedding. That case saved on 2.3.3, but its subset
   held only the glyphs the saving document had registered itself, so text drawn through the foreign
   handle extracted as other characters and veraPDF's PDF/A-2b profile failed. The glyphs the foreign

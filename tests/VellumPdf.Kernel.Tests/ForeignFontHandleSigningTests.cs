@@ -60,4 +60,70 @@ public sealed class ForeignFontHandleSigningTests
         Assert.NotEqual(string.Empty, own);
         Assert.Equal(own, viaForeign);
     }
+
+    private static byte[] SaveOrPrepare(PdfDocument doc, bool signing)
+    {
+        if (!signing)
+        {
+            using var ms = new MemoryStream();
+            doc.Save(ms);
+            return ms.ToArray();
+        }
+
+        return doc.PrepareForSigning(new SignaturePlaceholderOptions { SigningTime = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) });
+    }
+
+    /// <summary>
+    /// A foreign handle registered before the saving document embeds its own font saves, with the
+    /// same widths as the other order: whether the name is defined is decided at save, as 2.3.3, which
+    /// took no notice of the order, saved this file. A call-site refusal would throw here.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ForeignHandleRegisteredBeforeTheOwnFont_savesLikeTheOtherOrder(bool signing)
+    {
+        if (!File.Exists(FontPath)) OracleGate.Unavailable("DejaVuSans.ttf", "DejaVu Sans is copied beside the test assembly by the project file.");
+        var font = File.ReadAllBytes(FontPath);
+
+        using var owner = new PdfDocument();
+        var foreign = owner.UseTrueTypeFont(font);
+        using var early = new PdfDocument();
+        var page = early.AddPage();
+        foreign.GetGlyphIds("Hello", new ushort[5]);
+        early.RegisterEmbeddedFontUsage(page, foreign);       // before early.UseTrueTypeFont
+        _ = early.UseTrueTypeFont(font);
+
+        var late = WidthsOf(SaveOrPrepare(early, signing));
+
+        Assert.NotEqual(string.Empty, late);
+        Assert.Equal(WidthsOf(Build(viaForeign: true, signing)), late);
+    }
+
+    /// <summary>
+    /// A foreign handle whose name this document never defines is refused by the save, not by the
+    /// registration, with <see cref="ArgumentException"/> naming <c>handle</c> and before the document
+    /// is marked written: defining the font afterwards lets the same document save.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ForeignHandleWithNoOwnFont_isRefusedBySaveNotByTheRegistration(bool signing)
+    {
+        if (!File.Exists(FontPath)) OracleGate.Unavailable("DejaVuSans.ttf", "DejaVu Sans is copied beside the test assembly by the project file.");
+        var font = File.ReadAllBytes(FontPath);
+
+        using var owner = new PdfDocument();
+        var foreign = owner.UseTrueTypeFont(font);
+        using var other = new PdfDocument();
+        var page = other.AddPage();
+        other.RegisterEmbeddedFontUsage(page, foreign);       // accepted
+
+        var ex = Assert.Throws<ArgumentException>(() => SaveOrPrepare(other, signing));
+        Assert.Equal("handle", ex.ParamName);
+        Assert.Contains("belongs to a different document", ex.Message, StringComparison.Ordinal);
+
+        _ = other.UseTrueTypeFont(font);                       // now the name is defined: the same document saves
+        Assert.StartsWith("%PDF-", Encoding.Latin1.GetString(SaveOrPrepare(other, signing)), StringComparison.Ordinal);
+    }
 }
