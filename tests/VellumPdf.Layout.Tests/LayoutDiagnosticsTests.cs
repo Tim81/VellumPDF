@@ -30,7 +30,7 @@ public sealed class LayoutDiagnosticsTests
 
     private static Document NewDoc() => new() { PageSize = SmallPage, Margins = new EdgeInsets(50) };
 
-    private static Paragraph NullStyleParagraph() => new([new TextRun("   ", null)]);
+    private static Paragraph NullStyleParagraph() => new([new TextRun("   ", null!)]);
 
     private static Document NullStyleDoc(bool strict = false)
     {
@@ -179,7 +179,7 @@ public sealed class LayoutDiagnosticsTests
     {
         using var doc = NewDoc();
         var body = new TextRun(string.Join(' ', Enumerable.Repeat("word", 120)), TextStyle.Default);
-        doc.Add(new Paragraph([new TextRun("   ", null), body]));
+        doc.Add(new Paragraph([new TextRun("   ", null!), body]));
         using var ms = new MemoryStream();
 
         doc.Save(ms);
@@ -196,7 +196,7 @@ public sealed class LayoutDiagnosticsTests
     public void TwoNullStyleRuns_inOneParagraph_giveCountTwo()
     {
         using var doc = NewDoc();
-        doc.Add(new Paragraph([new TextRun("", null), new TextRun("\n", null), new TextRun("x", TextStyle.Default)]));
+        doc.Add(new Paragraph([new TextRun("", null!), new TextRun("\n", null!), new TextRun("x", TextStyle.Default)]));
 
         doc.Save(new MemoryStream());
 
@@ -279,7 +279,7 @@ public sealed class LayoutDiagnosticsTests
         child.AddChild(new ListItem(null!));
         top.AddChild(child);
         using var doc = new Document();
-        doc.Add(new ListElement(ListStyle.Unordered, [top]));
+        doc.Add(new ListElement(ListStyle.OrderedDecimal, [top]));
 
         doc.Save(new MemoryStream());
 
@@ -309,7 +309,7 @@ public sealed class LayoutDiagnosticsTests
         var top = new ListItem("top");
         top.AddChild(b);
         using var doc = new Document();
-        doc.Add(new ListElement(ListStyle.Unordered, [a, top]));
+        doc.Add(new ListElement(ListStyle.OrderedDecimal, [a, top]));
 
         doc.Save(new MemoryStream());
 
@@ -329,7 +329,7 @@ public sealed class LayoutDiagnosticsTests
         }
 
         using var doc = new Document();
-        doc.Add(new ListElement(ListStyle.Unordered, [levels[0]]));
+        doc.Add(new ListElement(ListStyle.OrderedDecimal, [levels[0]]));
 
         doc.Save(new MemoryStream());
 
@@ -466,7 +466,7 @@ public sealed class LayoutDiagnosticsTests
         {
             using var doc = new Document { StrictDiagnostics = strict };
             doc.Add(new Paragraph("Clean text"));
-            doc.Add(new ListElement(ListStyle.Unordered, [new ListItem("one"), new ListItem("two")]));
+            doc.Add(new ListElement(ListStyle.OrderedDecimal, [new ListItem("one"), new ListItem("two")]));
             var pdf = (PdfDocument)typeof(Document)
                 .GetField("_pdf", BindingFlags.Instance | BindingFlags.NonPublic)!
                 .GetValue(doc)!;

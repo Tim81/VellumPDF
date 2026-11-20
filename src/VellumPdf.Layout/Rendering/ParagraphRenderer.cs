@@ -700,7 +700,7 @@ public sealed class ParagraphRenderer : IRenderer
                 }
                 // An empty hardLine (e.g. two consecutive \n) still forces a break.
                 if (words.Length == 0 && !isFirstHardLine)
-                    tokens.Add((string.Empty, run.Style, true));
+                    tokens.Add((string.Empty, run.Style!, true));
             }
 
             // A null style that yielded a word threw above, so what is left here yielded none.
