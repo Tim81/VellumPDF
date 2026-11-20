@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`Document.Timestamp` and `Document.DocumentId` (#597).** The Layout `Document` now forwards the
+  two pins that `PdfDocument` already had. `Timestamp` sets the instant written as the XMP creation
+  and modification date and mixed into the derived file identifier; with it pinned, two documents
+  built by the same calls save to the same bytes on one library build, one runtime and one
+  operating system, unless the instant is before 1970 and `DocumentId` is null: the derived
+  identifier then follows the current culture's minus sign, and pinning `DocumentId` as well
+  removes the dependence. `DocumentId` sets both strings of the trailer `/ID`; a value that is not 16 bytes
+  is refused by the setter with `ArgumentException`. An encrypted document is never reproducible,
+  a signature takes its time from `PdfSignatureSettings.SigningTime`, and an embedded font's
+  ToUnicode map differs between Windows and Linux (#630). Nothing changes for a document that
+  leaves both unset.
 - **`Document.Diagnostics` and `Document.StrictDiagnostics` (#607).** One channel for what a save
   keeps while it loses, misplaces or substitutes content, and an opt-in switch that turns each
   report into a refusal.
@@ -122,6 +133,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **`Save` and the signing path build the document catalog in one place (#606).** Both used to
+  assemble it in separate blocks of `PdfDocument` that disagreed on key order and on where the
+  output-intent objects are numbered. One private builder now writes the keys, and each path
+  passes in the references it has already reserved, so no output changes: the 63 catalog golden
+  cases of #626 pass with their expected values untouched. The builder is where the catalog
+  parts that later issues add will go.
+
 - **Every package now targets `net10.0` and `net11.0`, built with the .NET 11 SDK (`global.json`
   pins 11.0.100, latest patch).** The seven library nupkgs carry `lib/net10.0` and `lib/net11.0`;
   the `VellumPdf.Cli` tool package carries `tools/net10.0/any` and `tools/net11.0/any`. The public
@@ -198,6 +216,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **The Kernel's `DocumentId` summary and `docs/kernel-guide.md` section 9 described the derived
+  identifier wrongly (#597).** They said it comes from the page content, which it never did: it
+  comes from the title, the producer, the page count and the time. They also said the bytes of two
+  identical saves differ, where they depend on when the document is saved.
 - **`PdfCanvas` refuses NaN and infinity in every operand it writes (#519).** Every content-stream
   operator that writes a number now throws `ArgumentException` for `NaN` or infinity, with the same
   message as `PdfReal`, instead of writing `NaN 0 0 rg`, which is not a PDF number (ISO 32000-2
@@ -696,6 +718,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   The XML documentation now describes this once per loader, with a "Do not pass" paragraph naming
   3.0 as the release that refuses all three. Three tests pin the shapes with exact dimensions.
   No behaviour changes.
+
+### Documentation
+
+- **Every file in `docs/` is now either in the site navigation or kept off the site on purpose
+  (#220).** `docs/toc.yml` already lists nine of the eleven Markdown files. The other two,
+  `vellumpdf-inline-fontdict-quirk.md` and `vellumpdf-showtext-winansi-quirk.md`, are Dutch
+  notes on defects fixed in 1.8.2 and 1.9.0, and the second quotes a consuming application's
+  name and source path, since scrubbed from both. They are now excluded from the DocFX build in
+  `docfx.json`; before, `docs/**.md` published them at a URL no page linked to. `barcodes-roadmap.md` called itself a maintainer
+  note left out of `toc.yml` while `toc.yml` listed it. Its opening now says what the page is,
+  and its README maintenance note names `eng/generate-roadmap.py` as the source of the roadmap
+  table.
 
 ## [2.3.4] - 2026-11-19
 

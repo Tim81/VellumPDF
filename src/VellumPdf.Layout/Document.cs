@@ -318,6 +318,75 @@ public sealed class Document : IDisposable
         set => _pdf.UseObjectStreams = value;
     }
 
+    /// <summary>
+    /// The instant written as the XMP creation and modification date and mixed into the derived
+    /// file identifier. Null, the default, means the time of the save. Forwarded to the underlying
+    /// <see cref="PdfDocument"/>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Pinning this makes the output reproducible for one library build on one runtime and one
+    /// operating system.</b> Two documents built by the same calls then save to the same bytes,
+    /// because the save reads the clock only when this is null and for a signature's time, and
+    /// reads random values only to encrypt. Those are the only clock and random reads in the
+    /// Kernel, Layout and Signing projects; code outside those projects and the .NET framework
+    /// are not covered by that statement.
+    /// <para>It does not hold when:</para>
+    /// <list type="bullet">
+    /// <item>An encrypted document is never reproducible: <see cref="Encrypt"/> draws random
+    /// salts and initialisation vectors on every save.</item>
+    /// <item>A document signed through VellumPdf.Signing takes the signature's time from
+    /// <c>PdfSignatureSettings.SigningTime</c> in that package, not from this property, and the
+    /// signature value itself is outside this guarantee.</item>
+    /// <item>A document with an embedded font can differ between Windows and Linux, because the
+    /// line ends of the font's ToUnicode map follow the platform (#630).</item>
+    /// <item>The compressed bytes can differ between .NET runtimes: .NET 10 writes an empty
+    /// page's content stream with no data and .NET 11 writes 8 bytes.</item>
+    /// <item>The instant is before 1970 (a negative Unix time) and <see cref="DocumentId"/> is
+    /// null: the derived identifier is hashed from the instant's decimal text, and the minus sign
+    /// of that text follows the current culture. Cultures whose negative sign differs from the invariant
+    /// one (sv-SE, nb-NO, fa-IR and ar-SA among them) give another identifier. Pin
+    /// <see cref="DocumentId"/> as well to remove the dependence.</item>
+    /// </list>
+    /// <para>The XMP dates keep whole seconds and the offset and drop the fraction of a second.
+    /// The derived file identifier uses the instant in milliseconds and ignores the offset, so
+    /// the same instant with two offsets gives one identifier and two XMP dates. The identifier
+    /// is derived from the title, the producer (<c>VellumPdf</c> when <c>Info.Producer</c> is
+    /// null) and the page count together with this instant, so <see cref="DocumentId"/> is not
+    /// needed for reproducibility, except for the pre-1970 case above.</para>
+    /// <para>The value is read once, when a save writes. A value set after the document has
+    /// saved is stored and never written, because a document saves once. A refused save that
+    /// failed before layout started leaves the document usable, and a value set before the retry
+    /// is the one written.</para>
+    /// </remarks>
+    public DateTimeOffset? Timestamp
+    {
+        get => _pdf.Timestamp;
+        set => _pdf.Timestamp = value;
+    }
+
+    /// <summary>
+    /// The permanent file identifier, written as both strings of the trailer <c>/ID</c> array.
+    /// Null, the default, means an identifier derived from the title, the producer, the page
+    /// count and <see cref="Timestamp"/>. Forwarded to the underlying <see cref="PdfDocument"/>.
+    /// </summary>
+    /// <remarks>
+    /// <b>An array that is not 16 bytes is refused.</b> The setter throws
+    /// <see cref="ArgumentException"/> naming the length, because the writer emits no
+    /// <c>/ID</c> for any other length and ISO 32000-2, Table 15 requires one once the file is
+    /// encrypted. Every 16-byte value is accepted, an all-zero one included.
+    /// <para>The array is copied on get and on set, so changing the caller's array afterwards does
+    /// not change the output. A value set after the document has saved is stored and never
+    /// written.</para>
+    /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// Thrown by the setter when the value is neither null nor exactly 16 bytes long.
+    /// </exception>
+    public byte[]? DocumentId
+    {
+        get => _pdf.DocumentId;
+        set => _pdf.DocumentId = value;
+    }
+
     /// <summary>Page margins applied to the content area. Defaults to 72 points (1 inch) on all sides.</summary>
     /// <remarks>
     /// Margins that meet or exceed the page are refused. Saving throws

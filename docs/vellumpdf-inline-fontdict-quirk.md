@@ -80,7 +80,7 @@ Overweeg hetzelfde voor de inline `/ExtGState`-dicts (GS1…GSn): poppler verwer
 correct, maar indirecte, gededupliceerde ExtGState-objecten zijn compacter bij
 multi-page documenten.
 
-## Repro binnen Celestium
+## Reproductie in een applicatie die de bibliotheek gebruikt
 
 ```bash
 # genereer een dashboard-export (Vellum) en inspecteer:

@@ -1,4 +1,8 @@
 #nullable enable
+VellumPdf.Layout.Document.DocumentId.get -> byte[]?
+VellumPdf.Layout.Document.DocumentId.set -> void
+VellumPdf.Layout.Document.Timestamp.get -> System.DateTimeOffset?
+VellumPdf.Layout.Document.Timestamp.set -> void
 VellumPdf.Layout.LayoutDiagnostic
 VellumPdf.Layout.LayoutDiagnostic.Clause.get -> string?
 VellumPdf.Layout.LayoutDiagnostic.Code.get -> VellumPdf.Layout.LayoutDiagnosticCode
