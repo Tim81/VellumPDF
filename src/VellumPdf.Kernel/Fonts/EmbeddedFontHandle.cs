@@ -9,11 +9,10 @@ namespace VellumPdf.Fonts;
 /// </summary>
 /// <remarks>
 /// A handle belongs to the document that returned it. Its <see cref="ResourceName"/> is a counter
-/// local to that document, so another document cannot use it as it stands. When the saving document
-/// has embedded the same font program itself, the page uses that document's own embedding and takes
-/// over the glyphs the handle registered. When it has not, it refuses the handle with
-/// <see cref="ArgumentException"/> where it records page usage. Embed the font through the
-/// document that saves the page.
+/// local to that document, so another document cannot use it as it stands. A saving document that
+/// defines no font under the handle's resource name refuses it; see
+/// <see cref="VellumPdf.Document.PdfDocument.RegisterEmbeddedFontUsage"/>. Embed the font through
+/// the document that saves the page.
 /// </remarks>
 public sealed class EmbeddedFontHandle
 {

@@ -214,14 +214,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **An embedded font handle from another `Document` is refused when the saving document defines no
   font under its resource name (#544).** A handle's resource name (`TT1`) is local to the document
   that issued it, so a foreign handle wrote a page naming a font its resources did not define, or
-  quietly used a different font of the same name. `PdfDocument.Save` and `PrepareForSigning` now
-  throw `ArgumentException` (parameter `handle`) before anything is written. Registration still
-  accepts it, because a later `UseTrueTypeFont` call may define the name. When the saving document
-  embedded the same font program under that name, the glyphs the foreign handle registered are now
-  added to the subset, so its text extracts correctly; this is a deliberate output change.
-  **Attention**: a foreign handle whose name the saving document defines for a different font still
-  saves with that font's glyphs, and nothing reports it yet (#607). The XML doc of
-  `RegisterEmbeddedFontUsage` says not to pass a foreign handle and that 3.0 refuses it.
+  quietly used a different font of the same name. `PdfDocument.Save`, `SaveAsync` and
+  `PrepareForSigning` now throw `ArgumentException` (parameter `handle`) before anything is written,
+  and the registering call never does, because a later `UseTrueTypeFont` call may define the name.
+  When the saving document defines that name with the same font program, the glyphs the foreign
+  handle registered are now added to the subset, so its text extracts correctly; this is a
+  deliberate output change. **Attention**: a foreign handle whose name the saving document defines
+  for a different font program still saves with that font's glyphs, and nothing reports it yet
+  (#607). The rule is stated once, on `PdfDocument.RegisterEmbeddedFontUsage`, which also says not to
+  pass a foreign handle and that 3.0 refuses it.
 
 - **A cycle in a structure tree, array, dictionary or stream is refused instead of overflowing the
   stack (#521).** `PdfArray.WriteTo`, `PdfDictionary.WriteTo` and the stream `WriteTo` throw
@@ -772,10 +773,9 @@ API file gained a removal or a rename.
     store a null too, and their `Layout` method throws (#547).
   - `SetDefaultFont` is used only by `Add(string)` calls made after it. A `Paragraph`,
     `Heading`, list, table or running band never uses it.
-  - A font handle from a different `Document` saves without an exception. The text is drawn in
-    whatever font the saving document registered under the same resource name, if any. Even when
-    that is the same font file, only the characters the saving document's own text also uses
-    survive (#544).
+  - A font handle from a different `Document` is refused at the save when the saving document defines
+    no font under its resource name, and otherwise is drawn in whatever font the saving document
+    defines under that name (#544); see the entry for #544 above.
   - `HorizontalAlignment.Justify` is drawn as left everywhere except paragraph and heading text.
     A justified line whose text is all in one `TextStyle` instance and in the standard-14 text
     faces (every standard-14 font but Symbol and ZapfDingbats) is stretched by only half the free

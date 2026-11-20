@@ -32,8 +32,8 @@ public sealed class TextStyle
     /// </summary>
     /// <remarks>
     /// Stored as given. A null handle saves in Helvetica, and a handle from another document is
-    /// refused unless the saving document embedded the same font program under the same resource name;
-    /// see <see cref="FontReference(EmbeddedFontHandle)"/>. A
+    /// refused when the saving document defines no font under its resource name; see
+    /// <see cref="VellumPdf.Document.PdfDocument.RegisterEmbeddedFontUsage"/>. A
     /// Standard-14 value the enumeration does not name makes the save throw once the font is
     /// selected on a page, which an empty table cell or list item with this style also does.
     /// <para><see cref="Standard14.Symbol"/> and <see cref="Standard14.ZapfDingbats"/> measure

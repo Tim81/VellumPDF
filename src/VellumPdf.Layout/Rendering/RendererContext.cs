@@ -78,10 +78,9 @@ public sealed class RendererContext
     /// Idempotent: safe to call on every draw call for the same font.
     /// </summary>
     /// <remarks>
-    /// A handle from a document other than the one that saves the page is refused unless the saving
-    /// document embedded the same font program under the same resource name; see
-    /// <see cref="VellumPdf.Layout.Core.FontReference.FontReference(EmbeddedFontHandle)"/>.
-    /// <b>Do not pass</b> a handle from another document: 3.0 refuses it.
+    /// A handle from another document is refused when the saving document defines no font under its
+    /// resource name, at the save and not here; see
+    /// <see cref="VellumPdf.Document.PdfDocument.RegisterEmbeddedFontUsage"/>.
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised from this call when this context was constructed with a null document.
@@ -91,11 +90,6 @@ public sealed class RendererContext
     /// context was constructed with a null page and a non-null document. The page is checked first,
     /// so a null page names <c>page</c> whether or not the handle is null; otherwise
     /// <c>ParamName</c> is <c>handle</c>.
-    /// </exception>
-    /// <exception cref="ArgumentException">
-    /// Raised from this call when <paramref name="handle"/> was returned by a document other than the
-    /// one that saves the page, and the saving document did not embed the same font program under the
-    /// same resource name.
     /// </exception>
     public void RegisterEmbeddedFontUsage(EmbeddedFontHandle handle) =>
         _document.RegisterEmbeddedFontUsage(_page, handle);
