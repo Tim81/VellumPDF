@@ -947,7 +947,8 @@ public sealed class Document : IDisposable
     /// <summary>
     /// Makes the path absolute and nothing more. The file is opened exactly as given, so the operating
     /// system follows any symbolic link, a chain or a link into another directory included, and
-    /// resolves a relative link target against the link's own directory, as the open always did. Whether the path is a directory, read-only or otherwise unwritable is also for the
+    /// resolves a relative link target against the link's own directory, as the open always did.
+    /// Whether the path is a directory, read-only or otherwise unwritable is also for the
     /// operating system to say when the file is opened: .NET reads a Unix file's read-only attribute
     /// from its mode bits alone, which ignores root, supplementary groups and access-control lists,
     /// so a check made here refused files the open would have written. Following links here by

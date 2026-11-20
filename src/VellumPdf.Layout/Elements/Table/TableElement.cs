@@ -111,8 +111,9 @@ public sealed class TableElement
     /// a refusal in a patch, because the table still renders. Entries whose sum overflows to
     /// infinity are accepted, and every explicit column is written at width 0 while an auto column
     /// keeps its content width, so with no auto column the cells' text is drawn at the table's left
-    /// edge on top of one another. <b>Do not pass</b> widths whose sum overflows. Nothing reports it, because there is no diagnostics
-    /// channel yet, and 3.0 will throw <see cref="InvalidOperationException"/>.
+    /// edge on top of one another. <b>Do not pass</b> widths whose sum overflows. Nothing reports
+    /// it, because there is no diagnostics channel yet, and 3.0 will throw
+    /// <see cref="InvalidOperationException"/>.
     /// When the auto columns take all of the available width or more, every column,
     /// auto ones included, is scaled by one ratio instead. A positive entry under 5e-6 is kept and
     /// written as width 0. None of this is reported.</para>
