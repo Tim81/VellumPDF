@@ -145,8 +145,8 @@ internal sealed class TableGridResolver
 
         // Each entry is finite here, but their sum need not be: three of 1e308 reach +Infinity, the
         // scale ratio becomes budget / Infinity = 0, and every explicit column is written at width 0,
-        // an auto column keeping its content width. With no auto column the cells' text is on top of
-        // one another at the left edge. The file is valid, so it is kept; documented on ColWidths,
+        // an auto column keeping its content width, so cells that start at the same x are drawn on
+        // top of one another. The file is valid, so it is kept; documented on ColWidths,
         // and 3.0 refuses it.
 
         var autoCount = 0;

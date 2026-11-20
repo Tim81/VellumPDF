@@ -186,8 +186,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   exact remainder before any sweep is added, so wedges no longer overlap or collapse; a smaller
   angle is unchanged. Slice totals that sum to infinity still save with an empty chart, and explicit
   column widths that sum to infinity still save with every explicit column at width 0, as on 2.3.3.
-  An auto column keeps its content width, and a table with none draws the cells' text at its left
-  edge on top of one another. `PieChart.Slices` and `ColWidths` say not to pass them, and 3.0
+  An auto column keeps its content width, and cells that start at the same x are drawn on top of
+  one another. `PieChart.Slices` and `ColWidths` say not to pass them, and 3.0
   refuses them (#484).
 
 - **Justified text in a standard-14 font reaches the right edge, and a multi-style line no longer
@@ -240,8 +240,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   disposed document, an unwritable stream, `UseObjectStreams` with `Encrypt`, a PDF/A conformance
   with `Encrypt`, `Encrypt` with `Sign`, a negative `SignaturePage`, and an
   `EstimatedSignatureSizeBytes` that is negative or above 536,870,894. `PdfDocument.SaveAsync` and
-  `DocumentRenderer.Render` check the destination first too, except for a linearized kernel
-  document. A refusal at one of these leaves the
+  `DocumentRenderer.Render` check the destination first too; `Render` does not for a linearized
+  kernel document, and `SaveAsync` still does. A refusal at one of these leaves the
   document untouched, and a retry saves it once; 2.3.3 laid it out a second time and wrote doubled
   pages, a deliberate output change. A save that throws once its layout has started, including a
   `SaveAsync` cancelled after the layout, leaves the document unusable, and every later save throws
@@ -255,8 +255,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   or lines broken at the first attempt's width, and now throws; build a new `Document`.
   **Attention**: a linearized `PdfDocument.Save` or `DocumentRenderer.Render` does not check the
   destination up front. The document is serialised in memory and the stream's own `Write` decides,
-  as on 2.3.3, so a closed or read-only stream throws `ObjectDisposedException` or
-  `NotSupportedException` after serialisation, the document counts as written, and a retry throws
+  as on 2.3.3, so whatever the stream's own `Write` throws, for example `ObjectDisposedException`
+  for a closed `MemoryStream` and `NotSupportedException` for a read-only one, comes after
+  serialisation, the document counts as written, and a retry throws
   `InvalidOperationException`. A non-linearized `Save` to a stream that cannot be written to
   reports `destination` where it reported `stream`.
   **Attention**: a bad `EstimatedSignatureSizeBytes` throws `ArgumentOutOfRangeException` with

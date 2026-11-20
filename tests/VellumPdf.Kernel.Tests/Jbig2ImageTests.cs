@@ -2080,7 +2080,11 @@ public sealed class Jbig2ImageTests
         Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(file, new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster }));
     }
 
-    /// <summary>The loader reads no flags byte, so one with bits 4 to 7 set is not special: the bytes after the ID string are read as segments and the file is refused like any other Annex D file.</summary>
+    /// <summary>
+    /// The loader reads no flags byte, so one with a high bit set (the fixture sets bit 4) is not
+    /// special: the bytes after the ID string are read as segments and the file is refused like any
+    /// other Annex D file.
+    /// </summary>
     [Fact]
     public void Load_AFlagsByteWithHighBitsSet_IsRefusedLikeAnyAnnexDFile()
     {

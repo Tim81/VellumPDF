@@ -717,8 +717,9 @@ public sealed class PdfDocument : IDisposable
     /// <see cref="ObjectDisposedException"/> for a closed <see cref="MemoryStream"/>,
     /// <see cref="NotSupportedException"/> for a read-only one, <see cref="IOException"/> for one that
     /// throws it. A stream that reports <c>CanWrite</c> false but accepts the write receives the PDF.
-    /// That failure comes after serialisation, so the document counts as written and a second save
-    /// throws <see cref="InvalidOperationException"/>, as for any failure once writing has begun.
+    /// A failure at that write comes after serialisation, so the document counts as written and a
+    /// second save throws <see cref="InvalidOperationException"/>, as for any failure once writing
+    /// has begun.
     /// </remarks>
     /// <exception cref="ObjectDisposedException">
     /// The document has been disposed, or <see cref="Linearize"/> is set and
@@ -740,7 +741,8 @@ public sealed class PdfDocument : IDisposable
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// <see cref="UseObjectStreams"/> is combined with <see cref="Encrypt"/>, or <see cref="Linearize"/>
-    /// is set and <paramref name="destination"/> is read-only.
+    /// is set and the <c>Write</c> of <paramref name="destination"/> throws it, as a read-only
+    /// <see cref="MemoryStream"/> does.
     /// </exception>
     /// <exception cref="IOException">
     /// <see cref="Linearize"/> is set and <paramref name="destination"/> throws it from <c>Write</c>;
