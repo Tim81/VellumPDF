@@ -262,11 +262,19 @@ public sealed class CmapFormat12Tests
     /// and found equal on this build. They are over inflated bodies, not the file, so a different
     /// zlib on another platform cannot move them. A change to which glyph a BMP code point maps to,
     /// or to what is embedded for it, changes a digest.
+    ///
+    /// <para>The ToUnicode map is written with <c>StringBuilder.AppendLine</c>, so its line breaks
+    /// are CRLF on Windows and LF on Linux: the map is 18 bytes shorter for these 4 characters,
+    /// measured on a Windows build and under WSL Ubuntu 24.04, and a digest over the raw bytes
+    /// failed on the Linux runner for that reason. That is 2.3.3's own behaviour, so
+    /// <see cref="StreamBodies"/> folds CRLF to LF in that one stream before hashing, and the
+    /// digests are the 2.3.3 bytes under that fold. The fold is limited to the ToUnicode map
+    /// because a font program can hold a CR LF pair that is data.</para>
     /// </summary>
     [Theory]
-    [InlineData("DejaVuSans.ttf", "intact", "B8C90319B5BEAE5E48F7E18B8B0ECF44D360E942C70FD100F9603D187B675617")]
-    [InlineData("DejaVuSans.ttf", "format4Only", "C9964F54FB78A50F0BC43245007F360CD980A02E091B8D3460D4EB36FB9EBC4B")]
-    [InlineData("SourceSans3-ExtraLight.otf", "intact", "CA40E77EF8B02C1F69BF577246FDA4E000FB5B7479575AA88717EB78646A82AF")]
+    [InlineData("DejaVuSans.ttf", "intact", "3E4AEB889F5F4A0C6FCD224C50417ABAD966CAF6A8DA17E1322AEB506F46E2A1")]
+    [InlineData("DejaVuSans.ttf", "format4Only", "F5E4EEC0EAE5413C9C87D17A5258FD7DBEF1F9A9FED87128070C81D6AC263BB2")]
+    [InlineData("SourceSans3-ExtraLight.otf", "intact", "3F4D3BBA526BBC8396431AAB288AB9162C1C992D1AB5B911672F162CCE0E737B")]
     public void BmpOnlyDocument_hasTheStreamBodiesItHadOn233(string asset, string variant, string expectedSha256)
     {
         var font = LoadAsset(asset);
@@ -628,7 +636,11 @@ public sealed class CmapFormat12Tests
         return output.ToArray();
     }
 
-    /// <summary>Every stream body of the PDF, inflated where it is deflated, concatenated.</summary>
+    /// <summary>
+    /// Every stream body of the PDF, inflated where it is deflated, concatenated. The ToUnicode
+    /// map's line breaks are folded from CRLF to LF, because the library writes them with
+    /// <c>AppendLine</c> and they follow the platform.
+    /// </summary>
     private static byte[] StreamBodies(byte[] pdf)
     {
         var text = Encoding.Latin1.GetString(pdf);
@@ -641,15 +653,21 @@ public sealed class CmapFormat12Tests
             s += "stream\n".Length;
             var e = text.IndexOf("\nendstream", s, StringComparison.Ordinal);
             if (e < 0) break;
+            byte[] body;
             try
             {
                 using var z = new ZLibStream(new MemoryStream(pdf, s, e - s), CompressionMode.Decompress);
-                z.CopyTo(all);
+                using var inflated = new MemoryStream();
+                z.CopyTo(inflated);
+                body = inflated.ToArray();
             }
             catch (InvalidDataException)
             {
-                all.Write(pdf, s, e - s);
+                body = pdf[s..e];
             }
+            if (body.AsSpan().StartsWith("/CIDInit"u8))
+                body = Encoding.Latin1.GetBytes(Encoding.Latin1.GetString(body).Replace("\r\n", "\n", StringComparison.Ordinal));
+            all.Write(body);
             pos = e + "\nendstream".Length;   // past the keyword, which itself contains "stream\n"
         }
         return all.ToArray();
