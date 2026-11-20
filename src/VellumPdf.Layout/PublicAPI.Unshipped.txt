@@ -1,1 +1,4 @@
 #nullable enable
+VellumPdf.Layout.Core.DrawContext.AddOutlineEntry(string! title, int level, double layoutY, bool expanded) -> void
+VellumPdf.Layout.Elements.Heading.BookmarkExpanded.get -> bool
+VellumPdf.Layout.Elements.Heading.BookmarkExpanded.init -> void

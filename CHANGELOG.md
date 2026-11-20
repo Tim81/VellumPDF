@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`Heading.BookmarkExpanded` and a four-argument `DrawContext.AddOutlineEntry` (#609).** A
+  heading's bookmark can now be written closed: `BookmarkExpanded = false` gives the entry a
+  negative `/Count` (ISO 32000-2:2020, 12.3.3, Table 151). The value only takes effect when later
+  bookmarks nest under the entry; an entry without children has no `/Count`, so the file is the
+  same as with `true`. The new `AddOutlineEntry(title, level, layoutY, expanded)` overload refuses
+  a null title (`ArgumentNullException`) and a position that maps to a non-finite destination
+  (`ArgumentOutOfRangeException`) at the call. The three-argument overload is unchanged and writes
+  an open entry.
+
 - **Internal name tree and number tree writers (#241).** `NameTreeWriter` and `NumberTreeWriter`
   in `VellumPdf.Kernel` build the structures ISO 32000-2, 7.9.6 and 7.9.7 define, which the
   catalog's `/Names` and `/PageLabels` entries, and later named destinations and embedded files,

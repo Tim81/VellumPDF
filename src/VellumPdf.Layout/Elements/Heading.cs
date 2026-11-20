@@ -67,7 +67,7 @@ public sealed class Heading
     /// you almost certainly meant the shallowest. A later major version will reject it.</para>
     /// <para>The raw value also reaches the outline builder, which hangs this heading's bookmark
     /// under the most recent earlier heading whose level is exactly one less, and puts it at the
-    /// top level when there is none; see <see cref="DrawContext.AddOutlineEntry"/>. So a level
+    /// top level when there is none; see <see cref="DrawContext.AddOutlineEntry(string, int, double)"/>. So a level
     /// expresses depth only where the heading above it is one shallower: after a level 0 heading,
     /// levels 5 and 500 both land at the top level, beside it rather than under it. Every level
     /// from 5 upward is the same <c>H6</c> tag as well, so assistive technology cannot tell them
@@ -80,6 +80,19 @@ public sealed class Heading
     /// </summary>
     /// <remarks>Null means use <see cref="Text"/>. Empty is an empty bookmark title.</remarks>
     public string? BookmarkTitle { get; init; }
+
+    /// <summary>Whether the heading's bookmark is shown open (the default) or closed in the outline.</summary>
+    /// <remarks>
+    /// <b>No value is refused.</b> The value takes effect only when the bookmark gets children: a
+    /// later bookmark at exactly <see cref="Level"/> + 1 whose most recent earlier bookmark at
+    /// <see cref="Level"/> is this one, whether from a heading or from a custom renderer's
+    /// <see cref="DrawContext.AddOutlineEntry(string, int, double, bool)"/>. Otherwise the
+    /// bookmark has no <c>/Count</c>, because ISO 32000-2:2020, Table 151, requires it only for an
+    /// item with descendants, and the value is not written. A closed bookmark writes a negative
+    /// <c>/Count</c>.
+    /// <para>A heading that splits across pages has one bookmark, and it carries this value.</para>
+    /// </remarks>
+    public bool BookmarkExpanded { get; init; } = true;
 
     /// <summary>Margins around the heading.</summary>
     /// <inheritdoc cref="Paragraph.Margins" path="/remarks"/>

@@ -7,13 +7,15 @@ using VellumPdf.Core;
 using VellumPdf.Document;
 using VellumPdf.Layout.Core;
 using VellumPdf.Layout.Elements;
+using VellumPdf.Layout.Rendering;
 using VellumPdf.TestSupport;
 
 namespace VellumPdf.Layout.Tests;
 
 /// <summary>
 /// #464: a heading that splits across pages has its bookmark at the split piece's position, not at
-/// the page top.
+/// the page top. #609: <see cref="Heading.BookmarkExpanded"/> and the four-argument
+/// <see cref="DrawContext.AddOutlineEntry(string, int, double, bool)"/>.
 /// </summary>
 public sealed class OutlineBookmarkSplitTests
 {
@@ -47,11 +49,11 @@ public sealed class OutlineBookmarkSplitTests
     private static int FirstPageObject(string pdf) =>
         int.Parse(Regex.Match(pdf, @"/Kids \[(\d+) 0 R").Groups[1].Value, CultureInfo.InvariantCulture);
 
-    private static string Build(string headingText, int fillerWords = 120)
+    private static string Build(string headingText, int fillerWords = 120, bool expanded = true)
     {
         using var doc = NewDoc();
         doc.Add(new Paragraph(Filler(fillerWords)));
-        doc.Add(new Heading(headingText));
+        doc.Add(new Heading(headingText) { BookmarkExpanded = expanded });
         return Save(doc);
     }
 
@@ -106,6 +108,158 @@ public sealed class OutlineBookmarkSplitTests
         // The sweep reaches both shapes: split on page 1, and moved to page 2.
         Assert.True(onFirstWithMorePages > 0);
         Assert.True(onSecondPage > 0);
+    }
+
+    [Fact]
+    public void CollapsedParentWithChildren_writesNegativeCount_andRootCountsVisibleItems()
+    {
+        using var doc = NewDoc();
+        doc.Add(new Heading("Parent") { Level = 0, BookmarkExpanded = false });
+        doc.Add(new Heading("Child A") { Level = 1 });
+        doc.Add(new Heading("Child B") { Level = 1 });
+        var pdf = Save(doc);
+
+        Assert.Contains("/Count -2", pdf, StringComparison.Ordinal);
+        Assert.Matches(@"/Type /Outlines[^>]*/Count 1\b|/Count 1\b[^>]*/Type /Outlines", pdf);
+    }
+
+    [Fact]
+    public void ExpandedParentWithChildren_writesPositiveCount()
+    {
+        using var doc = NewDoc();
+        doc.Add(new Heading("Parent") { Level = 0 });
+        doc.Add(new Heading("Child A") { Level = 1 });
+        var pdf = Save(doc);
+
+        Assert.Contains("/Count 1", pdf, StringComparison.Ordinal);
+        Assert.DoesNotContain("/Count -", pdf, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CollapsedWithoutChildren_isByteIdenticalToExpanded()
+    {
+        Assert.Equal(Pinned(true, 1), Pinned(false, 1));
+        // Only a level-2 heading follows a level-0 one, so it is a top-level entry, not a child.
+        Assert.Equal(Pinned(true, 2), Pinned(false, 2));
+        Assert.DoesNotContain("/Count -", Pinned(false, 2), StringComparison.Ordinal);
+
+        static string Pinned(bool expanded, int followerLevel)
+        {
+            var pdf = new PdfDocument
+            {
+                Timestamp = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                DocumentId = new byte[16],
+            };
+            var r = new DocumentRenderer(pdf, new PdfRectangle(0, 0, 200, PageHeight), new EdgeInsets(Margin));
+            r.Add(new HeadingRenderer(new Heading("Top") { Level = 0, BookmarkExpanded = expanded }));
+            if (followerLevel == 2) r.Add(new HeadingRenderer(new Heading("Deep") { Level = 2 }));
+            using var ms = new MemoryStream();
+            r.Render(ms);
+            return System.Text.Encoding.Latin1.GetString(ms.ToArray());
+        }
+    }
+
+    [Fact]
+    public void SplitHeading_collapsed_hasOneEntryAtTheSplitPiece()
+    {
+        using var doc = NewDoc();
+        doc.Add(new Paragraph(Filler(120)));
+        doc.Add(new Heading(string.Join(' ', Enumerable.Repeat("Heading", 40))) { Level = 0, BookmarkExpanded = false });
+        doc.Add(new Heading("Child") { Level = 1 });
+        var pdf = Save(doc);
+
+        var dests = Dests(pdf);
+        Assert.Equal(2, dests.Count);
+        Assert.True(dests[0].Top < PageHeight - Margin);
+        Assert.Contains("/Count -1", pdf, StringComparison.Ordinal);
+    }
+
+    private sealed class OutlineRenderer(Action<DrawContext> draw) : IRenderer
+    {
+        public LayoutResult Layout(LayoutContext context) => LayoutResult.Full(context.Area.WithHeight(0));
+
+        public void Draw(DrawContext context) => draw(context);
+    }
+
+    [Fact]
+    public void ThreeArgumentOverload_staysExpanded_withChildren()
+    {
+        using var doc = NewDoc();
+        doc.Add(new OutlineRenderer(c =>
+        {
+            c.AddOutlineEntry("P", 0, 20);
+            c.AddOutlineEntry("C", 1, 30);
+        }));
+        var pdf = Save(doc);
+
+        Assert.Contains("/Count 1", pdf, StringComparison.Ordinal);
+        Assert.DoesNotContain("/Count -", pdf, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FourArgumentOverload_collapsed_writesNegativeCount()
+    {
+        using var doc = NewDoc();
+        doc.Add(new OutlineRenderer(c =>
+        {
+            c.AddOutlineEntry("P", 0, 20, expanded: false);
+            c.AddOutlineEntry("C", 1, 30, expanded: true);
+        }));
+        var pdf = Save(doc);
+
+        Assert.Contains("/Count -1", pdf, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FourArgumentOverload_refusesNullTitle_andTheDocumentCannotBeSavedAgain()
+    {
+        using var doc = NewDoc();
+        doc.Add(new OutlineRenderer(c => c.AddOutlineEntry(null!, 0, 20, expanded: true)));
+
+        using var ms = new MemoryStream();
+        Assert.Throws<ArgumentNullException>(() => doc.Save(ms));
+        var again = Assert.Throws<InvalidOperationException>(() => doc.Save(new MemoryStream()));
+        Assert.Contains("cannot be saved again", again.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FourArgumentOverload_refusesNonFiniteY()
+    {
+        using var doc = NewDoc();
+        doc.Add(new OutlineRenderer(c => c.AddOutlineEntry("T", 0, double.NaN, expanded: true)));
+
+        using var ms = new MemoryStream();
+        Assert.Throws<ArgumentOutOfRangeException>(() => doc.Save(ms));
+    }
+
+    [Fact]
+    public void ThreeArgumentOverload_nullTitle_stillFailsLaterInTheSave()
+    {
+        using var doc = NewDoc();
+        doc.Add(new OutlineRenderer(c => c.AddOutlineEntry(null!, 0, 20)));
+
+        using var ms = new MemoryStream();
+        Assert.Throws<NullReferenceException>(() => doc.Save(ms));
+    }
+
+    [Fact]
+    public void HeadingAtANonFinitePosition_keepsTheRefusalItHadBeforeTheOverloadExisted()
+    {
+        // A page height and a top margin at the extremes make the destination's Y overflow to
+        // infinity. The heading draws through the unchecked core, so the exception is the writer's
+        // ArgumentException itself, not the validating overload's ArgumentOutOfRangeException.
+        var pdf = new PdfDocument();
+        var r = new DocumentRenderer(
+            pdf,
+            new PdfRectangle(0, 0, 200, double.MaxValue),
+            new EdgeInsets { Top = -double.MaxValue, Right = 10, Bottom = 10, Left = 10 });
+        r.Add(new HeadingRenderer(new Heading("T")));
+
+        var ex = Record.Exception(() => r.Render(new MemoryStream()));
+
+        Assert.NotNull(ex);
+        Assert.Equal(typeof(ArgumentException), ex.GetType());
+        Assert.Contains("PDF does not support NaN or Infinity", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
