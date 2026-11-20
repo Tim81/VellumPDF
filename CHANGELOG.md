@@ -57,8 +57,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     give way to the strict refusal when the switch is on.
   - A save now walks the list items below the second level to look for nulls. It visits each
     item once, however many lists and second-level items reach it, so the work is linear in the
-    distinct items you built there. A null text or null child is counted once in the save, under
-    the first list in drawing order that reaches it.
+    items and child links you built there. A null text or null child is counted once in the save,
+    under the first list the document draws, in drawing order, that reaches it. A list that
+    starts at a later item, or that your own renderer lays out and does not draw, takes no part.
   - The marker the library draws on a list item, such as the nested bullet in a Standard 14 font,
     is not listed as an unencodable character when the document draws the list. A list that your
     own renderer draws through a `DrawContext` you built can still list it.

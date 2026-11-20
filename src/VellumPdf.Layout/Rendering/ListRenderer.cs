@@ -33,13 +33,6 @@ public sealed class ListRenderer : IRenderer
 
     private LayoutBox _occupied;
 
-    // Items below the second level that hold a null text or a null child, and that no earlier
-    // list's walk reached. Nothing below the second level is laid out or drawn, so these save; they
-    // are counted where the items are built and reported from Draw, by the piece that starts at the
-    // first item.
-    private int _nullGrandchildText;
-    private int _nullGrandchild;
-
     // The height Layout offered each item it visited, indexed by the item's offset from the start
     // item. Draw offers the same height: it lays the item out a second time, a paragraph's line
     // count is a floor of the height it is given, and Bottom - y can come out one rounding step
@@ -115,7 +108,7 @@ public sealed class ListRenderer : IRenderer
         var area = context.Area.Deflate(_list.Margins);
         if (area.IsEmpty) return LayoutResult.Nothing();
 
-        _items ??= BuildItems(area.Width, context.ListWalk ?? new ListWalkState());
+        _items ??= BuildItems(area.Width);
 
         if (_items.Count == 0)
         {
@@ -166,8 +159,6 @@ public sealed class ListRenderer : IRenderer
                 var overflow = new ListRenderer(_list, i)
                 {
                     _items = _items,
-                    _nullGrandchildText = _nullGrandchildText,
-                    _nullGrandchild = _nullGrandchild,
                 };
                 var split = new ListRenderer(_list, _startItem, _partialContentOverrideAtStart)
                 {
@@ -175,8 +166,6 @@ public sealed class ListRenderer : IRenderer
                     _endItem = i,
                     _occupied = _occupied,
                     _offered = offered,
-                    _nullGrandchildText = _nullGrandchildText,
-                    _nullGrandchild = _nullGrandchild,
                 };
                 return LayoutResult.Partial(_occupied, split, overflow);
             }
@@ -200,8 +189,6 @@ public sealed class ListRenderer : IRenderer
                 var overflowList = new ListRenderer(_list, i, contentOverflow)
                 {
                     _items = _items,
-                    _nullGrandchildText = _nullGrandchildText,
-                    _nullGrandchild = _nullGrandchild,
                 };
 
                 var split = new ListRenderer(_list, _startItem, _partialContentOverrideAtStart)
@@ -210,8 +197,6 @@ public sealed class ListRenderer : IRenderer
                     _endItem = i + 1,
                     _occupied = _occupied,
                     _offered = offered,
-                    _nullGrandchildText = _nullGrandchildText,
-                    _nullGrandchild = _nullGrandchild,
                 };
                 return LayoutResult.Partial(_occupied, split, overflowList);
             }
@@ -242,23 +227,11 @@ public sealed class ListRenderer : IRenderer
     {
         if (_items is null) return;
 
-        if (_startItem == 0 && _partialContentOverrideAtStart is null)
-        {
-            if (_nullGrandchildText > 0)
-                ctx.Diagnostics?.Report(
-                    LayoutDiagnosticCode.NullGrandchildText,
-                    0,
-                    "A list item below the second level has a null text and is not drawn.",
-                    _nullGrandchildText,
-                    perElement: true);
-            if (_nullGrandchild > 0)
-                ctx.Diagnostics?.Report(
-                    LayoutDiagnosticCode.NullGrandchild,
-                    0,
-                    "A list item below the first level was given a null child, which is not drawn.",
-                    _nullGrandchild,
-                    perElement: true);
-        }
+        // Only the piece that starts the list, drawn through the document's context, takes part in
+        // the walk, so a list that is measured and never drawn, or that starts at a later item,
+        // leaves the items it did not report for the list that does.
+        if (_startItem == 0 && _partialContentOverrideAtStart is null && ctx.Diagnostics is { } sink)
+            ReportBelowSecondLevel(sink);
 
         // _occupied is already the margin-deflated area from Layout; do not deflate again.
         var area = _occupied;
@@ -352,6 +325,40 @@ public sealed class ListRenderer : IRenderer
         ctx.Diagnostics?.SyncEncodingWarnings(ctx.Canvas, report: false);
     }
 
+    // A child's own children are neither laid out nor drawn, so a defect in them saves. The walk
+    // visits each item below the first level once per save, so this list reports only the nulls
+    // that no list drawn before it, and no earlier child of this one, already reached.
+    private void ReportBelowSecondLevel(LayoutDiagnosticSink sink)
+    {
+        long nullText = 0, nullChild = 0;
+        foreach (var item in _list.Items)
+        {
+            if (item.Children is not { } children) continue;
+            foreach (var child in children)
+            {
+                if (!child.HasNullChild && child.Children is null) continue;
+                var (text, nulls) = sink.ListWalk.Visit(child);
+                nullText += text;
+                nullChild += nulls;
+            }
+        }
+
+        if (nullText > 0)
+            sink.Report(
+                LayoutDiagnosticCode.NullGrandchildText,
+                0,
+                "A list item below the second level has a null text and is not drawn.",
+                (int)Math.Min(nullText, int.MaxValue),
+                perElement: true);
+        if (nullChild > 0)
+            sink.Report(
+                LayoutDiagnosticCode.NullGrandchild,
+                0,
+                "A list item below the first level was given a null child, which is not drawn.",
+                (int)Math.Min(nullChild, int.MaxValue),
+                perElement: true);
+    }
+
     // ── Item building ─────────────────────────────────────────────────────────
 
     /// <summary>
@@ -392,13 +399,11 @@ public sealed class ListRenderer : IRenderer
         return widest;
     }
 
-    private List<(ParagraphRenderer Marker, ParagraphRenderer Content)> BuildItems(
-        double areaWidth, ListWalkState walk)
+    private List<(ParagraphRenderer Marker, ParagraphRenderer Content)> BuildItems(double areaWidth)
     {
         var result = new List<(ParagraphRenderer, ParagraphRenderer)>();
         var indent = _list.Indent;
         var defaultStyle = _list.DefaultStyle ?? TextStyle.Default;
-        long nullText = 0, nullChild = 0;
 
         for (var i = 0; i < _list.Items.Count; i++)
         {
@@ -453,7 +458,7 @@ public sealed class ListRenderer : IRenderer
             result.Add((markerRenderer, contentRenderer));
 
             // A null child of a top-level item is refused here, where the position is known. The
-            // same null on a grandchild is counted in the walk below instead, because
+            // same null on a grandchild is counted when the list is drawn instead, because
             // grandchildren are neither laid out nor drawn.
             if (item.HasNullChild)
                 throw new ArgumentNullException("child", "A list item has a null child.");
@@ -466,17 +471,6 @@ public sealed class ListRenderer : IRenderer
                 {
                     if (child.HasNullText)
                         throw new ArgumentNullException("text", "A list item has a null text.");
-                    // A child's own children are neither laid out nor drawn, so a defect in them
-                    // saves. The save's walk visits each item below the first level once, so this
-                    // list counts only the nulls that no earlier list, or earlier child of this
-                    // one, already reached.
-                    if (child.HasNullChild || child.Children is not null)
-                    {
-                        var (text, nulls) = walk.Visit(child);
-                        nullText += text;
-                        nullChild += nulls;
-                    }
-
                     var childStyle = child.Style ?? itemStyle;
                     // Nested unordered items use an open-bullet "◦"; nested ordered items
                     // route through ListElement.FormatMarker so OrderedAlpha/OrderedRoman
@@ -516,8 +510,6 @@ public sealed class ListRenderer : IRenderer
             }
         }
 
-        _nullGrandchildText = (int)Math.Min(nullText, int.MaxValue);
-        _nullGrandchild = (int)Math.Min(nullChild, int.MaxValue);
         return result;
     }
 }

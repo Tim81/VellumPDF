@@ -9,14 +9,15 @@ namespace VellumPdf.Layout.Rendering;
 /// The items the list walk has visited in one save, below the first level of every list. The
 /// items are the caller's graph: one can be its own descendant, and one subtree can be reached by
 /// exponentially many paths, by many second-level items, or by every list in the document. Each
-/// item is visited at most once per save, so the work is linear in the distinct items the caller
-/// built.
+/// item is visited at most once per save, so the work is linear in the items and the child links
+/// the caller built.
 /// </summary>
 /// <remarks>
 /// <b>Counting rule.</b> A null text or null child on an item is counted once, under the first
-/// list, in drawing order, whose walk reaches the item. A later list, or a later second-level item
-/// of the same list, that reaches the same item finds it visited and adds nothing. The total over
-/// all lists does not depend on their order; which list carries a count does.
+/// list, in drawing order, whose walk reaches the item. Only a list that reports takes part: one
+/// the document draws from its first item. A later list, or a later second-level item of the same
+/// list, that reaches the same item finds it visited and adds nothing. Among the lists that take
+/// part, the total does not depend on their order; which list carries a count does.
 /// <para>A walk uses an explicit stack, so a deep chain cannot overflow the call stack, and the
 /// visited set ends a cycle.</para>
 /// </remarks>

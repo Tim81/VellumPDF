@@ -27,6 +27,14 @@ internal sealed class LayoutDiagnosticSink
     private List<LayoutDiagnostic>? _items;
     private int _dropped;
 
+    private ListWalkState? _listWalk;
+
+    /// <summary>
+    /// The items the list walk has visited in this save. A list takes part only when it reports, so
+    /// the order of the walk is the order in which lists are drawn.
+    /// </summary>
+    internal ListWalkState ListWalk => _listWalk ??= new();
+
     // The canvas whose encoding warnings are already accounted for, and how many of them.
     private PdfCanvas? _syncedCanvas;
     private int _syncedCount;

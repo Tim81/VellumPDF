@@ -1022,6 +1022,70 @@ public sealed class LayoutDiagnosticsTests
         });
     }
 
+    // ── Only a list that reports takes part in the walk ──────────────────────
+
+    /// <summary>Three items, the second reaching <paramref name="nullText"/> two levels down.</summary>
+    private static ListElement ListReaching(ListItem nullText) => new(
+        ListStyle.OrderedDecimal,
+        [
+            new ListItem("a"),
+            new ListItem("b").AddChild(new ListItem("holder").AddChild(nullText)),
+            new ListItem("c"),
+        ]);
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AListStartingAtALaterItem_leavesItsNullsForTheListThatReports(bool strict)
+    {
+        var nullText = new ListItem(null!);
+        using var doc = NewDoc();
+        doc.StrictDiagnostics = strict;
+        doc.Add(new ListRenderer(ListReaching(nullText), startItem: 2));
+        doc.Add(ListReaching(nullText));
+
+        if (strict)
+        {
+            var ex = Assert.Throws<InvalidOperationException>(() => doc.Save(new MemoryStream()));
+            Assert.StartsWith("StrictDiagnostics refused the save: NullGrandchildText in List 1", ex.Message, StringComparison.Ordinal);
+            return;
+        }
+
+        doc.Save(new MemoryStream());
+
+        var item = Assert.Single(doc.Diagnostics);
+        Assert.Equal(LayoutDiagnosticCode.NullGrandchildText, item.Code);
+        Assert.Equal(1, item.Count);
+        Assert.Equal(1, item.ElementIndex);
+    }
+
+    /// <summary>A renderer of the caller's that measures a list through the document's context and draws nothing.</summary>
+    private sealed class MeasuringRenderer(ListRenderer inner) : IRenderer
+    {
+        public LayoutResult Layout(LayoutContext context) => inner.Layout(context);
+
+        public void Draw(DrawContext ctx)
+        {
+        }
+    }
+
+    [Fact]
+    public void AListMeasuredAndNeverDrawn_leavesItsNullsForTheListThatIsDrawn()
+    {
+        var list = ListReaching(new ListItem(null!));
+        using var doc = NewDoc();
+        doc.StrictDiagnostics = true;
+        doc.Add(new MeasuringRenderer(new ListRenderer(list)));
+        doc.Add(list);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => doc.Save(new MemoryStream()));
+
+        Assert.StartsWith("StrictDiagnostics refused the save: NullGrandchildText in List 1", ex.Message, StringComparison.Ordinal);
+        var item = Assert.Single(doc.Diagnostics);
+        Assert.Equal(1, item.Count);
+        Assert.Equal(1, item.ElementIndex);
+    }
+
     // ── What Diagnostics hands out, and cancellation ─────────────────────────
 
     [Fact]

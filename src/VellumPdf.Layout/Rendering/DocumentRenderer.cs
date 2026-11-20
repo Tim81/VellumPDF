@@ -130,13 +130,9 @@ public sealed class DocumentRenderer
 
     internal LayoutDiagnosticSink Sink => _sink;
 
-    // One visited set for the whole save, shared by every list, so each list item below the first
-    // level is walked once however many lists and second-level items reach it.
-    private readonly ListWalkState _listWalk = new();
-
-    internal ListWalkState ListWalk => _listWalk;
-
-    private LayoutContext NewLayoutContext(LayoutBox area) => new(area) { ListWalk = _listWalk };
+    // The items the list walk visited in this save; see ListWalkState. It lives on the sink because
+    // only a list that reports takes part in the walk.
+    internal ListWalkState ListWalk => _sink.ListWalk;
 
     /// <summary>Everything the layout reported so far, in first-occurrence order.</summary>
     internal IReadOnlyList<LayoutDiagnostic> Diagnostics => _sink.Snapshot().AsReadOnly();
@@ -544,7 +540,7 @@ public sealed class DocumentRenderer
                 ContentArea.X, _currentY,
                 ContentArea.Width, ContentArea.Bottom - _currentY);
 
-            var result = renderer.Layout(NewLayoutContext(availableArea));
+            var result = renderer.Layout(new LayoutContext(availableArea));
 
             switch (result.Status)
             {
@@ -562,7 +558,7 @@ public sealed class DocumentRenderer
                 case LayoutResult.Outcome.Nothing:
                     FinishCurrentPage(totalPages);
                     EnsurePage();
-                    var retry = renderer.Layout(NewLayoutContext(ContentArea));
+                    var retry = renderer.Layout(new LayoutContext(ContentArea));
                     if (retry.Status == LayoutResult.Outcome.Nothing)
                     {
                         FinishCurrentPage(totalPages);
@@ -900,7 +896,7 @@ public sealed class DocumentRenderer
                 contentArea.X, currentY,
                 contentArea.Width, contentArea.Bottom - currentY);
 
-            var result = renderer.Layout(NewLayoutContext(availableArea));
+            var result = renderer.Layout(new LayoutContext(availableArea));
 
             switch (result.Status)
             {
@@ -917,7 +913,7 @@ public sealed class DocumentRenderer
                 case LayoutResult.Outcome.Nothing:
                     pages++;
                     currentY = contentArea.Y;
-                    var retry = renderer.Layout(NewLayoutContext(contentArea));
+                    var retry = renderer.Layout(new LayoutContext(contentArea));
                     if (retry.Status == LayoutResult.Outcome.Nothing)
                     {
                         // This pass used to skip the element and undercount here while

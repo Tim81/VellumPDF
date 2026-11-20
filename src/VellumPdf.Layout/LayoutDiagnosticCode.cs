@@ -61,13 +61,17 @@ public enum LayoutDiagnosticCode
     /// <summary>
     /// A list item that is a child of a child, or deeper, holds a null text, and the save drew
     /// nothing of it. <see cref="LayoutDiagnostic.Count"/> is the number of such items the list's
-    /// element reached first. An item is counted once in the whole save, under the first element in
-    /// drawing order that reaches it, however many second-level items or lists reach it.
+    /// element reached first. An item is counted once in the whole save, under the first list the
+    /// document draws, in drawing order, that reaches it, however many second-level items or lists
+    /// reach it.
     /// </summary>
     /// <remarks>
     /// Items below the second level are not laid out or drawn, so this saves. Strict mode refuses
-    /// it. A <see cref="Rendering.ListRenderer"/> you build to start at an item other than the
-    /// first reports nothing, and the total over all lists does not depend on their order.
+    /// it. Only a list the document draws from its first item takes part. A
+    /// <see cref="Rendering.ListRenderer"/> you build to start at an item other than the first, or
+    /// that a renderer of yours lays out and does not draw, reports nothing and leaves its items
+    /// for a list that does. Among the lists that take part, the total does not depend on their
+    /// order.
     /// </remarks>
     NullGrandchildText = 201,
 

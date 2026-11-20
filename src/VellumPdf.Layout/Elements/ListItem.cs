@@ -80,10 +80,10 @@ public sealed class ListItem
     /// <see cref="LayoutDiagnosticCode.NullGrandchildText"/> or
     /// <see cref="LayoutDiagnosticCode.NullGrandchild"/>, and
     /// <see cref="Document.StrictDiagnostics"/> refuses the save. Any other content there is not
-    /// reported. The save visits each item below the first level of any list once, however many
-    /// lists and second-level items reach it, so the work is linear in the distinct items you built
-    /// there. An item with a null text, or a null child, is counted once in the save, under the
-    /// first element in drawing order that reaches it.
+    /// reported. The save visits each item below the first level of a list it draws once, however
+    /// many lists and second-level items reach it, so the work is linear in the items and child
+    /// links you built there. An item with a null text, or a null child, is counted once in the
+    /// save, under the first list the document draws, in drawing order, that reaches it.
     /// <para>Be aware that you have to handle this yourself: flatten a tree deeper than two
     /// levels, or compose separate lists, until arbitrary nesting lands (#479).</para>
     /// <para>In an <see cref="ListStyle.Unordered"/> list a child is marked with U+25E6, the
