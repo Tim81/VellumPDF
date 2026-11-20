@@ -85,7 +85,7 @@ internal interface IPlanDependent
     /// </summary>
     bool Resolve(PaginationPlan plan);
 
-    /// <summary>Names the target, for the message that reports a plan which does not settle.</summary>
+    /// <summary>Names the target, for the message about a plan that does not settle.</summary>
     string TargetName { get; }
 
     /// <summary>The text the last <see cref="Resolve"/> left, for the same message.</summary>

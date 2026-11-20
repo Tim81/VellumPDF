@@ -35,7 +35,9 @@ internal static class PlacementLoopSupport
         DocumentId = Convert.FromHexString("000102030405060708090A0B0C0D0E0F"),
     };
 
-    /// <summary>One line per <c>Layout</c> call: the wrapper's number, then the area offered.</summary>
+    /// <summary>
+    /// One line per <c>Layout</c> call: the wrapper's number, then the area offered.
+    /// </summary>
     internal sealed class CallLog
     {
         private readonly List<string> _lines = [];
@@ -48,7 +50,10 @@ internal static class PlacementLoopSupport
         internal string Text => string.Join('\n', _lines);
     }
 
-    /// <summary>Forwards to <paramref name="inner"/> and logs each <c>Layout</c> call. A split or overflow renderer it returns is wrapped under the same number.</summary>
+    /// <summary>
+    /// Forwards to <paramref name="inner"/> and logs each <c>Layout</c> call. A split or overflow
+    /// renderer it returns is wrapped under the same number.
+    /// </summary>
     internal sealed class Logging(IRenderer inner, CallLog log, int id) : IRenderer
     {
         internal static Logging Wrap(IRenderer inner, CallLog log) => new(inner, log, log.NextId());
@@ -117,9 +122,10 @@ internal static class PlacementLoopSupport
         RegexOptions.Singleline | RegexOptions.CultureInvariant);
 
     // foldToUnicodeLineEnds: an embedded font's ToUnicode CMap is written with CR LF line ends on
-    // Windows and LF on Linux (#630), so a hash that must hold on both folds CR LF to LF inside
-    // ToUnicode streams, and nowhere else. It does nothing once #630 is fixed (#647), because
-    // every line end is then LF already.
+    // Windows and LF on Linux (#630), so a hash that must hold on both folds CR LF to LF in every
+    // Flate stream whose inflated text contains `begincmap`, and nowhere else. In the pinned
+    // document that is the one ToUnicode stream. It does nothing once #630 is fixed (#647),
+    // because every line end is then LF already.
     internal static string Normalise(byte[] pdf, bool foldToUnicodeLineEnds = false)
     {
         var text = Encoding.Latin1.GetString(pdf);

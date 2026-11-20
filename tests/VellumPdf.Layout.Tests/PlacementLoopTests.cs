@@ -19,8 +19,8 @@ namespace VellumPdf.Layout.Tests;
 /// <summary>
 /// #288: the one placement loop, the placement reports a heading makes from it, the plan they
 /// build, and the measuring loop that resolves plan-dependent renderers. Everything here reads
-/// internals (<see cref="DocumentRenderer.MeasureRuns"/>, <see cref="DocumentRenderer.LayoutCalls"/>,
-/// the plans), which no public member exposes.
+/// internals (<see cref="DocumentRenderer.MeasureRuns"/>,
+/// <see cref="DocumentRenderer.LayoutCalls"/>, the plans), which no public member exposes.
 /// </summary>
 public sealed class PlacementLoopTests
 {
@@ -73,7 +73,9 @@ public sealed class PlacementLoopTests
         public void Draw(DrawContext context) { }
     }
 
-    /// <summary>A plan-dependent renderer that takes the next string of a script on each resolve.</summary>
+    /// <summary>
+    /// A plan-dependent renderer that takes the next string of a script on each resolve.
+    /// </summary>
     private sealed class ScriptedDependent(params string[] script) : IRenderer, IPlanDependent
     {
         private string _text = "";
@@ -104,7 +106,9 @@ public sealed class PlacementLoopTests
     private static readonly Regex DestPattern = new(
         @"/Dest \[(\d+) 0 R /XYZ (\S+) (\S+) null\]", RegexOptions.CultureInvariant);
 
-    /// <summary>The page index and PDF y each outline entry of the file points at, in entry order.</summary>
+    /// <summary>
+    /// The page index and PDF y each outline entry of the file points at, in entry order.
+    /// </summary>
     private static List<(int PageIndex, double PdfY)> OutlineDests(byte[] pdf)
     {
         var text = Encoding.Latin1.GetString(pdf);
@@ -334,8 +338,8 @@ public sealed class PlacementLoopTests
 
     // ── Convergence and the cap ──────────────────────────────────────────────
 
-    // The label of the target's page decides the dependent's height, and the heading comes after the
-    // dependent, so each height moves the heading to the other page. With the filler, a short
+    // The label of the target's page decides the dependent's height, and the heading comes after
+    // the dependent, so each height moves the heading to the other page. With the filler, a short
     // dependent leaves room for the heading on page 1; a tall one does not.
     private static (DocumentRenderer Renderer, LabelDependent Dependent, Heading Target) OscillatingDocument(bool oscillate)
     {
@@ -364,14 +368,16 @@ public sealed class PlacementLoopTests
             "Pagination did not settle after 5 layout passes: the text for 'target' read " +
             "'1', '2', '1', '2', '1'. A string that depends on where its target lands can change " +
             "the layout and so move that target, and here the passes keep changing it instead of " +
-            "settling. The renderers have already measured, so lay the content out again with a " +
-            "new Document.",
+            "settling. The renderers have already measured, so lay the content out again in a " +
+            "new renderer or document.",
             ex.Message);
         // The drawing pass never ran: the document was refused before any page was added.
         Assert.Null(renderer.DrawPlan);
     }
 
-    /// <summary>A dependent whose text is taken from <paramref name="textOf"/> by resolve number.</summary>
+    /// <summary>
+    /// A dependent whose text is taken from <paramref name="textOf"/> by resolve number.
+    /// </summary>
     private sealed class NamedDependent(string name, Func<int, string> textOf) : IRenderer, IPlanDependent
     {
         private string _text = "";

@@ -415,10 +415,10 @@ public sealed class DocumentRenderer
                 "Reduce the margins or band heights.",
                 "margins");
 
-        // A check that must refuse before any renderer has measured goes here, so the document is
-        // still saveable once the caller has fixed what it names: a save that fails after the
-        // layout started cannot be retried, one refused before it can. Nothing walks the added
-        // elements yet.
+        // The check above refuses before any renderer has measured, so the document is still
+        // saveable once the caller has fixed what it names: a save that fails after the layout
+        // started cannot be retried, one refused before it can. The walk below, over the added
+        // elements, finds the plan-dependent ones.
 
         // From here the renderers measure and cache; see Document.MarkFailedIfLaidOut.
         HasStartedLayout = true;
@@ -556,11 +556,15 @@ public sealed class DocumentRenderer
     /// </summary>
     internal int LayoutCalls { get; private set; }
 
-    /// <summary>The plan of the last measuring run, or null when none ran. Built on each read.</summary>
+    /// <summary>
+    /// The plan of the last measuring run, or null when none ran. Built on each read.
+    /// </summary>
     internal PaginationPlan? MeasurePlan =>
         _measureSink is null ? null : new PaginationPlan(_measureSink.Placements, _measurePages);
 
-    /// <summary>The plan the drawing pass reported, or null before it ran. Built on each read.</summary>
+    /// <summary>
+    /// The plan the drawing pass reported, or null before it ran. Built on each read.
+    /// </summary>
     internal PaginationPlan? DrawPlan =>
         _drawSink is null ? null : new PaginationPlan(_drawSink.Placements, _drawPages);
 
@@ -638,8 +642,8 @@ public sealed class DocumentRenderer
             // The diagnostics location is that of the element the document added, set here and not
             // in PlaceRenderer: its variable becomes the overflow renderer, which for a heading is
             // a plain paragraph renderer, and mapping that would call a heading's second page a
-            // paragraph. Reports come from the drawing pass only, so the measuring pass leaves the
-            // diagnostics alone.
+            // paragraph. Diagnostics are reported from the drawing pass only, so the measuring
+            // pass leaves them alone.
             if (!measure)
             {
                 _sink.CurrentKind = KindOf(_renderers[i]);
@@ -725,14 +729,16 @@ public sealed class DocumentRenderer
             $"Pagination did not settle after {MaxMeasureRuns} layout passes: {cause}. " +
             "A string that depends on where its target lands can change the layout and so move " +
             "that target, and here the passes keep changing it instead of settling. " +
-            "The renderers have already measured, so lay the content out again with a new Document.");
+            "The renderers have already measured, so lay the content out again in a new renderer " +
+            "or document.");
     }
 
     private static InvalidOperationException PaginationChanged() =>
         new("Pagination changed between the measuring and the drawing pass: the drawing pass " +
             "reported a placement that differs from the last measuring run's, so a renderer " +
             "answered differently the later time. " +
-            "The renderers have already measured, so lay the content out again with a new Document.");
+            "The renderers have already measured, so lay the content out again in a new renderer " +
+            "or document.");
 
     private LayoutResult CallLayout(IRenderer renderer, LayoutBox area)
     {

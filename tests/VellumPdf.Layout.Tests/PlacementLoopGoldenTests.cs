@@ -20,7 +20,8 @@ namespace VellumPdf.Layout.Tests;
 /// </summary>
 public sealed class PlacementLoopGoldenTests
 {
-    // Assert.Equal truncates long strings, and a pin is only useful if a failure prints the new value.
+    // Assert.Equal truncates long strings, and a pin is only useful if a failure prints the new
+    // value.
     private static void Pin(string expected, string actual) =>
         Assert.True(expected == actual, $"computed {actual}");
 
