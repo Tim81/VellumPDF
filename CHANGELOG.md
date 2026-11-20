@@ -762,9 +762,10 @@ API file gained a removal or a rename.
     store a null too, and their `Layout` method throws (#547).
   - `SetDefaultFont` is used only by `Add(string)` calls made after it. A `Paragraph`,
     `Heading`, list, table or running band never uses it.
-  - A font handle from a different `Document` is refused at the save when the saving document defines
-    no font under its resource name, and otherwise is drawn in whatever font the saving document
-    defines under that name (#544); see the entry for #544 above.
+  - A font handle from a different `Document` saves without an exception. The text is drawn in
+    whatever font the saving document registered under the same resource name, if any. Even when
+    that is the same font file, only the characters the saving document's own text also uses
+    survive (#544).
   - `HorizontalAlignment.Justify` is drawn as left everywhere except paragraph and heading text.
     A justified line whose text is all in one `TextStyle` instance and in the standard-14 text
     faces (every standard-14 font but Symbol and ZapfDingbats) is stretched by only half the free
