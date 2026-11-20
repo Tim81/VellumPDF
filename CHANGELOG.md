@@ -133,6 +133,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`ReconstructionAllocationTests` no longer fails on a stray allocation on the measuring thread
+  (test-only change).** `Open_WithReconstruction_OffCostsTheSameForAnyRun` compared two single
+  `GC.GetAllocatedBytesForCurrentThread` readings for exact equality and failed on CI's Linux runner
+  (net10.0) with 1520 against 8808 bytes. With reconstruction off, `PdfReader.Open` costs the same
+  for a 512-byte and a 262,144-byte run, but the figure the runtime adds on the thread is not
+  constant: in 3,000 readings on one machine it took three values (744, 912 and 936 bytes)
+  and, once, 17,320. The class's `Measure` helper now takes the minimum of five runs after its
+  warm-up run, and this test alternates the two inputs so that a step between values cannot fall
+  between their readings. Every ceiling and bound is unchanged. Copying the input when
+  reconstruction is off still fails the control test. No shipped package changes.
+
 - **`PdfReader.Open` with `AllowReconstruction = true` no longer allocates hundreds of megabytes on a
   short run of `[` (#610).** The reconstruction walk resumes one byte after a failed construct (two bytes
   after a failed `<<`, and just after `obj` for a failed `N G obj` header), so a run of `[` starts a
