@@ -84,8 +84,10 @@ public enum LayoutDiagnosticCode
     /// </summary>
     /// <remarks>
     /// Items below the second level are not laid out or drawn, so this saves. Strict mode refuses
-    /// it. A <see cref="Rendering.ListRenderer"/> you build to start at an item other than the
-    /// first reports nothing.
+    /// it. Only a list the document draws from its first item takes part. A
+    /// <see cref="Rendering.ListRenderer"/> you build to start at an item other than the first, or
+    /// that a renderer of yours lays out and does not draw, reports nothing and leaves its items
+    /// for a list that does, as for <see cref="NullGrandchildText"/>.
     /// </remarks>
     NullGrandchild = 202,
 

@@ -6,7 +6,8 @@ using VellumPdf.Layout.Elements;
 namespace VellumPdf.Layout.Rendering;
 
 /// <summary>
-/// The items the list walk has visited in one save, below the first level of every list. The
+/// The items the list walk has visited in one save, below the first level of every list that
+/// reports. The
 /// items are the caller's graph: one can be its own descendant, and one subtree can be reached by
 /// exponentially many paths, by many second-level items, or by every list in the document. Each
 /// item is visited at most once per save, so the work is linear in the items and the child links

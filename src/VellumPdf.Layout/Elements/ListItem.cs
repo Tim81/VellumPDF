@@ -76,14 +76,17 @@ public sealed class ListItem
     /// <remarks>
     /// One level of nesting is supported, and only one. A child's own <see cref="Children"/>
     /// are neither laid out nor drawn, so a child of a child is absent from the document. The save
-    /// does look at them for one thing: a null text or a null child on such an item is reported as
+    /// does look at them for one thing, in a list the document draws from its first item: a null
+    /// text or a null child on such an item is reported as
     /// <see cref="LayoutDiagnosticCode.NullGrandchildText"/> or
     /// <see cref="LayoutDiagnosticCode.NullGrandchild"/>, and
     /// <see cref="Document.StrictDiagnostics"/> refuses the save. Any other content there is not
-    /// reported. The save visits each item below the first level of a list it draws once, however
-    /// many lists and second-level items reach it, so the work is linear in the items and child
-    /// links you built there. An item with a null text, or a null child, is counted once in the
-    /// save, under the first list the document draws, in drawing order, that reaches it.
+    /// reported. A list that starts at a later item, or that a renderer of yours lays out and does
+    /// not draw, reports nothing, and its items are left for a list that does report. The save
+    /// visits each item below the first level of a list it reports once, however many lists and
+    /// second-level items reach it, so the work is linear in the items and child links you built
+    /// there. An item with a null text, or a null child, is counted once in the save, under the
+    /// first such list, in drawing order, that reaches it.
     /// <para>Be aware that you have to handle this yourself: flatten a tree deeper than two
     /// levels, or compose separate lists, until arbitrary nesting lands (#479).</para>
     /// <para>In an <see cref="ListStyle.Unordered"/> list a child is marked with U+25E6, the
