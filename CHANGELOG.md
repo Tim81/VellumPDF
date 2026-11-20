@@ -265,36 +265,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   2.3.3's `Save(string)` did not do; pass a `FileStream` to `Save(Stream)` to avoid that. The file
   is held open with `FileShare.None` until the save returns, an advisory lock on Linux and macOS.
 
-- **`Jbig2ImageLoader` reads the file header's flags byte and page count, and the random-access
-  organisation (#570).** A JBIG2 file as ITU-T T.88 Annex D defines it has a flags byte and, unless
-  the unknown-page-count bit is set, a 4-byte page count after the ID string. The loader took them
-  for the start of the first segment, so every such file failed. It now reads them, and the
-  random-access organisation (D.2), which it rejoins into the embedded form a PDF stores. A file
-  with the ID string followed directly by segments, and the bare embedded form, still load and are
-  tried first. A PDF image is one page, so a multi-page file embeds the first page, the one the
-  first page-information segment names, under `Passthrough` and `DecodeToRaster`. This is a
-  deliberate output change: `Passthrough` embedded every page's segments and `DecodeToRaster`
-  composited every page into one raster on 2.3.3. A segment of unknown length is dropped under
-  `Passthrough`, as on 2.3.3, and ends what is read of a sequential or embedded stream; nothing
-  reports it yet (#607). **Attention**: a file with the Annex D header loads only if it complies
-  with T.88 (first page-information segment on page 1, no segment on another page, page
-  information first on page 1, every region on a page, a header page count of 1, increasing
-  segment numbers with none repeated, no reserved segment type, exactly one end-of-page segment
-  that is the last one on the page, a region segment of at least 17 bytes, a generic region
-  segment whose flags leave bits 5-7 clear, set no template under MMR and are followed by the AT
-  flags that arithmetic coding needs, and a tables segment of at least 9 bytes with bit 7 of its
-  flags clear; and in the headers a count subfield other than 5 or 6, clear retain bits for referrals
-  that are absent, referrals only to lower-numbered segments of the same page or of no page, no
-  referrals from page-information, end-of-page, end-of-stripe, end-of-file, profiles, tables or colour
-  palette segments, page-information, end-of-page and end-of-stripe segments on a page, the
-  end-of-file segment on none and last, exactly 19 bytes of page information, no data in end-of-page
-  and end-of-file segments, and file header flags bit 2 set for a 12-pixel AT template and bit 3 set
-  for a coloured region), and otherwise
-  throws `InvalidDataException` naming the clause. It loads only under `Passthrough`:
-  `DecodeToRaster` throws `InvalidDataException` for every file with that header, because its
-  `/DeviceGray` output would render the page as a negative. A multi-page file with that header, and
-  one with a segment of unknown length, throw `InvalidDataException` naming the page count or the
-  segment. Do not pass a multi-page file; 3.0 refuses it.
+- **`Jbig2ImageLoader` embeds the first page of a multi-page stream (#570).** A PDF image is one
+  page, so the loader embeds the page the first page-information segment names, with the segments
+  of no page, under `Passthrough` and `DecodeToRaster`. This is a deliberate output change:
+  `Passthrough` embedded every page's segments and `DecodeToRaster` composited every page into one
+  raster on 2.3.3. A segment of unknown length is dropped under `Passthrough`, as on 2.3.3, and
+  ends what is read of the stream; nothing reports it yet (#607). Do not pass a multi-page stream;
+  3.0 refuses it. **Attention**: only the 8-byte ID string is stripped, as on 2.3.3, so a file with
+  the T.88 Annex D file header whose bytes after the ID string do not read as segments throws
+  `InvalidDataException` in both modes. `DecodeToRaster` stores the decoded bits unchanged as
+  `/DeviceGray`, while T.88 (5.6, NOTE 1) gives 1 as black, so its raster renders as a negative, as
+  on 2.3.3.
 
 - **A paragraph no longer wraps at U+202F NARROW NO-BREAK SPACE or U+2007 FIGURE SPACE (#562).**
   With U+00A0 these are the white-space characters in UAX #14's GL class, but only U+00A0 was kept,
