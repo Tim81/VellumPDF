@@ -13,6 +13,9 @@ namespace VellumPdf.Images;
 ///   • Global and local colour tables.
 ///   • Interlaced images, deinterlaced to display order (Appendix E).
 ///   • Graphic Control Extension: transparent index → 8-bit /SMask.
+///   • Logical screen, opt-in through <see cref="GifLoadOptions.PlaceOnLogicalScreen"/>: the frame
+///     is placed on the screen at its Image Left/Top Position and the pixels it does not cover are
+///     transparent (8-bit /SMask). Without the option the frame comes back at its own size.
 ///   • Animated GIFs: only the first image descriptor is decoded; subsequent frames are ignored.
 ///
 /// Rejected: a file with no image descriptor, an image descriptor truncated before its own fields
@@ -24,7 +27,9 @@ namespace VellumPdf.Images;
 /// </summary>
 public static class GifImageLoader
 {
-    /// <summary>Decodes the first frame of a GIF into a FlateDecode Image XObject.</summary>
+    /// <summary>
+    /// Decodes the first frame of a GIF into a FlateDecode Image XObject, at the frame's own size.
+    /// </summary>
     /// <remarks>
     /// Malformed input is refused. This method throws <see cref="InvalidDataException"/> naming
     /// the fault for a file with no image descriptor, an image descriptor truncated before its own
@@ -33,10 +38,24 @@ public static class GifImageLoader
     /// read from, a colour table or sub-block chain that runs past the end of the file, a truncated
     /// extension, or dimensions <see cref="ImageLimits.ValidateDimensions"/> refuses. A caller
     /// can guard on the one exception type for all of them rather than several.
+    /// <para><b>The Logical Screen Descriptor and the frame's position are not read.</b> The result
+    /// is the frame at its own size, with an /SMask only where a Graphic Control Extension names a
+    /// transparent index. A file whose frame is smaller than its screen, or sits away from the
+    /// screen's origin, therefore decodes to a different size and aspect ratio from the one a
+    /// viewer shows. <see cref="Load(byte[], GifLoadOptions)"/> with
+    /// <see cref="GifLoadOptions.PlaceOnLogicalScreen"/> set places the frame on the screen. <b>Do
+    /// not rely on the default ignoring the screen:</b> a later major may place the frame by
+    /// default.</para>
     /// <para>A stream carrying more pixels than the image descriptor promises is <b>not</b>
     /// refused: decoding stops once the promised count is produced, so trailing codes are never
-    /// read. Do not rely on the overrun being rejected; a later major may make it one.</para>
+    /// read. A pixel whose colour index is past the active colour table is left black, not
+    /// refused. Do not rely on either being accepted: <see cref="Load(byte[], GifLoadOptions)"/>
+    /// with <see cref="GifLoadOptions.PlaceOnLogicalScreen"/> set refuses both, and a later major
+    /// may refuse them by default.</para>
     /// </remarks>
+    /// <param name="gifBytes">The GIF file.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="gifBytes"/> is
+    /// <see langword="null"/>.</exception>
     /// <exception cref="InvalidDataException">
     /// <paramref name="gifBytes"/> is too small to be a GIF, does not carry the GIF87a/GIF89a
     /// signature, has no image descriptor, the image descriptor itself is truncated, a colour
@@ -45,8 +64,62 @@ public static class GifImageLoader
     /// the LZW stream is corrupt or ends before every promised pixel is produced, or the image
     /// dimensions are invalid or exceed the safety limit named in the message.
     /// </exception>
-    public static PdfImageXObject Load(byte[] gifBytes)
+    public static PdfImageXObject Load(byte[] gifBytes) => Load(gifBytes, GifLoadOptions.Default);
+
+    /// <summary>
+    /// Decodes the first frame of a GIF into a FlateDecode Image XObject, placing it on the logical
+    /// screen when <paramref name="options"/> asks for that.
+    /// </summary>
+    /// <remarks>
+    /// With <see cref="GifLoadOptions.PlaceOnLogicalScreen"/> unset this is
+    /// <see cref="Load(byte[])"/>. The rest of this section describes the option set.
+    /// <para><b>The frame is placed on the logical screen.</b> The result is as large as the
+    /// Logical Screen Descriptor says (GIF89a section 18), with the frame at its Image Left and Top
+    /// Position (section 20.c.ii and 20.c.iii). The pixels the frame does not cover are
+    /// transparent: the result carries an /SMask whose alpha is 0 there, and the colour stored
+    /// under them is black. The Background Color Index (section 18.c.vii) is not read and plays no
+    /// part, because it names a colour for those pixels and the transparent answer invents none.
+    /// The frame is placed when its left or top is not 0 or when the screen is wider or taller
+    /// than the frame. A frame that fills the screen from the origin gets no /SMask it did not
+    /// already have from a Graphic Control Extension.</para>
+    /// <para><b>A screen the frame does not fit is refused.</b> Section 20.a says each image must
+    /// fit within the boundaries of the Logical Screen, so under this option a screen with a
+    /// width or height of 0, a frame whose far edge lies beyond the screen, and a screen of more
+    /// than 100 million pixels (the limit <see cref="ImageLimits.ValidateDimensions"/> applies to a
+    /// frame) all throw <see cref="InvalidDataException"/>. None falls back to the frame's own
+    /// size, because the option was asked for and silently ignoring it would defeat its
+    /// purpose.</para>
+    /// <para><b>Data that breaks a GIF89a rule is refused.</b> Under the option the loader throws
+    /// <see cref="InvalidDataException"/> naming the rule and its section for a pixel whose colour
+    /// index is past the active colour table (section 22.a), image data that decodes more pixels
+    /// than the descriptor declares or ends without the End of Information code that Appendix F
+    /// says must be the last code, image data not ended by a Block Terminator (section 22.c), a
+    /// Graphic Control Extension that is not one sub-block with a Block Size of 4 or a second one
+    /// before the same graphic-rendering block (sections 23.a and 23.c.iii), and a top-level block
+    /// that is not an extension, an image descriptor or the trailer (Appendix B). The default path
+    /// accepts each of these.</para>
+    /// <para><b>Cost.</b> The canvas is allocated at the screen's size, 4 bytes a pixel (RGB plus
+    /// the alpha of the /SMask), however small the frame is. A 42-byte file can therefore claim a
+    /// screen that allocates about 400 MB, the largest the limit allows. Callers loading
+    /// untrusted files should check the screen size in bytes 6 to 9 before enabling the option.
+    /// With the option unset no allocation depends on the screen.</para>
+    /// </remarks>
+    /// <param name="gifBytes">The GIF file.</param>
+    /// <param name="options">What to do with the logical screen.</param>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="gifBytes"/> or <paramref name="options"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="InvalidDataException">
+    /// Every case <see cref="Load(byte[])"/> documents, and, with
+    /// <see cref="GifLoadOptions.PlaceOnLogicalScreen"/> set, a screen with a zero dimension, a
+    /// frame that extends past the screen, a screen over 100 million pixels, or any of the
+    /// GIF89a rule breaks listed above.
+    /// </exception>
+    public static PdfImageXObject Load(byte[] gifBytes, GifLoadOptions options)
     {
+        ArgumentNullException.ThrowIfNull(gifBytes);
+        ArgumentNullException.ThrowIfNull(options);
+        var place = options.PlaceOnLogicalScreen;
         if (gifBytes.Length < 13)
             throw new InvalidDataException("GIF data too small.");
 
@@ -56,7 +129,12 @@ public static class GifImageLoader
             gifBytes[5] != 'a')
             throw new InvalidDataException("Not a GIF file.");
 
-        // Logical screen descriptor
+        // Logical screen descriptor, section 18: width(2), height(2), packed(1), background(1),
+        // aspect(1). The background index (byte 11) is deliberately not read; see the remarks on
+        // Load for why the uncovered area is transparent rather than that colour. The size is
+        // used only when placement was asked for.
+        var screenWidth = gifBytes[6] | (gifBytes[7] << 8);
+        var screenHeight = gifBytes[8] | (gifBytes[9] << 8);
         var globalColorTableFlag = (gifBytes[10] & 0x80) != 0;
         var globalColorTableSize = 2 << (gifBytes[10] & 0x07); // 2^(n+1) entries
 
@@ -74,6 +152,9 @@ public static class GifImageLoader
 
         // Walk the block stream until the first image descriptor
         int transparentIndex = -1;
+        // True from a Graphic Control Extension until the graphic-rendering block that closes its
+        // scope. Read only under the option, to refuse a second one (section 23.a).
+        var graphicControlPending = false;
 
         while (pos < gifBytes.Length)
         {
@@ -84,7 +165,7 @@ public static class GifImageLoader
 
             if (blockType == 0x2C) // Image Descriptor
             {
-                return DecodeImage(gifBytes, ref pos, globalPalette, transparentIndex);
+                return DecodeImage(gifBytes, ref pos, globalPalette, transparentIndex, screenWidth, screenHeight, place);
             }
 
             if (blockType == 0x21) // Extension
@@ -100,7 +181,21 @@ public static class GifImageLoader
                 var label = gifBytes[pos++];
                 if (label == 0xF9) // Graphic Control Extension
                 {
-                    SkipBlock(gifBytes, ref pos, out var gceData);
+                    SkipBlock(gifBytes, ref pos, out var gceData, out var gceSubBlocks);
+                    if (place)
+                    {
+                        // Section 23.a: "at most one Graphic Control Extension may precede a
+                        // graphic rendering block", and it "contains only one data sub-block";
+                        // section 23.c.iii: the Block Size "contains the fixed value 4". Without
+                        // the option a block that breaks these is read as far as it goes.
+                        if (graphicControlPending)
+                            throw new InvalidDataException(
+                                "GIF has two Graphic Control Extensions before one graphic rendering block (section 23.a: at most one may precede it).");
+                        if (gceSubBlocks != 1 || gceData is null || gceData.Length != 4)
+                            throw new InvalidDataException(
+                                "GIF Graphic Control Extension is not one sub-block with a Block Size of 4 (section 23.a and 23.c.iii).");
+                    }
+                    graphicControlPending = true;
                     // gceData[0] = packed, [1]+[2] = delay, [3] = transparent index. A clear
                     // transparency flag resets the index rather than leaving an earlier
                     // extension's value standing, for the same reason the scope-closing rule
@@ -139,10 +234,20 @@ public static class GifImageLoader
                     // gives a Graphic-Rendering block as what closes a pending scope, so an
                     // unrecognised Control label simply is not one of the blocks that can close it.
                     if (label <= 0x7F)
+                    {
                         transparentIndex = -1;
+                        graphicControlPending = false;
+                    }
                 }
                 continue;
             }
+
+            // Appendix B gives a Data Stream three kinds of top-level block: an extension (0x21),
+            // an image descriptor (0x2C) and the trailer (0x3B). Anything else is outside the
+            // grammar; without the option it is skipped as a run of sub-blocks.
+            if (place)
+                throw new InvalidDataException(
+                    $"GIF has the block introducer 0x{blockType:X2} at offset {pos - 1}; Appendix B allows only an extension (0x21), an image descriptor (0x2C) or the trailer (0x3B).");
 
             // Unknown block: try to skip sub-blocks.
             SkipSubBlocks(gifBytes, ref pos);
@@ -155,13 +260,15 @@ public static class GifImageLoader
 
     private static PdfImageXObject DecodeImage(
         byte[] data, ref int pos,
-        byte[]? globalPalette, int transparentIndex)
+        byte[]? globalPalette, int transparentIndex, int screenWidth, int screenHeight, bool place)
     {
         if (pos + 9 > data.Length)
             throw new InvalidDataException("Truncated GIF image descriptor.");
 
         // Image descriptor layout (pos already pointing past the 0x2C separator):
         //   left(2), top(2), width(2), height(2), packed(1)
+        var left = data[pos] | (data[pos + 1] << 8);
+        var top = data[pos + 2] | (data[pos + 3] << 8);
         var width = data[pos + 4] | (data[pos + 5] << 8);
         var height = data[pos + 6] | (data[pos + 7] << 8);
         var packed = data[pos + 8];
@@ -199,10 +306,17 @@ public static class GifImageLoader
             throw new InvalidDataException($"Invalid LZW minimum code size: {lzwMinCodeSize}.");
 
         // Gather sub-blocks into a single byte stream
-        var lzwStream = GatherSubBlocks(data, ref pos);
+        var lzwStream = GatherSubBlocks(data, ref pos, out var terminated);
 
-        // LZW decode
-        var indices = LzwDecode(lzwStream, lzwMinCodeSize, width * height);
+        // LZW decode. The raster buffer is sized from the image descriptor, which is attacker text:
+        // a 42-byte file can declare 10,000 x 10,000 and the code stream behind it is refused as
+        // short, but only after the buffer exists (about 100 MB for that file, were the buffer
+        // sized first; #536's class; the pass below allocates about 27 KB). A first pass runs the
+        // same decoder with no buffer and so makes the same refusals, with the same messages, in
+        // the same order, and counts the pixels the stream delivers. The buffer is allocated only
+        // once that count has matched, so what is allocated is bounded by what the file contained.
+        LzwDecode(lzwStream, lzwMinCodeSize, width * height, produce: false, strict: place);
+        var indices = LzwDecode(lzwStream, lzwMinCodeSize, width * height, produce: true, strict: false)!;
 
         // The LZW stream carries rows in storage order. For an interlaced image that is not
         // display order, so the rows are put back before anything reads a pixel. The colour
@@ -210,6 +324,54 @@ public static class GifImageLoader
         if (interlaced)
             indices = Deinterlace(indices, width, height);
 
+        if (!place)
+            return FrameOnly(indices, width, height, palette, transparentIndex);
+
+        // Placement was asked for, so the data must meet the rules the default path lets pass. The
+        // checks run after the LZW decode, so a file that is malformed in the ways Load documents
+        // is refused with those messages first.
+        //
+        // Section 16 defines the Block Terminator as the zero-length sub-block that ends a sequence
+        // of Data Sub-blocks (section 22.c gives the image data as such a sequence), and the
+        // Appendix F raster-data diagram shows it after the code that "must appear before Block
+        // Terminator". Running off the end of the file without one is accepted by default.
+        if (!terminated)
+            throw new InvalidDataException(
+                "GIF image data is not ended by a Block Terminator (section 22.c, section 16).");
+
+        // Section 22.a: "Each index must be within the range of the size of the active color
+        // table, starting at 0." The default path leaves such a pixel black.
+        var entries = palette.Length / 3;
+        for (var i = 0; i < indices.Length; i++)
+        {
+            if (indices[i] >= entries)
+                throw new InvalidDataException(
+                    $"GIF pixel ({i % width},{i / width}) has colour index {indices[i]}, past the {entries}-entry active colour table (section 22.a: \"Each index must be within the range of the size of the active color table\").");
+        }
+
+        // A screen the frame cannot be placed on is refused rather than answered with the frame
+        // alone. Section 20.a: "Each image must fit within the boundaries of the Logical Screen".
+        if (screenWidth == 0 || screenHeight == 0)
+            throw new InvalidDataException(
+                $"GIF logical screen is {screenWidth}x{screenHeight}; the frame cannot be placed on it.");
+        if (left + width > screenWidth || top + height > screenHeight)
+            throw new InvalidDataException(
+                $"GIF frame {width}x{height} at ({left},{top}) does not fit its {screenWidth}x{screenHeight} logical screen (section 20.a).");
+        if ((long)screenWidth * screenHeight > ImageLimits.MaxPixels)
+            throw new InvalidDataException(
+                $"GIF logical screen {screenWidth}x{screenHeight} exceeds the {ImageLimits.MaxPixels}-pixel limit.");
+
+        // A frame that fills the screen from the origin is the frame as it is.
+        if (screenWidth == width && screenHeight == height)
+            return FrameOnly(indices, width, height, palette, transparentIndex);
+
+        return FrameOnScreen(
+            indices, width, height, left, top, screenWidth, screenHeight, palette, transparentIndex);
+    }
+
+    private static PdfImageXObject FrameOnly(
+        byte[] indices, int width, int height, byte[] palette, int transparentIndex)
+    {
         // Expand indices to RGB. Section 22.a requires every index to be within the active
         // colour table's range, so one that is not makes this a malformed file, and the class
         // contract is InvalidDataException for that. This is a deliberate departure from it: the
@@ -238,6 +400,36 @@ public static class GifImageLoader
         return new PdfImageXObject(width, height, rgb, PdfName.FlateDecode, ImageColorSpace.DeviceRgb, 8, sMask);
     }
 
+    /// <summary>
+    /// Composes the frame onto a larger canvas. Uncovered pixels keep alpha 0 and black colour
+    /// (both arrays start zeroed); covered pixels are opaque unless they carry the transparent
+    /// index. The /SMask is always written here, since the uncovered area needs it.
+    /// </summary>
+    private static PdfImageXObject FrameOnScreen(
+        byte[] indices, int width, int height, int left, int top,
+        int canvasWidth, int canvasHeight, byte[] palette, int transparentIndex)
+    {
+        var rgb = new byte[canvasWidth * canvasHeight * 3];
+        var alpha = new byte[canvasWidth * canvasHeight];
+        for (var y = 0; y < height; y++)
+        {
+            for (var x = 0; x < width; x++)
+            {
+                var src = y * width + x;
+                var dst = (top + y) * canvasWidth + left + x;
+                alpha[dst] = indices[src] == transparentIndex ? (byte)0 : (byte)255;
+                var idx = indices[src] * 3;
+                if (idx + 2 >= palette.Length) continue; // out-of-range index, leave black
+                rgb[dst * 3] = palette[idx];
+                rgb[dst * 3 + 1] = palette[idx + 1];
+                rgb[dst * 3 + 2] = palette[idx + 2];
+            }
+        }
+
+        return new PdfImageXObject(
+            canvasWidth, canvasHeight, rgb, PdfName.FlateDecode, ImageColorSpace.DeviceRgb, 8, new PdfStream(alpha));
+    }
+
     // ── GIF LZW decoder ──────────────────────────────────────────────────────
     // GIF uses a variant of LZW where:
     //   • Codes are packed LSB-first into bytes.
@@ -246,7 +438,7 @@ public static class GifImageLoader
     //   • Code width starts at minCodeSize+1 and grows as the table fills.
     //   • Maximum table size is 4096 entries (12-bit codes).
 
-    private static byte[] LzwDecode(byte[] stream, int minCodeSize, int pixelCount)
+    private static byte[]? LzwDecode(byte[] stream, int minCodeSize, int pixelCount, bool produce, bool strict)
     {
         var clearCode = 1 << minCodeSize;
         var eoiCode = clearCode + 1;
@@ -259,8 +451,8 @@ public static class GifImageLoader
         var tablePrefix = new int[maxTableSize];
         var tableSuffix = new byte[maxTableSize];
 
-        // Output buffer
-        var output = new byte[pixelCount];
+        // Output buffer; null on the counting pass (see the caller).
+        var output = produce ? new byte[pixelCount] : null;
         var outIdx = 0;
 
         // Bit-reading state
@@ -274,6 +466,7 @@ public static class GifImageLoader
         int codeMask = (1 << codeSize) - 1;
         int prevCode = -1;
         var sawEndOfInformation = false;
+        var lastCodeWidened = false;
 
         // Initialise root entries (palette indices 0..clearCode-1)
         for (var i = 0; i < clearCode; i++)
@@ -303,6 +496,7 @@ public static class GifImageLoader
             var code = bitBuf & codeMask;
             bitBuf >>= codeSize;
             bitsLeft -= codeSize;
+            lastCodeWidened = false;
 
             if (code == eoiCode) { sawEndOfInformation = true; break; }
 
@@ -367,8 +561,14 @@ public static class GifImageLoader
             }
 
             // Pop stack into output
-            for (var i = stackTop - 1; i >= 0 && outIdx < pixelCount; i--)
-                output[outIdx++] = stack[i];
+            // Strict mode keeps counting past the descriptor's pixel count so an overrun shows
+            // as a count above it; the default stops there and drops the rest.
+            for (var i = stackTop - 1; i >= 0 && (strict || outIdx < pixelCount); i--)
+            {
+                if (output is not null && outIdx < pixelCount)
+                    output[outIdx] = stack[i];
+                outIdx++;
+            }
 
             // Add new table entry: prevCode's sequence + first byte of current code.
             // The chain walk pushes suffix bytes root-to-leaf reversed, so stack[stackTop-1]
@@ -400,6 +600,7 @@ public static class GifImageLoader
                 {
                     codeSize++;
                     codeMask = (1 << codeSize) - 1;
+                    lastCodeWidened = true;
                 }
             }
 
@@ -425,6 +626,10 @@ public static class GifImageLoader
         // descriptor asks for is still truncated to the descriptor silently, because Pillow 12.3.0,
         // the independent decoder this was checked against, accepts such a stream, and refusing it
         // here would reject files that render.
+        if (strict && outIdx > pixelCount)
+            throw new InvalidDataException(
+                $"GIF image data decodes more pixels than the {pixelCount} its descriptor declares: the last code runs past it (section 22.a, Appendix F).");
+
         if (outIdx != pixelCount)
             throw new InvalidDataException(
                 sawEndOfInformation
@@ -432,7 +637,71 @@ public static class GifImageLoader
                       + "End of Information code arrived before the last pixel."
                     : $"GIF image data ended after {outIdx} of {pixelCount} pixels.");
 
+        if (strict)
+            RequireEndOfInformation(stream, minCodeSize, pixelCount, bitBuf, bitsLeft, streamPos, codeSize, lastCodeWidened);
+
         return output;
+    }
+
+    /// <summary>
+    /// Appendix F, COMPRESSION item 2: the End of Information code "must be the last code output by
+    /// the encoder for an image". After the last pixel only Clear codes may come before it (a Clear
+    /// carries no pixel); a data code is more pixels than declared. With no End of Information code
+    /// the refusal names a missing terminating code only when fewer bits remain than the narrowest
+    /// width a code could be read at (the stream's own padding to a byte boundary counts as
+    /// remaining); with at least that many bits left, whatever they hold is read as a code, so
+    /// a long run of padding is reported as a code after the last pixel. Padding bits after the
+    /// End of Information code in its last byte are not codes.
+    ///
+    /// The first code after the last pixel is read at the decoder's current width. When the table
+    /// entry added for the last data code is what widened that width, it is also read one bit
+    /// narrower: the specification does not say which width the final code takes at a widening,
+    /// and <see cref="GifEncoder"/> writes the narrower one, so both are accepted rather than
+    /// refusing the library's own output. Anywhere else the width is not in doubt, and a narrower
+    /// read would take a data code whose low bits equal the End of Information code for that
+    /// code.
+    /// </summary>
+    private static void RequireEndOfInformation(
+        byte[] stream, int minCodeSize, int pixelCount, int bitBuf, int bitsLeft, int streamPos, int codeSize,
+        bool lastCodeWidened)
+    {
+        var clearCode = 1 << minCodeSize;
+        var eoiCode = clearCode + 1;
+        var first = true;
+        while (true)
+        {
+            while (bitsLeft < codeSize && streamPos < stream.Length)
+            {
+                bitBuf |= stream[streamPos++] << bitsLeft;
+                bitsLeft += 8;
+            }
+
+            var narrowest = first && lastCodeWidened ? codeSize - 1 : codeSize;
+            var consumed = 0;
+            for (var width = codeSize; width >= narrowest && consumed == 0; width--)
+            {
+                if (bitsLeft < width)
+                    continue;
+                var code = bitBuf & ((1 << width) - 1);
+                if (code == eoiCode)
+                    return;
+                if (code == clearCode)
+                    consumed = width;
+            }
+
+            if (consumed == 0)
+            {
+                throw new InvalidDataException(
+                    bitsLeft < narrowest
+                        ? "GIF image data ends without an End of Information code (Appendix F, COMPRESSION item 2: it \"must be the last code output by the encoder for an image\")."
+                        : $"GIF image data decodes more pixels than the {pixelCount} its descriptor declares: a code follows the last pixel (section 22.a, Appendix F).");
+            }
+
+            bitBuf >>= consumed;
+            bitsLeft -= consumed;
+            codeSize = minCodeSize + 1;
+            first = false;
+        }
     }
 
     /// <summary>
@@ -470,13 +739,18 @@ public static class GifImageLoader
     /// Reads GIF sub-blocks (length-prefixed byte sequences terminated by a zero-length block)
     /// and returns their concatenated payload.
     /// </summary>
-    private static byte[] GatherSubBlocks(byte[] data, ref int pos)
+    private static byte[] GatherSubBlocks(byte[] data, ref int pos, out bool terminated)
     {
         using var ms = new MemoryStream();
+        terminated = false;
         while (pos < data.Length)
         {
             var blockLen = data[pos++];
-            if (blockLen == 0) break;
+            if (blockLen == 0)
+            {
+                terminated = true;
+                break;
+            }
             if (pos + blockLen > data.Length)
                 throw new InvalidDataException("GIF sub-block extends beyond end of file.");
             ms.Write(data, pos, blockLen);
@@ -488,9 +762,10 @@ public static class GifImageLoader
     /// <summary>
     /// Skips sub-blocks, optionally capturing the first block's payload for GCE parsing.
     /// </summary>
-    private static void SkipBlock(byte[] data, ref int pos, out byte[]? firstBlockData)
+    private static void SkipBlock(byte[] data, ref int pos, out byte[]? firstBlockData, out int subBlocks)
     {
         firstBlockData = null;
+        subBlocks = 0;
         while (pos < data.Length)
         {
             var blockLen = data[pos++];
@@ -502,6 +777,7 @@ public static class GifImageLoader
                 throw new InvalidDataException("GIF sub-block extends beyond end of file.");
             if (firstBlockData is null)
                 firstBlockData = data[pos..(pos + blockLen)];
+            subBlocks++;
             pos += blockLen;
         }
     }
