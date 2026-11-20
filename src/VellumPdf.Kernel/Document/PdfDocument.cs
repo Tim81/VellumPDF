@@ -1175,14 +1175,14 @@ public sealed class PdfDocument : IDisposable
     /// <exception cref="ArgumentException">
     /// A page was registered with an <see cref="EmbeddedFontHandle"/> from another document and this
     /// document defines no font under its resource name (<c>ParamName</c> <c>handle</c>); see
-    /// <see cref="RegisterEmbeddedFontUsage"/>.
+    /// <see cref="RegisterEmbeddedFontUsage"/>. It is also raised from the serialisation, with
+    /// <c>ParamName</c> <c>value</c>, when a form field's drawn value, selected option or caption
+    /// holds a character outside WinAnsiEncoding; see <see cref="AddTextField"/>.
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// <paramref name="destination"/> cannot be written to, which is checked before anything is
     /// serialised, so the document is not marked as written. It is also thrown when
-    /// <see cref="UseObjectStreams"/> is combined with <see cref="Encrypt"/>, and, from the
-    /// serialisation, when a form field's drawn value, selected option or caption holds a character
-    /// outside WinAnsiEncoding (<c>ParamName</c> <c>value</c>); see <see cref="AddTextField"/>.
+    /// <see cref="UseObjectStreams"/> is combined with <see cref="Encrypt"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// A PDF/A <see cref="Conformance"/> is set together with <see cref="Encrypt"/>, or

@@ -107,7 +107,7 @@ public sealed class RealTokenVeraPdfTests
         doc.Save(ms);
         var pdf = ms.ToArray();
 
-        // The fixture holds the token the change writes, in the link and in the content stream.
+        // The fixture holds the real token in the link destination and in the content stream.
         Assert.Contains($"/XYZ {token} 100 null]", Text(pdf));
         Assert.Contains($"{token} 5 m", Inflated(pdf));
 
@@ -128,8 +128,8 @@ public sealed class RealTokenVeraPdfTests
             return ms.ToArray();
         }
 
-        var nbsp = Build("a b", "v w");
-        // The change under test: both strings are UTF-16BE with a mark, where 2.3.3 wrote 0xA0.
+        var nbsp = Build("a\u00A0b", "v\u00A0w");
+        // Both strings hold U+00A0, so each is written as UTF-16BE with a byte order mark.
         byte[] name = [0xFE, 0xFF, 0x00, 0x61, 0x00, 0xA0, 0x00, 0x62];
         Assert.True(IndexOf(nbsp, [.. "/T ("u8.ToArray(), .. name, (byte)')']) >= 0, "/T is not the UTF-16BE string.");
         byte[] value = [0xFE, 0xFF, 0x00, 0x76, 0x00, 0xA0, 0x00, 0x77];

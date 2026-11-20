@@ -185,10 +185,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **A whole number outside the 32-bit range is written as a real token, not an integer token
   (#639).** `PdfReal`, every `PdfCanvas` operand, and the numbers in the AcroForm appearance
-  streams and `/DA` strings all wrote `2147483648` for 2147483648.0. ISO 32000-2, Table C.1 gives
-  integers 32 bits, and ISO 19005-2, 6.1.13 fails a PDF/A file with an integer outside that
-  range. From 2^63 up, `qpdf --check` reported "overflow/underflow converting
-  9223372036854780000 to 64-bit int" and treated the object as null, so a link annotation or a
+  streams and `/DA` strings all wrote `2147483648` for 2147483648.0. ISO 32000-1, Table C.1 gives
+  2,147,483,647 as the largest integer (ISO 32000-2, Table C.1 says only that integers "can often
+  be expressed within 32 bits"), and ISO 19005-2, 6.1.13 fails a PDF/A file with an integer outside
+  that range. From 2^63 up, `qpdf --check` reported "overflow/underflow converting
+  9223372036854780000 to 64-bit integer" and treated the object as null, so a link annotation or a
   content stream was dropped. One internal formatter now formats all three, and when the rounded
   text has no decimal point and is not a 32-bit integer it appends `.0`. **Deliberate output
   change:** 2147483648 is written as `2147483648.0`, -2147483649 as `-2147483649.0` and 3e9 as
@@ -203,9 +204,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   decodes differently where PDFDocEncoding differs (ISO 32000-2, Table D.3). **Deliberate output
   change:** a string containing U+0018 to U+001F, U+007F, U+0080 to U+00A0 or U+00AD, or starting
   with U+00FE U+00FF or U+00EF U+00BB U+00BF, is now UTF-16BE with a byte order mark and decodes
-  as passed. A lone surrogate is written as U+FFFD, where it used to be written alone. Strings
-  with only printable ASCII, U+00A1 to U+00FF except U+00AD, or U+0000 to U+0017, and strings with
-  a character above U+00FF that are well formed, keep their bytes. The appearance stream still
+  as passed, except that U+001B is written as it stands and a reader takes it for the start of a
+  language escape sequence (ISO 32000-2, 7.9.2.2.2), so do not pass it. A lone surrogate is
+  written as U+FFFD, where it used to be written alone. Strings with only printable ASCII, U+00A1
+  to U+00FF except U+00AD, or U+0000 to U+0017, that do not start with a byte order mark, and
+  strings with a character above U+00FF that are well formed, keep their bytes. The appearance stream still
   draws each character as a WinAnsiEncoding byte, so U+0080 is drawn as the euro sign. The XML
   documentation now says all this and lists the exceptions `Save`, `SaveAsync` and
   `PrepareForSigning` raise for a drawn value outside WinAnsiEncoding.

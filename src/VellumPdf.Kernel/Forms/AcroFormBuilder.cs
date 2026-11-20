@@ -632,8 +632,10 @@ internal static class AcroFormBuilder
 
     /// <summary>
     /// Encodes a PDF text string (ISO 32000-2 7.9.2) for the field dictionary entries <c>/T</c>,
-    /// <c>/V</c>, <c>/Opt</c> and <c>/MK /CA</c> through the encoder every other text string
-    /// uses, so a reader decodes each character as it was passed.
+    /// <c>/V</c>, <c>/Opt</c> and <c>/MK /CA</c> through <see cref="PdfLiteralString.FromTextString"/>,
+    /// the encoder the signature dictionary and output intent strings use, so a reader decodes each
+    /// character as it was passed. The document information, outline titles and page-label prefixes
+    /// use <see cref="PdfLiteralString.FromUnicode"/>.
     /// </summary>
     private static PdfLiteralString TextString(string value) =>
         PdfLiteralString.FromTextString(value);

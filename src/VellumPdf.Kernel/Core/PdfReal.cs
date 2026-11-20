@@ -8,8 +8,9 @@ namespace VellumPdf.Core;
 /// The value is written rounded to at most five decimal places. When the rounded text has no
 /// decimal point and lies inside −2,147,483,648 to 2,147,483,647 it is an integer token, which
 /// 7.3.3 allows wherever a real is expected (<c>3</c> for 3.0). Otherwise it is a real token
-/// (<c>2147483648.0</c>), so no integer token outside the 32-bit range of ISO 32000-2 Table C.1
-/// is written. The rule reads the rounded text: 2147483647.000001 is written as
+/// (<c>2147483648.0</c>), so no integer token outside the 32-bit range is written (the
+/// figure is that of ISO 32000-1 Table C.1; ISO 32000-2 Table C.1 says only that integers "can
+/// often be expressed within 32 bits"). The rule reads the rounded text: 2147483647.000001 is written as
 /// <c>2147483647</c> and 2147483648.000001 as <c>2147483648.0</c>.
 /// </remarks>
 public sealed class PdfReal : PdfObject
