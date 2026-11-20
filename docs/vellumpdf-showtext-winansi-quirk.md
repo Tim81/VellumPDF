@@ -31,7 +31,7 @@ Tekens die écht buiten CP1252 vallen (℞ U+211E, ★ U+2605, ✕ U+2715, astro
 symbolen, PUA-glyphs) renderen als `"?"` — dát is verdedigbaar gedrag; deze quirk gaat
 uitsluitend over de tekens die WinAnsi wél dekt.
 
-## Diagnose (empirisch, Celestium-portret-export)
+## Diagnose (empirisch, export van een applicatie die de bibliotheek gebruikt)
 
 1. **`°` afwezig bevestigd via `pdftotext` op de contentstream**: het teken staat niet in
    de PDF-bytes — het wordt door de writer weggelaten, niet door de viewer verkeerd
@@ -61,9 +61,9 @@ wonen) en alléén voor tekens buiten CP1252 een fallback/warning gebruiken.
 3. Warning (zoals bij ontbrekende glyphs elders) voor tekens buiten CP1252 i.p.v. stil
    transliteren.
 
-## Workarounds in Celestium (te verwijderen ná de upstream-fix)
+## Workarounds in de consumerende applicatie (te verwijderen ná de upstream-fix)
 
-Alle in `src/Astrologie.Desktop/VellumPdfExportService.cs`, patroon: cel leeg doorgeven
+Alle in de exportcode van die applicatie, patroon: cel leeg doorgeven
 aan `TekenTabelRij` en apart tekenen via `TekenGemengdeTekst` (DejaVu-embedded keten):
 
 - Gradencellen (Posities/Huizen/Aspecten-orb/Progressies/Halfsommen/Heerschap/
@@ -95,7 +95,7 @@ Standalone probe-project tegen VellumPdf.Kernel/Fonts.Standard14 1.8.2: tekst vi
 **en-dash (U+2013) en em-dash (U+2014) renderen beide als kale ASCII-hyphen `-`** — een
 derde faalmodus naast `°` (volledig weg) en `•` (wordt `.`). Drie verschillende
 uitkomsten voor drie CP1252-tekens versterkt de transliteratie-hypothese in §Oorzaak.
-Regressietest in Celestium: `GenereerBytes_TijdsherenAgesOfManJaren_BevatEchteEnDashInPdfTekst`
+Een regressietest in die applicatie controleert de en-dash in de PDF-tekst
 (pdftotext-gebaseerd; skipt zonder poppler).
 
 ## Openstaand

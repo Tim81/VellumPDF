@@ -1,9 +1,8 @@
 # Barcodes: verification record and roadmap
 
-A maintainer note, not user-facing documentation; it is deliberately left out of
-`toc.yml`. It records the outcome of the post-1.9.0 verification pass over
+This page records the outcome of the post-1.9.0 verification pass over
 `VellumPdf.Barcodes` (July 2026) and the roadmap that came out of it, so the
-reasoning is not lost between releases.
+reasoning is not lost between releases. The last section is for contributors.
 
 ## Verification outcome
 
@@ -80,9 +79,10 @@ General Specifications disallow FNC4 in a GS1-128 symbol.
 
 ## Maintenance note: README duplication
 
-Each package ships its own `README.md` (see `src/Directory.Build.targets`). Every
-one of those repeats two blocks verbatim (the package-family/status table and
-the roadmap table) because NuGet renders a single flattened Markdown file per
-package with no include mechanism. When the family list or the roadmap changes,
-update all nine copies: the root `README.md` and the eight `src/*/README.md`
-files.
+Each package ships its own `README.md` (see `src/Directory.Build.targets`), because
+NuGet renders a single flattened Markdown file per package with no include
+mechanism. Two blocks repeat in all nine copies, the root `README.md` and the eight
+`src/*/README.md` files. The roadmap table is generated: edit
+`eng/roadmap/milestones.json` and run `python eng/generate-roadmap.py`. The
+package-family and status table is still copied by hand, so a change to the family
+list needs the same edit in each of the nine files.

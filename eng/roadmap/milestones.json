@@ -20,7 +20,7 @@
       "number": 53,
       "track": "kernel",
       "title": "v2.5 — Accessible documents, extraction and Reader graduation",
-      "description": "PDF/A-2a and PDF/UA-1 tagging fixes (links, artifacts, one structure element per logical element, table headers, language changes, list labels), text and image extraction (#98, #394), graduating VellumPdf.Reader from Preview to Stable (#187), image encoders (#491, #495), and settling whether a CCITT Group 4 encoder is worth building (#494).",
+      "description": "PDF/A-2a and PDF/UA-1 tagging fixes (links, artifacts, one structure element per logical element, table headers, language changes, list labels), text and image extraction (#98, #394), graduating VellumPdf.Reader from Preview to Stable (#187), image encoders (#491, #495), settling whether a CCITT Group 4 encoder is worth building (#494), and full JBIG2 support: decoding (#434), encoding (#436), loading files with the T.88 Annex D header (#570) and the raster fixes (#619, #620, #621), each checked against every T.88 rule that applies.",
       "released": false
     },
     {
