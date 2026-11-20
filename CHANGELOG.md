@@ -165,6 +165,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **A heading that splits across pages gets its bookmark at the split piece (#464).** The piece
+  that stays on the first page now carries the box it was placed in, so the bookmark's `/XYZ` top
+  is where the heading starts instead of the top of the page. Deliberate output change: only that
+  top value changes, and only for a heading whose split piece starts below layout y 0; the byte
+  offsets that follow it move with it.
+
 - **`PdfCanvas` refuses NaN and infinity in every operand it writes (#519).** Every content-stream
   operator that writes a number now throws `ArgumentException` for `NaN` or infinity, with the same
   message as `PdfReal`, instead of writing `NaN 0 0 rg`, which is not a PDF number (ISO 32000-2

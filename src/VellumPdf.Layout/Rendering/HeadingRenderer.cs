@@ -45,11 +45,14 @@ internal sealed class HeadingRenderer : IRenderer
         _ => "H6",
     };
 
-    // Private constructor used by Split/Overflow path (inner already has StructType set).
-    private HeadingRenderer(Heading heading, ParagraphRenderer inner)
+    // Private constructor used by the split path (inner already has StructType set). The split piece
+    // draws the bookmark, so it carries the box it was placed in; without it the entry would target
+    // layout y 0, the top of the page (#464).
+    private HeadingRenderer(Heading heading, ParagraphRenderer inner, LayoutBox occupied)
     {
         _heading = heading;
         _inner = inner;
+        _occupied = occupied;
     }
 
     public LayoutResult Layout(LayoutContext context)
@@ -65,7 +68,10 @@ internal sealed class HeadingRenderer : IRenderer
         {
             return LayoutResult.Partial(
                 result.OccupiedArea!.Value,
-                new HeadingRenderer(_heading, (ParagraphRenderer)result.SplitRenderer!),
+                new HeadingRenderer(
+                    _heading,
+                    (ParagraphRenderer)result.SplitRenderer!,
+                    result.OccupiedArea!.Value),
                 result.OverflowRenderer!);
         }
 
