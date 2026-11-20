@@ -85,7 +85,8 @@ public sealed class GifLogicalScreenTests
         Assert.Equal(Inflate(reference), Inflate(img));
     }
 
-    /// <summary>A transparent index still gives the /SMask it gave on 2.3.3, at the frame's size, with no screen involved.</summary>
+    /// <summary>A transparent index still gives the /SMask it gave on 2.3.3, at the frame's size,
+    /// with no screen involved.</summary>
     [Fact]
     public void Default_transparentIndexOnAnOffsetFrame_isTheFramesOwnMask()
     {
@@ -128,7 +129,8 @@ public sealed class GifLogicalScreenTests
         Assert.Equal(new string('.', 20), map[19]);
     }
 
-    /// <summary>The second row of #498's table: 5x4 at (4, 3) on a 9x7 screen, flush to the far edges.</summary>
+    /// <summary>The second row of #498's table: 5x4 at (4, 3) on a 9x7 screen, flush to the far
+    /// edges.</summary>
     [Fact]
     public void Decode_frameFlushWithTheFarCorner_isTheScreenSizeWithTheFrameAtItsPosition()
     {
@@ -203,7 +205,8 @@ public sealed class GifLogicalScreenTests
         Assert.Contains("4x3 at (" + left + "," + top + ")", ex.Message);
     }
 
-    /// <summary>A screen of 0 in either dimension has no area to place on; the frame is not returned alone instead.</summary>
+    /// <summary>A screen of 0 in either dimension has no area to place on; the frame is not
+    /// returned alone instead.</summary>
     [Theory]
     [InlineData(0, 0)]
     [InlineData(0, 5)]
@@ -235,7 +238,8 @@ public sealed class GifLogicalScreenTests
              0, 255, 0, 0,
              0, 0, 255, 0],
             ReadAlpha(img));
-        // The transparent pixel keeps its palette colour under alpha 0, as it does without a screen.
+        // The transparent pixel keeps its palette colour under alpha 0, as it does without a
+        // screen.
         Assert.Equal(["....", ".AB.", ".BA."], ReadMap(img));
     }
 
@@ -291,13 +295,14 @@ public sealed class GifLogicalScreenTests
     }
 
     /// <summary>
-    /// Placing a frame on a larger screen gives the image an /SMask, which is transparency. ISO 19005-2 6.2.10
-    /// has the OutputIntent as the default blending space and wants a page /Group with a /CS when
-    /// there is none, so a PDF/A file that carried the mask without either would be non-conformant.
-    /// <see cref="PdfDocument"/> writes a GTS_PDFA1 OutputIntent on every PDF/A save (the code
-    /// builds it whenever Conformance is not None), so no /Group is needed; this pins that for the
-    /// three claims the library offers, and pins 6.2.8.1 for the image: no /Interpolate and no
-    /// /Alternates. veraPDF 1.30.4 passed the same three files (2b, 2u, 2a) when measured.
+    /// Placing a frame on a larger screen gives the image an /SMask, which is transparency. ISO
+    /// 19005-2 6.2.10 has the OutputIntent as the default blending space and wants a page /Group
+    /// with a /CS when there is none, so a PDF/A file that carried the mask without either would be
+    /// non-conformant. <see cref="PdfDocument"/> writes a GTS_PDFA1 OutputIntent on every PDF/A
+    /// save (the code builds it whenever Conformance is not None), so no /Group is needed; this
+    /// pins that for the three claims the library offers, and pins 6.2.8.1 for the image: no
+    /// /Interpolate and no /Alternates. veraPDF 1.30.4 passed the same three files (2b, 2u, 2a)
+    /// when measured.
     /// </summary>
     [Theory]
     [InlineData(PdfConformance.PdfA2b)]
@@ -387,7 +392,8 @@ public sealed class GifLogicalScreenTests
         data[offset + 1] = (byte)(value >> 8);
     }
 
-    /// <summary>The map the loader's output should read as: the frame at (left, top), dots elsewhere.</summary>
+    /// <summary>The map the loader's output should read as: the frame at (left, top), dots
+    /// elsewhere.</summary>
     private static string[] ExpectedMap(string[] frame, int width, int height, int left, int top)
     {
         var rows = new string[height];
@@ -406,8 +412,8 @@ public sealed class GifLogicalScreenTests
     }
 
     /// <summary>
-    /// Reads the decoded raster back as the character map the fixtures are written in. A pixel
-    /// that is black and alpha 0, or black with no soft mask at all, reads as <c>.</c>; a pixel that
+    /// Reads the decoded raster back as the character map the fixtures are written in. A pixel that
+    /// is black and alpha 0, or black with no soft mask at all, reads as <c>.</c>; a pixel that
     /// matches a fixture colour reads as its letter, and anything else fails the test by name.
     /// </summary>
     private static string[] ReadMap(PdfImageXObject img)

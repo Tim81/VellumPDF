@@ -15,7 +15,8 @@ namespace VellumPdf.Layout.Tests;
 /// </summary>
 public sealed class GifLogicalScreenLayoutTests
 {
-    /// <summary>A 40x20 frame on a 40x2000 screen: the file the review used to show the placement growing a Layout image.</summary>
+    /// <summary>A 40x20 frame on a 40x2000 screen: the file the review used to show the placement
+    /// growing a Layout image.</summary>
     private static byte[] FrameOnATallScreen()
     {
         var rgb = new byte[40 * 20 * 3];

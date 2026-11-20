@@ -54,7 +54,8 @@ public static class GifImageLoader
     /// may refuse them by default.</para>
     /// </remarks>
     /// <param name="gifBytes">The GIF file.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="gifBytes"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="gifBytes"/> is
+    /// <see langword="null"/>.</exception>
     /// <exception cref="InvalidDataException">
     /// <paramref name="gifBytes"/> is too small to be a GIF, does not carry the GIF87a/GIF89a
     /// signature, has no image descriptor, the image descriptor itself is truncated, a colour
@@ -86,8 +87,8 @@ public static class GifImageLoader
     /// width or height of 0, a frame whose far edge lies beyond the screen, and a screen of more
     /// than 100 million pixels (the limit <see cref="ImageLimits.ValidateDimensions"/> applies to a
     /// frame) all throw <see cref="InvalidDataException"/>. None falls back to the frame's own
-    /// size, because the option was asked for and an answer that silently ignored it would be
-    /// the defect it exists to fix.</para>
+    /// size, because the option was asked for and silently ignoring it would defeat its
+    /// purpose.</para>
     /// <para><b>Data that breaks a GIF89a rule is refused.</b> Under the option the loader throws
     /// <see cref="InvalidDataException"/> naming the rule and its section for a pixel whose colour
     /// index is past the active colour table (section 22.a), image data that decodes more pixels
@@ -183,10 +184,10 @@ public static class GifImageLoader
                     SkipBlock(gifBytes, ref pos, out var gceData, out var gceSubBlocks);
                     if (place)
                     {
-                        // Section 23.a: "at most one Graphic Control Extension may precede a graphic
-                        // rendering block", and it "contains only one data sub-block"; section
-                        // 23.c.iii: the Block Size "contains the fixed value 4". Without the option
-                        // a block that breaks these is read as far as it goes.
+                        // Section 23.a: "at most one Graphic Control Extension may precede a
+                        // graphic rendering block", and it "contains only one data sub-block";
+                        // section 23.c.iii: the Block Size "contains the fixed value 4". Without
+                        // the option a block that breaks these is read as far as it goes.
                         if (graphicControlPending)
                             throw new InvalidDataException(
                                 "GIF has two Graphic Control Extensions before one graphic rendering block (section 23.a: at most one may precede it).");
@@ -307,13 +308,13 @@ public static class GifImageLoader
         // Gather sub-blocks into a single byte stream
         var lzwStream = GatherSubBlocks(data, ref pos, out var terminated);
 
-        // LZW decode. The raster buffer is sized from the image descriptor, which is attacker
-        // text: a 42-byte file can declare 10,000 x 10,000 and the code stream behind it is
-        // refused as short, but only after the buffer exists (about 100 MB when the buffer was
-        // sized first, for that file; #536's class; the pass below allocates about 27 KB). A
-        // first pass runs the same decoder with no buffer and so makes the same refusals, with
-        // the same messages, in the same order, and counts the pixels the stream delivers. The buffer is allocated only once that count has
-        // matched, so what is allocated is bounded by what the file contained.
+        // LZW decode. The raster buffer is sized from the image descriptor, which is attacker text:
+        // a 42-byte file can declare 10,000 x 10,000 and the code stream behind it is refused as
+        // short, but only after the buffer exists (about 100 MB for that file, were the buffer
+        // sized first; #536's class; the pass below allocates about 27 KB). A first pass runs the
+        // same decoder with no buffer and so makes the same refusals, with the same messages, in
+        // the same order, and counts the pixels the stream delivers. The buffer is allocated only
+        // once that count has matched, so what is allocated is bounded by what the file contained.
         LzwDecode(lzwStream, lzwMinCodeSize, width * height, produce: false, strict: place);
         var indices = LzwDecode(lzwStream, lzwMinCodeSize, width * height, produce: true, strict: false)!;
 

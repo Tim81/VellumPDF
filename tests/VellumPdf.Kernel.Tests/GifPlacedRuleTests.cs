@@ -53,7 +53,8 @@ public sealed class GifPlacedRuleTests
         return [.. bytes];
     }
 
-    /// <summary>A one-frame file: a 4-entry palette, the given blocks before the image, and the given codes.</summary>
+    /// <summary>A one-frame file: a 4-entry palette, the given blocks before the image, and the
+    /// given codes.</summary>
     private static byte[] File(
         int width, int height, int[] codes, byte[]? beforeImage = null, bool blockTerminator = true, bool trailer = true)
     {
@@ -89,7 +90,8 @@ public sealed class GifPlacedRuleTests
         Assert.Contains(expectedFragment, ex.Message);
     }
 
-    /// <summary>The control for every refusal below: a compliant file of the same shape loads both ways.</summary>
+    /// <summary>The control for every refusal below: a compliant file of the same shape loads both
+    /// ways.</summary>
     [Fact]
     public void CompliantFile_loadsWithAndWithoutTheOption()
     {
@@ -104,7 +106,8 @@ public sealed class GifPlacedRuleTests
 
     // ------------------------------------------------ section 22.a: index within the colour table
 
-    /// <summary>Four entries: index 3 is the last valid one (loads), 4 is past the table (refused).</summary>
+    /// <summary>Four entries: index 3 is the last valid one (loads), 4 is past the table
+    /// (refused).</summary>
     [Fact]
     public void Place_indexAtTheEndOfTheColourTable_loads()
     {
@@ -124,7 +127,8 @@ public sealed class GifPlacedRuleTests
         AssertRefusedOnlyWithTheOption(gif, $"pixel (1,1) has colour index {index}, past the 4-entry active colour table (section 22.a");
     }
 
-    /// <summary>A local table is the active one, so the range is its size, not the global table's.</summary>
+    /// <summary>A local table is the active one, so the range is its size, not the global
+    /// table's.</summary>
     [Fact]
     public void Place_indexIsCheckedAgainstTheLocalColourTable()
     {
@@ -145,9 +149,9 @@ public sealed class GifPlacedRuleTests
 
     /// <summary>
     /// A 5 x 4 frame of four colours (20 pixels) is the file whose last code widens the decoder's
-    /// table: <see cref="GifEncoder"/> writes the End of Information code one bit narrower than that
-    /// width. The specification does not fix the width at that boundary, so the loader reads both,
-    /// and the library's own output loads under the option.
+    /// table: <see cref="GifEncoder"/> writes the End of Information code one bit narrower than
+    /// that width. The specification does not fix the width at that boundary, so the loader reads
+    /// both, and the library's own output loads under the option.
     /// </summary>
     [Fact]
     public void Place_encoderOutputWhoseLastCodeWidensTheTable_loads()
@@ -170,10 +174,10 @@ public sealed class GifPlacedRuleTests
     // ------------------------------------------------ Appendix F: the width of the final code
 
     /// <summary>
-    /// A file whose LZW minimum code size is 2, so the code width starts at 3 and the widths in these
-    /// streams are small enough to write by hand as (code, width) pairs. The pairs are the output of
-    /// a standard LZW encoder over the colour indices named at each test, with the width the decoder
-    /// reads each code at.
+    /// A file whose LZW minimum code size is 2, so the code width starts at 3 and the widths in
+    /// these streams are small enough to write by hand as (code, width) pairs. The pairs are the
+    /// output of a standard LZW encoder over the colour indices named at each test, with the width
+    /// the decoder reads each code at.
     /// </summary>
     private static byte[] FileWithWidths(int width, int height, (int Code, int Width)[] codes)
     {
@@ -211,24 +215,25 @@ public sealed class GifPlacedRuleTests
         return [.. bytes];
     }
 
-    // Colour indices 0 1 2 3 repeated over 20 pixels (5 x 4). The 12th code, 8, adds table entry 15 and
-    // that makes the next entry 16, which widens the decoder from 4 bits to 5.
+    // Colour indices 0 1 2 3 repeated over 20 pixels (5 x 4). The 12th code, 8, adds table entry 15
+    // and that makes the next entry 16, which widens the decoder from 4 bits to 5.
     private static readonly (int Code, int Width)[] FiveByFourCodes =
         [(4, 3), (0, 3), (1, 3), (2, 3), (3, 4), (6, 4), (8, 4), (10, 4), (9, 4), (7, 4), (13, 4), (8, 4)];
 
-    // Colour indices 0 3 2 1 1 2 3 0 2 1 0 3 (4 x 3). The last code, 6, leaves the width at 4 and the next
-    // table entry at 15, so code 13 is a valid table entry after the last pixel.
+    // Colour indices 0 3 2 1 1 2 3 0 2 1 0 3 (4 x 3). The last code, 6, leaves the width at 4 and
+    // the next table entry at 15, so code 13 is a valid table entry after the last pixel.
     private static readonly (int Code, int Width)[] FourByThreeCodes =
         [(4, 3), (0, 3), (3, 3), (2, 3), (1, 4), (1, 4), (2, 4), (3, 4), (0, 4), (8, 4), (6, 4)];
 
-    // Colour indices 0 2 0 2 1 3 1 3 2 0 2 0 (4 x 3). The last code, 7, leaves the next entry at 13, so code
-    // 13 is not in the table.
+    // Colour indices 0 2 0 2 1 3 1 3 2 0 2 0 (4 x 3). The last code, 7, leaves the next entry at
+    // 13, so code 13 is not in the table.
     private static readonly (int Code, int Width)[] FourByThreeShortTableCodes =
         [(4, 3), (0, 3), (2, 3), (6, 3), (1, 4), (3, 4), (9, 4), (7, 4), (7, 4)];
 
     /// <summary>
-    /// Where the last data code's table entry widens the decoder, the End of Information code may be
-    /// written at the new width or one bit narrower (<see cref="GifEncoder"/> writes the narrower).
+    /// Where the last data code's table entry widens the decoder, the End of Information code may
+    /// be written at the new width or one bit narrower (<see cref="GifEncoder"/> writes the
+    /// narrower).
     /// </summary>
     [Theory]
     [InlineData(5)]
@@ -242,9 +247,9 @@ public sealed class GifPlacedRuleTests
 
     /// <summary>
     /// Without a widening the width is not in doubt, so a data code after the last pixel is a data
-    /// code even when its low bits equal the End of Information code: code 13 is 1101 at width 4, and
-    /// read one bit narrower it would be 101, which is 5. With or without a real End of Information
-    /// code after it, the file carries more pixels than it declares.
+    /// code even when its low bits equal the End of Information code: code 13 is 1101 at width 4,
+    /// and read one bit narrower it would be 101, which is 5. With or without a real End of
+    /// Information code after it, the file carries more pixels than it declares.
     /// </summary>
     [Theory]
     [InlineData(false)]
@@ -257,7 +262,8 @@ public sealed class GifPlacedRuleTests
         AssertRefusedOnlyWithTheOption(gif, "decodes more pixels than the 12 its descriptor declares: a code follows the last pixel");
     }
 
-    /// <summary>The same with a code that is not in the table (next entry 13), which is junk at either width.</summary>
+    /// <summary>The same with a code that is not in the table (next entry 13), which is junk at
+    /// either width.</summary>
     [Fact]
     public void Place_codeNotInTheTableAfterTheLastPixelWhoseLowBitsAreEndOfInformation_isRefusedAndDefaultLoads()
     {
@@ -267,8 +273,9 @@ public sealed class GifPlacedRuleTests
     }
 
     /// <summary>
-    /// A Clear code after the last pixel resets the width to the minimum, so a second Clear and the End
-    /// of Information code behind it are read at 3 bits even though the width was 4 before the first.
+    /// A Clear code after the last pixel resets the width to the minimum, so a second Clear and the
+    /// End of Information code behind it are read at 3 bits even though the width was 4 before the
+    /// first.
     /// </summary>
     [Fact]
     public void Place_clearClearEndOfInformationAfterTheWidthHasGrown_loads()
@@ -285,13 +292,14 @@ public sealed class GifPlacedRuleTests
     /// <summary>
     /// After a Clear the width is the minimum plus one, so a code needs 3 bits here. Two bits left
     /// after the Clears are fewer than any code, which is a missing End of Information code, not a
-    /// code after the last pixel. The case sits exactly one bit under the width: a read that kept the
-    /// narrower width after a Clear would find 2 bits sufficient and report the other message.
+    /// code after the last pixel. The case sits exactly one bit under the width: a read that kept
+    /// the narrower width after a Clear would find 2 bits sufficient and report the other message.
     /// </summary>
     [Fact]
     public void Place_clearThenFewerBitsThanTheResetWidth_isReportedAsNoEndOfInformation()
     {
-        // 0 0 0 over 3 pixels (3 x 1), Clear at the grown width of 4, three Clears at 3, then 2 bits of padding.
+        // 0 0 0 over 3 pixels (3 x 1), Clear at the grown width of 4, three Clears at 3, then 2
+        // bits of padding.
         (int Code, int Width)[] codes = [(0, 3), (0, 3), (0, 3), (4, 4), (4, 3), (4, 3), (4, 3)];
         var gif = FileWithWidths(3, 1, codes);
 
@@ -322,7 +330,8 @@ public sealed class GifPlacedRuleTests
         AssertRefusedOnlyWithTheOption(gif, "decodes more pixels than the 3 its descriptor declares: the last code runs past it");
     }
 
-    /// <summary>A Clear code carries no pixel, so it may precede the End of Information code.</summary>
+    /// <summary>A Clear code carries no pixel, so it may precede the End of Information
+    /// code.</summary>
     [Fact]
     public void Place_clearCodeBeforeEndOfInformation_loads()
     {
@@ -331,7 +340,8 @@ public sealed class GifPlacedRuleTests
         Assert.Equal((2, 1), (GifImageLoader.Load(gif, Placed).Width, GifImageLoader.Load(gif, Placed).Height));
     }
 
-    // ------------------------------------------------ Appendix F: End of Information, section 22.c: terminator
+    // ------------------------------------------------ Appendix F: End of Information, section
+    // 22.c: terminator
 
     [Fact]
     public void Place_noEndOfInformationCode_isRefusedAndDefaultLoads()

@@ -105,7 +105,8 @@ public sealed class GifAllocationTests
         Assert.True(allocated <= 5 * pixels, $"allocated {allocated} bytes, over 5 bytes a pixel ({5 * pixels})");
     }
 
-    /// <summary>A screen over the limit is refused before the canvas exists, so the refusal allocates no canvas.</summary>
+    /// <summary>A screen over the limit is refused before the canvas exists, so the refusal
+    /// allocates no canvas.</summary>
     [Fact]
     public void Load_placedOverTheLimit_isRefusedWithoutAllocatingTheCanvas()
     {
@@ -127,7 +128,8 @@ public sealed class GifAllocationTests
         return Declare(GifEncoder.Encode(rgb, 2, 2, interlaced), width, height);
     }
 
-    /// <summary>The same file with the image descriptor's frame size rewritten (the screen is untouched).</summary>
+    /// <summary>The same file with the image descriptor's frame size rewritten (the screen is
+    /// untouched).</summary>
     private static byte[] Declare(byte[] gif, int width, int height)
     {
         var copy = (byte[])gif.Clone();
