@@ -326,6 +326,71 @@ public sealed class CatalogGoldenTests
         Assert.Equal(6, metadata.ObjectNumber);
     }
 
+    // The catalog builder's seam (#606): one entry, appended last, on both paths.
+    private static PdfDictionary ExtraEntry() => new PdfDictionary().Set(new PdfName("Extra"), new PdfInteger(7));
+
+    private static string WithoutExtra(string catalogText)
+        => catalogText.Replace("/Extra 7\n", string.Empty, StringComparison.Ordinal);
+
+    [Theory]
+    [InlineData("plain")]
+    [InlineData("everything")]
+    [InlineData("outline-pdfa2u")]
+    public void Save_catalogBuilderSeam_appendsTheEntryLast(string configuration)
+    {
+        var document = Build(configuration);
+        document.CatalogExtraEntries = ExtraEntry();
+        using var ms = new MemoryStream();
+        document.Save(ms);
+        var text = CatalogObject(ms.ToArray());
+        Assert.EndsWith("/Extra 7\n>>\nendobj", text, StringComparison.Ordinal);
+        Assert.Equal(SaveGoldens[configuration].CatalogText, WithoutExtra(text));
+    }
+
+    [Theory]
+    [InlineData("plain")]
+    [InlineData("everything")]
+    [InlineData("outline-pdfa2u")]
+    public void PrepareForSigning_catalogBuilderSeam_appendsTheEntryLast(string configuration)
+    {
+        var text = CatalogObject(Sign(configuration, d => d.CatalogExtraEntries = ExtraEntry()));
+        Assert.EndsWith("/Extra 7\n>>\nendobj", text, StringComparison.Ordinal);
+        Assert.Equal(SignGoldens[configuration].CatalogText, WithoutExtra(text));
+    }
+
+    [Fact]
+    public void Save_catalogBuilderSeam_reachesACatalogInAnObjectStream()
+    {
+        var document = Build("objstm");
+        document.CatalogExtraEntries = ExtraEntry();
+        using var ms = new MemoryStream();
+        document.Save(ms);
+        var catalog = PdfReader.Open(ms.ToArray()).Catalog;
+        Assert.Equal(["Type", "Pages", "Metadata", "Extra"], catalog.Entries.Select(e => e.Key.Value).ToArray());
+        Assert.Equal(7, Assert.IsType<PdfInteger>(catalog.Get(new PdfName("Extra"))).Value);
+    }
+
+    [Fact]
+    public void Save_afterAPreconditionRefusal_writesOnceAndMatchesTheGolden()
+    {
+        // A null stream is refused before the document is marked written, so the retry saves.
+        var document = Build("outline-pdfa2u");
+        Assert.Throws<ArgumentNullException>(() => document.Save(null!));
+        using var ms = new MemoryStream();
+        document.Save(ms);
+        Assert.Equal(SaveGoldens["outline-pdfa2u"].Sha, NormalisedSha256(ms.ToArray()));
+    }
+
+    [Fact]
+    public void PrepareForSigning_afterAPreconditionRefusal_writesOnceAndMatchesTheGolden()
+    {
+        var document = Build("outline-pdfa2u");
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => document.PrepareForSigning(new SignaturePlaceholderOptions { SignaturePage = -1, SigningTime = Pinned }));
+        var pdf = document.PrepareForSigning(new SignaturePlaceholderOptions { SigningTime = Pinned });
+        Assert.Equal(SignGoldens["outline-pdfa2u"].Sha, NormalisedSha256(pdf));
+    }
+
     [Fact]
     public void Save_withEncryption_keepsTheCatalogObjectAndTrailer()
     {

@@ -1029,44 +1029,9 @@ public sealed class PdfDocument : IDisposable
             outlinesRef = BuildOutlineTree(registry, pageRefMap);
 
         // ── Fill catalog value ─────────────────────────────────────────────
-        var catalog = new PdfDictionary()
-            .Set(PdfName.Type, PdfName.Catalog)
-            .Set(PdfName.Pages, pageTreeRef)
-            .Set(new PdfName("Metadata"), metadataRef);
-
-        if (outlinesRef is not null)
-        {
-            catalog
-                .Set(new PdfName("Outlines"), outlinesRef)
-                .Set(new PdfName("PageMode"), new PdfName("UseOutlines"));
-        }
-
-        // /MarkInfo — required when Tagged or PDF/A conformance is requested
-        var needsMarkInfo = Tagged || Conformance != PdfConformance.None;
-        if (needsMarkInfo)
-        {
-            var markInfo = new PdfDictionary()
-                .Set(new PdfName("Marked"), PdfBoolean.True);
-            catalog.Set(new PdfName("MarkInfo"), markInfo);
-        }
-
-        if (structTreeRootRef is not null)
-            catalog.Set(new PdfName("StructTreeRoot"), structTreeRootRef);
-
-        if (acroFormDict is not null)
-            catalog.Set(new PdfName("AcroForm"), acroFormDict);
-
-        if (outputIntentsRef is not null)
-            catalog.Set(new PdfName("OutputIntents"), new PdfArray([outputIntentsRef]));
-
-        ApplyLanguage(catalog, Language);
-
-        if (Conformance == PdfConformance.PdfUA1)
-        {
-            var viewerPrefs = new PdfDictionary()
-                .Set(new PdfName("DisplayDocTitle"), PdfBoolean.True);
-            catalog.Set(new PdfName("ViewerPreferences"), viewerPrefs);
-        }
+        var catalog = BuildCatalog(new CatalogParts(
+            pageTreeRef, metadataRef, outlinesRef, structTreeRootRef, acroFormDict,
+            AcroFormFollowsMetadata: false, outputIntentsRef));
 
         registry.SetValue(catalogRef, catalog);
 
@@ -1578,43 +1543,16 @@ public sealed class PdfDocument : IDisposable
                 .Set(new PdfName("SigFlags"), new PdfInteger(3));
         }
 
-        var catalog = new PdfDictionary()
-            .Set(PdfName.Type, PdfName.Catalog)
-            .Set(PdfName.Pages, pageTreeRef)
-            .Set(new PdfName("Metadata"), metadataRef)
-            .Set(new PdfName("AcroForm"), acroFormDict);
-
-        if (outlinesRef is not null)
-        {
-            catalog
-                .Set(new PdfName("Outlines"), outlinesRef)
-                .Set(new PdfName("PageMode"), new PdfName("UseOutlines"));
-        }
-
-        var needsMarkInfo = Tagged || Conformance != PdfConformance.None;
-        if (needsMarkInfo)
-        {
-            var markInfo = new PdfDictionary()
-                .Set(new PdfName("Marked"), PdfBoolean.True);
-            catalog.Set(new PdfName("MarkInfo"), markInfo);
-        }
-
-        if (structTreeRootRef is not null)
-            catalog.Set(new PdfName("StructTreeRoot"), structTreeRootRef);
-
-        // PDF/A output intent (sRGB ICC, §6.2.3) — emitted when signing a conformance document,
-        // just as on the regular Save path, and for the same reason: see BuildOutputIntents.
+        // The output-intent objects are numbered here, after the outline tree and the signature
+        // objects, so a signed PDF/A document numbers them differently from a saved one. Both
+        // numberings are pinned by the catalog golden tests (#606).
+        PdfIndirectReference? outputIntentsRef = null;
         if (Conformance != PdfConformance.None)
-            catalog.Set(new PdfName("OutputIntents"), new PdfArray([BuildOutputIntents(registry)]));
+            outputIntentsRef = BuildOutputIntents(registry);
 
-        ApplyLanguage(catalog, Language);
-
-        if (Conformance == PdfConformance.PdfUA1)
-        {
-            var viewerPrefs = new PdfDictionary()
-                .Set(new PdfName("DisplayDocTitle"), PdfBoolean.True);
-            catalog.Set(new PdfName("ViewerPreferences"), viewerPrefs);
-        }
+        var catalog = BuildCatalog(new CatalogParts(
+            pageTreeRef, metadataRef, outlinesRef, structTreeRootRef, acroFormDict,
+            AcroFormFollowsMetadata: true, outputIntentsRef));
 
         registry.SetValue(catalogRef, catalog);
 
@@ -1625,6 +1563,103 @@ public sealed class PdfDocument : IDisposable
         xref.WriteXrefAndTrailer(writer, catalogRef, infoRef, documentId: documentId);
         writer.Flush();
     }
+
+    /// <summary>
+    /// Everything <see cref="BuildCatalog"/> cannot derive from the document's own properties: the
+    /// references and dictionaries the calling path has already built. The builder reserves
+    /// nothing, so each path keeps the object numbering it had before the two blocks were merged.
+    /// </summary>
+    /// <param name="Pages">The page tree root.</param>
+    /// <param name="Metadata">The XMP metadata stream.</param>
+    /// <param name="Outlines">The outline tree root, or <see langword="null"/> without bookmarks.</param>
+    /// <param name="StructTreeRoot">The structure tree root, or <see langword="null"/> untagged.</param>
+    /// <param name="AcroForm">The form dictionary, or <see langword="null"/> for none.</param>
+    /// <param name="AcroFormFollowsMetadata">
+    /// Whether <c>/AcroForm</c> is written straight after <c>/Metadata</c> (the signing path) or
+    /// after <c>/StructTreeRoot</c> (<c>Save</c>). It exists only so that neither path's bytes
+    /// change (#606); both orders are valid and a later major may drop it.
+    /// </param>
+    /// <param name="OutputIntents">The output-intent dictionary, or <see langword="null"/>.</param>
+    private readonly record struct CatalogParts(
+        PdfIndirectReference Pages,
+        PdfIndirectReference Metadata,
+        PdfIndirectReference? Outlines,
+        PdfIndirectReference? StructTreeRoot,
+        PdfDictionary? AcroForm,
+        bool AcroFormFollowsMetadata,
+        PdfIndirectReference? OutputIntents);
+
+    /// <summary>
+    /// Builds the document catalog for both <see cref="Save(Stream)"/> and the signing path. It
+    /// reserves no object and calls nothing that does, and it throws nothing the two blocks it
+    /// replaced did not: both run after the document is marked written.
+    /// </summary>
+    private PdfDictionary BuildCatalog(CatalogParts parts)
+    {
+        var catalog = new PdfDictionary()
+            .Set(PdfName.Type, PdfName.Catalog)
+            .Set(PdfName.Pages, parts.Pages)
+            .Set(new PdfName("Metadata"), parts.Metadata);
+
+        if (parts.AcroFormFollowsMetadata && parts.AcroForm is not null)
+            catalog.Set(new PdfName("AcroForm"), parts.AcroForm);
+
+        // Bookmarks: the outline tree, and the viewer opens its pane.
+        if (parts.Outlines is not null)
+        {
+            catalog
+                .Set(new PdfName("Outlines"), parts.Outlines)
+                .Set(new PdfName("PageMode"), new PdfName("UseOutlines"));
+        }
+
+        // /MarkInfo — required when Tagged or PDF/A conformance is requested
+        if (Tagged || Conformance != PdfConformance.None)
+        {
+            var markInfo = new PdfDictionary()
+                .Set(new PdfName("Marked"), PdfBoolean.True);
+            catalog.Set(new PdfName("MarkInfo"), markInfo);
+        }
+
+        // The structure tree, present when the document is tagged (#120).
+        if (parts.StructTreeRoot is not null)
+            catalog.Set(new PdfName("StructTreeRoot"), parts.StructTreeRoot);
+
+        if (!parts.AcroFormFollowsMetadata && parts.AcroForm is not null)
+            catalog.Set(new PdfName("AcroForm"), parts.AcroForm);
+
+        // PDF/A output intent (sRGB ICC, PDF/A-2 §6.2.3): present under any conformance claim,
+        // see BuildOutputIntents.
+        if (parts.OutputIntents is not null)
+            catalog.Set(new PdfName("OutputIntents"), new PdfArray([parts.OutputIntents]));
+
+        ApplyLanguage(catalog, Language);
+
+        // ISO 14289-1 7.1: ViewerPreferences shall contain DisplayDocTitle with a value of true.
+        if (Conformance == PdfConformance.PdfUA1)
+        {
+            var viewerPrefs = new PdfDictionary()
+                .Set(new PdfName("DisplayDocTitle"), PdfBoolean.True);
+            catalog.Set(new PdfName("ViewerPreferences"), viewerPrefs);
+        }
+
+        // Entries added through the test seam go last and only when set, so a default document's
+        // catalog is unchanged.
+        if (CatalogExtraEntries is { } extra)
+        {
+            foreach (var entry in extra.Entries)
+                catalog.Set(entry.Key, entry.Value);
+        }
+
+        return catalog;
+    }
+
+    /// <summary>
+    /// Test seam for #606: entries the catalog builder appends after every other key on both the
+    /// <see cref="Save(Stream)"/> and the signing path. <see langword="null"/> by default, which
+    /// leaves every document's catalog as the golden tests pin it. The catalog parts that later
+    /// issues add take its place.
+    /// </summary>
+    internal PdfDictionary? CatalogExtraEntries { get; set; }
 
     /// <summary>
     /// Builds and registers the /OutputIntents array entry referencing an ICC profile stream.

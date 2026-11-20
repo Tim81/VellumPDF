@@ -89,6 +89,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **`Save` and the signing path build the document catalog in one place (#606).** Both used to
+  assemble it in separate blocks of `PdfDocument` that disagreed on key order and on where the
+  output-intent objects are numbered. One private builder now writes the keys, and each path
+  passes in the references it has already reserved, so no output changes: the 63 catalog golden
+  cases of #626 pass with their expected values untouched. The builder is where the catalog
+  parts that later issues add will go.
+
 - **Every package now targets `net10.0` and `net11.0`, built with the .NET 11 SDK (`global.json`
   pins 11.0.100, latest patch).** The seven library nupkgs carry `lib/net10.0` and `lib/net11.0`;
   the `VellumPdf.Cli` tool package carries `tools/net10.0/any` and `tools/net11.0/any`. The public
