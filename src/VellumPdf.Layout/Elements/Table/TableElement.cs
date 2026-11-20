@@ -112,7 +112,7 @@ public sealed class TableElement
     /// infinity are accepted, and every explicit column is written at width 0 while an auto column
     /// keeps its content width, so cells that start at the same x are drawn on top of one
     /// another. <b>Do not pass</b> widths whose sum overflows. Nothing reports
-    /// it, because there is no diagnostics channel yet, and 3.0 will throw
+    /// it, because <see cref="Document.Diagnostics"/> has no code for it yet, and 3.0 will throw
     /// <see cref="InvalidOperationException"/>.
     /// When the auto columns take all of the available width or more, every column,
     /// auto ones included, is scaled by one ratio instead. A positive entry under 5e-6 is kept and
