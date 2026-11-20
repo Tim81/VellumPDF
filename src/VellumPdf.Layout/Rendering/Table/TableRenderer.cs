@@ -15,7 +15,8 @@ namespace VellumPdf.Layout.Rendering.Table;
 ///   • Resolves column widths.
 ///   • Computes row heights (max cell content height in each row).
 ///   • Splits at row boundaries if the table crosses a page break.
-///   • Header rows are repeated at the top of each continuation page.
+///   • The leading run of header rows is repeated at the top of each continuation page, when a
+///     row that is not a header follows it.
 ///   • Rowspan cells: the page break is not placed inside a rowspan group that starts in a
 ///     data row; see <see cref="Cell.RowSpan"/>.
 ///
@@ -26,8 +27,10 @@ namespace VellumPdf.Layout.Rendering.Table;
 /// </summary>
 /// <remarks>
 /// A table that resolves to no columns is refused from <see cref="Layout"/>. A table whose rows are
-/// all headers lays out as <see cref="LayoutResult.Outcome.Nothing"/>, so the document's save
-/// throws <see cref="InvalidOperationException"/> saying the element is too tall to fit (#488).
+/// all headers has no repeatable header: its rows are laid out and drawn as the body, each once, and
+/// the table splits between rows like any other. Each of those rows is still tagged as a header
+/// row. A table that has a row that is not a header after its leading header rows repeats those
+/// header rows on every page.
 /// </remarks>
 public sealed class TableRenderer : IRenderer
 {
@@ -44,9 +47,11 @@ public sealed class TableRenderer : IRenderer
     /// </summary>
     /// <remarks>
     /// <paramref name="startRow"/> indexes <see cref="TableElement.Rows"/> with the header rows
-    /// counted. The leading header rows are drawn first on every page, then the other rows from
-    /// <paramref name="startRow"/> on, so a start below zero or inside the header run draws every
-    /// row. A start past the last row lays out as <see cref="LayoutResult.Outcome.Nothing"/>, so a
+    /// counted. When a row that is not a header follows the leading header rows, those rows are drawn
+    /// first on every page, then the other rows from <paramref name="startRow"/> on, so a start below
+    /// zero or inside the header run draws every row. A table whose rows are all headers has no
+    /// header run, so its rows are drawn from <paramref name="startRow"/> on, once each. A start
+    /// past the last row lays out as <see cref="LayoutResult.Outcome.Nothing"/>, so a
     /// document saving it throws <see cref="InvalidOperationException"/> saying the element is too
     /// tall to fit. A null <paramref name="table"/> is refused here.
     /// <para>Do not pass a start outside the table's rows. 3.0 will throw from
@@ -203,8 +208,8 @@ public sealed class TableRenderer : IRenderer
     /// <summary>Draws cell backgrounds, borders and text (repeating header rows) and builds the tagged Table struct tree when tagging is enabled.</summary>
     /// <remarks>See <see cref="IRenderer.Draw"/>.</remarks>
     /// <exception cref="IndexOutOfRangeException">
-    /// This method is called before <see cref="Layout"/> on a table that has a header row; see
-    /// <see cref="IRenderer.Draw"/>.
+    /// This method is called before <see cref="Layout"/> on a table with a repeatable header, that
+    /// is, leading header rows followed by a row that is not a header; see <see cref="IRenderer.Draw"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// <b>A cell's text colour with a non-finite channel, and a negative table border width, are refused
@@ -546,10 +551,18 @@ public sealed class TableRenderer : IRenderer
     }
 
     /// <summary>
-    /// Returns the indices of the leading contiguous run of header rows. The two loops in
-    /// <see cref="Draw"/> partition the rows whenever this list is a prefix of them, and the
-    /// leading contiguous run is the longest prefix that holds header rows alone; a header row
+    /// Returns the indices of the repeatable header: the leading contiguous run of header rows,
+    /// when at least one row that is not a header follows it, and an empty list otherwise. The two
+    /// loops in <see cref="Draw"/> partition the rows whenever this list is a prefix of them, and
+    /// the leading contiguous run is the longest prefix that holds header rows alone; a header row
     /// elsewhere in the table draws as an ordinary row instead of extending it.
+    ///
+    /// A run that covers every row has no data below it to repeat over. Returning it anyway set
+    /// <c>dataStartRow</c> to the row count, so <see cref="Layout"/> never entered its fit loop and
+    /// gave up on every area, however large, and the document refused a table that was never too
+    /// tall (#488). An empty list makes the rows the table's body: each is laid out and drawn once,
+    /// in order, and the table splits between rows like any other. Both <see cref="Layout"/> and
+    /// <see cref="Draw"/> read this list, so they agree on which case a table is in.
     ///
     /// This method used to collect every <c>IsHeader</c> row wherever it sat in the table, so
     /// <c>dataStartRow</c> — set from this list's last index — started past the *last* header while
@@ -563,10 +576,11 @@ public sealed class TableRenderer : IRenderer
         var indices = new List<int>();
         for (var i = 0; i < rows.Count; i++)
         {
-            if (!rows[i].IsHeader) break;
+            if (!rows[i].IsHeader) return indices;
             indices.Add(i);
         }
-        return indices;
+        // Every row is a header: nothing follows the run, so there is no header to repeat.
+        return [];
     }
 
     private double ColSpanWidth(int startCol, int span)

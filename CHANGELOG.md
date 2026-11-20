@@ -227,6 +227,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **A table whose every row is a header saves (#488).** The repeatable header is the leading run of
+  header rows only when a row that is not a header follows it. A table with no such row has no
+  header to repeat, so its rows are laid out and drawn as the body, each once and in order, and it
+  splits between rows like any other. On 2.3.3 a table of one, two or three header rows, or of
+  thirty, threw `InvalidOperationException` ("An element is too tall to fit on a single page") from
+  `Save` on a page of any size, because the header run covered every row and nothing was left to
+  fit. Each row is still tagged as a header row: `TH` with `/Scope /Column`. Output for a table
+  with a data row after its header rows, or a header row after a data row, is unchanged. This is a
+  deliberate change of behaviour for the input that used to throw. A table that had two defects, an
+  all-header table with a cell background that has a NaN channel, threw the "too tall"
+  `InvalidOperationException` first and now throws the canvas's `ArgumentException`. Calling
+  `TableRenderer.Draw` before `Layout` on an all-header table no longer throws
+  `IndexOutOfRangeException`; the member is documented as not to be called that way. The XML
+  documentation of `TableElement`, `TableElement.AddRow`, `TableElement.AddHeaderRow`,
+  `Row.IsHeader`, `Cell.RowSpan` and `TableRenderer` says so.
 - **On .NET 10 an empty stream was written as `/FlateDecode` with no data (#640).** `PdfStream`
   compressed through `ZLibStream`, which on .NET 10.0.15 writes nothing for empty input, so an empty
   page's `/Contents` came out as `/Filter /FlateDecode /Length 0` with an empty body, which is not
