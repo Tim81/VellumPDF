@@ -17,18 +17,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (one item per character a Standard 14 font cannot encode, with its count, mirroring
   `TextEncodingWarnings`), `NullGrandchildText` and `NullGrandchild` (a null text or null child
   below the second level of a list) and `BandTruncated` (mirroring `BandTruncations`). A save
-  stores at most 1,000 distinct items and ends the list with `DiagnosticsDropped`, whose `Count` is
-  the number of reports dropped. `TextEncodingWarnings` and `BandTruncations` keep their content
+  stores at most 1,000 distinct items and, when it drops any, ends the list with `DiagnosticsDropped`,
+  whose `Count` is the number of occurrences dropped. `TextEncodingWarnings` and `BandTruncations` keep their content
   and order. With `StrictDiagnostics = true` a save that would report an error item throws
   `InvalidOperationException` after the layout and before anything is written, from every save
   overload and from signing; an existing file at the path keeps its bytes and a file the save
   created is removed. The switch is off by default, so no document that saved on 2.3.3 stops
   saving, and the bytes of a saved document do not change. 3.0 refuses every error item (#614).
   **Attention:** a running band cut to fit is now rated an error, so the earlier documentation
-  that called it "not an error" no longer holds, and strict mode refuses it. The list walks
-  list items below the second level to find nulls, with a visited set, so an item that is its own
-  descendant, or that is reachable by exponentially many paths, still saves; an item reached by
-  several paths counts once.
+  that called it "not an error" no longer holds, and strict mode refuses it. Strict mode runs after
+  the layout and before the write, so a refusal that only the write raises (such as a signature page
+  past the last page) is pre-empted by a strict refusal when the switch is on. A save now also
+  visits every distinct list item below the second level to look for nulls; the cost is linear in
+  the items you built there, and an item reached by several paths, or from its own descendants,
+  counts once. The list marker the library draws, such as the nested bullet in a Standard 14 font,
+  is not listed as an unencodable character, because it is not your text.
 - **Internal name tree and number tree writers (#241).** `NameTreeWriter` and `NumberTreeWriter`
   in `VellumPdf.Kernel` build the structures ISO 32000-2, 7.9.6 and 7.9.7 define, which the
   catalog's `/Names` and `/PageLabels` entries, and later named destinations and embedded files,

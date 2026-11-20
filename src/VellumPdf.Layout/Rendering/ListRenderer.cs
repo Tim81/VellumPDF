@@ -162,7 +162,12 @@ public sealed class ListRenderer : IRenderer
                 _endItem = i;
                 _occupied = area.WithHeight(area.Height - remaining);
                 _offered = offered;
-                var overflow = new ListRenderer(_list, i) { _items = _items };
+                var overflow = new ListRenderer(_list, i)
+                {
+                    _items = _items,
+                    _nullGrandchildText = _nullGrandchildText,
+                    _nullGrandchild = _nullGrandchild,
+                };
                 var split = new ListRenderer(_list, _startItem, _partialContentOverrideAtStart)
                 {
                     _items = _items,
@@ -191,7 +196,12 @@ public sealed class ListRenderer : IRenderer
 
                 // The overflow for item i carries the content's OverflowRenderer.
                 var contentOverflow = (ParagraphRenderer)contentResult.OverflowRenderer!;
-                var overflowList = new ListRenderer(_list, i, contentOverflow) { _items = _items };
+                var overflowList = new ListRenderer(_list, i, contentOverflow)
+                {
+                    _items = _items,
+                    _nullGrandchildText = _nullGrandchildText,
+                    _nullGrandchild = _nullGrandchild,
+                };
 
                 var split = new ListRenderer(_list, _startItem, _partialContentOverrideAtStart)
                 {
@@ -304,7 +314,7 @@ public sealed class ListRenderer : IRenderer
                 content.ParentStructElem = lbodyElem;
 
                 if (!isContinuation)
-                    marker.Draw(ctx);
+                    DrawMarker(marker, ctx);
                 content.Draw(ctx);
 
                 // Reset for safety (layout/draw may be called multiple times in pagination)
@@ -319,7 +329,7 @@ public sealed class ListRenderer : IRenderer
             else
             {
                 if (!isContinuation)
-                    marker.Draw(ctx);
+                    DrawMarker(marker, ctx);
                 content.Draw(ctx);
             }
 
@@ -328,6 +338,17 @@ public sealed class ListRenderer : IRenderer
 
         if (listElem is not null)
             ctx.RegisterStructElemTree(listElem);
+    }
+
+    // A marker is text the library wrote, not the caller's: a '?' it substitutes, such as the
+    // nested
+    // unordered marker in a Standard 14 font, is not a character the caller can change. What came
+    // before it is accounted for first, so the marker's own substitutions are the ones skipped.
+    private static void DrawMarker(ParagraphRenderer marker, DrawContext ctx)
+    {
+        ctx.Diagnostics?.SyncEncodingWarnings(ctx.Canvas, report: true);
+        marker.Draw(ctx);
+        ctx.Diagnostics?.SyncEncodingWarnings(ctx.Canvas, report: false);
     }
 
     // ── Item building ─────────────────────────────────────────────────────────
@@ -431,7 +452,8 @@ public sealed class ListRenderer : IRenderer
             result.Add((markerRenderer, contentRenderer));
 
             // A null child of a top-level item is refused here, where the position is known. The
-            // same null on a grandchild is never reached, because grandchildren are not read.
+            // same null on a grandchild is counted in the walk below instead, because
+            // grandchildren are neither laid out nor drawn.
             if (item.HasNullChild)
                 throw new ArgumentNullException("child", "A list item has a null child.");
 
@@ -443,11 +465,20 @@ public sealed class ListRenderer : IRenderer
                 {
                     if (child.HasNullText)
                         throw new ArgumentNullException("text", "A list item has a null text.");
-                    // A child's own children are never read, so a defect in them saves. Counted
-                    // here, one pass over the tree below this child.
-                    if (child.HasNullChild) nullChild++;
-                    if (child.Children is { } grandchildren)
-                        CountBelowSecondLevel(grandchildren, ref visited, ref nullText, ref nullChild);
+                    // A child's own children are neither laid out nor drawn, so a defect in them
+                    // saves. Counted here, one pass over the tree below the top level. The child
+                    // joins the same visited set as everything under it, so an item reached by
+                    // several paths, or from its own descendants, counts once.
+                    if (child.HasNullChild || child.Children is not null)
+                    {
+                        visited ??= new HashSet<ListItem>(ReferenceEqualityComparer.Instance);
+                        if (visited.Add(child))
+                        {
+                            if (child.HasNullChild) nullChild++;
+                            if (child.Children is { } grandchildren)
+                                CountBelowSecondLevel(grandchildren, ref visited, ref nullText, ref nullChild);
+                        }
+                    }
 
                     var childStyle = child.Style ?? itemStyle;
                     // Nested unordered items use an open-bullet "◦"; nested ordered items
@@ -495,7 +526,8 @@ public sealed class ListRenderer : IRenderer
 
     // Walks every item below a child with an explicit stack and a visited set. The graph is the
     // caller's: an item can be its own descendant (A.AddChild(A)), and one shared sub-item can be
-    // reached by exponentially many paths, so a recursive walk or one without a visited set hangs or
+    // reached by exponentially many paths, so a recursive walk or one without a visited set hangs
+    // or
     // overflows on a list that saves. An item reached by several paths counts once, and the set is
     // shared across the whole list so the walk stays linear in the number of distinct items.
     private static void CountBelowSecondLevel(

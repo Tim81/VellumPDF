@@ -103,7 +103,7 @@ public sealed class LayoutDiagnosticsTests
         Assert.Equal(LayoutDiagnosticCode.UnencodableCharacter, item.Code);
         Assert.Equal(LayoutElementKind.Heading, item.ElementKind);
         Assert.Equal(0, item.ElementIndex);
-        Assert.True(item.PageNumber > 1, $"the character sits on a later page, got {item.PageNumber}");
+        Assert.Equal(8, item.PageNumber);
     }
 
     [Theory]
@@ -314,6 +314,63 @@ public sealed class LayoutDiagnosticsTests
     }
 
     [Fact]
+    public void ASecondLevelHolderSharedByTwoParents_countsOnce()
+    {
+        var shared = new ListItem("shared");
+        shared.AddChild((ListItem)null!);
+        var first = new ListItem("first");
+        first.AddChild(shared);
+        var second = new ListItem("second");
+        second.AddChild(shared);
+        using var doc = new Document();
+        doc.Add(new ListElement(ListStyle.OrderedDecimal, [first, second]));
+
+        doc.Save(new MemoryStream());
+
+        var item = Assert.Single(doc.Diagnostics);
+        Assert.Equal(LayoutDiagnosticCode.NullGrandchild, item.Code);
+        Assert.Equal(1, item.Count);
+    }
+
+    [Fact]
+    public void ASecondLevelHolderThatIsItsOwnChild_countsOnce()
+    {
+        var holder = new ListItem("holder");
+        holder.AddChild((ListItem)null!);
+        holder.AddChild(holder);
+        var top = new ListItem("top");
+        top.AddChild(holder);
+        using var doc = new Document();
+        doc.Add(new ListElement(ListStyle.OrderedDecimal, [top]));
+
+        doc.Save(new MemoryStream());
+
+        var item = Assert.Single(doc.Diagnostics);
+        Assert.Equal(LayoutDiagnosticCode.NullGrandchild, item.Code);
+        Assert.Equal(1, item.Count);
+    }
+
+    [Fact]
+    public void AListThatSplitsOverPages_reportsItsGrandchildNullsOnce()
+    {
+        var items = Enumerable.Range(0, 60).Select(i => new ListItem("item " + i)).ToList();
+        var child = new ListItem("child");
+        child.AddChild(new ListItem(null!));
+        items[0].AddChild(child);
+        using var doc = NewDoc();
+        doc.Add(new ListElement(ListStyle.OrderedDecimal, items));
+        using var ms = new MemoryStream();
+
+        doc.Save(ms);
+
+        var item = Assert.Single(doc.Diagnostics);
+        Assert.Equal(LayoutDiagnosticCode.NullGrandchildText, item.Code);
+        Assert.Equal(1, item.Count);
+        var text = System.Text.Encoding.Latin1.GetString(ms.ToArray());
+        Assert.True(System.Text.RegularExpressions.Regex.Matches(text, @"/Type\s*/Page(?![s\w])").Count >= 2);
+    }
+
+    [Fact]
     public void AnItemThatIsItsOwnChild_savesAndTerminates()
     {
         var a = new ListItem("a");
@@ -351,6 +408,115 @@ public sealed class LayoutDiagnosticsTests
         var item = Assert.Single(doc.Diagnostics);
         Assert.Equal(LayoutDiagnosticCode.NullGrandchildText, item.Code);
         Assert.Equal(1, item.Count);
+    }
+
+    // ── Library-written text is not the caller's ─────────────────────────────
+
+    private static ListElement NestedBulletList(string childText)
+    {
+        var top = new ListItem("top");
+        top.AddChild(childText);
+        return new ListElement(ListStyle.Unordered, [top]);
+    }
+
+    [Fact]
+    public void ANestedBulletMarkerInAStandard14Font_isNotReported_andDoesNotTripStrict()
+    {
+        using var doc = new Document { StrictDiagnostics = true };
+        doc.Add(NestedBulletList("child"));
+
+        doc.Save(new MemoryStream());
+
+        Assert.Empty(doc.Diagnostics);
+        // The older list still records the substitution, as before.
+        Assert.Equal(new System.Text.Rune(0x25E6), Assert.Single(doc.TextEncodingWarnings).Character);
+    }
+
+    [Fact]
+    public void CallerTextInTheSameList_isStillReported()
+    {
+        using var doc = new Document();
+        doc.Add(NestedBulletList("child ★"));
+
+        doc.Save(new MemoryStream());
+
+        var item = Assert.Single(doc.Diagnostics);
+        Assert.Equal(LayoutDiagnosticCode.UnencodableCharacter, item.Code);
+        Assert.Equal(StarMessage, item.Message);
+        Assert.Equal(1, item.Count);
+        Assert.Equal(2, doc.TextEncodingWarnings.Count);
+    }
+
+    // ── Where each kind of item is attributed ────────────────────────────────
+
+    private sealed class TextWritingRenderer(string text) : IRenderer
+    {
+        public LayoutResult Layout(LayoutContext context) => LayoutResult.Full(context.Area.WithHeight(10));
+
+        public void Draw(DrawContext ctx)
+        {
+            ctx.Canvas.BeginText();
+            ctx.Canvas.SetFont(ctx.GetFont(VellumPdf.Fonts.Standard14.Helvetica), 10);
+            ctx.Canvas.ShowText(text);
+            ctx.Canvas.EndText();
+        }
+    }
+
+    [Fact]
+    public void TableCustomAndHeaderItems_carryTheirOwnKindAndIndex()
+    {
+        // Image, line separator and pie chart write no text through the canvas's ShowText, so none
+        // of them can raise a report today and none is covered here.
+        using var doc = NewDoc();
+        doc.Header = new RunningBand("★");
+        var table = new Elements.Table.TableElement();
+        table.AddRow().AddCell("☃");
+        doc.Add(table);
+        doc.Add(new TextWritingRenderer("☀"));
+
+        doc.Save(new MemoryStream());
+
+        Assert.Equal(
+            [
+                (LayoutElementKind.Table, (int?)0),
+                (LayoutElementKind.Custom, 1),
+                (LayoutElementKind.Header, null),
+            ],
+            doc.Diagnostics.Select(i => (i.ElementKind, i.ElementIndex)));
+    }
+
+    // ── Default bytes ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The channel changes no byte of a saved document. This one holds an input for each code this
+    /// release reports, with the switch off, and its inflated bytes are pinned with the timestamp and
+    /// id.
+    /// </summary>
+    [Fact]
+    public void ADocumentWithReportableInputs_savesTheBytesItDidBeforeTheChannel()
+    {
+        using var doc = NewDoc();
+        var style = new TextStyle { FontSize = 10 };
+        doc.Footer = new RunningBand(new string('Æ', 25), style);
+        doc.Add(NullStyleParagraph());
+        doc.Add(new Paragraph("Black star: ⚹ and a bullet ★", style));
+        var top = new ListItem("top");
+        var child = new ListItem("child");
+        child.AddChild(new ListItem(null!));
+        top.AddChild(child);
+        doc.Add(new ListElement(ListStyle.OrderedDecimal, [top]));
+        var pdf = (PdfDocument)typeof(Document)
+            .GetField("_pdf", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(doc)!;
+        pdf.Timestamp = new DateTimeOffset(2026, 1, 2, 3, 4, 5, TimeSpan.Zero);
+        pdf.DocumentId = new byte[16];
+        var ms = new MemoryStream();
+
+        doc.Save(ms);
+
+        var inflated = PdfTestUtil.DecompressAllFlatStreams(ms.ToArray()).Replace("\r\n", "\n");
+        var hash = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.Latin1.GetBytes(inflated)));
+        Assert.Equal("0B20297CEF64A9029E09C716DBDC4B61FA4F3B42C1FA7724DE44080D0B6F6DD2", hash);
     }
 
     // ── Strict mode ──────────────────────────────────────────────────────────
@@ -495,14 +661,49 @@ public sealed class LayoutDiagnosticsTests
         Assert.Equal(Bytes(false), Bytes(true));
     }
 
+    /// <summary>Reports through the context the document passes, as a later lane's renderer will.</summary>
+    private sealed class ReportingRenderer(Action<LayoutDiagnosticSink> report) : IRenderer
+    {
+        public LayoutResult Layout(LayoutContext context) => LayoutResult.Full(context.Area.WithHeight(10));
+
+        public void Draw(DrawContext ctx) => report(ctx.Diagnostics!);
+    }
+
     [Fact]
     public void Strict_aWarningAloneNeverRefuses()
     {
-        // No warning-severity code is reported by a save yet, so the severity table is pinned
-        // directly: the sentinel is the one warning, and it must not be an error.
+        using var doc = NewDoc();
+        doc.StrictDiagnostics = true;
+        doc.Add(new ReportingRenderer(sink =>
+        {
+            for (var i = 0; i < 5; i++) sink.Report(LayoutDiagnosticCode.DiagnosticsDropped, i, "w");
+        }));
+
+        doc.Save(new MemoryStream());
+
+        Assert.Equal(5, doc.Diagnostics.Count);
+        Assert.All(doc.Diagnostics, i => Assert.Equal(LayoutDiagnosticSeverity.Warning, i.Severity));
+    }
+
+    [Fact]
+    public void Strict_whenEveryDroppedReportWasAnError_saysSoWithTheirCount()
+    {
+        using var doc = NewDoc();
+        doc.StrictDiagnostics = true;
+        doc.Add(new ReportingRenderer(sink =>
+        {
+            // A thousand warnings fill the channel; the error that follows is dropped, not stored.
+            for (var i = 0; i < 1001; i++) sink.Report(LayoutDiagnosticCode.DiagnosticsDropped, i, "w");
+            sink.Report(LayoutDiagnosticCode.NullGrandchild, 0, "e", count: 3);
+        }));
+
+        var ex = Assert.Throws<InvalidOperationException>(() => doc.Save(new MemoryStream()));
+
         Assert.Equal(
-            LayoutDiagnosticSeverity.Warning,
-            LayoutDiagnostic.SeverityOf(LayoutDiagnosticCode.DiagnosticsDropped));
+            "StrictDiagnostics refused the save: 3 error report(s) were dropped past the channel's "
+            + "limit of 1000 items.",
+            ex.Message);
+        Assert.Equal(4, doc.Diagnostics[^1].Count);
     }
 
     // ── Strict does not reorder an existing refusal ──────────────────────────
@@ -560,8 +761,12 @@ public sealed class LayoutDiagnosticsTests
     public void Strict_withANullDestination_reportsThePreconditionFirst()
     {
         using var doc = NullStyleDoc(strict: true);
+        using var lenient = NullStyleDoc(strict: false);
+        var withoutSwitch = Assert.Throws<ArgumentNullException>(() => lenient.Save((Stream)null!));
 
-        Assert.Throws<ArgumentNullException>(() => doc.Save((Stream)null!));
+        var withSwitch = Assert.Throws<ArgumentNullException>(() => doc.Save((Stream)null!));
+
+        Assert.Equal(withoutSwitch.Message, withSwitch.Message);
 
         // The precondition left the document usable, so the strict refusal still comes later.
         var ex = Assert.Throws<InvalidOperationException>(() => doc.Save(new MemoryStream()));
@@ -586,10 +791,12 @@ public sealed class LayoutDiagnosticsTests
     public void AFailedSave_thatIsNotAStrictRefusal_leavesDiagnosticsAlone()
     {
         using var doc = NewDoc();
+        doc.Add(NullStyleParagraph());
         doc.Add(new Paragraph("x", new TextStyle { FontSize = double.NaN }));
 
         Assert.Throws<InvalidOperationException>(() => doc.Save(new MemoryStream()));
 
+        // The null-style run was found before the layout threw, and none of it is kept.
         Assert.Empty(doc.Diagnostics);
     }
 

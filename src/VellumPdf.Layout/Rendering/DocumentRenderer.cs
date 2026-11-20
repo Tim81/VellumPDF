@@ -128,9 +128,6 @@ public sealed class DocumentRenderer
     // renderer, but it allocates its collections on the first report.
     private readonly LayoutDiagnosticSink _sink = new();
 
-    // How many of the current canvas's encoding warnings are already in the sink.
-    private int _reportedEncodingWarnings;
-
     internal LayoutDiagnosticSink Sink => _sink;
 
     /// <summary>Everything the layout reported so far, in first-occurrence order.</summary>
@@ -151,7 +148,8 @@ public sealed class DocumentRenderer
     /// <see cref="Document.StrictDiagnostics"/> refuses a save that cut one, and
     /// <see cref="Document.Diagnostics"/> also lists it as
     /// <see cref="LayoutDiagnosticCode.BandTruncated"/>. This list stays as it is until 3.0, and
-    /// <see cref="Render"/> exposes no <c>Diagnostics</c> and has no strict switch. The cut compares a running total of the resolved text's character widths
+    /// <see cref="Render"/> exposes no <c>Diagnostics</c> and has no strict switch. The cut
+    /// compares a running total of the resolved text's character widths
     /// with the content width. Resolved text whose glyphs measure zero or negative width, as at a
     /// negative font size, is not cut or reported (see <see cref="RunningBand.Template"/>), and
     /// neither is any band when the content width is <c>NaN</c>. Resolved text that fits exactly
@@ -306,6 +304,9 @@ public sealed class DocumentRenderer
     /// layout that threw; this method does not. A failure once writing has started leaves what was
     /// written so far in
     /// <paramref name="destination"/>, which can be the PDF header alone.
+    /// <para>This method has no strict switch and exposes no <c>Diagnostics</c>: it never applies
+    /// <see cref="Document.StrictDiagnostics"/>, so none of that refusal reaches you from
+    /// here.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// An element needs more than <b>50,000</b> page continuations or is too tall for one page, or
@@ -423,7 +424,8 @@ public sealed class DocumentRenderer
         }
 
         // Pass 2 (or only pass): full render with running bands resolved.
-        // The location is that of the element the document added, set here and not in PlaceRenderer:
+        // The location is that of the element the document added, set here and not in
+        // PlaceRenderer:
         // PlaceRenderer's variable becomes the overflow renderer, which for a heading is a plain
         // paragraph renderer, and mapping that would call a heading's second page a paragraph.
         for (var i = 0; i < _renderers.Count; i++)
@@ -455,24 +457,6 @@ public sealed class DocumentRenderer
         PieChartRenderer => LayoutElementKind.PieChart,
         _ => LayoutElementKind.Custom,
     };
-
-    // Each distinct scalar is one item, so a document that substitutes one character a million times
-    // reports once. The location is whichever element or band was being drawn when the canvas
-    // recorded the warning: the caller diffs the canvas list around each draw.
-    private void ReportNewEncodingWarnings()
-    {
-        if (_currentCanvas is null) return;
-        var warnings = _currentCanvas.TextEncodingWarnings;
-        for (; _reportedEncodingWarnings < warnings.Count; _reportedEncodingWarnings++)
-        {
-            _sink.Report(
-                LayoutDiagnosticCode.UnencodableCharacter,
-                warnings[_reportedEncodingWarnings].CodePoint,
-                static codePoint => string.Create(
-                    System.Globalization.CultureInfo.InvariantCulture,
-                    $"U+{codePoint:X4} is not in WinAnsiEncoding and is written as '?'."));
-        }
-    }
 
     private void ReportBandTruncations()
     {
@@ -512,7 +496,6 @@ public sealed class DocumentRenderer
             _currentCanvas = new PdfCanvas(_currentPage);
             _currentRendererCtx = new RendererContext(_currentPage, _pdf);
             _currentY = _margins.Top + HeaderHeight;
-            _reportedEncodingWarnings = 0;
         }
     }
 
@@ -531,7 +514,7 @@ public sealed class DocumentRenderer
                 DrawRunningBands(_currentCanvas, _currentRendererCtx!, _currentPage!, pageNumber, totalPages);
             }
 
-            ReportNewEncodingWarnings();
+            _sink.SyncEncodingWarnings(_currentCanvas!, report: true);
             (_sink.CurrentKind, _sink.CurrentIndex, _sink.CurrentPage) = (kind, index, reportPage);
             _textEncodingWarnings.AddRange(_currentCanvas.TextEncodingWarnings);
 
@@ -628,7 +611,7 @@ public sealed class DocumentRenderer
             _deferredCanvasRefusal ??= ex;
         }
 
-        ReportNewEncodingWarnings();
+        _sink.SyncEncodingWarnings(_currentCanvas!, report: true);
     }
 
     // ── Running bands ─────────────────────────────────────────────────────────
@@ -654,7 +637,7 @@ public sealed class DocumentRenderer
             DrawBandText(ctx, canvas, text, Header, RunningBandKind.Header, pageNumber, bandY, bandHeight);
         }
 
-        ReportNewEncodingWarnings();
+        _sink.SyncEncodingWarnings(canvas, report: true);
 
         if (Footer is not null)
         {

@@ -42,6 +42,9 @@ public enum LayoutElementKind
     /// <summary>The running footer band.</summary>
     Footer = 9,
 
-    /// <summary>A renderer the library does not know, added with <see cref="Document.Add(VellumPdf.Layout.Core.IRenderer)"/>.</summary>
+    /// <summary>
+    /// A renderer the library does not know, added with
+    /// <see cref="VellumPdf.Layout.Document.Add(VellumPdf.Layout.Core.IRenderer)"/>.
+    /// </summary>
     Custom = 10,
 }

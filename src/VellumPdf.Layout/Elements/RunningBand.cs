@@ -12,7 +12,7 @@ namespace VellumPdf.Layout.Elements;
 /// </summary>
 /// <remarks>
 /// A null template throws from <see cref="Resolve"/> / save (#531). Overlong text is
-/// truncated, not refused; see <see cref="Template"/>.
+/// truncated, and refused only in strict mode; see <see cref="Template"/>.
 /// </remarks>
 public sealed class RunningBand
 {
@@ -20,11 +20,15 @@ public sealed class RunningBand
     /// <remarks>
     /// Not checked when it is set: the constructor stores a null template and
     /// <see cref="Resolve"/> throws during the save. A template that does not fit the content box
-    /// is truncated, not refused;
+    /// is truncated, and refused only in strict mode;
     /// <see cref="VellumPdf.Layout.Rendering.DocumentRenderer.BandTruncations"/> says when it
-    /// counts as not fitting. The cut is reported through <c>Document.BandTruncations</c> and
-    /// <c>DocumentRenderer.BandTruncations</c>, so read one of those if you need to know it
-    /// happened. Pass an empty string for a band that draws no text, never <see langword="null"/>.
+    /// counts as not fitting. The cut is reported through <c>Document.BandTruncations</c>,
+    /// <c>DocumentRenderer.BandTruncations</c> and, with error severity, as
+    /// <see cref="LayoutDiagnosticCode.BandTruncated"/> in <see cref="Document.Diagnostics"/>. With
+    /// <see cref="Document.StrictDiagnostics"/> set, the save throws
+    /// <see cref="InvalidOperationException"/> from the save, not from this property, and 3.0 will
+    /// refuse it always. Pass an empty string for a band that draws no text, never
+    /// <see langword="null"/>.
     /// <para>The cut bounds the advance width, <b>not</b> the ink. Side bearings and italic
     /// overhang can still paint a little past it. Nothing in this package sets a clip path.</para>
     /// <para><b>Attention</b>: truncation does nothing for text whose glyphs measure zero, because
@@ -45,6 +49,10 @@ public sealed class RunningBand
     /// from this property, when the band measures text that holds an unpaired surrogate in an
     /// embedded font, which can include part of the template it then does not draw; see
     /// <see cref="TextStyle.FontRef"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from the save, not from this property, when the template does not fit the content box
+    /// and <see cref="Document.StrictDiagnostics"/> is <see langword="true"/>.
     /// </exception>
     public string Template { get; }
 

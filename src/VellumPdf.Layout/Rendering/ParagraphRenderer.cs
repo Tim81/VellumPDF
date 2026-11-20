@@ -133,7 +133,15 @@ public sealed class ParagraphRenderer : IRenderer
         _endLine = _startLine + maxLines;
         _occupied = area.WithHeight(maxLines * _lineHeight);
 
-        var overflow = new ParagraphRenderer(_para, _endLine) { _lines = _lines, StructType = StructType, ParentStructElem = ParentStructElem, ElementLanguage = ElementLanguage, RunOwner = RunOwner };
+        var overflow = new ParagraphRenderer(_para, _endLine)
+        {
+            _lines = _lines,
+            _nullStyleRuns = _nullStyleRuns,
+            StructType = StructType,
+            ParentStructElem = ParentStructElem,
+            ElementLanguage = ElementLanguage,
+            RunOwner = RunOwner,
+        };
         var split = new ParagraphRenderer(_para, _startLine)
         {
             _lines = _lines,
