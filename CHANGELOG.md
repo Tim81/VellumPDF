@@ -22,6 +22,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `qpdf` 12.4.2 `--check` orders name-tree keys after converting them to UTF-8 rather than byte by
   byte, so it reports a tree in correct byte order as unsorted for some keys outside printable
   ASCII; the tests check that range by reading the file back instead.
+- **Internal tables for named destinations and page labels (#262, part 1).** `NamedDestinationTable`
+  and `PageLabelTable` in `VellumPdf.Kernel` turn names and label ranges into the `/Dests` name tree
+  and the `/PageLabels` number tree (ISO 32000-2, 12.3.2.4 and 12.4.2), using the tree writers above,
+  and `PageLabelFormatter` computes the label a page shows. They are `internal`, so there is no public
+  API change and no output change: no document member calls them yet. A destination name is 1 to
+  127 characters from `A-Z a-z 0-9 . _ - :`; each value is an
+  indirect `[page /XYZ left top null]` array. A table with no range at page 0 gets a decimal one there,
+  because 12.4.2 requires a value for page index 0. Letters repeat (27 is `AA`, 53 is `AAA`) rather than
+  counting in base 26, as Table 161 describes, and Roman numerals above 3999 add one `M` per thousand,
+  a choice of this library because 12.4.2 sets no rule there. An empty table builds nothing and leaves
+  the object numbers alone. A bad name, a duplicate, a coordinate that is not finite or lies beyond
+  ±2,147,483,647 (the largest integer of ISO 32000-1, Table C.1; a whole coordinate is written as
+  an integer), a first number below 1, an unpaired surrogate in a prefix and a label over 32,767
+  characters are refused.
 - **The boundaries Layout documents are now pinned as tests.** `BoundaryContractTests` holds 67
   cases (5 facts and 62 theory rows), taken from the probes that produced the sentences in #542:
   which null argument decides when two are null on `DrawContext` and `RendererContext`, that an
@@ -41,6 +55,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   The placement cases carry controls: a Helvetica line beside the Symbol one, and a default indent
   beside the infinite one. They catch a change that always places the line at the Symbol position or
   always drops the item text.
+- **The bytes of the document catalog are now pinned as tests (#606).** `CatalogGoldenTests` holds
+  63 cases that pin what `PdfDocument.Save` and `PdfDocument.PrepareForSigning` write for the
+  catalog. Each configuration (11 on `Save`, 9
+  on the signing path) is pinned by the SHA-256 of the whole file, and each classic-xref one also by
+  the exact text of the catalog object. The hash is taken after inflating every `/FlateDecode`
+  stream and masking byte offsets and the contents of every hint stream and
+  cross-reference stream, so it does not move when the compressor's output does; the
+  catalog text is not normalised. The tests pin that `Save` writes `/AcroForm` after
+  `/StructTreeRoot` and before `/OutputIntents`, and only for a document with form fields, that the
+  signing path writes it straight after `/Metadata`, and that the two paths number the
+  output-intent object differently when a document has an outline and a PDF/A claim. A catalog
+  holding every optional key and one holding only `/Lang` cover the key order and the `/Lang`
+  condition. Every file also goes through `qpdf --check`. Tests only.
 
 ### Changed
 
