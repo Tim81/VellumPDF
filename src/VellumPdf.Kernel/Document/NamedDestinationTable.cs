@@ -22,10 +22,11 @@ namespace VellumPdf.Document;
 /// </remarks>
 internal sealed class NamedDestinationTable
 {
-    // PdfReal writes a whole value with no decimal point, so it reaches the file as an integer token, and
-    // Table C.1 of ISO 32000-1 limits an integer to 2,147,483,647 (2^31 - 1). A larger token is out of range
-    // for a reader: qpdf drops the destination and veraPDF fails 6.1.13 of ISO 19005-2 for it. The real
-    // limit of Table C.1 (3.403e38) is therefore not the bound that matters here.
+    // ISO 32000-1 Table C.1 gives 2,147,483,647 (2^31 - 1) as the largest integer, and PdfReal writes a
+    // whole value with no decimal point, so a coordinate this large reaches the file as an integer token.
+    // PDF/A-2 6.1.13 holds a file to that range, and veraPDF fails it from 2,147,483,648 and from
+    // -2,147,483,649. The bound is symmetric on purpose, so -2,147,483,648, which Table C.1 allows, is
+    // refused too. The real limit of Table C.1 for a real number (3.403e38) is not the bound that matters.
     private const double MaxCoordinate = 2_147_483_647;
 
     private readonly Dictionary<string, (PdfPage Page, double Left, double Top)> _entries = new(StringComparer.Ordinal);
@@ -92,8 +93,7 @@ internal sealed class NamedDestinationTable
 
     /// <summary>
     /// The value stored under a name: <c>[page /XYZ left top null]</c>, ISO 32000-2 Table 149. A null zoom
-    /// leaves the zoom as it is. Kept in one method so a later value form (a dictionary with <c>/D</c> and
-    /// <c>/SD</c>, #600) changes here and not in <see cref="Build"/>.
+    /// leaves the zoom as it is. <see cref="Build"/> stores the array under each name.
     /// </summary>
     private static PdfArray BuildValue(PdfIndirectReference page, double left, double top) =>
         new([page, new PdfName("XYZ"), new PdfReal(left), new PdfReal(top), PdfNull.Instance]);
