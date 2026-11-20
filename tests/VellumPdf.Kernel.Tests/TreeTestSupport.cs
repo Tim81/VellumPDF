@@ -54,6 +54,48 @@ internal static class TreeTestSupport
         return ms.ToArray();
     }
 
+    /// <summary>
+    /// Writes a PDF with one 200 x 200 page per entry of <paramref name="pageRefs"/>, whose catalog
+    /// holds <paramref name="destsRoot"/> under <c>/Names /Dests</c> and
+    /// <paramref name="labelsRoot"/> under <c>/PageLabels</c>, each when not
+    /// <see langword="null"/>. The pages are reserved by the caller, before the tables are built,
+    /// because a destination's array names its page; <see cref="BuildPdf"/> reserves its one page
+    /// after the tree and so cannot carry destinations.
+    /// </summary>
+    internal static byte[] BuildPdfWithPages(PdfObjectRegistry registry, IReadOnlyList<PdfIndirectReference> pageRefs, PdfDictionary? destsRoot, PdfDictionary? labelsRoot)
+    {
+        var pagesRef = registry.Reserve();
+        var catalogRef = registry.Reserve();
+        foreach (var pageRef in pageRefs)
+        {
+            registry.SetValue(pageRef, new PdfDictionary()
+                .Set(PdfName.Type, PdfName.Page)
+                .Set(new PdfName("Parent"), pagesRef)
+                .Set(new PdfName("Resources"), new PdfDictionary())
+                .Set(new PdfName("MediaBox"), new PdfArray([new PdfInteger(0), new PdfInteger(0), new PdfInteger(200), new PdfInteger(200)])));
+        }
+        registry.SetValue(pagesRef, new PdfDictionary()
+            .Set(PdfName.Type, PdfName.Pages)
+            .Set(PdfName.Kids, new PdfArray([.. pageRefs]))
+            .Set(PdfName.Count, pageRefs.Count));
+        var catalog = new PdfDictionary()
+            .Set(PdfName.Type, PdfName.Catalog)
+            .Set(PdfName.Pages, pagesRef);
+        if (destsRoot is not null)
+            catalog.Set(new PdfName("Names"), new PdfDictionary().Set(new PdfName("Dests"), destsRoot));
+        if (labelsRoot is not null)
+            catalog.Set(new PdfName("PageLabels"), labelsRoot);
+        registry.SetValue(catalogRef, catalog);
+
+        using var ms = new MemoryStream();
+        var writer = new PdfWriter(ms);
+        writer.WriteAscii("%PDF-1.7\n"u8);
+        var xref = new CrossReferenceBuilder();
+        registry.WriteAll(writer, xref);
+        xref.WriteXrefAndTrailer(writer, catalogRef, null);
+        return ms.ToArray();
+    }
+
     /// <summary>Reads the tree root out of a PDF made by <see cref="BuildPdf"/>.</summary>
     internal static (PdfDocumentReader Reader, PdfDictionary Root) OpenRoot(byte[] pdf, bool nameTree)
     {
