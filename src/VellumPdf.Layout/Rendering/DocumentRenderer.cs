@@ -4,6 +4,7 @@
 using VellumPdf.Canvas;
 using VellumPdf.Layout.Core;
 using VellumPdf.Layout.Elements;
+using VellumPdf.Layout.Rendering.Table;
 
 namespace VellumPdf.Layout.Rendering;
 
@@ -123,6 +124,19 @@ public sealed class DocumentRenderer
     private BandTruncationWarning? _headerTruncation;
     private BandTruncationWarning? _footerTruncation;
 
+    // What the layout noticed and kept going through; see Document.Diagnostics. Created with the
+    // renderer, but it allocates its collections on the first report.
+    private readonly LayoutDiagnosticSink _sink = new();
+
+    internal LayoutDiagnosticSink Sink => _sink;
+
+    // The items the list walk visited in this save; see ListWalkState. It lives on the sink because
+    // only a list that reports takes part in the walk.
+    internal ListWalkState ListWalk => _sink.ListWalk;
+
+    /// <summary>Everything the layout reported so far, in first-occurrence order.</summary>
+    internal IReadOnlyList<LayoutDiagnostic> Diagnostics => _sink.Snapshot().AsReadOnly();
+
     /// <summary>
     /// Characters written via <see cref="PdfCanvas.ShowText"/> across every page rendered so far
     /// that WinAnsiEncoding could not represent. Aggregated from each page's canvas as it finishes.
@@ -134,8 +148,12 @@ public sealed class DocumentRenderer
     /// naming the page that lost the most.
     /// </summary>
     /// <remarks>
-    /// Empty until <see cref="Render"/> has run. A cut band is not an error, and this list is the
-    /// only report of it. The cut compares a running total of the resolved text's character widths
+    /// Empty until <see cref="Render"/> has run. A cut band loses text the caller wrote, so
+    /// <see cref="Document.StrictDiagnostics"/> refuses a save that cut one, and
+    /// <see cref="Document.Diagnostics"/> also lists it as
+    /// <see cref="LayoutDiagnosticCode.BandTruncated"/>. This list stays as it is until 3.0, and
+    /// <see cref="Render"/> exposes no <c>Diagnostics</c> and has no strict switch. The cut
+    /// compares a running total of the resolved text's character widths
     /// with the content width. Resolved text whose glyphs measure zero or negative width, as at a
     /// negative font size, is not cut or reported (see <see cref="RunningBand.Template"/>), and
     /// neither is any band when the content width is <c>NaN</c>. Resolved text that fits exactly
@@ -290,6 +308,9 @@ public sealed class DocumentRenderer
     /// layout that threw; this method does not. A failure once writing has started leaves what was
     /// written so far in
     /// <paramref name="destination"/>, which can be the PDF header alone.
+    /// <para>This method has no strict switch and exposes no <c>Diagnostics</c>: it never applies
+    /// <see cref="Document.StrictDiagnostics"/>, so none of that refusal reaches you from
+    /// here.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// An element needs more than <b>50,000</b> page continuations or is too tall for one page, or
@@ -407,16 +428,60 @@ public sealed class DocumentRenderer
         }
 
         // Pass 2 (or only pass): full render with running bands resolved.
-        foreach (var renderer in _renderers)
-            PlaceRenderer(renderer, totalPages);
+        // The location is that of the element the document added, set here and not in
+        // PlaceRenderer: PlaceRenderer's variable becomes the overflow renderer, which for a
+        // heading is a plain paragraph renderer, and mapping that would call a heading's second
+        // page a paragraph.
+        for (var i = 0; i < _renderers.Count; i++)
+        {
+            _sink.CurrentKind = KindOf(_renderers[i]);
+            _sink.CurrentIndex = i;
+            PlaceRenderer(_renderers[i], totalPages);
+        }
 
+        _sink.CurrentKind = LayoutElementKind.Document;
+        _sink.CurrentIndex = null;
         FinishCurrentPage(totalPages);
+        ReportBandTruncations();
 
         if (_deferredCanvasRefusal is not null)
             System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(_deferredCanvasRefusal).Throw();
     }
 
     // ── Private ──────────────────────────────────────────────────────────────
+
+    private static LayoutElementKind KindOf(IRenderer renderer) => renderer switch
+    {
+        ParagraphRenderer => LayoutElementKind.Paragraph,
+        HeadingRenderer => LayoutElementKind.Heading,
+        ListRenderer => LayoutElementKind.List,
+        TableRenderer => LayoutElementKind.Table,
+        LayoutImageRenderer => LayoutElementKind.Image,
+        LineSeparatorRenderer => LayoutElementKind.LineSeparator,
+        PieChartRenderer => LayoutElementKind.PieChart,
+        _ => LayoutElementKind.Custom,
+    };
+
+    private void ReportBandTruncations()
+    {
+        foreach (var warning in BandTruncations)
+        {
+            _sink.CurrentKind = warning.Band == RunningBandKind.Header
+                ? LayoutElementKind.Header
+                : LayoutElementKind.Footer;
+            _sink.CurrentIndex = null;
+            _sink.CurrentPage = warning.PageNumber;
+            _sink.Report(
+                LayoutDiagnosticCode.BandTruncated,
+                (long)warning.Band,
+                string.Create(
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    $"The {warning.Band.ToString().ToLowerInvariant()} band's text was cut to fit the content width: {warning.DrawnCharacters} of {warning.ResolvedCharacters} characters drawn on the page that lost the most."));
+        }
+
+        _sink.CurrentKind = LayoutElementKind.Document;
+        _sink.CurrentPage = null;
+    }
 
     private double HeaderHeight => Header?.EffectiveHeight ?? 0;
     private double FooterHeight => Footer?.EffectiveHeight ?? 0;
@@ -442,6 +507,10 @@ public sealed class DocumentRenderer
     {
         if (_currentCanvas is not null)
         {
+            // The bands report under their own location, and the element that was being laid out
+            // when the page ended carries on afterwards, so the location is put back.
+            var (kind, index, reportPage) = (_sink.CurrentKind, _sink.CurrentIndex, _sink.CurrentPage);
+
             // Draw header/footer for this page.
             if (Header is not null || Footer is not null)
             {
@@ -449,6 +518,8 @@ public sealed class DocumentRenderer
                 DrawRunningBands(_currentCanvas, _currentRendererCtx!, _currentPage!, pageNumber, totalPages);
             }
 
+            _sink.SyncEncodingWarnings(_currentCanvas!, report: true);
+            (_sink.CurrentKind, _sink.CurrentIndex, _sink.CurrentPage) = (kind, index, reportPage);
             _textEncodingWarnings.AddRange(_currentCanvas.TextEncodingWarnings);
 
             _currentCanvas.Finish();
@@ -528,7 +599,13 @@ public sealed class DocumentRenderer
     private void DrawRenderer(IRenderer renderer)
     {
         var pageBounds = new LayoutBox(0, 0, _pageSize.Width, _pageSize.Height);
-        var ctx = new DrawContext(_currentCanvas!, pageBounds, _currentRendererCtx!, _pdf, _currentPage!);
+        var ctx = new DrawContext(_currentCanvas!, pageBounds, _currentRendererCtx!, _pdf, _currentPage!)
+        {
+            Diagnostics = _sink,
+        };
+        // Reports come from this pass only. The page counting pass lays out without drawing, and a
+        // wrap is cached per renderer, so a report raised from Layout could run twice.
+        _sink.CurrentPage = _pdf.Pages.Count;
         try
         {
             renderer.Draw(ctx);
@@ -537,6 +614,8 @@ public sealed class DocumentRenderer
         {
             _deferredCanvasRefusal ??= ex;
         }
+
+        _sink.SyncEncodingWarnings(_currentCanvas!, report: true);
     }
 
     // ── Running bands ─────────────────────────────────────────────────────────
@@ -549,18 +628,24 @@ public sealed class DocumentRenderer
         int totalPages)
     {
         var pageBounds = new LayoutBox(0, 0, _pageSize.Width, _pageSize.Height);
-        var ctx = new DrawContext(canvas, pageBounds, rendererCtx, _pdf, page);
+        var ctx = new DrawContext(canvas, pageBounds, rendererCtx, _pdf, page) { Diagnostics = _sink };
+        _sink.CurrentPage = pageNumber;
+        _sink.CurrentIndex = null;
 
         if (Header is not null)
         {
+            _sink.CurrentKind = LayoutElementKind.Header;
             var text = Header.Resolve(pageNumber, totalPages);
             var bandY = _margins.Top;
             var bandHeight = Header.EffectiveHeight;
             DrawBandText(ctx, canvas, text, Header, RunningBandKind.Header, pageNumber, bandY, bandHeight);
         }
 
+        _sink.SyncEncodingWarnings(canvas, report: true);
+
         if (Footer is not null)
         {
+            _sink.CurrentKind = LayoutElementKind.Footer;
             var text = Footer.Resolve(pageNumber, totalPages);
             var bandY = _pageSize.Height - _margins.Bottom - Footer.EffectiveHeight;
             var bandHeight = Footer.EffectiveHeight;

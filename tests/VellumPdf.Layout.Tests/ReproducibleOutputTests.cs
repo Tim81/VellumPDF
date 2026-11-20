@@ -37,7 +37,7 @@ public sealed class ReproducibleOutputTests
     // The normalised hash of StandardDocument(), recorded from the first run and checked by every
     // later one, so a second process, and CI on Linux, must give the same bytes. It is normalised
     // (see Normalise) because the compressed bytes depend on the runtime's compressor, which the
-    // property's documentation says separately. One value serves net10.0 and net11.0.
+    // library does not control. One value serves net10.0 and net11.0.
     private const string StandardDocumentNormalisedSha256 = "8BCDADDFA5FE56302A8CE0161E467A9663E71F58E9B15FE8BB8722D709DDB507";
 
     // ── Documents under test ──────────────────────────────────────────────────
@@ -490,7 +490,8 @@ public sealed class ReproducibleOutputTests
         return text;
     }
 
-    // An empty stream has no zlib header on net10.0, so there is nothing to inflate.
+    // The library writes the empty zlib stream for an empty body, so a zero-length body is not
+    // output of this library; the guard keeps the helper total for hand-built input.
     private static string Inflate(byte[] data)
     {
         if (data.Length == 0)

@@ -103,6 +103,12 @@ public sealed class DrawContext
         _page = page;
     }
 
+    /// <summary>
+    /// Where the document's layout collects diagnostics. Null for a context a caller constructs, so
+    /// a custom renderer that builds its own context reports nothing and does not throw.
+    /// </summary>
+    internal LayoutDiagnosticSink? Diagnostics { get; init; }
+
     /// <summary>Returns (or creates) a font resource on the current document.</summary>
     /// <remarks>
     /// This does not embed a file. Nothing is checked: a value the enumeration does not name is

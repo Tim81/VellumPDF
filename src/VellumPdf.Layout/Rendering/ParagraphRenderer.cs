@@ -30,6 +30,11 @@ public sealed class ParagraphRenderer : IRenderer
     private double _lineHeight;      // max EffectiveLeading across the paragraph
     private LayoutBox _occupied;
 
+    // How many runs with a null style yielded no word, found where the wrap is made and cached with
+    // it. A split paragraph shares its wrap between its pieces, so only the piece that starts at
+    // line 0 reports them; see Draw.
+    private int _nullStyleRuns;
+
     // Pagination window: only lines[_startLine.._endLine) are in this renderer.
     private readonly int _startLine;
     private int _endLine;  // exclusive
@@ -91,7 +96,10 @@ public sealed class ParagraphRenderer : IRenderer
             return LayoutResult.Nothing();
 
         if (_lines is null)
-            (_lines, _lineEnds) = WordWrap(_para.Runs, area.Width);
+        {
+            (_lines, _lineEnds) = WordWrap(_para.Runs, area.Width, out var nullStyleRuns);
+            _nullStyleRuns = nullStyleRuns;
+        }
 
         // Line height = max EffectiveLeading across every fragment in every line.
         _lineHeight = 0;
@@ -126,7 +134,16 @@ public sealed class ParagraphRenderer : IRenderer
         _endLine = _startLine + maxLines;
         _occupied = area.WithHeight(maxLines * _lineHeight);
 
-        var overflow = new ParagraphRenderer(_para, _endLine) { _lines = _lines, _lineEnds = _lineEnds, StructType = StructType, ParentStructElem = ParentStructElem, ElementLanguage = ElementLanguage, RunOwner = RunOwner };
+        var overflow = new ParagraphRenderer(_para, _endLine)
+        {
+            _lines = _lines,
+            _lineEnds = _lineEnds,
+            _nullStyleRuns = _nullStyleRuns,
+            StructType = StructType,
+            ParentStructElem = ParentStructElem,
+            ElementLanguage = ElementLanguage,
+            RunOwner = RunOwner,
+        };
         var split = new ParagraphRenderer(_para, _startLine)
         {
             _lines = _lines,
@@ -134,6 +151,7 @@ public sealed class ParagraphRenderer : IRenderer
             _endLine = _endLine,
             _lineHeight = _lineHeight,
             _occupied = _occupied,
+            _nullStyleRuns = _nullStyleRuns,
             StructType = StructType,
             ParentStructElem = ParentStructElem,
             ElementLanguage = ElementLanguage,
@@ -186,6 +204,19 @@ public sealed class ParagraphRenderer : IRenderer
     public void Draw(DrawContext ctx)
     {
         if (_lines is null) return;
+
+        // Reported from the drawing pass, once per paragraph: a page-counting pass lays the same
+        // renderer out again, and every piece of a split shares the wrap but only the first starts
+        // at line 0.
+        if (_startLine == 0 && _nullStyleRuns > 0)
+        {
+            ctx.Diagnostics?.Report(
+                LayoutDiagnosticCode.NullTextRunStyle,
+                0,
+                "A paragraph run with a null style yields no text and was saved without a style.",
+                _nullStyleRuns,
+                perElement: true);
+        }
 
         var area = _occupied;
         var canvas = ctx.Canvas;
@@ -669,8 +700,9 @@ public sealed class ParagraphRenderer : IRenderer
     /// forced cut ends where the word ends, so what follows decides its kind.
     /// </returns>
     internal static (List<LineFragment[]> Lines, List<LineEnd> Ends) WordWrap(
-        IReadOnlyList<TextRun> runs, double maxWidth)
+        IReadOnlyList<TextRun> runs, double maxWidth, out int nullStyleRuns)
     {
+        nullStyleRuns = 0;
         var lines = new List<LineFragment[]>();
         var ends = new List<LineEnd>();
 
@@ -723,6 +755,9 @@ public sealed class ParagraphRenderer : IRenderer
                     openWord = true;
                 }
             }
+
+            // A null style that yielded a word threw above, so what is left here yielded none.
+            if (run.Style is null) nullStyleRuns++;
         }
 
         if (tokens.Count == 0)

@@ -9,8 +9,8 @@ namespace VellumPdf.Layout.Elements;
 /// A single item in a <see cref="ListElement"/>, with optional nested children.
 /// </summary>
 /// <remarks>
-/// Nesting is one level. An item reached only as a child of a child is not measured or drawn, so nothing
-/// it holds makes the save throw; see <see cref="Children"/>.
+/// Nesting is one level. An item reached only as a child of a child is not laid out or drawn, so
+/// nothing it holds makes the save throw; see <see cref="Children"/>.
 /// </remarks>
 public sealed class ListItem
 {
@@ -75,17 +75,29 @@ public sealed class ListItem
     /// <summary>The nested child items, or null if this item has no children.</summary>
     /// <remarks>
     /// One level of nesting is supported, and only one. A child's own <see cref="Children"/>
-    /// is read by <b>nothing</b>. A child of a child is not measured, not drawn and not reported, and
-    /// its text is absent from the document. The scope of that claim: the renderer reads
-    /// <c>item.Children</c> and takes each child's style, marker and content, and never reads
-    /// <c>child.Children</c>.
+    /// are neither laid out nor drawn, so a child of a child is absent from the document. The save
+    /// does look at them for one thing, in a list the document draws from its first item: a null
+    /// text or a null child on such an item is reported as
+    /// <see cref="LayoutDiagnosticCode.NullGrandchildText"/> or
+    /// <see cref="LayoutDiagnosticCode.NullGrandchild"/>, and
+    /// <see cref="Document.StrictDiagnostics"/> refuses the save. Any other content there is not
+    /// reported. A list that starts at a later item, or that a renderer of yours lays out and does
+    /// not draw, reports nothing, and its items are left for a list that does report. The save
+    /// visits each item below the first level of a list it reports once, however many lists and
+    /// second-level items reach it, so the work is linear in the items and child links you built
+    /// there. An item with a null text, or a null child, is counted once in the save, under the
+    /// first such list, in drawing order, that reaches it.
     /// <para>Be aware that you have to handle this yourself: flatten a tree deeper than two
     /// levels, or compose separate lists, until arbitrary nesting lands (#479).</para>
     /// <para>In an <see cref="ListStyle.Unordered"/> list a child is marked with U+25E6, the
     /// white bullet. The standard-14 fonts cannot encode it, so with a standard-14 style the
     /// child's marker is written as the character code for <c>?</c> and recorded in
-    /// <see cref="Document.TextEncodingWarnings"/>. ZapfDingbats draws that code as a glyph other
-    /// than <c>?</c>.</para>
+    /// <see cref="Document.TextEncodingWarnings"/>. When the document draws the list it is not
+    /// listed in <see cref="Document.Diagnostics"/>, because the marker is the library's text and
+    /// not yours, so <see cref="Document.StrictDiagnostics"/> does not refuse a list for it. A
+    /// list that your own renderer draws through a <see cref="Core.DrawContext"/> you built can
+    /// list it. ZapfDingbats
+    /// draws that code as a glyph other than <c>?</c>.</para>
     /// </remarks>
     public IReadOnlyList<ListItem>? Children => _children;
 
@@ -97,12 +109,14 @@ public sealed class ListItem
     /// know where the item will sit. <see cref="Text"/> becomes an empty string and the item is
     /// marked. On a top-level item, or a child of one, the save throws
     /// <see cref="ArgumentNullException"/> naming <c>text</c> when it lays the list out. On an item
-    /// deeper than that, a child of a child, nothing is read and the list renders.</para>
-    /// <para><b>Do not pass a null text.</b> On a child of a child it is accepted today and not
-    /// reported, because there is no diagnostics channel yet. 3.0 will throw
-    /// <see cref="ArgumentNullException"/> from this constructor whatever the position, and the
-    /// diagnostics channel will report it before then. <see cref="ListElement.Add(string, TextStyle?)"/>
-    /// has no such leniency: its item is always top-level, so it throws from the call.</para>
+    /// deeper than that, a child of a child, the text is never laid out and the list
+    /// renders.</para>
+    /// <para><b>Do not pass a null text.</b> On a child of a child it is accepted today and
+    /// reported as <see cref="LayoutDiagnosticCode.NullGrandchildText"/>, which
+    /// <see cref="Document.StrictDiagnostics"/> refuses. 3.0 will throw
+    /// <see cref="ArgumentNullException"/> from this constructor whatever the position.
+    /// <see cref="ListElement.Add(string, TextStyle?)"/> has no such leniency: its item is always
+    /// top-level, so it throws from the call.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -121,7 +135,9 @@ public sealed class ListItem
     /// from this constructor, when the style's size or leading is refused, or a channel of its text
     /// colour is not finite; see <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/>
     /// and <see cref="TextStyle.Color"/>. It is not raised for an item reached only as a
-    /// child of a child.
+    /// child of a child, except that with <see cref="Document.StrictDiagnostics"/> set, a null
+    /// <paramref name="text"/> there throws it; see
+    /// <see cref="LayoutDiagnosticCode.NullGrandchildText"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -147,17 +163,22 @@ public sealed class ListItem
     /// know where this item will sit in the list. It is not added: <see cref="Children"/> never holds
     /// a null. When this item is top-level the save throws <see cref="ArgumentNullException"/>
     /// naming <c>child</c> when it lays the list out. When this item is itself another item's
-    /// child, or deeper, its children are never read and the list renders.</para>
-    /// <para><b>Do not pass a null child.</b> Held by a child item it is skipped today and not
-    /// reported, because there is no diagnostics channel yet. 3.0 will throw
-    /// <see cref="ArgumentNullException"/> from this call whatever the position, and the diagnostics
-    /// channel will report it before then.</para>
+    /// child, or deeper, its children are never laid out and the list renders.</para>
+    /// <para><b>Do not pass a null child.</b> Held by a child item it is skipped today and reported
+    /// as <see cref="LayoutDiagnosticCode.NullGrandchild"/>, which
+    /// <see cref="Document.StrictDiagnostics"/> refuses. 3.0 will throw
+    /// <see cref="ArgumentNullException"/> from this call whatever the position.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this call, when <paramref name="child"/> is <see langword="null"/> and this item is laid
     /// out as a top-level item. <c>ParamName</c> is <c>child</c>. It is not raised when this item is
-    /// itself another item's child, whose own children are never read.
+    /// itself another item's child, whose own children are never laid out.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from the save, not from this call, when <see cref="Document.StrictDiagnostics"/> is
+    /// set and <paramref name="child"/> is <see langword="null"/> on an item that is another
+    /// item's child, or deeper; see <see cref="LayoutDiagnosticCode.NullGrandchild"/>.
     /// </exception>
     public ListItem AddChild(ListItem child)
     {
@@ -186,7 +207,7 @@ public sealed class ListItem
     /// from this call, when <paramref name="text"/> is <see langword="null"/> and this item is laid
     /// out as a top-level item, which makes the new item a child. <c>ParamName</c> is <c>text</c>. It
     /// is not raised when this item is itself another item's child, which makes the new item a child
-    /// of a child, and that is never read.
+    /// of a child, and that is never laid out.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -199,7 +220,9 @@ public sealed class ListItem
     /// from this call, when the style's size or leading is refused, or a channel of its text colour
     /// is not finite; see <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/> and
     /// <see cref="TextStyle.Color"/>. It is raised only when this item is laid out as a top-level
-    /// item.
+    /// item. With <see cref="Document.StrictDiagnostics"/> set it is also raised for a null
+    /// <paramref name="text"/> on an item that is itself another item's child; see
+    /// <see cref="LayoutDiagnosticCode.NullGrandchildText"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not

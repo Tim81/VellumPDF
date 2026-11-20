@@ -505,7 +505,7 @@ public sealed partial class RunBoundaryTests
 
     private static (string[] Texts, LineEnd[] Ends) Wrap(double width, params TextRun[] runs)
     {
-        var (lines, ends) = ParagraphRenderer.WordWrap(runs, width);
+        var (lines, ends) = ParagraphRenderer.WordWrap(runs, width, out _);
         return ([.. lines.Select(l => string.Concat(l.Select(f => f.Text)))], [.. ends]);
     }
 
