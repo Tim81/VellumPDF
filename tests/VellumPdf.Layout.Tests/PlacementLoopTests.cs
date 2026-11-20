@@ -1,11 +1,11 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
-using CsCheck;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using CsCheck;
 using VellumPdf.Core;
 using VellumPdf.Document;
 using VellumPdf.Layout.Core;
