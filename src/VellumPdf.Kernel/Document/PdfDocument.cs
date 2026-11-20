@@ -93,13 +93,15 @@ public sealed class PdfDocument : IDisposable
 
     /// <summary>
     /// Optional fixed document <c>/ID</c> (the permanent element of the PDF <c>/ID</c> array;
-    /// 16 bytes is conventional). When null, the ID is derived from the document content and
-    /// <see cref="Timestamp"/>. Pin this together with <see cref="Timestamp"/> for byte-reproducible
-    /// output.
+    /// 16 bytes is conventional). When null, the ID is derived from <c>Info.Title</c>,
+    /// <c>Info.Producer</c> (<c>VellumPdf</c> when null), the page count and <see cref="Timestamp"/>;
+    /// the page content does not enter it. Pinning <see cref="Timestamp"/> gives a stable derived ID
+    /// for a Timestamp from 1970 onward. Before 1970 the hashed text of the instant carries a minus
+    /// sign that follows the current culture, so pin this property as well to remove the dependence.
     ///
-    /// <para>Encrypted and signed documents stay non-deterministic regardless of these pins:
-    /// each save draws fresh random salts/IVs for encryption, and a signature is time- and
-    /// key-dependent.</para>
+    /// <para>Encrypted documents stay non-deterministic regardless of these pins, because each save
+    /// draws fresh random salts and IVs. A signature's time comes from the signing options, not from
+    /// <see cref="Timestamp"/>.</para>
     /// </summary>
     /// <remarks>
     /// The array is defensively copied on get and set, so mutating it afterwards has no effect on the

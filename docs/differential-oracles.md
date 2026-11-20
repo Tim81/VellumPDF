@@ -161,8 +161,9 @@ echoes the input filename in `page <file> N`, in `cannot draw '<file>'`, and in 
 document element. Strip all of that, sort, and compare the normalised set.
 
 The input has to be stable first. `PdfDocument.Timestamp` and `PdfDocument.DocumentId` are both
-settable and pinning them makes identical content produce identical bytes, which
-`DeterminismTests` already proves. Fixtures that do not pin them change on every run.
+settable and pinning them makes identical content produce identical bytes on one library build, one
+runtime and one operating system, for an unencrypted document, which `DeterminismTests` already
+proves. Fixtures that do not pin them change on every run.
 
 ## Reproducing this
 

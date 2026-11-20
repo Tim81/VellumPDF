@@ -608,9 +608,10 @@ conforming documents.
 
 ## 9. Deterministic output
 
-By default the document `/ID` is derived from the content and the current
-timestamp, so two otherwise identical saves produce different bytes.  For
-golden-file tests or reproducible builds, pin both:
+By default the document `/ID` is derived from the title, the producer, the page
+count and the current timestamp, so the bytes depend on when the document is
+saved.  For golden-file tests or reproducible builds, pin `Timestamp` and, to be
+independent of the process culture, `DocumentId`:
 
 ```csharp
 var doc = new PdfDocument
@@ -624,8 +625,13 @@ var page = doc.AddPage(PageSize.A4);
 doc.Save(stream);
 ```
 
-With the same `Timestamp` and `DocumentId`, identical content produces
-byte-identical output across any number of invocations.
+With the same `Timestamp` and `DocumentId`, two documents built by the same
+calls save to the same bytes on one library build, one runtime and one operating
+system.  Encryption draws random salts and IVs on every save, so an encrypted
+document is never reproducible; a signature takes its time from the signing
+options, not from `Timestamp`; and a document with an embedded font can differ
+between Windows and Linux, because the ToUnicode map's line ends follow the
+platform (#630).
 
 `DocumentId` must be exactly 16 bytes; any other length throws
 `ArgumentException`.  The writer emits no `/ID` for a length it cannot use, and
@@ -633,8 +639,12 @@ ISO 32000-2 Table 15 requires the entry once `/Encrypt` is present, so on an
 encrypted document a wrong length would leave the file invalid.
 
 When only `Timestamp` is pinned (and `DocumentId` is left null) the ID is
-derived from content and the pinned timestamp, so it is still stable across
-repeated calls with the same input.
+derived from the title, the producer, the page count and the pinned timestamp,
+so it is stable across repeated calls with the same input.  A `Timestamp`
+before 1970 is the exception: the derived ID hashes the instant's decimal text,
+whose minus sign follows the current culture (sv-SE, nb-NO, fa-IR and ar-SA
+differ from the invariant culture), so pin `DocumentId` as well to remove the
+dependence.
 
 ---
 

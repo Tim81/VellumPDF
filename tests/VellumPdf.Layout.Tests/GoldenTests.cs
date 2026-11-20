@@ -10,8 +10,9 @@ namespace VellumPdf.Layout.Tests;
 
 /// <summary>
 /// Golden / snapshot tests for the Layout layer (issue #5).
-/// Structural projection only — the Layout <see cref="Document"/> does not expose
-/// Timestamp/DocumentId pins, so byte-stable raw output is not achievable here.
+/// Structural projection only, by choice: a projection survives a change of compressor or
+/// object numbering that a byte comparison would not. Byte-level reproducibility under a pinned
+/// <see cref="Document.Timestamp"/> is covered by <c>ReproducibleOutputTests</c>.
 /// </summary>
 public sealed class GoldenTests
 {

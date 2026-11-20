@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`Document.Timestamp` and `Document.DocumentId` (#597).** The Layout `Document` now forwards the
+  two pins that `PdfDocument` already had. `Timestamp` sets the instant written as the XMP creation
+  and modification date and mixed into the derived file identifier; with it pinned, two documents
+  built by the same calls save to the same bytes on one library build, one runtime and one
+  operating system, unless the instant is before 1970 and `DocumentId` is null: the derived
+  identifier then follows the current culture's minus sign, and pinning `DocumentId` as well
+  removes the dependence. `DocumentId` sets both strings of the trailer `/ID`; a value that is not 16 bytes
+  is refused by the setter with `ArgumentException`. An encrypted document is never reproducible,
+  a signature takes its time from `PdfSignatureSettings.SigningTime`, and an embedded font's
+  ToUnicode map differs between Windows and Linux (#630). Nothing changes for a document that
+  leaves both unset.
 - **Internal name tree and number tree writers (#241).** `NameTreeWriter` and `NumberTreeWriter`
   in `VellumPdf.Kernel` build the structures ISO 32000-2, 7.9.6 and 7.9.7 define, which the
   catalog's `/Names` and `/PageLabels` entries, and later named destinations and embedded files,
@@ -172,6 +183,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **The Kernel's `DocumentId` summary and `docs/kernel-guide.md` section 9 described the derived
+  identifier wrongly (#597).** They said it comes from the page content, which it never did: it
+  comes from the title, the producer, the page count and the time. They also said the bytes of two
+  identical saves differ, where they depend on when the document is saved.
 - **`PdfCanvas` refuses NaN and infinity in every operand it writes (#519).** Every content-stream
   operator that writes a number now throws `ArgumentException` for `NaN` or infinity, with the same
   message as `PdfReal`, instead of writing `NaN 0 0 rg`, which is not a PDF number (ISO 32000-2
