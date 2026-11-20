@@ -55,11 +55,12 @@ internal static class TreeTestSupport
     }
 
     /// <summary>
-    /// Writes a PDF with one 200 x 200 page per entry of <paramref name="pageRefs"/>, whose catalog holds
-    /// <paramref name="destsRoot"/> under <c>/Names /Dests</c> and <paramref name="labelsRoot"/> under
-    /// <c>/PageLabels</c>, each when not <see langword="null"/>. The pages are reserved by the caller, before
-    /// the tables are built, because a destination's array names its page; <see cref="BuildPdf"/> reserves its
-    /// one page after the tree and so cannot carry destinations.
+    /// Writes a PDF with one 200 x 200 page per entry of <paramref name="pageRefs"/>, whose catalog
+    /// holds <paramref name="destsRoot"/> under <c>/Names /Dests</c> and
+    /// <paramref name="labelsRoot"/> under <c>/PageLabels</c>, each when not
+    /// <see langword="null"/>. The pages are reserved by the caller, before the tables are built,
+    /// because a destination's array names its page; <see cref="BuildPdf"/> reserves its one page
+    /// after the tree and so cannot carry destinations.
     /// </summary>
     internal static byte[] BuildPdfWithPages(PdfObjectRegistry registry, IReadOnlyList<PdfIndirectReference> pageRefs, PdfDictionary? destsRoot, PdfDictionary? labelsRoot)
     {

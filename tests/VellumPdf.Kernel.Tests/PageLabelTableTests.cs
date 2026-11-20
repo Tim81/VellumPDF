@@ -12,9 +12,9 @@ using static VellumPdf.Kernel.Tests.TreeTestSupport;
 namespace VellumPdf.Kernel.Tests;
 
 /// <summary>
-/// #262: the page label table, its <c>/PageLabels</c> number tree (ISO 32000-2, 12.4.2 and 7.9.7) and the
-/// formatter that computes a page's label. Exact bytes are asserted as written; structure is read back
-/// through <c>VellumPdf.Reader</c>.
+/// #262: the page label table, its <c>/PageLabels</c> number tree (ISO 32000-2, 12.4.2 and 7.9.7)
+/// and the formatter that computes a page's label. Exact bytes are asserted as written; structure
+/// is read back through <c>VellumPdf.Reader</c>.
 /// </summary>
 public sealed class PageLabelTableTests
 {
@@ -264,7 +264,8 @@ public sealed class PageLabelTableTests
         var ex = Assert.Throws<ArgumentException>(() => table.Set(1, PageLabelNumbering.Decimal, new string('x', 16_383), 1));
         Assert.Equal("prefix", ex.ParamName);
 
-        // 16,382 characters are 2 + 2 x 16,382 = 32,766 bytes, inside the 32,767 of ISO 19005-2, 6.1.13.
+        // 16,382 characters are 2 + 2 x 16,382 = 32,766 bytes, inside the 32,767 of ISO 19005-2,
+        // 6.1.13.
         var root = table.Build(new PdfObjectRegistry(), 2)!;
         var nums = Assert.IsType<PdfArray>(root.Get(new PdfName("Nums")));
         var value = Assert.IsType<PdfDictionary>(nums[1]);
@@ -299,7 +300,8 @@ public sealed class PageLabelTableTests
     [InlineData((int)PageLabelNumbering.UpperRoman)]
     public void Format_romanFollowsTheSubtractiveFormForEveryNumberUpTo3999(int style)
     {
-        // An independent reference: greedy subtraction over the full table, written separately from the formatter.
+        // An independent reference: greedy subtraction over the full table, written separately from
+        // the formatter.
         (int, string)[] digits = [(1000, "m"), (900, "cm"), (500, "d"), (400, "cd"), (100, "c"), (90, "xc"), (50, "l"), (40, "xl"), (10, "x"), (9, "ix"), (5, "v"), (4, "iv"), (1, "i")];
         for (var n = 1; n <= 3999; n++)
         {
@@ -361,8 +363,8 @@ public sealed class PageLabelTableTests
         // Thousands are one M each: 32,767 M, plus nothing for a remainder of 0.
         Assert.Equal(32_767, PageLabelFormatter.Format(PageLabelNumbering.UpperRoman, null, 32_767_000).Length);
         Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PageLabelNumbering.UpperRoman, null, 32_768_000));
-        // The remainder counts too: 32,766 M and one I fill the bound, 32,767 M and one I pass it, and
-        // 32,766 M with CMXCIX (6 characters) passes it.
+        // The remainder counts too: 32,766 M and one I fill the bound, 32,767 M and one I pass it,
+        // and 32,766 M with CMXCIX (6 characters) passes it.
         Assert.Equal(32_767, PageLabelFormatter.Format(PageLabelNumbering.UpperRoman, null, 32_766_001).Length);
         Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PageLabelNumbering.UpperRoman, null, 32_767_001));
         Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PageLabelNumbering.UpperRoman, null, 32_766_999));
@@ -409,12 +411,13 @@ public sealed class PageLabelTableTests
         var label = PageLabelFormatter.Format(PageLabelNumbering.UpperLetters, null, 851_942);
         var accepted = GC.GetAllocatedBytesForCurrentThread() - before;
         Assert.Equal(32_767, label.Length);
-        // One string of 32,767 two-byte characters is 65,534 bytes plus a header (65,560 measured in
-        // Release on net10.0 and net11.0); allow twice the characters' size.
+        // One string of 32,767 two-byte characters is 65,534 bytes plus a header (65,560 measured
+        // in Release on net10.0 and net11.0); allow twice the characters' size.
         Assert.True(accepted <= 2L * 32_767 * 2, $"accepted case allocated {accepted} bytes");
 
-        // The exception's own allocation is counted too (624 bytes measured); the refused case must still
-        // stay below what building the label costs, so no buffer was made before the length check.
+        // The exception's own allocation is counted too (624 bytes measured); the refused case must
+        // still stay below what building the label costs, so no buffer was made before the length
+        // check.
         before = GC.GetAllocatedBytesForCurrentThread();
         Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PageLabelNumbering.UpperLetters, null, int.MaxValue));
         var refused = GC.GetAllocatedBytesForCurrentThread() - before;
@@ -548,8 +551,9 @@ public sealed class PageLabelTableTests
         }
     }
 
-    // qpdf --json=2 gives a page's label as the dictionary of its range with /St advanced to that page, and
-    // spells a prefix "u:" + text. Written here from the ranges the table was given, not from the formatter.
+    // qpdf --json=2 gives a page's label as the dictionary of its range with /St advanced to that
+    // page, and spells a prefix "u:" + text. Written here from the ranges the table was given, not
+    // from the formatter.
     private static string QpdfLabel(LabelRange range, int offset)
     {
         var parts = new List<string>();

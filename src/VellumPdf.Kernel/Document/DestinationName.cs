@@ -5,19 +5,20 @@ namespace VellumPdf.Document;
 
 /// <summary>
 /// The rule for the name of a named destination, and its encoding as a name-tree key (#262).
-/// Internal: no public API refers to it yet.
+/// Internal: no public API refers to it.
 /// </summary>
 /// <remarks>
-/// A name is 1 to 127 characters, each one of <c>A-Z a-z 0-9 . _ - :</c>. ISO 32000-2, 12.3.2.4 has the
-/// <c>/Dests</c> name tree map "name strings" to destinations, and 7.9.6 and J.3.3 have a reader compare
-/// keys byte by byte, so any self-consistent encoding is valid. This rule is narrower on purpose: ASCII
-/// bytes are the same in every encoding a reader might assume, they sort the same under a byte-wise and a
-/// converted comparison, and a name that fits is also within the limit ISO 19005-2, 6.1.13 puts on a name
-/// object (127 bytes) and a string (32,767 bytes) in a PDF/A-2 file. That part of the standard is not held
-/// in this repository, and the validator's own limits rule enforces the same numbers.
-/// <para>A name that breaks the rule is refused when it is added to a table, not when the table is built.
-/// The message gives the length for a length defect and, for a bad character, its UTF-16 index and code
-/// point. It never quotes the name, so a hostile name cannot flood a log.</para>
+/// A name is 1 to 127 characters, each one of <c>A-Z a-z 0-9 . _ - :</c>. ISO 32000-2, 12.3.2.4 has
+/// the <c>/Dests</c> name tree map "name strings" to destinations, and 7.9.6 and J.3.3 have a
+/// reader compare keys byte by byte, so any self-consistent encoding is valid. This rule is
+/// narrower on purpose: ASCII bytes are the same in every encoding a reader might assume, they sort
+/// the same under a byte-wise and a converted comparison, and a name that fits is also within the
+/// limit ISO 19005-2, 6.1.13 puts on a name object (127 bytes) and a string (32,767 bytes) in a
+/// PDF/A-2 file. That part of the standard is not held in this repository, and the validator's own
+/// limits rule enforces the same numbers.
+/// <para>A name that breaks the rule is refused when it is added to a table, not when the table is
+/// built. The message gives the length for a length defect and, for a bad character, its UTF-16
+/// index and code point. It never quotes the name, so a hostile name cannot flood a log.</para>
 /// </remarks>
 internal static class DestinationName
 {
@@ -27,13 +28,17 @@ internal static class DestinationName
     /// <summary>
     /// Refuses a name that breaks the rule. A <see langword="null"/> name throws
     /// <see cref="ArgumentNullException"/>; an empty name, one longer than <see cref="MaxLength"/>
-    /// characters, or one holding any other character throws <see cref="ArgumentException"/>. The length is
-    /// checked first, so a long name that also holds a bad character is reported as too long.
+    /// characters, or one holding any other character throws <see cref="ArgumentException"/>. The
+    /// length is checked first, so a long name that also holds a bad character is reported as too
+    /// long.
     /// </summary>
     /// <param name="name">The name to check.</param>
     /// <param name="paramName">The parameter name carried by the exception.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentException"><paramref name="name"/> is empty, is longer than <see cref="MaxLength"/> characters, or holds a character outside <c>A-Z a-z 0-9 . _ - :</c>.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is
+    /// <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="name"/> is empty, is longer than
+    /// <see cref="MaxLength"/> characters, or holds a character outside
+    /// <c>A-Z a-z 0-9 . _ - :</c>.</exception>
     internal static void Validate(string? name, string paramName)
     {
         ArgumentNullException.ThrowIfNull(name, paramName);
@@ -56,12 +61,16 @@ internal static class DestinationName
     }
 
     /// <summary>
-    /// The name as the bytes of its ASCII characters, which is the key the name tree stores. Applies
-    /// <see cref="Validate"/> first, so it throws what that method throws, with the parameter name <c>name</c>.
+    /// The name as the bytes of its ASCII characters, which is the key the name tree stores.
+    /// Applies <see cref="Validate"/> first, so it throws what that method throws, with the
+    /// parameter name <c>name</c>.
     /// </summary>
     /// <param name="name">The name to encode.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentException"><paramref name="name"/> is empty, is longer than <see cref="MaxLength"/> characters, or holds a character outside <c>A-Z a-z 0-9 . _ - :</c>.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is
+    /// <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="name"/> is empty, is longer than
+    /// <see cref="MaxLength"/> characters, or holds a character outside
+    /// <c>A-Z a-z 0-9 . _ - :</c>.</exception>
     internal static byte[] Encode(string name)
     {
         Validate(name, nameof(name));

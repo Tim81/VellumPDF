@@ -11,8 +11,9 @@ using static VellumPdf.Kernel.Tests.TreeTestSupport;
 namespace VellumPdf.Kernel.Tests;
 
 /// <summary>
-/// #262: the name rule, the named destination table and its <c>/Dests</c> name tree (ISO 32000-2, 12.3.2.4
-/// and 7.9.6). Exact bytes are asserted as written; structure is read back through <c>VellumPdf.Reader</c>.
+/// #262: the name rule, the named destination table and its <c>/Dests</c> name tree (ISO 32000-2,
+/// 12.3.2.4 and 7.9.6). Exact bytes are asserted as written; structure is read back through
+/// <c>VellumPdf.Reader</c>.
 /// </summary>
 public sealed class NamedDestinationTableTests
 {
@@ -87,7 +88,8 @@ public sealed class NamedDestinationTableTests
     [Fact]
     public void Name_withAnUnpairedSurrogate_namesTheCodeUnit()
     {
-        // Built at run time: a lone surrogate in an attribute argument does not survive test discovery.
+        // Built at run time: a lone surrogate in an attribute argument does not survive test
+        // discovery.
         var high = Assert.Throws<ArgumentException>(() => DestinationName.Validate("ab" + (char)0xD800, "p"));
         Assert.Contains("index 2 is U+D800", high.Message);
         var low = Assert.Throws<ArgumentException>(() => DestinationName.Validate("a" + (char)0xDC00 + (char)0xD800, "p"));
@@ -142,7 +144,8 @@ public sealed class NamedDestinationTableTests
         // A duplicate name with a bad coordinate: the coordinate is reported, not the duplicate.
         var duplicate = Assert.Throws<ArgumentOutOfRangeException>(() => table.Add("a", page, double.NaN, 0));
         Assert.Equal("left", duplicate.ParamName);
-        // A bad name with a null page: the name is reported (ArgumentException, not ArgumentNullException).
+        // A bad name with a null page: the name is reported (ArgumentException, not
+        // ArgumentNullException).
         var name = Assert.Throws<ArgumentException>(() => table.Add("a b", null!, 0, 0));
         Assert.Equal("name", name.ParamName);
         Assert.Equal(1, table.Count);
@@ -180,8 +183,8 @@ public sealed class NamedDestinationTableTests
     [Fact]
     public void Build_writesTheBoundaryCoordinatesAsIntegerTokensInRange()
     {
-        // PdfReal writes a whole value with no decimal point, so the file holds an integer token, and
-        // Table C.1 of ISO 32000-1 stops an integer at 2,147,483,647.
+        // PdfReal writes a whole value with no decimal point, so the file holds an integer token,
+        // and Table C.1 of ISO 32000-1 stops an integer at 2,147,483,647.
         var registry = new PdfObjectRegistry();
         var page = NewPage();
         var pageRef = ReservePage(registry);
@@ -484,10 +487,10 @@ public sealed class NamedDestinationTableTests
         var mid = AllocatedBytesPerDestination(10_000);
         var large = AllocatedBytesPerDestination(100_000);
         var message = $"bytes per destination: 1,000 -> {small}, 10,000 -> {mid}, 100,000 -> {large}";
-        // Measured in Release on net10.0 and net11.0, both: 707, 723 and 692 bytes per destination at 1,000,
-        // 10,000 and 100,000. A step that re-copied per node, or a name lookup that grew with the table,
-        // would make the large figure grow with the count; the factor leaves room for the list and
-        // dictionary doubling.
+        // Measured in Release on net10.0 and net11.0, both: 707, 723 and 692 bytes per destination
+        // at 1,000, 10,000 and 100,000. A step that re-copied per node, or a name lookup that grew
+        // with the table, would make the large figure grow with the count; the factor leaves room
+        // for the list and dictionary doubling.
         Assert.True(large <= small * 3 / 2 + 8, message);
         Assert.True(mid <= small * 3 / 2 + 8, message);
     }
