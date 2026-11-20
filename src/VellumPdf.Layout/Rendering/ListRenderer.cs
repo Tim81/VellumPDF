@@ -33,9 +33,10 @@ public sealed class ListRenderer : IRenderer
 
     private LayoutBox _occupied;
 
-    // Items below the second level that hold a null text or a null child. Nothing below the second
-    // level is laid out or drawn, so these save; they are counted where the items are built and
-    // reported from Draw, by the piece that starts at the first item.
+    // Items below the second level that hold a null text or a null child, and that no earlier
+    // list's walk reached. Nothing below the second level is laid out or drawn, so these save; they
+    // are counted where the items are built and reported from Draw, by the piece that starts at the
+    // first item.
     private int _nullGrandchildText;
     private int _nullGrandchild;
 
@@ -114,7 +115,7 @@ public sealed class ListRenderer : IRenderer
         var area = context.Area.Deflate(_list.Margins);
         if (area.IsEmpty) return LayoutResult.Nothing();
 
-        _items ??= BuildItems(area.Width, context.ListWalk ?? new ListWalkMemo());
+        _items ??= BuildItems(area.Width, context.ListWalk ?? new ListWalkState());
 
         if (_items.Count == 0)
         {
@@ -392,12 +393,11 @@ public sealed class ListRenderer : IRenderer
     }
 
     private List<(ParagraphRenderer Marker, ParagraphRenderer Content)> BuildItems(
-        double areaWidth, ListWalkMemo walk)
+        double areaWidth, ListWalkState walk)
     {
         var result = new List<(ParagraphRenderer, ParagraphRenderer)>();
         var indent = _list.Indent;
         var defaultStyle = _list.DefaultStyle ?? TextStyle.Default;
-        HashSet<ListItem>? holders = null;
         long nullText = 0, nullChild = 0;
 
         for (var i = 0; i < _list.Items.Count; i++)
@@ -467,18 +467,14 @@ public sealed class ListRenderer : IRenderer
                     if (child.HasNullText)
                         throw new ArgumentNullException("text", "A list item has a null text.");
                     // A child's own children are neither laid out nor drawn, so a defect in them
-                    // saves. What lies below this child is counted by the save's memo, which walks
-                    // it once however many lists reach it, and this list adds each distinct child's
-                    // counts once.
+                    // saves. The save's walk visits each item below the first level once, so this
+                    // list counts only the nulls that no earlier list, or earlier child of this
+                    // one, already reached.
                     if (child.HasNullChild || child.Children is not null)
                     {
-                        holders ??= new HashSet<ListItem>(ReferenceEqualityComparer.Instance);
-                        if (holders.Add(child))
-                        {
-                            var (text, nulls) = walk.CountBelow(child);
-                            nullText += text;
-                            nullChild += nulls;
-                        }
+                        var (text, nulls) = walk.Visit(child);
+                        nullText += text;
+                        nullChild += nulls;
                     }
 
                     var childStyle = child.Style ?? itemStyle;

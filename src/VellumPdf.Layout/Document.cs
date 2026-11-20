@@ -99,7 +99,7 @@ public sealed class Document : IDisposable
     /// that threw leaves it as it was, with one exception: a refusal by
     /// <see cref="StrictDiagnostics"/> fills it with the items the refused layout reported, because
     /// that layout is the document's only one.
-    /// <para>The order is the order in which the layout first met each item, except that
+    /// <para>The order is drawing order, except that
     /// <see cref="LayoutDiagnosticCode.BandTruncated"/> items follow all the others, and
     /// <see cref="LayoutDiagnosticCode.DiagnosticsDropped"/> is last.</para>
     /// <para>The codes, each described on <see cref="LayoutDiagnosticCode"/>:

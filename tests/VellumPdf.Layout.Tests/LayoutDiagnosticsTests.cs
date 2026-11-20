@@ -1,7 +1,6 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
-using System.Reflection;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using VellumPdf.Canvas;
@@ -505,11 +504,8 @@ public sealed class LayoutDiagnosticsTests
         child.AddChild(new ListItem(null!));
         top.AddChild(child);
         doc.Add(new ListElement(ListStyle.OrderedDecimal, [top]));
-        var pdf = (PdfDocument)typeof(Document)
-            .GetField("_pdf", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .GetValue(doc)!;
-        pdf.Timestamp = new DateTimeOffset(2026, 1, 2, 3, 4, 5, TimeSpan.Zero);
-        pdf.DocumentId = new byte[16];
+        doc.Timestamp = new DateTimeOffset(2026, 1, 2, 3, 4, 5, TimeSpan.Zero);
+        doc.DocumentId = new byte[16];
         var ms = new MemoryStream();
 
         doc.Save(ms);
@@ -647,11 +643,8 @@ public sealed class LayoutDiagnosticsTests
             using var doc = new Document { StrictDiagnostics = strict };
             doc.Add(new Paragraph("Clean text"));
             doc.Add(new ListElement(ListStyle.OrderedDecimal, [new ListItem("one"), new ListItem("two")]));
-            var pdf = (PdfDocument)typeof(Document)
-                .GetField("_pdf", BindingFlags.Instance | BindingFlags.NonPublic)!
-                .GetValue(doc)!;
-            pdf.Timestamp = new DateTimeOffset(2026, 1, 2, 3, 4, 5, TimeSpan.Zero);
-            pdf.DocumentId = new byte[16];
+            doc.Timestamp = new DateTimeOffset(2026, 1, 2, 3, 4, 5, TimeSpan.Zero);
+            doc.DocumentId = new byte[16];
             var ms = new MemoryStream();
             doc.Save(ms);
             return ms.ToArray();
@@ -804,8 +797,8 @@ public sealed class LayoutDiagnosticsTests
     [Fact]
     public void CallerTextInAListItemThatIsNotTheLast_isReported()
     {
-        // The marker of item 2 is drawn after the text of item 1, so the substitution in "a ★" has to
-        // be accounted for before the marker's own are skipped.
+        // The marker of item 2 is drawn after the text of item 1, so the substitution in "a ★"
+        // has to be accounted for before the marker's own are skipped.
         using var doc = new Document();
         doc.Add(new ListElement(ListStyle.Unordered, [new ListItem("a \u2605"), new ListItem("b")]));
 
@@ -899,40 +892,134 @@ public sealed class LayoutDiagnosticsTests
         Assert.Equal(length, renderer.ListWalk.NodesVisited);
     }
 
-    [Theory]
-    [InlineData(1)]
-    [InlineData(20)]
-    public void ManyListsSharingAChain_walkItOnce_andEachReportsItsOwnCount(int lists)
+    private static ListItem ChainWithNullTail(int length)
     {
-        const int length = 1000;
-        var tail = new ListItem(null!);
         var head = Chain(length);
         var last = head;
         while (last.Children is { Count: > 0 } kids) last = kids[0];
-        last.AddChild(tail);
-        using var doc = NewDoc();
-        for (var i = 0; i < lists; i++)
+        last.AddChild(new ListItem(null!));
+        return head;
+    }
+
+    private static ListElement Ordered(ListItem top) => new(ListStyle.OrderedDecimal, [top]);
+
+    /// <summary>
+    /// The five shapes the cost of the walk was measured on, with their distinct item counts.
+    /// </summary>
+    private static (List<ListElement> Lists, int Distinct) Shape(string shape, int a, int b)
+    {
+        switch (shape)
         {
-            var top = new ListItem("top " + i);
-            top.AddChild(head);
-            doc.Add(new ListElement(ListStyle.OrderedDecimal, [top]));
+            case "same-list": // one list added a times: the chain and its null tail
+                {
+                    var top = new ListItem("top");
+                    top.AddChild(ChainWithNullTail(b));
+                    var list = Ordered(top);
+                    return (Enumerable.Repeat(list, a).ToList(), b + 1);
+                }
+            case "lists-share-chain": // a lists, each with its own top item, one chain
+                {
+                    var head = ChainWithNullTail(b);
+                    return (Enumerable.Range(0, a).Select(i => Ordered(new ListItem("top " + i).AddChild(head))).ToList(), b + 1);
+                }
+            case "holders-share-chain": // one list, a second-level items, one chain
+                {
+                    var head = ChainWithNullTail(b);
+                    var top = new ListItem("top");
+                    for (var i = 0; i < a; i++) top.AddChild(new ListItem("holder " + i).AddChild(head));
+                    return ([Ordered(top)], a + b + 1);
+                }
+            case "holders-chained": // one list, a second-level items, each the child of the previous
+                {
+                    var holders = Enumerable.Range(0, a).Select(i => new ListItem("holder " + i)).ToArray();
+                    for (var i = 0; i + 1 < a; i++) holders[i].AddChild(holders[i + 1]);
+                    holders[^1].AddChild(new ListItem(null!));
+                    var top = new ListItem("top");
+                    foreach (var holder in holders) top.AddChild(holder);
+                    return ([Ordered(top)], a + 1);
+                }
+            case "lists-own-holder-share-chain": // a lists, each its own second-level item, one chain
+                {
+                    var head = ChainWithNullTail(b);
+                    return (Enumerable.Range(0, a).Select(i =>
+                        Ordered(new ListItem("top " + i).AddChild(new ListItem("holder " + i).AddChild(head)))).ToList(), a + b + 1);
+                }
+            default:
+                throw new ArgumentOutOfRangeException(nameof(shape));
         }
+    }
+
+    [Theory]
+    [InlineData("same-list", 5, 500)]
+    [InlineData("same-list", 40, 500)]
+    [InlineData("lists-share-chain", 5, 500)]
+    [InlineData("lists-share-chain", 40, 500)]
+    [InlineData("holders-share-chain", 5, 500)]
+    [InlineData("holders-share-chain", 40, 500)]
+    [InlineData("holders-chained", 50, 0)]
+    [InlineData("holders-chained", 400, 0)]
+    [InlineData("lists-own-holder-share-chain", 5, 500)]
+    [InlineData("lists-own-holder-share-chain", 40, 500)]
+    public void TheWalk_visitsEachDistinctItemOnce_andCountsTheNullOnce(string shape, int a, int b)
+    {
+        var (lists, distinct) = Shape(shape, a, b);
+
+        var renderer = LayOutLists(lists);
+
+        // Work is the distinct items, whatever number of lists or second-level items reach them.
+        Assert.Equal(distinct, renderer.ListWalk.NodesVisited);
+        var item = Assert.Single(renderer.Diagnostics);
+        Assert.Equal(LayoutDiagnosticCode.NullGrandchildText, item.Code);
+        Assert.Equal(1, item.Count);
+        Assert.Equal(0, item.ElementIndex);
+    }
+
+    [Fact]
+    public void TwoSecondLevelItemsReachingOneNullTextItem_countItOnceUnderTheFirstList()
+    {
+        var nullText = new ListItem(null!);
+        ListElement MakeList() => Ordered(new ListItem("top")
+            .AddChild(new ListItem("first").AddChild(nullText))
+            .AddChild(new ListItem("second").AddChild(nullText)));
+        using var doc = NewDoc();
+        doc.Add(MakeList());
+        doc.Add(MakeList());
 
         doc.Save(new MemoryStream());
 
-        Assert.Equal(lists, doc.Diagnostics.Count);
+        var item = Assert.Single(doc.Diagnostics);
+        Assert.Equal(LayoutDiagnosticCode.NullGrandchildText, item.Code);
+        Assert.Equal(1, item.Count);
+        Assert.Equal(0, item.ElementIndex);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void TheTotalDoesNotDependOnTheOrderOfTheLists(bool reversed)
+    {
+        // Two lists share a second-level item that holds a null child and a null-text item.
+        var nullText = new ListItem(null!);
+        var shared = new ListItem("shared");
+        shared.AddChild(nullText);
+        shared.AddChild((ListItem)null!);
+        var inner = new ListItem("inner");
+        inner.AddChild(shared);
+        var one = Ordered(new ListItem("one").AddChild(inner).AddChild(shared));
+        var two = Ordered(new ListItem("two").AddChild(shared));
+        using var doc = NewDoc();
+        foreach (var list in reversed ? new[] { two, one } : new[] { one, two }) doc.Add(list);
+
+        doc.Save(new MemoryStream());
+
+        Assert.Equal(
+            [LayoutDiagnosticCode.NullGrandchildText, LayoutDiagnosticCode.NullGrandchild],
+            doc.Diagnostics.Select(i => i.Code));
         Assert.All(doc.Diagnostics, i =>
         {
-            Assert.Equal(LayoutDiagnosticCode.NullGrandchildText, i.Code);
             Assert.Equal(1, i.Count);
+            Assert.Equal(0, i.ElementIndex);
         });
-        var renderer = LayOutLists(Enumerable.Range(0, lists).Select(i =>
-        {
-            var top = new ListItem("top " + i);
-            top.AddChild(head);
-            return new ListElement(ListStyle.OrderedDecimal, [top]);
-        }));
-        Assert.Equal(length + 1, renderer.ListWalk.NodesVisited);
     }
 
     // ── What Diagnostics hands out, and cancellation ─────────────────────────
@@ -1004,8 +1091,8 @@ public sealed class LayoutDiagnosticsTests
 
         renderer.Draw(new DrawContext(canvas, box, rendererContext, pdf, page));
 
-        // The same renderer reports once it is given the channel, so the silence above is the missing
-        // channel and not a renderer that never finds the run.
+        // The same renderer reports once it is given the channel, so the silence above is the
+        // missing channel and not a renderer that never finds the run.
         var sink = new LayoutDiagnosticSink();
         renderer.Draw(new DrawContext(canvas, box, rendererContext, pdf, page) { Diagnostics = sink });
         Assert.Equal(

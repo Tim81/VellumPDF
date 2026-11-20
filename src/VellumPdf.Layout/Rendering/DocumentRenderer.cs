@@ -130,11 +130,11 @@ public sealed class DocumentRenderer
 
     internal LayoutDiagnosticSink Sink => _sink;
 
-    // One memo for the whole save, shared by both passes and every list, so a subtree below a
-    // second-level list item that several lists reach is walked once.
-    private readonly ListWalkMemo _listWalk = new();
+    // One visited set for the whole save, shared by every list, so each list item below the first
+    // level is walked once however many lists and second-level items reach it.
+    private readonly ListWalkState _listWalk = new();
 
-    internal ListWalkMemo ListWalk => _listWalk;
+    internal ListWalkState ListWalk => _listWalk;
 
     private LayoutContext NewLayoutContext(LayoutBox area) => new(area) { ListWalk = _listWalk };
 

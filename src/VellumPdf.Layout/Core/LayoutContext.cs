@@ -42,11 +42,10 @@ public sealed class LayoutContext
     }
 
     /// <summary>
-    /// The per-save memo of what the list walk found below each second-level item. Null for a
-    /// context a caller builds, so a list laid out through one walks its own items and shares
-    /// nothing.
+    /// The items the list walk has visited in this save. Null for a context a caller builds, so a
+    /// list laid out through one starts a walk of its own and shares nothing.
     /// </summary>
-    internal ListWalkMemo? ListWalk { get; init; }
+    internal ListWalkState? ListWalk { get; init; }
 
     /// <summary>Returns a copy of this context with the available area replaced.</summary>
     /// <remarks>Nothing is refused. <see cref="ContentTop"/> is copied unchanged.</remarks>

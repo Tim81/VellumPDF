@@ -60,14 +60,14 @@ public enum LayoutDiagnosticCode
 
     /// <summary>
     /// A list item that is a child of a child, or deeper, holds a null text, and the save drew
-    /// nothing of it. <see cref="LayoutDiagnostic.Count"/> is the number of such items in the list,
-    /// counted once for each second-level item that reaches them, so an item shared by several
-    /// parents of one second-level item counts once.
+    /// nothing of it. <see cref="LayoutDiagnostic.Count"/> is the number of such items the list's
+    /// element reached first. An item is counted once in the whole save, under the first element in
+    /// drawing order that reaches it, however many second-level items or lists reach it.
     /// </summary>
     /// <remarks>
     /// Items below the second level are not laid out or drawn, so this saves. Strict mode refuses
     /// it. A <see cref="Rendering.ListRenderer"/> you build to start at an item other than the
-    /// first reports nothing.
+    /// first reports nothing, and the total over all lists does not depend on their order.
     /// </remarks>
     NullGrandchildText = 201,
 
@@ -75,7 +75,7 @@ public enum LayoutDiagnosticCode
     /// A list item that is another item's child, or deeper, below the top level, was given a null
     /// child with <see cref="Elements.ListItem.AddChild(Elements.ListItem)"/>, and the save skipped
     /// it. <see cref="LayoutDiagnostic.Count"/> is the number of items that hold at least one null
-    /// child, not the number of nulls, counted as for
+    /// child, not the number of nulls. Each such item is counted once in the whole save, as for
     /// <see cref="NullGrandchildText"/>.
     /// </summary>
     /// <remarks>
