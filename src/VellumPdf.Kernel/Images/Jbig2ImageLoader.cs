@@ -131,6 +131,10 @@ public static class Jbig2ImageLoader
     /// </param>
     /// <returns>A <see cref="PdfImageXObject"/> with the appropriate filter.</returns>
     /// <exception cref="ArgumentException">Thrown when <paramref name="jbig2"/> is null or empty.</exception>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="options"/> is <see langword="null"/>, because the decode mode is read from it
+    /// (<c>ParamName</c> <c>options</c>). A call with null data and null options reports the data.
+    /// </exception>
     /// <exception cref="InvalidDataException">
     /// Thrown on malformed or truncated input, and for a file with the T.88 Annex D file header whose
     /// bytes after the ID string do not read as segments; see the remarks on this type. Under
@@ -151,6 +155,7 @@ public static class Jbig2ImageLoader
     {
         if (jbig2 is null || jbig2.Length == 0)
             throw new ArgumentException("JBIG2 data must be non-empty.", nameof(jbig2));
+        ArgumentNullException.ThrowIfNull(options);
 
         // Only the ID string is stripped; embedded-form input has none. What follows is read as
         // segments, so a file whose Annex D flags byte and page count do not read that way is

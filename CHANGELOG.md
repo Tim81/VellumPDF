@@ -275,7 +275,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the T.88 Annex D file header whose bytes after the ID string do not read as segments throws
   `InvalidDataException` in both modes. `DecodeToRaster` stores the decoded bits unchanged as
   `/DeviceGray`, while T.88 (5.6, NOTE 1) gives 1 as black, so its raster renders as a negative, as
-  on 2.3.3.
+  on 2.3.3. `Jbig2ImageLoader.Load(bytes, null)` throws `ArgumentNullException` (`options`) where it
+  threw `NullReferenceException`.
 
 - **A paragraph no longer wraps at U+202F NARROW NO-BREAK SPACE or U+2007 FIGURE SPACE (#562).**
   With U+00A0 these are the white-space characters in UAX #14's GL class, but only U+00A0 was kept,

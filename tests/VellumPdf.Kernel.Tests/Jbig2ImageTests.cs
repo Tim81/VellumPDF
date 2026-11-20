@@ -446,6 +446,23 @@ public sealed class Jbig2ImageTests
     }
 
     [Fact]
+    public void Load_NullOptions_ThrowsArgumentNullExceptionNamingOptions()
+    {
+        var ex = Assert.Throws<ArgumentNullException>(() => Jbig2ImageLoader.Load(BuildMinimalJbig2(8, 8), null!));
+
+        Assert.Equal("options", ex.ParamName);
+    }
+
+    [Fact]
+    public void Load_NullDataAndNullOptions_ReportsTheData()
+    {
+        var ex = Assert.Throws<ArgumentException>(() => Jbig2ImageLoader.Load(null!, null!));
+
+        Assert.IsNotType<ArgumentNullException>(ex);
+        Assert.Equal("jbig2", ex.ParamName);
+    }
+
+    [Fact]
     public void Load_EmptyData_Throws()
     {
         Assert.Throws<ArgumentException>(() => Jbig2ImageLoader.Load([]));
