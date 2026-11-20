@@ -13,8 +13,9 @@ namespace VellumPdf.Layout.Elements;
 /// <c>Text</c>.
 /// <para>A null style is stored, and refused where the paragraph is laid out, with
 /// <see cref="ArgumentNullException"/> naming <c>Style</c>. It is refused only for a run that yields a word, a non-white-space character, U+00A0 included; it saves for empty text, white space, a tab or line breaks alone.
-/// <b>Do not pass a null style.</b> 3.0 refuses it from the constructor, whatever the text, and the
-/// diagnostics channel (#607) will report the saved cases before then.</para>
+/// <b>Do not pass a null style.</b> 3.0 refuses it from the constructor, whatever the text. The saved
+/// cases are reported as <see cref="LayoutDiagnosticCode.NullTextRunStyle"/> in
+/// <see cref="Document.Diagnostics"/>, and <see cref="Document.StrictDiagnostics"/> refuses them.</para>
 /// Refusals on size, leading, font and text colour are on <see cref="TextStyle"/> and are raised
 /// from the save. The boundary between this run and the next is drawn as a space unless a line
 /// break falls on it; see <see cref="Paragraph"/>.

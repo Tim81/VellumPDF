@@ -33,6 +33,12 @@ public sealed class ListRenderer : IRenderer
 
     private LayoutBox _occupied;
 
+    // Items below the second level that hold a null text or a null child. Nothing below the second
+    // level is read, so these save; they are counted where the items are built and reported from
+    // Draw, by the piece that starts at the first item.
+    private int _nullGrandchildText;
+    private int _nullGrandchild;
+
     // The height Layout offered each item it visited, indexed by the item's offset from the start
     // item. Draw offers the same height: it lays the item out a second time, a paragraph's line
     // count is a floor of the height it is given, and Bottom - y can come out one rounding step
@@ -163,6 +169,8 @@ public sealed class ListRenderer : IRenderer
                     _endItem = i,
                     _occupied = _occupied,
                     _offered = offered,
+                    _nullGrandchildText = _nullGrandchildText,
+                    _nullGrandchild = _nullGrandchild,
                 };
                 return LayoutResult.Partial(_occupied, split, overflow);
             }
@@ -191,6 +199,8 @@ public sealed class ListRenderer : IRenderer
                     _endItem = i + 1,
                     _occupied = _occupied,
                     _offered = offered,
+                    _nullGrandchildText = _nullGrandchildText,
+                    _nullGrandchild = _nullGrandchild,
                 };
                 return LayoutResult.Partial(_occupied, split, overflowList);
             }
@@ -220,6 +230,24 @@ public sealed class ListRenderer : IRenderer
     public void Draw(DrawContext ctx)
     {
         if (_items is null) return;
+
+        if (_startItem == 0 && _partialContentOverrideAtStart is null)
+        {
+            if (_nullGrandchildText > 0)
+                ctx.Diagnostics?.Report(
+                    LayoutDiagnosticCode.NullGrandchildText,
+                    0,
+                    "A list item below the second level has a null text and is not drawn.",
+                    _nullGrandchildText,
+                    perElement: true);
+            if (_nullGrandchild > 0)
+                ctx.Diagnostics?.Report(
+                    LayoutDiagnosticCode.NullGrandchild,
+                    0,
+                    "A list item below the first level was given a null child, which is not drawn.",
+                    _nullGrandchild,
+                    perElement: true);
+        }
 
         // _occupied is already the margin-deflated area from Layout; do not deflate again.
         var area = _occupied;
@@ -347,6 +375,8 @@ public sealed class ListRenderer : IRenderer
         var result = new List<(ParagraphRenderer, ParagraphRenderer)>();
         var indent = _list.Indent;
         var defaultStyle = _list.DefaultStyle ?? TextStyle.Default;
+        HashSet<ListItem>? visited = null;
+        long nullText = 0, nullChild = 0;
 
         for (var i = 0; i < _list.Items.Count; i++)
         {
@@ -413,6 +443,12 @@ public sealed class ListRenderer : IRenderer
                 {
                     if (child.HasNullText)
                         throw new ArgumentNullException("text", "A list item has a null text.");
+                    // A child's own children are never read, so a defect in them saves. Counted
+                    // here, one pass over the tree below this child.
+                    if (child.HasNullChild) nullChild++;
+                    if (child.Children is { } grandchildren)
+                        CountBelowSecondLevel(grandchildren, ref visited, ref nullText, ref nullChild);
+
                     var childStyle = child.Style ?? itemStyle;
                     // Nested unordered items use an open-bullet "◦"; nested ordered items
                     // route through ListElement.FormatMarker so OrderedAlpha/OrderedRoman
@@ -452,6 +488,35 @@ public sealed class ListRenderer : IRenderer
             }
         }
 
+        _nullGrandchildText = (int)Math.Min(nullText, int.MaxValue);
+        _nullGrandchild = (int)Math.Min(nullChild, int.MaxValue);
         return result;
+    }
+
+    // Walks every item below a child with an explicit stack and a visited set. The graph is the
+    // caller's: an item can be its own descendant (A.AddChild(A)), and one shared sub-item can be
+    // reached by exponentially many paths, so a recursive walk or one without a visited set hangs or
+    // overflows on a list that saves. An item reached by several paths counts once, and the set is
+    // shared across the whole list so the walk stays linear in the number of distinct items.
+    private static void CountBelowSecondLevel(
+        IReadOnlyList<ListItem> items,
+        ref HashSet<ListItem>? visited,
+        ref long nullText,
+        ref long nullChild)
+    {
+        visited ??= new HashSet<ListItem>(ReferenceEqualityComparer.Instance);
+        var pending = new Stack<ListItem>();
+        foreach (var item in items)
+            if (visited.Add(item)) pending.Push(item);
+
+        while (pending.Count > 0)
+        {
+            var item = pending.Pop();
+            if (item.HasNullText) nullText++;
+            if (item.HasNullChild) nullChild++;
+            if (item.Children is null) continue;
+            foreach (var next in item.Children)
+                if (visited.Add(next)) pending.Push(next);
+        }
     }
 }

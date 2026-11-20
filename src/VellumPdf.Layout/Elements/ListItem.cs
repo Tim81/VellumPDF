@@ -75,8 +75,10 @@ public sealed class ListItem
     /// <summary>The nested child items, or null if this item has no children.</summary>
     /// <remarks>
     /// One level of nesting is supported, and only one. A child's own <see cref="Children"/>
-    /// is read by <b>nothing</b>. A child of a child is not measured, not drawn and not reported, and
-    /// its text is absent from the document. The scope of that claim: the renderer reads
+    /// is read by <b>nothing</b>. A child of a child is not measured and not drawn, and its text is
+    /// absent from the document. A null text or a null child on such an item is reported; see
+    /// <see cref="LayoutDiagnosticCode.NullGrandchildText"/> and
+    /// <see cref="LayoutDiagnosticCode.NullGrandchild"/>. Any other content there is not reported. The scope of that claim: the renderer reads
     /// <c>item.Children</c> and takes each child's style, marker and content, and never reads
     /// <c>child.Children</c>.
     /// <para>Be aware that you have to handle this yourself: flatten a tree deeper than two
@@ -98,10 +100,10 @@ public sealed class ListItem
     /// marked. On a top-level item, or a child of one, the save throws
     /// <see cref="ArgumentNullException"/> naming <c>text</c> when it lays the list out. On an item
     /// deeper than that, a child of a child, nothing is read and the list renders.</para>
-    /// <para><b>Do not pass a null text.</b> On a child of a child it is accepted today and not
-    /// reported, because there is no diagnostics channel yet. 3.0 will throw
-    /// <see cref="ArgumentNullException"/> from this constructor whatever the position, and the
-    /// diagnostics channel will report it before then. <see cref="ListElement.Add(string, TextStyle?)"/>
+    /// <para><b>Do not pass a null text.</b> On a child of a child it is accepted today and reported as
+    /// <see cref="LayoutDiagnosticCode.NullGrandchildText"/>, which <see cref="Document.StrictDiagnostics"/>
+    /// refuses. 3.0 will throw <see cref="ArgumentNullException"/> from this constructor whatever
+    /// the position. <see cref="ListElement.Add(string, TextStyle?)"/>
     /// has no such leniency: its item is always top-level, so it throws from the call.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
@@ -148,10 +150,10 @@ public sealed class ListItem
     /// a null. When this item is top-level the save throws <see cref="ArgumentNullException"/>
     /// naming <c>child</c> when it lays the list out. When this item is itself another item's
     /// child, or deeper, its children are never read and the list renders.</para>
-    /// <para><b>Do not pass a null child.</b> Held by a child item it is skipped today and not
-    /// reported, because there is no diagnostics channel yet. 3.0 will throw
-    /// <see cref="ArgumentNullException"/> from this call whatever the position, and the diagnostics
-    /// channel will report it before then.</para>
+    /// <para><b>Do not pass a null child.</b> Held by a child item it is skipped today and reported as
+    /// <see cref="LayoutDiagnosticCode.NullGrandchild"/>, which <see cref="Document.StrictDiagnostics"/>
+    /// refuses. 3.0 will throw <see cref="ArgumentNullException"/> from this call whatever the
+    /// position.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
