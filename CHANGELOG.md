@@ -109,6 +109,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Layout places every element through one loop, and a renderer can report where it landed
+  (#288).** The page-counting pass and the drawing pass used to be two copies of the same branching
+  (`CountPlaceRenderer` and `PlaceRenderer`). One routine now runs both, so the too-tall refusal,
+  the 50,000-continuation cap and every later placement rule exist once. This is an internal
+  change with no output change: the normalised bytes, the order and areas of every `Layout` call,
+  the exception types and messages, and the pages a caller-owned `PdfDocument` holds after a
+  caught `Render` exception are pinned by tests recorded on the commit before the change, and a
+  document without a running band still runs one pass. A running band still adds one counting
+  pass. New internals: `IPlacementSource`, which an internal renderer implements explicitly to
+  report a target and the box it was placed in (only headings report so far, and a heading split
+  across pages reports from the piece that holds its first line); `PaginationPlan`, built from
+  those reports; and `IPlanDependent`, a renderer whose text depends on the plan, resolved over
+  at most five counting runs before the drawing pass. No public renderer is such a dependent yet,
+  so no existing document reaches the five-run limit or the check that the drawing pass paginates
+  as the counting runs did. Removed with no effect on output: `DocumentRenderer.PendingBookmarks`
+  and the internal `BookmarkEntry`, which nothing wrote or read.
+
 - **`Save` and the signing path build the document catalog in one place (#606).** Both used to
   assemble it in separate blocks of `PdfDocument` that disagreed on key order and on where the
   output-intent objects are numbered. One private builder now writes the keys, and each path
