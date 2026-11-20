@@ -68,8 +68,17 @@ public class PdfStream : PdfObject
         writer.WriteAscii("\nendstream"u8);
     }
 
+    // RFC 1950 2.2: CMF 0x78 (deflate, 32K window), FLG 0x9C (CMF*256+FLG is a multiple of 31), one
+    // final fixed-Huffman block holding only end-of-block (03 00), then the Adler-32 of no data,
+    // which is 1 (00 00 00 01). Empty input gets these bytes on every runtime because an empty body
+    // has no header or checksum, so it is not an RFC 1950 stream; 10.0.15's ZLibStream writes
+    // nothing for it and 11.0.0's writes exactly these bytes.
+    private static readonly byte[] EmptyZlibStream = [0x78, 0x9C, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01];
+
     private static byte[] Compress(byte[] data)
     {
+        if (data.Length == 0)
+            return (byte[])EmptyZlibStream.Clone();
         var ms = new MemoryStream();
         // ZLibStream (not DeflateStream) — RFC 1950 includes the zlib header PDF requires.
         using (var z = new ZLibStream(ms, CompressionLevel.Optimal, leaveOpen: true))

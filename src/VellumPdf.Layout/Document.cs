@@ -258,8 +258,6 @@ public sealed class Document : IDisposable
     /// signature value itself is outside this guarantee.</item>
     /// <item>A document with an embedded font can differ between Windows and Linux, because the
     /// line ends of the font's ToUnicode map follow the platform (#630).</item>
-    /// <item>The compressed bytes can differ between .NET runtimes: .NET 10 writes an empty
-    /// page's content stream with no data and .NET 11 writes 8 bytes.</item>
     /// <item>The instant is before 1970 (a negative Unix time) and <see cref="DocumentId"/> is
     /// null: the derived identifier is hashed from the instant's decimal text, and the minus sign
     /// of that text follows the current culture. Cultures whose negative sign differs from the invariant
