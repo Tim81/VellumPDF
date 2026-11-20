@@ -76,6 +76,19 @@ public sealed class PlacementLoopGoldenTests
     public void TooTall_inTheDrawPass_leavesTheCommittedPages() =>
         Pin("An element is too tall to fit on a single page and cannot be rendered. Reduce the element's content or increase the page size.|2", CatchTooTall(null));
 
+    // The drawing pass commits the page it has open before it throws: only Finish turns a page's
+    // ContentBytes from null into an array.
+    [Fact]
+    public void TooTall_inTheDrawPass_commitsTheOpenPageBeforeThrowing()
+    {
+        var pdf = NewPdf();
+        var renderer = new DocumentRenderer(pdf, Page, Margins);
+        renderer.Add(new ParagraphRenderer(new Paragraph("before", Body)));
+        renderer.Add(new NothingRenderer());
+        Assert.Throws<InvalidOperationException>(() => renderer.Render(new MemoryStream()));
+        Assert.All(pdf.Pages, page => Assert.NotNull(page.ContentBytes));
+    }
+
     [Fact]
     public void TooTall_inTheMeasurePass_leavesNoPages() =>
         Pin("An element is too tall to fit on a single page and cannot be rendered. On a 300.0pt page, 40.0pt of margins and 18.4pt of running bands (header 0.0pt, footer 18.4pt) leave a content area 241.6pt tall. Reduce the element's content, lower the band heights, reduce the margins, or increase the page size.|0", CatchTooTall(new RunningBand("f")));

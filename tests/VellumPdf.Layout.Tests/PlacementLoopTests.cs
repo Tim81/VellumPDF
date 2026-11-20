@@ -177,6 +177,28 @@ public sealed class PlacementLoopTests
         Assert.True(splitY + whole > Page.Height - Margins.Bottom, $"{splitY} + {whole} does not overflow the page");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AHeadingThatFindsNoRoom_isPlannedAtTheTopOfTheNextPage(bool withBand)
+    {
+        // 5pt are left under the block, less than one line, so the heading answers Nothing and is
+        // laid out again on the next page. The report belongs to the result that was accepted.
+        var renderer = NewRenderer(NewPdf(), withBand ? new RunningBand("f") : null);
+        var heading = NewHeading("Late");
+        renderer.Add(new Block(withBand ? 236 : 255));
+        renderer.Add(new HeadingRenderer(heading));
+        var bytes = Render(renderer);
+
+        var plan = renderer.DrawPlan!;
+        Assert.True(plan.TryGetTarget(heading, out var page, out var y));
+        Assert.Equal(1, page);
+        Assert.Equal(Margins.Top, y);
+        Assert.Single(plan.Placements);
+        var dest = Assert.Single(OutlineDests(bytes));
+        Assert.Equal((page, Page.Height - y), dest);
+    }
+
     [Fact]
     public void MeasurePlan_andDrawPlan_reportTheSamePlacements()
     {
