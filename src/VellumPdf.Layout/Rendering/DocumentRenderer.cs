@@ -305,7 +305,8 @@ public sealed class DocumentRenderer
     /// non-finite position is written outside the content stream, such as a link rectangle.
     /// </exception>
     /// <exception cref="ArgumentNullException">
-    /// <paramref name="destination"/> is <see langword="null"/>, checked before the layout runs. A
+    /// <paramref name="destination"/> is <see langword="null"/>, checked before the layout runs, except
+    /// in a document with nothing added, where the page geometry and bands are checked first. A
     /// null that an element holds and that is refused where it is used, such as a band template that
     /// is drawn or a null value in a written <see cref="PdfDictionary"/>, is raised from here too; see
     /// <see cref="Document.Save(System.IO.Stream)"/>.

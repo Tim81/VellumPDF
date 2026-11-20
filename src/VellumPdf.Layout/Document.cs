@@ -48,7 +48,8 @@ namespace VellumPdf.Layout;
 /// <para>A call with two or more defects is refused, but which defect's exception is reported can
 /// differ between releases. A save precondition (null destination, disposed document, an unwritable
 /// stream, an option conflict) is reported before a layout defect, and an already cancelled token
-/// before both. The exception is <see cref="SaveAsync(string, System.Threading.CancellationToken)"/>,
+/// before both, except in a document with nothing added, where the page geometry and bands are
+/// checked first. The exception is <see cref="SaveAsync(string, System.Threading.CancellationToken)"/>,
 /// whose path checks run when the file is opened, before the token is looked at.</para>
 /// <para><b>Do not pass</b> a non-finite number to any of these members. The saved cases are not
 /// reported yet, because there is no diagnostics channel (#607), and 3.0 refuses every non-finite
@@ -1162,7 +1163,8 @@ public sealed class Document : IDisposable
     /// <paramref name="destination"/>, a document already written, <see cref="UseObjectStreams"/>
     /// together with <see cref="Encrypt"/>, a PDF/A <see cref="Conformance"/> together with
     /// <see cref="Encrypt"/>, and PDF/UA-1 with settings that omit
-    /// <see cref="PdfPermissions.Extract"/>. The document is untouched, so correct the cause and
+    /// <see cref="PdfPermissions.Extract"/>. In a document with nothing added the page geometry and
+    /// bands are checked before these. The document is untouched, so correct the cause and
     /// save again. A refused page geometry, such as margins that meet the page, is raised before any
     /// page is added and is just as recoverable. A save that threw <b>after</b> its layout had
     /// added pages cannot be undone, whether the layout itself threw, such as for an element too
@@ -1178,7 +1180,8 @@ public sealed class Document : IDisposable
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="destination"/> is <see langword="null"/>. This is checked before the layout
-    /// runs, so the document is untouched and can be saved again; see the remarks.
+    /// runs, except in a document with nothing added, where the page geometry and bands are checked
+    /// first. The document is untouched, so it can be saved again; see the remarks.
     /// It is also raised, from the layout and not from the call that stored the null, for a null an
     /// element holds that is refused where it is used: a <see cref="TextRun"/> style that yields a
     /// word (<c>ParamName</c> <c>Style</c>), a <see cref="Cell"/> text in a table with an
@@ -1411,7 +1414,8 @@ public sealed class Document : IDisposable
     /// <paramref name="destination"/>, a document already written, <see cref="UseObjectStreams"/>
     /// together with <see cref="Encrypt"/>, a PDF/A <see cref="Conformance"/> together with
     /// <see cref="Encrypt"/>, and PDF/UA-1 with settings that omit
-    /// <see cref="PdfPermissions.Extract"/>. The document is untouched, so correct the cause and
+    /// <see cref="PdfPermissions.Extract"/>. In a document with nothing added the page geometry and
+    /// bands are checked before these. The document is untouched, so correct the cause and
     /// save again. A refused page geometry, such as margins that meet the page, is raised before any
     /// page is added and is just as recoverable. A save that threw <b>after</b> its layout had
     /// added pages cannot be undone, whether the layout itself threw, such as for an element too

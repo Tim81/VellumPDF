@@ -243,7 +243,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `SaveAsync` cancelled after the layout, leaves the document unusable, and every later save throws
   `InvalidOperationException` asking for a new `Document`. A call with two or more defects is
   refused as before, but which defect's exception is reported may differ from 2.3.3: a save
-  precondition is reported before a layout defect, and an already-cancelled token before both,
+  precondition is reported before a layout defect, except in a document with nothing added, where
+  the page geometry and bands are checked first, and an already-cancelled token before both,
   except that the path checks of `SaveAsync(string)` run at the open, before the token is looked at.
   **Attention**: retrying the same `Document` after a failed layout used to save, with pages doubled
   or lines broken at the first attempt's width, and now throws; build a new `Document`.
