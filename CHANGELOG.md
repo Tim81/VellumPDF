@@ -183,6 +183,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **A deep structure tree saves instead of ending the process (#638).** A tagged document whose
+  structure tree was deeper than the calling thread's stack allowed overflowed the stack inside
+  `Save`, and .NET cannot catch that. The six walks that number the tree, order its pages, derive
+  each element's `/Pg` and check its types no longer recurse, so the depth of the tree is not limited
+  by `Save`, `SaveAsync` or `PrepareForSigning`; time and memory grow with the number of elements.
+  The page of a grouping element is now found in one pass over the tree rather than by walking the
+  subtree of every element, which made a chain's cost grow with the square of its depth. A cycle, a
+  null child, a negative, duplicate or oversized MCID, a non-standard type and a shared element
+  without an MCID are refused with the same exception and message as before, and a tree that saved
+  before saves to the same bytes. **Attention**: a tree deeper than the stack allowed ended the
+  process on 2.3.3 and now saves; the file is valid, but a reader that walks the structure tree
+  recursively can fail on it, so do not build a tree deeper than your readers can walk (ISO 32000-2
+  Annex C, Table C.1, "Nested objects").
 - **The Kernel's `DocumentId` summary and `docs/kernel-guide.md` section 9 described the derived
   identifier wrongly (#597).** They said it comes from the page content, which it never did: it
   comes from the title, the producer, the page count and the time. They also said the bytes of two

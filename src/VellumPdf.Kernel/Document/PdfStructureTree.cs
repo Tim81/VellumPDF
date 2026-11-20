@@ -74,15 +74,21 @@ public sealed class PdfStructElem
     /// <remarks>
     /// <b>An element that is its own ancestor is refused when the structure tree is built, not here.</b>
     /// A child that is this element, or that already holds this element somewhere in its own subtree,
-    /// closes a cycle, and the walks that number the tree and write it recurse over
-    /// <see cref="Children"/>, so a cycle would overflow the stack, which .NET cannot catch.
+    /// closes a cycle, and a walk over a cycle would never end.
     /// <c>Save</c> therefore throws <see cref="InvalidOperationException"/> for a tagged document whose
     /// structure tree reaches such an element. This call accepts it, because the cycle is harmless to a save that never walks it: a document that is not tagged, or that was tagged after the element was registered. An element reachable by
     /// two routes without a cycle is not refused.
+    /// <para><b>The depth of the tree is not limited by <c>Save</c>.</b> The walks that number and
+    /// write the tree do not recurse, so a tree of any depth saves whatever the stack of the
+    /// calling thread; time and memory grow with the number of elements.</para>
     /// <para>A null <paramref name="child"/> is stored and refused where the structure
     /// tree is built: a document that is not tagged never builds it, so such a document saves. It is
     /// not refused at this call. <b>Do not pass</b> a null child or a child that closes a cycle: a
     /// later major refuses both here.</para>
+    /// <para><b>Do not build</b> a tree deeper than a reader can walk. ISO 32000-2 Annex C, Table
+    /// C.1 (row "Nested objects"), warns that a PDF processor may implement recursive algorithms
+    /// that fail on excessively nested constructs, so a file this library saves can be one that
+    /// such a reader cannot open.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// Raised from <c>Save</c>, not from this call, when the document is tagged and the element is
@@ -171,6 +177,10 @@ internal sealed class PdfStructureTree
         // Build a parent map so each elem's true immediate parent is known at any depth.
         var parentMap = new Dictionary<PdfStructElem, PdfStructElem>(allElems.Count);
         BuildParentMap(_documentRoot, parentMap);
+
+        // The first-leaf page of every element, computed once here (CollectPages has already
+        // refused a cycle) and dropped with this call.
+        var firstLeafPages = FirstLeafPages(_documentRoot, out _);
 
         // Reserve StructTreeRoot ref
         var structTreeRootRef = registry.Reserve();
@@ -274,7 +284,7 @@ internal sealed class PdfStructureTree
             // /Pg — the page this element's content is on.
             // For grouping elements (Mcid == -1) without an explicit Page, derive it from
             // the first leaf descendant so the /Pg is still present.
-            var pg = elem.Page ?? FindFirstLeafPage(elem);
+            var pg = elem.Page ?? (firstLeafPages.TryGetValue(elem, out var firstLeaf) ? firstLeaf : null);
             if (pg is not null && pageRefMap.TryGetValue(pg, out var pgRef))
                 d.Set(new PdfName("Pg"), pgRef);
 
@@ -369,13 +379,16 @@ internal sealed class PdfStructureTree
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    // Six walks below recurse over Children. AddChild accepts a cycle (an untagged document never
-    // builds the tree), and a stack overflow cannot be caught, so the walks refuse it. Three of them,
-    // CollectElems, CollectPages and CollectElemsOnPage, keep the elements on their current path and
-    // refuse to enter one twice. The other three, BuildParentMap, FindFirstLeafPage and
-    // CollectStructTypes, keep no path: they are safe only because each runs after CollectPages has
-    // walked the same tree from the document root and refused a cycle. Reorder them and a graph put
-    // together some other way would crash the process rather than raise.
+    // The walks below visit every element with an explicit stack, so the depth of a tree is not
+    // limited by the stack of the thread that saves it: time and memory grow with the number of
+    // elements. AddChild accepts a cycle (an untagged document never builds the tree), and a walk
+    // over a cycle would never end, since its stack would grow until memory ran out, so the walks
+    // refuse it. Three of them, CollectElems, CollectPages and CollectElemsOnPage, keep the
+    // elements on their current path and refuse to enter one twice. The other three,
+    // BuildParentMap, FirstLeafPages and CollectStructTypes, keep no path: they are safe only
+    // because each runs after CollectPages has walked the same tree from the document root and
+    // refused a cycle. Reorder them and a graph put together some other way would never finish
+    // rather than raise.
     private static void EnterElement(HashSet<PdfStructElem> path, PdfStructElem element)
     {
         if (!path.Add(element))
@@ -383,105 +396,135 @@ internal sealed class PdfStructureTree
                 "The structure tree contains a cycle: an element is its own ancestor, so the tree cannot be walked.");
     }
 
-    private static void CollectElems(PdfStructElem parent, List<PdfStructElem> list)
-        => CollectElems(parent, list, new HashSet<PdfStructElem>(ReferenceEqualityComparer.Instance));
-
-    private static void CollectElems(PdfStructElem parent, List<PdfStructElem> list, HashSet<PdfStructElem> path)
+    // Pre-order walk. visit(node, parent) runs on entry, in the order a recursive walk would enter
+    // nodes; the root is visited first with a null parent. The visit runs before the node is read,
+    // so a walk that must refuse a null child does it there. With guard set, the nodes on the
+    // current path are kept and an element met twice on one path raises; a node leaves the path
+    // when its children are done.
+    private static void PreOrder(PdfStructElem root, bool guard, Action<PdfStructElem, PdfStructElem?> visit)
     {
-        EnterElement(path, parent);
-        foreach (var child in parent.Children)
+        var path = guard ? new HashSet<PdfStructElem>(ReferenceEqualityComparer.Instance) : null;
+        var stack = new List<(PdfStructElem Node, int Next)>();
+
+        void Enter(PdfStructElem node, PdfStructElem? parent)
         {
-            list.Add(child);
-            CollectElems(child, list, path);
+            visit(node, parent);
+            if (path is not null)
+                EnterElement(path, node);
+            stack.Add((node, 0));
         }
-        path.Remove(parent);
+
+        Enter(root, null);
+        while (stack.Count > 0)
+        {
+            var (node, next) = stack[^1];
+            if (next < node.Children.Count)
+            {
+                stack[^1] = (node, next + 1);
+                Enter(node.Children[next], node);
+            }
+            else
+            {
+                path?.Remove(node);
+                stack.RemoveAt(stack.Count - 1);
+            }
+        }
     }
+
+    private static void CollectElems(PdfStructElem parent, List<PdfStructElem> list)
+        => PreOrder(parent, guard: true, (node, p) =>
+        {
+            if (p is not null)
+                list.Add(node);
+        });
 
     private static void CollectPages(
         PdfStructElem root,
         List<PdfPage> pageOrder,
         Dictionary<PdfPage, int> pageStructParents)
-        => CollectPages(root, pageOrder, pageStructParents, new HashSet<PdfStructElem>(ReferenceEqualityComparer.Instance));
-
-    private static void CollectPages(
-        PdfStructElem root,
-        List<PdfPage> pageOrder,
-        Dictionary<PdfPage, int> pageStructParents,
-        HashSet<PdfStructElem> path)
-    {
-        if (root is null)
-            throw new ArgumentNullException("child", "A structure element has a null child.");
-        EnterElement(path, root);
-        if (root.Page is not null && !pageStructParents.ContainsKey(root.Page))
+        => PreOrder(root, guard: true, (node, _) =>
         {
-            pageStructParents[root.Page] = pageOrder.Count;
-            pageOrder.Add(root.Page);
-        }
-        foreach (var child in root.Children)
-            CollectPages(child, pageOrder, pageStructParents, path);
-        path.Remove(root);
-    }
+            if (node is null)
+                throw new ArgumentNullException("child", "A structure element has a null child.");
+            if (node.Page is not null && !pageStructParents.ContainsKey(node.Page))
+            {
+                pageStructParents[node.Page] = pageOrder.Count;
+                pageOrder.Add(node.Page);
+            }
+        });
 
-    private static void CollectElemsOnPage(
-        PdfStructElem parent,
-        PdfPage target,
-        List<PdfStructElem> result)
-        => CollectElemsOnPage(parent, target, result, new HashSet<PdfStructElem>(ReferenceEqualityComparer.Instance));
-
-    private static void CollectElemsOnPage(
-        PdfStructElem parent,
-        PdfPage target,
-        List<PdfStructElem> result,
-        HashSet<PdfStructElem> path)
-    {
-        EnterElement(path, parent);
-        foreach (var child in parent.Children)
+    private static void CollectElemsOnPage(PdfStructElem parent, PdfPage target, List<PdfStructElem> result)
+        => PreOrder(parent, guard: true, (node, p) =>
         {
-            if (child.Page == target && child.Mcid >= 0)
-                result.Add(child);
-            CollectElemsOnPage(child, target, result, path);
-        }
-        path.Remove(parent);
-    }
+            if (p is not null && node.Page == target && node.Mcid >= 0)
+                result.Add(node);
+        });
 
-    /// <summary>
-    /// Recursively populates <paramref name="map"/> so that each child element maps to its
-    /// immediate parent. The document root itself is the parent of its direct children.
-    /// </summary>
+    // Where an element is reached twice the last parent wins, as before; no saved file can show it,
+    // because an element reached twice is refused (a duplicate MCID, or a reserved object that is
+    // never assigned).
     private static void BuildParentMap(PdfStructElem parent, Dictionary<PdfStructElem, PdfStructElem> map)
-    {
-        foreach (var child in parent.Children)
+        => PreOrder(parent, guard: false, (node, p) =>
         {
-            map[child] = parent;
-            BuildParentMap(child, map);
-        }
-    }
+            if (p is not null)
+                map[node] = p;
+        });
 
     /// <summary>
-    /// Returns the <see cref="PdfPage"/> of the first leaf descendant (Mcid &gt;= 0) of
-    /// <paramref name="elem"/>, or null if none exists. Used to supply a /Pg entry for
-    /// grouping elements that have no direct page assignment.
+    /// Maps every element under <paramref name="root"/> (and <paramref name="root"/> itself) to the
+    /// page of its first leaf descendant in document order, where a leaf is an element with a page
+    /// and an MCID of 0 or more, or to null when it has none. Supplies the <c>/Pg</c> entry of a
+    /// grouping element with no page of its own. <paramref name="steps"/> is the work done: one for
+    /// each element entered and one for each parent-child edge followed, so a tree costs at most
+    /// twice its elements, whatever its shape.
     /// </summary>
-    private static PdfPage? FindFirstLeafPage(PdfStructElem elem)
+    internal static Dictionary<PdfStructElem, PdfPage?> FirstLeafPages(PdfStructElem root, out int steps)
     {
-        foreach (var child in elem.Children)
+        var map = new Dictionary<PdfStructElem, PdfPage?>(ReferenceEqualityComparer.Instance);
+        var stack = new List<(PdfStructElem Node, int Next, PdfPage? Found)>();
+        steps = 0;
+        var count = 0;
+        if (root is null)
+            return map;
+        stack.Add((root, 0, null));
+        count++;
+        while (stack.Count > 0)
         {
-            if (child.Page is not null && child.Mcid >= 0) return child.Page;
-            var found = FindFirstLeafPage(child);
-            if (found is not null) return found;
+            var (node, next, found) = stack[^1];
+            if (next < node.Children.Count)
+            {
+                var child = node.Children[next];
+                count++;
+                stack[^1] = (node, next + 1, found);
+                if (map.TryGetValue(child, out var known))
+                {
+                    // An element reached by a second route: its answer is already known.
+                    if (found is null)
+                        stack[^1] = (node, next + 1, IsLeaf(child) ? child.Page : known);
+                }
+                else
+                {
+                    count++;
+                    stack.Add((child, 0, null));
+                }
+                continue;
+            }
+
+            map[node] = found;
+            stack.RemoveAt(stack.Count - 1);
+            if (stack.Count > 0)
+            {
+                var (parent, parentNext, parentFound) = stack[^1];
+                if (parentFound is null)
+                    stack[^1] = (parent, parentNext, IsLeaf(node) ? node.Page : found);
+            }
         }
-        return null;
+        steps = count;
+        return map;
     }
 
-    /// <summary>
-    /// Recursively collects distinct structure-type strings from <paramref name="elem"/>
-    /// and all its descendants (inclusive). The caller is responsible for seeding the
-    /// set with the document root's type before the first call if needed.
-    /// </summary>
+    private static bool IsLeaf(PdfStructElem element) => element.Page is not null && element.Mcid >= 0;
+
     private static void CollectStructTypes(PdfStructElem elem, HashSet<string> types)
-    {
-        types.Add(elem.StructType);
-        foreach (var child in elem.Children)
-            CollectStructTypes(child, types);
-    }
+        => PreOrder(elem, guard: false, (node, _) => types.Add(node.StructType));
 }
