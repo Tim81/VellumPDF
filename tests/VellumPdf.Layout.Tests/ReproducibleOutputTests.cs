@@ -1,6 +1,7 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Globalization;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
@@ -18,8 +19,9 @@ namespace VellumPdf.Layout.Tests;
 /// <summary>
 /// <see cref="Document.Timestamp"/> and <see cref="Document.DocumentId"/>: what pinning them
 /// makes reproducible, and the limits the XML documentation states. Nothing here reads a wall
-/// clock: the pin replaces the clock, so equality of two builds proves the pin and a one-second
-/// step proves it is the pin that decides.
+/// clock. Two saves can fall in the same millisecond, so equality of two builds alone does not
+/// show the pin was used: the equality tests also assert the pinned XMP date or the identifier
+/// derived from the pin, and a one-second step shows the pin is what decides.
 /// </summary>
 public sealed class ReproducibleOutputTests
 {
@@ -100,6 +102,15 @@ public sealed class ReproducibleOutputTests
         return (last.Groups[1].Value, last.Groups[2].Value);
     }
 
+    // The identifier StandardDocument derives from an instant, built here by hand so a Kernel
+    // save that ignores Timestamp cannot match it.
+    private static string DerivedIdHex(DateTimeOffset instant, CultureInfo culture) =>
+        Convert.ToHexString(MD5.HashData(Encoding.UTF8.GetBytes(
+            "Reproducible|VellumPdf|1|" + instant.ToUnixTimeMilliseconds().ToString(culture))));
+
+    private static void AssertCarriesPinnedDate(byte[] pdf) =>
+        Assert.Contains("<xmp:CreateDate>2026-11-20T12:00:00+00:00</xmp:CreateDate>", Ascii(pdf), StringComparison.Ordinal);
+
     // ── Same calls, same pin, same bytes ──────────────────────────────────────
 
     [Fact]
@@ -109,6 +120,8 @@ public sealed class ReproducibleOutputTests
         var second = Save(StandardDocument(Pinned));
 
         Assert.Equal(Sha256(first), Sha256(second));
+        AssertCarriesPinnedDate(first);
+        Assert.Equal(DerivedIdHex(Pinned, CultureInfo.InvariantCulture), TrailerIds(first).First, ignoreCase: true);
     }
 
     [Fact]
@@ -118,6 +131,8 @@ public sealed class ReproducibleOutputTests
         var second = Save(StandardDocument(Pinned, PinnedId));
 
         Assert.Equal(Sha256(first), Sha256(second));
+        AssertCarriesPinnedDate(first);
+        Assert.Equal(Convert.ToHexString(PinnedId), TrailerIds(first).First, ignoreCase: true);
     }
 
     [Theory]
@@ -135,6 +150,7 @@ public sealed class ReproducibleOutputTests
         // The artefact must contain the change before an oracle's verdict means anything.
         var (a, b) = TrailerIds(first);
         Assert.Equal(a, b);
+        AssertCarriesPinnedDate(first);
         if (pinId)
             Assert.Equal(Convert.ToHexString(PinnedId), a, ignoreCase: true);
     }
@@ -232,6 +248,40 @@ public sealed class ReproducibleOutputTests
         doc.DocumentId = null;
 
         Assert.Equal(derived, TrailerIds(Save(doc)).First);
+        Assert.Equal(DerivedIdHex(Pinned, CultureInfo.InvariantCulture), derived, ignoreCase: true);
+    }
+
+    [Fact]
+    public void DocumentId_derivedBeforeEpoch_followsTheCultureUnlessPinned()
+    {
+        var before1970 = new DateTimeOffset(1950, 6, 1, 0, 0, 0, TimeSpan.Zero);
+        var swedish = new CultureInfo("sv-SE");
+        // The premise: this culture writes a different minus sign than the invariant one.
+        Assert.NotEqual(CultureInfo.InvariantCulture.NumberFormat.NegativeSign, swedish.NumberFormat.NegativeSign);
+
+        byte[] Build(CultureInfo culture, byte[]? id)
+        {
+            var saved = CultureInfo.CurrentCulture;
+            CultureInfo.CurrentCulture = culture;
+            try
+            {
+                return Save(StandardDocument(before1970, id));
+            }
+            finally
+            {
+                CultureInfo.CurrentCulture = saved;
+            }
+        }
+
+        var invariant = Build(CultureInfo.InvariantCulture, null);
+        var underSwedish = Build(swedish, null);
+        Assert.NotEqual(TrailerIds(invariant).First, TrailerIds(underSwedish).First);
+        Assert.Equal(DerivedIdHex(before1970, CultureInfo.InvariantCulture), TrailerIds(invariant).First, ignoreCase: true);
+        Assert.Equal(DerivedIdHex(before1970, swedish), TrailerIds(underSwedish).First, ignoreCase: true);
+
+        var pinnedInvariant = Build(CultureInfo.InvariantCulture, PinnedId);
+        var pinnedSwedish = Build(swedish, PinnedId);
+        Assert.Equal(Sha256(pinnedInvariant), Sha256(pinnedSwedish));
     }
 
     [Fact]

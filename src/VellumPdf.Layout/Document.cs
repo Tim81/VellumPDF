@@ -247,8 +247,9 @@ public sealed class Document : IDisposable
     /// operating system.</b> Two documents built by the same calls then save to the same bytes,
     /// because the save reads the clock only when this is null and for a signature's time, and
     /// reads random values only to encrypt. Those are the only clock and random reads in the
-    /// Kernel, Layout and Signing projects; the claim does not cover other code or the framework.
-    /// <para>The limits, each with its cause:</para>
+    /// Kernel, Layout and Signing projects; code outside those projects and the .NET framework
+    /// are not covered by that statement.
+    /// <para>It does not hold when:</para>
     /// <list type="bullet">
     /// <item>An encrypted document is never reproducible: <see cref="Encrypt"/> draws random
     /// salts and initialisation vectors on every save.</item>
@@ -259,13 +260,18 @@ public sealed class Document : IDisposable
     /// line ends of the font's ToUnicode map follow the platform (#630).</item>
     /// <item>The compressed bytes can differ between .NET runtimes: .NET 10 writes an empty
     /// page's content stream with no data and .NET 11 writes 8 bytes.</item>
+    /// <item>The instant is before 1970 (a negative Unix time) and <see cref="DocumentId"/> is
+    /// null: the derived identifier is hashed from the instant's decimal text, and the minus sign
+    /// of that text follows the current culture. Cultures whose negative sign differs from the invariant
+    /// one (sv-SE, nb-NO, fa-IR and ar-SA among them) give another identifier. Pin
+    /// <see cref="DocumentId"/> as well to remove the dependence.</item>
     /// </list>
     /// <para>The XMP dates keep whole seconds and the offset and drop the fraction of a second.
     /// The derived file identifier uses the instant in milliseconds and ignores the offset, so
     /// the same instant with two offsets gives one identifier and two XMP dates. The identifier
     /// is derived from the title, the producer (<c>VellumPdf</c> when <c>Info.Producer</c> is
     /// null) and the page count together with this instant, so <see cref="DocumentId"/> is not
-    /// needed for reproducibility.</para>
+    /// needed for reproducibility, except for the pre-1970 case above.</para>
     /// <para>The value is read once, when a save writes. A value set after the document has
     /// saved is stored and never written, because a document saves once. A refused save that
     /// failed before layout started leaves the document usable, and a value set before the retry
