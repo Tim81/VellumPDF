@@ -19,6 +19,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   a signature takes its time from `PdfSignatureSettings.SigningTime`, and an embedded font's
   ToUnicode map differs between Windows and Linux (#630). Nothing changes for a document that
   leaves both unset.
+- **`Heading.BookmarkExpanded` and a four-argument `DrawContext.AddOutlineEntry` (#609).** A
+  heading's bookmark can now be written closed: `BookmarkExpanded = false` gives the entry a
+  negative `/Count` (ISO 32000-2:2020, 12.3.3, Table 151). The value only takes effect when later
+  bookmarks nest under the entry; an entry without children has no `/Count`, so the file is the
+  same as with `true`. The new `AddOutlineEntry(title, level, layoutY, expanded)` overload refuses
+  a null title (`ArgumentNullException`) and a position that maps to a non-finite destination
+  (`ArgumentOutOfRangeException`) at the call. The three-argument overload is unchanged and writes
+  an open entry.
+
 - **`Document.Diagnostics` and `Document.StrictDiagnostics` (#607).** One channel for what a save
   keeps while it loses, misplaces or substitutes content, and an opt-in switch that turns each
   report into a refusal.
@@ -221,6 +230,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   identifier wrongly (#597).** They said it comes from the page content, which it never did: it
   comes from the title, the producer, the page count and the time. They also said the bytes of two
   identical saves differ, where they depend on when the document is saved.
+- **A heading that splits across pages gets its bookmark where it starts (#464).** The split
+  piece, on the page where the heading starts, now carries the box it was placed in, so the
+  bookmark's `/XYZ` top is where the heading starts instead of the top of the page. Deliberate
+  output change: only that top value changes, and only for a heading whose split piece does not
+  start at layout y 0. That includes a split piece that starts above y 0, through a negative
+  margin, whose top moves from the page height to a value above it. The byte offsets that follow
+  the value move with it.
+
 - **`PdfCanvas` refuses NaN and infinity in every operand it writes (#519).** Every content-stream
   operator that writes a number now throws `ArgumentException` for `NaN` or infinity, with the same
   message as `PdfReal`, instead of writing `NaN 0 0 rg`, which is not a PDF number (ISO 32000-2

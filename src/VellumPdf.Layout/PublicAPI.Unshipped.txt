@@ -38,3 +38,6 @@ VellumPdf.Layout.Document.Diagnostics.get -> System.Collections.Generic.IReadOnl
 VellumPdf.Layout.Document.StrictDiagnostics.get -> bool
 VellumPdf.Layout.Document.StrictDiagnostics.set -> void
 override VellumPdf.Layout.LayoutDiagnostic.ToString() -> string!
+VellumPdf.Layout.Core.DrawContext.AddOutlineEntry(string! title, int level, double layoutY, bool expanded) -> void
+VellumPdf.Layout.Elements.Heading.BookmarkExpanded.get -> bool
+VellumPdf.Layout.Elements.Heading.BookmarkExpanded.init -> void
