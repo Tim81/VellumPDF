@@ -197,6 +197,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the same way. A magnitude above 3.403 × 10^38 is now a valid real token, but it is still outside
   the real range of ISO 19005-2, 6.1.13, so the XML documentation of `PdfReal`, `PdfCanvas`,
   `PdfRectangle` and the destination coordinates of links and outline entries says not to pass it.
+- **`AddTextField`, `AddCheckBox`, `AddChoiceField`, `AddRadioButtonGroup` and `AddPushButton` write
+  names, values, options and captions as PDF text strings (#641).** The field dictionary used its
+  own encoder: a string with no character above U+00FF became Latin-1 bytes, which a reader
+  decodes differently where PDFDocEncoding differs (ISO 32000-2, Table D.3). **Deliberate output
+  change:** a string containing U+0018 to U+001F, U+007F, U+0080 to U+00A0 or U+00AD, or starting
+  with U+00FE U+00FF or U+00EF U+00BB U+00BF, is now UTF-16BE with a byte order mark and decodes
+  as passed. A lone surrogate is written as U+FFFD, where it used to be written alone. Strings
+  with only printable ASCII, U+00A1 to U+00FF except U+00AD, or U+0000 to U+0017, and strings with
+  a character above U+00FF that are well formed, keep their bytes. The appearance stream still
+  draws each character as a WinAnsiEncoding byte, so U+0080 is drawn as the euro sign. The XML
+  documentation now says all this and lists the exceptions `Save`, `SaveAsync` and
+  `PrepareForSigning` raise for a drawn value outside WinAnsiEncoding.
+
 - **The Kernel's `DocumentId` summary and `docs/kernel-guide.md` section 9 described the derived
   identifier wrongly (#597).** They said it comes from the page content, which it never did: it
   comes from the title, the producer, the page count and the time. They also said the bytes of two
@@ -595,7 +608,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   which was `?`, is now U+FFFD. Printable ASCII and U+00A1 to U+00FF except U+00AD are
   byte-identical to 2.3.3, and none of the 13 values probed fails to sign. U+001B is written as it
   stands and a reader takes it for a language escape; the documentation says not to pass it.
-  `AcroFormBuilder` writes field text strings its own way and is not changed here. The public XML
+  The AcroForm field text strings are changed separately (#641). The public XML
   documentation on the four signing properties and the output-intent methods now says all this, and
   replaces the sentence that described the best-fit substitution as the behaviour.
 - **`ExternalToolTests.TryRun_CapturesOutputLargerThanTheOsPipeBuffer` no longer times out on a

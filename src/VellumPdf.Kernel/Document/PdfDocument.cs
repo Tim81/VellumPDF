@@ -490,6 +490,31 @@ public sealed class PdfDocument : IDisposable
     /// Adds an absolute-positioned text-input AcroForm field to <paramref name="page"/>.
     /// The field is serialised during <see cref="Save"/>.
     /// </summary>
+    /// <remarks>
+    /// <b>No character of a name, value, option or caption is rewritten into another in the field
+    /// dictionary.</b> <paramref name="name"/> and <paramref name="value"/> are written to
+    /// <c>/T</c> and <c>/V</c> as PDF text strings (ISO 32000-2, 7.9.2), and the other field kinds
+    /// write their names, options, selected option and caption the same way, to <c>/T</c>,
+    /// <c>/Opt</c>, <c>/V</c> and <c>/MK /CA</c>. A string made only of U+0000 to U+0017, U+0020 to
+    /// U+007E, and U+00A1 to U+00FF except U+00AD is written one byte per character, unless it begins
+    /// with U+00FE U+00FF or U+00EF U+00BB U+00BF. Any other string, including one with a character
+    /// above U+00FF, is written as UTF-16BE with a byte order mark and reaches the file as passed.
+    /// <para>The appearance of a value, selected option or caption encodes each character as a
+    /// WinAnsiEncoding byte, so U+0080 to U+009F are drawn as the glyph WinAnsiEncoding gives that
+    /// byte (U+0080 as the euro sign), and the drawn text can differ from <c>/V</c>.</para>
+    /// <para><b>Do not</b> pass a lone UTF-16 surrogate or U+001B. A lone surrogate is not a
+    /// character and is written as U+FFFD. U+001B is written as it stands, and a reader takes
+    /// U+001B inside a UTF-16BE string for the start of a language escape sequence (7.9.2.2.2).
+    /// Version 3.0 will refuse both.</para>
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="page"/>, <paramref name="rect"/> or <paramref name="name"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="name"/> is empty or already names a field of this document.</exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/>, <see cref="SaveAsync"/> or
+    /// <see cref="PrepareForSigning"/>, not from this call, when the <paramref name="value"/> holds a character outside
+    /// WinAnsiEncoding (<c>ParamName</c> <c>value</c>), because the appearance font is a Standard-14
+    /// font that cannot draw it.
+    /// </exception>
     public void AddTextField(
         PdfPage page,
         string name,
@@ -508,6 +533,12 @@ public sealed class PdfDocument : IDisposable
     /// <summary>
     /// Adds an absolute-positioned checkbox AcroForm field to <paramref name="page"/>.
     /// </summary>
+    /// <remarks>
+    /// <paramref name="name"/> is written to <c>/T</c> as a text string; the encoding rule and what
+    /// not to pass are those of <see cref="AddTextField"/>.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="page"/>, <paramref name="rect"/> or <paramref name="name"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="name"/> is empty or already names a field of this document.</exception>
     public void AddCheckBox(
         PdfPage page,
         string name,
@@ -526,6 +557,20 @@ public sealed class PdfDocument : IDisposable
     /// <summary>
     /// Adds an absolute-positioned dropdown or listbox AcroForm field to <paramref name="page"/>.
     /// </summary>
+    /// <remarks>
+    /// <paramref name="name"/>, each of <paramref name="options"/> and <paramref name="selected"/>
+    /// are written to <c>/T</c>, <c>/Opt</c> and <c>/V</c> as text strings; the encoding rule and what
+    /// not to pass are those of <see cref="AddTextField"/>. When <paramref name="selected"/> is
+    /// <see langword="null"/> the first option is written as <c>/V</c> and drawn.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="page"/>, <paramref name="rect"/>, <paramref name="options"/> or <paramref name="name"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="name"/> is empty or already names a field of this document.</exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/>, <see cref="SaveAsync"/> or
+    /// <see cref="PrepareForSigning"/>, not from this call, when the drawn selected option holds a character outside
+    /// WinAnsiEncoding (<c>ParamName</c> <c>value</c>), because the appearance font is a Standard-14
+    /// font that cannot draw it.
+    /// </exception>
     public void AddChoiceField(
         PdfPage page,
         string name,
@@ -550,6 +595,13 @@ public sealed class PdfDocument : IDisposable
     /// The optional <paramref name="selectedExportValue"/> sets the initially selected button;
     /// pass <see langword="null"/> to leave all buttons unselected (/V /Off).
     /// </summary>
+    /// <remarks>
+    /// <paramref name="name"/> is written to <c>/T</c> as a text string; the encoding rule and what
+    /// not to pass are those of <see cref="AddTextField"/>. Export values are written as names, not
+    /// as text strings.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="options"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="name"/> is empty or already names a field of this document, <paramref name="options"/> is empty, or an export value is <c>Off</c> or repeats within the group.</exception>
     public void AddRadioButtonGroup(
         string name,
         IReadOnlyList<RadioOption> options,
@@ -581,6 +633,19 @@ public sealed class PdfDocument : IDisposable
     /// Adds a push button AcroForm field to <paramref name="page"/>.
     /// The button displays <paramref name="caption"/> centred in the widget rectangle.
     /// </summary>
+    /// <remarks>
+    /// <paramref name="name"/> and <paramref name="caption"/> are written to <c>/T</c> and
+    /// <c>/MK /CA</c> as text strings; the encoding rule and what not to pass are those of
+    /// <see cref="AddTextField"/>.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="page"/>, <paramref name="rect"/>, <paramref name="caption"/> or <paramref name="name"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="name"/> is empty or already names a field of this document.</exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/>, <see cref="SaveAsync"/> or
+    /// <see cref="PrepareForSigning"/>, not from this call, when the <paramref name="caption"/> holds a character outside
+    /// WinAnsiEncoding (<c>ParamName</c> <c>value</c>), because the appearance font is a Standard-14
+    /// font that cannot draw it.
+    /// </exception>
     public void AddPushButton(
         PdfPage page,
         string name,
@@ -751,7 +816,9 @@ public sealed class PdfDocument : IDisposable
     /// closed, unless <see cref="Linearize"/> is set; see the remarks. It is also thrown, naming the
     /// handle, when a page was registered with an <see cref="EmbeddedFontHandle"/> from another
     /// document and this document defines no font under its resource name; see
-    /// <see cref="RegisterEmbeddedFontUsage"/>.
+    /// <see cref="RegisterEmbeddedFontUsage"/>. It is also thrown when a form field's drawn value,
+    /// selected option or caption holds a character outside WinAnsiEncoding (<c>ParamName</c>
+    /// <c>value</c>); see <see cref="AddTextField"/>.
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// <see cref="UseObjectStreams"/> is combined with <see cref="Encrypt"/>, or <see cref="Linearize"/>
@@ -1113,7 +1180,9 @@ public sealed class PdfDocument : IDisposable
     /// <exception cref="NotSupportedException">
     /// <paramref name="destination"/> cannot be written to, which is checked before anything is
     /// serialised, so the document is not marked as written. It is also thrown when
-    /// <see cref="UseObjectStreams"/> is combined with <see cref="Encrypt"/>.
+    /// <see cref="UseObjectStreams"/> is combined with <see cref="Encrypt"/>, and, from the
+    /// serialisation, when a form field's drawn value, selected option or caption holds a character
+    /// outside WinAnsiEncoding (<c>ParamName</c> <c>value</c>); see <see cref="AddTextField"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// A PDF/A <see cref="Conformance"/> is set together with <see cref="Encrypt"/>, or
@@ -1233,7 +1302,9 @@ public sealed class PdfDocument : IDisposable
     /// <exception cref="ArgumentException">
     /// A page was registered with an <see cref="EmbeddedFontHandle"/> from another document and this
     /// document defines no font under its resource name (<c>ParamName</c> <c>handle</c>); see
-    /// <see cref="RegisterEmbeddedFontUsage"/>.
+    /// <see cref="RegisterEmbeddedFontUsage"/>. It is also thrown when a form field's drawn value,
+    /// selected option or caption holds a character outside WinAnsiEncoding (<c>ParamName</c>
+    /// <c>value</c>); see <see cref="AddTextField"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The document has no pages, or has already been written, or an array, dictionary, stream or

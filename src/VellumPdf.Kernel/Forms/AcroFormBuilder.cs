@@ -631,24 +631,12 @@ internal static class AcroFormBuilder
             $"/Helv {Num(fontSize)} Tf 0 g"));
 
     /// <summary>
-    /// Encodes a PDF <em>text string</em> (ISO 32000-2 §7.9.2) for use in field dictionary
-    /// entries such as <c>/T</c>, <c>/V</c>, <c>/TU</c>, and <c>/Opt</c> display strings.
-    /// Emits a compact Latin-1 literal when every character is representable in Latin-1
-    /// (preserving byte-identical output for ASCII/Latin-1 input); otherwise emits UTF-16BE
-    /// with a leading U+FEFF BOM so viewers that support only text-string encoding
-    /// (not arbitrary Latin-1) can still decode the value correctly.
+    /// Encodes a PDF text string (ISO 32000-2 7.9.2) for the field dictionary entries <c>/T</c>,
+    /// <c>/V</c>, <c>/Opt</c> and <c>/MK /CA</c> through the encoder every other text string
+    /// uses, so a reader decodes each character as it was passed.
     /// </summary>
-    private static PdfLiteralString TextString(string value)
-    {
-        foreach (var c in value)
-        {
-            if (c > 0xFF)
-                return PdfLiteralString.FromUnicode(value);
-        }
-        // All characters fit in Latin-1: emit the compact form (byte-identical to the
-        // previous LiteralFromLatin1 path for ASCII/Latin-1 input).
-        return new PdfLiteralString(Encoding.Latin1.GetBytes(value));
-    }
+    private static PdfLiteralString TextString(string value) =>
+        PdfLiteralString.FromTextString(value);
 
     /// <summary>
     /// Escapes a string value for inclusion between ( ) in a PDF content stream
