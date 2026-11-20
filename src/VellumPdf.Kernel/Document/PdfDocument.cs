@@ -300,17 +300,18 @@ public sealed class PdfDocument : IDisposable
     /// so that <see cref="Save"/> can register the font reference on the correct pages.
     /// </summary>
     /// <remarks>
-    /// <b>A handle from another document is refused at <see cref="Save"/> when this document defines
-    /// no font under its resource name.</b> Usage is recorded by resource name, and that name is a
-    /// counter local to the document that issued it, so a name this document never issued would be
-    /// saved on the page with no <c>/Font</c> entry to define it. <see cref="Save"/> throws
-    /// <see cref="ArgumentException"/> naming the handle, before anything is written, and not this
-    /// call: whether the name is defined is decided once every <see cref="UseTrueTypeFont"/> call has
-    /// been made, so registering the handle before this document embeds its own font is accepted.
-    /// When this document has embedded the same font program under that name, the glyphs the foreign
-    /// handle registered are added to this document's subset at save.
+    /// <b>A handle from another document is refused when this document is saved, if it defines no
+    /// font under the handle's resource name.</b> <see cref="Save"/>, <see cref="SaveAsync"/> and
+    /// <see cref="PrepareForSigning"/> throw <see cref="ArgumentException"/> (<c>ParamName</c>
+    /// <c>handle</c>) before anything is written; this call never does. Usage is recorded by resource
+    /// name, and that name is a counter local to the document that issued it, so a name this document
+    /// never issued would be saved on the page with no <c>/Font</c> entry to define it. Whether the
+    /// name is defined is decided once every <see cref="UseTrueTypeFont"/> call has been made, so
+    /// registering the handle before this document embeds its own font is accepted. When the font
+    /// this document defines under that name is the same font program, the glyphs the foreign handle
+    /// registered are added to this document's subset at save.
     /// <para><b>Do not pass</b> a handle from another document. When this document defines the name
-    /// for a different font program, the call is accepted: the page is saved with a valid font
+    /// for a different font program, the handle is accepted: the page is saved with a valid font
     /// dictionary, and the text drawn through the handle is shown in this document's font of that name,
     /// with the wrong glyphs. Nothing reports it yet (#607), and 3.0 refuses a foreign handle whatever
     /// this document holds.</para>
@@ -1101,6 +1102,11 @@ public sealed class PdfDocument : IDisposable
     /// <see cref="PdfStructElem"/> are raised from the serialisation, with <c>ParamName</c>
     /// <c>value</c> or <c>child</c>; see <see cref="Save(System.IO.Stream)"/>.
     /// </exception>
+    /// <exception cref="ArgumentException">
+    /// A page was registered with an <see cref="EmbeddedFontHandle"/> from another document and this
+    /// document defines no font under its resource name (<c>ParamName</c> <c>handle</c>); see
+    /// <see cref="RegisterEmbeddedFontUsage"/>.
+    /// </exception>
     /// <exception cref="NotSupportedException">
     /// <paramref name="destination"/> cannot be written to, which is checked before anything is
     /// serialised, so the document is not marked as written. It is also thrown when
@@ -1221,9 +1227,16 @@ public sealed class PdfDocument : IDisposable
     /// <c>options</c> for all of them. Everything but a page index past the last page is refused
     /// before anything is written, and before a layout engine that calls this has laid out any page.
     /// </exception>
+    /// <exception cref="ArgumentException">
+    /// A page was registered with an <see cref="EmbeddedFontHandle"/> from another document and this
+    /// document defines no font under its resource name (<c>ParamName</c> <c>handle</c>); see
+    /// <see cref="RegisterEmbeddedFontUsage"/>.
+    /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// A registered form field's <see cref="FormFieldOptions.FontSize"/> is not finite. That
-    /// property's boundary documentation names the value and the field.
+    /// The document has no pages, or has already been written, or an array, dictionary, stream or
+    /// structure element in it holds itself, or a registered form field's
+    /// <see cref="FormFieldOptions.FontSize"/> is not finite. That property's boundary documentation
+    /// names the value and the field.
     /// </exception>
     public byte[] PrepareForSigning(SignaturePlaceholderOptions options)
     {

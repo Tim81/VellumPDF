@@ -46,7 +46,9 @@ public static class SigningExtensions
     /// Thrown when the certificate in <paramref name="settings"/> does not include a private key
     /// and neither <see cref="PdfSignatureSettings.ExternalPrivateKey"/> nor
     /// <see cref="PdfSignatureSettings.ExternalSigner"/> is set, or when the chosen
-    /// <see cref="PadesLevel"/> requires a client that is not set.
+    /// <see cref="PadesLevel"/> requires a client that is not set. It is also thrown, with
+    /// <c>ParamName</c> <c>handle</c>, for a font handle from another document that this document
+    /// defines no font under; see <see cref="PdfDocument.PrepareForSigning"/>.
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// Thrown when encryption has already been configured on the document, or when
@@ -54,7 +56,9 @@ public static class SigningExtensions
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// A registered form field's <see cref="FormFieldOptions.FontSize"/> is not finite. That
-    /// property's boundary documentation names the value and the field.
+    /// property's boundary documentation names the value and the field. It is also thrown for a
+    /// document with no pages, one already written, and one that holds a cycle; see
+    /// <see cref="PdfDocument.PrepareForSigning"/>.
     /// </exception>
     public static void Sign(this PdfDocument doc, Stream output, PdfSignatureSettings settings)
     {
@@ -87,7 +91,9 @@ public static class SigningExtensions
     /// <exception cref="ArgumentException">
     /// Thrown when the certificate in <paramref name="settings"/> does not include a private key
     /// and <see cref="PdfSignatureSettings.ExternalPrivateKey"/> is not set, or when the chosen
-    /// <see cref="PadesLevel"/> requires a client that is not set.
+    /// <see cref="PadesLevel"/> requires a client that is not set. It is also thrown, with
+    /// <c>ParamName</c> <c>handle</c>, for a font handle from another document that this document
+    /// defines no font under; see <see cref="PdfDocument.PrepareForSigning"/>.
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// Thrown when encryption has already been configured on the document.
