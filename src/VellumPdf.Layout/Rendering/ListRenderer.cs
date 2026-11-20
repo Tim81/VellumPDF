@@ -316,11 +316,7 @@ public sealed class ListRenderer : IRenderer
         // U+2007 from the whitespace it collapses (#562), so a run joined by one is a single token
         // to WordWrap. Both read the one definition, NoBreakSpaces.IsNoBreakSpace. Splitting on it,
         // which String.Split does through char.IsWhiteSpace, understates the widest token and lets
-        // the widened gutter hard-break a word the caller's own indent would not have. Measured at
-        // Helvetica 10pt before this was fixed: "AAAA<NBSP>AAAA" measures 56.14 whole and the bound
-        // saw 26.68, so item 38 of a roman list on an 80pt page was split into "AAAA<NBSP>AAA" and
-        // "A" while the 26 items whose gutter stayed at the indent, and had less room, stayed
-        // intact.
+        // the widened gutter hard-break a word the caller's own indent would not have.
         // The set lives in code points written as escapes, in NoBreakSpaces: an invisible literal
         // U+00A0 inverts the predicate if any tool normalises it.
         var widest = 0.0;

@@ -144,8 +144,9 @@ internal sealed class TableGridResolver
         }
 
         // Each entry is finite here, but their sum need not be: three of 1e308 reach +Infinity, the
-        // scale ratio becomes budget / Infinity = 0, and every column is written at width 0, an
-        // empty table. The file is valid, so it is kept; documented on ColWidths, and 3.0 refuses it.
+        // scale ratio becomes budget / Infinity = 0, and every column is written at width 0, with the
+        // cells' text on top of one another at the left edge. The file is valid, so it is kept;
+        // documented on ColWidths, and 3.0 refuses it.
 
         var autoCount = 0;
         for (var i = 0; i < cols; i++) if (isAuto[i]) autoCount++;

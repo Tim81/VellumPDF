@@ -111,8 +111,7 @@ public sealed class RunningBand
     /// shares the type again: <see cref="InvalidOperationException"/> while the content area is
     /// still positive, and <see cref="ArgumentException"/> once it reaches exactly zero, on a header and a
     /// footer alike.</para>
-    /// <para>A refusal raised before the save writes anything leaves the file a path held as it was
-    ///.</para>
+    /// <para>A refusal raised before the save writes anything leaves the file a path held as it was.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from a save rather than from this property, when a finite height is large enough on

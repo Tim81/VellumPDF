@@ -64,8 +64,7 @@ public sealed class Row
     /// <remarks>
     /// A null <paramref name="cell"/> is refused here. In a row that a cell
     /// above covers through <see cref="Cell.RowSpan"/>, the row's cells fill the columns left over,
-    /// in order, and a cell past the last column is not drawn, though its text is still measured
-    ///.
+    /// in order, and a cell past the last column is not drawn, though its text is still measured.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="cell"/> is <see langword="null"/>.
@@ -83,8 +82,7 @@ public sealed class Row
     /// not honoured; see <see cref="Cell.Content"/>. A null <paramref name="text"/> is added as an
     /// empty cell. In a row that a cell
     /// above covers through <see cref="Cell.RowSpan"/>, the row's cells fill the columns left over,
-    /// in order, and a cell past the last column is not drawn, though its text is still measured
-    ///.
+    /// in order, and a cell past the last column is not drawn, though its text is still measured.
     /// </remarks>
     /// <inheritdoc cref="Paragraph.Add(string, TextStyle)" path="/exception[@cref='T:System.ArgumentException']"/>
     public Row AddCell(string text) => AddCell(new Cell(text));

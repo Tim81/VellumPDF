@@ -26,7 +26,7 @@ internal static class NoBreakSpaces
     /// <summary>U+00A0 NO-BREAK SPACE. WinAnsiEncoding encodes it as 0xA0.</summary>
     public const char NoBreakSpace = '\u00A0';
 
-    /// <summary>U+202F NARROW NO-BREAK SPACE, used before <c>; ? !</c> in French typography.</summary>
+    /// <summary>U+202F NARROW NO-BREAK SPACE, line-breaking class GL.</summary>
     public const char NarrowNoBreakSpace = '\u202F';
 
     /// <summary>U+2007 FIGURE SPACE, used to align digits.</summary>

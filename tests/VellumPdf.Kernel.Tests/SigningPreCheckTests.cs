@@ -58,7 +58,18 @@ public sealed class SigningPreCheckTests
     public void ASizeThatFits_isNotRefused(int size)
     {
         using var doc = OnePage();
-        doc.EnsureCanPrepareForSigning(new SignaturePlaceholderOptions { EstimatedSignatureSizeBytes = size });
+        var options = new SignaturePlaceholderOptions { EstimatedSignatureSizeBytes = size };
+
+        doc.EnsureCanPrepareForSigning(options);
+
+        // The largest size would build a placeholder of about 1 GiB, so only the smaller two are written.
+        if (size <= 8192)
+        {
+            var text = System.Text.Encoding.Latin1.GetString(doc.PrepareForSigning(options));
+            var placeholder = System.Text.RegularExpressions.Regex.Match(text, @"/Contents\s*<(0*)>");
+            Assert.True(placeholder.Success);
+            Assert.Equal(size * 2, placeholder.Groups[1].Length);
+        }
     }
 
     /// <summary>A caller that holds the pages gets the document's own order, with no pages reported before any option; a layout engine that has not laid the pages out (<c>pagesKnown: false</c>) goes straight to the option.</summary>

@@ -23,9 +23,9 @@ namespace VellumPdf.Layout.Elements;
 /// drawn as a space too, unless a line break falls on it, so a word cannot change style part-way:
 /// the run <c>Bold</c> followed by the run <c>er</c> is drawn as <c>Bold er</c>.</para>
 /// <para>A line cannot wrap at a no-break space, so
-/// <c>Pourquoi ?</c> written with U+202F before the question mark does not wrap between the two
-///. These are the three white-space characters that UAX #14 puts in its GL class, and the
-/// only ones; a tab, an en or em space and a thin space still break. In a Standard-14 font
+/// <c>Pourquoi ?</c> written with U+202F before the question mark does not wrap between the two.
+/// The no-break spaces are the three white-space characters that UAX #14 puts in its GL class, and
+/// the only ones; a tab, an en or em space and a thin space still break. In a Standard-14 font
 /// U+202F and U+2007 are drawn as U+00A0, which WinAnsiEncoding has and they do not, so they show
 /// as a space of that width and report no <see cref="Document.TextEncodingWarnings"/> entry. In an
 /// embedded font they use the font's own glyph, or U+00A0's, or a plain space's, when the font

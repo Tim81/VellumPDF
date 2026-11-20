@@ -204,6 +204,12 @@ public sealed class NoBreakSpaceBundledFontTests
         var page = pdf.AddPage();
 
         pdf.RegisterEmbeddedFontUsage(page, own);
+
+        using var saved = new MemoryStream();
+        pdf.Save(saved);
+        var text = System.Text.Encoding.Latin1.GetString(saved.ToArray());
+        Assert.Contains($"/{own.ResourceName} ", text, StringComparison.Ordinal);
+        Assert.Matches(@"/BaseFont /[A-Z]{6}\+LiberationMono", text);
     }
 
     [Fact]

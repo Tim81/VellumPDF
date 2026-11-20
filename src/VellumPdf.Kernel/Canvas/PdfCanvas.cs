@@ -27,8 +27,9 @@ namespace VellumPdf.Canvas;
 /// this class does not enforce.
 /// <para><see cref="AppendArc"/> is the one exception to "writes nothing": a <c>NaN</c> or
 /// positive-infinite radius, or an angle that makes the sweep non-finite, is skipped without drawing and
-/// without throwing. A non-finite centre is refused, and so is a negative radius, negative infinity
-/// included.</para>
+/// without throwing. A non-finite centre is refused when the arc is drawn, because a radius of 0 or a
+/// zero sweep returns before the centre is looked at. A negative radius, negative infinity included,
+/// is refused.</para>
 /// <para><b>Attention</b>: a non-finite operand is never written as the token <c>NaN</c> or
 /// <c>Infinity</c>; the call throws instead.</para>
 /// </remarks>

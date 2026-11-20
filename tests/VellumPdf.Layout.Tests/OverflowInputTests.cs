@@ -132,7 +132,13 @@ public sealed class OverflowInputTests
 
     // ── Explicit table column widths ─────────────────────────────────────────
 
-    /// <summary>Three widths of 1e308 add up to positive infinity, so the scale ratio is zero and every column is drawn at width 0; the file saves with no non-finite token, as in 2.3.3.</summary>
+    private static string[] CellRectangles(string stream) =>
+        Regex.Matches(stream, @"(?m)^[-\d.]+ [-\d.]+ [-\d.]+ [-\d.]+ re$").Select(m => m.Value).ToArray();
+
+    private static string[] TextPositions(string stream) =>
+        Regex.Matches(stream, @"(?m)^1 0 0 1 [-\d.]+ [-\d.]+ Tm$").Select(m => m.Value).ToArray();
+
+    /// <summary>Three widths of 1e308 add up to positive infinity, so the scale ratio is zero: every column is written at width 0, and the three cells' text is drawn at the table's left edge on top of one another. The file saves with no non-finite token.</summary>
     [Fact]
     public void Table_explicitWidthsThatOverflowToInfinity_stillSave_withNoNonFiniteToken()
     {
@@ -145,6 +151,8 @@ public sealed class OverflowInputTests
 
         Assert.DoesNotContain("NaN", stream, StringComparison.Ordinal);
         Assert.DoesNotContain("Infinity", stream, StringComparison.Ordinal);
+        Assert.Equal(["10 470 0 20 re", "10 470 0 20 re", "10 470 0 20 re"], CellRectangles(stream));
+        Assert.Equal(["1 0 0 1 16 476 Tm", "1 0 0 1 16 476 Tm", "1 0 0 1 16 476 Tm"], TextPositions(stream));
     }
 
     /// <summary>One dominant finite entry is not an overflow: it scales the others to almost nothing and still renders.</summary>
@@ -160,6 +168,9 @@ public sealed class OverflowInputTests
 
         Assert.DoesNotContain("NaN", stream, StringComparison.Ordinal);
         Assert.DoesNotContain("Infinity", stream, StringComparison.Ordinal);
+        // The first column takes the whole 380pt of content width; the other two are written at width 0 at its right edge.
+        Assert.Equal(["10 470 380 20 re", "390 470 0 20 re", "390 470 0 20 re"], CellRectangles(stream));
+        Assert.Equal(["1 0 0 1 16 476 Tm", "1 0 0 1 396 476 Tm", "1 0 0 1 396 476 Tm"], TextPositions(stream));
     }
 
     [Fact]

@@ -171,7 +171,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **A `NaN` or negative-infinity `ListElement.Indent` no longer reaches the content stream (#532).**
   Where a nested child's marker, or a flat item whose longest word does not fit beside its marker,
   takes the indent as its left inset, `PdfCanvas` refuses the value with `ArgumentException`. A
-  list whose items fit, and an empty list, still save. A finite negative indent still renders.
+  flat list whose items fit saves with negative infinity, and an empty list saves with either value. A finite negative indent still renders.
 
 - **A negative line width is refused (#557).** ISO 32000-2, 8.4.3.2 requires a non-negative line
   width, and `LineSeparator.LineWidth` and `TableElement.BorderWidth` wrote `-3 w`. A negative
@@ -183,8 +183,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Pie slice totals, pie start angles and explicit table widths no longer overflow into wrong
   output (#546).** A `PieChart.StartAngle` of 1e12 or more in magnitude is reduced to a turn with an
   exact remainder before any sweep is added, so wedges no longer overlap or collapse; a smaller
-  angle is unchanged. Slice totals and explicit column widths that sum to infinity still save, with
-  an empty chart or table, as on 2.3.3. `PieChart.Slices` and `ColWidths` say not to pass them, and
+  angle is unchanged. Slice totals that sum to infinity still save with an empty chart, and explicit column
+  widths that sum to infinity still save with every column at width 0, so the cells' text is drawn
+  at the table's left edge on top of one another, as on 2.3.3. `PieChart.Slices` and `ColWidths` say not to pass them, and
   3.0 refuses them (#484).
 
 - **Justified text in a standard-14 font reaches the right edge, and a multi-style line no longer
