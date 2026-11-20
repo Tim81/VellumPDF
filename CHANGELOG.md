@@ -187,9 +187,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (#639).** `PdfReal`, every `PdfCanvas` operand, and the numbers in the AcroForm appearance
   streams and `/DA` strings all wrote `2147483648` for 2147483648.0. ISO 32000-2, Table C.1 gives
   integers 32 bits, and ISO 19005-2, 6.1.13 fails a PDF/A file with an integer outside that
-  range. From 2^63 up the token was worse: `qpdf --check` reported "overflow/underflow converting
+  range. From 2^63 up, `qpdf --check` reported "overflow/underflow converting
   9223372036854780000 to 64-bit int" and treated the object as null, so a link annotation or a
-  content stream was dropped. One internal formatter now serves all three, and when the rounded
+  content stream was dropped. One internal formatter now formats all three, and when the rounded
   text has no decimal point and is not a 32-bit integer it appends `.0`. **Deliberate output
   change:** 2147483648 is written as `2147483648.0`, -2147483649 as `-2147483649.0` and 3e9 as
   `3000000000.0`; 2147483647, -2147483648, 3, 0.5 and `-0` keep their 2.3.3 bytes, and so does
