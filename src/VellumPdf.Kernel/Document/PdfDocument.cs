@@ -1544,8 +1544,8 @@ public sealed class PdfDocument : IDisposable
         }
 
         // The output-intent objects are numbered here, after the outline tree and the signature
-        // objects, so a signed PDF/A document numbers them differently from a saved one. Both
-        // numberings are pinned by the catalog golden tests (#606).
+        // objects, so a signed PDF/A or PDF/UA-1 document numbers them differently from a saved
+        // one. Both numberings are pinned by the catalog golden tests (#606).
         PdfIndirectReference? outputIntentsRef = null;
         if (Conformance != PdfConformance.None)
             outputIntentsRef = BuildOutputIntents(registry);
@@ -1567,7 +1567,7 @@ public sealed class PdfDocument : IDisposable
     /// <summary>
     /// Everything <see cref="BuildCatalog"/> cannot derive from the document's own properties: the
     /// references and dictionaries the calling path has already built. The builder reserves
-    /// nothing, so each path keeps the object numbering it had before the two blocks were merged.
+    /// nothing, so each path's object numbers are those it assigned before calling it.
     /// </summary>
     /// <param name="Pages">The page tree root.</param>
     /// <param name="Metadata">The XMP metadata stream.</param>
@@ -1576,8 +1576,11 @@ public sealed class PdfDocument : IDisposable
     /// <param name="AcroForm">The form dictionary, or <see langword="null"/> for none.</param>
     /// <param name="AcroFormFollowsMetadata">
     /// Whether <c>/AcroForm</c> is written straight after <c>/Metadata</c> (the signing path) or
-    /// after <c>/StructTreeRoot</c> (<c>Save</c>). It exists only so that neither path's bytes
-    /// change (#606); both orders are valid and a later major may drop it.
+    /// after the last of <c>/Outlines</c> with <c>/PageMode</c>, <c>/MarkInfo</c> and
+    /// <c>/StructTreeRoot</c> that is present, falling back to <c>/Metadata</c> when none is
+    /// (<c>Save</c>). Both paths write <c>/OutputIntents</c> after it when it is present. It
+    /// exists only so that neither path's bytes change (#606); both orders are valid and a later
+    /// major may drop it.
     /// </param>
     /// <param name="OutputIntents">The output-intent dictionary, or <see langword="null"/>.</param>
     private readonly record struct CatalogParts(
@@ -1591,8 +1594,8 @@ public sealed class PdfDocument : IDisposable
 
     /// <summary>
     /// Builds the document catalog for both <see cref="Save(Stream)"/> and the signing path. It
-    /// reserves no object and calls nothing that does, and it throws nothing the two blocks it
-    /// replaced did not: both run after the document is marked written.
+    /// reserves no object and calls nothing that does, and it throws nothing: both callers run it
+    /// after the document is marked written.
     /// </summary>
     private PdfDictionary BuildCatalog(CatalogParts parts)
     {
@@ -1612,7 +1615,7 @@ public sealed class PdfDocument : IDisposable
                 .Set(new PdfName("PageMode"), new PdfName("UseOutlines"));
         }
 
-        // /MarkInfo — required when Tagged or PDF/A conformance is requested
+        // /MarkInfo, required when Tagged, or when PDF/A or PDF/UA-1 conformance is requested
         if (Tagged || Conformance != PdfConformance.None)
         {
             var markInfo = new PdfDictionary()
@@ -1627,8 +1630,8 @@ public sealed class PdfDocument : IDisposable
         if (!parts.AcroFormFollowsMetadata && parts.AcroForm is not null)
             catalog.Set(new PdfName("AcroForm"), parts.AcroForm);
 
-        // PDF/A output intent (sRGB ICC, PDF/A-2 §6.2.3): present under any conformance claim,
-        // see BuildOutputIntents.
+        // PDF/A output intent (an sRGB or CMYK ICC profile, PDF/A-2 §6.2.3): present under any
+        // conformance claim, see BuildOutputIntents.
         if (parts.OutputIntents is not null)
             catalog.Set(new PdfName("OutputIntents"), new PdfArray([parts.OutputIntents]));
 
@@ -1656,8 +1659,7 @@ public sealed class PdfDocument : IDisposable
     /// <summary>
     /// Test seam for #606: entries the catalog builder appends after every other key on both the
     /// <see cref="Save(Stream)"/> and the signing path. <see langword="null"/> by default, which
-    /// leaves every document's catalog as the golden tests pin it. The catalog parts that later
-    /// issues add take its place.
+    /// leaves the catalog of each configuration the golden tests pin as they pin it.
     /// </summary>
     internal PdfDictionary? CatalogExtraEntries { get; set; }
 

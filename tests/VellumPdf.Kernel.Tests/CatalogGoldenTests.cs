@@ -95,6 +95,9 @@ public sealed class CatalogGoldenTests
         ["outline-pdfa2u"] = new(
             "21238A6A96E54C96E36C1EC884BF056CCFE8DF51C9ACA8112C4E27286A02E446",
             "5 0 obj\n<<\n/Type /Catalog\n/Pages 3 0 R\n/Metadata 6 0 R\n/Outlines 10 0 R\n/PageMode /UseOutlines\n/MarkInfo <<\n/Marked true\n>>\n/OutputIntents [8 0 R]\n>>\nendobj"),
+        ["form-pdfa2u"] = new(
+            "EBB1F8EBB1338AC2857034A6D15C31E4D51C437DDA117DE81FFC6CAEA4C36B67",
+            "5 0 obj\n<<\n/Type /Catalog\n/Pages 3 0 R\n/Metadata 10 0 R\n/MarkInfo <<\n/Marked true\n>>\n/AcroForm <<\n/Fields [9 0 R]\n/NeedAppearances false\n/DR <<\n/Font <<\n/Helv 6 0 R\n/ZaDb 7 0 R\n>>\n>>\n/DA (/Helv 0 Tf 0 g)\n>>\n/OutputIntents [12 0 R]\n>>\nendobj"),
         ["linearized"] = new(
             "67BE09CA85A64320B725122DC9492CD17D6D55312526ACAEA9A9FF1E98F75C36",
             "2 0 obj\n<<\n/Type /Catalog\n/Pages 3 0 R\n/Metadata 5 0 R\n>>\nendobj"),
@@ -129,6 +132,9 @@ public sealed class CatalogGoldenTests
         ["everything"] = new(
             "47E5E48C1842E9B346C3E504377723FD1E6EBFA0D651B04A5E1369BEE25DEB0C",
             "5 0 obj\n<<\n/Type /Catalog\n/Pages 3 0 R\n/Metadata 15 0 R\n/AcroForm <<\n/Fields [14 0 R 7 0 R]\n/NeedAppearances false\n/DR <<\n/Font <<\n/Helv 11 0 R\n/ZaDb 12 0 R\n>>\n>>\n/DA (/Helv 0 Tf 0 g)\n/SigFlags 3\n>>\n/Outlines 17 0 R\n/PageMode /UseOutlines\n/MarkInfo <<\n/Marked true\n>>\n/StructTreeRoot 9 0 R\n/OutputIntents [19 0 R]\n/Lang (\u00FE\u00FF\0e\0n)\n/ViewerPreferences <<\n/DisplayDocTitle true\n>>\n>>\nendobj"),
+        ["form-pdfa2u"] = new(
+            "82FE5D64796D0ADC2F9500A7308D416FA6E68B6F2057AA22176FCC4780443AA3",
+            "5 0 obj\n<<\n/Type /Catalog\n/Pages 3 0 R\n/Metadata 12 0 R\n/AcroForm <<\n/Fields [11 0 R 7 0 R]\n/NeedAppearances false\n/DR <<\n/Font <<\n/Helv 8 0 R\n/ZaDb 9 0 R\n>>\n>>\n/DA (/Helv 0 Tf 0 g)\n/SigFlags 3\n>>\n/MarkInfo <<\n/Marked true\n>>\n/OutputIntents [14 0 R]\n>>\nendobj"),
         ["outline-pdfa2u"] = new(
             "D78353650BDC53DBE97D5721B0363C0AC63638F29D34069AF9EB91D18C03BB86",
             "5 0 obj\n<<\n/Type /Catalog\n/Pages 3 0 R\n/Metadata 8 0 R\n/AcroForm <<\n/Fields [7 0 R]\n/SigFlags 3\n>>\n/Outlines 10 0 R\n/PageMode /UseOutlines\n/MarkInfo <<\n/Marked true\n>>\n/OutputIntents [12 0 R]\n>>\nendobj"),
@@ -182,6 +188,12 @@ public sealed class CatalogGoldenTests
                 // The one configuration in which the two paths number the output-intent object
                 // differently.
                 document.AddOutlineEntry(new PdfOutlineEntry { Title = "A", DestPage = page, DestTop = 700 });
+                document.Conformance = PdfConformance.PdfA2u;
+                break;
+            case "form-pdfa2u":
+                // A form under an untagged PDF/A level: the output intent is numbered with the
+                // form's objects, and /AcroForm sits at a different place on each path.
+                document.AddTextField(page, "f1", new PdfRectangle(10, 10, 100, 30));
                 document.Conformance = PdfConformance.PdfA2u;
                 break;
             case "linearized":
