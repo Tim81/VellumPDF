@@ -813,7 +813,12 @@ public sealed class ParagraphRenderer : IRenderer
             for (var k = ti; k < tj; k++)
             {
                 var (pieceText, pieceStyle, _) = tokens[k];
-                var w = pieceStyle!.FontRef.MeasureString(pieceText, pieceStyle.FontSize);
+
+                // The width is not used. Measuring in an embedded font records the glyphs measured,
+                // so this keeps the space in the font's subset (its /W and ToUnicode entries) as the
+                // wrap has always done, and a document with no glued boundary keeps its bytes.
+                _ = pieceStyle!.FontRef.MeasureString(" ", pieceStyle.FontSize);
+                var w = pieceStyle.FontRef.MeasureString(pieceText, pieceStyle.FontSize);
                 pieceWidths.Add(w);
                 wordW = k == ti ? w : wordW + w;
             }

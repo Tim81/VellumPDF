@@ -467,6 +467,20 @@ public sealed partial class RunBoundaryTests
         AssertNear(lineWidth + Slack, shows[iLogie].X + b.MeasureString("logie"), "right edge of the line");
     }
 
+    [Fact]
+    public void AOneWordEmbeddedParagraph_keepsTheSpaceInTheFontSubset()
+    {
+        using var doc = new Document();
+        var (r, _) = Embedded(doc);
+        doc.Add(new Paragraph("vet", r));
+
+        var content = Content(doc);
+
+        // The wrap measures a space beside every word, which puts the space in the subset's ToUnicode
+        // map even though nothing draws it. A document with no glued boundary keeps those bytes.
+        Assert.Contains("<0003> <0020>", content, StringComparison.Ordinal);
+    }
+
     // ── Links ────────────────────────────────────────────────────────────────
 
     [Fact]

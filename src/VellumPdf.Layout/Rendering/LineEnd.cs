@@ -5,8 +5,7 @@ namespace VellumPdf.Layout.Rendering;
 
 /// <summary>
 /// Internal: how a wrapped line ended. Nothing reads it when a paragraph is drawn; it records where
-/// each line's end falls so that a later change can write a trailing space at some ends and not at
-/// others without wrapping the text a second time.
+/// each line's end falls, which a test pins.
 /// </summary>
 internal enum LineEnd : byte
 {
