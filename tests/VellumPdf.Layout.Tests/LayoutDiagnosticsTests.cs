@@ -193,6 +193,21 @@ public sealed class LayoutDiagnosticsTests
     }
 
     [Fact]
+    public void ANullStyleParagraph_withAFooter_isStillCountedOnce()
+    {
+        // A footer makes the document lay every element out twice, once to count pages.
+        using var doc = NewDoc();
+        doc.Footer = new RunningBand("page {page} of {pages}");
+        doc.Add(NullStyleParagraph());
+        doc.Add(NullStyleParagraph());
+
+        doc.Save(new MemoryStream());
+
+        Assert.Equal([1, 1], doc.Diagnostics.Select(i => i.Count));
+        Assert.Equal([0, 1], doc.Diagnostics.Select(i => i.ElementIndex ?? -1));
+    }
+
+    [Fact]
     public void TwoNullStyleRuns_inOneParagraph_giveCountTwo()
     {
         using var doc = NewDoc();
