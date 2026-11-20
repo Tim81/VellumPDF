@@ -48,9 +48,10 @@ namespace VellumPdf.Layout;
 /// <para>A call with two or more defects is refused, but which defect's exception is reported can
 /// differ between releases. A save precondition (null destination, disposed document, an unwritable
 /// stream, an option conflict) is reported before a layout defect, and an already cancelled token
-/// before both, except in a document with nothing added, where the page geometry and bands are
-/// checked first. The exception is <see cref="SaveAsync(string, System.Threading.CancellationToken)"/>,
-/// whose path checks run when the file is opened, before the token is looked at.</para>
+/// before both. In a document with nothing added the page geometry and bands are checked before the
+/// preconditions, but not before the token. The path checks of
+/// <see cref="SaveAsync(string, System.Threading.CancellationToken)"/> are the exception: they run
+/// when the file is opened, before the token is looked at.</para>
 /// <para><b>Do not pass</b> a non-finite number to any of these members. The saved cases are not
 /// reported yet, because there is no diagnostics channel (#607), and 3.0 refuses every non-finite
 /// value at the member that holds it.</para>
@@ -1209,7 +1210,7 @@ public sealed class Document : IDisposable
     /// <exception cref="ArgumentException">
     /// Many unrelated conditions share this type, so <b>do not</b> switch on the parameter name to
     /// tell them apart. A non-writable <paramref name="destination"/> is refused before the layout
-    /// runs and reports <c>destination</c>. The margin check reports <c>margins</c>. A
+    /// runs, except in a document with nothing added, and reports <c>destination</c>. The margin check reports <c>margins</c>. A
     /// non-finite position the save writes outside the content stream, such as a link rectangle
     /// moved by a non-finite margin, reports <c>value</c>; see <see cref="Margins"/>. An element
     /// that refuses its own input reports a name of its own choosing, which is not always the
@@ -1430,13 +1431,14 @@ public sealed class Document : IDisposable
     /// </remarks>
     /// <inheritdoc cref="Save(System.IO.Stream)" path="/exception[@cref='T:System.ArgumentNullException' or @cref='T:System.InvalidOperationException' or @cref='T:System.IO.IOException' or @cref='T:System.ArgumentOutOfRangeException' or @cref='T:System.NullReferenceException' or @cref='T:System.IndexOutOfRangeException' or @cref='T:System.IO.InvalidDataException' or @cref='T:System.OverflowException' or @cref='T:System.OutOfMemoryException']"/>
     /// <exception cref="NotSupportedException">
-    /// <paramref name="destination"/> cannot be written to. That is refused before the layout runs, so
-    /// the document is untouched. It is also raised when <see cref="UseObjectStreams"/> is true and
+    /// <paramref name="destination"/> cannot be written to. That is refused before the layout runs, except in
+    /// a document with nothing added, where the page geometry and bands are checked first, so the
+    /// document is untouched. It is also raised when <see cref="UseObjectStreams"/> is true and
     /// <see cref="Encrypt"/> has been called.
     /// </exception>
     /// <exception cref="ObjectDisposedException">
-    /// <paramref name="destination"/> was already closed, which is refused before the layout runs, or
-    /// this <see cref="Document"/> was already disposed.
+    /// <paramref name="destination"/> was already closed, which is refused before the layout runs, except in a
+    /// document with nothing added, or this <see cref="Document"/> was already disposed.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// The margins, header and footer leave

@@ -109,8 +109,9 @@ public sealed class TableElement
     /// explicit columns near zero: <c>1e200, 60, 70</c> resolves to about 451, 0 and 0 on an A4
     /// page with the default margins, and nothing reports it. That is a contract tightening for 3.0, not
     /// a refusal in a patch, because the table still renders. Entries whose sum overflows to
-    /// infinity are accepted, and every column is written at width 0, so the cells' text is drawn at
-    /// the table's left edge on top of one another. <b>Do not pass</b> widths whose sum overflows. Nothing reports it, because there is no diagnostics
+    /// infinity are accepted, and every explicit column is written at width 0 while an auto column
+    /// keeps its content width, so with no auto column the cells' text is drawn at the table's left
+    /// edge on top of one another. <b>Do not pass</b> widths whose sum overflows. Nothing reports it, because there is no diagnostics
     /// channel yet, and 3.0 will throw <see cref="InvalidOperationException"/>.
     /// When the auto columns take all of the available width or more, every column,
     /// auto ones included, is scaled by one ratio instead. A positive entry under 5e-6 is kept and
@@ -125,7 +126,7 @@ public sealed class TableElement
     /// Replaces every width. Called with no arguments it clears them, so every column is auto. A
     /// null array is refused only after the existing widths are cleared, so they are lost. The
     /// entries follow the rules on <see cref="ColWidths"/>; none is refused here, and a set whose
-    /// sum overflows to infinity is accepted, with every column written at width 0; see <see cref="ColWidths"/>.
+    /// sum overflows to infinity is accepted, with every explicit column written at width 0; see <see cref="ColWidths"/>.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="widths"/> is <see langword="null"/>. <c>ParamName</c> is <c>collection</c>,

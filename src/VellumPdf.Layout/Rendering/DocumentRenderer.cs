@@ -277,7 +277,8 @@ public sealed class DocumentRenderer
     /// <summary>Lays out all added renderers and saves the resulting PDF to <paramref name="destination"/>.</summary>
     /// <remarks>
     /// The checks on <paramref name="destination"/> and on the kernel document's options run first,
-    /// before the layout adds any page to it, so a refusal leaves the document as it was and a
+    /// before the layout adds any page to it (a document with nothing added checks its page geometry
+    /// and bands before them), so a refusal leaves the document as it was and a
     /// retry cannot write the pages twice. The write is
     /// <see cref="PdfDocument.Save(System.IO.Stream)"/>, so every exception it documents can reach
     /// you from here. <see cref="Document.Save(System.IO.Stream)"/> builds a

@@ -155,6 +155,23 @@ public sealed class OverflowInputTests
         Assert.Equal(["1 0 0 1 16 476 Tm", "1 0 0 1 16 476 Tm", "1 0 0 1 16 476 Tm"], TextPositions(stream));
     }
 
+    /// <summary>With an auto column left, only the explicit columns are written at width 0; the auto column keeps its content width.</summary>
+    [Fact]
+    public void Table_explicitWidthsThatOverflowToInfinity_withAnAutoColumn_keepTheAutoColumnsContentWidth()
+    {
+        using var doc = Page();
+        var table = new TableElement { DefaultCellStyle = Style() }.SetColumnWidths(1e308, 1e308);
+        table.AddRow().AddCell("a").AddCell("b").AddCell("c");
+        doc.Add(table);
+
+        var stream = Stream(doc);
+
+        Assert.DoesNotContain("NaN", stream, StringComparison.Ordinal);
+        Assert.DoesNotContain("Infinity", stream, StringComparison.Ordinal);
+        Assert.Equal(["10 470 0 20 re", "10 470 0 20 re", "10 470 17 20 re"], CellRectangles(stream));
+        Assert.Equal(["1 0 0 1 16 476 Tm", "1 0 0 1 16 476 Tm", "1 0 0 1 16 476 Tm"], TextPositions(stream));
+    }
+
     /// <summary>One dominant finite entry is not an overflow: it scales the others to almost nothing and still renders.</summary>
     [Fact]
     public void Table_oneDominantFiniteWidth_stillRenders()

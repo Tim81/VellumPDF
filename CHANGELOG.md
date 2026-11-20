@@ -184,8 +184,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   output (#546).** A `PieChart.StartAngle` of 1e12 or more in magnitude is reduced to a turn with an
   exact remainder before any sweep is added, so wedges no longer overlap or collapse; a smaller
   angle is unchanged. Slice totals that sum to infinity still save with an empty chart, and explicit column
-  widths that sum to infinity still save with every column at width 0, so the cells' text is drawn
-  at the table's left edge on top of one another, as on 2.3.3. `PieChart.Slices` and `ColWidths` say not to pass them, and
+  widths that sum to infinity still save with every explicit column at width 0, as on 2.3.3. An
+  auto column keeps its content width, and a table with none draws the cells' text at its left edge
+  on top of one another. `PieChart.Slices` and `ColWidths` say not to pass them, and
   3.0 refuses them (#484).
 
 - **Justified text in a standard-14 font reaches the right edge, and a multi-style line no longer
