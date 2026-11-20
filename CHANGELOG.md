@@ -192,6 +192,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Two runs with no white space between them are one word, not two (#590).** A `Paragraph` built
+  from several runs drew a space at every run boundary, so the runs `astro` and `logie` came out as
+  `astro logie`, and `Instellingen` followed by `.` as `Instellingen .`. A boundary now draws a
+  space only where the text has one: a space, tab, line break or other white space, except the three
+  no-break spaces U+00A0, U+202F and U+2007, at the end of one run or the start of the next. Without
+  one, the runs hold one word, drawn with nothing between the pieces, wrapped as a unit, and cut at a
+  character when it is wider than the line. The no-break spaces are characters of the word, so
+  a run ending in U+00A0 followed by a run starting with `b` is one word. An empty run adds nothing, so it no
+  longer separates its neighbours. Line breaks are still read per run: a carriage return ending one
+  run and a line feed starting the next are two breaks, as before. Runs that share one `TextStyle`
+  instance are drawn exactly as the single run holding their joined text; runs whose styles are equal
+  copies stay separate fragments, so their bytes differ though the glyph positions match. A link
+  run inside a word covers its own text, without the space it used to take. Deliberate output change:
+  a document changes only if it holds a paragraph with at least one such boundary, which only a
+  caller building a paragraph from two or more runs can produce. In a changed document the
+  paragraph can take another number of lines, so what follows it can move, including to another
+  page. Headings, list items, table cells and single-run paragraphs keep their bytes. For the issue's
+  example, `pdftotext -raw` and the library's own reader now extract `Open Instellingen. Daarna
+  astrologie en (vet).`, where `pdftotext -raw` gave `Open Instellingen . Daarna astro logie en ( vet ).`.
 - **The Kernel's `DocumentId` summary and `docs/kernel-guide.md` section 9 described the derived
   identifier wrongly (#597).** They said it comes from the page content, which it never did: it
   comes from the title, the producer, the page count and the time. They also said the bytes of two

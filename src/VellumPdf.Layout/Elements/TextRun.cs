@@ -16,8 +16,8 @@ namespace VellumPdf.Layout.Elements;
 /// <b>Do not pass a null style.</b> 3.0 refuses it from the constructor, whatever the text, and the
 /// diagnostics channel (#607) will report the saved cases before then.</para>
 /// Refusals on size, leading, font and text colour are on <see cref="TextStyle"/> and are raised
-/// from the save. The boundary between this run and the next is drawn as a space unless a line
-/// break falls on it; see <see cref="Paragraph"/>.
+/// from the save. A space is drawn between this run and the next only where the text has white space
+/// at the boundary; without it the two runs hold one word; see <see cref="Paragraph"/>.
 /// </remarks>
 /// <exception cref="ArgumentNullException">
 /// The text is <see langword="null"/>. <c>ParamName</c> is <c>Text</c>, the name of the
