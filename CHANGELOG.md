@@ -187,9 +187,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   structure tree was deeper than the calling thread's stack allowed overflowed the stack inside
   `Save`, and .NET cannot catch that. The six walks that number the tree, order its pages, derive
   each element's `/Pg` and check its types no longer recurse, so the depth of the tree is not limited
-  by `Save`, `SaveAsync` or `PrepareForSigning`. The walks take time and memory in proportion to
-  the number of elements; `Linearize` takes longer than that on a very large tree, because the
-  linearization planner searches a list once for each object.
+  by `Save`, `SaveAsync` or `PrepareForSigning`. Where each element has one parent, the walks take
+  time and memory in proportion to the number of elements; `Linearize` takes longer than that on a
+  very large tree, because the linearization planner searches a list once for each object. An
+  element added under two parents is walked once per path, so the time can grow exponentially with
+  the depth before `Save` refuses the tree with `InvalidOperationException`.
   The page of a grouping element is now found in one pass over the tree rather than by walking the
   subtree of every element, which made a chain's cost grow with the square of its depth. A
   duplicate MCID, an MCID above the supported maximum, a non-standard type and a shared element

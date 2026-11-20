@@ -80,8 +80,11 @@ public sealed class PdfStructElem
     /// two routes without a cycle is not refused.
     /// <para><b>The depth of the tree is not limited by <c>Save</c>.</b> The walks that number and
     /// write the tree do not recurse, so a tree's depth does not depend on the stack of the
-    /// calling thread, and the walks take time and memory in proportion to the number of elements.
-    /// <c>Linearize</c> takes longer than that on a very large tree.</para>
+    /// calling thread. Where each element has one parent, the walks take time and memory in
+    /// proportion to the number of elements; <c>Linearize</c> takes longer than that on a very large
+    /// tree. An element added under two parents is walked once per path, so the time can grow
+    /// exponentially with the depth before <c>Save</c> refuses the tree with
+    /// <see cref="InvalidOperationException"/>.</para>
     /// <para>A null <paramref name="child"/> is stored and refused where the structure
     /// tree is built: a document that is not tagged never builds it, so such a document saves. It is
     /// not refused at this call. <b>Do not pass</b> a null child or a child that closes a cycle: a
@@ -381,15 +384,17 @@ internal sealed class PdfStructureTree
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     // The walks below visit every element with an explicit stack, so the depth of a tree is not
-    // limited by the stack of the thread that saves it, and each takes time and memory in
-    // proportion to the number of elements. AddChild accepts a cycle (an untagged document never
-    // builds the tree). A walk over a cycle would not stop until it ran out of memory, so the walks
-    // refuse it with the cycle error first. Three of them, CollectElems, CollectPages and
-    // CollectElemsOnPage, keep the elements on their current path and refuse to enter one twice.
-    // The other three, BuildParentMap, FirstLeafPages and CollectStructTypes, keep no path: they
-    // are safe only because each runs after CollectPages has walked the same tree from the document
-    // root and refused a cycle. Reorder them and a graph put together some other way would run
-    // until memory ran out instead of raising the cycle error.
+    // limited by the stack of the thread that saves it. Where each element has one parent, each
+    // takes time and memory in proportion to the number of elements; an element added under two
+    // parents is walked once per path, so the time can grow exponentially with the depth before the
+    // save refuses the tree. AddChild accepts a cycle (an untagged document never builds the tree).
+    // A walk over a cycle would not stop until it ran out of memory, so the walks refuse it with
+    // the cycle error first. Three of them, CollectElems, CollectPages and CollectElemsOnPage, keep
+    // the elements on their current path and refuse to enter one twice. The other three,
+    // BuildParentMap, FirstLeafPages and CollectStructTypes, keep no path: they are safe only
+    // because each runs after CollectPages has walked the same tree from the document root and
+    // refused a cycle. Reorder them and a graph put together some other way would run until memory
+    // ran out instead of raising the cycle error.
     private static void EnterElement(HashSet<PdfStructElem> path, PdfStructElem element)
     {
         if (!path.Add(element))
