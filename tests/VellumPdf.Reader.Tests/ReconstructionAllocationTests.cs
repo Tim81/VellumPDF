@@ -116,12 +116,23 @@ public sealed class ReconstructionAllocationTests
         return data;
     }
 
-    private static long Measure(byte[] input, PdfReaderOptions options, out string outcome)
-    {
-        // One throwaway run so one-time JIT and static-initialiser allocations are not charged to
-        // the measured one (the convention EncryptedReconstructionTests uses).
-        try { PdfReader.Open(input, options).Dispose(); } catch (InvalidDataException) { }
+    // Several measurements per input, minimum taken. A thread's allocation counter also counts
+    // whatever the runtime itself allocates on that thread while the measured call runs (a lazily
+    // built static, a first-use cache, a JIT tier change), and a one-off lands in whichever
+    // measurement happens to trigger it. An input's own cost recurs on every run and a one-off does
+    // not, so the minimum is the input's cost. The ceilings and bounds below are unchanged: they
+    // were measured on a warm path, which is what the minimum reports.
+    private const int Runs = 5;
 
+    // One throwaway run so one-time JIT and static-initialiser allocations are not charged to the
+    // measured ones (the convention EncryptedReconstructionTests uses).
+    private static void WarmUp(byte[] input, PdfReaderOptions options)
+    {
+        try { PdfReader.Open(input, options).Dispose(); } catch (InvalidDataException) { }
+    }
+
+    private static long MeasureOnce(byte[] input, PdfReaderOptions options, out string outcome)
+    {
         var before = GC.GetAllocatedBytesForCurrentThread();
         try
         {
@@ -134,6 +145,16 @@ public sealed class ReconstructionAllocationTests
         }
 
         return GC.GetAllocatedBytesForCurrentThread() - before;
+    }
+
+    private static long Measure(byte[] input, PdfReaderOptions options, out string outcome)
+    {
+        WarmUp(input, options);
+        var min = long.MaxValue;
+        outcome = "";
+        for (var i = 0; i < Runs; i++)
+            min = Math.Min(min, MeasureOnce(input, options, out outcome));
+        return min;
     }
 
     [Theory]
@@ -177,9 +198,24 @@ public sealed class ReconstructionAllocationTests
     public void Open_WithReconstruction_OffCostsTheSameForAnyRun()
     {
         // The control: reconstruction off never enters the walk, so the run's length is irrelevant.
+        // The two inputs are measured in alternation rather than one after the other. The runtime's
+        // own allocation on this thread is not constant for the life of the process: with reconstruction
+        // off, the same Open call measured 936, 912 and 744 bytes at different points in one run (the
+        // cause was not isolated). Five readings of one input followed by five of the other can
+        // straddle such a step and differ by it, while the minimum over alternated readings is taken
+        // from the same states for both inputs.
         var off = new PdfReaderOptions { AllowReconstruction = false };
-        var a = Measure(Shape("[", 512), off, out _);
-        var b = Measure(Shape("[", 262144), off, out _);
+        var shortRun = Shape("[", 512);
+        var longRun = Shape("[", 262144);
+        WarmUp(shortRun, off);
+        WarmUp(longRun, off);
+        long a = long.MaxValue, b = long.MaxValue;
+        for (var i = 0; i < Runs; i++)
+        {
+            a = Math.Min(a, MeasureOnce(shortRun, off, out _));
+            b = Math.Min(b, MeasureOnce(longRun, off, out _));
+        }
+
         Assert.Equal(a, b);
         Assert.True(a < 4096, $"allocated {a:N0}");
     }

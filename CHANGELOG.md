@@ -341,6 +341,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   one, in paragraphs, table cells and bands, and an embedded font that lacks the glyph for U+202F
   falls back to the glyph of U+00A0, then of a plain space, instead of glyph 0, the missing-glyph
   box. **Attention**: the fallback space is as wide as U+00A0, wider than a real narrow space.
+- **`ReconstructionAllocationTests` no longer fails on a stray allocation on the measuring thread
+  (test-only change).** `Open_WithReconstruction_OffCostsTheSameForAnyRun` compared two single
+  `GC.GetAllocatedBytesForCurrentThread` readings for exact equality and failed on CI's Linux runner
+  (net10.0) with 1520 against 8808 bytes. With reconstruction off, `PdfReader.Open` costs the same
+  for a 512-byte and a 262,144-byte run, but the figure the runtime adds on the thread is not
+  constant: in 3,000 readings on one machine it took three values (744, 912 and 936 bytes)
+  and, once, 17,320. The class's `Measure` helper now takes the minimum of five runs after its
+  warm-up run, and this test alternates the two inputs so that a step between values cannot fall
+  between their readings. Every ceiling and bound is unchanged. Copying the input when
+  reconstruction is off still fails the control test. No shipped package changes.
 
 - **`PdfReader.Open` with `AllowReconstruction = true` no longer allocates hundreds of megabytes on a
   short run of `[` (#610).** The reconstruction walk resumes one byte after a failed construct (two bytes
