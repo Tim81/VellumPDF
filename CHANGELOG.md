@@ -43,10 +43,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   always drops the item text.
 - **The bytes of the document catalog are now pinned as tests (#606).** `CatalogGoldenTests` holds
   63 cases that pin what `PdfDocument.Save` and `PdfDocument.PrepareForSigning` write for the
-  catalog, ahead of merging their two catalog blocks into one. Each configuration (11 on `Save`, 9
+  catalog. Each configuration (11 on `Save`, 9
   on the signing path) is pinned by the SHA-256 of the whole file, and each classic-xref one also by
   the exact text of the catalog object. The hash is taken after inflating every `/FlateDecode`
-  stream and masking byte offsets, so it does not move when the compressor's output does; the
+  stream and masking byte offsets and the contents of every hint stream and
+  cross-reference stream, so it does not move when the compressor's output does; the
   catalog text is not normalised. The tests pin that `Save` writes `/AcroForm` after
   `/StructTreeRoot` and before `/OutputIntents`, and only for a document with form fields, that the
   signing path writes it straight after `/Metadata`, and that the two paths number the

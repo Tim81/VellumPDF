@@ -38,8 +38,10 @@ namespace VellumPdf.Kernel.Tests;
 /// page content stream is written as <c>/Filter /FlateDecode /Length 0</c> with no data on net10.0
 /// and as the eight bytes of an empty zlib stream on net11.0, which moves every later offset. <see cref="Normalise"/> inflates every <c>/FlateDecode</c> stream, sets its
 /// <c>/Length</c> to the inflated length, and replaces what depends on a byte offset or on a
-/// compressed size: the cross-reference entries, <c>startxref</c>, <c>/Prev</c>, the numbers of
-/// the linearization dictionary, and the contents of a hint stream or a cross-reference stream.
+/// compressed size: the cross-reference entries, <c>startxref</c>, the trailer or
+/// cross-reference stream <c>/Prev</c> offset (not an outline item's <c>/Prev N 0 R</c>), the
+/// linearization dictionary's <c>/L</c>, <c>/H</c>, <c>/E</c> and <c>/T</c> (its <c>/O</c> and <c>/N</c>
+/// stay pinned), and the contents of a hint stream or a cross-reference stream.
 /// Everything else is hashed as written, so object order, object numbers, every dictionary key
 /// and every stream's decoded content stay pinned; what the normalisation drops, <c>qpdf --check</c>
 /// checks in the same file. One hash therefore serves both target frameworks.
@@ -239,7 +241,7 @@ public sealed class CatalogGoldenTests
         });
         text = Regex.Replace(text, @"\d{10} (\d{5}) ([nf])", "# $1 $2");
         text = Regex.Replace(text, @"startxref\n\d+", "startxref\n#");
-        text = Regex.Replace(text, @"/Prev \d+", "/Prev #");
+        text = Regex.Replace(text, @"/Prev \d+(?!\d| 0 R)", "/Prev #");
         text = Regex.Replace(text, @"/L \d+ /H \[\d+ \d+\] /O (\d+) /E \d+ /N (\d+) /T \d+", "/L # /H [# #] /O $1 /E # /N $2 /T #");
         return text;
     }
