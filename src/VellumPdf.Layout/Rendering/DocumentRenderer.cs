@@ -373,6 +373,8 @@ public sealed class DocumentRenderer
     /// </summary>
     internal void RunLayout()
     {
+        // A refusal belongs to the layout that raised it; a renderer reused for another layout starts clean.
+        _deferredCanvasRefusal = null;
 
         var contentArea = ContentArea;
         if (contentArea.Width <= 0 || contentArea.Height <= 0)

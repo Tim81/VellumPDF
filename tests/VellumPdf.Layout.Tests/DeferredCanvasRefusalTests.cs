@@ -120,6 +120,23 @@ public sealed class DeferredCanvasRefusalTests
         Assert.Equal(0, after.Draws);
     }
 
+    /// <summary>The refusal a layout kept is raised by that layout only: a second <c>Render</c> on the same renderer, whose draw no longer refuses, does not raise it again.</summary>
+    [Fact]
+    public void ARenderReusedAfterACanvasRefusal_doesNotRaiseTheFirstRefusal()
+    {
+        var draws = 0;
+        var refusingOnce = new DrawingRenderer(c =>
+        {
+            if (draws++ == 0) c.Canvas.MoveTo(double.NaN, 0);
+        });
+        var (renderer, first) = RendererOf(refusingOnce);
+
+        Assert.Throws<ArgumentException>(() => renderer.Render(first));
+
+        renderer.Render(new MemoryStream());
+        Assert.Equal(2, draws);
+    }
+
     /// <summary>An <see cref="ArgumentException"/> from a renderer that is not the canvas's refusal propagates at once.</summary>
     [Fact]
     public void AnUnrelatedArgumentException_fromADraw_isNotDeferred()
