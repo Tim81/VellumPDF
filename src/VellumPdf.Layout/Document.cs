@@ -53,7 +53,7 @@ namespace VellumPdf.Layout;
 /// <see cref="SaveAsync(string, System.Threading.CancellationToken)"/> are the exception: they run
 /// when the file is opened, before the token is looked at.</para>
 /// <para><b>Do not pass</b> a non-finite number to any of these members. The saved cases are not
-/// reported yet, because there is no diagnostics channel (#607), and 3.0 refuses every non-finite
+/// reported: <see cref="Diagnostics"/> has no code for them yet, and 3.0 refuses every non-finite
 /// value at the member that holds it.</para>
 /// </remarks>
 public sealed class Document : IDisposable
@@ -82,8 +82,87 @@ public sealed class Document : IDisposable
     /// <para>The built-in elements and running bands pass <see cref="PdfCanvas.ShowText"/> only
     /// their Standard-14 text. Characters a custom <see cref="IRenderer"/> passes to
     /// <see cref="PdfCanvas.ShowText"/> are recorded whatever font is selected.</para>
+    /// <para>This list holds one entry per substituted character and has no limit, and it stays as
+    /// it is until 3.0. <see cref="Diagnostics"/> holds the same substitutions grouped by
+    /// character; see <see cref="LayoutDiagnosticCode.UnencodableCharacter"/> for what it leaves
+    /// out.</para>
     /// </remarks>
     public IReadOnlyList<TextEncodingWarning> TextEncodingWarnings => _textEncodingWarnings;
+
+    private IReadOnlyList<LayoutDiagnostic> _diagnostics = Array.Empty<LayoutDiagnostic>().AsReadOnly();
+
+    /// <summary>
+    /// What the last save noticed and kept going through, one item per condition and subject.
+    /// </summary>
+    /// <remarks>
+    /// Empty until a save (or signing prep) has run, and replaced by each one that succeeds. A save
+    /// that threw leaves it as it was, with one exception: a refusal by
+    /// <see cref="StrictDiagnostics"/> fills it with the items the refused layout reported, because
+    /// that layout is the document's only one.
+    /// <para>The order is drawing order, except that
+    /// <see cref="LayoutDiagnosticCode.BandTruncated"/> items follow all the others, and
+    /// <see cref="LayoutDiagnosticCode.DiagnosticsDropped"/> is last.</para>
+    /// <para>The codes, each described on <see cref="LayoutDiagnosticCode"/>:
+    /// <see cref="LayoutDiagnosticCode.NullTextRunStyle"/> (a run with a null style that yields no
+    /// word), <see cref="LayoutDiagnosticCode.UnencodableCharacter"/> (a character written as
+    /// <c>?</c>, mirroring <see cref="TextEncodingWarnings"/>),
+    /// <see cref="LayoutDiagnosticCode.NullGrandchildText"/> and
+    /// <see cref="LayoutDiagnosticCode.NullGrandchild"/> (a null below the second level of a list),
+    /// <see cref="LayoutDiagnosticCode.BandTruncated"/> (mirroring <see cref="BandTruncations"/>)
+    /// and <see cref="LayoutDiagnosticCode.DiagnosticsDropped"/>. Every one saves by default; only
+    /// <see cref="StrictDiagnostics"/> refuses it, and a later major version refuses them
+    /// all.</para>
+    /// <para>The channel stores at most 1,000 distinct items, and adds
+    /// <see cref="LayoutDiagnosticCode.DiagnosticsDropped"/> after them when it dropped any, so the
+    /// list can hold 1,001. That item's <see cref="LayoutDiagnostic.Count"/> is the number of
+    /// occurrences dropped. A repeat of a stored item adds to its count. No message quotes caller
+    /// text beyond the one code point it names.</para>
+    /// <para><b>What is not reported.</b> A <see cref="DrawContext"/> you construct carries no
+    /// channel, so a built-in renderer drawn with it reports nothing of its own. A character
+    /// written as <c>?</c> on the document's canvas is still listed, because it is read from the
+    /// canvas after each element is drawn, whichever renderer wrote it. The one exception is text
+    /// the library wrote itself: the marker of a built-in list is not listed when the document
+    /// draws the list, and through a context you built it can be. Callers of the Kernel alone have
+    /// no channel, and
+    /// <see cref="VellumPdf.Layout.Rendering.DocumentRenderer.Render(System.IO.Stream)"/> exposes
+    /// none.
+    /// Input that is refused is thrown, not listed. <b>Do not</b> read an empty list as proof that
+    /// the document is free of every defect the library keeps: only the codes above are reported
+    /// yet.</para>
+    /// </remarks>
+    public IReadOnlyList<LayoutDiagnostic> Diagnostics => _diagnostics;
+
+    /// <summary>
+    /// Whether a save refuses a document whose layout reports an error item. Off by default.
+    /// </summary>
+    /// <remarks>
+    /// <b>A save that would report an error item is refused.</b> Every save overload
+    /// (<see cref="Save(System.IO.Stream)"/>, <see cref="Save(string)"/>,
+    /// <see cref="SaveAsync(System.IO.Stream, System.Threading.CancellationToken)"/>,
+    /// <see cref="SaveAsync(string, System.Threading.CancellationToken)"/>) and signing preparation
+    /// through <c>VellumPdf.Signing</c> throw <see cref="InvalidOperationException"/> from the
+    /// call, after the layout and before anything is written. The message names the first error
+    /// item and how many further stored error items there were; errors dropped past the channel's
+    /// limit are not in that number. A stream is left as it was. An existing file at the path keeps
+    /// its bytes, and a file the save created is removed. The document cannot be saved again, as
+    /// after any failure once the layout has started.
+    /// <para>A save precondition (a null or unwritable destination, a disposed document, an option
+    /// conflict) and a refusal raised while the document is laid out, including a non-finite value
+    /// the canvas refuses, are reported first, exactly as with the switch off. A refusal that only
+    /// writing the PDF would raise, such as a signature page past the last page or a null inside a
+    /// <see cref="PdfDictionary"/>, is not reached: the strict refusal comes first. So is a
+    /// cancellation seen after the layout started: a token cancelled while an element is drawn
+    /// gives the strict refusal, not <see cref="OperationCanceledException"/>. A token already
+    /// cancelled when the call starts still wins, as it does with the switch off. The switch is
+    /// read when the save runs, so setting it after an element is added applies to that element.
+    /// A <see cref="LayoutDiagnosticSeverity.Warning"/> item never makes the save throw.</para>
+    /// <para>A later major version refuses every error item whatever this property says. Do not
+    /// rely on leaving it off to keep such a document saving.</para>
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from the save, not from this setter, when an error item is reported.
+    /// </exception>
+    public bool StrictDiagnostics { get; set; }
 
     /// <summary>
     /// Running bands whose text was cut to fit the content box, from the last save that succeeded.
@@ -92,7 +171,9 @@ public sealed class Document : IDisposable
     /// </summary>
     /// <remarks>
     /// Empty until a save (or signing prep) has run, and replaced by each one that succeeds. A cut
-    /// band is not an error, and for a save or signing prep this list is the only report of it.
+    /// band loses text the caller wrote, so it is also listed in <see cref="Diagnostics"/> as
+    /// <see cref="LayoutDiagnosticCode.BandTruncated"/> with error severity, which
+    /// <see cref="StrictDiagnostics"/> refuses. This list stays as it is until 3.0.
     /// <see cref="VellumPdf.Layout.Rendering.DocumentRenderer.BandTruncations"/> describes when a
     /// band is cut.
     /// </remarks>
@@ -1168,6 +1249,7 @@ public sealed class Document : IDisposable
         try
         {
             renderer.RunLayout();
+            ThrowIfStrictRefused(renderer);
         }
         catch
         {
@@ -1187,6 +1269,7 @@ public sealed class Document : IDisposable
         try
         {
             renderer.RunLayout();
+            ThrowIfStrictRefused(renderer);
             afterLayout();
         }
         catch
@@ -1194,6 +1277,45 @@ public sealed class Document : IDisposable
             MarkFailedIfLaidOut(pagesBefore, renderer);
             throw;
         }
+    }
+
+    // Runs inside the try of both layout helpers, right after the layout returns, so every save
+    // path shares it and the failure is marked like any other layout failure. Everything that
+    // writes follows it, and a non-finite value the canvas refused was already rethrown by
+    // RunLayout. A refusal that only the write raises is pre-empted by this one when the switch is
+    // on.
+    private void ThrowIfStrictRefused(DocumentRenderer renderer)
+    {
+        if (!StrictDiagnostics || !renderer.Sink.HasErrors) return;
+
+        var items = renderer.Diagnostics;
+        _diagnostics = items;
+
+        LayoutDiagnostic? first = null;
+        var errors = 0;
+        foreach (var item in items)
+        {
+            if (item.Severity != LayoutDiagnosticSeverity.Error) continue;
+            first ??= item;
+            errors++;
+        }
+
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        if (first is null)
+            throw new InvalidOperationException(string.Create(
+                inv,
+                $"StrictDiagnostics refused the save: {renderer.Sink.ErrorReports} error report(s) were dropped past the channel's limit of {LayoutDiagnosticSink.MaxItems} items."));
+
+        var text = new System.Text.StringBuilder("StrictDiagnostics refused the save: ");
+        text.Append(first.Code);
+        if (first.Clause is not null) text.Append(" (").Append(first.Clause).Append(')');
+        text.Append(" in ").Append(first.ElementKind);
+        if (first.ElementIndex is { } index) text.Append(' ').Append(index.ToString(inv));
+        if (first.PageNumber is { } page) text.Append(", page ").Append(page.ToString(inv));
+        text.Append(": ").Append(first.Message);
+        if (errors > 1)
+            text.Append(' ').Append((errors - 1).ToString(inv)).Append(" further error item(s).");
+        throw new InvalidOperationException(text.ToString());
     }
 
     // A renderer caches its wrap at the first width it is laid out at (ParagraphRenderer._lines,
@@ -1229,6 +1351,8 @@ public sealed class Document : IDisposable
 
         _bandTruncations.Clear();
         _bandTruncations.AddRange(renderer.BandTruncations);
+
+        _diagnostics = renderer.Diagnostics;
     }
 
     /// <summary>Runs the layout pass and writes the resulting PDF to the given stream.</summary>
@@ -1291,7 +1415,11 @@ public sealed class Document : IDisposable
     /// <see cref="Conformance"/>. It is also raised when a font registered with
     /// <see cref="UseTrueTypeFont"/> lacks a table the save needs, and by every save after one whose
     /// save threw once its layout had started. For the element inputs, the boundary
-    /// documentation on the property you set says which values reach this.
+    /// documentation on the property you set says which values reach this. It is also raised when
+    /// <see cref="StrictDiagnostics"/> is <see langword="true"/> and the layout reported an item
+    /// whose <see cref="LayoutDiagnostic.Severity"/> is
+    /// <see cref="LayoutDiagnosticSeverity.Error"/>, or dropped an error report past the channel's
+    /// limit; nothing is written and the document cannot be saved again.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Many unrelated conditions share this type, so <b>do not</b> switch on the parameter name to
@@ -1425,8 +1553,9 @@ public sealed class Document : IDisposable
     /// The document has already been written, or has no pages, or an element's input cannot be laid
     /// out, or <see cref="Encrypt"/> is combined with a PDF/A <see cref="Conformance"/>, or with
     /// PDF/UA-1 when the settings leave out <see cref="PdfPermissions.Extract"/>, or a registered
-    /// font lacks a table the save needs. None of these touches the file at the path; see the
-    /// remarks.
+    /// font lacks a table the save needs, or <see cref="StrictDiagnostics"/> is
+    /// <see langword="true"/> and the layout reported an error item. None of these touches the
+    /// file at the path; see the remarks.
     /// </exception>
     public void Save(string path)
     {
@@ -1544,8 +1673,9 @@ public sealed class Document : IDisposable
     /// <paramref name="destination"/> included. The token is then looked at when the layout is queued,
     /// once it has finished, and once serialisation has finished; a cancellation seen at one of those
     /// points ends the task the same way before anything is written. Only a failure inside the layout,
-    /// such as an element that refuses its input, is reported ahead of a cancellation seen after the
-    /// layout starts. During the write, <paramref name="destination"/> receives the token and
+    /// such as an element that refuses its input, or, with <see cref="StrictDiagnostics"/> set, a
+    /// strict refusal, is reported ahead of a cancellation seen after the layout starts. During the
+    /// write, <paramref name="destination"/> receives the token and
     /// decides what to raise.
     /// </exception>
     // RS0026 flags multiple overloads with optional parameters as a future-ambiguity risk;
@@ -1606,10 +1736,11 @@ public sealed class Document : IDisposable
     /// emptied; and in the copy into the file, before each chunk. The copy passes the token to each
     /// write into the file as well, which decides what that write raises. A cancellation seen at one of the
     /// first three leaves the file that was there untouched; see the remarks. A failure that comes
-    /// first, such as a refused page geometry or an exception from an element, is reported instead.
-    /// While the PDF is being built the token is not looked at. The copy is the one point after the
-    /// file was emptied, so a cancellation there leaves it truncated or incomplete; one seen after the last chunk was written is not reported. A cancellation after the
-    /// layout has run also means this <see cref="Document"/> cannot be saved again; see
+    /// first, such as a refused page geometry, an exception from an element or a strict refusal, is
+    /// reported instead. While the PDF is being built the token is not looked at. The copy is the
+    /// one point after the file was emptied, so a cancellation there leaves it truncated or
+    /// incomplete; one seen after the last chunk was written is not reported. A cancellation after
+    /// the layout has run also means this <see cref="Document"/> cannot be saved again; see
     /// <see cref="SaveAsync(System.IO.Stream, System.Threading.CancellationToken)"/>.
     /// </exception>
 #pragma warning disable RS0026

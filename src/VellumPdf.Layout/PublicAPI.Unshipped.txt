@@ -3,6 +3,41 @@ VellumPdf.Layout.Document.DocumentId.get -> byte[]?
 VellumPdf.Layout.Document.DocumentId.set -> void
 VellumPdf.Layout.Document.Timestamp.get -> System.DateTimeOffset?
 VellumPdf.Layout.Document.Timestamp.set -> void
+VellumPdf.Layout.LayoutDiagnostic
+VellumPdf.Layout.LayoutDiagnostic.Clause.get -> string?
+VellumPdf.Layout.LayoutDiagnostic.Code.get -> VellumPdf.Layout.LayoutDiagnosticCode
+VellumPdf.Layout.LayoutDiagnostic.Count.get -> int
+VellumPdf.Layout.LayoutDiagnostic.ElementIndex.get -> int?
+VellumPdf.Layout.LayoutDiagnostic.ElementKind.get -> VellumPdf.Layout.LayoutElementKind
+VellumPdf.Layout.LayoutDiagnostic.Message.get -> string!
+VellumPdf.Layout.LayoutDiagnostic.PageNumber.get -> int?
+VellumPdf.Layout.LayoutDiagnostic.Severity.get -> VellumPdf.Layout.LayoutDiagnosticSeverity
+VellumPdf.Layout.LayoutDiagnosticCode
+VellumPdf.Layout.LayoutDiagnosticCode.BandTruncated = 401 -> VellumPdf.Layout.LayoutDiagnosticCode
+VellumPdf.Layout.LayoutDiagnosticCode.DiagnosticsDropped = 901 -> VellumPdf.Layout.LayoutDiagnosticCode
+VellumPdf.Layout.LayoutDiagnosticCode.NullGrandchild = 202 -> VellumPdf.Layout.LayoutDiagnosticCode
+VellumPdf.Layout.LayoutDiagnosticCode.NullGrandchildText = 201 -> VellumPdf.Layout.LayoutDiagnosticCode
+VellumPdf.Layout.LayoutDiagnosticCode.NullTextRunStyle = 101 -> VellumPdf.Layout.LayoutDiagnosticCode
+VellumPdf.Layout.LayoutDiagnosticCode.UnencodableCharacter = 103 -> VellumPdf.Layout.LayoutDiagnosticCode
+VellumPdf.Layout.LayoutDiagnosticSeverity
+VellumPdf.Layout.LayoutDiagnosticSeverity.Error = 2 -> VellumPdf.Layout.LayoutDiagnosticSeverity
+VellumPdf.Layout.LayoutDiagnosticSeverity.Warning = 1 -> VellumPdf.Layout.LayoutDiagnosticSeverity
+VellumPdf.Layout.LayoutElementKind
+VellumPdf.Layout.LayoutElementKind.Custom = 10 -> VellumPdf.Layout.LayoutElementKind
+VellumPdf.Layout.LayoutElementKind.Document = 0 -> VellumPdf.Layout.LayoutElementKind
+VellumPdf.Layout.LayoutElementKind.Footer = 9 -> VellumPdf.Layout.LayoutElementKind
+VellumPdf.Layout.LayoutElementKind.Header = 8 -> VellumPdf.Layout.LayoutElementKind
+VellumPdf.Layout.LayoutElementKind.Heading = 2 -> VellumPdf.Layout.LayoutElementKind
+VellumPdf.Layout.LayoutElementKind.Image = 5 -> VellumPdf.Layout.LayoutElementKind
+VellumPdf.Layout.LayoutElementKind.LineSeparator = 6 -> VellumPdf.Layout.LayoutElementKind
+VellumPdf.Layout.LayoutElementKind.List = 3 -> VellumPdf.Layout.LayoutElementKind
+VellumPdf.Layout.LayoutElementKind.Paragraph = 1 -> VellumPdf.Layout.LayoutElementKind
+VellumPdf.Layout.LayoutElementKind.PieChart = 7 -> VellumPdf.Layout.LayoutElementKind
+VellumPdf.Layout.LayoutElementKind.Table = 4 -> VellumPdf.Layout.LayoutElementKind
+VellumPdf.Layout.Document.Diagnostics.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Layout.LayoutDiagnostic!>!
+VellumPdf.Layout.Document.StrictDiagnostics.get -> bool
+VellumPdf.Layout.Document.StrictDiagnostics.set -> void
+override VellumPdf.Layout.LayoutDiagnostic.ToString() -> string!
 VellumPdf.Layout.Core.DrawContext.AddOutlineEntry(string! title, int level, double layoutY, bool expanded) -> void
 VellumPdf.Layout.Elements.Heading.BookmarkExpanded.get -> bool
 VellumPdf.Layout.Elements.Heading.BookmarkExpanded.init -> void

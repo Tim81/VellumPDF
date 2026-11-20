@@ -28,6 +28,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (`ArgumentOutOfRangeException`) at the call. The three-argument overload is unchanged and writes
   an open entry.
 
+- **`Document.Diagnostics` and `Document.StrictDiagnostics` (#607).** One channel for what a save
+  keeps while it loses, misplaces or substitutes content, and an opt-in switch that turns each
+  report into a refusal.
+  - `Diagnostics` lists `LayoutDiagnostic` items (`Code`, `Severity`, `Message`, `Clause`,
+    `ElementKind`, `ElementIndex`, `PageNumber`, `Count`), one per code and subject, replaced by
+    each save that succeeds. It is a read-only view.
+  - The codes are `NullTextRunStyle` (a `TextRun` with a null style that yields no word),
+    `UnencodableCharacter` (a character written as `?`, one item per character with its count,
+    mirroring `TextEncodingWarnings`), `NullGrandchildText` and `NullGrandchild` (a null text or a
+    null child below the second level of a list), `BandTruncated` (mirroring `BandTruncations`) and
+    `DiagnosticsDropped`.
+  - A save stores at most 1,000 distinct items. When it drops any, the list ends with
+    `DiagnosticsDropped`, whose `Count` is the number of occurrences dropped.
+  - `TextEncodingWarnings` and `BandTruncations` keep their content and order.
+  - With `StrictDiagnostics = true`, a save that would report an error item throws
+    `InvalidOperationException` after the layout and before anything is written. That holds for
+    every save overload and for signing. An existing file at the path keeps its bytes, and a file
+    the save created is removed.
+  - The switch is off by default. No document that saved on 2.3.3 stops saving, and the bytes of a
+    saved document do not change. 3.0 refuses every error item (#614).
+
+  **Attention:**
+  - A running band cut to fit is now an error, so the earlier documentation that called it "not an
+    error" no longer holds, and strict mode refuses it.
+  - Strict mode runs after the layout and before the write. A refusal that only the write raises,
+    such as a signature page past the last page, and a cancellation seen after the layout started,
+    give way to the strict refusal when the switch is on.
+  - A save now walks the list items below the second level to look for nulls. It visits each
+    item once, however many lists and second-level items reach it, so the work is linear in the
+    items and child links you built there. A null text or null child is counted once in the save,
+    under the first list the document draws, in drawing order, that reaches it. A list that
+    starts at a later item, or that your own renderer lays out and does not draw, takes no part.
+  - The marker the library draws on a list item, such as the nested bullet in a Standard 14 font,
+    is not listed as an unencodable character when the document draws the list. A list that your
+    own renderer draws through a `DrawContext` you built can still list it.
 - **Internal name tree and number tree writers (#241).** `NameTreeWriter` and `NumberTreeWriter`
   in `VellumPdf.Kernel` build the structures ISO 32000-2, 7.9.6 and 7.9.7 define, which the
   catalog's `/Names` and `/PageLabels` entries, and later named destinations and embedded files,
