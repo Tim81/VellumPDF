@@ -1594,8 +1594,8 @@ public sealed class PdfDocument : IDisposable
 
     /// <summary>
     /// Builds the document catalog for both <see cref="Save(Stream)"/> and the signing path. It
-    /// reserves no object and calls nothing that does, and it throws nothing: both callers run it
-    /// after the document is marked written.
+    /// reserves no object, calls nothing that does, and throws nothing. Both callers run it after
+    /// the document is marked written.
     /// </summary>
     private PdfDictionary BuildCatalog(CatalogParts parts)
     {
