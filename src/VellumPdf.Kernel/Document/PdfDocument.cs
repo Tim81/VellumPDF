@@ -708,7 +708,19 @@ public sealed class PdfDocument : IDisposable
     }
 
     /// <summary>Writes a complete PDF file to <paramref name="destination"/>.</summary>
-    /// <exception cref="ObjectDisposedException">The document has been disposed.</exception>
+    /// <remarks>
+    /// <b>With <see cref="Linearize"/> set, a destination that cannot be written to is refused with the
+    /// exception its own <c>Write</c> throws, not with <see cref="ArgumentException"/>.</b> A closed
+    /// stream gives <see cref="ObjectDisposedException"/>, a read-only one
+    /// <see cref="NotSupportedException"/>, and a custom one what it throws, such as
+    /// <see cref="IOException"/>. This save asks the stream with a write of no bytes before anything is
+    /// written, so the document stays unwritten and can be saved again. A stream that is not writable
+    /// but accepts a write of no bytes gives <see cref="ArgumentException"/>.
+    /// </remarks>
+    /// <exception cref="ObjectDisposedException">
+    /// The document has been disposed, or <see cref="Linearize"/> is set and <paramref name="destination"/>
+    /// was closed.
+    /// </exception>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="destination"/> is <see langword="null"/>. It is also raised from the write, not
     /// from the call that stored the null, for a <see langword="null"/> value in a
@@ -718,12 +730,19 @@ public sealed class PdfDocument : IDisposable
     /// </exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="destination"/> cannot be written to, which includes a stream that was already
-    /// closed. It is also thrown, naming the handle, when a page
-    /// was registered with an <see cref="EmbeddedFontHandle"/> from another document and this document
-    /// defines no font under its resource name; see <see cref="RegisterEmbeddedFontUsage"/>.
+    /// closed, unless <see cref="Linearize"/> is set; see the remarks. It is also thrown, naming the
+    /// handle, when a page was registered with an <see cref="EmbeddedFontHandle"/> from another
+    /// document and this document defines no font under its resource name; see
+    /// <see cref="RegisterEmbeddedFontUsage"/>.
     /// </exception>
-    /// <exception cref="NotSupportedException"><see cref="UseObjectStreams"/> is combined with
-    /// <see cref="Encrypt"/>.</exception>
+    /// <exception cref="NotSupportedException">
+    /// <see cref="UseObjectStreams"/> is combined with <see cref="Encrypt"/>, or <see cref="Linearize"/>
+    /// is set and <paramref name="destination"/> is read-only.
+    /// </exception>
+    /// <exception cref="IOException">
+    /// <see cref="Linearize"/> is set and a <paramref name="destination"/> that cannot be written to
+    /// throws it from <c>Write</c>; see the remarks.
+    /// </exception>
     /// <exception cref="InvalidOperationException">
     /// A PDF/A <see cref="Conformance"/> is set together with <see cref="Encrypt"/>, or
     /// <see cref="Conformance"/> is <see cref="PdfConformance.PdfUA1"/> together with
@@ -736,7 +755,18 @@ public sealed class PdfDocument : IDisposable
     /// </exception>
     public void Save(Stream destination)
     {
-        EnsureCanSave(destination);
+        try
+        {
+            EnsureCanSave(destination);
+        }
+        catch (ArgumentException) when (Linearize && destination is { CanWrite: false })
+        {
+            // A linearized document is built in memory and copied to the destination at the end, so
+            // the stream's own Write decides the exception type. A write of no bytes asks it the same
+            // question before anything is laid out or marked written; if it accepts, the refusal stands.
+            destination.Write(ReadOnlySpan<byte>.Empty);
+            throw;
+        }
 
         if (_pages.Count == 0)
             throw new InvalidOperationException("The document has no pages.");

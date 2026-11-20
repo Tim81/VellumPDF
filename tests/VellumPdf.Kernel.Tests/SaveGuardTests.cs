@@ -133,6 +133,83 @@ public sealed class SaveGuardTests
         await Assert.ThrowsAsync<ObjectDisposedException>(() => doc.SaveAsync(stream, TestContext.Current.CancellationToken));
     }
 
+    /// <summary>An unwritable stream whose <c>Write</c> throws <see cref="IOException"/>, with the other capabilities as given.</summary>
+    private sealed class RefusingStream(bool canRead, bool canSeek) : Stream
+    {
+        public override bool CanRead => canRead;
+        public override bool CanSeek => canSeek;
+        public override bool CanWrite => false;
+        public override long Length => 0;
+        public override long Position { get => 0; set { } }
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count) => 0;
+        public override long Seek(long offset, SeekOrigin origin) => 0;
+        public override void SetLength(long value) { }
+        public override void Write(byte[] buffer, int offset, int count) => throw new IOException("custom write refused");
+    }
+
+    private static PdfDocument LinearizedOnePage()
+    {
+        var doc = OnePage();
+        doc.Linearize = true;
+        return doc;
+    }
+
+    /// <summary>A linearized save to a destination that cannot be written to is refused with the exception the stream's own <c>Write</c> throws, before anything is written: the document saves afterwards.</summary>
+    [Fact]
+    public void Save_linearized_toAClosedMemoryStream_throwsObjectDisposedException_andTheDocumentIsStillSaveable()
+    {
+        using var doc = LinearizedOnePage();
+        var closed = new MemoryStream();
+        closed.Dispose();
+
+        Assert.Throws<ObjectDisposedException>(() => doc.Save(closed));
+
+        using var ok = new MemoryStream();
+        doc.Save(ok);
+        Assert.StartsWith("%PDF-", Encoding.Latin1.GetString(ok.ToArray()), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Save_linearized_toAReadOnlyMemoryStream_throwsNotSupportedException_andTheDocumentIsStillSaveable()
+    {
+        using var doc = LinearizedOnePage();
+        using var readOnly = ReadOnlyStream();
+
+        Assert.Throws<NotSupportedException>(() => doc.Save(readOnly));
+
+        using var ok = new MemoryStream();
+        doc.Save(ok);
+        Assert.StartsWith("%PDF-", Encoding.Latin1.GetString(ok.ToArray()), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    public void Save_linearized_toAnUnwritableStreamWhoseWriteThrows_throwsThatException_andTheDocumentIsStillSaveable(bool canRead, bool canSeek)
+    {
+        using var doc = LinearizedOnePage();
+        using var refusing = new RefusingStream(canRead, canSeek);
+
+        var ex = Assert.Throws<IOException>(() => doc.Save(refusing));
+
+        Assert.Equal("custom write refused", ex.Message);
+        using var ok = new MemoryStream();
+        doc.Save(ok);
+        Assert.StartsWith("%PDF-", Encoding.Latin1.GetString(ok.ToArray()), StringComparison.Ordinal);
+    }
+
+    /// <summary>Without <see cref="PdfDocument.Linearize"/> the same stream is refused with <see cref="ArgumentException"/> by the writer.</summary>
+    [Fact]
+    public void Save_notLinearized_toAnUnwritableStreamWhoseWriteThrows_throwsArgumentException()
+    {
+        using var doc = OnePage();
+        using var refusing = new RefusingStream(canRead: false, canSeek: true);
+
+        Assert.Throws<ArgumentException>(() => doc.Save(refusing));
+    }
+
     [Fact]
     public void Save_toANonWritableStream_leavesTheDocumentSaveable()
     {

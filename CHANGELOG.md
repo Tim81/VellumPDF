@@ -247,9 +247,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   except that the path checks of `SaveAsync(string)` run at the open, before the token is looked at.
   **Attention**: retrying the same `Document` after a failed layout used to save, with pages doubled
   or lines broken at the first attempt's width, and now throws; build a new `Document`.
-  **Attention**: the destination is checked up front, so a linearized `PdfDocument.Save` to a
-  closed stream throws `ArgumentException` where it threw `ObjectDisposedException`. A
-  non-linearized `Save` to such a stream reports `destination` where it reported `stream`.
+  **Attention**: a non-linearized `Save` to a stream that cannot be written to reports `destination`
+  where it reported `stream`. A linearized `PdfDocument.Save` to one still throws the exception the
+  stream's own `Write` throws (`ObjectDisposedException` for a closed stream, `NotSupportedException`
+  for a read-only one), but now before anything is laid out, so a retry saves.
   **Attention**: a bad `EstimatedSignatureSizeBytes` throws `ArgumentOutOfRangeException` with
   `ParamName` `options` before any page is added, where 2.3.3 threw it with `ParamName` `count`, or
   threw `OutOfMemoryException` for sizes up to 2^30 - 1.
