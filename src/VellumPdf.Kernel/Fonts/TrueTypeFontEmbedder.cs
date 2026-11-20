@@ -379,9 +379,13 @@ public sealed class TrueTypeFontEmbedder
     /// <summary>Builds the /ToUnicode CMap stream mapping glyph IDs back to Unicode so text stays searchable and copyable.</summary>
     /// <remarks>
     /// Every line of the CMap ends with one line feed (U+000A) on every operating system, so the
-    /// inflated stream is the same on Windows, Linux and macOS for the same glyph usage. ISO 32000-2,
-    /// 7.2.3 allows a carriage return, a line feed or both as an end-of-line marker, so either form
-    /// is valid; the single form keeps the output reproducible. The compressed bytes can still
+    /// inflated stream is the same on Windows, Linux and macOS for the same glyph usage. A CMap is
+    /// the body of a stream, which the end-of-line rules of ISO 32000-2, 7.2.3 exclude. It is
+    /// governed by 9.10.3 and 9.7.5.4, which point to Adobe Technical Note #5014; that note calls
+    /// a CMap file an ASCII text file in a subset and extension of PostScript. The PostScript
+    /// language reference that defines its line ends is not among the standards held for this
+    /// project, so this member does not claim that a carriage return and line feed pair is
+    /// invalid; the single form keeps the output reproducible. The compressed bytes can still
     /// differ between .NET runtimes. This member refuses no input and throws nothing.
     /// </remarks>
     public Core.PdfStream BuildToUnicodeCMap()

@@ -7802,28 +7802,29 @@ public static class OracleCorpus
     }
 
     // Builds a minimal ToUnicode CMap text with a beginbfchar section.
-    // Each entry is (srcCode, dstUnicode string). The destination is encoded as UTF-16BE hex.
+    // Each entry is (srcCode, dstUnicode string). The destination is encoded as UTF-16BE hex. Every line
+    // ends with LF, as the library writes it, so the bytes do not depend on the operating system.
     private static string BuildToUnicodeCMap(IEnumerable<(int Code, string Unicode)> entries)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("/CIDInit /ProcSet findresource begin");
-        sb.AppendLine("12 dict begin");
-        sb.AppendLine("begincmap");
-        sb.AppendLine("/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def");
-        sb.AppendLine("/CMapName /Adobe-Identity-UCS def");
-        sb.AppendLine("/CMapType 2 def");
+        sb.Append("/CIDInit /ProcSet findresource begin").Append('\n');
+        sb.Append("12 dict begin").Append('\n');
+        sb.Append("begincmap").Append('\n');
+        sb.Append("/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def").Append('\n');
+        sb.Append("/CMapName /Adobe-Identity-UCS def").Append('\n');
+        sb.Append("/CMapType 2 def").Append('\n');
         var list = entries.ToList();
-        sb.AppendLine($"{list.Count} beginbfchar");
+        sb.Append($"{list.Count} beginbfchar").Append('\n');
         foreach (var (code, unicode) in list)
         {
             var destHex = string.Concat(Encoding.BigEndianUnicode.GetBytes(unicode).Select(b => b.ToString("X2")));
-            sb.AppendLine($"<{code:X4}> <{destHex}>");
+            sb.Append($"<{code:X4}> <{destHex}>").Append('\n');
         }
-        sb.AppendLine("endbfchar");
-        sb.AppendLine("endcmap");
-        sb.AppendLine("CMapName currentdict /CMap defineresource pop");
-        sb.AppendLine("end");
-        sb.AppendLine("end");
+        sb.Append("endbfchar").Append('\n');
+        sb.Append("endcmap").Append('\n');
+        sb.Append("CMapName currentdict /CMap defineresource pop").Append('\n');
+        sb.Append("end").Append('\n');
+        sb.Append("end").Append('\n');
         return sb.ToString();
     }
 
