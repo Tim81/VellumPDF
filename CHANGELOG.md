@@ -192,6 +192,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **On .NET 10 an empty stream was written as `/FlateDecode` with no data (#640).** `PdfStream`
+  compressed through `ZLibStream`, which on .NET 10.0.15 writes nothing for empty input, so an empty
+  page's `/Contents` came out as `/Filter /FlateDecode /Length 0` with an empty body, which is not
+  an RFC 1950 stream (no header, no Adler-32). .NET 11.0.0 writes the 8 bytes of an empty zlib
+  stream, and so does `PdfStream` now on both: `78 9C 03 00 00 00 00 01`. This is a deliberate
+  output change on net10.0 only: every saved document that holds an empty unencrypted `PdfStream`
+  gains 8 bytes for it, which moves the `/Length`, the body and every later offset. An
+  AES-256-encrypted document with an empty page saves the same 2,002 bytes and `/Length 32` as
+  before, because the body is encrypted; only the decrypted plaintext changes. net11.0 output is
+  byte-identical, and a stream of one byte or more is unchanged on both. qpdf 12.4.2 `--check`,
+  `pdftotext` (poppler) and veraPDF 1.30.4 (PDF/A-2u) accepted the empty body, so only the bytes
+  show it in those tools. `Document.Timestamp` no longer lists this runtime difference among the
+  cases where output can differ.
 - **The Kernel's `DocumentId` summary and `docs/kernel-guide.md` section 9 described the derived
   identifier wrongly (#597).** They said it comes from the page content, which it never did: it
   comes from the title, the producer, the page count and the time. They also said the bytes of two
