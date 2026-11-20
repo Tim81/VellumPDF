@@ -256,6 +256,31 @@ public sealed class SaveLifecycleTests
         Assert.Equal(1, Pages(ok.ToArray()));
     }
 
+    /// <summary>A stream that is not writable and not readable but seekable, as the 2.3.3 check classified it.</summary>
+    private sealed class SeekOnlyStream : Stream
+    {
+        public override bool CanRead => false;
+        public override bool CanSeek => true;
+        public override bool CanWrite => false;
+        public override long Length => 0;
+        public override long Position { get => 0; set { } }
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => 0;
+        public override void SetLength(long value) { }
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
+    [Fact]
+    public async Task SaveAsync_toAnUnwritableUnreadableSeekableStream_throwsObjectDisposedException()
+    {
+        using var doc = Good();
+        doc.Add(new Paragraph("Hello", Style()));
+        using var stream = new SeekOnlyStream();
+
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => doc.SaveAsync(stream, TestContext.Current.CancellationToken));
+    }
+
     /// <summary>A call with two defects, a save precondition and a layout defect, reports the precondition, because it is checked before anything is laid out and so stays retryable.</summary>
     [Fact]
     public void ANullDestination_isReportedBeforeALayoutDefect_asRuled()

@@ -640,11 +640,11 @@ public sealed class PdfDocument : IDisposable
         {
             // An asynchronous save fails inside the copy into the stream, so the type is the stream's
             // own: NotSupportedException for one that cannot be written to, and ObjectDisposedException
-            // for one that was closed, which reports neither CanRead nor CanSeek. The synchronous
+            // for one that does not report CanRead, which is how a closed one answers. The synchronous
             // saves throw ArgumentException from the writer's constructor.
             if (asynchronous)
             {
-                if (!destination.CanRead && !destination.CanSeek)
+                if (!destination.CanRead)
                     throw new ObjectDisposedException(destination.GetType().FullName);
                 throw new NotSupportedException("Stream does not support writing.");
             }
