@@ -849,7 +849,11 @@ internal sealed class GlyphPresenceRule : IConformanceRule
                     if (!AdobeGlyphList.TryGetCodepoint(glyphName, out var codePoint))
                         continue; // cannot resolve — skip defensively
 
-                    if (!_cmapTable.TryGetGlyphId(codePoint, out var gid))
+                    // ISO 32000-2 9.6.5.4 looks the character up in the (3,1) subtable, so only the
+                    // 16-bit subtable is consulted; a code point that only format 12 maps is not
+                    // one the specified lookup reaches, and a font with no 16-bit subtable maps
+                    // none.
+                    if (!_cmapTable.TryGetSixteenBitGlyphId(codePoint, out var gid))
                         continue; // glyph not in cmap — cannot determine GID, skip
 
                     // Width from /Widths array (1-indexed by charcode offset from FirstChar).

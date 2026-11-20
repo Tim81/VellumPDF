@@ -420,6 +420,60 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   byte 4 of every file `GifEncoder.Encode` returns changes from `9` to `7` (`89a` to `87a`); the
   rest of the file is identical. `GifImageLoader` accepts both versions, as before. A later release that
   writes a block needing 89a will write `GIF89a`, so read the version from the file.
+- **Embedded fonts can draw characters above U+FFFF: cmap format 12 is read (#595).** The cmap
+  parser read formats 0, 4 and 6 only. A font with a format 12 subtable beside its format 4 one
+  was read through format 4, which cannot hold a code point above U+FFFF, so every such character
+  mapped to glyph 0; a font whose only Unicode subtable was format 12 threw
+  `NotSupportedException`. The parser now adds the format 12 subtable on platform 3 / encoding 10
+  or platform 0 / encoding 4 (or 10, beside a 16-bit subtable) to the 16-bit subtable it already read. Layout and ordering
+  rules are from the OpenType cmap chapter (OpenType 1.9.1, learn.microsoft.com, read 2026-11-19;
+  not held under `docs/iso`). Platform 0 / encoding 10 is read beside a 16-bit subtable because real fonts carry it
+  (DejaVu Sans does), not because the chapter lists it: its Unicode-platform encoding IDs run 0 to
+  6, so a font whose only Unicode subtable is that one is still refused. Measured with DejaVu Sans: U+1F600 drew glyph 0 and its ToUnicode entry read `<0000>
+  <D83DDE00>` on 2.3.3, and now draws glyph 5857 with `<16E1> <D83DDE00>`; pdftotext returns the
+  emoji from the page and veraPDF accepts the PDF/A-2u build.
+  **Deliberate output changes:** (1) a document that draws a code point above U+FFFF from a font
+  with a format 12 subtable now uses the real glyph. (2) A code point the 16-bit subtable leaves
+  unmapped but format 12 maps now draws its glyph, BMP included. The 16-bit subtable keeps every
+  code point it maps, so a code point both map keeps the glyph 2.3.3 drew. Measured on fonts
+  built from DejaVu Sans and Source Sans 3: with U+00E9 removed from format 4, U+00E9 drew glyph 0
+  and now draws glyph 171; with the Mac format 6 subtable as the 16-bit one, format 12 adds 5,180
+  BMP code points for DejaVu Sans and 1,410 for Source Sans 3. Across the 52 fonts of the
+  comparison that 2.3.3 loaded, every code point 2.3.3 mapped keeps its glyph. (3) A font whose
+  only Unicode subtable is format 12 on platform 3 / encoding 10 or platform 0 / encoding 4 now
+  loads, if it passes the checks listed below. A document that draws only BMP text is unchanged
+  when the 16-bit subtable covers that text: the inflated stream bodies hash to the same SHA-256
+  on 2.3.3 and now, for DejaVu Sans, DejaVu Sans cut to its format 4 subtable, and Source Sans 3.
+  **What is refused.** A format 12 subtable is malformed when a group is inverted, ends above
+  U+10FFFF, is not after the group before it, maps a glyph ID at or beyond `maxp.numGlyphs` (past
+  65535 when the font has no readable `maxp`), or when the group count does not fit the length the
+  subtable declares. The OpenType chapter says "character codes that do not correspond to any
+  glyph in the font should be mapped to glyph index 0", so a glyph the font lacks is not a
+  mapping. A malformed subtable beside a usable 16-bit one is ignored, as 2.3.3 loaded such a
+  font. When it is the only Unicode subtable, the font is refused with `NotSupportedException`,
+  the type 2.3.3 threw for every such font, with a message naming the rule. A font whose only
+  Unicode subtable is format 12 is also checked elsewhere, since it is accepted on the strength of
+  a subtable 2.3.3 refused. It is refused with `NotSupportedException` naming the rule when two
+  encoding records share a platform, encoding and language, when the records are not sorted by
+  them, when a subtable outside the Macintosh platform has a non-zero language field or a format 8, 10, 12 or 13 subtable a non-zero reserved field (the
+  cmap chapter's own requirements), when its only format 12 record is platform 0 / encoding
+  10, which the chapter does not define, when a composite glyph names a component at or past
+  `numGlyphs` (the glyf chapter's component record, walked without decoding outlines), and when
+  the composite glyphs form a cycle (the glyf chapter: the graph "must be acyclic"; the walk is
+  depth-first with an explicit stack and visits each glyph once, so it is bounded by the glyphs
+  and components the font holds). Fonts with
+  a usable 16-bit subtable keep 2.3.3's behaviour. Besides those, `head`, `hhea`, `maxp`, `name`, `OS/2`, `post` and `hmtx` must be
+  present and long enough, `head.unitsPerEm` must not be 0, every glyph's `loca` range must lie
+  inside `glyf`, and a CFF table must parse; any failure is `NotSupportedException` too. Not
+  checked: glyph and charstring contents, checksums, and every other value in those tables. **Cost:** groups are sorted and disjoint, so a font maps at most
+  1,114,112 code points; a 220-byte subtable of 17 groups over a font with no `maxp` covers
+  1,114,095 of them, which allocated 53,889,264 bytes (`GC.GetAllocatedBytesForCurrentThread`,
+  net10.0). `GlyphPresenceRule` shares the parser, and looks a character up in the 16-bit subtable
+  only, so its findings are those 2.3.3 gave: it skips a font that has no 16-bit subtable. ISO
+  32000-2 9.6.5.4 maps a non-symbolic character through the (3,1) subtable when the font has one
+  (the (1,0) subtable otherwise) and falls back to the `post` table only when the glyph name has
+  no mapping; the rule looks in the 16-bit subtable alone and makes no `post` fallback. With the merged map it raised a width finding for a
+  code point only format 12 maps.
 - **A raw CRLF, or a raw CR, inside a literal string now reads back as one line feed (#511).** ISO
   32000-2, 7.3.4.2 says an unescaped end-of-line marker in a literal string "shall be treated as a
   byte value of (0Ah), irrespective of whether the end-of-line marker was a CARRIAGE RETURN (0Dh), a

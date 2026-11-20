@@ -47,20 +47,161 @@ public sealed class TrueTypeFontEmbedder
     public string ResourceName { get; }
 
     /// <summary>Parses the SFNT font program and prepares it for embedding under the given resource name.</summary>
+    /// <exception cref="NotSupportedException">
+    /// The font's <c>cmap</c> has no Unicode subtable this library reads (format 0, 4 or 6, or
+    /// format 12 on platform 3 / encoding 10 or platform 0 / encoding 4, or on platform 0 /
+    /// encoding 10 beside a 16-bit subtable). Also, when format 12 is the only such subtable, the
+    /// font is refused if that subtable is malformed, if its encoding records repeat or are out of
+    /// order, if a non-Macintosh subtable has a non-zero language, if a format 8, 10, 12 or 13
+    /// subtable has a non-zero reserved field, if the only format 12 record is platform 0 /
+    /// encoding 10, if a required table is missing or short, if <c>unitsPerEm</c> is 0, if a
+    /// <c>loca</c> range lies outside <c>glyf</c>, if a composite glyph names a component at or
+    /// past <c>numGlyphs</c>, if the composite glyphs form a cycle, or if the <c>CFF </c> table
+    /// does not parse; the message names the rule.
+    /// </exception>
     public TrueTypeFontEmbedder(ReadOnlyMemory<byte> fontData, string resourceName)
     {
         _sfnt = SfntFont.Parse(fontData);
         _fontData = fontData;
 
         _cmap = CmapTable.Parse(_sfnt);
-        _head = HeadTable.Parse(_sfnt);
-        _hhea = HheaTable.Parse(_sfnt);
-        _maxp = MaxpTable.Parse(_sfnt);
-        _name = NameTable.Parse(_sfnt);
-        _os2 = Os2Table.Parse(_sfnt);
-        _post = PostTable.Parse(_sfnt);
-        _hmtx = HmtxTable.Parse(_sfnt, _hhea, _maxp.NumGlyphs);
+
+        // A font whose only Unicode cmap subtable is format 12 was refused with
+        // NotSupportedException before format 12 was read, whatever else was wrong with it. It is
+        // accepted now only if it is sound everywhere this class and its subsetters read, and
+        // every refusal keeps that exception type; see ParseOtherTables.
+        if (_cmap.OnlyFormat12)
+        {
+            try
+            {
+                (_head, _hhea, _maxp, _name, _os2, _post, _hmtx) = ParseOtherTables(_sfnt);
+                if (_head.UnitsPerEm == 0)
+                    throw new InvalidDataException("head.unitsPerEm is 0, so no metric can be scaled.");
+                ValidateOutlines(_sfnt);
+            }
+            catch (Exception ex) when (ex is not (NotSupportedException or OutOfMemoryException))
+            {
+                throw new NotSupportedException(
+                    "font's only Unicode cmap subtable is format 12 and the font is malformed elsewhere: " + ex.Message, ex);
+            }
+        }
+        else
+        {
+            (_head, _hhea, _maxp, _name, _os2, _post, _hmtx) = ParseOtherTables(_sfnt);
+        }
         ResourceName = resourceName;
+    }
+
+    private static (HeadTable, HheaTable, MaxpTable, NameTable, Os2Table, PostTable, HmtxTable) ParseOtherTables(
+        SfntFont sfnt)
+    {
+        var head = HeadTable.Parse(sfnt);
+        var hhea = HheaTable.Parse(sfnt);
+        var maxp = MaxpTable.Parse(sfnt);
+        var name = NameTable.Parse(sfnt);
+        var os2 = Os2Table.Parse(sfnt);
+        var post = PostTable.Parse(sfnt);
+        var hmtx = HmtxTable.Parse(sfnt, hhea, maxp.NumGlyphs);
+        return (head, hhea, maxp, name, os2, post, hmtx);
+    }
+
+    // What is checked for a format-12-only font, beyond the tables ParseOtherTables reads (each of
+    // which must be present and long enough): for glyf outlines, every glyph's loca range lies
+    // inside the glyf table (GlyfSubsetter reads exactly this, for each glyph it keeps); for CFF
+    // outlines, the CFF table parses; and no composite glyph names a component at or past numGlyphs
+    // and no composite glyph reaches itself through its components. Not checked: the contents of
+    // any glyph or charstring, table checksums, and the values (as opposed to the presence) of the
+    // name, OS/2 and post fields; and head.unitsPerEm other than 0 is the only value check (0 makes
+    // every metric non-finite and the save throw). A font that is wrong only in the unchecked
+    // places is accepted.
+    private static void ValidateOutlines(SfntFont sfnt)
+    {
+        if (sfnt.IsCff)
+        {
+            _ = CffFont.Parse(sfnt.GetTableBytes(new Tag("CFF ")));
+            return;
+        }
+
+        var subsetter = new GlyfSubsetter(sfnt);
+        var numGlyphs = MaxpTable.Parse(sfnt).NumGlyphs;
+        var components = new int[numGlyphs][];
+        for (var gid = 0; gid < numGlyphs; gid++)
+            components[gid] = ReadComponents(gid, subsetter.GetGlyphData(gid), numGlyphs);
+        RequireNoCompositeCycle(components);
+    }
+
+    // The glyf chapter: "a composite glyph description is a directed graph. This graph must be
+    // acyclic, with every path through the graph leading to a simple glyph as a leaf node." A
+    // depth-first walk with an explicit stack, so a chain of 65,535 composites cannot overflow the
+    // call stack, and each glyph is entered once (state 1 while on the stack, 2 when finished), so
+    // the work is bounded by the glyphs and components the font holds. A glyph reached while it is
+    // still on the stack closes a cycle; a glyph that is its own component is the shortest one.
+    private static void RequireNoCompositeCycle(int[][] components)
+    {
+        var state = new byte[components.Length];
+        var stack = new Stack<(int Gid, int Next)>();
+        for (var root = 0; root < components.Length; root++)
+        {
+            if (state[root] != 0)
+                continue;
+            state[root] = 1;
+            stack.Push((root, 0));
+            while (stack.Count > 0)
+            {
+                var (gid, next) = stack.Pop();
+                var children = components[gid];
+                if (next == children.Length)
+                {
+                    state[gid] = 2;
+                    continue;
+                }
+
+                stack.Push((gid, next + 1));
+                var child = children[next];
+                if (state[child] == 1)
+                    throw new InvalidDataException(
+                        $"composite glyph {gid} names component glyph {child}, which is already being expanded above it, so the composite glyphs form a cycle (OpenType glyf chapter: the graph of composite glyphs must be acyclic).");
+                if (state[child] == 0)
+                {
+                    state[child] = 1;
+                    stack.Push((child, 0));
+                }
+            }
+        }
+    }
+
+    // OpenType glyf chapter (OpenType 1.9.1, learn.microsoft.com/typography/opentype/spec/glyf,
+    // read 2026-11-19): a glyph whose numberOfContours is negative is composite; after the 10-byte
+    // header it holds component records of "uint16 flags; uint16 glyphIndex", two arguments of 2 or
+    // 4 bytes in all (ARG_1_AND_2_ARE_WORDS, 0x0001), then 2 (WE_HAVE_A_SCALE, 0x0008), 4
+    // (WE_HAVE_AN_X_AND_Y_SCALE, 0x0040) or 8 (WE_HAVE_A_TWO_BY_TWO, 0x0080) bytes of transform,
+    // repeated "while ( flags & MORE_COMPONENTS )" (0x0020). "glyphIndex" is "glyph index of
+    // component", and glyph IDs run from 0 to numGlyphs - 1, so an index at or past numGlyphs names
+    // no glyph. The records are walked here without decoding any outline. A record that runs past
+    // the glyph's data ends the walk, as it does in GlyfSubsetter.ExpandComposites.
+    private static int[] ReadComponents(int gid, ReadOnlySpan<byte> data, int numGlyphs)
+    {
+        if (data.Length < 10 || (short)((data[0] << 8) | data[1]) >= 0)
+            return [];
+
+        var components = new List<int>();
+        var offset = 10;
+        int flags;
+        do
+        {
+            if (offset + 4 > data.Length)
+                return [.. components];
+            flags = (data[offset] << 8) | data[offset + 1];
+            var component = (data[offset + 2] << 8) | data[offset + 3];
+            if (component >= numGlyphs)
+                throw new InvalidDataException(
+                    $"composite glyph {gid} names component glyph {component}, but the font has {numGlyphs} glyph(s) (OpenType glyf chapter: glyphIndex is the glyph index of the component).");
+            components.Add(component);
+            offset += 4 + ((flags & 0x0001) != 0 ? 4 : 2);
+            offset += (flags & 0x0008) != 0 ? 2 : (flags & 0x0040) != 0 ? 4 : (flags & 0x0080) != 0 ? 8 : 0;
+        }
+        while ((flags & 0x0020) != 0);
+        return [.. components];
     }
 
     /// <summary>
