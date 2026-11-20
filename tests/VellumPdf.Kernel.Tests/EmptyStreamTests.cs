@@ -11,10 +11,10 @@ using VellumPdf.IO;
 namespace VellumPdf.Kernel.Tests;
 
 /// <summary>
-/// An empty <see cref="PdfStream"/> is written as the eight-byte empty zlib stream of RFC 1950 on
-/// every runtime. .NET 10's ZLibStream writes no bytes for empty input, which left an empty
-/// FlateDecode body with no header and no Adler-32; the assertions are on bytes because
-/// the common readers accept that body.
+/// An empty <see cref="PdfStream"/> is written as the eight-byte empty zlib stream of RFC 1950
+/// (<c>78 9C 03 00 00 00 00 01</c>, <c>/Length 8</c>) on every runtime, and the same document
+/// saves the same raw bytes on net10.0 and net11.0. The assertions are on bytes, not on a reader's
+/// verdict.
 /// </summary>
 public sealed class EmptyStreamTests
 {

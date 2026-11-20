@@ -8,7 +8,9 @@ namespace VellumPdf.Core;
 /// <summary>
 /// PDF stream object (ISO 32000-2 §7.3.8).
 /// Data is stored uncompressed; WriteTo applies FlateDecode compression via
-/// ZLibStream (RFC 1950 — includes the zlib wrapper PDF requires).
+/// ZLibStream (RFC 1950 — includes the zlib wrapper PDF requires). An empty body is written
+/// as the eight-byte empty zlib stream on every runtime, because an empty FlateDecode body has
+/// no zlib header or Adler-32 and so is not an RFC 1950 stream.
 /// </summary>
 public class PdfStream : PdfObject
 {
