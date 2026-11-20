@@ -36,6 +36,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   ±2,147,483,647 (the largest integer of ISO 32000-1, Table C.1; a whole coordinate is written as
   an integer), a first number below 1, an unpaired surrogate in a prefix and a label over 32,767
   characters are refused.
+- **`GifLoadOptions` and `GifImageLoader.Load(byte[], GifLoadOptions)` (#498).** One property,
+  `PlaceOnLogicalScreen`, default `false`. With it set the loader refuses what section 20.a rules
+  out ("Each image must fit within the boundaries of the Logical Screen"): a screen with a width
+  or height of 0, a frame whose far edge lies beyond the screen, and a screen of more than 100
+  million pixels each throw `InvalidDataException`, and none falls back to the frame's own size.
+  The option also refuses what the default path lets pass, each with `InvalidDataException`
+  naming the rule and the GIF89a section: a pixel whose colour index is past the active colour
+  table (22.a), image data that decodes more pixels than the descriptor declares or ends without
+  an End of Information code (22.a, Appendix F; the code is read at the decoder's current width,
+  and one bit narrower only where the table entry added for the last data code widened it, which
+  is how `GifEncoder` writes it), image data not ended by a Block Terminator (22.c),
+  a Graphic Control Extension that is not one sub-block with a Block Size of 4, or a second one
+  before the same graphic-rendering block (23.a, 23.c.iii), and a top-level block that is not an
+  extension, an image descriptor or the trailer (Appendix B). The canvas is the screen's size at
+  4 bytes a pixel, so a 42-byte file can cost about 400 MB (the 100-million-pixel limit); do not
+  enable it for untrusted files without checking the screen size in bytes 6 to 9 first. Do not rely on the default being `false`: 3.0
+  may place the frame by default. A null `gifBytes` now throws `ArgumentNullException` where
+  2.3.3 threw `NullReferenceException`.
 - **The boundaries Layout documents are now pinned as tests.** `BoundaryContractTests` holds 67
   cases (5 facts and 62 theory rows), taken from the probes that produced the sentences in #542:
   which null argument decides when two are null on `DrawContext` and `RendererContext`, that an
@@ -182,6 +200,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   evidence it cannot carry gives `UnsupportedPdfFeatureException`, and every other failure,
   including the budget running out while it verifies an encrypted file's cross-reference streams,
   gives `InvalidDataException`.
+- **`GifImageLoader` can place the frame on the logical screen, as an option (#498).** The loader
+  decodes the first frame at the frame's own size and reads neither the Logical Screen
+  Descriptor's size nor the Image Descriptor's left and top position, so a GIF whose frame covers
+  part of a larger screen comes back at a different size and aspect ratio from the one a viewer
+  shows. `GifImageLoader.Load(byte[], GifLoadOptions)` with
+  `GifLoadOptions.PlaceOnLogicalScreen` set returns the screen's size (GIF89a section 18) with
+  the frame at its position (section 20.c.ii and 20.c.iii), and the pixels the frame does not
+  cover transparent, through an 8-bit `/SMask` with alpha 0 and black stored under it. The
+  Background Color Index (section 18.c.vii) is not used, because it names a colour for the
+  uncovered pixels and the transparent answer invents none. The frame is placed when its left or
+  top is not 0 or when the screen is wider or taller than the frame; a frame that fills the
+  screen from the origin gets no soft mask. **The default does not change:** `Load(byte[])` and
+  `Load` with default options return what 2.3.3 returned, byte for byte, for every file that
+  loaded on 2.3.3 (3,937 files in a generated corpus, compared by size, pixel and mask hashes
+  and refusal message), so Layout documents keep their size. Only the first frame is decoded, as
+  before.
+- **`GifImageLoader` no longer allocates the raster before the data has been shown to hold it
+  (#536's class).** A 42-byte GIF declaring 10,000 x 10,000 is within the 100-million-pixel limit,
+  and 2.3.3 allocated the 100,000,000-byte index buffer before refusing it for carrying 4 pixels
+  (measured with `GC.GetAllocatedBytesForCurrentThread` around `Load`: about 100 MB on 2.3.3 for
+  that file, about 27 KB now). The LZW decoder now runs
+  once without a buffer, which makes the same refusals with the same messages and counts the
+  pixels delivered, and allocates only after the count matches. The result for the files probed
+  is unchanged: a 3000 x 3000 file, interlaced and not, decodes to the same bytes on 2.3.3 and
+  now, and each short stream probed is refused with the same message. A file that loads pays for
+  the counting pass: about 50 KB against about 25 KB for a 2 x 2 frame.
+- **`GifEncoder` writes `GIF87a` when it writes only 87a blocks (#499).** It wrote `GIF89a` over a
+  Global Color Table, an Image Descriptor, Table Based Image Data and a Trailer, each of which
+  lists 87a as its required version, and GIF89a section 17.d.ii says an encoder should use the
+  earliest version that defines every block in the stream. This is a deliberate output change:
+  byte 4 of every file `GifEncoder.Encode` returns changes from `9` to `7` (`89a` to `87a`); the
+  rest of the file is identical. `GifImageLoader` accepts both versions, as before. A later release that
+  writes a block needing 89a will write `GIF89a`, so read the version from the file.
 - **A raw CRLF, or a raw CR, inside a literal string now reads back as one line feed (#511).** ISO
   32000-2, 7.3.4.2 says an unescaped end-of-line marker in a literal string "shall be treated as a
   byte value of (0Ah), irrespective of whether the end-of-line marker was a CARRIAGE RETURN (0Dh), a
