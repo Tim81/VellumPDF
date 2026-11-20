@@ -8,16 +8,19 @@ using VellumPdf.Fonts;
 
 namespace VellumPdf.Conformance.Tests.Oracle;
 
-/// <summary>A 4,000-level structure tree, the deepest veraPDF reads, is accepted by it as a structure tree.</summary>
+/// <summary>A 1,000-level structure tree, a depth veraPDF reads, is accepted by it as a structure tree.</summary>
 [Collection("veraPDF")]
 public sealed class DeepStructureTreeOracleTests
 {
-    // veraPDF 1.30.4 walks the structure tree recursively on the JVM's default stack: it ended with a
-    // StackOverflowError between 4,000 and 6,000 levels, so this is a depth it validates.
-    private const int Depth = 4_000;
+    // veraPDF 1.30.4 walks the structure tree recursively on the JVM's default stack, so the depth it
+    // reads depends on the JVM. On one development machine it read 5,000 levels and overflowed at
+    // 5,500; the CI runner's JVM overflowed at 4,000. CI's limit was not measured below that, so this
+    // uses 1,000, well under the lowest overflow seen anywhere. The 100,000-level coverage is
+    // qpdf --check and the save-path tests in the Kernel suite.
+    private const int Depth = 1_000;
 
     [Fact]
-    public void PdfUA1_chainOf4000Divs_endsNormally_andFailsNoStructureRule()
+    public void PdfUA1_chainOf1000Divs_endsNormally_andFailsNoStructureRule()
     {
         VeraPdf.EnsureAvailable();
 

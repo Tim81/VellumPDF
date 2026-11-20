@@ -187,12 +187,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   structure tree was deeper than the calling thread's stack allowed overflowed the stack inside
   `Save`, and .NET cannot catch that. The six walks that number the tree, order its pages, derive
   each element's `/Pg` and check its types no longer recurse, so the depth of the tree is not limited
-  by `Save`, `SaveAsync` or `PrepareForSigning`; time and memory grow with the number of elements.
+  by `Save`, `SaveAsync` or `PrepareForSigning`. The walks take time and memory in proportion to
+  the number of elements; `Linearize` takes longer than that on a very large tree, because the
+  linearization planner searches a list once for each object.
   The page of a grouping element is now found in one pass over the tree rather than by walking the
-  subtree of every element, which made a chain's cost grow with the square of its depth. A cycle, a
-  null child, a negative, duplicate or oversized MCID, a non-standard type and a shared element
-  without an MCID are refused with the same exception and message as before, and a tree that saved
-  before saves to the same bytes. **Attention**: a tree deeper than the stack allowed ended the
+  subtree of every element, which made a chain's cost grow with the square of its depth. A
+  duplicate MCID, an MCID above the supported maximum, a non-standard type and a shared element
+  without an MCID are refused with the same exception and message as on 2.3.3, the cycle and
+  null-child refusals stay as #521 introduced them, and a tree that saved before saves to the same
+  bytes. **Attention**: a tree deeper than the stack allowed ended the
   process on 2.3.3 and now saves; the file is valid, but a reader that walks the structure tree
   recursively can fail on it, so do not build a tree deeper than your readers can walk (ISO 32000-2
   Annex C, Table C.1, "Nested objects").

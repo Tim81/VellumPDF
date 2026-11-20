@@ -12,8 +12,8 @@ using VellumPdf.TestSupport;
 namespace VellumPdf.Kernel.Tests;
 
 /// <summary>
-/// A structure tree of any depth saves. The walks that number the tree and write it are iterative, so
-/// the depth a save can take does not depend on the stack of the thread that calls it. These tests run
+/// A deep structure tree saves. The walks that number the tree and write it are iterative, so the
+/// depth of the tree is not bounded by the stack of the thread that calls the save. These tests run
 /// the deep cases on a thread with a small stack, so a walk that recurses fails them by ending the
 /// process rather than by a slow run, and assert the exact refusal for each input a save refuses.
 /// </summary>
@@ -340,7 +340,7 @@ public sealed class StructureTreeDepthTests
         }
     }
 
-    /// <summary>The first descendant leaf in document order wins, a leaf is looked for below a leaf's siblings only when it comes first, and an element reached twice is entered once.</summary>
+    /// <summary>The first leaf below an element in document order names its page, whether it is a direct child or nested deeper, and an element reached by two routes is entered once.</summary>
     [Fact]
     public void FirstLeafPages_returnsTheFirstLeafInDocumentOrder()
     {
