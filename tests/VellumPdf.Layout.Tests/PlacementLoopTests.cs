@@ -576,6 +576,30 @@ public sealed class PlacementLoopTests
         Assert.True(compared > iterations / 2, $"only {compared} of {iterations} documents were laid out");
     }
 
+    // ── Diagnostics come from the drawing pass only ──────────────────────────
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void MeasuringRunsReportNoDiagnostics_soACutFooterIsReportedOnce(bool withDependent)
+    {
+        using var doc = new Document { PageSize = Page, Margins = Margins };
+        var style = new TextStyle { FontSize = 10 };
+        doc.Footer = new RunningBand(new string('Æ', 40), style);
+        doc.Add(new Paragraph("body", style));
+        if (withDependent)
+            doc.Add(new NamedDependent("settled", n => n == 0 ? "a" : "b"));
+
+        doc.Save(new MemoryStream());
+
+        // One footer and a dependent that takes three measuring runs still give one report, with
+        // a count of one, as with no dependent and a single run.
+        var item = Assert.Single(doc.Diagnostics);
+        Assert.Equal(LayoutDiagnosticCode.BandTruncated, item.Code);
+        Assert.Equal(1, item.Count);
+        Assert.Equal(1, item.PageNumber);
+    }
+
     // ── Retry, through Document ──────────────────────────────────────────────
 
     private sealed class NothingRenderer : IRenderer
