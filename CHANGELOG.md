@@ -664,6 +664,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   3.0 as the release that refuses all three. Three tests pin the shapes with exact dimensions.
   No behaviour changes.
 
+### Documentation
+
+- **Every file in `docs/` is now either in the site navigation or kept off the site on purpose
+  (#220).** `docs/toc.yml` already lists nine of the eleven Markdown files. The other two,
+  `vellumpdf-inline-fontdict-quirk.md` and `vellumpdf-showtext-winansi-quirk.md`, are Dutch
+  notes on defects fixed in 1.8.2 and 1.9.0, and the second quotes a consuming application's
+  source path. They are now excluded from the DocFX build in `docfx.json`; before, `docs/**.md`
+  published them at a URL no page linked to. `barcodes-roadmap.md` called itself a maintainer
+  note left out of `toc.yml` while `toc.yml` listed it. Its opening now says what the page is,
+  and its README maintenance note names `eng/generate-roadmap.py` as the source of the roadmap
+  table.
+
 ## [2.3.4] - 2026-11-19
 
 A security servicing release. VellumPdf's own code is unchanged: `git diff v2.3.3 -- src` is empty
