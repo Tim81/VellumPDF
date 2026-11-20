@@ -171,8 +171,7 @@ public sealed class NoBreakSpaceSyntheticFontTests
             z.CopyTo(inflated);
         var text = Encoding.Latin1.GetString(inflated.ToArray());
 
-        // \r?: the CMap is built with AppendLine, so its lines end in CRLF on Windows.
-        return Regex.Matches(text, @"^<([0-9A-F]{4})> <([0-9A-F]{4})>\r?$", RegexOptions.Multiline)
+        return Regex.Matches(text, @"^<([0-9A-F]{4})> <([0-9A-F]{4})>$", RegexOptions.Multiline)
             .Select(m => (Convert.ToInt32(m.Groups[1].Value, 16), Convert.ToInt32(m.Groups[2].Value, 16)))
             .ToList();
     }

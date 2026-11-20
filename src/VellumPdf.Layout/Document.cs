@@ -337,8 +337,6 @@ public sealed class Document : IDisposable
     /// <item>A document signed through VellumPdf.Signing takes the signature's time from
     /// <c>PdfSignatureSettings.SigningTime</c> in that package, not from this property, and the
     /// signature value itself is outside this guarantee.</item>
-    /// <item>A document with an embedded font can differ between Windows and Linux, because the
-    /// line ends of the font's ToUnicode map follow the platform (#630).</item>
     /// <item>The instant is before 1970 (a negative Unix time) and <see cref="DocumentId"/> is
     /// null: the derived identifier is hashed from the instant's decimal text, and the minus sign
     /// of that text follows the current culture. Cultures whose negative sign differs from the invariant
