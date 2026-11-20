@@ -9,12 +9,12 @@ namespace VellumPdf.Fonts.Sfnt;
 /// 12 (segmented coverage, the full Unicode range).
 /// </summary>
 /// <remarks>
-/// A format 12 subtable on platform 3 / encoding 10, or platform 0 / encoding 4 (or 10 beside a 16-bit subtable), adds the
-/// code points format 4 cannot hold, those above U+FFFF. The OpenType cmap chapter (OpenType 1.9.1,
-/// learn.microsoft.com, read 2026-11-19; not held under docs/iso) names platform 3 / encoding 10
-/// and platform 0 / encoding 4 for format 12. Platform 0 / encoding 10 is not in its list of
-/// Unicode-platform encoding IDs (0 to 6); it is read because real fonts carry it (DejaVu Sans
-/// does, with a format 12 subtable), not because the chapter lists it.
+/// A format 12 subtable on platform 3 / encoding 10, or platform 0 / encoding 4 (or 10 beside a
+/// 16-bit subtable), adds the code points format 4 cannot hold, those above U+FFFF. The OpenType
+/// cmap chapter (OpenType 1.9.1, learn.microsoft.com) names platform 3 / encoding 10 and platform 0
+/// / encoding 4 for format 12. Platform 0 / encoding 10 is not in its list of Unicode-platform
+/// encoding IDs (0 to 6); it is read because real fonts carry it (DejaVu Sans does, with a format
+/// 12 subtable), not because the chapter lists it.
 /// <para><b>The 16-bit subtable keeps every code point it maps.</b> The OpenType cmap chapter says
 /// the 32-bit subtable of a font that carries both should be a superset of the 16-bit one, so for
 /// a well-formed font the two agree on the BMP. A font whose tables disagree keeps the BMP mapping
@@ -32,22 +32,21 @@ namespace VellumPdf.Fonts.Sfnt;
 /// <see cref="NotSupportedException"/>; the message names the rule, and the
 /// <see cref="InvalidDataException"/> that found it is the inner exception.</para>
 /// <para><b>A font whose only Unicode subtable is format 12 is held to the chapter's other
-/// rules too.</b> <see cref="Parse"/> throws
-/// <see cref="NotSupportedException"/> naming the rule when two encoding records share a platform,
-/// encoding and language, when the records are not sorted by platform, encoding and language, when
-/// a subtable on a platform other than Macintosh has a non-zero language field, when a format 8, 10,
-/// 12 or 13 subtable has a non-zero reserved field, or when the only
-/// format 12 record is platform 0 / encoding 10 (the chapter defines platform 0 encodings 0 to 6
-/// only). A font that also has a 16-bit subtable is not held to these.</para>
+/// rules too.</b>
+/// <see cref="Parse"/> throws <see cref="NotSupportedException"/> naming the rule when two encoding
+/// records share a platform, encoding and language, when the records are not sorted by platform,
+/// encoding and language, when a subtable on a platform other than Macintosh has a non-zero
+/// language field, when a format 8, 10, 12 or 13 subtable has a non-zero reserved field, or when
+/// the only format 12 record is platform 0 / encoding 10 (the chapter defines platform 0 encodings
+/// 0 to 6 only). A font that also has a 16-bit subtable is not held to these.</para>
 /// <para><b>Cost is bounded by the file.</b> Groups are sorted and disjoint, so a font maps at
 /// most 1,114,112 code points however it is built, and a group count must fit the declared length,
 /// so a subtable of 12 bytes a group costs at most what its groups hold. A group maps at most as
 /// many code points as the font has glyphs, so the worst case needs a font with close to 65,535
 /// of them: seventeen groups (a 220-byte subtable) over a font with no <c>maxp</c> to bound the
-/// glyph IDs cover 1,114,095 code points, which builds a dictionary of that many entries,
-/// 53,889,264 bytes allocated by <see cref="Parse"/>, measured with
-/// <c>GC.GetAllocatedBytesForCurrentThread</c> on net10.0. The 1,114,112 code points Unicode has
-/// are 17 more entries than that, and the cost is paid once per font load.</para>
+/// glyph IDs cover 1,114,095 code points, which builds a dictionary of that many entries and
+/// allocates about 54 MB in <see cref="Parse"/>. The 1,114,112 code points Unicode has are 17 more
+/// entries than that, and the cost is paid once per font load.</para>
 /// </remarks>
 internal sealed class CmapTable
 {
@@ -194,9 +193,9 @@ internal sealed class CmapTable
         }
         catch (InvalidDataException ex)
         {
-            // Nothing else to read: this is a font that was refused with NotSupportedException before
-            // format 12 was read, and it is still refused, with the same type and a message that
-            // names the rule.
+            // Nothing else to read: this is a font that was refused with NotSupportedException
+            // before format 12 was read, and it is still refused, with the same type and a message
+            // that names the rule.
             throw new NotSupportedException(
                 "font's only Unicode cmap subtable is format 12 and it is malformed: " + ex.Message, ex);
         }
@@ -215,20 +214,20 @@ internal sealed class CmapTable
 
     // A font whose only Unicode subtable is format 12 was refused before format 12 was read, so
     // accepting it is new, and what is new is held to the chapter's own rules (R2: input that does
-    // not comply never gets the exception for bugs). Each failure is NotSupportedException, the type
-    // every such font was refused with. Fonts that also carry a 16-bit subtable loaded before format 12
-    // was read and are not held to these.
+    // not comply never gets the exception for bugs). Each failure is NotSupportedException, the
+    // type every such font was refused with. Fonts that also carry a 16-bit subtable loaded before
+    // format 12 was read and are not held to these.
     //
-    // OpenType cmap chapter (OpenType 1.9.1, learn.microsoft.com/typography/opentype/spec/cmap, read
-    // 2026-11-19): "The encoding record entries in the 'cmap' header must be sorted first by
+    // OpenType cmap chapter (OpenType 1.9.1, learn.microsoft.com/typography/opentype/spec/cmap,
+    // read 2026-11-19): "The encoding record entries in the 'cmap' header must be sorted first by
     // platform ID, then by platform-specific encoding ID, and then by the language field in the
     // corresponding subtable. Each platform ID, platform-specific encoding ID, and subtable
     // language combination may appear only once in the 'cmap' table." and "The language field must
-    // be set to zero for all 'cmap' subtables whose platform IDs are other than Macintosh
-    // (platform ID 1)." Its Unicode-platform encoding IDs are 0 to 6, so platform 0 / encoding 10
-    // is not one the chapter defines; platform 3 / encoding 10 and platform 0 / encoding 4 are the
-    // chapter's full-repertoire records. The format 8, 10, 12 and 13 headers have a "uint16
-    // reserved" field, "Reserved; set to 0".
+    // be set to zero for all 'cmap' subtables whose platform IDs are other than Macintosh (platform
+    // ID 1)." Its Unicode-platform encoding IDs are 0 to 6, so platform 0 / encoding 10 is not one
+    // the chapter defines; platform 3 / encoding 10 and platform 0 / encoding 4 are the chapter's
+    // full-repertoire records. The format 8, 10, 12 and 13 headers have a "uint16 reserved" field,
+    // "Reserved; set to 0".
     private static void RequireSoundRecordsForSoleFormat12(SfntReader r, int numTabs, bool chapterWide)
     {
         if (!chapterWide)
@@ -245,7 +244,8 @@ internal sealed class CmapTable
                 var encoding = r.ReadU16(4 + i * 8 + 2);
                 var offset = (int)r.ReadU32(4 + i * 8 + 4);
                 var format = r.ReadU16(offset);
-                // Formats 8, 10, 12 and 13 have a uint16 "reserved" field after the format, "set to 0".
+                // Formats 8, 10, 12 and 13 have a uint16 "reserved" field after the format, "set to
+                // 0".
                 if (format is 8 or 10 or 12 or 13 && r.ReadU16(offset + 2) != 0)
                     throw new NotSupportedException(
                         $"font's only Unicode cmap subtable is format 12 and the format {format} subtable for platform {platform} / encoding {encoding} has a non-zero reserved field; the OpenType cmap chapter says to set it to 0");
@@ -415,10 +415,11 @@ internal sealed class CmapTable
             if (start <= previousEnd)
                 throw new InvalidDataException(
                     $"Malformed font: cmap format-12 group {i} is not after the group before it.");
-            // The OpenType cmap chapter (OpenType 1.9.1, learn.microsoft.com, read 2026-11-19): "character
-            // codes that do not correspond to any glyph in the font should be mapped to glyph index 0", so a glyph ID the font does not hold is not
-            // a mapping. The last glyph of the group is the largest, and `end - start` cannot
-            // wrap because the inverted-group check above has already run.
+            // The OpenType cmap chapter (OpenType 1.9.1, learn.microsoft.com, read 2026-11-19):
+            // "character codes that do not correspond to any glyph in the font should be mapped to
+            // glyph index 0", so a glyph ID the font does not hold is not a mapping. The last glyph
+            // of the group is the largest, and `end - start` cannot wrap because the inverted-group
+            // check above has already run.
             if ((long)startGlyph + (end - start) >= numGlyphs)
                 throw new InvalidDataException(
                     numGlyphs > ushort.MaxValue

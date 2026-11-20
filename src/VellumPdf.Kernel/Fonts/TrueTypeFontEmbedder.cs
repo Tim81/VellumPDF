@@ -43,14 +43,15 @@ public sealed class TrueTypeFontEmbedder
     /// <summary>Parses the SFNT font program and prepares it for embedding under the given resource name.</summary>
     /// <exception cref="NotSupportedException">
     /// The font's <c>cmap</c> has no Unicode subtable this library reads (format 0, 4 or 6, or
-    /// format 12 on platform 3 / encoding 10 or platform 0 / encoding 4, or on platform 0 / encoding 10 beside a 16-bit subtable). Also, when format
-    /// 12 is the only such subtable, the font is refused if that subtable is malformed, if its
-    /// encoding records repeat or are out of order, if a non-Macintosh subtable has a non-zero
-    /// language, if a format 8, 10, 12 or 13 subtable has a non-zero reserved field, if the only format 12
-    /// record is platform 0 / encoding 10, if a required table is
-    /// missing or short, if <c>unitsPerEm</c> is 0, if a <c>loca</c> range lies outside
-    /// <c>glyf</c>, if a composite glyph names a component at or past <c>numGlyphs</c>, if the composite glyphs form a cycle, or if the
-    /// <c>CFF </c> table does not parse; the message names the rule.
+    /// format 12 on platform 3 / encoding 10 or platform 0 / encoding 4, or on platform 0 /
+    /// encoding 10 beside a 16-bit subtable). Also, when format 12 is the only such subtable, the
+    /// font is refused if that subtable is malformed, if its encoding records repeat or are out of
+    /// order, if a non-Macintosh subtable has a non-zero language, if a format 8, 10, 12 or 13
+    /// subtable has a non-zero reserved field, if the only format 12 record is platform 0 /
+    /// encoding 10, if a required table is missing or short, if <c>unitsPerEm</c> is 0, if a
+    /// <c>loca</c> range lies outside <c>glyf</c>, if a composite glyph names a component at or
+    /// past <c>numGlyphs</c>, if the composite glyphs form a cycle, or if the <c>CFF </c> table
+    /// does not parse; the message names the rule.
     /// </exception>
     public TrueTypeFontEmbedder(ReadOnlyMemory<byte> fontData, string resourceName)
     {
@@ -101,11 +102,12 @@ public sealed class TrueTypeFontEmbedder
     // What is checked for a format-12-only font, beyond the tables ParseOtherTables reads (each of
     // which must be present and long enough): for glyf outlines, every glyph's loca range lies
     // inside the glyf table (GlyfSubsetter reads exactly this, for each glyph it keeps); for CFF
-    // outlines, the CFF table parses; and no composite glyph names a component at or past
-    // numGlyphs and no composite glyph reaches itself through its components. Not checked: the contents of any glyph or charstring, table checksums, and the
-    // values (as opposed to the presence) of the name, OS/2 and post fields; and head.unitsPerEm other than 0 is the only
-    // value check (0 makes every metric non-finite and the save throw). A font that is wrong
-    // only in the unchecked places is accepted.
+    // outlines, the CFF table parses; and no composite glyph names a component at or past numGlyphs
+    // and no composite glyph reaches itself through its components. Not checked: the contents of
+    // any glyph or charstring, table checksums, and the values (as opposed to the presence) of the
+    // name, OS/2 and post fields; and head.unitsPerEm other than 0 is the only value check (0 makes
+    // every metric non-finite and the save throw). A font that is wrong only in the unchecked
+    // places is accepted.
     private static void ValidateOutlines(SfntFont sfnt)
     {
         if (sfnt.IsCff)

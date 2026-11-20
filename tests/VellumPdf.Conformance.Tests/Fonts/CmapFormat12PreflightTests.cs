@@ -8,11 +8,11 @@ namespace VellumPdf.Conformance.Tests.Fonts;
 
 /// <summary>
 /// <c>GlyphPresenceRule</c> resolves a simple TrueType character through the 16-bit cmap subtable,
-/// which is the lookup ISO 32000-2 9.6.5.4 specifies ((3,1), then post), and skips a font whose cmap
-/// parse throws or that has no 16-bit subtable. Reading format 12 (#595) therefore changes nothing
-/// the rule says: a font whose only Unicode subtable is format 12 is skipped, as it was on 2.3.3
-/// when its parse threw, and a code point only format 12 maps is not looked up. These tests pin
-/// that.
+/// which is the lookup ISO 32000-2 9.6.5.4 specifies ((3,1), then post), and skips a font whose
+/// cmap parse throws or that has no 16-bit subtable. Reading format 12 (#595) therefore changes
+/// nothing the rule says: a font whose only Unicode subtable is format 12 is skipped, as it was on
+/// 2.3.3 when its parse threw, and a code point only format 12 maps is not looked up. These tests
+/// pin that.
 ///
 /// Each fixture is the oracle corpus's simple-font PDF (one character, 'A', drawn with WinAnsi
 /// encoding and a /Widths entry measured from the unmodified DejaVu Sans) with the embedded program
@@ -23,7 +23,8 @@ public sealed class CmapFormat12PreflightTests
     private const string GlyphPresent = "ISO19005-2:6.2.11.4.1-glyph-present";
     private const string GlyphWidth = "ISO19005-2:6.2.11.5-glyph-width";
 
-    /// <summary>The program's own format 12 subtable, glyphs present: the rule skips the font and finds nothing.</summary>
+    /// <summary>The program's own format 12 subtable, glyphs present: the rule skips the font and
+    /// finds nothing.</summary>
     [Fact]
     public void FormatTwelveOnlyProgram_withTheGlyphPresent_raisesNoGlyphFinding()
     {
@@ -70,9 +71,9 @@ public sealed class CmapFormat12PreflightTests
     /// ISO 32000-2 9.6.5.4 resolves a non-symbolic TrueType character through the (3,1) cmap, then
     /// the post table. A font with a 16-bit subtable that lacks the code point and a format 12
     /// subtable that maps it was skipped on 2.3.3 (the 16-bit subtable was the only one read), and
-    /// the rule keeps reading only the 16-bit subtable for such a font: it would otherwise judge the
-    /// declared width against a glyph the specified lookup never reaches. Here 'A' is in format 12
-    /// only, mapped to a glyph whose advance differs from the /Widths entry, and the rule says
+    /// the rule keeps reading only the 16-bit subtable for such a font: it would otherwise judge
+    /// the declared width against a glyph the specified lookup never reaches. Here 'A' is in format
+    /// 12 only, mapped to a glyph whose advance differs from the /Widths entry, and the rule says
     /// nothing, as it did on 2.3.3.
     /// </summary>
     [Fact]
@@ -99,11 +100,13 @@ public sealed class CmapFormat12PreflightTests
 
     // ---------------------------------------------------------------- fixtures
 
-    /// <summary>Rule ids of every assertion preflight raises on the fixture, for PDF/A-2b.</summary>
+    /// <summary>Rule ids of every assertion preflight raises on the fixture, for
+    /// PDF/A-2b.</summary>
     internal static List<string> RuleIds(byte[] pdf) =>
         PdfPreflight.Validate(pdf, PdfConformance.PdfA2B).Assertions.Select(a => a.RuleId).ToList();
 
-    /// <summary>The corpus's simple-font PDF with the DejaVu program cut to its format 12 subtable, then transformed.</summary>
+    /// <summary>The corpus's simple-font PDF with the DejaVu program cut to its format 12 subtable,
+    /// then transformed.</summary>
     internal static byte[] FormatTwelveOnly(Func<byte[], byte[]> transform)
     {
         var font = CmapFormat12Tests.LoadAsset("DejaVuSans.ttf");
@@ -112,7 +115,8 @@ public sealed class CmapFormat12PreflightTests
         return OracleCorpus.SimpleTrueTypeFont(_ => { }, encoding: new PdfName("WinAnsiEncoding"), fontProgram: transform(twelve));
     }
 
-    /// <summary>A program whose only subtable is a format 12 one mapping a single code point.</summary>
+    /// <summary>A program whose only subtable is a format 12 one mapping a single code
+    /// point.</summary>
     internal static byte[] FormatTwelveOnlyKeeping(int codePoint)
     {
         var font = CmapFormat12Tests.LoadAsset("DejaVuSans.ttf");

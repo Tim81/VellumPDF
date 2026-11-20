@@ -11,7 +11,8 @@ using VellumPdf.TestSupport;
 
 namespace VellumPdf.Conformance.Tests.Fonts;
 
-// The enclosing VellumPdf.Conformance namespace has its own PdfConformance; this file means the document one.
+// The enclosing VellumPdf.Conformance namespace has its own PdfConformance; this file means the
+// document one.
 using PdfConformance = VellumPdf.Document.PdfConformance;
 
 /// <summary>
@@ -92,7 +93,8 @@ public sealed class CmapFormat12Tests
         }
     }
 
-    /// <summary>The same two format 12 fonts, one KAT each, so a failure above names a value.</summary>
+    /// <summary>The same two format 12 fonts, one KAT each, so a failure above names a
+    /// value.</summary>
     [Fact]
     public void Format12OnlyDejaVu_mapsU1F600ToGlyph5857()
     {
@@ -190,7 +192,8 @@ public sealed class CmapFormat12Tests
         }
     }
 
-    /// <summary>The CFF path: Source Sans draws U+1F916 with glyph 2251 (0x08CB) and a ToUnicode pair for it.</summary>
+    /// <summary>The CFF path: Source Sans draws U+1F916 with glyph 2251 (0x08CB) and a ToUnicode
+    /// pair for it.</summary>
     [Fact]
     public void EmbeddedSourceSans_drawsU1F916WithItsRealGlyph()
     {
@@ -203,14 +206,14 @@ public sealed class CmapFormat12Tests
         Assert.Contains("D83EDD16>", all);   // U+1F916 as a surrogate pair
     }
 
-    // ---------------------------------------------------------------- where the two subtables disagree
+    // -------------------------------------------------------- where the two subtables disagree
 
     /// <summary>
-    /// A font whose format 12 subtable maps a BMP code point differently from its format 4 one keeps
-    /// the format 4 glyph, as 2.3.3 drew it, and still gets its supplementary planes from format 12.
-    /// The disagreement is made in memory: the format 12 group holding 'A' is shifted by 1000
-    /// glyphs, and the format 12 subtable alone is checked to map 'A' to 1036 first, so the test
-    /// cannot pass because nothing disagreed.
+    /// A font whose format 12 subtable maps a BMP code point differently from its format 4 one
+    /// keeps the format 4 glyph, as 2.3.3 drew it, and still gets its supplementary planes from
+    /// format 12. The disagreement is made in memory: the format 12 group holding 'A' is shifted by
+    /// 1000 glyphs, and the format 12 subtable alone is checked to map 'A' to 1036 first, so the
+    /// test cannot pass because nothing disagreed.
     /// </summary>
     [Fact]
     public void FontWhoseFormat12DisagreesOnABmpCodePoint_keepsTheFormat4Glyph()
@@ -233,7 +236,8 @@ public sealed class CmapFormat12Tests
         }
     }
 
-    /// <summary>The subtable with every group that holds <paramref name="codePoint"/> moved up by <paramref name="shift"/> glyphs.</summary>
+    /// <summary>The subtable with every group that holds <paramref name="codePoint"/> moved up by
+    /// <paramref name="shift"/> glyphs.</summary>
     internal static Subtable ShiftGroupContaining(Subtable format12, int codePoint, int shift)
     {
         var bytes = (byte[])format12.Bytes.Clone();
@@ -303,7 +307,7 @@ public sealed class CmapFormat12Tests
         Assert.Equal(expectedSha256, digest);
     }
 
-    // ---------------------------------------------------------------- a format-12-only font must be sound
+    // ----------------------------------------------------- a format-12-only font must be sound
 
     /// <summary>
     /// A font whose only Unicode subtable is format 12 was refused with NotSupportedException on
@@ -327,7 +331,8 @@ public sealed class CmapFormat12Tests
 
         Assert.Contains("only Unicode cmap subtable is format 12 and the font is malformed elsewhere", ex.Message);
         Assert.NotNull(ex.InnerException);
-        // The same damage on a font with a format 4 subtable never surfaces as NotSupportedException.
+        // The same damage on a font with a format 4 subtable never surfaces as
+        // NotSupportedException.
         var control = Record.Exception(() => new TrueTypeFontEmbedder(WithTableLength(full, tag, damagedLength), "F1"));
         Assert.False(control is NotSupportedException, "the damage is not what is being refused");
     }
@@ -364,7 +369,8 @@ public sealed class CmapFormat12Tests
         Assert.IsType<InvalidOperationException>(ex.InnerException);
     }
 
-    /// <summary>A format 12 subtable that maps a glyph the font does not hold, alone in the font, is refused at load.</summary>
+    /// <summary>A format 12 subtable that maps a glyph the font does not hold, alone in the font,
+    /// is refused at load.</summary>
     [Fact]
     public void FormatTwelveOnlyFont_mappingAGlyphPastNumGlyphs_isRefusedAsNotSupported()
     {
@@ -378,7 +384,8 @@ public sealed class CmapFormat12Tests
         Assert.Contains("but the font has", ex.Message);
     }
 
-    /// <summary>The same shifted subtable beside format 4 is ignored and the font loads, mapping 'A' through format 4.</summary>
+    /// <summary>The same shifted subtable beside format 4 is ignored and the font loads, mapping
+    /// 'A' through format 4.</summary>
     [Fact]
     public void FormatTwelveBesideFormat4_mappingAGlyphPastNumGlyphs_isIgnoredAndTheFontLoads()
     {
@@ -506,10 +513,10 @@ public sealed class CmapFormat12Tests
 
     /// <summary>
     /// The glyf chapter: a composite glyph description "is a directed graph. This graph must be
-    /// acyclic". A composite that names itself, and two composites that name each other, are refused
-    /// for a format-12-only font with the rule in the message. A composite that names another
-    /// composite which does not lead back (a nested composite) loads, and so does the same cycle
-    /// beside a 16-bit subtable, which is not held to the chapter's other rules.
+    /// acyclic". A composite that names itself, and two composites that name each other, are
+    /// refused for a format-12-only font with the rule in the message. A composite that names
+    /// another composite which does not lead back (a nested composite) loads, and so does the same
+    /// cycle beside a 16-bit subtable, which is not held to the chapter's other rules.
     /// </summary>
     [Fact]
     public void FormatTwelveOnlyFont_compositeCycle_isRefusedAsNotSupported()
@@ -539,9 +546,9 @@ public sealed class CmapFormat12Tests
     }
 
     /// <summary>
-    /// The font with the glyphIndex of component <paramref name="componentIndex"/> of composite glyph
-    /// <paramref name="gid"/> rewritten to <paramref name="component"/>. Written from the glyf
-    /// chapter's record layout (flags, glyphIndex, two arguments of 2 or 4 bytes, an optional
+    /// The font with the glyphIndex of component <paramref name="componentIndex"/> of composite
+    /// glyph <paramref name="gid"/> rewritten to <paramref name="component"/>. Written from the
+    /// glyf chapter's record layout (flags, glyphIndex, two arguments of 2 or 4 bytes, an optional
     /// transform of 2, 4 or 8 bytes, repeated while MORE_COMPONENTS is set), independently of the
     /// walk in the embedder.
     /// </summary>
@@ -673,7 +680,8 @@ public sealed class CmapFormat12Tests
         return all.ToArray();
     }
 
-    /// <summary>The font with one table's directory length rewritten, so the table is cut short.</summary>
+    /// <summary>The font with one table's directory length rewritten, so the table is cut
+    /// short.</summary>
     private static byte[] WithTableLength(byte[] font, string tag, int length)
     {
         var copy = (byte[])font.Clone();
@@ -682,7 +690,8 @@ public sealed class CmapFormat12Tests
         return copy;
     }
 
-    /// <summary>The font with one table's tag overwritten, so the table is missing from the directory.</summary>
+    /// <summary>The font with one table's tag overwritten, so the table is missing from the
+    /// directory.</summary>
     private static byte[] WithTagRenamed(byte[] font, string tag)
     {
         var copy = (byte[])font.Clone();
@@ -714,7 +723,8 @@ public sealed class CmapFormat12Tests
         d[o] = (byte)(v >> 24); d[o + 1] = (byte)(v >> 16); d[o + 2] = (byte)(v >> 8); d[o + 3] = (byte)v;
     }
 
-    /// <summary>Finds a table's directory entry: (entry offset, table offset, table length).</summary>
+    /// <summary>Finds a table's directory entry: (entry offset, table offset, table
+    /// length).</summary>
     private static (int Entry, int Offset, int Length) FindTable(byte[] font, string tag)
     {
         var count = U16(font, 4);
@@ -727,7 +737,8 @@ public sealed class CmapFormat12Tests
         throw new InvalidOperationException($"no '{tag}' table");
     }
 
-    /// <summary>The font's cmap subtables, each with the bytes the encoding record points at.</summary>
+    /// <summary>The font's cmap subtables, each with the bytes the encoding record points
+    /// at.</summary>
     internal static List<Subtable> Subtables(byte[] font)
     {
         var (_, cmap, _) = FindTable(font, "cmap");
@@ -746,9 +757,10 @@ public sealed class CmapFormat12Tests
     }
 
     /// <summary>
-    /// The font with a new cmap table holding only <paramref name="keep"/>. The table is appended to
-    /// the file and the directory entry repointed; the old bytes stay where they are, unreferenced.
-    /// Table checksums are not recomputed, which this project's parser does not check.
+    /// The font with a new cmap table holding only <paramref name="keep"/>. The table is appended
+    /// to the file and the directory entry repointed; the old bytes stay where they are,
+    /// unreferenced. Table checksums are not recomputed, which this project's parser does not
+    /// check.
     /// </summary>
     internal static byte[] WithCmap(byte[] font, IEnumerable<Subtable> keep)
     {

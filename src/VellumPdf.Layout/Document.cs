@@ -476,17 +476,18 @@ public sealed class Document : IDisposable
     /// subtable is malformed (a group that is inverted, unsorted or past U+10FFFF, a glyph ID at or
     /// beyond <c>numGlyphs</c>, or a group count the declared length cannot hold); when two
     /// encoding records share a platform, encoding and language, or the records are not sorted by
-    /// them; when a subtable outside the Macintosh platform has a non-zero language, or a format 8, 10,
-    /// 12 or 13 subtable a non-zero reserved field; when the only
-    /// format 12 record is platform 0 / encoding 10; when any table in the list above is missing or
-    /// truncated; when <c>head</c>'s <c>unitsPerEm</c> is 0; when a glyph's <c>loca</c> range lies
-    /// outside <c>glyf</c>; when a composite glyph names a component at or past <c>numGlyphs</c> or the composite glyphs form a cycle;
-    /// or when the <c>CFF </c> table does not parse. It does not check glyph or charstring
-    /// contents, checksums, or any other value in <c>head</c>, <c>name</c>, <c>OS/2</c> and
-    /// <c>post</c>.</para>
+    /// them; when a subtable outside the Macintosh platform has a non-zero language, or a format 8,
+    /// 10, 12 or 13 subtable a non-zero reserved field; when the only format 12 record is platform
+    /// 0 / encoding 10; when any table in the list above is missing or truncated; when
+    /// <c>head</c>'s <c>unitsPerEm</c> is 0; when a glyph's <c>loca</c> range lies outside
+    /// <c>glyf</c>; when a composite glyph names a component at or past <c>numGlyphs</c> or the
+    /// composite glyphs form a cycle; or when the <c>CFF </c> table does not parse. It does not
+    /// check glyph or charstring contents, checksums, or any other value in <c>head</c>,
+    /// <c>name</c>, <c>OS/2</c> and <c>post</c>.</para>
     /// <para>For every other font, this call does not check every value in those tables, and it
     /// does not read the outlines. Both are used at save, for every font registered here whether or
-    /// not text uses it, so a font this call accepts can still make the save throw: <see cref="InvalidOperationException"/> for a
+    /// not text uses it, so a font this call accepts can still make the save throw:
+    /// <see cref="InvalidOperationException"/> for a
     /// missing outline table, <see cref="InvalidDataException"/> for malformed outline data, and
     /// <see cref="ArgumentException"/> for a value that makes a font metric non-finite, such as a
     /// <c>unitsPerEm</c> of 0. An OpenType font with CFF outlines is accepted.</para>
@@ -500,8 +501,9 @@ public sealed class Document : IDisposable
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// The font's <c>cmap</c> table has no Unicode subtable this library reads (format 0, 4 or 6,
-    /// or format 12 on platform 3 / encoding 10 or platform 0 / encoding 4, or on platform 0 / encoding 10 beside a 16-bit subtable), or the font's
-    /// only such subtable is format 12 and the font breaks a rule the remarks list.
+    /// or format 12 on platform 3 / encoding 10 or platform 0 / encoding 4, or on platform 0 /
+    /// encoding 10 beside a 16-bit subtable), or the font's only such subtable is format 12 and the
+    /// font breaks a rule the remarks list.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// A table the parser needs is missing: from this call for the tables listed in the remarks,

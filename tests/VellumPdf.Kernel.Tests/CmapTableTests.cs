@@ -306,7 +306,8 @@ public sealed class CmapTableTests
     // that it passes every guard but the one it names, and asserts that guard's message, so
     // removing the guard fails the test instead of another guard catching the file.
 
-    /// <summary>The refusal a sole malformed format 12 subtable gets, and the rule it names.</summary>
+    /// <summary>The refusal a sole malformed format 12 subtable gets, and the rule it
+    /// names.</summary>
     private static void AssertRefusedAs(byte[] fontBytes, string rule)
     {
         var ex = Assert.Throws<NotSupportedException>(() => CmapTable.Parse(SfntFont.Parse(fontBytes)));
@@ -336,9 +337,10 @@ public sealed class CmapTableTests
         var font = BuildFont(("cmap", BuildCmap((3, 10, sub12))));
         AssertRefusedAs(font, "declares 4294967295 groups");   // also warms the parser up
 
-        // The count is checked against the declared length before anything is allocated for it.
-        // A 4-billion-entry dictionary or group array would be tens of gigabytes; the bound is far
-        // above the few kilobytes the refusal needs and far below what allocating for the count costs.
+        // The count is checked against the declared length before anything is allocated for it. A
+        // 4-billion-entry dictionary or group array would be tens of gigabytes; the bound is far
+        // above the few kilobytes the refusal needs and far below what allocating for the count
+        // costs.
         var before = GC.GetAllocatedBytesForCurrentThread();
         AssertRefusedAs(font, "declares 4294967295 groups");
         var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
@@ -471,9 +473,9 @@ public sealed class CmapTableTests
     }
 
     /// <summary>
-    /// The cost the class remarks state: 17 groups in a 220-byte subtable cover 1,114,095 code points.
-    /// Each group maps 65,535 glyphs from glyph 1, the most a 16-bit glyph ID allows, so the
-    /// subtable is well-formed and the parser builds every entry.
+    /// The cost the class remarks state: 17 groups in a 220-byte subtable cover 1,114,095 code
+    /// points. Each group maps 65,535 glyphs from glyph 1, the most a 16-bit glyph ID allows, so
+    /// the subtable is well-formed and the parser builds every entry.
     /// </summary>
     [Fact]
     public void CmapFormat12_seventeenGroups_expandToOverAMillionEntries()
@@ -516,7 +518,8 @@ public sealed class CmapTableTests
 
     // A font whose only Unicode subtable is format 12 is accepted on the strength of a subtable
     // 2.3.3 refused, so the chapter's rules on the encoding records hold it too. Each refusal below
-    // is paired with the same defect beside a 16-bit subtable, which loaded on 2.3.3 and still does.
+    // is paired with the same defect beside a 16-bit subtable, which loaded on 2.3.3 and still
+    // does.
 
     private static byte[] Sub12(uint language = 0)
     {
@@ -552,7 +555,8 @@ public sealed class CmapTableTests
         Assert.True(ParseLoaded(BuildCmap((0, 4, Sub12()), (3, 10, Sub12()))).OnlyFormat12);   // the same records in order
     }
 
-    /// <summary>The order is platform, then encoding, then language: two Macintosh records that differ only by language must be in language order.</summary>
+    /// <summary>The order is platform, then encoding, then language: two Macintosh records that
+    /// differ only by language must be in language order.</summary>
     [Fact]
     public void CmapFormat12Only_recordsOutOfLanguageOrder_areRefused()
     {
@@ -579,10 +583,10 @@ public sealed class CmapTableTests
     }
 
     /// <summary>
-    /// The OpenType cmap chapter gives formats 8, 10, 12 and 13 a "uint16 reserved" field, "Reserved;
-    /// set to 0". A format 8, 10 or 13 record is one this class does not read, so the font stays
-    /// format-12-only and the record is only looked at. The same record with the field at 0 loads,
-    /// and beside a 16-bit subtable the defect is not refused.
+    /// The OpenType cmap chapter gives formats 8, 10, 12 and 13 a "uint16 reserved" field,
+    /// "Reserved; set to 0". A format 8, 10 or 13 record is one this class does not read, so the
+    /// font stays format-12-only and the record is only looked at. The same record with the field
+    /// at 0 loads, and beside a 16-bit subtable the defect is not refused.
     /// </summary>
     [Theory]
     [InlineData(8)]
@@ -780,7 +784,8 @@ public sealed class CmapTableTests
         return subtable;
     }
 
-    /// <summary>A maxp table of the given glyph count (version, then numGlyphs at offset 4).</summary>
+    /// <summary>A maxp table of the given glyph count (version, then numGlyphs at offset
+    /// 4).</summary>
     private static byte[] BuildMaxp(ushort numGlyphs)
     {
         var maxp = new byte[6];
@@ -789,7 +794,8 @@ public sealed class CmapTableTests
         return maxp;
     }
 
-    /// <summary>A cmap table holding the given subtables, one encoding record each, in order.</summary>
+    /// <summary>A cmap table holding the given subtables, one encoding record each, in
+    /// order.</summary>
     private static byte[] BuildCmap(params (ushort Platform, ushort Encoding, byte[] Subtable)[] subtables)
     {
         var headerSize = 4 + 8 * subtables.Length;
