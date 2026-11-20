@@ -6,16 +6,15 @@ using System.Globalization;
 namespace VellumPdf.Layout;
 
 /// <summary>
-/// One condition a save noticed and kept going through, listed in <see
-/// cref="Document.Diagnostics"/>
+/// One condition a save noticed and kept going through, listed in
+/// <see cref="Document.Diagnostics"/>
 /// instead of thrown.
 /// </summary>
 /// <remarks>
 /// A save reports each <see cref="Code"/> at most once per subject and counts the repeats in
 /// <see cref="Count"/>, so a document that substitutes the same character a million times yields
-/// one
-/// item. Nothing here retains caller text: <see cref="Message"/> names a code point or a band, not
-/// the string that held it.
+/// one item. Nothing here retains caller text: <see cref="Message"/> names a code point or a band,
+/// not the string that held it.
 /// <para>Instances are created by the library. Do not parse <see cref="Message"/> or
 /// <see cref="ToString"/>; branch on <see cref="Code"/>.</para>
 /// </remarks>
@@ -26,8 +25,7 @@ public sealed class LayoutDiagnostic
 
     /// <summary>
     /// How seriously to take <see cref="Code"/>, looked up from a fixed table keyed on the code,
-    /// not
-    /// chosen per call site.
+    /// not chosen per call site.
     /// </summary>
     public LayoutDiagnosticSeverity Severity { get; }
 

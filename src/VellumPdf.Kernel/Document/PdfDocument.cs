@@ -325,7 +325,7 @@ public sealed class PdfDocument : IDisposable
     /// <para><b>Do not pass</b> a handle from another document. When this document defines the name
     /// for a different font program, the handle is accepted: the page is saved with a valid font
     /// dictionary, and the text drawn through the handle is shown in this document's font of that name,
-    /// with the wrong glyphs. Nothing reports it yet (#607), and 3.0 refuses a foreign handle whatever
+    /// with the wrong glyphs. Nothing reports it, and 3.0 refuses a foreign handle whatever
     /// this document holds.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">

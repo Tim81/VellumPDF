@@ -341,9 +341,9 @@ public sealed class ListRenderer : IRenderer
     }
 
     // A marker is text the library wrote, not the caller's: a '?' it substitutes, such as the
-    // nested
-    // unordered marker in a Standard 14 font, is not a character the caller can change. What came
-    // before it is accounted for first, so the marker's own substitutions are the ones skipped.
+    // nested unordered marker in a Standard 14 font, is not a character the caller can change. What
+    // came before it is accounted for first, so the marker's own substitutions are the ones
+    // skipped.
     private static void DrawMarker(ParagraphRenderer marker, DrawContext ctx)
     {
         ctx.Diagnostics?.SyncEncodingWarnings(ctx.Canvas, report: true);

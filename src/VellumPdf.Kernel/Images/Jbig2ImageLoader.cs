@@ -35,8 +35,7 @@ namespace VellumPdf.Images;
 /// 7.2.7) is not embedded, because this loader does not scan the data for the end marker that clause
 /// describes and so cannot say where such a segment ends.
 /// <see cref="ImageDecodeMode.Passthrough"/> drops it, which can leave a page blank without a word;
-/// <b>do not pass</b> such a segment, because 3.0 refuses it and the diagnostics channel (#607) will
-/// report it before then. <see cref="ImageDecodeMode.DecodeToRaster"/> refuses an unknown length on an
+/// <b>do not pass</b> such a segment, because 3.0 refuses it and nothing reports it before then. <see cref="ImageDecodeMode.DecodeToRaster"/> refuses an unknown length on an
 /// immediate, lossless or intermediate generic region (types 36, 38 and 39) with
 /// <see cref="InvalidDataException"/> naming the segment. A stream takes the rest of the data as an
 /// unknown-length segment's own, so what follows one is not seen.</para>

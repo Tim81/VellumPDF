@@ -433,9 +433,9 @@ public sealed class DocumentRenderer
 
         // Pass 2 (or only pass): full render with running bands resolved.
         // The location is that of the element the document added, set here and not in
-        // PlaceRenderer:
-        // PlaceRenderer's variable becomes the overflow renderer, which for a heading is a plain
-        // paragraph renderer, and mapping that would call a heading's second page a paragraph.
+        // PlaceRenderer: PlaceRenderer's variable becomes the overflow renderer, which for a
+        // heading is a plain paragraph renderer, and mapping that would call a heading's second
+        // page a paragraph.
         for (var i = 0; i < _renderers.Count; i++)
         {
             _sink.CurrentKind = KindOf(_renderers[i]);

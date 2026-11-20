@@ -154,7 +154,10 @@ public static class SigningExtensions
     /// <exception cref="ArgumentOutOfRangeException">
     /// The signature page is negative or past the last page, or the reserve computed from
     /// <paramref name="settings"/> is negative or above 536,870,894 bytes. <c>ParamName</c> is
-    /// <c>options</c>. Everything but a page past the last page is raised before anything is laid out.
+    /// <c>options</c>. Everything but a page past the last page is raised before anything is laid
+    /// out. A page past the last page is raised after the layout, so with
+    /// <see cref="VellumPdf.Layout.Document.StrictDiagnostics"/> set and an error item reported,
+    /// the <see cref="InvalidOperationException"/> of the strict refusal comes first.
     /// </exception>
     public static void Sign(this VellumPdf.Layout.Document doc, Stream output, PdfSignatureSettings settings)
     {

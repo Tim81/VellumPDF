@@ -22,12 +22,14 @@ internal sealed class ListWalkMemo
     private readonly Dictionary<ListItem, (int NullText, int NullChild)> _byHolder =
         new(ReferenceEqualityComparer.Instance);
 
-    /// <summary>The items the walks visited, for the test that pins the work to the distinct items.</summary>
+    /// <summary>
+    /// The items the walks visited, so a test can pin the work to the distinct items.
+    /// </summary>
     internal long NodesVisited { get; private set; }
 
     /// <summary>
-    /// The number of distinct items at or below <paramref name="holder"/> that hold a null text, and
-    /// the number that hold a null child.
+    /// The number of distinct items at or below <paramref name="holder"/> that hold a null text,
+    /// and the number that hold a null child.
     /// </summary>
     internal (int NullText, int NullChild) CountBelow(ListItem holder)
     {

@@ -7,8 +7,8 @@ namespace VellumPdf.Layout.Rendering;
 
 /// <summary>
 /// Collects what a layout noticed. A report is keyed on its code and subject, and on the element
-/// too when the caller asks for that; a repeat bumps the item's count, and the 1,001st distinct
-/// key is not stored.
+/// too when the caller asks for that; a repeat bumps the item's count, and the 1,001st distinct key
+/// is not stored.
 /// </summary>
 /// <remarks>
 /// The cap bounds memory against a document that produces a distinct subject per character. It is
@@ -128,7 +128,7 @@ internal sealed class LayoutDiagnosticSink
                 warnings[_syncedCount].CodePoint,
                 static codePoint => string.Create(
                     System.Globalization.CultureInfo.InvariantCulture,
-                    $"U+{codePoint:X4} is not in WinAnsiEncoding and is written as '?'."));
+                    $"U+{codePoint:X4} is not in WinAnsiEncoding and is written as '?' for each UTF-16 code unit."));
         }
     }
 

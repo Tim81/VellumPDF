@@ -11,8 +11,7 @@ namespace VellumPdf.Layout;
 /// <remarks>
 /// <b>The numeric values are append-only.</b> A value is what a caller persists, so a member is
 /// never renumbered or reused, and a later release adds members without moving these. <b>Do not
-/// switch exhaustively over this enumeration</b>: a value this release does not name can reach
-/// you.
+/// switch exhaustively over this enumeration</b>: a value this release does not name can reach you.
 /// <para>Values are allocated in hundred-wide blocks: 1xx text and fonts, 2xx lists, 3xx tables,
 /// 4xx running bands, 5xx images, 6xx conformance claims, 7xx structure and tagging, 8xx
 /// pagination, 9xx the channel's own bookkeeping. Numbers inside a block that this enumeration
@@ -43,15 +42,18 @@ public enum LayoutDiagnosticCode
     NullTextRunStyle = 101,
 
     /// <summary>
-    /// A character that the font's encoding cannot represent was written as <c>?</c>. A Standard
-    /// 14 font's WinAnsiEncoding cannot represent every character, and a custom renderer's text
-    /// is recorded whatever font is selected. Each distinct scalar value is one item, whose
+    /// A character that the font's encoding cannot represent was written as <c>?</c>. That is a
+    /// character outside WinAnsiEncoding in Standard 14 text, and in text a custom renderer passes
+    /// to the canvas whatever font is selected. Each distinct scalar value is one item, whose
     /// <see cref="LayoutDiagnostic.Count"/> is the number of times it was substituted. It mirrors
-    /// <see cref="Document.TextEncodingWarnings"/>.
+    /// <see cref="Document.TextEncodingWarnings"/>, except that it leaves out the characters past
+    /// the channel's limit of 1,000 items, which <see cref="DiagnosticsDropped"/> counts, and the
+    /// text the library wrote itself.
     /// </summary>
     /// <remarks>
-    /// Text is substituted, so strict mode refuses it. Text the library wrote itself, such as a
-    /// list marker, is not listed when the document draws the list; a list drawn through a
+    /// A character outside the Basic Multilingual Plane is one item and is written as two question
+    /// marks. Text is substituted, so strict mode refuses it. Text the library wrote itself, such
+    /// as a list marker, is not listed when the document draws the list; a list drawn through a
     /// <see cref="Core.DrawContext"/> you built can list it.
     /// </remarks>
     UnencodableCharacter = 103,

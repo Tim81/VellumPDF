@@ -24,7 +24,7 @@ public sealed class LayoutDiagnosticsTests
         "A paragraph run with a null style yields no text and was saved without a style.";
 
     private static string StarMessage =>
-        "U+2605 is not in WinAnsiEncoding and is written as '?'.";
+        "U+2605 is not in WinAnsiEncoding and is written as '?' for each UTF-16 code unit.";
 
     private static readonly PdfRectangle SmallPage = new(0, 0, 300, 200);
 
@@ -489,8 +489,8 @@ public sealed class LayoutDiagnosticsTests
 
     /// <summary>
     /// The channel changes no byte of a saved document. This one holds an input for each code this
-    /// release reports, with the switch off, and its inflated bytes are pinned with the timestamp and
-    /// id.
+    /// release reports, with the switch off. The timestamp and id are pinned, and the whole file is
+    /// hashed. The hash is the one the same document had before the channel existed.
     /// </summary>
     [Fact]
     public void ADocumentWithReportableInputs_savesTheBytesItDidBeforeTheChannel()
@@ -514,9 +514,8 @@ public sealed class LayoutDiagnosticsTests
 
         doc.Save(ms);
 
-        var inflated = PdfTestUtil.DecompressAllFlatStreams(ms.ToArray()).Replace("\r\n", "\n");
-        var hash = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.Latin1.GetBytes(inflated)));
-        Assert.Equal("0B20297CEF64A9029E09C716DBDC4B61FA4F3B42C1FA7724DE44080D0B6F6DD2", hash);
+        var hash = Convert.ToHexString(SHA256.HashData(ms.ToArray()));
+        Assert.Equal("8C5E33CA07812BF9C03B8974108D011FF136A6EB9AF019AD9DF981D43FD7D988", hash);
     }
 
     // ── Strict mode ──────────────────────────────────────────────────────────
@@ -661,7 +660,7 @@ public sealed class LayoutDiagnosticsTests
         Assert.Equal(Bytes(false), Bytes(true));
     }
 
-    /// <summary>Reports through the context the document passes, as a later lane's renderer will.</summary>
+    /// <summary>Reports through the context the document passes.</summary>
     private sealed class ReportingRenderer(Action<LayoutDiagnosticSink> report) : IRenderer
     {
         public LayoutResult Layout(LayoutContext context) => LayoutResult.Full(context.Area.WithHeight(10));
@@ -800,9 +799,75 @@ public sealed class LayoutDiagnosticsTests
         Assert.Empty(doc.Diagnostics);
     }
 
+    // ── Items are keyed and counted as documented ────────────────────────────
+
+    [Fact]
+    public void CallerTextInAListItemThatIsNotTheLast_isReported()
+    {
+        // The marker of item 2 is drawn after the text of item 1, so the substitution in "a ★" has to
+        // be accounted for before the marker's own are skipped.
+        using var doc = new Document();
+        doc.Add(new ListElement(ListStyle.Unordered, [new ListItem("a \u2605"), new ListItem("b")]));
+
+        doc.Save(new MemoryStream());
+
+        var item = Assert.Single(doc.Diagnostics);
+        Assert.Equal(LayoutDiagnosticCode.UnencodableCharacter, item.Code);
+        Assert.Equal(LayoutElementKind.List, item.ElementKind);
+        Assert.Equal(0, item.ElementIndex);
+        Assert.Equal(1, item.Count);
+    }
+
+    [Fact]
+    public void TheSameCharacterInTwoElements_isOneItemWithBothOccurrences()
+    {
+        using var doc = new Document();
+        doc.Add(new Paragraph("a \u2605"));
+        doc.Add(new Paragraph("b \u2605"));
+
+        doc.Save(new MemoryStream());
+
+        var item = Assert.Single(doc.Diagnostics);
+        Assert.Equal(2, item.Count);
+        Assert.Equal(0, item.ElementIndex);
+    }
+
+    [Fact]
+    public void ACutHeaderAndACutFooter_areTwoItems()
+    {
+        using var doc = NewDoc();
+        var style = new TextStyle { FontSize = 10 };
+        doc.Header = new RunningBand(new string('\u00C6', 25), style);
+        doc.Footer = new RunningBand(new string('\u00C6', 25), style);
+        doc.Add(new Paragraph("body", style));
+
+        doc.Save(new MemoryStream());
+
+        Assert.Equal(
+            [LayoutElementKind.Header, LayoutElementKind.Footer],
+            doc.Diagnostics.Select(i => i.ElementKind));
+        Assert.All(doc.Diagnostics, i => Assert.Equal(LayoutDiagnosticCode.BandTruncated, i.Code));
+    }
+
+    [Fact]
+    public void TheStrictMessage_countsOnlyTheStoredErrorItems()
+    {
+        // One null-style run, then 1,001 distinct characters: the channel stores the run and 999
+        // characters, drops two, and ends with a warning that is not an error.
+        using var doc = new Document { StrictDiagnostics = true };
+        doc.Add(NullStyleParagraph());
+        doc.Add(new Paragraph(DistinctCharacters(1001)));
+
+        var ex = Assert.Throws<InvalidOperationException>(() => doc.Save(new MemoryStream()));
+
+        Assert.Equal(NullStyleStrictMessage + " 999 further error item(s).", ex.Message);
+        Assert.Equal(1001, doc.Diagnostics.Count);
+    }
+
     // ── The walk below the second level is linear ────────────────────────────
 
-    /// <summary>A chain of <paramref name="length"/> items, each the only child of the one before.</summary>
+    /// <summary>A chain of <paramref name="length"/> items, each the only child of the last.
+    /// </summary>
     private static ListItem Chain(int length)
     {
         var items = Enumerable.Range(0, length).Select(i => new ListItem("link " + i)).ToArray();
@@ -927,18 +992,25 @@ public sealed class LayoutDiagnosticsTests
     // ── Reporting boundaries ─────────────────────────────────────────────────
 
     [Fact]
-    public void ADrawContextTheCallerBuilds_reportsNothingAndDoesNotThrow()
+    public void ADrawContextTheCallerBuilds_hasNoChannel_andDrawingThroughItDoesNotThrow()
     {
         var pdf = new PdfDocument();
         var page = pdf.AddPage(SmallPage);
         var box = new LayoutBox(0, 0, 300, 200);
         var renderer = new ParagraphRenderer(NullStyleParagraph());
         renderer.Layout(new LayoutContext(box));
-        var ctx = new DrawContext(new PdfCanvas(page), box, new RendererContext(page, pdf), pdf, page);
+        var canvas = new PdfCanvas(page);
+        var rendererContext = new RendererContext(page, pdf);
 
-        renderer.Draw(ctx);
+        renderer.Draw(new DrawContext(canvas, box, rendererContext, pdf, page));
 
-        Assert.Null(ctx.Diagnostics);
+        // The same renderer reports once it is given the channel, so the silence above is the missing
+        // channel and not a renderer that never finds the run.
+        var sink = new LayoutDiagnosticSink();
+        renderer.Draw(new DrawContext(canvas, box, rendererContext, pdf, page) { Diagnostics = sink });
+        Assert.Equal(
+            LayoutDiagnosticCode.NullTextRunStyle,
+            Assert.Single(sink.Snapshot()).Code);
     }
 
     [Fact]

@@ -107,12 +107,11 @@ public sealed class ListItem
     /// deeper than that, a child of a child, the text is never laid out and the list
     /// renders.</para>
     /// <para><b>Do not pass a null text.</b> On a child of a child it is accepted today and
-    /// reported
-    /// as <see cref="LayoutDiagnosticCode.NullGrandchildText"/>, which
+    /// reported as <see cref="LayoutDiagnosticCode.NullGrandchildText"/>, which
     /// <see cref="Document.StrictDiagnostics"/> refuses. 3.0 will throw
     /// <see cref="ArgumentNullException"/> from this constructor whatever the position.
-    /// <see cref="ListElement.Add(string, TextStyle?)"/>
-    /// has no such leniency: its item is always top-level, so it throws from the call.</para>
+    /// <see cref="ListElement.Add(string, TextStyle?)"/> has no such leniency: its item is always
+    /// top-level, so it throws from the call.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
