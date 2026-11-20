@@ -1,4 +1,8 @@
 #nullable enable
+VellumPdf.Layout.Document.DocumentId.get -> byte[]?
+VellumPdf.Layout.Document.DocumentId.set -> void
+VellumPdf.Layout.Document.Timestamp.get -> System.DateTimeOffset?
+VellumPdf.Layout.Document.Timestamp.set -> void
 VellumPdf.Layout.Core.DrawContext.AddOutlineEntry(string! title, int level, double layoutY, bool expanded) -> void
 VellumPdf.Layout.Elements.Heading.BookmarkExpanded.get -> bool
 VellumPdf.Layout.Elements.Heading.BookmarkExpanded.init -> void
