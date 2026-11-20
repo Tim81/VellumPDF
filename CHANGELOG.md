@@ -16,9 +16,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   identifier then follows the current culture's minus sign, and pinning `DocumentId` as well
   removes the dependence. `DocumentId` sets both strings of the trailer `/ID`; a value that is not 16 bytes
   is refused by the setter with `ArgumentException`. An encrypted document is never reproducible,
-  a signature takes its time from `PdfSignatureSettings.SigningTime`, and an embedded font's
-  ToUnicode map differs between Windows and Linux (#630). Nothing changes for a document that
-  leaves both unset.
+  and a signature takes its time from `PdfSignatureSettings.SigningTime`. Nothing changes for a
+  document that leaves both unset.
 - **`Heading.BookmarkExpanded` and a four-argument `DrawContext.AddOutlineEntry` (#609).** A
   heading's bookmark can now be written closed: `BookmarkExpanded = false` gives the entry a
   negative `/Count` (ISO 32000-2:2020, 12.3.3, Table 151). The value only takes effect when later
@@ -192,6 +191,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **An embedded font's ToUnicode map ends every line with a line feed on every operating system
+  (#630).** It was written with `StringBuilder.AppendLine`, so on Windows each line ended with a
+  carriage return and a line feed, and the same document saved to different bytes on Windows and
+  Linux. Deliberate output change: on Windows only, a document with an embedded TrueType or
+  OpenType font has a ToUnicode stream with one byte less per line, which is 18 bytes for the text
+  `Hello` in DejaVu Sans (398 bytes inflated before, 380 after). The compressed length and every
+  later byte offset follow. Nothing changes on Linux or macOS, or for a document without an
+  embedded font. Both forms are valid
+  (ISO 32000-2:2020, 7.2.3); the fix is reproducibility. The build now refuses
+  `StringBuilder.AppendLine`, `Environment.NewLine` and `TextWriter.WriteLine` in every library
+  project except the command-line tool, so the platform line end cannot return unnoticed on a
+  platform the tests do not run on.
 - **The Kernel's `DocumentId` summary and `docs/kernel-guide.md` section 9 described the derived
   identifier wrongly (#597).** They said it comes from the page content, which it never did: it
   comes from the title, the producer, the page count and the time. They also said the bytes of two

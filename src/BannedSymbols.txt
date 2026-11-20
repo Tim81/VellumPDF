@@ -1,0 +1,40 @@
+# Platform line ends (#630). Every overload is listed, because an entry without a parameter
+# list bans only the parameterless overload. The set is the union of the overloads declared
+# on net10.0 and net11.0.
+P:System.Environment.NewLine;is the platform line end, so use LF explicitly: the bytes must not depend on the operating system
+M:System.IO.TextWriter.WriteLine;writes the platform line end, so write LF explicitly: the bytes must not depend on the operating system
+M:System.IO.TextWriter.WriteLine(System.Boolean);writes the platform line end, so write LF explicitly: the bytes must not depend on the operating system
+M:System.IO.TextWriter.WriteLine(System.Char);writes the platform line end, so write LF explicitly: the bytes must not depend on the operating system
+M:System.IO.TextWriter.WriteLine(System.Char[]);writes the platform line end, so write LF explicitly: the bytes must not depend on the operating system
+M:System.IO.TextWriter.WriteLine(System.Char[],System.Int32,System.Int32);writes the platform line end, so write LF explicitly: the bytes must not depend on the operating system
+M:System.IO.TextWriter.WriteLine(System.Decimal);writes the platform line end, so write LF explicitly: the bytes must not depend on the operating system
+M:System.IO.TextWriter.WriteLine(System.Double);writes the platform line end, so write LF explicitly: the bytes must not depend on the operating system
+M:System.IO.TextWriter.WriteLine(System.Int32);writes the platform line end, so write LF explicitly: the bytes must not depend on the operating system
+M:System.IO.TextWriter.WriteLine(System.Int64);writes the platform line end, so write LF explicitly: the bytes must not depend on the operating system
+M:System.IO.TextWriter.WriteLine(System.Object);writes the platform line end, so write LF explicitly: the bytes must not depend on the operating system
+M:System.IO.TextWriter.WriteLine(System.ReadOnlySpan{System.Char});writes the platform line end, so write LF explicitly: the bytes must not depend on the operating system
+M:System.IO.TextWriter.WriteLine(System.Single);writes the platform line end, so write LF explicitly: the bytes must not depend on the operating system
+M:System.IO.TextWriter.WriteLine(System.String);writes the platform line end, so write LF explicitly: the bytes must not depend on the operating system
+M:System.IO.TextWriter.WriteLine(System.String,System.Object);writes the platform line end, so write LF explicitly: the bytes must not depend on the operating system
+M:System.IO.TextWriter.WriteLine(System.String,System.Object,System.Object);writes the platform line end, so write LF explicitly: the bytes must not depend on the operating system
+M:System.IO.TextWriter.WriteLine(System.String,System.Object,System.Object,System.Object);writes the platform line end, so write LF explicitly: the bytes must not depend on the operating system
+M:System.IO.TextWriter.WriteLine(System.String,System.Object[]);writes the platform line end, so write LF explicitly: the bytes must not depend on the operating system
+M:System.IO.TextWriter.WriteLine(System.String,System.ReadOnlySpan{System.Object});writes the platform line end, so write LF explicitly: the bytes must not depend on the operating system
+M:System.IO.TextWriter.WriteLine(System.Text.Rune);writes the platform line end, so write LF explicitly: the bytes must not depend on the operating system
+M:System.IO.TextWriter.WriteLine(System.Text.StringBuilder);writes the platform line end, so write LF explicitly: the bytes must not depend on the operating system
+M:System.IO.TextWriter.WriteLine(System.UInt32);writes the platform line end, so write LF explicitly: the bytes must not depend on the operating system
+M:System.IO.TextWriter.WriteLine(System.UInt64);writes the platform line end, so write LF explicitly: the bytes must not depend on the operating system
+M:System.IO.TextWriter.WriteLineAsync;writes the platform line end, so write LF explicitly: the bytes must not depend on the operating system
+M:System.IO.TextWriter.WriteLineAsync(System.Char);writes the platform line end, so write LF explicitly: the bytes must not depend on the operating system
+M:System.IO.TextWriter.WriteLineAsync(System.Char[]);writes the platform line end, so write LF explicitly: the bytes must not depend on the operating system
+M:System.IO.TextWriter.WriteLineAsync(System.Char[],System.Int32,System.Int32);writes the platform line end, so write LF explicitly: the bytes must not depend on the operating system
+M:System.IO.TextWriter.WriteLineAsync(System.ReadOnlyMemory{System.Char},System.Threading.CancellationToken);writes the platform line end, so write LF explicitly: the bytes must not depend on the operating system
+M:System.IO.TextWriter.WriteLineAsync(System.String);writes the platform line end, so write LF explicitly: the bytes must not depend on the operating system
+M:System.IO.TextWriter.WriteLineAsync(System.String,System.Threading.CancellationToken);writes the platform line end, so write LF explicitly: the bytes must not depend on the operating system
+M:System.IO.TextWriter.WriteLineAsync(System.Text.Rune);writes the platform line end, so write LF explicitly: the bytes must not depend on the operating system
+M:System.IO.TextWriter.WriteLineAsync(System.Text.StringBuilder,System.Threading.CancellationToken);writes the platform line end, so write LF explicitly: the bytes must not depend on the operating system
+M:System.IO.TextWriter.WriteLineAsync(System.Threading.CancellationToken);writes the platform line end, so write LF explicitly: the bytes must not depend on the operating system
+M:System.Text.StringBuilder.AppendLine;writes the platform line end, so write LF explicitly: the bytes must not depend on the operating system
+M:System.Text.StringBuilder.AppendLine(System.IFormatProvider,System.Text.StringBuilder.AppendInterpolatedStringHandler@);writes the platform line end, so write LF explicitly: the bytes must not depend on the operating system
+M:System.Text.StringBuilder.AppendLine(System.String);writes the platform line end, so write LF explicitly: the bytes must not depend on the operating system
+M:System.Text.StringBuilder.AppendLine(System.Text.StringBuilder.AppendInterpolatedStringHandler@);writes the platform line end, so write LF explicitly: the bytes must not depend on the operating system

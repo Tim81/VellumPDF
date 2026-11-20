@@ -377,6 +377,13 @@ public sealed class TrueTypeFontEmbedder
     }
 
     /// <summary>Builds the /ToUnicode CMap stream mapping glyph IDs back to Unicode so text stays searchable and copyable.</summary>
+    /// <remarks>
+    /// Every line of the CMap ends with one line feed (U+000A) on every operating system, so the
+    /// inflated stream is the same on Windows, Linux and macOS for the same glyph usage. ISO 32000-2,
+    /// 7.2.3 allows a carriage return, a line feed or both as an end-of-line marker, so either form
+    /// is valid; the single form keeps the output reproducible. The compressed bytes can still
+    /// differ between .NET runtimes. This member refuses no input and throws nothing.
+    /// </remarks>
     public Core.PdfStream BuildToUnicodeCMap()
     {
         var cmap = BuildToUnicodeCMapContent();
@@ -688,15 +695,15 @@ public sealed class TrueTypeFontEmbedder
         IReadOnlyDictionary<int, ushort> unicodeToGid, IReadOnlySet<int> fallbackCodePoints)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("/CIDInit /ProcSet findresource begin");
-        sb.AppendLine("12 dict begin");
-        sb.AppendLine("begincmap");
-        sb.AppendLine("/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def");
-        sb.AppendLine("/CMapName /Adobe-Identity-UCS def");
-        sb.AppendLine("/CMapType 2 def");
-        sb.AppendLine("1 begincodespacerange");
-        sb.AppendLine("<0000> <FFFF>");
-        sb.AppendLine("endcodespacerange");
+        sb.Append("/CIDInit /ProcSet findresource begin").Append('\n');
+        sb.Append("12 dict begin").Append('\n');
+        sb.Append("begincmap").Append('\n');
+        sb.Append("/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def").Append('\n');
+        sb.Append("/CMapName /Adobe-Identity-UCS def").Append('\n');
+        sb.Append("/CMapType 2 def").Append('\n');
+        sb.Append("1 begincodespacerange").Append('\n');
+        sb.Append("<0000> <FFFF>").Append('\n');
+        sb.Append("endcodespacerange").Append('\n');
 
         // A code point that got a stand-in glyph (U+202F or U+2007 in a font without it) shares that
         // glyph with U+00A0 or U+0020. A ToUnicode CMap maps a glyph to one string, and the stand-in
@@ -730,7 +737,7 @@ public sealed class TrueTypeFontEmbedder
         for (var start = 0; start < pairs.Count; start += chunk)
         {
             var end = Math.Min(start + chunk, pairs.Count);
-            sb.AppendLine($"{end - start} beginbfchar");
+            sb.Append($"{end - start} beginbfchar").Append('\n');
             for (var i = start; i < end; i++)
             {
                 var cp = pairs[i].cp;
@@ -748,14 +755,14 @@ public sealed class TrueTypeFontEmbedder
                     var lo = 0xDC00 + (cp & 0x3FF);
                     cpHex = $"{hi:X4}{lo:X4}";
                 }
-                sb.AppendLine($"<{pairs[i].gid:X4}> <{cpHex}>");
+                sb.Append($"<{pairs[i].gid:X4}> <{cpHex}>").Append('\n');
             }
-            sb.AppendLine("endbfchar");
+            sb.Append("endbfchar").Append('\n');
         }
 
-        sb.AppendLine("endcmap");
-        sb.AppendLine("CMapName currentdict /CMap defineresource pop");
-        sb.AppendLine("end end");
+        sb.Append("endcmap").Append('\n');
+        sb.Append("CMapName currentdict /CMap defineresource pop").Append('\n');
+        sb.Append("end end").Append('\n');
         return sb.ToString();
     }
 

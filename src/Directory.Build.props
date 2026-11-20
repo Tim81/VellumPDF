@@ -48,4 +48,19 @@
     <AdditionalFiles Include="$(MSBuildProjectDirectory)\PublicAPI.Unshipped.txt" Condition="Exists('$(MSBuildProjectDirectory)\PublicAPI.Unshipped.txt')" />
   </ItemGroup>
 
+  <!--
+    Platform line ends (#630). StringBuilder.AppendLine, Environment.NewLine and
+    TextWriter.WriteLine write CR LF on Windows and LF elsewhere, so a library that uses them
+    for bytes it puts in a PDF writes different files on different operating systems. CI runs
+    the tests on Linux only, where those calls write LF, so a test cannot catch a regression;
+    the build can. The command-line tool prints to a console and is exempt.
+  -->
+  <ItemGroup Condition="'$(MSBuildProjectName)' != 'VellumPdf.Cli'">
+    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)BannedSymbols.txt" />
+  </ItemGroup>
+
 </Project>
