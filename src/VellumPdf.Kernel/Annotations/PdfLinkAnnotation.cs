@@ -25,9 +25,11 @@ public sealed class PdfLinkAnnotation
     public PdfPage? DestPage { get; init; }
 
     /// <summary>X coordinate of the destination viewport origin (PDF user-space).</summary>
+    /// <remarks>A magnitude above 3.403 × 10^38 is written but fails PDF/A validation; see <see cref="PdfReal"/>.</remarks>
     public double DestLeft { get; init; }
 
     /// <summary>Y coordinate of the destination viewport origin (PDF user-space).</summary>
+    /// <remarks>A magnitude above 3.403 × 10^38 is written but fails PDF/A validation; see <see cref="PdfReal"/>.</remarks>
     public double DestTop { get; init; }
 
     /// <summary>
