@@ -156,7 +156,10 @@ public sealed class ListRenderer : IRenderer
                 _endItem = i;
                 _occupied = area.WithHeight(area.Height - remaining);
                 _offered = offered;
-                var overflow = new ListRenderer(_list, i) { _items = _items };
+                var overflow = new ListRenderer(_list, i)
+                {
+                    _items = _items,
+                };
                 var split = new ListRenderer(_list, _startItem, _partialContentOverrideAtStart)
                 {
                     _items = _items,
@@ -183,7 +186,10 @@ public sealed class ListRenderer : IRenderer
 
                 // The overflow for item i carries the content's OverflowRenderer.
                 var contentOverflow = (ParagraphRenderer)contentResult.OverflowRenderer!;
-                var overflowList = new ListRenderer(_list, i, contentOverflow) { _items = _items };
+                var overflowList = new ListRenderer(_list, i, contentOverflow)
+                {
+                    _items = _items,
+                };
 
                 var split = new ListRenderer(_list, _startItem, _partialContentOverrideAtStart)
                 {
@@ -220,6 +226,12 @@ public sealed class ListRenderer : IRenderer
     public void Draw(DrawContext ctx)
     {
         if (_items is null) return;
+
+        // Only the piece that starts the list, drawn through the document's context, takes part in
+        // the walk, so a list that is measured and never drawn, or that starts at a later item,
+        // leaves the items it did not report for the list that does.
+        if (_startItem == 0 && _partialContentOverrideAtStart is null && ctx.Diagnostics is { } sink)
+            ReportBelowSecondLevel(sink);
 
         // _occupied is already the margin-deflated area from Layout; do not deflate again.
         var area = _occupied;
@@ -276,7 +288,7 @@ public sealed class ListRenderer : IRenderer
                 content.ParentStructElem = lbodyElem;
 
                 if (!isContinuation)
-                    marker.Draw(ctx);
+                    DrawMarker(marker, ctx);
                 content.Draw(ctx);
 
                 // Reset for safety (layout/draw may be called multiple times in pagination)
@@ -291,7 +303,7 @@ public sealed class ListRenderer : IRenderer
             else
             {
                 if (!isContinuation)
-                    marker.Draw(ctx);
+                    DrawMarker(marker, ctx);
                 content.Draw(ctx);
             }
 
@@ -300,6 +312,51 @@ public sealed class ListRenderer : IRenderer
 
         if (listElem is not null)
             ctx.RegisterStructElemTree(listElem);
+    }
+
+    // A marker is text the library wrote, not the caller's: a '?' it substitutes, such as the
+    // nested unordered marker in a Standard 14 font, is not a character the caller can change. What
+    // came before it is accounted for first, so the marker's own substitutions are the ones
+    // skipped.
+    private static void DrawMarker(ParagraphRenderer marker, DrawContext ctx)
+    {
+        ctx.Diagnostics?.SyncEncodingWarnings(ctx.Canvas, report: true);
+        marker.Draw(ctx);
+        ctx.Diagnostics?.SyncEncodingWarnings(ctx.Canvas, report: false);
+    }
+
+    // A child's own children are neither laid out nor drawn, so a defect in them saves. The walk
+    // visits each item below the first level once per save, so this list reports only the nulls
+    // that no list drawn before it, and no earlier child of this one, already reached.
+    private void ReportBelowSecondLevel(LayoutDiagnosticSink sink)
+    {
+        long nullText = 0, nullChild = 0;
+        foreach (var item in _list.Items)
+        {
+            if (item.Children is not { } children) continue;
+            foreach (var child in children)
+            {
+                if (!child.HasNullChild && child.Children is null) continue;
+                var (text, nulls) = sink.ListWalk.Visit(child);
+                nullText += text;
+                nullChild += nulls;
+            }
+        }
+
+        if (nullText > 0)
+            sink.Report(
+                LayoutDiagnosticCode.NullGrandchildText,
+                0,
+                "A list item below the second level has a null text and is not drawn.",
+                (int)Math.Min(nullText, int.MaxValue),
+                perElement: true);
+        if (nullChild > 0)
+            sink.Report(
+                LayoutDiagnosticCode.NullGrandchild,
+                0,
+                "A list item below the first level was given a null child, which is not drawn.",
+                (int)Math.Min(nullChild, int.MaxValue),
+                perElement: true);
     }
 
     // ── Item building ─────────────────────────────────────────────────────────
@@ -401,7 +458,8 @@ public sealed class ListRenderer : IRenderer
             result.Add((markerRenderer, contentRenderer));
 
             // A null child of a top-level item is refused here, where the position is known. The
-            // same null on a grandchild is never reached, because grandchildren are not read.
+            // same null on a grandchild is counted when the list is drawn instead, because
+            // grandchildren are neither laid out nor drawn.
             if (item.HasNullChild)
                 throw new ArgumentNullException("child", "A list item has a null child.");
 
