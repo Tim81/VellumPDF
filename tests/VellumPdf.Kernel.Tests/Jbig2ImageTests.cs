@@ -2080,9 +2080,9 @@ public sealed class Jbig2ImageTests
         Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(file, new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster }));
     }
 
-    /// <summary>A flags byte with a reserved bit (4 to 7) set falls back to the ID string followed by segments.</summary>
+    /// <summary>The loader reads no flags byte, so one with bits 4 to 7 set is not special: the bytes after the ID string are read as segments and the file is refused like any other Annex D file.</summary>
     [Fact]
-    public void Load_ReservedFlagBitsSet_IsNotReadAsAStandardHeader()
+    public void Load_AFlagsByteWithHighBitsSet_IsRefusedLikeAnyAnnexDFile()
     {
         var file = Sequential(0x11, PageCountOne, FiveSegments(64, 48));
 
@@ -2101,9 +2101,9 @@ public sealed class Jbig2ImageTests
         Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(file));
     }
 
-    /// <summary>The 8-byte ID-string-only form loads.</summary>
+    /// <summary>The ID string followed directly by segments loads, with the page size of its page-information segment.</summary>
     [Fact]
-    public void Load_TheOlderBareIdStringForm_StillLoads()
+    public void Load_IdStringThenSegments_LoadsWithThePageSize()
     {
         var img = Jbig2ImageLoader.Load(BuildMinimalJbig2(50, 40, withFileHeader: true));
 

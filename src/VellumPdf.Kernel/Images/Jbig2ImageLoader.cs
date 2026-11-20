@@ -206,103 +206,6 @@ public static class Jbig2ImageLoader
 
     // ── Segment header parsing (ITU-T T.88 §7.2) ─────────────────────────────
 
-    /// <summary>One segment header as it is read, before it is known where the segment's data is.</summary>
-    private readonly record struct RawHeader(
-        int Number, int Type, int PageAssociation, int HeaderStart, long DataLength);
-
-    /// <summary>
-    /// Reads one segment header (§7.2) at <paramref name="pos"/> and leaves <paramref name="pos"/> just
-    /// past it.
-    /// </summary>
-    private static RawHeader ReadSegmentHeader(ReadOnlySpan<byte> data, ref int pos)
-    {
-        var headerStart = pos;
-
-        // §7.2.1 Segment number — 4 bytes, big-endian.
-        if (pos + 4 > data.Length)
-            throw new InvalidDataException(
-                $"JBIG2: truncated segment number at offset {pos}.");
-        var segNumber = ReadInt32(data, pos);
-        pos += 4;
-
-        // §7.2.2 Segment header flags — 1 byte.
-        if (pos >= data.Length)
-            throw new InvalidDataException("JBIG2: truncated segment flags.");
-        var flags = data[pos];
-        var segType = flags & 0x3F;
-        var pageAssocSizeFlag = (flags >> 6) & 1; // 0 = 1-byte, 1 = 4-byte page assoc
-        pos++;
-
-        // §7.2.4 Referred-to segment count and retention flags.
-        // The count is held in the TOP 3 bits of the first byte (the low 5 bits are
-        // retention flags). When those top bits are all 1 (value 7) the field is the
-        // long form: a 4-byte big-endian value whose low 29 bits hold the count,
-        // followed by ceil((count + 1) / 8) retention-flag bytes.
-        if (pos >= data.Length)
-            throw new InvalidDataException("JBIG2: truncated referred-to segment count.");
-        var refFlagByte = data[pos];
-        int refCount = (refFlagByte >> 5) & 0x7;
-
-        if (refCount == 7)
-        {
-            // Long form: the count byte is the first of a 4-byte field.
-            if (pos + 4 > data.Length)
-                throw new InvalidDataException("JBIG2: truncated referred-to segment count (long form).");
-            refCount = (int)(ReadUInt32(data, pos) & 0x1FFF_FFFF);
-            pos += 4;
-            // Retention flags: ceil((refCount + 1) / 8) bytes.
-            var retentionBytes = (refCount + 8) / 8;
-            if (pos + retentionBytes > data.Length)
-                throw new InvalidDataException("JBIG2: truncated referred-to retention flags.");
-            pos += retentionBytes;
-        }
-        else
-        {
-            // Short form: single byte (count in top 3 bits, retention flags in low 5 bits).
-            pos++;
-        }
-
-        // §7.2.5 Referred-to segment numbers.
-        // Each entry is 1, 2, or 4 bytes depending on the current segment number.
-        int refEntryBytes = segNumber <= 256 ? 1 : segNumber <= 65536 ? 2 : 4;
-        var refSectionBytes = (long)refCount * refEntryBytes;
-        if (pos + refSectionBytes > data.Length)
-            throw new InvalidDataException("JBIG2: truncated referred-to segment numbers.");
-        pos += (int)refSectionBytes;
-
-        // §7.2.6 Segment page association.
-        int pageAssociation;
-        if (pageAssocSizeFlag == 1)
-        {
-            if (pos + 4 > data.Length)
-                throw new InvalidDataException("JBIG2: truncated page association.");
-            pageAssociation = ReadInt32(data, pos);
-            pos += 4;
-        }
-        else
-        {
-            if (pos >= data.Length)
-                throw new InvalidDataException("JBIG2: truncated page association.");
-            pageAssociation = data[pos];
-            pos++;
-        }
-
-        // §7.2.7 Segment data length — 4 bytes, big-endian.
-        // 0xFFFF_FFFF means unknown (variable-length segment).
-        if (pos + 4 > data.Length)
-            throw new InvalidDataException("JBIG2: truncated segment data length.");
-        var rawLength = ReadUInt32(data, pos);
-        pos += 4;
-
-        long dataLength = rawLength == 0xFFFF_FFFF ? -1L : (long)rawLength;
-
-        return new RawHeader(segNumber, segType, pageAssociation, headerStart, dataLength);
-    }
-
-    /// <summary>
-    /// Parses segments in the order of the embedded organisation (§D.3), where each segment's header is
-    /// followed by its data.
-    /// </summary>
     private static List<SegmentHeader> ParseSegments(ReadOnlySpan<byte> data)
     {
         var segments = new List<SegmentHeader>();
@@ -314,16 +217,95 @@ public static class Jbig2ImageLoader
                 throw new InvalidDataException(
                     $"JBIG2: segment count exceeds the safety limit of {MaxSegments}.");
 
-            var h = ReadSegmentHeader(data, ref pos);
+            var headerStart = pos;
+
+            // §7.2.1 Segment number — 4 bytes, big-endian.
+            if (pos + 4 > data.Length)
+                throw new InvalidDataException(
+                    $"JBIG2: truncated segment number at offset {pos}.");
+            var segNumber = ReadInt32(data, pos);
+            pos += 4;
+
+            // §7.2.2 Segment header flags — 1 byte.
+            if (pos >= data.Length)
+                throw new InvalidDataException("JBIG2: truncated segment flags.");
+            var flags = data[pos];
+            var segType = flags & 0x3F;
+            var pageAssocSizeFlag = (flags >> 6) & 1; // 0 = 1-byte, 1 = 4-byte page assoc
+            pos++;
+
+            // §7.2.4 Referred-to segment count and retention flags.
+            // The count is held in the TOP 3 bits of the first byte (the low 5 bits are
+            // retention flags). When those top bits are all 1 (value 7) the field is the
+            // long form: a 4-byte big-endian value whose low 29 bits hold the count,
+            // followed by ceil((count + 1) / 8) retention-flag bytes.
+            if (pos >= data.Length)
+                throw new InvalidDataException("JBIG2: truncated referred-to segment count.");
+            var refFlagByte = data[pos];
+            int refCount = (refFlagByte >> 5) & 0x7;
+
+            if (refCount == 7)
+            {
+                // Long form: the count byte is the first of a 4-byte field.
+                if (pos + 4 > data.Length)
+                    throw new InvalidDataException("JBIG2: truncated referred-to segment count (long form).");
+                refCount = (int)(ReadUInt32(data, pos) & 0x1FFF_FFFF);
+                pos += 4;
+                // Retention flags: ceil((refCount + 1) / 8) bytes.
+                var retentionBytes = (refCount + 8) / 8;
+                if (pos + retentionBytes > data.Length)
+                    throw new InvalidDataException("JBIG2: truncated referred-to retention flags.");
+                pos += retentionBytes;
+            }
+            else
+            {
+                // Short form: single byte (count in top 3 bits, retention flags in low 5 bits).
+                pos++;
+            }
+
+            // §7.2.5 Referred-to segment numbers.
+            // Each entry is 1, 2, or 4 bytes depending on the current segment number.
+            int refEntryBytes = segNumber <= 256 ? 1 : segNumber <= 65536 ? 2 : 4;
+            var refSectionBytes = (long)refCount * refEntryBytes;
+            if (pos + refSectionBytes > data.Length)
+                throw new InvalidDataException("JBIG2: truncated referred-to segment numbers.");
+            pos += (int)refSectionBytes;
+
+            // §7.2.6 Segment page association.
+            int pageAssociation;
+            if (pageAssocSizeFlag == 1)
+            {
+                if (pos + 4 > data.Length)
+                    throw new InvalidDataException("JBIG2: truncated page association.");
+                pageAssociation = ReadInt32(data, pos);
+                pos += 4;
+            }
+            else
+            {
+                if (pos >= data.Length)
+                    throw new InvalidDataException("JBIG2: truncated page association.");
+                pageAssociation = data[pos];
+                pos++;
+            }
+
+            // §7.2.7 Segment data length — 4 bytes, big-endian.
+            // 0xFFFF_FFFF means unknown (variable-length segment).
+            if (pos + 4 > data.Length)
+                throw new InvalidDataException("JBIG2: truncated segment data length.");
+            var rawLength = ReadUInt32(data, pos);
+            pos += 4;
+
+            long dataLength = rawLength == 0xFFFF_FFFF ? -1L : (long)rawLength;
+
             var dataOffset = pos;
 
-            if (h.DataLength >= 0)
+            if (dataLength >= 0)
             {
-                if (dataOffset + h.DataLength > data.Length)
+                if (dataOffset + dataLength > data.Length)
                     throw new InvalidDataException(
-                        $"JBIG2: segment {h.Number} data length {h.DataLength} " +
+                        $"JBIG2: segment {segNumber} data length {dataLength} " +
                         $"at offset {dataOffset} exceeds buffer size {data.Length}.");
-                pos += (int)h.DataLength;
+                pos += (int)dataLength;
             }
             else
             {
@@ -332,8 +314,8 @@ public static class Jbig2ImageLoader
             }
 
             segments.Add(new SegmentHeader(
-                h.Number, h.Type, h.PageAssociation,
-                h.HeaderStart, dataOffset, h.DataLength));
+                segNumber, segType, pageAssociation,
+                headerStart, dataOffset, dataLength));
         }
 
         return segments;
