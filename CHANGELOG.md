@@ -670,8 +670,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (#220).** `docs/toc.yml` already lists nine of the eleven Markdown files. The other two,
   `vellumpdf-inline-fontdict-quirk.md` and `vellumpdf-showtext-winansi-quirk.md`, are Dutch
   notes on defects fixed in 1.8.2 and 1.9.0, and the second quotes a consuming application's
-  source path. They are now excluded from the DocFX build in `docfx.json`; before, `docs/**.md`
-  published them at a URL no page linked to. `barcodes-roadmap.md` called itself a maintainer
+  name and source path, since scrubbed from both. They are now excluded from the DocFX build in
+  `docfx.json`; before, `docs/**.md` published them at a URL no page linked to. `barcodes-roadmap.md` called itself a maintainer
   note left out of `toc.yml` while `toc.yml` listed it. Its opening now says what the page is,
   and its README maintenance note names `eng/generate-roadmap.py` as the source of the roadmap
   table.
