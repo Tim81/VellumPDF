@@ -81,8 +81,8 @@ internal sealed class HeadingRenderer : IRenderer
     public void Draw(DrawContext ctx)
     {
         // Register outline entry at the top of the occupied area.
-        // The core method, not the validating overload: a heading's title is never null, and this keeps
-        // every heading's refusals as they were before the overload existed.
+        // The unchecked core, not the validating overload: a heading's title is never null, and a
+        // non-finite destination is refused later, by the writer, with ArgumentException.
         ctx.AddOutlineEntryCore(
             _heading.ResolvedBookmarkTitle, _heading.Level, _occupied.Y, _heading.BookmarkExpanded);
         _inner.Draw(ctx);

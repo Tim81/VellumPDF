@@ -243,7 +243,7 @@ public sealed class OutlineBookmarkSplitTests
     }
 
     [Fact]
-    public void HeadingAtANonFinitePosition_keepsTheRefusalItHadBeforeTheOverloadExisted()
+    public void HeadingAtANonFinitePosition_isRefusedByTheWriterWithArgumentException()
     {
         // A page height and a top margin at the extremes make the destination's Y overflow to
         // infinity. The heading draws through the unchecked core, so the exception is the writer's
@@ -260,6 +260,46 @@ public sealed class OutlineBookmarkSplitTests
         Assert.NotNull(ex);
         Assert.Equal(typeof(ArgumentException), ex.GetType());
         Assert.Contains("PDF does not support NaN or Infinity", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SplitHeadingStartingAboveLayoutYZero_hasItsBookmarkAboveThePageHeight()
+    {
+        // A negative document top margin: the split piece starts at layout y -20.
+        using (var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, 200, PageHeight),
+            Margins = new EdgeInsets { Top = -20, Right = Margin, Bottom = Margin, Left = Margin },
+        })
+        {
+            doc.Add(new Heading(string.Join(' ', Enumerable.Repeat("Heading", 400))));
+            var pdf = Save(doc);
+            Assert.Equal(PageHeight + 20, Assert.Single(Dests(pdf)).Top);
+            Assert.True(Regex.Matches(pdf, @"/Type /Page\b(?!s)").Count >= 2);
+        }
+
+        // A negative heading top margin: the split piece starts at layout y 10 - 30 = -20.
+        using var doc2 = NewDoc();
+        doc2.Add(new Heading(string.Join(' ', Enumerable.Repeat("Heading", 400)))
+        {
+            Margins = new EdgeInsets { Top = -30, Right = 0, Bottom = 0, Left = 0 },
+        });
+        var pdf2 = Save(doc2);
+        Assert.Equal(PageHeight + 20, Assert.Single(Dests(pdf2)).Top);
+        Assert.True(Regex.Matches(pdf2, @"/Type /Page\b(?!s)").Count >= 2);
+    }
+
+    [Fact]
+    public void LevelMinusOneBookmark_neverGetsChildren_soCollapsedIsNotWritten()
+    {
+        using var doc = NewDoc();
+        doc.Add(new Heading("Below") { Level = -1, BookmarkExpanded = false });
+        doc.Add(new Heading("Top") { Level = 0 });
+        var pdf = Save(doc);
+
+        // Two top-level items and no /Count on either; the root counts both.
+        Assert.DoesNotContain("/Count -", pdf, StringComparison.Ordinal);
+        Assert.Matches(@"/Type /Outlines[^>]*/Count 2\b|/Count 2\b[^>]*/Type /Outlines", pdf);
     }
 
     [Fact]

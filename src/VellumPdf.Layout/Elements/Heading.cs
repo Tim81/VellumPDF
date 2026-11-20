@@ -86,9 +86,11 @@ public sealed class Heading
     /// <b>No value is refused.</b> The value takes effect only when the bookmark gets children: a
     /// later bookmark at exactly <see cref="Level"/> + 1 whose most recent earlier bookmark at
     /// <see cref="Level"/> is this one, whether from a heading or from a custom renderer's
-    /// <see cref="DrawContext.AddOutlineEntry(string, int, double, bool)"/>. Otherwise the
-    /// bookmark has no <c>/Count</c>, because ISO 32000-2:2020, Table 151, requires it only for an
-    /// item with descendants, and the value is not written. A closed bookmark writes a negative
+    /// <see cref="DrawContext.AddOutlineEntry(string, int, double, bool)"/>. Level 0 is always
+    /// top-level and never has a parent, so a bookmark at level -1 never gets children: the
+    /// bookmarks after it at level 0 sit beside it. Without children the bookmark has no
+    /// <c>/Count</c>, because ISO 32000-2:2020, Table 151, requires it only for an item with
+    /// descendants, and the value is not written. A closed bookmark writes a negative
     /// <c>/Count</c>.
     /// <para>A heading that splits across pages has one bookmark, and it carries this value.</para>
     /// </remarks>

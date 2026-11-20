@@ -253,28 +253,36 @@ public sealed class DrawContext
     /// target position.
     /// </summary>
     /// <remarks>
-    /// <inheritdoc cref="AddOutlineEntry(string, int, double)" path="/remarks/node()"/>
-    /// <para><b>A null title is refused.</b> This call throws <see cref="ArgumentNullException"/>
-    /// for it, where the three-argument overload accepts it and fails later in the save.
+    /// <b>A null title is refused.</b> This call throws <see cref="ArgumentNullException"/> for
+    /// it, where the three-argument overload accepts it and fails later in the save.
     /// <b>A position that does not map to a finite destination is refused</b> the same way, with
     /// <see cref="ArgumentOutOfRangeException"/>, because a non-finite <c>/XYZ</c> operand is not a
-    /// valid PDF number.</para>
+    /// valid PDF number.
+    /// <para><paramref name="level"/> is not refused. Level 0 is a top-level entry. Any other
+    /// level, negative included, nests under the most recent earlier entry at exactly one level
+    /// less, and goes to the top level when there is none. For <see cref="int.MinValue"/> the level
+    /// one less wraps to <see cref="int.MaxValue"/>.</para>
     /// <para><paramref name="expanded"/> is not refused. <see langword="false"/> writes a negative
     /// <c>/Count</c> (ISO 32000-2:2020, 12.3.3, Table 151), but only on an entry that has
-    /// children: an entry is given children by later entries at exactly one level deeper whose most
-    /// recent earlier entry one level up is this one. Without children the entry has no
-    /// <c>/Count</c>, and the value is not written.</para>
-    /// <para>These refusals arrive during the layout that draws the content, so through
-    /// <see cref="VellumPdf.Layout.Document"/> a throw leaves the document unable to be saved
-    /// again.</para>
+    /// children, and the value is not written otherwise. An entry has children when a later entry
+    /// at its level + 1 finds it as the most recent earlier entry at its level, and level 0 never
+    /// has a parent. So an entry at level -1 never has children: the entries after it at level 0
+    /// are top-level.</para>
+    /// <para>These refusals are raised from the <c>Draw</c> of the renderer that calls this
+    /// method, which <see cref="VellumPdf.Layout.Document"/> runs inside its save, so a throw
+    /// leaves that document unable to be saved again.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
-    /// <paramref name="title"/> is <see langword="null"/>.
+    /// Raised from this call when <paramref name="title"/> is <see langword="null"/>. Also raised
+    /// from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other save
+    /// overloads, not from this call, when this context was constructed with a null page and a
+    /// non-null document. It comes from the save of the <see cref="PdfDocument"/> this context was
+    /// constructed with. <c>ParamName</c> is <c>key</c>.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// The Y written for the destination, <paramref name="layoutY"/> passed through
-    /// <see cref="ToPdfY"/>, is not finite. A finite <paramref name="layoutY"/> is refused when
-    /// <see cref="PageBounds"/>'s height is not finite or the subtraction overflows.
+    /// Raised from this call when the Y written for the destination, <paramref name="layoutY"/>
+    /// passed through <see cref="ToPdfY"/>, is not finite. A finite <paramref name="layoutY"/> is
+    /// refused when <see cref="PageBounds"/>'s height is not finite or the subtraction overflows.
     /// </exception>
     /// <exception cref="NullReferenceException">
     /// Raised from this call when this context was constructed with a null document.
