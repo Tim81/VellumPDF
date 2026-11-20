@@ -9,7 +9,7 @@ namespace VellumPdf.Layout.Elements;
 /// A single item in a <see cref="ListElement"/>, with optional nested children.
 /// </summary>
 /// <remarks>
-/// Nesting is one level. An item reached only as a grandchild is not measured or drawn, so nothing
+/// Nesting is one level. An item reached only as a child of a child is not measured or drawn, so nothing
 /// it holds makes the save throw; see <see cref="Children"/>.
 /// </remarks>
 public sealed class ListItem
@@ -18,19 +18,15 @@ public sealed class ListItem
 
     /// <summary>The item's text.</summary>
     /// <remarks>
-    /// A null value makes the save throw on a top-level item or a child; see the constructor. White
-    /// space is drawn as on <see cref="Paragraph"/>.
+    /// <b>Never null.</b> A null passed to the constructor is stored as an empty string and
+    /// remembered; see the constructor for what the save does with it. White space is drawn as on
+    /// <see cref="Paragraph"/>.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the text is <see langword="null"/> on a top-level item or a child;
-    /// a grandchild is ignored (see <see cref="Children"/>).
-    /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when the text holds an unpaired surrogate and is measured in an embedded
     /// font; see <see cref="TextStyle.FontRef"/>. It is not raised for an item reached only as a
-    /// grandchild.
+    /// child of a child.
     /// </exception>
     public string Text { get; }
 
@@ -38,27 +34,28 @@ public sealed class ListItem
     /// <remarks>
     /// On a top-level item, null means the list's <see cref="ListElement.DefaultStyle"/>, then
     /// <see cref="TextStyle.Default"/>. On a child, null means the parent item's style after that
-    /// same fallback. Refusals on size, leading and font are on <see cref="TextStyle"/> and are
-    /// raised from the save.
+    /// same fallback. Refusals on size, leading, font and text colour are on
+    /// <see cref="TextStyle"/> and are raised from the save.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the style's size or leading is refused; see
-    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
-    /// It is not raised for an item reached only as a grandchild.
+    /// from this property, when the style's size or leading is refused, or a channel of its text
+    /// colour is not finite; see <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/>
+    /// and <see cref="TextStyle.Color"/>. It is not raised for an item reached only as a
+    /// child of a child.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when the style holds a <see cref="VellumPdf.Fonts.Standard14"/> value
     /// the enumeration does not name and the font is selected on a page; see
     /// <see cref="TextStyle.FontRef"/>.
-    /// It is not raised for an item reached only as a grandchild.
+    /// It is not raised for an item reached only as a child of a child.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when text in this style holds an unpaired surrogate and is measured in
     /// an embedded font; see <see cref="TextStyle.FontRef"/>.
-    /// It is not raised for an item reached only as a grandchild.
+    /// It is not raised for an item reached only as a child of a child.
     /// </exception>
     public TextStyle? Style { get; init; }
 
@@ -78,7 +75,7 @@ public sealed class ListItem
     /// <summary>The nested child items, or null if this item has no children.</summary>
     /// <remarks>
     /// One level of nesting is supported, and only one. A child's own <see cref="Children"/>
-    /// is read by <b>nothing</b>. A grandchild is not measured, not drawn and not reported, and
+    /// is read by <b>nothing</b>. A child of a child is not measured, not drawn and not reported, and
     /// its text is absent from the document. The scope of that claim: the renderer reads
     /// <c>item.Children</c> and takes each child's style, marker and content, and never reads
     /// <c>child.Children</c>.
@@ -95,73 +92,101 @@ public sealed class ListItem
     /// <summary>Creates a list item with the given text and optional style.</summary>
     /// <remarks>
     /// A null <paramref name="style"/> is stored; <see cref="Style"/> says which style the item
-    /// then inherits. A null <paramref name="text"/> is stored, and the save throws when it lays
-    /// out the item as a top-level item or a child.
-    /// <para>Do not pass null text. A later major version will throw
-    /// <see cref="ArgumentNullException"/> from this call.</para>
+    /// then inherits. An empty string is not null and is accepted.
+    /// <para>A null <paramref name="text"/> is not refused by this call, because the call cannot
+    /// know where the item will sit. <see cref="Text"/> becomes an empty string and the item is
+    /// marked. On a top-level item, or a child of one, the save throws
+    /// <see cref="ArgumentNullException"/> naming <c>text</c> when it lays the list out. On an item
+    /// deeper than that, a child of a child, nothing is read and the list renders.</para>
+    /// <para><b>Do not pass a null text.</b> On a child of a child it is accepted today and not
+    /// reported, because there is no diagnostics channel yet. 3.0 will throw
+    /// <see cref="ArgumentNullException"/> from this constructor whatever the position, and the
+    /// diagnostics channel will report it before then. <see cref="ListElement.Add(string, TextStyle?)"/>
+    /// has no such leniency: its item is always top-level, so it throws from the call.</para>
     /// </remarks>
-    /// <exception cref="NullReferenceException">
+    /// <exception cref="ArgumentNullException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this constructor, when <paramref name="text"/> is <see langword="null"/>.
-    /// It is not raised for an item reached only as a grandchild.
+    /// from this constructor, when <paramref name="text"/> is <see langword="null"/> and the item is
+    /// laid out as a top-level item or as a child of one. <c>ParamName</c> is <c>text</c>. It is not
+    /// raised for an item reached only as a child of a child.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this constructor, when the text holds an unpaired surrogate and is measured in an
     /// embedded font; see <see cref="TextStyle.FontRef"/>.
-    /// It is not raised for an item reached only as a grandchild.
+    /// It is not raised for an item reached only as a child of a child.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this constructor, when the style's size or leading is refused; see
-    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
-    /// It is not raised for an item reached only as a grandchild.
+    /// from this constructor, when the style's size or leading is refused, or a channel of its text
+    /// colour is not finite; see <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/>
+    /// and <see cref="TextStyle.Color"/>. It is not raised for an item reached only as a
+    /// child of a child.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this constructor, when the style holds a <see cref="VellumPdf.Fonts.Standard14"/> value
     /// the enumeration does not name and the font is selected on a page; see
     /// <see cref="TextStyle.FontRef"/>.
-    /// It is not raised for an item reached only as a grandchild.
+    /// It is not raised for an item reached only as a child of a child.
     /// </exception>
     public ListItem(string text, TextStyle? style = null)
     {
-        Text = text;
+        HasNullText = text is null;
+        Text = text ?? string.Empty;
         Style = style;
     }
 
+    /// <summary>True when the constructor was given a null text.</summary>
+    internal bool HasNullText { get; }
+
     /// <summary>Adds a nested child item. Returns this item.</summary>
     /// <remarks>
-    /// Children of <paramref name="child"/> are ignored; see <see cref="Children"/>. A null
-    /// <paramref name="child"/> is stored, and the save throws when this item is laid out as a
-    /// top-level item.
-    /// <para>Do not pass null. A later major version will throw
-    /// <see cref="ArgumentNullException"/> from this call.</para>
+    /// Children of <paramref name="child"/> are ignored; see <see cref="Children"/>.
+    /// <para>A null <paramref name="child"/> is not refused by this call, because the call cannot
+    /// know where this item will sit in the list. It is not added: <see cref="Children"/> never holds
+    /// a null. When this item is top-level the save throws <see cref="ArgumentNullException"/>
+    /// naming <c>child</c> when it lays the list out. When this item is itself another item's
+    /// child, or deeper, its children are never read and the list renders.</para>
+    /// <para><b>Do not pass a null child.</b> Held by a child item it is skipped today and not
+    /// reported, because there is no diagnostics channel yet. 3.0 will throw
+    /// <see cref="ArgumentNullException"/> from this call whatever the position, and the diagnostics
+    /// channel will report it before then.</para>
     /// </remarks>
-    /// <exception cref="NullReferenceException">
+    /// <exception cref="ArgumentNullException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when <paramref name="child"/> is <see langword="null"/> and this item is
-    /// laid out as a top-level item.
+    /// from this call, when <paramref name="child"/> is <see langword="null"/> and this item is laid
+    /// out as a top-level item. <c>ParamName</c> is <c>child</c>. It is not raised when this item is
+    /// itself another item's child, whose own children are never read.
     /// </exception>
     public ListItem AddChild(ListItem child)
     {
+        if (child is null)
+        {
+            HasNullChild = true;
+            return this;
+        }
+
         _children ??= [];
         _children.Add(child);
         return this;
     }
 
+    /// <summary>True when <see cref="AddChild(ListItem)"/> was given a null.</summary>
+    internal bool HasNullChild { get; private set; }
+
     /// <summary>Adds a nested child item with the given text and optional style. Returns this item.</summary>
     /// <remarks>
-    /// Creates the child with <see cref="ListItem(string, TextStyle?)"/> and adds it. A null
-    /// <paramref name="text"/> is stored, and the save throws when it lays out the new child, which
-    /// happens only when this item is laid out as a top-level item.
-    /// <para>Do not pass null text. A later major version will throw
-    /// <see cref="ArgumentNullException"/> from this call.</para>
+    /// Creates the child with <see cref="ListItem(string, TextStyle?)"/> and adds it, so a null
+    /// <paramref name="text"/> is handled as that constructor handles it, and the same advice
+    /// applies. <b>Do not pass a null text.</b>
     /// </remarks>
-    /// <exception cref="NullReferenceException">
+    /// <exception cref="ArgumentNullException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when <paramref name="text"/> is <see langword="null"/>.
-    /// It is raised only when this item is laid out as a top-level item.
+    /// from this call, when <paramref name="text"/> is <see langword="null"/> and this item is laid
+    /// out as a top-level item, which makes the new item a child. <c>ParamName</c> is <c>text</c>. It
+    /// is not raised when this item is itself another item's child, which makes the new item a child
+    /// of a child, and that is never read.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -171,9 +196,10 @@ public sealed class ListItem
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when the style's size or leading is refused; see
-    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
-    /// It is raised only when this item is laid out as a top-level item.
+    /// from this call, when the style's size or leading is refused, or a channel of its text colour
+    /// is not finite; see <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/> and
+    /// <see cref="TextStyle.Color"/>. It is raised only when this item is laid out as a top-level
+    /// item.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not

@@ -8,12 +8,44 @@ namespace VellumPdf.Images;
 /// <summary>
 /// Creates a PDF Image XObject from JBIG2 bilevel image data (ITU-T T.88 / ISO/IEC 14492).
 ///
-/// <para><b>Sequential vs embedded organisation:</b> A standalone <c>.jbig2</c> file uses
-/// the <i>sequential</i> organisation with an 8-byte file header
-/// (<c>97 4A 42 32 0D 0A 1A 0A</c>) followed by segments. PDF <c>/JBIG2Decode</c> uses the
-/// <i>embedded</i> organisation: no file header; page-associated segments go in the image
-/// stream; globally-referenced segments (symbol dictionaries, pattern dictionaries, tables)
-/// go in a separate stream referenced as <c>/DecodeParms &lt;&lt; /JBIG2Globals &lt;ref&gt; &gt;&gt;</c>.</para>
+/// <para><b>Organisations:</b> PDF <c>/JBIG2Decode</c> uses the <i>embedded</i> organisation (T.88
+/// D.3): no file header; the segments of the page go in the image stream; the global segments (page
+/// association 0, such as symbol dictionaries, pattern dictionaries and tables) go in a separate stream referenced as
+/// <c>/DecodeParms &lt;&lt; /JBIG2Globals &lt;ref&gt; &gt;&gt;</c>. The input is that form, or the same
+/// segments after the 8-byte ID string <c>97 4A 42 32 0D 0A 1A 0A</c>, which is stripped.</para>
+///
+/// <para><b>A file with the T.88 Annex D file header is refused unless its bytes after the ID string
+/// read as segments.</b> Only the ID string is stripped. The flags byte and page count that Annex D (D.4.2,
+/// D.4.3) puts after it are not read as header fields, so a file that carries them, or is in the
+/// random-access organisation, is refused with <see cref="InvalidDataException"/> in both
+/// <see cref="ImageDecodeMode"/>s unless those bytes happen to read as a valid segment sequence.
+/// Pass the segments without the file header.</para>
+///
+/// <para><b>One page:</b> a PDF image is one page, so only the first page of a multi-page stream is
+/// embedded. The first page is the one named by the page association of the first
+/// page-information segment (type 48). Its segments are kept, with the segments that belong to no
+/// page (page association 0), and the segments of every other page are dropped. The width and height
+/// are the first page's. A first page-information segment with page association 0 names no page, so
+/// every segment is kept. <see cref="ImageDecodeMode.DecodeToRaster"/> still decodes the regions of
+/// the other pages and discards the result, so a later page with a region this loader cannot decode, or
+/// whose data length is unknown, refuses the file there. <b>Do not pass</b> a multi-page stream: the
+/// other pages are lost without a word, and 3.0 refuses it.</para>
+///
+/// <para><b>Unknown segment length:</b> a segment whose data length field is 0xFFFFFFFF (ITU-T T.88
+/// 7.2.7) is not embedded, because this loader does not scan the data for the end marker that clause
+/// describes and so cannot say where such a segment ends.
+/// <see cref="ImageDecodeMode.Passthrough"/> drops it, which can leave a page blank without a word;
+/// <b>do not pass</b> such a segment, because 3.0 refuses it and the diagnostics channel (#607) will
+/// report it before then. <see cref="ImageDecodeMode.DecodeToRaster"/> refuses an unknown length on an
+/// immediate, lossless or intermediate generic region (types 36, 38 and 39) with
+/// <see cref="InvalidDataException"/> naming the segment. A stream takes the rest of the data as an
+/// unknown-length segment's own, so what follows one is not seen.</para>
+///
+/// <para><b>Polarity:</b> <see cref="ImageDecodeMode.DecodeToRaster"/> stores the decoded bits unchanged as
+/// <c>/DeviceGray</c> without <c>/Decode</c>, whose default maps sample 0 to black (ISO 32000-2 8.9.5.2),
+/// while T.88 (clause 3, NOTE 1; 5.6) gives 1 as black as the typical reading, so the raster renders as a
+/// negative. <see cref="ImageDecodeMode.Passthrough"/> embeds the segments as they are and has no such
+/// inversion.</para>
 ///
 /// <para>When the input has no global segments the resulting XObject carries no
 /// <c>/JBIG2Globals</c> entry and is self-contained.</para>
@@ -24,7 +56,7 @@ namespace VellumPdf.Images;
 /// </summary>
 public static class Jbig2ImageLoader
 {
-    // JBIG2 sequential-file magic header bytes (ITU-T T.88 §D.4.1).
+    // JBIG2 file ID string (ITU-T T.88 §D.4.1); the flags byte and page count follow it (§D.4.2, §D.4.3).
     private static readonly byte[] FileHeader = [0x97, 0x4A, 0x42, 0x32, 0x0D, 0x0A, 0x1A, 0x0A];
 
     /// <summary>Maximum number of segments accepted from a single JBIG2 file.</summary>
@@ -58,8 +90,7 @@ public static class Jbig2ImageLoader
     /// options (passthrough, with globals partitioned out if present).
     /// </summary>
     /// <param name="jbig2">
-    /// The JBIG2 bytes — either a standalone sequential file (with the 8-byte magic header)
-    /// or data already in embedded form (without the file header).
+    /// The JBIG2 segments in embedded form, with or without the 8-byte ID string in front.
     /// </param>
     /// <returns>
     /// A <see cref="PdfImageXObject"/> with <c>/Filter /JBIG2Decode</c>.
@@ -68,7 +99,16 @@ public static class Jbig2ImageLoader
     /// by <see cref="Document.PdfDocument"/> when the document is written.
     /// </returns>
     /// <exception cref="ArgumentException">Thrown when <paramref name="jbig2"/> is null or empty.</exception>
-    /// <exception cref="InvalidDataException">Thrown on malformed or truncated input.</exception>
+    /// <exception cref="InvalidDataException">
+    /// Thrown on malformed or truncated input, and for a file with the T.88 Annex D file header whose
+    /// bytes after the ID string do not read as segments; see the remarks on this type. A segment whose
+    /// data length is unknown (0xFFFFFFFF, ITU-T T.88 7.2.7) is dropped, not refused, because this
+    /// loader does not scan for the end marker 7.2.7 describes and so cannot say where the segment
+    /// ends. <b>Do not pass</b> such a segment: the image is embedded without it, which can leave no
+    /// region and a blank image, and nothing reports it yet; 3.0 refuses it. Only the first page of a
+    /// multi-page stream is embedded, unless the first page-information segment has page association 0,
+    /// which keeps every segment.
+    /// </exception>
     public static PdfImageXObject Load(byte[] jbig2)
         => Load(jbig2, ImageLoadOptions.Default);
 
@@ -76,8 +116,7 @@ public static class Jbig2ImageLoader
     /// Loads a JBIG2 image and creates a PDF Image XObject using the specified options.
     /// </summary>
     /// <param name="jbig2">
-    /// The JBIG2 bytes — either a standalone sequential file (with the 8-byte magic header)
-    /// or data already in embedded form (without the file header).
+    /// The JBIG2 segments in embedded form, with or without the 8-byte ID string in front.
     /// </param>
     /// <param name="options">
     /// Options controlling how the image is mapped into the XObject.
@@ -92,7 +131,21 @@ public static class Jbig2ImageLoader
     /// </param>
     /// <returns>A <see cref="PdfImageXObject"/> with the appropriate filter.</returns>
     /// <exception cref="ArgumentException">Thrown when <paramref name="jbig2"/> is null or empty.</exception>
-    /// <exception cref="InvalidDataException">Thrown on malformed or truncated input.</exception>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="options"/> is <see langword="null"/>, because the decode mode is read from it
+    /// (<c>ParamName</c> <c>options</c>). A call with null data and null options reports the data.
+    /// </exception>
+    /// <exception cref="InvalidDataException">
+    /// Thrown on malformed or truncated input, and for a file with the T.88 Annex D file header whose
+    /// bytes after the ID string do not read as segments; see the remarks on this type. Under
+    /// <see cref="ImageDecodeMode.DecodeToRaster"/> it is also thrown for a generic region whose data
+    /// length is unknown (0xFFFFFFFF, ITU-T T.88 7.2.7), which this loader cannot decode; the message
+    /// names the segment number. Under <see cref="ImageDecodeMode.Passthrough"/> such a segment is
+    /// dropped; see <see cref="Load(byte[])"/>. Only the first page of a multi-page stream is embedded,
+    /// under either mode, unless the first page-information segment has page association 0, which keeps
+    /// every segment. Under <see cref="ImageDecodeMode.DecodeToRaster"/> the other pages are decoded and
+    /// discarded, so a region on them that cannot be decoded refuses the file.
+    /// </exception>
     /// <exception cref="NotSupportedException">
     /// Thrown under <see cref="ImageDecodeMode.DecodeToRaster"/> when the file contains
     /// segment types that are not supported for in-process decoding (symbol dictionaries,
@@ -102,19 +155,22 @@ public static class Jbig2ImageLoader
     {
         if (jbig2 is null || jbig2.Length == 0)
             throw new ArgumentException("JBIG2 data must be non-empty.", nameof(jbig2));
+        ArgumentNullException.ThrowIfNull(options);
 
-        // Strip the sequential-file header if present; accept embedded-form input too.
+        // Only the ID string is stripped; embedded-form input has none. What follows is read as
+        // segments, so a file whose Annex D flags byte and page count do not read that way is
+        // refused, as on 2.3.3.
         var dataStart = StartsWithFileHeader(jbig2) ? FileHeader.Length : 0;
         var data = jbig2.AsSpan(dataStart);
 
         var segments = ParseSegments(data);
-        var (width, height) = ReadPageInfo(segments, data);
+        var (width, height, firstPage) = ReadPageInfo(segments, data);
 
         ImageLimits.ValidateDimensions("JBIG2", width, height);
 
         return options.DecodeMode == ImageDecodeMode.DecodeToRaster
-            ? DecodeToRaster(segments, data, width, height)
-            : BuildPassthrough(segments, data, width, height);
+            ? DecodeToRaster(segments, data, width, height, firstPage)
+            : BuildPassthrough(segments, data, width, height, firstPage);
     }
 
     // ── Parsed segment metadata ───────────────────────────────────────────────
@@ -267,7 +323,11 @@ public static class Jbig2ImageLoader
 
     // ── Page-info segment (type 48) ───────────────────────────────────────────
 
-    private static (int width, int height) ReadPageInfo(
+    /// <summary>
+    /// Reads the first page-information segment: the page size, and the page association that names
+    /// the first page.
+    /// </summary>
+    private static (int width, int height, int page) ReadPageInfo(
         List<SegmentHeader> segments, ReadOnlySpan<byte> data)
     {
         foreach (var seg in segments)
@@ -290,17 +350,40 @@ public static class Jbig2ImageLoader
                 throw new InvalidDataException(
                     $"JBIG2: invalid page dimensions {width}×{height}.");
 
-            return (width, height);
+            return (width, height, seg.PageAssociation);
         }
 
         throw new InvalidDataException("JBIG2: no page-information segment (type 48) found.");
     }
 
+    /// <summary>
+    /// The refusal of a generic region whose data length is 0xFFFFFFFF (§7.2.7) under
+    /// <c>DecodeToRaster</c>. Only an immediate generic region may carry that length, and its end is
+    /// found only by scanning the data for a marker that depends on the coding (ITU-T T.88 7.2.7):
+    /// 0xFF 0xAC for template-based arithmetic coding or 0x00 0x00 for MMR, each followed by a
+    /// four-byte row count. This loader does not scan, so it cannot decode such a segment.
+    /// </summary>
+    private static InvalidDataException UnknownLength(in SegmentHeader seg)
+        => new(
+            $"JBIG2: segment {seg.Number} (type {seg.Type}) has an unknown data length " +
+            "(0xFFFFFFFF, ITU-T T.88 7.2.7), which this loader cannot use: it does not scan the data " +
+            "for the end marker that clause describes, so it can neither partition the segment into " +
+            "a page stream and a globals stream nor decode it.");
+
+    /// <summary>
+    /// Whether a segment is part of the page being embedded: it is associated with that page, or with
+    /// no page at all (association 0, the globally referenced segments). A first page-information
+    /// segment that itself has association 0 names no page, so no page is selected and every segment
+    /// is kept.
+    /// </summary>
+    private static bool BelongsToPage(in SegmentHeader seg, int page)
+        => page == 0 || seg.PageAssociation == page || seg.PageAssociation == 0;
+
     // ── Passthrough: partition segments into page stream + globals stream ─────
 
     private static PdfImageXObject BuildPassthrough(
         List<SegmentHeader> segments, ReadOnlySpan<byte> data,
-        int width, int height)
+        int width, int height, int firstPage)
     {
         var globalBuf = new MemoryStream();
         var pageBuf = new MemoryStream();
@@ -314,7 +397,15 @@ public static class Jbig2ImageLoader
             if (seg.Type is SegmentTypeEndOfFile or SegmentTypeEndOfPage)
                 continue;
 
-            // Variable-length segments cannot be reliably partitioned; skip them.
+            // A PDF image is one page; the rest of a multi-page file is not embedded.
+            if (!BelongsToPage(seg, firstPage))
+                continue;
+
+            // A segment of unknown length (§7.2.7) is dropped. This loader does not scan for the end
+            // marker 7.2.7 describes (0xFF 0xAC for arithmetic coding, 0x00 0x00 for MMR, each
+            // followed by a row count; only an immediate generic region may have one), so it cannot
+            // say where the segment ends. Dropping it can leave an image with no region, which a
+            // reader draws blank. The file is valid, so it is not refused; 3.0 refuses it.
             if (!seg.HasKnownLength)
                 continue;
 
@@ -367,8 +458,9 @@ public static class Jbig2ImageLoader
 
     private static PdfImageXObject DecodeToRaster(
         List<SegmentHeader> segments, ReadOnlySpan<byte> data,
-        int width, int height)
+        int width, int height, int firstPage)
     {
+        // Every segment is looked at, whatever page it is on, as the class remarks say.
         // Reject segment types that require symbol/pattern/refinement decoding.
         foreach (var seg in segments)
         {
@@ -398,19 +490,34 @@ public static class Jbig2ImageLoader
             throw new InvalidDataException("JBIG2: decoded raster would exceed the safety limit.");
 
         var raster = new byte[(int)outputSize];
+        byte[]? discarded = null;
 
         foreach (var seg in segments)
         {
+            var onPage = BelongsToPage(seg, firstPage);
+
             if (seg.Type != SegmentTypeImmediateGenericRegion
                 && seg.Type != SegmentTypeImmediateLosslessGenericRegion
                 && seg.Type != SegmentTypeIntermediateGenericRegion)
                 continue;
 
-            if (!seg.HasKnownLength || seg.DataLength < 18)
+            // The one place this mode already refused an unknown length, as "data too short". Every
+            // other type is as it was: an unsupported one throws NotSupportedException above, and a
+            // segment the raster does not use is ignored whatever its length.
+            if (!seg.HasKnownLength)
+                throw UnknownLength(seg);
+
+            if (seg.DataLength < 18)
                 throw new InvalidDataException(
                     $"JBIG2: generic region segment {seg.Number} data too short.");
 
-            DecodeGenericRegion(seg, data, raster, width, height, rowBytes);
+            // The regions of the other pages are decoded so that one this loader cannot decode is
+            // refused, and the result is thrown away.
+            byte[] target = raster;
+            if (!onPage)
+                target = discarded ??= new byte[raster.Length];
+
+            DecodeGenericRegion(seg, data, target, width, height, rowBytes);
         }
 
         return new PdfImageXObject(

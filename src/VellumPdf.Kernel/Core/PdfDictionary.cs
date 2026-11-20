@@ -32,7 +32,22 @@ public sealed class PdfDictionary : PdfObject
     private Dictionary<PdfName, int>? _index;
 
     /// <summary>Sets <paramref name="key"/> to <paramref name="value"/>, replacing any existing entry, and returns this dictionary.</summary>
-    /// <exception cref="ArgumentNullException"><paramref name="key"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// A null <paramref name="key"/> is refused here. A null <paramref name="value"/> is stored and
+    /// refused where <see cref="WriteTo"/> reaches it, with <see cref="ArgumentNullException"/> naming
+    /// the key. Setting the key again replaces the null, and a dictionary that is never written never fails. <b>Do not pass</b> a null value: 3.0 refuses it here. A dictionary entry
+    /// whose value is absent is expressed by not setting the key, or by <see cref="PdfNull"/> where a
+    /// PDF null is meant.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="key"/> is <see langword="null"/>. A null <paramref name="value"/> is raised from
+    /// <see cref="WriteTo"/>, not from this call.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from the save that writes this dictionary, not from this call, when it contains itself,
+    /// directly or through other arrays, dictionaries and streams. Refer to the object through an
+    /// indirect reference to break the cycle.
+    /// </exception>
     public PdfDictionary Set(PdfName key, PdfObject value)
     {
         // Without this, a null key would behave differently depending on which side of
@@ -44,6 +59,8 @@ public sealed class PdfDictionary : PdfObject
         // pins.
         ArgumentNullException.ThrowIfNull(key);
 
+        // A null value is stored and refused in WriteTo: a sequence that sets the key again before
+        // the dictionary is written saves a valid file.
         if (_index is not null)
         {
             if (_index.TryGetValue(key, out var i))
@@ -159,16 +176,39 @@ public sealed class PdfDictionary : PdfObject
     }
 
     /// <summary>Writes the serialised PDF representation to <paramref name="writer"/>.</summary>
+    /// <remarks>
+    /// A dictionary that holds itself, directly or through other arrays and dictionaries, is
+    /// refused. Writing it would recurse until the stack overflowed, which cannot be caught. A
+    /// value that is an indirect reference is written as a reference and not followed, so a cycle
+    /// through indirect objects, which PDF allows, is not affected. The same object placed in two
+    /// entries, side by side, is not a cycle.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// This dictionary contains itself.
+    /// </exception>
+    /// <exception cref="ArgumentNullException">
+    /// An entry's value is <see langword="null"/>; see <see cref="Set(PdfName, PdfObject)"/>.
+    /// </exception>
     public override void WriteTo(PdfWriter writer)
     {
-        writer.WriteAscii("<<"u8);
-        foreach (var kv in _entries)
+        writer.EnterContainer(this);
+        try
         {
-            writer.WriteByte((byte)'\n');
-            kv.Key.WriteTo(writer);
-            writer.WriteByte((byte)' ');
-            kv.Value.WriteTo(writer);
+            writer.WriteAscii("<<"u8);
+            foreach (var kv in _entries)
+            {
+                writer.WriteByte((byte)'\n');
+                kv.Key.WriteTo(writer);
+                writer.WriteByte((byte)' ');
+                if (kv.Value is null)
+                    throw new ArgumentNullException("value", $"The value of dictionary key {kv.Key.Value} is null.");
+                kv.Value.WriteTo(writer);
+            }
+            writer.WriteAscii("\n>>"u8);
         }
-        writer.WriteAscii("\n>>"u8);
+        finally
+        {
+            writer.LeaveContainer(this);
+        }
     }
 }

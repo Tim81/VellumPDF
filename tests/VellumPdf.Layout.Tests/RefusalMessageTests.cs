@@ -83,7 +83,16 @@ public sealed class RefusalMessageTests
         using var doc = Page();
         doc.Add(new Heading("x", Style(double.NaN)));
 
-        Assert.StartsWith("A paragraph run has a font size of NaN", Refused(doc).Message, StringComparison.Ordinal);
+        Assert.StartsWith("A heading has a font size of NaN", Refused(doc).Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ListItem_nonFiniteFontSize_namesTheListItem()
+    {
+        using var doc = Page();
+        doc.Add(new ListElement().Add("x", Style(double.NaN)));
+
+        Assert.StartsWith("A list item has a font size of NaN", Refused(doc).Message, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -92,17 +101,21 @@ public sealed class RefusalMessageTests
     /// It had no test at all, in any suite.
     /// </summary>
     [Theory]
-    [InlineData(true, "header")]
-    [InlineData(false, "footer")]
-    public void Band_nonFiniteFontSize_namesTheBand(bool header, string named)
+    [InlineData(true, "header", double.NaN, "NaN")]
+    [InlineData(false, "footer", double.NaN, "NaN")]
+    [InlineData(true, "header", double.PositiveInfinity, "positive infinity")]
+    [InlineData(false, "footer", double.PositiveInfinity, "positive infinity")]
+    [InlineData(true, "header", double.NegativeInfinity, "negative infinity")]
+    [InlineData(false, "footer", double.NegativeInfinity, "negative infinity")]
+    public void Band_nonFiniteFontSize_namesTheBand(bool header, string named, double size, string rendered)
     {
         using var doc = Page();
-        var band = new RunningBand("page {page}", Style(double.NaN)) { Height = 20 };
+        var band = new RunningBand("page {page}", Style(size)) { Height = 20 };
         if (header) doc.Header = band; else doc.Footer = band;
         doc.Add(new Paragraph("body", Style()));
 
         Assert.Equal(
-            $"The {named} band has a font size of NaN, which cannot be laid out. " +
+            $"The {named} band has a font size of {rendered}, which cannot be laid out. " +
             "A font size must be a finite number.",
             Refused(doc).Message);
     }
@@ -224,6 +237,32 @@ public sealed class RefusalMessageTests
             "A drawn height must be finite and at least 0.000005 points in magnitude; anything " +
             "smaller is written as zero, giving a transformation matrix with no inverse.",
             Refused(doc).Message);
+    }
+
+    /// <summary>
+    /// The threshold itself is accepted: 5e-6 is the smallest extent written as a non-zero token, so a
+    /// width or a height of exactly that value draws, and the matrix carries <c>0.00001</c> (the
+    /// five-decimal rounding of 5e-6). A guard written as "greater than" instead of "at least" would
+    /// refuse it.
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Image_extentExactlyAtTheThreshold_isDrawn(bool width)
+    {
+        using var doc = Page();
+        doc.Add(width
+            ? new LayoutImage(TwoByTwoImage()) { Width = 5e-6 }
+            : new LayoutImage(TwoByTwoImage()) { Height = 5e-6 });
+
+        var stream = Stream(doc);
+
+        // The matrix is a b c d e f cm, so the width is its first operand and the height its fourth.
+        Assert.Matches(
+            width
+                ? @"(?m)^0\.00001 0 0 [-\d.]+ [-\d.]+ [-\d.]+ cm\s*$"
+                : @"(?m)^[-\d.]+ 0 0 0\.00001 [-\d.]+ [-\d.]+ cm\s*$",
+            stream);
     }
 
     /// <summary>
@@ -389,7 +428,7 @@ public sealed class RefusalMessageTests
     }
 
     /// <summary>A 2x2 opaque RGB PNG, decoded so these tests need no fixture file.</summary>
-    private static VellumPdf.Images.PdfImageXObject TwoByTwoImage()
+    internal static VellumPdf.Images.PdfImageXObject TwoByTwoImage()
     {
         static uint Crc(byte[] d)
         {

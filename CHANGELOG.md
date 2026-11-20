@@ -165,6 +165,183 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`PdfCanvas` refuses NaN and infinity in every operand it writes (#519).** Every content-stream
+  operator that writes a number now throws `ArgumentException` for `NaN` or infinity, with the same
+  message as `PdfReal`, instead of writing `NaN 0 0 rg`, which is not a PDF number (ISO 32000-2
+  7.3.3). `SetFont` and `SetFontByName` check the size before writing the font name, and
+  `SetFillAlpha` registers no graphics state for a refused value. The same guard refuses an element
+  margin (`Paragraph`, `Heading`, `ListElement`, `TableElement`, `LayoutImage`, `PieChart`) that
+  would be written as `NaN` or infinity. **Attention**: a caller that passed a non-finite value to a
+  `PdfCanvas` method used to get a file with an invalid content stream and now gets the exception.
+  `ParamName` is null where `PdfReal` reports `value`, and the message formats the value with the
+  invariant culture, so positive infinity prints `Infinity`. `AppendArc` refuses a
+  non-finite centre only when it draws an arc: with a zero radius, a `NaN` or positive-infinite
+  radius, or a zero or non-finite sweep, it returns without drawing and without throwing. A negative
+  radius, negative infinity included, throws `ArgumentOutOfRangeException` (`radius`).
+
+- **A non-finite number is mostly not checked before the layout.** An inset, indent, colour channel
+  or band height of `NaN` or infinity is accepted by the member that holds it, and the layout runs
+  as it did on 2.3.3. The save throws only where the value is written: `PdfCanvas`, and `PdfReal`
+  for a bookmark or a link rectangle, throw `ArgumentException`. Otherwise the result depends on the
+  content: drawn, wrapped after every word, placed off the page, not drawn, or refused as too tall
+  or after 50,000 page continuations. A saved file that lost content this way is kept (#484). A few
+  checks run in the layout and name the element, each inside the element's own `Layout` call and in
+  document order, so an earlier element that is too tall is reported first: the font size and colour
+  of a paragraph run, heading or list item, the font size of a table cell, a line separator's width,
+  margins and colour, a table cell's padding, a table's border width when it is not finite, an image
+  extent that is zero or not finite, and a `ColSpan` below one. Three run where the value is
+  written, because a table or band that is laid out and not drawn writes no invalid token: a table
+  cell's text colour, a negative table border width and a running band's font size. These raise
+  `InvalidOperationException`. **Attention**: a `catch` of `ArgumentException` around a save does not
+  see them. The XML doc of each member says not to pass such a value and that 3.0 refuses it, and
+  the diagnostics channel (#607) will report it. The entries below refer to this paragraph.
+
+- **A non-finite colour channel no longer reaches the content stream (#509).** A `ColorRgb` with a
+  `NaN` or infinite channel on a text style, running band, table cell or border, line separator or
+  pie slice is refused where the colour is written, by `PdfCanvas` with `ArgumentException`, or by
+  the layout or the table cell with `InvalidOperationException` for the elements named in the
+  paragraph on non-finite numbers. A colour that is never written still saves. A finite channel
+  outside 0 to 1 is not refused and is documented as a boundary for 3.0 (#484).
+
+- **A `NaN` or negative-infinity `Document.Margins` inset is no longer written as a token (#502).**
+  Where the layout would write the value, the canvas refuses it with `ArgumentException`; otherwise
+  the document saves as on 2.3.3. Positive infinity is still refused by the existing margin sum
+  check (`ArgumentException`, parameter `margins`). A finite negative inset is not refused and is
+  documented as a boundary for 3.0.
+
+- **A footer at negative infinity no longer saves invalid output (#520).** A footer with
+  `Height = double.NegativeInfinity` saved `NaN` in a text matrix; `PdfCanvas` now refuses it with
+  `ArgumentException`. Other non-finite heights behave as on 2.3.3.
+
+- **A `NaN` or negative-infinity `ListElement.Indent` no longer reaches the content stream (#532).**
+  Where a nested child's marker, or a flat item whose longest word does not fit beside its marker,
+  takes the indent as its left inset, `PdfCanvas` refuses the value with `ArgumentException`. A
+  flat list whose items fit saves with negative infinity, and an empty list saves with either value.
+  A finite negative indent still renders.
+
+- **A negative line width is refused (#557).** ISO 32000-2, 8.4.3.2 requires a non-negative line
+  width, and `LineSeparator.LineWidth` and `TableElement.BorderWidth` wrote `-3 w`. A negative
+  `LineWidth` is now refused when the separator is laid out, and a negative `BorderWidth` where a
+  cell border is drawn, each with `InvalidOperationException` naming the element, the width and the
+  clause. Zero is accepted. **Attention**: a negative `LineWidth` or `BorderWidth` saved on 2.3.3
+  and now throws.
+
+- **Pie slice totals, pie start angles and explicit table widths no longer overflow into wrong
+  output (#546).** A `PieChart.StartAngle` of 1e12 or more in magnitude is reduced to a turn with an
+  exact remainder before any sweep is added, so wedges no longer overlap or collapse; a smaller
+  angle is unchanged. Slice totals that sum to infinity still save with an empty chart, and explicit
+  column widths that sum to infinity still save with every explicit column at width 0, as on 2.3.3.
+  An auto column keeps its content width, and cells that start at the same x are drawn on top of
+  one another. `PieChart.Slices` and `ColWidths` say not to pass them, and 3.0
+  refuses them (#484).
+
+- **Justified text in a standard-14 font reaches the right edge, and a multi-style line no longer
+  overprints (#548, #555).** The word spacing was divided by a count that included both neighbours
+  of every space, so half the slack was distributed. It is now divided by the number of spaces the
+  line draws. Each fragment on a line with more than one `TextStyle` starts where the previous one
+  is drawn to end, and a `LinkUri` rectangle covers the drawn position and width. This is a
+  deliberate output change for justified standard-14 text; a line that is not justified is
+  unchanged. A justified line that holds `Symbol` or `ZapfDingbats` text keeps the old divisor,
+  because those fonts measure every glyph as zero (#470).
+
+- **The last item a list draws on a page keeps all its lines (#556).** `ListRenderer.Draw` offered
+  the last item on a page a height one rounding step short of the layout pass, so its last line was
+  dropped. The draw pass now offers the height the layout pass recorded. This is a deliberate output
+  change: a list item that lost a line on 2.3.3 draws it.
+
+- **A null argument is refused by the call that took it, with `ArgumentNullException` (#523, #531,
+  #547).** Across the Kernel object model and Layout's element types, a null that 2.3.3 stored and
+  later dereferenced as `NullReferenceException` from `Save` or a renderer is refused by the call
+  that took it, naming the parameter, and a null inside a sequence names its index. The XML doc of
+  each member lists what it refuses. Where 2.3.3 stored the null and failed only when it was used,
+  the null is stored again and refused at that point, so a shape that saved still saves (#484); the
+  member says not to pass it and that 3.0 refuses it at the call. **Attention**: code that caught
+  the later `NullReferenceException` now gets `ArgumentNullException`.
+  `new Paragraph((IEnumerable<TextRun>)null)` reports `ParamName` `runs` where it reported `source`.
+
+- **An embedded font handle from another `Document` is refused when the saving document defines no
+  font under its resource name (#544).** A handle's resource name (`TT1`) is local to the document
+  that issued it, so a foreign handle wrote a page naming a font its resources did not define, or
+  quietly used a different font of the same name. `PdfDocument.Save`, `SaveAsync` and
+  `PrepareForSigning` now throw `ArgumentException` (parameter `handle`) before anything is written,
+  and the registering call never does, because a later `UseTrueTypeFont` call may define the name.
+  When the saving document defines that name with the same font program, the glyphs the foreign
+  handle registered are now added to the subset, so its text extracts correctly; this is a
+  deliberate output change. **Attention**: a foreign handle whose name the saving document defines
+  for a different font program still saves with that font's glyphs, and nothing reports it yet
+  (#607). The rule is stated once, on `PdfDocument.RegisterEmbeddedFontUsage`, which also says not to
+  pass a foreign handle and that 3.0 refuses it.
+
+- **A cycle in a structure tree, array, dictionary or stream is refused instead of overflowing the
+  stack (#521).** `PdfArray.WriteTo`, `PdfDictionary.WriteTo` and the stream `WriteTo` throw
+  `InvalidOperationException` for a container that contains itself, and `Save` does for a tagged
+  document whose structure tree reaches a cyclic `PdfStructElem`. `PdfStructElem.AddChild` still
+  accepts such a child, and an untagged document saves as before. A deep acyclic structure and an
+  object placed twice side by side are not cycles. **Attention**: these cases ended the process
+  with `StackOverflowException` on 2.3.3. `ListItem.AddChild` is unchanged and is closed with #483.
+
+- **A `Document` that failed to save no longer silently appends a second layout on the next save
+  (#530).** Save checks that do not depend on the layout now run before it: a null destination, a
+  disposed document, an unwritable stream, `UseObjectStreams` with `Encrypt`, a PDF/A conformance
+  with `Encrypt`, `Encrypt` with `Sign`, a negative `SignaturePage`, and an
+  `EstimatedSignatureSizeBytes` that is negative or above 536,870,894. `PdfDocument.SaveAsync` and
+  `DocumentRenderer.Render` check the destination first too; `Render` does not for a linearized
+  kernel document, and `SaveAsync` still does. A refusal at one of these leaves the
+  document untouched, and a retry saves it once; 2.3.3 laid it out a second time and wrote doubled
+  pages, a deliberate output change. A save that throws once its layout has started, including a
+  `SaveAsync` cancelled after the layout, leaves the document unusable, and every later save throws
+  `InvalidOperationException` asking for a new `Document`. A call with two or more defects is
+  refused as before, but which defect's exception is reported may differ from 2.3.3: a save
+  precondition is reported before a layout defect, and an already-cancelled token before both. In a
+  document with nothing added the page geometry and bands are checked before the preconditions,
+  but not before the token. The path checks of `SaveAsync(string)` are the exception: they run at
+  the open, before the token is looked at.
+  **Attention**: retrying the same `Document` after a failed layout used to save, with pages doubled
+  or lines broken at the first attempt's width, and now throws; build a new `Document`.
+  **Attention**: a linearized `PdfDocument.Save` or `DocumentRenderer.Render` does not check the
+  destination up front. The document is serialised in memory and the stream's own `Write` decides,
+  as on 2.3.3, so whatever the stream's own `Write` throws, for example `ObjectDisposedException`
+  for a closed `MemoryStream` and `NotSupportedException` for a read-only one, comes after
+  serialisation, the document counts as written, and a retry throws
+  `InvalidOperationException`. A non-linearized `Save` to a stream that cannot be written to
+  reports `destination` where it reported `stream`.
+  **Attention**: a bad `EstimatedSignatureSizeBytes` throws `ArgumentOutOfRangeException` with
+  `ParamName` `options` before any page is added, where 2.3.3 threw it with `ParamName` `count`, or
+  threw `OutOfMemoryException` for sizes up to 2^30 - 1.
+
+- **A failed `Save(string)` or `SaveAsync(string)` no longer destroys the file that was already
+  there (#508).** Both used to truncate the path before the layout ran. They now open the target
+  first without emptying it, build the PDF in memory, and empty the file and copy the bytes in only
+  once the PDF is built. A failure at layout or while building the PDF leaves the previous file
+  unchanged and creates nothing at a new path. The file is rewritten in place, so permissions,
+  owner, hard links and symbolic links are kept, and a failed save deletes only a file it created.
+  **Attention**: the final copy is not atomic. A full disk, a crash or a cancellation during it can
+  leave the file truncated or incomplete. The PDF is held in memory until it is copied, which
+  2.3.3's `Save(string)` did not do; pass a `FileStream` to `Save(Stream)` to avoid that. The file
+  is held open with `FileShare.None` until the save returns, an advisory lock on Linux and macOS.
+
+- **`Jbig2ImageLoader` embeds the first page of a multi-page stream (#570).** A PDF image is one
+  page, so the loader embeds the page the first page-information segment names, with the segments
+  of no page, under `Passthrough` and `DecodeToRaster`. This is a deliberate output change:
+  `Passthrough` embedded every page's segments and `DecodeToRaster` composited every page into one
+  raster on 2.3.3. A segment of unknown length is dropped under `Passthrough`, as on 2.3.3, and
+  ends what is read of the stream; nothing reports it yet (#607). Do not pass a multi-page stream;
+  3.0 refuses it. **Attention**: only the 8-byte ID string is stripped, as on 2.3.3, so a file with
+  the T.88 Annex D file header whose bytes after the ID string do not read as segments throws
+  `InvalidDataException` in both modes. `DecodeToRaster` stores the decoded bits unchanged as
+  `/DeviceGray`, while T.88 (5.6, NOTE 1) gives 1 as black, so its raster renders as a negative, as
+  on 2.3.3. `Jbig2ImageLoader.Load(bytes, null)` throws `ArgumentNullException` (`options`) where it
+  threw `NullReferenceException`.
+
+- **A paragraph no longer wraps at U+202F NARROW NO-BREAK SPACE or U+2007 FIGURE SPACE (#562).**
+  With U+00A0 these are the white-space characters in UAX #14's GL class, but only U+00A0 was kept,
+  so `Pourquoi ?` could wrap before the `?`. Paragraphs, headings and list items now treat all three
+  as part of a word; tables are unchanged. This is a deliberate output change: standard-14 text
+  shows U+202F and U+2007 as a U+00A0 space with no `TextEncodingWarning`, where it drew `?` with
+  one, in paragraphs, table cells and bands, and an embedded font that lacks the glyph for U+202F
+  falls back to the glyph of U+00A0, then of a plain space, instead of glyph 0, the missing-glyph
+  box. **Attention**: the fallback space is as wide as U+00A0, wider than a real narrow space.
+
 - **`PdfReader.Open` with `AllowReconstruction = true` no longer allocates hundreds of megabytes on a
   short run of `[` (#610).** The reconstruction walk resumes one byte after a failed construct (two bytes
   after a failed `<<`, and just after `obj` for a failed `N G obj` header), so a run of `[` starts a

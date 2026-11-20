@@ -186,35 +186,8 @@ public sealed class DocumentRenderer
     public RunningBand? Header { get; set; }
 
     /// <summary>Footer band drawn at the bottom of every page. Optional.</summary>
-    /// <remarks>
-    /// A band whose <see cref="RunningBand.Template"/> is null makes <see cref="Render"/> throw
-    /// (#531). Pages the kernel document already held when <see cref="Render"/> runs get no band,
-    /// and <c>{page}</c> counts those pages while <c>{pages}</c> does not. The band's height and
-    /// style refusals also come from <see cref="Render"/>; see <see cref="RunningBand.Height"/>,
-    /// <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/> and
-    /// <see cref="TextStyle.FontRef"/>.
-    /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Render"/>, not from this property, when the band's
-    /// <see cref="RunningBand.Template"/> is <see langword="null"/>.
-    /// </exception>
-    /// <exception cref="ArgumentException">
-    /// Raised from <see cref="Render"/>, when the band's height leaves the content area no positive
-    /// size, or when <c>Height</c> is null and its style's size or leading does; see
-    /// <see cref="RunningBand.Height"/> and <see cref="RunningBand.Style"/>. It is also raised when
-    /// the band measures text that holds an unpaired surrogate in an embedded font, which can
-    /// include part of the template it then does not draw; see <see cref="TextStyle.FontRef"/>.
-    /// </exception>
-    /// <exception cref="InvalidOperationException">
-    /// Raised from <see cref="Render"/>, when the band's height, or its style's size or leading, is
-    /// refused; see <see cref="RunningBand.Height"/>, <see cref="TextStyle.FontSize"/> and
-    /// <see cref="TextStyle.Leading"/>.
-    /// </exception>
-    /// <exception cref="IndexOutOfRangeException">
-    /// Raised from <see cref="Render"/>, when the band's style holds a
-    /// <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name and the band
-    /// draws text.
-    /// </exception>
+    /// <inheritdoc cref="Header" path="/remarks"/>
+    /// <inheritdoc cref="Header" path="/exception"/>
     public RunningBand? Footer { get; set; }
 
     // Pending bookmarks: queued by Document.AddBookmark, drained on next Draw.
@@ -224,36 +197,33 @@ public sealed class DocumentRenderer
     /// <remarks>
     /// The page size and margins are checked here. A page width or height that is not a positive
     /// finite number throws <see cref="ArgumentOutOfRangeException"/>, and margins that meet or
-    /// exceed the page throw <see cref="ArgumentException"/>, both from this constructor. A margin
-    /// of <c>NaN</c> or negative infinity passes this check, and so does positive infinity when the
-    /// opposite edge on its axis holds one of those; see <see cref="Document.Margins"/>.
+    /// exceed the page throw <see cref="ArgumentException"/>, both from this constructor, and so does
+    /// a positive-infinity margin, which meets the page. A <c>NaN</c> or negative-infinity margin
+    /// is not checked here; see <see cref="Document.Margins"/>.
     /// <para>A null <paramref name="pageSize"/> means the <see cref="PdfDocument.DefaultPageSize"/>
     /// of <paramref name="pdf"/> at construction, and a null <paramref name="margins"/> means 72
     /// points on every side.</para>
-    /// <para>A null <paramref name="pdf"/> throws <see cref="NullReferenceException"/>: from this
-    /// constructor when <paramref name="pageSize"/> is null, and from <see cref="Render"/>
-    /// otherwise.</para>
+    /// <para>A null <paramref name="pdf"/> throws <see cref="ArgumentNullException"/> from this
+    /// constructor, naming <c>pdf</c>. </para>
     /// <para>A negative margin is accepted and moves that edge of the content area outward, as on
     /// <see cref="Document.Margins"/>. The origin of <paramref name="pageSize"/> is not used for
     /// layout, as on <see cref="Document.PageSize"/>.</para>
-    /// <para>Do not pass a null <paramref name="pdf"/>, a page rectangle not at the origin, or a
-    /// page size so large that positions overflow. Do not pass a margin that is a finite negative
-    /// inset, <c>NaN</c> or negative infinity either. A later major version will refuse
-    /// them.</para>
+    /// <para>Do not pass a page rectangle not at the origin or a page size so large that positions
+    /// overflow. Do not pass a margin that is a finite negative inset either. 3.0
+    /// will refuse them.</para>
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// The page width or height is not a positive finite number.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// The margins meet or exceed the page on either axis. It is also raised from
+    /// A margin is <c>NaN</c> or infinite, or the margins meet or exceed the page on either axis. It
+    /// is also raised from
     /// <see cref="Render"/>, not from this constructor, when margins that pass this check leave no
     /// positive content area once a header or footer is taken off, or put a position written
     /// outside the content stream at a non-finite value; see <see cref="Document.Margins"/>.
     /// </exception>
-    /// <exception cref="NullReferenceException">
-    /// <paramref name="pageSize"/> is null and <paramref name="pdf"/> is null, or its
-    /// <see cref="PdfDocument.DefaultPageSize"/> is null. With a page size given, a null
-    /// <paramref name="pdf"/> makes <see cref="Render"/> throw it instead.
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="pdf"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Render"/>, not from this constructor, when a page size and margins
@@ -262,6 +232,7 @@ public sealed class DocumentRenderer
     /// </exception>
     public DocumentRenderer(PdfDocument pdf, PdfRectangle? pageSize = null, EdgeInsets? margins = null)
     {
+        ArgumentNullException.ThrowIfNull(pdf);
         _pdf = pdf;
         _pageSize = pageSize ?? pdf.DefaultPageSize;
         _margins = margins ?? new EdgeInsets(72); // 1-inch default margins (72pt)
@@ -271,16 +242,18 @@ public sealed class DocumentRenderer
 
     /// <summary>Appends a renderer to the document flow and returns this instance for chaining.</summary>
     /// <remarks>
-    /// Nothing is checked here. A null <paramref name="renderer"/> is stored, and
-    /// <see cref="Render"/> throws when it reaches it. The page-continuation limit on
-    /// <see cref="IRenderer.Layout"/> applies from <see cref="Render"/>.
-    /// <para>Do not pass null. A later major version will throw <see cref="ArgumentNullException"/>
-    /// from this call.</para>
+    /// A null <paramref name="renderer"/> is refused here, as <see cref="Document"/> refuses
+    /// one passed to its own <c>Add</c>. What the renderer holds is not
+    /// checked here. The page-continuation limit on <see cref="IRenderer.Layout"/> applies from
+    /// <see cref="Render"/>.
     /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="renderer"/> is <see langword="null"/>.
+    /// </exception>
     /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Render"/>, not from this call, when <paramref name="renderer"/> is
-    /// <see langword="null"/>, or returns a null result from <see cref="IRenderer.Layout"/> or a
-    /// <see cref="LayoutResult.Partial"/> with a null renderer.
+    /// Raised from <see cref="Render"/>, not from this call, when <paramref name="renderer"/> returns
+    /// a null result from <see cref="IRenderer.Layout"/> or a <see cref="LayoutResult.Partial"/>
+    /// with a null renderer.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Render"/>, not from this call, when <paramref name="renderer"/>, or
@@ -292,19 +265,30 @@ public sealed class DocumentRenderer
     /// returns a result whose non-finite bottom leaves a later element at a position
     /// <see cref="Render"/> writes outside the content stream; see <see cref="LayoutResult.Full"/>.
     /// </exception>
-    public DocumentRenderer Add(IRenderer renderer) { _renderers.Add(renderer); return this; }
+    public DocumentRenderer Add(IRenderer renderer)
+    {
+        // Document.Add(IRenderer) already refused a null; this is the same operation by the other
+        // door.
+        ArgumentNullException.ThrowIfNull(renderer);
+        _renderers.Add(renderer);
+        return this;
+    }
 
     /// <summary>Lays out all added renderers and saves the resulting PDF to <paramref name="destination"/>.</summary>
     /// <remarks>
-    /// The layout runs first and adds pages to the kernel document; the checks on
-    /// <paramref name="destination"/> and on the document's options run after it, just before
-    /// writing. That write is <see cref="PdfDocument.Save(System.IO.Stream)"/>, so every exception
-    /// it documents can reach you from here. <see cref="Document.Save(System.IO.Stream)"/> builds a
+    /// The checks on <paramref name="destination"/> and on the kernel document's options run first,
+    /// before the layout adds any page to it (a document with nothing added checks its page geometry
+    /// and bands before them), so a refusal leaves the document as it was and a
+    /// retry cannot write the pages twice. The write is
+    /// <see cref="PdfDocument.Save(System.IO.Stream)"/>, so every exception it documents can reach
+    /// you from here. <see cref="Document.Save(System.IO.Stream)"/> builds a
     /// renderer and calls this method, so the exceptions listed on that save, other than those
     /// about the <see cref="Document"/> itself, can reach you from here, and so can anything a
     /// custom renderer or the destination raises. A second call after one that succeeded throws;
-    /// after one that threw, it can succeed and write the failed call's pages as well (#530). A
-    /// failure once writing has started leaves what was written so far in
+    /// after a layout that threw, it can succeed and write the failed call's pages as well.
+    /// <see cref="Document.Save(System.IO.Stream)"/> guards against that by refusing a save after a
+    /// layout that threw; this method does not. A failure once writing has started leaves what was
+    /// written so far in
     /// <paramref name="destination"/>, which can be the PDF header alone.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
@@ -315,19 +299,24 @@ public sealed class DocumentRenderer
     /// </exception>
     /// <exception cref="ArgumentException">
     /// The margins, header and footer together leave the content area no positive size, or an
-    /// element refuses its own input, or <paramref name="destination"/> is not writable and the
-    /// kernel document is not linearized, or a registered font has a value that makes a font metric
+    /// element refuses its own input, or <paramref name="destination"/> is not writable or is closed
+    /// and the kernel document is not linearized (the parameter name is <c>destination</c>, and it
+    /// is raised before the layout, except in a document with nothing added), or a
+    /// registered font has a value that makes a font metric
     /// non-finite, or text measured in an embedded font holds an unpaired surrogate, or a
     /// non-finite position is written outside the content stream, such as a link rectangle.
     /// </exception>
     /// <exception cref="ArgumentNullException">
-    /// <paramref name="destination"/> is <see langword="null"/>, checked after the layout has run.
+    /// <paramref name="destination"/> is <see langword="null"/>, checked before the layout runs, except
+    /// in a document with nothing added, where the page geometry and bands are checked first. A
+    /// null that an element holds and that is refused where it is used, such as a band template that
+    /// is drawn or a null value in a written <see cref="PdfDictionary"/>, is raised from here too; see
+    /// <see cref="Document.Save(System.IO.Stream)"/>.
     /// </exception>
     /// <exception cref="NullReferenceException">
     /// An added renderer is <see langword="null"/>, returns a null result, or returns a
     /// <see cref="LayoutResult.Partial"/> result with a null renderer. It is also raised when a
-    /// band's template, a text or another member an element stored without a check is null, and
-    /// when the constructor was given a null <c>pdf</c> with a page size.
+    /// member an element stored without a check is null.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// A <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name is selected
@@ -345,23 +334,44 @@ public sealed class DocumentRenderer
     /// allocate.
     /// </exception>
     /// <exception cref="IOException">
-    /// The destination stream failed to write.
+    /// The destination stream failed to write. With a linearized kernel document the destination is
+    /// not checked up front, so a destination that cannot be written to throws here after the layout
+    /// whatever its own <c>Write</c> throws, <see cref="IOException"/> or not; see
+    /// <see cref="PdfDocument.Save(System.IO.Stream)"/>.
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// The kernel document combines options it cannot write together, such as object streams with
-    /// encryption, or linearization with either. A linearized kernel document raises this type, not
-    /// <see cref="ArgumentException"/>, for an open <paramref name="destination"/> that is not
-    /// writable.
+    /// encryption, or linearization with either.
     /// </exception>
     /// <exception cref="ObjectDisposedException">
-    /// The kernel document was disposed, or, for a linearized kernel document,
-    /// <paramref name="destination"/> is closed.
+    /// The kernel document was disposed. A closed <paramref name="destination"/> is an
+    /// <see cref="ArgumentException"/> unless the kernel document is linearized, where the stream's
+    /// own <c>Write</c> decides.
     /// </exception>
     public void Render(Stream destination)
     {
+        // What the save would refuse without looking at the pages comes first. Layout appends pages
+        // to the kernel document, and a refusal after it, such as an unwritable destination, left
+        // them there with the document not marked as written, so a retry laid out again on top of
+        // them and wrote every page twice (#530). The kernel document marks itself written once
+        // these checks have passed, and a failure after that burns it; so after this point a failure
+        // either added no pages or leaves the document unable to be written again.
+        // With nothing added the layout only checks the page geometry and the bands and adds no page,
+        // so it runs first and "no pages" follows, as it always did.
+        if (_renderers.Count == 0) RunLayout();
+        _pdf.EnsureCanSave(destination, pagesKnown: _renderers.Count == 0);
+        _pdf.ValidateSaveOptions();
+
         RunLayout();
         _pdf.Save(destination);
     }
+
+    /// <summary>
+    /// True once <see cref="RunLayout"/> got past its geometry checks. A renderer caches its wrap at
+    /// the width it was first laid out at, so a document that reached this point cannot be laid out
+    /// again with different geometry.
+    /// </summary>
+    internal bool HasStartedLayout { get; private set; }
 
     /// <summary>
     /// Runs the layout pass (page count + full render) without writing to any stream.
@@ -370,6 +380,9 @@ public sealed class DocumentRenderer
     /// </summary>
     internal void RunLayout()
     {
+        // A refusal belongs to the layout that raised it; a renderer reused for another layout starts clean.
+        _deferredCanvasRefusal = null;
+
         var contentArea = ContentArea;
         if (contentArea.Width <= 0 || contentArea.Height <= 0)
             throw new ArgumentException(
@@ -378,6 +391,9 @@ public sealed class DocumentRenderer
                 "The margins, header, and footer together exceed the page dimensions. " +
                 "Reduce the margins or band heights.",
                 "margins");
+
+        // From here the renderers measure and cache; see Document.MarkFailedIfLaidOut.
+        HasStartedLayout = true;
 
         int totalPages;
         if (Header is not null || Footer is not null)
@@ -395,6 +411,9 @@ public sealed class DocumentRenderer
             PlaceRenderer(renderer, totalPages);
 
         FinishCurrentPage(totalPages);
+
+        if (_deferredCanvasRefusal is not null)
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(_deferredCanvasRefusal).Throw();
     }
 
     // ── Private ──────────────────────────────────────────────────────────────
@@ -496,11 +515,28 @@ public sealed class DocumentRenderer
         }
     }
 
+    // The first refusal of a non-finite operand that the canvas raised while an element was drawn.
+    // The first refusal is kept and the layout carries on, so an element that is too tall, or any
+    // other refusal later in the document, surfaces as its own exception type. It is raised when the
+    // layout has finished and nothing else threw.
+    private ArgumentException? _deferredCanvasRefusal;
+
+    private static bool IsCanvasNonFiniteRefusal(ArgumentException ex) =>
+        ex.ParamName is null
+        && ex.Message.StartsWith("PDF does not support NaN or Infinity as a real number value.", StringComparison.Ordinal);
+
     private void DrawRenderer(IRenderer renderer)
     {
         var pageBounds = new LayoutBox(0, 0, _pageSize.Width, _pageSize.Height);
         var ctx = new DrawContext(_currentCanvas!, pageBounds, _currentRendererCtx!, _pdf, _currentPage!);
-        renderer.Draw(ctx);
+        try
+        {
+            renderer.Draw(ctx);
+        }
+        catch (ArgumentException ex) when (IsCanvasNonFiniteRefusal(ex))
+        {
+            _deferredCanvasRefusal ??= ex;
+        }
     }
 
     // ── Running bands ─────────────────────────────────────────────────────────
@@ -546,10 +582,10 @@ public sealed class DocumentRenderer
     {
         var style = band.Style;
 
-        // The band is the one path to a Tf operator that reaches no renderer, so it reached no
-        // validation either: a non-finite band font size saved a document containing "/F1 NaN Tf"
-        // and "1 0 0 1 NaN NaN Tm". The note further down about geometry validation asked for this.
-        LayoutValidation.ValidateStyle(style, $"The {kind.ToString().ToLowerInvariant()} band");
+        // The band is the one path to a Tf operator that reaches no renderer, so it needs its own
+        // check. The size only: a colour is written only when text is drawn, and a band that draws
+        // nothing is not refused for one.
+        LayoutValidation.ValidateFontSize(style, $"The {kind.ToString().ToLowerInvariant()} band");
 
         var contentWidth = _pageSize.Width - _margins.Horizontal;
         var (drawn, textWidth) = FitToWidth(style, text, contentWidth);
@@ -570,6 +606,7 @@ public sealed class DocumentRenderer
         // An empty template is one of the shapes the property generator produces, so it is not a
         // corner nobody reaches.
         if (drawn.Length == 0) return;
+
 
         // textWidth is bounded by contentWidth for every finite, positive font size, because
         // FitToWidth only ever accumulates a piece whose running total still fits. So no clamp is

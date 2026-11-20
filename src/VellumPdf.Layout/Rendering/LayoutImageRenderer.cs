@@ -17,16 +17,15 @@ public sealed class LayoutImageRenderer : IRenderer
 
     /// <summary>Creates a renderer for the given layout image.</summary>
     /// <remarks>
-    /// A null <paramref name="img"/> is stored, and <see cref="Layout"/> throws.
-    /// <para>Do not pass null. A later major version will throw <see cref="ArgumentNullException"/>
-    /// from this constructor.</para>
+    /// A null <paramref name="img"/> is refused here. A layout image cannot hold a
+    /// null image, because <see cref="LayoutImage"/> refuses one when it is created.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised later from <see cref="Layout"/>, not from this constructor, when
-    /// <paramref name="img"/> or its image is <see langword="null"/>.
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="img"/> is <see langword="null"/>.
     /// </exception>
     public LayoutImageRenderer(LayoutImage img)
     {
+        ArgumentNullException.ThrowIfNull(img);
         _img = img;
     }
 
@@ -44,9 +43,6 @@ public sealed class LayoutImageRenderer : IRenderer
     /// </exception>
     /// <exception cref="ArgumentException">
     /// The image's own pixel width or height is not a positive number.
-    /// </exception>
-    /// <exception cref="NullReferenceException">
-    /// The layout image, or the image it holds, is <see langword="null"/>.
     /// </exception>
     public LayoutResult Layout(LayoutContext ctx)
     {
@@ -105,6 +101,7 @@ public sealed class LayoutImageRenderer : IRenderer
 
     /// <summary>Draws the image XObject, emitting a tagged Figure struct element when tagging is enabled.</summary>
     /// <remarks>See <see cref="IRenderer.Draw"/>.</remarks>
+    /// <inheritdoc cref="IRenderer.Draw" path="/exception"/>
     public void Draw(DrawContext ctx)
     {
         var area = _occupied.Deflate(_img.Margins);

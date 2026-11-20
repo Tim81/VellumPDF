@@ -11,6 +11,9 @@ namespace VellumPdf.Layout.Rendering;
 /// <see cref="PieChart"/>.</remarks>
 public sealed class PieChartRenderer : IRenderer
 {
+    // See Draw: the magnitude of a start angle from which it is reduced to a full turn.
+    private const double NormaliseStartAngleFrom = 1e12;
+
     private readonly PieChart _chart;
     private LayoutBox _occupied;
 
@@ -22,15 +25,16 @@ public sealed class PieChartRenderer : IRenderer
 
     /// <summary>Creates a renderer for the given pie chart.</summary>
     /// <remarks>
-    /// A null <paramref name="chart"/> is stored, and <see cref="Layout"/> throws.
-    /// <para>Do not pass null. A later major version will throw <see cref="ArgumentNullException"/>
-    /// from this constructor.</para>
+    /// A null <paramref name="chart"/> is refused here.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised later from <see cref="Layout"/>, not from this constructor, when
+    /// <exception cref="ArgumentNullException">
     /// <paramref name="chart"/> is <see langword="null"/>.
     /// </exception>
-    public PieChartRenderer(PieChart chart) => _chart = chart;
+    public PieChartRenderer(PieChart chart)
+    {
+        ArgumentNullException.ThrowIfNull(chart);
+        _chart = chart;
+    }
 
     /// <summary>Validates the slices, reserves the chart diameter plus margins, and reports the occupied region.</summary>
     /// <remarks>
@@ -44,9 +48,6 @@ public sealed class PieChartRenderer : IRenderer
     /// <see cref="PieChart.Slices"/>, <see cref="PieChart.Diameter"/>,
     /// <see cref="PieChart.StartAngle"/> or <see cref="PieChart.StrokeWidth"/> is refused;
     /// <c>ParamName</c> names the property.
-    /// </exception>
-    /// <exception cref="NullReferenceException">
-    /// The chart, or its <see cref="PieChart.Slices"/>, is <see langword="null"/>.
     /// </exception>
     public LayoutResult Layout(LayoutContext ctx)
     {
@@ -67,6 +68,10 @@ public sealed class PieChartRenderer : IRenderer
                     nameof(PieChart.Slices));
             total += slice.Value;
         }
+
+        // Each slice is finite, but two of 1e308 sum to +Infinity, and every wedge's sweep is then
+        // value / Infinity = 0: the chart has no curves. The file is valid, so it is kept;
+        // PieChart.Slices says not to pass it.
 
         if (total <= 0)
             throw new ArgumentException(
@@ -122,6 +127,10 @@ public sealed class PieChartRenderer : IRenderer
 
     /// <summary>Fills each wedge, optionally stroking separators, wrapped as an artifact when tagging is enabled.</summary>
     /// <remarks>See <see cref="IRenderer.Draw"/>.</remarks>
+    /// <exception cref="ArgumentException">
+    /// A slice or stroke colour with a <c>NaN</c> or infinite channel is refused by <see cref="VellumPdf.Canvas.PdfCanvas"/> where it
+    /// is written (<c>ParamName</c> is null). It is written only for a slice with a positive angle.
+    /// </exception>
     public void Draw(DrawContext ctx)
     {
         var area = _occupied.Deflate(_chart.Margins);
@@ -209,7 +218,13 @@ public sealed class PieChartRenderer : IRenderer
         }
 
         var direction = _chart.Clockwise ? -1.0 : 1.0;
-        var angle = _chart.StartAngle;
+        // A start angle of 1e12 or more is reduced to a full turn before any sweep is added. Doubles
+        // near 1e16 are further apart than a wedge's sweep, so adding one to such an angle loses it and
+        // the wedges overlap or collapse (#546). The remainder is exact. A smaller angle is left as it
+        // was, so that every kept input writes the bytes 2.3.3 wrote.
+        var angle = Math.Abs(_chart.StartAngle) >= NormaliseStartAngleFrom
+            ? _chart.StartAngle % (2 * Math.PI)
+            : _chart.StartAngle;
 
         // A lone drawable slice spans the whole circle; a 360° wedge has coincident radial
         // edges that show as a seam when stroked, so draw a seamless circle instead.

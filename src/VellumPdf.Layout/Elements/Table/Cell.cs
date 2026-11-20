@@ -8,30 +8,24 @@ namespace VellumPdf.Layout.Elements.Table;
 /// <summary>A single table cell, optionally spanning multiple columns or rows.</summary>
 /// <remarks>
 /// A <see cref="ColSpan"/> below 1 is refused at save, and a <see cref="RowSpan"/> below 1 is
-/// drawn as 1. A null <see cref="Content"/> can make the save throw; see the constructor.
+/// drawn as 1. A null text given to the constructor is stored, and refused where a column is
+/// sized automatically; see the constructor.
 /// <see cref="HorizontalAlignment.Justify"/> is drawn as <see cref="HorizontalAlignment.Left"/>.
 /// </remarks>
 public sealed class Cell
 {
     /// <summary>The text content rendered in the cell.</summary>
     /// <remarks>
-    /// An empty string draws no text. A null value can make the save throw; see the constructor.
+    /// An empty string draws no text. The value is null when the constructor was given a null;
+    /// the cell then draws no text, and the save refuses it only where a column is sized
+    /// automatically, as the constructor describes.
     /// Spaces are the only break points between words, and a word wider than the cell is broken
     /// between characters. A line feed, carriage return or tab is not a break. In a standard-14
     /// font each is written into the cell as it is; in an embedded font each is drawn as whatever
     /// glyph the font's character map gives it, which is .notdef (glyph 0) when the map has no
     /// entry.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the text is <see langword="null"/> and a column is sized
-    /// automatically; see the constructor.
-    /// </exception>
-    /// <exception cref="ArgumentException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the text holds an unpaired surrogate and is measured in an embedded
-    /// font; see <see cref="TextStyle.FontRef"/>.
-    /// </exception>
+    /// <inheritdoc cref="Heading.Text" path="/exception[@cref='T:System.ArgumentException']"/>
     public string Content { get; }
 
     /// <summary>
@@ -101,26 +95,12 @@ public sealed class Cell
     /// <summary>Text style for the cell content; falls back to the table default when null.</summary>
     /// <remarks>
     /// Null means <see cref="TableElement.DefaultCellStyle"/>, then
-    /// <see cref="TextStyle.Default"/>. Refusals on size, leading and font are on
+    /// <see cref="TextStyle.Default"/>. Refusals on size, leading, font and text colour are on
     /// <see cref="TextStyle"/> and are raised from the save. A <see cref="TextStyle.LinkUri"/> in
     /// it is ignored (#475).
     /// </remarks>
-    /// <exception cref="InvalidOperationException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the style's size or leading is refused; see
-    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
-    /// </exception>
-    /// <exception cref="IndexOutOfRangeException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the style holds a <see cref="VellumPdf.Fonts.Standard14"/> value
-    /// the enumeration does not name and the font is selected on a page; see
-    /// <see cref="TextStyle.FontRef"/>.
-    /// </exception>
-    /// <exception cref="ArgumentException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when text in this style holds an unpaired surrogate and is measured in
-    /// an embedded font; see <see cref="TextStyle.FontRef"/>.
-    /// </exception>
+    /// <inheritdoc cref="Heading.Style" path="/exception[@cref='T:System.InvalidOperationException' or @cref='T:System.IndexOutOfRangeException']"/>
+    /// <inheritdoc cref="ListElement.DefaultStyle" path="/exception[@cref='T:System.ArgumentException']"/>
     public TextStyle? Style { get; init; }
 
     /// <summary>Inner padding between the cell border and its content.</summary>
@@ -155,10 +135,16 @@ public sealed class Cell
 
     /// <summary>Optional background fill color for the cell.</summary>
     /// <remarks>
-    /// Null means no fill. A colour is stored as given. Channels are not checked or clamped. Each
-    /// is written into the content stream rounded to five decimals, and <c>NaN</c> or
-    /// <c>Infinity</c> as that token; see <see cref="ColorRgb"/>.
+    /// Null means no fill. A colour is stored as given. Channels are not clamped. A channel that is not
+    /// finite is refused where it is written; see <see cref="Document"/> and <see cref="ColorRgb"/>. A
+    /// cell that a span from an earlier row pushes past the last column is never drawn, so its colour is not written and not refused. <b>Do not pass</b> a non-finite channel: 3.0
+    /// refuses it.
     /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// Raised from a save, when a channel is <c>NaN</c> or infinite and the cell is drawn. The message
+    /// says PDF does not support NaN or Infinity as a real number. A finite channel outside 0 to 1 is
+    /// not refused.
+    /// </exception>
     public ColorRgb? Background { get; init; }
 
     /// <summary>Horizontal alignment of the cell content.</summary>
@@ -184,22 +170,21 @@ public sealed class Cell
 
     /// <summary>Creates a cell with the given text content.</summary>
     /// <remarks>
-    /// A null <paramref name="content"/> is stored. The save throws when it sizes a column
+    /// A null <paramref name="content"/> is stored, and the cell draws no text. The save refuses it with
+    /// <see cref="ArgumentNullException"/> (<c>ParamName</c> <c>content</c>) when it sizes a column
     /// automatically, which it does for a column without a positive finite width in
-    /// <see cref="TableElement.ColWidths"/>. In a table where every column has a positive finite
-    /// width, the cell is drawn empty.
-    /// <para>Do not pass null. A later major version will throw
-    /// <see cref="ArgumentNullException"/> from this call.</para>
+    /// <see cref="TableElement.ColWidths"/>, and then for every cell of the table; a table where every
+    /// column has such a width draws the cell empty. <b>Do not pass</b> a null: 3.0 refuses
+    /// it here.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when <paramref name="content"/> is <see langword="null"/> and the table
-    /// sizes a column automatically; see <see cref="TableElement.ColWidths"/>.
+    /// <exception cref="ArgumentNullException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not from
+    /// this call, when <paramref name="content"/> is <see langword="null"/> and a column is sized
+    /// automatically. The document cannot be saved again.
     /// </exception>
-    /// <exception cref="ArgumentException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when the text holds an unpaired surrogate and is measured in an embedded
-    /// font; see <see cref="TextStyle.FontRef"/>.
-    /// </exception>
-    public Cell(string content) => Content = content;
+    /// <inheritdoc cref="Paragraph.Add(string, TextStyle)" path="/exception[@cref='T:System.ArgumentException']"/>
+    public Cell(string content)
+    {
+        Content = content;
+    }
 }

@@ -46,7 +46,9 @@ public static class SigningExtensions
     /// Thrown when the certificate in <paramref name="settings"/> does not include a private key
     /// and neither <see cref="PdfSignatureSettings.ExternalPrivateKey"/> nor
     /// <see cref="PdfSignatureSettings.ExternalSigner"/> is set, or when the chosen
-    /// <see cref="PadesLevel"/> requires a client that is not set.
+    /// <see cref="PadesLevel"/> requires a client that is not set. It is also thrown, with
+    /// <c>ParamName</c> <c>handle</c>, for a font handle from another document that this document
+    /// defines no font under; see <see cref="PdfDocument.PrepareForSigning"/>.
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// Thrown when encryption has already been configured on the document, or when
@@ -54,7 +56,9 @@ public static class SigningExtensions
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// A registered form field's <see cref="FormFieldOptions.FontSize"/> is not finite. That
-    /// property's boundary documentation names the value and the field.
+    /// property's boundary documentation names the value and the field. It is also thrown for a
+    /// document with no pages, one already written, and one that holds a cycle; see
+    /// <see cref="PdfDocument.PrepareForSigning"/>.
     /// </exception>
     public static void Sign(this PdfDocument doc, Stream output, PdfSignatureSettings settings)
     {
@@ -83,21 +87,16 @@ public static class SigningExtensions
     /// <see cref="Task.Run(Action)"/>, and any PAdES B-T/B-LT/B-LTA network calls (TSA
     /// timestamping, OCSP/CRL fetches) are awaited instead of blocking the calling thread.
     /// </summary>
-    /// <exception cref="ArgumentNullException">
-    /// Thrown when <paramref name="doc"/>, <paramref name="output"/>, or
-    /// <paramref name="settings"/> is null.
-    /// </exception>
+    /// <inheritdoc cref="SigningExtensions.Sign(PdfDocument, Stream, PdfSignatureSettings)" path="/exception[@cref='T:System.ArgumentNullException' or @cref='T:System.InvalidOperationException']"/>
     /// <exception cref="ArgumentException">
     /// Thrown when the certificate in <paramref name="settings"/> does not include a private key
     /// and <see cref="PdfSignatureSettings.ExternalPrivateKey"/> is not set, or when the chosen
-    /// <see cref="PadesLevel"/> requires a client that is not set.
+    /// <see cref="PadesLevel"/> requires a client that is not set. It is also thrown, with
+    /// <c>ParamName</c> <c>handle</c>, for a font handle from another document that this document
+    /// defines no font under; see <see cref="PdfDocument.PrepareForSigning"/>.
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// Thrown when encryption has already been configured on the document.
-    /// </exception>
-    /// <exception cref="InvalidOperationException">
-    /// A registered form field's <see cref="FormFieldOptions.FontSize"/> is not finite. That
-    /// property's boundary documentation names the value and the field.
     /// </exception>
     // RS0026 flags multiple overloads with optional parameters as a future-ambiguity risk;
     // PdfDocument and Layout.Document share no implicit conversion, so overload resolution
@@ -130,18 +129,32 @@ public static class SigningExtensions
     /// has been called.</para>
     /// </summary>
     /// <exception cref="ArgumentNullException">
-    /// Thrown when <paramref name="doc"/>, <paramref name="output"/>, or
-    /// <paramref name="settings"/> is null.
+    /// <paramref name="doc"/>, <paramref name="output"/> or <paramref name="settings"/> is null. The
+    /// layout that runs inside this call also raises it for the nulls listed on
+    /// <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/>, and the document then cannot be
+    /// signed again.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Thrown when the certificate in <paramref name="settings"/> does not include a private key
     /// and neither <see cref="PdfSignatureSettings.ExternalPrivateKey"/> nor
     /// <see cref="PdfSignatureSettings.ExternalSigner"/> is set, or when the chosen
-    /// <see cref="PadesLevel"/> requires a client that is not set.
+    /// <see cref="PadesLevel"/> requires a client that is not set. The layout that runs inside this
+    /// call raises it too, for the causes listed on
+    /// <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/>.
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// Thrown when encryption has already been configured on the document, or when
     /// <see cref="PdfSignatureSettings.ExternalSigner"/> is set (it requires <c>SignAsync</c>).
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// The layout runs inside this call, so every <see cref="InvalidOperationException"/> listed on
+    /// <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> applies, including a document
+    /// whose earlier save or signing call stopped after its layout had started.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// The signature page is negative or past the last page, or the reserve computed from
+    /// <paramref name="settings"/> is negative or above 536,870,894 bytes. <c>ParamName</c> is
+    /// <c>options</c>. Everything but a page past the last page is raised before anything is laid out.
     /// </exception>
     public static void Sign(this VellumPdf.Layout.Document doc, Stream output, PdfSignatureSettings settings)
     {
@@ -172,18 +185,23 @@ public static class SigningExtensions
     /// timestamping, OCSP/CRL fetches) are awaited instead of blocking the calling thread.
     /// </summary>
     /// <exception cref="ArgumentNullException">
-    /// Thrown when <paramref name="doc"/>, <paramref name="output"/>, or
-    /// <paramref name="settings"/> is null.
+    /// <paramref name="doc"/>, <paramref name="output"/> or <paramref name="settings"/> is null. The
+    /// layout that runs inside this call also raises it for the nulls listed on
+    /// <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/>, and the document then cannot be
+    /// signed again.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Thrown when the certificate in <paramref name="settings"/> does not include a private key
     /// and none of <see cref="PdfSignatureSettings.ExternalPrivateKey"/> or
     /// <see cref="PdfSignatureSettings.ExternalSigner"/> is set, or when the chosen
-    /// <see cref="PadesLevel"/> requires a client that is not set.
+    /// <see cref="PadesLevel"/> requires a client that is not set. The layout that runs inside this
+    /// call raises it too, for the causes listed on
+    /// <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/>.
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// Thrown when encryption has already been configured on the document.
     /// </exception>
+    /// <inheritdoc cref="SigningExtensions.Sign(VellumPdf.Layout.Document, Stream, PdfSignatureSettings)" path="/exception[@cref='T:System.ArgumentOutOfRangeException' or @cref='T:System.InvalidOperationException']"/>
 #pragma warning disable RS0026
     public static async Task SignAsync(this VellumPdf.Layout.Document doc, Stream output, PdfSignatureSettings settings, CancellationToken cancellationToken = default)
 #pragma warning restore RS0026

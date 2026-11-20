@@ -35,17 +35,16 @@ public sealed class ParagraphRenderer : IRenderer
 
     /// <summary>Creates a renderer for the paragraph, optionally starting at <paramref name="startLine"/> for pagination.</summary>
     /// <remarks>
-    /// Nothing is checked here. A null <paramref name="para"/> makes <see cref="Layout"/> throw. A
+    /// A null <paramref name="para"/> is refused here. Nothing else is checked. A
     /// negative <paramref name="startLine"/> makes <see cref="Layout"/> count that many lines more
     /// than the text holds, and makes <see cref="Draw"/> throw. A start past the last line lays out
     /// as <see cref="LayoutResult.Outcome.Nothing"/>, so a document saving it throws
     /// <see cref="InvalidOperationException"/> saying the element is too tall to fit. A renderer
     /// built directly ignores the paragraph's <see cref="Paragraph.Language"/>.
-    /// <para>Do not pass null or a start outside the paragraph's lines. A later major version will
-    /// throw from this call.</para>
+    /// <para>Do not pass a start outside the paragraph's lines. 3.0 will throw
+    /// from this call.</para>
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised later from <see cref="Layout"/>, not from this constructor, when
+    /// <exception cref="ArgumentNullException">
     /// <paramref name="para"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
@@ -54,6 +53,7 @@ public sealed class ParagraphRenderer : IRenderer
     /// </exception>
     public ParagraphRenderer(Paragraph para, int startLine = 0)
     {
+        ArgumentNullException.ThrowIfNull(para);
         _para = para;
         _startLine = startLine;
     }
@@ -70,16 +70,18 @@ public sealed class ParagraphRenderer : IRenderer
     /// save.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
-    /// A run's <see cref="TextStyle.FontSize"/> is refused; see that member.
-    /// </exception>
-    /// <exception cref="NullReferenceException">
-    /// The paragraph, one of its runs, or a run's text is <see langword="null"/>, or a run has a
-    /// null style and its text holds a character other than white space. U+00A0 NO-BREAK SPACE
-    /// counts as such a character; a tab and other white space do not.
+    /// A run that yields text has a <see cref="TextStyle.FontSize"/> or <see cref="TextStyle.Color"/>
+    /// that is refused; see those members.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Text this method measures in an embedded font holds an unpaired surrogate; see
-    /// <see cref="TextStyle.FontRef"/>.
+    /// <see cref="TextStyle.FontRef"/>. It is also raised, by <see cref="VellumPdf.Canvas.PdfCanvas"/>,
+    /// when a non-finite edge of <see cref="Paragraph.Margins"/> would be written; see
+    /// <see cref="Document"/>.
+    /// </exception>
+    /// <exception cref="ArgumentNullException">
+    /// A run that yields text has a null style; <c>ParamName</c> is <c>Style</c>. See
+    /// <see cref="TextRun"/>.
     /// </exception>
     public LayoutResult Layout(LayoutContext context)
     {
@@ -97,7 +99,7 @@ public sealed class ParagraphRenderer : IRenderer
                 // A non-finite size makes every height derived from it non-finite, every height
                 // comparison false, and the paragraph reports that it placed nothing -- which the
                 // document renderer reads as "too tall" (#481).
-                LayoutValidation.ValidateStyle(frag.Style, "A paragraph run");
+                LayoutValidation.ValidateStyle(frag.Style, RunOwner);
                 _lineHeight = Math.Max(_lineHeight, frag.Style.EffectiveLeading);
             }
         if (_lineHeight <= 0)
@@ -122,7 +124,7 @@ public sealed class ParagraphRenderer : IRenderer
         _endLine = _startLine + maxLines;
         _occupied = area.WithHeight(maxLines * _lineHeight);
 
-        var overflow = new ParagraphRenderer(_para, _endLine) { _lines = _lines, StructType = StructType, ParentStructElem = ParentStructElem, ElementLanguage = ElementLanguage };
+        var overflow = new ParagraphRenderer(_para, _endLine) { _lines = _lines, StructType = StructType, ParentStructElem = ParentStructElem, ElementLanguage = ElementLanguage, RunOwner = RunOwner };
         var split = new ParagraphRenderer(_para, _startLine)
         {
             _lines = _lines,
@@ -132,6 +134,7 @@ public sealed class ParagraphRenderer : IRenderer
             StructType = StructType,
             ParentStructElem = ParentStructElem,
             ElementLanguage = ElementLanguage,
+            RunOwner = RunOwner,
         };
         return LayoutResult.Partial(_occupied, split, overflow);
     }
@@ -158,10 +161,21 @@ public sealed class ParagraphRenderer : IRenderer
     /// </summary>
     internal string? ElementLanguage { get; set; }
 
+    /// <summary>
+    /// What a refused run is called in the message: a paragraph's own run by default, and the heading
+    /// or list item that built this renderer, so a caller is not pointed at a paragraph they did not
+    /// add. Carried to both halves of a split, as the other per-element fields are.
+    /// </summary>
+    internal string RunOwner { get; set; } = "A paragraph run";
+
     /// <summary>Emits the wrapped lines as PDF text operators, applying alignment, justification, links and tagging.</summary>
     /// <remarks>See <see cref="IRenderer.Draw"/>.</remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// The renderer was constructed with a negative start line.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// A position written here is <c>NaN</c> or infinite, which
+    /// <see cref="VellumPdf.Canvas.PdfCanvas"/> refuses (<c>ParamName</c> is null).
     /// </exception>
     public void Draw(DrawContext ctx)
     {
@@ -201,7 +215,23 @@ public sealed class ParagraphRenderer : IRenderer
             // Count inter-word gaps in this line (gaps between fragments that end/start with space-adjacent text)
             // We count total word-tokens in the line to compute spacing.
             var wordGapCount = CountWordGaps(fragments);
-            var wordSpacing = isJustified && wordGapCount > 0 ? slack / wordGapCount : 0.0;
+
+            // The Tw path spreads the slack over SPACE CHARACTERS, not over word gaps. A gap is a
+            // pair of adjacent tokens where either is a space, so every space is counted twice by
+            // CountWordGaps, which is right for the embedded path (it adds the extra after both
+            // neighbours of a space) and wrong here: Tw applies once per space, so dividing by the
+            // gap count handed out half the slack and the line stopped short of the right edge
+            // (#548). The divisor must match what Tw draws.
+            //
+            // Symbol and ZapfDingbats measure every glyph as zero (#470), so the slack on a line that
+            // holds either is the whole line width, not the room the text leaves. Handing all of it
+            // out per space, as above, pushed such a line twice as far past the right edge as the old
+            // divisor did. There is no right answer without metrics, so these lines keep the divisor
+            // they always had and are no worse than before. Real metrics would fix both.
+            var zeroMeasured = isJustified && HoldsZeroMeasuredFont(fragments);
+            var spaceCount = isJustified ? CountSpaces(fragments) : 0;
+            var divisor = zeroMeasured ? wordGapCount : spaceCount;
+            var wordSpacing = divisor > 0 ? slack / divisor : 0.0;
 
             // Baseline X for left, center, right — for Justify treat as Left (we use Tw or Tm).
             //
@@ -291,7 +321,7 @@ public sealed class ParagraphRenderer : IRenderer
             else
             {
                 // Standard-14 path (or non-justified): use Tw for word spacing.
-                if (isJustified && wordGapCount > 0)
+                if (spaceCount > 0)
                     canvas.SetWordSpacing(wordSpacing);
 
                 var linkStartX = curX;
@@ -303,18 +333,24 @@ public sealed class ParagraphRenderer : IRenderer
                     canvas.SetTextMatrix(1, 0, 0, 1, curX, linePdfY);
                     ShowText(canvas, frag.Style, frag.Text);
 
+                    // Tw widens every space the fragment holds, so the fragment is drawn that much
+                    // wider than the width it was measured at. The next fragment starts after the
+                    // drawn width, not the measured one, or it overprints the end of this one
+                    // (#555); the link rectangle covers the same drawn width. wordSpacing is zero
+                    // on a line that is not justified, so ordinary lines advance as before.
+                    var drawnWidth = frag.Width + (CountSpaces(frag.Text) * wordSpacing);
+
                     // Register link annotation for this fragment if it has a URI.
                     if (frag.Style.LinkUri is not null)
                     {
-                        var fragBox = new LayoutBox(curX, lineLayoutTop, frag.Width, leading);
+                        var fragBox = new LayoutBox(curX, lineLayoutTop, drawnWidth, leading);
                         ctx.AddUriLinkAnnotation(fragBox, frag.Style.LinkUri);
                     }
 
-                    curX += frag.Width;
-                    // Word spacing is handled by Tw operator, so advance by frag.Width only.
+                    curX += drawnWidth;
                 }
 
-                if (isJustified && wordGapCount > 0)
+                if (spaceCount > 0)
                     canvas.SetWordSpacing(0);
             }
         }
@@ -490,6 +526,41 @@ public sealed class ParagraphRenderer : IRenderer
         return tokens;
     }
 
+    /// <summary>
+    /// Whether a fragment of the line is set in Symbol or ZapfDingbats, which have no width metrics
+    /// and measure as zero.
+    /// </summary>
+    private static bool HoldsZeroMeasuredFont(LineFragment[] fragments)
+    {
+        foreach (var frag in fragments)
+        {
+            var font = frag.Style.FontRef;
+            if (!font.IsEmbedded && font.Standard14 is Standard14.Symbol or Standard14.ZapfDingbats)
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Counts the space characters (U+0020) a line draws, which is what <c>Tw</c> acts on. Other
+    /// white space is not counted: <c>Tw</c> applies to the single-byte code 32 alone.
+    /// </summary>
+    private static int CountSpaces(LineFragment[] fragments)
+    {
+        var count = 0;
+        foreach (var frag in fragments) count += CountSpaces(frag.Text);
+        return count;
+    }
+
+    private static int CountSpaces(string text)
+    {
+        var count = 0;
+        foreach (var c in text)
+            if (c == ' ') count++;
+        return count;
+    }
+
     private static bool IsWordGap(
         (string Text, TextStyle Style, double Width) left,
         (string Text, TextStyle Style, double Width) right) =>
@@ -521,7 +592,9 @@ public sealed class ParagraphRenderer : IRenderer
     /// Characters that are <em>not</em> normalised (pass through unchanged):
     /// <list type="bullet">
     ///   <item><c>\n</c> — consumed as the hard-break sentinel by the caller.</item>
-    ///   <item>U+00A0 (NBSP) — non-breaking space must keep words together.</item>
+    ///   <item>The no-break spaces, which must keep words together: U+00A0 NO-BREAK SPACE,
+    ///   U+202F NARROW NO-BREAK SPACE and U+2007 FIGURE SPACE. These are the white-space
+    ///   characters in UAX #14 line-breaking class GL; see <see cref="NoBreakSpaces"/>.</item>
     ///   <item>Any non-whitespace character.</item>
     /// </list>
     /// All other characters for which <see cref="char.IsWhiteSpace(char)"/> returns
@@ -530,13 +603,11 @@ public sealed class ParagraphRenderer : IRenderer
     /// </summary>
     private static string NormaliseWhitespace(string s)
     {
-        const char nbsp = ' ';
-
         // Fast path: if there is nothing but regular printable chars and plain spaces, return as-is.
         var needsNorm = false;
         foreach (var c in s)
         {
-            if (c != '\n' && c != nbsp && char.IsWhiteSpace(c))
+            if (c != '\n' && !NoBreakSpaces.IsNoBreakSpace(c) && char.IsWhiteSpace(c))
             {
                 needsNorm = true;
                 break;
@@ -547,8 +618,8 @@ public sealed class ParagraphRenderer : IRenderer
         var sb = new System.Text.StringBuilder(s.Length);
         foreach (var c in s)
         {
-            // \n is the hard-break sentinel; NBSP is a non-breaking word character.
-            if (c != '\n' && c != nbsp && char.IsWhiteSpace(c))
+            // \n is the hard-break sentinel; a no-break space is a non-breaking word character.
+            if (c != '\n' && !NoBreakSpaces.IsNoBreakSpace(c) && char.IsWhiteSpace(c))
                 sb.Append(' ');
             else
                 sb.Append(c);
@@ -565,9 +636,10 @@ public sealed class ParagraphRenderer : IRenderer
     /// </para>
     /// <para>
     /// Word splitting uses <see cref="NormaliseWhitespace"/> to convert Unicode whitespace
-    /// (tab, thin space, en/em space, etc.) to plain spaces, then splits on space. Non-breaking
-    /// space (U+00A0) is intentionally <em>not</em> a split point because it is semantically
-    /// a non-breaking join between words.
+    /// (tab, thin space, en/em space, etc.) to plain spaces, then splits on space. The no-break
+    /// spaces (U+00A0, U+202F and U+2007) are intentionally <em>not</em> split points because they
+    /// are semantically a non-breaking join between words: <c>Pourquoi ?</c> written with U+202F
+    /// before the question mark cannot wrap between the two.
     /// </para>
     /// </summary>
     private static List<LineFragment[]> WordWrap(IReadOnlyList<TextRun> runs, double maxWidth)
@@ -595,6 +667,10 @@ public sealed class ParagraphRenderer : IRenderer
                 var isFirstWord = true;
                 foreach (var w in words)
                 {
+                    // Only a run that yields a word is refused; empty text, white space or line breaks
+                    // alone save with a null style.
+                    if (run.Style is null)
+                        throw new ArgumentNullException("Style", "A paragraph run with text has a null style.");
                     tokens.Add((w, run.Style, !isFirstHardLine && isFirstWord));
                     isFirstWord = false;
                 }

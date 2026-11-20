@@ -7,16 +7,39 @@ namespace VellumPdf.Fonts;
 /// An opaque handle to a TrueType font registered with a <see cref="VellumPdf.Document.PdfDocument"/>.
 /// Returned by <c>PdfDocument.UseTrueTypeFont</c>; pass to canvas and layout APIs to use the font.
 /// </summary>
+/// <remarks>
+/// A handle belongs to the document that returned it. Its <see cref="ResourceName"/> is a counter
+/// local to that document, so another document cannot use it as it stands. A saving document that
+/// defines no font under the handle's resource name refuses it; see
+/// <see cref="VellumPdf.Document.PdfDocument.RegisterEmbeddedFontUsage"/>. Embed the font through
+/// the document that saves the page.
+/// </remarks>
 public sealed class EmbeddedFontHandle
 {
     internal TrueTypeFontEmbedder Embedder { get; }
 
+    /// <summary>
+    /// The document that embedded this font. A handle is only meaningful to that document: its
+    /// <see cref="ResourceName"/> is a counter local to it, so two documents can each hold a
+    /// different font called <c>TT1</c>, and a handle used on the wrong one would resolve to
+    /// whichever font the saving document happened to register under that name.
+    /// </summary>
+    internal object Owner { get; }
+
     /// <summary>PDF resource name assigned to this font (e.g. "TT1").</summary>
     public string ResourceName => Embedder.ResourceName;
 
-    internal EmbeddedFontHandle(TrueTypeFontEmbedder embedder)
+    /// <summary>
+    /// SHA-256 of the font program this handle embeds, as the owning document keyed it. Another
+    /// document that embedded the same program recognises it by this value.
+    /// </summary>
+    internal string FontHash { get; }
+
+    internal EmbeddedFontHandle(TrueTypeFontEmbedder embedder, object owner, string fontHash)
     {
         Embedder = embedder;
+        Owner = owner;
+        FontHash = fontHash;
     }
 
     /// <summary>Measures the width of <paramref name="text"/> in points at <paramref name="pointSize"/>.</summary>
@@ -28,6 +51,15 @@ public sealed class EmbeddedFontHandle
     /// Safe to call from the layout/draw phase; all registered code points are included
     /// in the subset written during <c>Save</c>.
     /// </summary>
+    /// <remarks>
+    /// A code point the font has no glyph for gives glyph 0 (.notdef), with one exception:
+    /// U+202F NARROW NO-BREAK SPACE and U+2007 FIGURE SPACE, when the font lacks them, give the
+    /// glyph of U+00A0 NO-BREAK SPACE, or of U+0020 SPACE when it lacks that too. Layout keeps these
+    /// characters in a paragraph rather than turning them into a plain space, so a font that cannot
+    /// draw them must still be able to show a space. A font that has the glyph keeps it. The same
+    /// lookup measures the text, so the width of the space that is drawn is the width that was
+    /// measured.
+    /// </remarks>
     public ushort GetGlyphId(int codePoint) => Embedder.GetGlyphId(codePoint);
 
     /// <summary>

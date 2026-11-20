@@ -7,6 +7,7 @@ using VellumPdf.Fonts;
 using VellumPdf.Layout;
 using VellumPdf.Layout.Core;
 using VellumPdf.Layout.Elements;
+using VellumPdf.Layout.Rendering;
 
 namespace VellumPdf.Layout.Tests;
 
@@ -213,5 +214,20 @@ public sealed class ListTests
         Assert.Equal("iv.", list.FormatMarker(4));
         Assert.Equal("ix.", list.FormatMarker(9));
         Assert.Equal("xiv.", list.FormatMarker(14));
+    }
+
+    // ── A negative start item ────────────────────────────────────────────────
+
+    [Fact]
+    public void ListRenderer_negativeStartItem_throwsArgumentOutOfRange_notIndexOutOfRange()
+    {
+        // A negative start must throw the documented ArgumentOutOfRangeException, not IndexOutOfRangeException from the per-item height array.
+        var list = new ListElement(ListStyle.Unordered).Add("First").Add("Second");
+        var renderer = new ListRenderer(list, startItem: -1);
+        var context = new LayoutContext(new LayoutBox(0, 0, 300, 200));
+
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => _ = renderer.Layout(context));
+
+        Assert.Equal("startItem", ex.ParamName);
     }
 }
