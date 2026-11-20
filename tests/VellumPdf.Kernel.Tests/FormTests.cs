@@ -801,6 +801,156 @@ public sealed class FormTests
         }
     }
 
+    // ── Text strings in the field dictionary (#641) ──────────────────────────
+    // Each expectation is the exact byte sequence of the literal as it sits in the file.
+
+    private static byte[] Latin1Lit(string s) => Literal(Encoding.Latin1.GetBytes(s));
+
+    private static byte[] Utf16Lit(string s) =>
+        Literal([0xFE, 0xFF, .. Encoding.BigEndianUnicode.GetBytes(s)]);
+
+    private static byte[] Literal(byte[] raw)
+    {
+        var o = new List<byte> { (byte)'(' };
+        foreach (var b in raw)
+        {
+            switch (b)
+            {
+                case (byte)'(': o.AddRange("\\("u8.ToArray()); break;
+                case (byte)')': o.AddRange("\\)"u8.ToArray()); break;
+                case (byte)'\\': o.AddRange("\\\\"u8.ToArray()); break;
+                case 0x0A: o.AddRange("\\n"u8.ToArray()); break;
+                case 0x0D: o.AddRange("\\r"u8.ToArray()); break;
+                default: o.Add(b); break;
+            }
+        }
+        o.Add((byte)')');
+        return [.. o];
+    }
+
+    private static byte[] SaveBytes(PdfDocument doc)
+    {
+        using var ms = new MemoryStream();
+        doc.Save(ms);
+        return ms.ToArray();
+    }
+
+    private static void AssertEntry(byte[] pdf, string key, byte[] literal)
+    {
+        byte[] needle = [.. Encoding.ASCII.GetBytes(key + " "), .. literal];
+        Assert.True(FindSequence(pdf, needle) >= 0, $"{key} literal not found in the file.");
+    }
+
+    public static TheoryData<string, bool> NameCases => new()
+    {
+        { "abc", false },
+        { "caf\u00E9 \u00A3\u00FF", false },
+        { "a\u0001b", false },
+        { "a\tb", false },
+        { "a \u00FE \u00FF", false },
+        { "x\u0080y\u00ADz", true },
+        { "a\u00A0b", true },
+        { "a\u007Fb", true },
+        { "a\u0018b", true },
+        { "\u00FE\u00FFabc", true },
+        { "\u00EF\u00BB\u00BFabc", true },
+        { "\u0141\u00F3d\u017A", true },
+        { "a\U0001F600b", true },
+        { "a\u0080b\u0141", true },
+    };
+
+    [Theory]
+    [MemberData(nameof(NameCases))]
+    public void TextField_name_is_written_as_a_text_string(string name, bool utf16)
+    {
+        using var doc = new PdfDocument();
+        var page = doc.AddPage();
+        // The name is not drawn, so a character outside WinAnsiEncoding is accepted.
+        doc.AddTextField(page, name, new PdfRectangle(0, 0, 100, 20));
+        AssertEntry(SaveBytes(doc), "/T", utf16 ? Utf16Lit(name) : Latin1Lit(name));
+    }
+
+    [Theory]
+    [InlineData("x\u0080y\u00ADz", true)]
+    [InlineData("a\u00A0b", true)]
+    [InlineData("\u00FE\u00FFabc", true)]
+    [InlineData("caf\u00E9", false)]
+    public void TextField_value_is_written_as_a_text_string(string value, bool utf16)
+    {
+        using var doc = new PdfDocument();
+        var page = doc.AddPage();
+        doc.AddTextField(page, "F", new PdfRectangle(0, 0, 100, 20), value);
+        AssertEntry(SaveBytes(doc), "/V", utf16 ? Utf16Lit(value) : Latin1Lit(value));
+    }
+
+    [Fact]
+    public void LoneSurrogate_in_a_name_is_written_as_U_FFFD()
+    {
+        using var doc = new PdfDocument();
+        var page = doc.AddPage();
+        doc.AddTextField(page, "a\uD800b", new PdfRectangle(0, 0, 100, 20));
+        doc.AddCheckBox(page, "c\uDC00d", new PdfRectangle(0, 30, 20, 50));
+        var pdf = SaveBytes(doc);
+        AssertEntry(pdf, "/T", Utf16Lit("a\uFFFDb"));
+        AssertEntry(pdf, "/T", Utf16Lit("c\uFFFDd"));
+    }
+
+    [Fact]
+    public void ChoiceField_options_are_written_as_text_strings()
+    {
+        using var doc = new PdfDocument();
+        var page = doc.AddPage();
+        string[] options = ["plain", "x\u0080y", "\u00A0", "q\uD800r"];
+        doc.AddChoiceField(page, "C", new PdfRectangle(0, 0, 100, 20), options, selected: "plain");
+        var pdf = SaveBytes(doc);
+        AssertEntry(pdf, "/V", Latin1Lit("plain"));
+        Assert.True(FindSequence(pdf, Latin1Lit("plain")) >= 0);
+        Assert.True(FindSequence(pdf, Utf16Lit("x\u0080y")) >= 0);
+        Assert.True(FindSequence(pdf, Utf16Lit("\u00A0")) >= 0);
+        Assert.True(FindSequence(pdf, Utf16Lit("q\uFFFDr")) >= 0);
+    }
+
+    [Fact]
+    public void PushButton_caption_is_written_as_a_text_string()
+    {
+        using var doc = new PdfDocument();
+        var page = doc.AddPage();
+        doc.AddPushButton(page, "B", new PdfRectangle(0, 0, 100, 20), "a\u0080b");
+        AssertEntry(SaveBytes(doc), "/CA", Utf16Lit("a\u0080b"));
+    }
+
+    [Fact]
+    public void RadioGroup_name_is_written_as_a_text_string()
+    {
+        using var doc = new PdfDocument();
+        var page = doc.AddPage();
+        doc.AddRadioButtonGroup("r\u00A0g", [new RadioOption(page, new PdfRectangle(0, 0, 18, 18), "A")]);
+        AssertEntry(SaveBytes(doc), "/T", Utf16Lit("r\u00A0g"));
+    }
+
+    [Fact]
+    public void Appearance_draws_U_0080_as_the_WinAnsi_byte()
+    {
+        using var doc = new PdfDocument();
+        var page = doc.AddPage();
+        doc.AddTextField(page, "F", new PdfRectangle(0, 0, 100, 20), "a\u0080b");
+        var pdf = SaveBytes(doc);
+        var searchFrom = 0;
+        while (true)
+        {
+            var start = FindSequence(pdf, "\nstream\n"u8, searchFrom);
+            Assert.True(start >= 0, "No appearance stream drew the value.");
+            var data = start + 8;
+            var end = FindSequence(pdf, "\nendstream"u8, data);
+            byte[] inflated;
+            try { inflated = Decompress(pdf[data..end]); }
+            catch (InvalidDataException) { inflated = []; }
+            if (FindSequence(inflated, Encoding.Latin1.GetBytes("(a\u0080b) Tj")) >= 0)
+                return;
+            searchFrom = end;
+        }
+    }
+
     private static byte[] Decompress(byte[] compressed)
     {
         using var zms = new MemoryStream(compressed);
