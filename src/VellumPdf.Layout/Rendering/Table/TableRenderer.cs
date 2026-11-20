@@ -48,16 +48,16 @@ public sealed class TableRenderer : IRenderer
     /// <paramref name="startRow"/> on, so a start below zero or inside the header run draws every
     /// row. A start past the last row lays out as <see cref="LayoutResult.Outcome.Nothing"/>, so a
     /// document saving it throws <see cref="InvalidOperationException"/> saying the element is too
-    /// tall to fit. A null <paramref name="table"/> makes <see cref="Layout"/> throw.
-    /// <para>Do not pass null or a start outside the table's rows. A later major version will
-    /// throw from this call.</para>
+    /// tall to fit. A null <paramref name="table"/> is refused here.
+    /// <para>Do not pass a start outside the table's rows. 3.0 will throw from
+    /// this call.</para>
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised later from <see cref="Layout"/>, not from this constructor, when
+    /// <exception cref="ArgumentNullException">
     /// <paramref name="table"/> is <see langword="null"/>.
     /// </exception>
     public TableRenderer(TableElement table, int startRow = 0)
     {
+        ArgumentNullException.ThrowIfNull(table);
         _table = table;
         _startRow = startRow;
     }
@@ -69,13 +69,19 @@ public sealed class TableRenderer : IRenderer
     /// calls this method, the exceptions it lists reach you from the save.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
-    /// The table resolves to no columns, or a cell's span, padding or style, or the table's
-    /// border width, is refused; see <see cref="TableElement.Rows"/>, <see cref="Cell.ColSpan"/>,
-    /// <see cref="Cell.Padding"/> and <see cref="TableElement.BorderWidth"/>.
+    /// The table resolves to no columns, or a cell's span, padding or font size, or the table's border
+    /// width when it is not finite, is refused; see <see cref="TableElement.Rows"/>, <see cref="Cell.ColSpan"/>,
+    /// <see cref="Cell.Padding"/>, <see cref="TableElement.BorderWidth"/>. A cell's text colour, and a negative
+    /// border width, are refused the same way where the cell is drawn.
     /// </exception>
-    /// <exception cref="NullReferenceException">
-    /// The table or a cell is <see langword="null"/>, or a cell's content is null in a table with
-    /// an automatically sized column.
+    /// <exception cref="ArgumentException">
+    /// <see cref="VellumPdf.Canvas.PdfCanvas"/> refuses a non-finite <see cref="Cell.Background"/> or
+    /// <see cref="TableElement.BorderColor"/> channel, or a non-finite edge of
+    /// <see cref="TableElement.Margins"/>, where it would be written; see <see cref="Document"/>.
+    /// </exception>
+    /// <exception cref="ArgumentNullException">
+    /// A cell's text is null and a column is sized automatically; <c>ParamName</c> is <c>content</c>.
+    /// See <see cref="Cell"/>.
     /// </exception>
     /// <exception cref="OverflowException">
     /// A row's column spans sum past <see cref="int.MaxValue"/>; see <see cref="Cell.ColSpan"/>.
@@ -102,7 +108,7 @@ public sealed class TableRenderer : IRenderer
                 LayoutValidation.ValidateCell(cells[c], r, c);
         }
 
-        LayoutValidation.ValidateLineWidth(_table.BorderWidth, "A table");
+        LayoutValidation.ValidateLineWidthIsFinite(_table.BorderWidth, "A table");
 
         var grid = new TableGridResolver();
         grid.Resolve(_table, area.Width);
@@ -131,7 +137,7 @@ public sealed class TableRenderer : IRenderer
                 var cs = cell.Style ?? style;
                 // The authoring index, not col: the two diverge as soon as an earlier cell spans
                 // more than one column, and naming the column points at a cell nobody wrote.
-                LayoutValidation.ValidateStyle(cs, $"Table row {r}, cell {cellIndex}");
+                LayoutValidation.ValidateFontSize(cs, $"Table row {r}, cell {cellIndex}");
                 var colW = ColSpanWidth(col, cell.ColSpan);
                 var innerW = colW - cell.Padding.Horizontal;
                 var lines = WordWrapCount(cell.Content, cs, Math.Max(1, innerW));
@@ -199,6 +205,15 @@ public sealed class TableRenderer : IRenderer
     /// <exception cref="IndexOutOfRangeException">
     /// This method is called before <see cref="Layout"/> on a table that has a header row; see
     /// <see cref="IRenderer.Draw"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// <b>A cell's text colour with a non-finite channel, and a negative table border width, are refused
+    /// here and not in <see cref="Layout"/>,</b> because each is checked where it is written; a table
+    /// that is laid out and not drawn is not refused for either. See <see cref="Document"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// A cell or row background, the table's border colour or a coordinate written here is <c>NaN</c> or
+    /// infinite, which <see cref="VellumPdf.Canvas.PdfCanvas"/> refuses (<c>ParamName</c> is null).
     /// </exception>
     public void Draw(DrawContext ctx)
     {
@@ -345,7 +360,7 @@ public sealed class TableRenderer : IRenderer
             {
                 // Normal single-row cell — draw immediately
                 DrawCell(ctx, cell, row, col, colXPositions[col], rowY, colW, h, style, trElem,
-                    rowSpan, colSpan);
+                    rowSpan, colSpan, rowIdx, cellIdx - 1);
             }
             else
             {
@@ -356,7 +371,7 @@ public sealed class TableRenderer : IRenderer
                     totalSpanH += _rowHeights[sr];
 
                 DrawCell(ctx, cell, row, col, colXPositions[col], rowY, colW, totalSpanH, style,
-                    trElem, rowSpan, colSpan);
+                    trElem, rowSpan, colSpan, rowIdx, cellIdx - 1);
 
                 for (var sr = rowIdx + 1; sr < rowIdx + rowSpan; sr++)
                     for (var sc = col; sc < col + colSpan; sc++)
@@ -399,7 +414,8 @@ public sealed class TableRenderer : IRenderer
 
     private void DrawCell(DrawContext ctx, Cell cell, Row row, int colIdx,
         double cellX, double cellY, double colW, double h,
-        TextStyle style, PdfStructElem? trElem, int rowSpan, int colSpan)
+        TextStyle style, PdfStructElem? trElem, int rowSpan, int colSpan,
+        int rowIndex, int cellIndex)
     {
         var cs = cell.Style ?? style;
 
@@ -415,6 +431,10 @@ public sealed class TableRenderer : IRenderer
                 .Fill();
             if (ctx.Tagged) ctx.Canvas.EndMarkedContent();
         }
+
+        // Where the border is written, so a table that is never drawn is not refused for a negative
+        // width. The finite check is in Layout.
+        LayoutValidation.ValidateLineWidth(_table.BorderWidth, "A table");
 
         // Cell border (decorative — wrapped as /Artifact when tagged)
         var (rx, ry, rw, rh) = ctx.ToPdfRect(new LayoutBox(cellX, cellY, colW, h));
@@ -453,6 +473,9 @@ public sealed class TableRenderer : IRenderer
             canvas.SetFont(cf, cs.FontSize);
         }
 
+        // Where the text colour is written, so a cell that is never drawn is not refused for it.
+        // The font size is checked in Layout.
+        LayoutValidation.ValidateColor(cs.Color, $"Table row {rowIndex}, cell {cellIndex}", "text colour");
         canvas.SetFillColorRgb(cs.Color.R, cs.Color.G, cs.Color.B);
 
         var lineHeight = cs.EffectiveLeading;

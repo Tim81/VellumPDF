@@ -31,8 +31,9 @@ public sealed class TextStyle
     /// or an <see cref="EmbeddedFontHandle"/> returned by <c>Document.UseTrueTypeFont</c>.
     /// </summary>
     /// <remarks>
-    /// Stored as given. A null handle saves in Helvetica, and a handle from another document keeps
-    /// at most the characters <see cref="FontReference(EmbeddedFontHandle)"/> describes. A
+    /// Stored as given. A null handle saves in Helvetica, and a handle from another document is
+    /// refused when the saving document defines no font under its resource name; see
+    /// <see cref="VellumPdf.Document.PdfDocument.RegisterEmbeddedFontUsage"/>. A
     /// Standard-14 value the enumeration does not name makes the save throw once the font is
     /// selected on a page, which an empty table cell or list item with this style also does.
     /// <para><see cref="Standard14.Symbol"/> and <see cref="Standard14.ZapfDingbats"/> measure
@@ -93,8 +94,8 @@ public sealed class TextStyle
     /// <see cref="VellumPdf.Layout.Elements.RunningBand"/> style takes a band-specific route
     /// instead, detailed on the exception tags below.
     /// <para>Each paragraph run, and a heading's text, is checked when it holds a character other
-    /// than white space. U+00A0 NO-BREAK SPACE counts as such a character; a tab and other white
-    /// space do not. A table cell or list item is checked whatever its text holds.</para>
+    /// than white space. The no-break spaces U+00A0, U+202F and U+2007 count as such characters; a
+    /// tab and other white space do not. A table cell or list item is checked whatever its text holds.</para>
     /// <para><b>Attention</b>: a size of zero or less is <b>not</b> refused. It reaches the content
     /// stream as a font operator that readers accept, so you still get a document. At zero the
     /// text is invisible. Below zero the glyphs are inverted. If you do not want either, check the
@@ -103,11 +104,10 @@ public sealed class TextStyle
     /// <exception cref="InvalidOperationException">
     /// Raised from a save rather than from this property, when a checked size is not finite (see
     /// the remarks), or when a finite size makes the element too tall for the content area. On a
-    /// paragraph style the message names the run and the size; a
-    /// <see cref="VellumPdf.Layout.Elements.Heading"/> is laid out through the same paragraph code
-    /// and reports the same way, as <c>"A paragraph run"</c>, not by the heading's own name. A list
-    /// item's marker is laid out as a paragraph, so a list-item style reports as <c>"A paragraph
-    /// run"</c> too. On a table-cell style the message names the row and cell instead.
+    /// paragraph style the message names the run and the size, as <c>"A paragraph run"</c>. A
+    /// <see cref="VellumPdf.Layout.Elements.Heading"/> reports as <c>"A heading"</c> and a list item,
+    /// or the marker laid out with it, as <c>"A list item"</c>. On a table-cell style the message names
+    /// the row and cell instead.
     /// <para>On a <see cref="VellumPdf.Layout.Elements.RunningBand"/> style, which message fires
     /// depends on the band and on whether
     /// <see cref="VellumPdf.Layout.Elements.RunningBand.Height"/> is set. Measured with
@@ -187,10 +187,22 @@ public sealed class TextStyle
 
     /// <summary>The text colour. Defaults to <see cref="ColorRgb.Black"/>.</summary>
     /// <remarks>
-    /// Stored as given. Channels are not checked or clamped. Each is written into the content
-    /// stream rounded to five decimals, and <c>NaN</c> or <c>Infinity</c> as that token; see
-    /// <see cref="ColorRgb"/>.
+    /// Stored as given. Channels are not clamped. A channel that is not finite is refused where it is
+    /// written; see <see cref="Document"/> and <see cref="ColorRgb"/>. In a paragraph run, a heading, a
+    /// list item or a table cell that draws text, the element's own check names it. On a running band,
+    /// and on a band that draws nothing, <see cref="VellumPdf.Canvas.PdfCanvas"/> decides: it refuses
+    /// the value when the band is drawn, and an empty template writes no colour. <b>Do not pass</b> a
+    /// non-finite channel: 3.0 refuses it.
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from a save, when a channel is <c>NaN</c> or infinite on a paragraph run, heading, list
+    /// item or table cell that draws text. The message names the element and the channel. A finite
+    /// channel outside 0 to 1 is not refused.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from a save, when a channel is <c>NaN</c> or infinite on a running band that is drawn.
+    /// The message says PDF does not support NaN or Infinity as a real number.
+    /// </exception>
     public ColorRgb Color { get; init; } = ColorRgb.Black;
 
     /// <summary>
@@ -221,17 +233,19 @@ public sealed class TextStyle
     /// untagged and without an alternate description, whatever the conformance, and no exception
     /// reports it. In a document whose <c>Conformance</c> is PDF/UA-1, the link breaks ISO
     /// 14289-1, 7.18.5 (#550). A link whose rectangle lies wholly outside the page's crop box is
-    /// exempt: clause 7.18.1 lifts the requirements of clause 7.18 for it. On a justified line
-    /// the link's rectangle is sized and placed as if the line were not stretched, so the linked
-    /// words can run past it, and in an embedded font can lie away from it (#551).
+    /// exempt: clause 7.18.1 lifts the requirements of clause 7.18 for it. On a justified line in a
+    /// standard-14 text face the link's rectangle starts where the linked text is drawn and covers
+    /// its drawn width, spaces stretched included. On a justified line in an embedded font
+    /// the rectangle is still sized and placed as if the line were not stretched, so the linked
+    /// words can run past it and can lie away from it.
     /// <para>Do not pass a value that is not an absolute URI. A later major version will refuse
     /// one.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when linked text is placed at a non-finite position, for example through
-    /// a non-finite margin (see <see cref="Document.Margins"/>) or a bottom of negative infinity in
-    /// a renderer's result (see <see cref="LayoutResult.Full"/>). The link's rectangle is written
+    /// a bottom of negative infinity in a renderer's result (see <see cref="LayoutResult.Full"/>). The link's rectangle
+    /// is written
     /// outside the content stream, and the save refuses a non-finite coordinate there. Without a
     /// link, the same paragraph or list-item text saves. A heading placed at a non-finite height
     /// throws either way, from its bookmark; see

@@ -239,9 +239,52 @@ public sealed class GifSpecificationTests
     {
         var gif = GifEncoder.Encode([1, 2, 3, 250, 251, 252], width: 2, height: 1);
 
-        Assert.Equal("GIF89a"u8.ToArray(), gif[..6]);
+        // Section 17.d.ii: the earliest version that defines every block written. Global Color
+        // Table, Image Descriptor, Table Based Image Data and Trailer are all 87a (sections 19,
+        // 20, 22 and 27, "Required Version"), and no extension is written.
+        Assert.Equal("GIF87a"u8.ToArray(), gif[..6]);
         Assert.Equal(0x2C, gif[13 + 3 * 2]);   // Image Descriptor, after a 2-entry global table
         Assert.Equal(0x3B, gif[^1]);           // Trailer
+    }
+
+    /// <summary>
+    /// The header's 87a claim is only true while no block that needs 89a is in the stream, so
+    /// this walks the blocks the encoder wrote and rejects any extension introducer (0x21), the
+    /// introducer of every 89a-only block (Graphic Control, Comment, Plain Text, Application).
+    /// A future encoder that adds one has to move the version with it or fail here. Covers the
+    /// interlaced and non-interlaced forms, and a palette wide enough for a 256-entry table.
+    /// </summary>
+    [Theory]
+    [InlineData(2, false)]
+    [InlineData(2, true)]
+    [InlineData(256, false)]
+    public void Encode_headerVersionMatchesTheBlocksWritten(int colours, bool interlaced)
+    {
+        const int w = 16, h = 16;
+        var rgb = new byte[w * h * 3];
+        for (var i = 0; i < w * h; i++)
+        {
+            var c = i % colours;
+            rgb[i * 3] = (byte)c; rgb[i * 3 + 1] = (byte)(255 - c); rgb[i * 3 + 2] = 7;
+        }
+
+        var gif = GifEncoder.Encode(rgb, w, h, interlaced);
+
+        var tableBytes = 3 * (2 << (gif[10] & 0x07));
+        var pos = 13 + tableBytes;
+        var sawExtension = false;
+        while (gif[pos] != 0x3B)
+        {
+            if (gif[pos] == 0x21) { sawExtension = true; break; }
+            Assert.Equal(0x2C, gif[pos]);
+            pos += 10;            // separator + 9-byte descriptor, no local table
+            pos++;                // LZW minimum code size
+            while (gif[pos] != 0) pos += gif[pos] + 1;
+            pos++;                // block terminator
+        }
+
+        Assert.False(sawExtension);
+        Assert.Equal("GIF87a"u8.ToArray(), gif[..6]);
     }
 
     /// <summary>

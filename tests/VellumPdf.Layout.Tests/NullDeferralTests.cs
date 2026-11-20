@@ -1,0 +1,119 @@
+// Copyright © Timothy van der Ham (@Tim81)
+// SPDX-License-Identifier: Apache-2.0
+
+using System.Text.RegularExpressions;
+using VellumPdf.Core;
+using VellumPdf.Document;
+using VellumPdf.Layout.Core;
+using VellumPdf.Layout.Elements;
+using VellumPdf.Layout.Elements.Table;
+
+// The rows pass nulls on purpose where the library annotates a non-null parameter.
+#nullable disable
+
+namespace VellumPdf.Layout.Tests;
+
+/// <summary>A null that 2.3.3 stored and dereferenced only in some shapes is refused in exactly those shapes, with <see cref="ArgumentNullException"/> where it threw <see cref="NullReferenceException"/>; each row is a shape's 2.3.3 outcome (the second element is whether it saved), and a document that saved still saves. A null that 2.3.3 always crashed on is refused at the call; see <c>NullArgumentTests</c>.</summary>
+public sealed class NullDeferralTests
+{
+    private static TextRun R(string text) => new(text, null);
+
+    private static readonly (string Name, bool Saved, Func<Document> Build)[] _rows =
+    [
+        ("run null style, text Hello", false, () => { var d = new Document(); d.Add(new Paragraph(new[]{R("Hello")})); return d; }),
+        ("run null style, empty text", true, () => { var d = new Document(); d.Add(new Paragraph(new[]{R("")})); return d; }),
+        ("run null style, spaces", true, () => { var d = new Document(); d.Add(new Paragraph(new[]{R("   ")})); return d; }),
+        ("run null style, tab", true, () => { var d = new Document(); d.Add(new Paragraph(new[]{R("\t")})); return d; }),
+        ("run null style, nbsp", false, () => { var d = new Document(); d.Add(new Paragraph(new[]{R(" ")})); return d; }),
+        ("run null style, newline only", true, () => { var d = new Document(); d.Add(new Paragraph(new[]{R("\n")})); return d; }),
+        ("run null style, a newline b", false, () => { var d = new Document(); d.Add(new Paragraph(new[]{R("a\nb")})); return d; }),
+        ("run null style, ws between styled", true, () => { var d = new Document(); d.Add(new Paragraph(new[]{new TextRun("a",TextStyle.Default),R(" "),new TextRun("b",TextStyle.Default)})); return d; }),
+        ("run null style, x between styled", false, () => { var d = new Document(); d.Add(new Paragraph(new[]{new TextRun("a",TextStyle.Default),R("x"),new TextRun("b",TextStyle.Default)})); return d; }),
+        ("run null style, paragraph never added", true, () => { var d = new Document(); _=new Paragraph(new[]{R("Hello")}); d.Add(new Paragraph("ok")); return d; }),
+        ("cell null auto 1 col", false, () => { var d = new Document(); var t=new TableElement(); t.AddRow().AddCell(new Cell(null)); d.Add(t); return d; }),
+        ("cell null explicit widths all (60)", true, () => { var d = new Document(); var t=new TableElement().SetColumnWidths(60); t.AddRow().AddCell(new Cell(null)); d.Add(t); return d; }),
+        ("cell null 2 cols widths (60,60)", true, () => { var d = new Document(); var t=new TableElement().SetColumnWidths(60,60); var r=t.AddRow(); r.AddCell("a"); r.AddCell(new Cell(null)); d.Add(t); return d; }),
+        ("cell null widths (60,0), null in explicit col", false, () => { var d = new Document(); var t=new TableElement().SetColumnWidths(60,0); var r=t.AddRow(); r.AddCell(new Cell(null)); r.AddCell("b"); d.Add(t); return d; }),
+        ("cell null widths (60,0), null in auto col", false, () => { var d = new Document(); var t=new TableElement().SetColumnWidths(60,0); var r=t.AddRow(); r.AddCell("a"); r.AddCell(new Cell(null)); d.Add(t); return d; }),
+        ("cell null second row, widths (60,60)", true, () => { var d = new Document(); var t=new TableElement().SetColumnWidths(60,60); t.AddRow().AddCell("a").AddCell("b"); t.AddRow().AddCell(new Cell(null)); d.Add(t); return d; }),
+        ("cell null auto, table not drawn (doc top -inf)", false, () => { var d = new Document(){Margins=new EdgeInsets(double.NegativeInfinity,72,72,72)}; var t=new TableElement(); t.AddRow().AddCell(new Cell(null)); d.Add(t); return d; }),
+        ("cell null explicit (60), null cell beyond columns", false, () => { var d = new Document(); var t=new TableElement().SetColumnWidths(60); var r=t.AddRow(); r.AddCell("a"); r.AddCell(new Cell(null)); d.Add(t); return d; }),
+        ("cell null auto, null cell beyond columns", false, () => { var d = new Document(); var t=new TableElement(); t.AddRow().AddCell("a"); var r=t.AddRow(); r.AddCell("b"); r.AddCell(new Cell(null)); d.Add(t); return d; }),
+        ("cell null auto via Row.AddCell((string)null)", false, () => { var d = new Document(); var t=new TableElement(); t.AddRow().AddCell((string)null); d.Add(t); return d; }),
+        ("dict Set(k,null) then Set(k,v), written", true, () => { var d = new Document(); var x=new PdfDictionary(); x.Set(new PdfName("K"),(PdfObject)null); x.Set(new PdfName("K"),1L); using var m=new MemoryStream(); x.WriteTo(new VellumPdf.IO.PdfWriter(m)); d.Add("hello"); return d; }),
+        ("dict Set(k,null) then written", false, () => { var d = new Document(); var x=new PdfDictionary(); x.Set(new PdfName("K"),(PdfObject)null); using var m=new MemoryStream(); x.WriteTo(new VellumPdf.IO.PdfWriter(m)); d.Add("hello"); return d; }),
+        ("dict Set(k,null) never written", true, () => { var d = new Document(); var x=new PdfDictionary(); x.Set(new PdfName("K"),(PdfObject)null); d.Add("hello"); return d; }),
+        ("band null template assigned then replaced", true, () => { var d = new Document(); d.Header=new RunningBand(null); d.Header=new RunningBand("h"); d.Add("hello"); return d; }),
+        ("band null template assigned then cleared", true, () => { var d = new Document(); d.Header=new RunningBand(null); d.Header=null; d.Add("hello"); return d; }),
+        ("band null template header kept", false, () => { var d = new Document(); d.Header=new RunningBand(null); d.Add("hello"); return d; }),
+        ("band null template footer kept", false, () => { var d = new Document(); d.Footer=new RunningBand(null); d.Add("hello"); return d; }),
+        ("SetHeader(null) kept", false, () => { var d = new Document(); d.SetHeader(null); d.Add("hello"); return d; }),
+        ("listitem null child on grandchild", true, () => { var d = new Document(); var c=new ListItem("c"); c.AddChild((ListItem)null); d.Add(new ListElement().Add(new ListItem("p").AddChild(c))); return d; }),
+        ("listitem null child on top-level item", false, () => { var d = new Document(); d.Add(new ListElement().Add(new ListItem("p").AddChild((ListItem)null))); return d; }),
+        ("listitem null text top-level", false, () => { var d = new Document(); d.Add(new ListElement().Add(new ListItem(null))); return d; }),
+        ("listitem null text child", false, () => { var d = new Document(); d.Add(new ListElement().Add(new ListItem("p").AddChild((string)null))); return d; }),
+        ("listitem null text grandchild", true, () => { var d = new Document(); var c=new ListItem("c"); c.AddChild((string)null); d.Add(new ListElement().Add(new ListItem("p").AddChild(c))); return d; }),
+        ("listitem null child, list never added", true, () => { var d = new Document(); _=new ListElement().Add(new ListItem("p").AddChild((ListItem)null)); d.Add("ok"); return d; }),
+    ];
+
+    // What 2.3.3 drew for each row it saved: every text shown (a Tj operand), joined by |, with a byte outside printable ASCII shown as ?.
+    private static readonly Dictionary<string, string> _drawn = new()
+    {
+        ["run null style, empty text"] = "",
+        ["run null style, spaces"] = "",
+        ["run null style, tab"] = "",
+        ["run null style, newline only"] = "",
+        ["run null style, ws between styled"] = "a b",
+        ["run null style, paragraph never added"] = "ok",
+        ["cell null explicit widths all (60)"] = "",
+        ["cell null 2 cols widths (60,60)"] = "a|",
+        ["cell null second row, widths (60,60)"] = "a|b|",
+        ["dict Set(k,null) then Set(k,v), written"] = "hello",
+        ["dict Set(k,null) never written"] = "hello",
+        ["band null template assigned then replaced"] = "hello|h",
+        ["band null template assigned then cleared"] = "hello",
+        ["listitem null child on grandchild"] = "?|p|?|c",
+        ["listitem null text grandchild"] = "?|p|?|c",
+        ["listitem null child, list never added"] = "ok",
+    };
+
+    public static TheoryData<string> Names()
+    {
+        var rows = new TheoryData<string>();
+        foreach (var r in _rows) rows.Add(r.Name);
+        return rows;
+    }
+
+    private static string DrawnText(byte[] pdf)
+    {
+        var stream = PdfTestUtil.DecompressAllFlatStreams(pdf);
+        var texts = Regex.Matches(stream, @"\(([^)]*)\) Tj")
+            .Select(m => Regex.Replace(m.Groups[1].Value, @"[^ -~]", "?"));
+        return string.Join("|", texts);
+    }
+
+    [Theory]
+    [MemberData(nameof(Names))]
+    public void NullShape_savesWhereTheDeferredNullSaved_andIsRefusedWhereItThrew(string name)
+    {
+        var row = _rows.Single(r => r.Name == name);
+        using var ms = new MemoryStream();
+
+        // The build is inside the call: a few rows write a Kernel object while they build.
+        void BuildAndSave()
+        {
+            using var doc = row.Build();
+            doc.Save(ms);
+        }
+
+        if (row.Saved)
+        {
+            BuildAndSave();
+            Assert.Equal(_drawn[name], DrawnText(ms.ToArray()));
+        }
+        else
+        {
+            Assert.Throws<ArgumentNullException>(BuildAndSave);
+        }
+    }
+}

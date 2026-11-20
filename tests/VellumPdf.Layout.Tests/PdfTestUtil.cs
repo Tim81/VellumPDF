@@ -161,6 +161,30 @@ internal static class PdfTestUtil
         return ms.ToArray();
     }
 
+    /// <summary>A 2×2 white RGBA PNG whose alpha channel becomes the image's <c>SMask</c>.</summary>
+    internal static byte[] CreateMinimalRgbaPng()
+    {
+        using var ms = new MemoryStream();
+        ms.Write([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+
+        var ihdr = new byte[13];
+        ihdr[3] = 2;
+        ihdr[7] = 2;
+        ihdr[8] = 8;
+        ihdr[9] = 6;    // colour type: RGBA
+        WritePngChunk(ms, "IHDR", ihdr);
+
+        byte[] rawScanlines =
+        [
+            0, 255, 255, 255, 255, 255, 255, 255, 128,
+            0, 255, 255, 255, 64, 255, 255, 255, 255,
+        ];
+        WritePngChunk(ms, "IDAT", ZlibCompress(rawScanlines));
+        WritePngChunk(ms, "IEND", []);
+
+        return ms.ToArray();
+    }
+
     private static void WritePngChunk(MemoryStream s, string type, byte[] data)
     {
         s.WriteByte((byte)(data.Length >> 24));

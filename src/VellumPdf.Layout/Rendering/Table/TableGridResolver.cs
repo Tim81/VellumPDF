@@ -143,6 +143,12 @@ internal sealed class TableGridResolver
             explicitSum += raw[i];
         }
 
+        // Each entry is finite here, but their sum need not be: three of 1e308 reach +Infinity, the
+        // scale ratio becomes budget / Infinity = 0, and every explicit column is written at width 0,
+        // an auto column keeping its content width, so cells that start at the same x are drawn on
+        // top of one another. The file is valid, so it is kept; documented on ColWidths,
+        // and 3.0 refuses it.
+
         var autoCount = 0;
         for (var i = 0; i < cols; i++) if (isAuto[i]) autoCount++;
 
@@ -285,6 +291,8 @@ internal sealed class TableGridResolver
             {
                 if (col >= cols) break;
                 var cellStyle = cell.Style ?? style;
+                if (cell.Content is null)
+                    throw new ArgumentNullException("content", "A table cell has a null text and a column is sized automatically.");
                 var words = cell.Content.Split(' ');
                 var longest = words.Max(w => cellStyle.FontRef.MeasureString(w, cellStyle.FontSize));
                 var full = cellStyle.FontRef.MeasureString(cell.Content, cellStyle.FontSize)
