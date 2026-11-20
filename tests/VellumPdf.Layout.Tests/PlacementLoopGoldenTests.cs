@@ -210,7 +210,7 @@ public sealed class PlacementLoopGoldenTests
         Assert.Equal((30, 62), (plain.Calls, banded.Calls));
     }
 
-    // ── PDF/A-2u, headings (one of them split), a footer with a page count ───
+    // ── PDF/A-2u, headings (the second splits across two pages), a footer with a page count ───
 
     private static readonly string Regular =
         Path.Combine(AppContext.BaseDirectory, "Fonts", "LiberationSans-Regular.ttf");
@@ -233,8 +233,8 @@ public sealed class PlacementLoopGoldenTests
         doc.SetFooter("Page {page} of {pages}", style);
         for (var chapter = 1; chapter <= 4; chapter++)
         {
-            doc.Add(new Heading(string.Join(' ', Enumerable.Repeat($"Chapter {chapter} heading", chapter == 2 ? 8 : 1)), style));
-            for (var i = 0; i < 6; i++)
+            doc.Add(new Heading(string.Join(' ', Enumerable.Repeat($"Chapter {chapter} heading", chapter == 2 ? 30 : 1)), style));
+            for (var i = 0; i < (chapter == 1 ? 4 : 6); i++)
                 doc.Add(new Paragraph(ParagraphText(i), style));
         }
 
@@ -245,7 +245,7 @@ public sealed class PlacementLoopGoldenTests
 
     [Fact]
     public void PdfA2uDocument_pinsBytes() =>
-        Pin("F7C8F9F81644E495E0715C2063104B7973ADB906F9A83EBD1B43C652BAA46C7C", NormalisedSha256(PdfA2uDocument()));
+        Pin("DD46E6108AF15BC933A173578B994924276DB5CAB0690B44D3D553CFCB074870", NormalisedSha256(PdfA2uDocument(), foldToUnicodeLineEnds: true));
 
     [Fact]
     public void PdfA2uDocument_veraPdfReportsCompliant()

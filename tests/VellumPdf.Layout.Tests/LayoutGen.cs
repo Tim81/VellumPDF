@@ -83,7 +83,7 @@ internal static class LayoutGen
     /// shape this field exists to reach). Deliberately excludes both — a table with no data rows at
     /// all reports <see cref="LayoutResult.Outcome.Nothing"/> unconditionally from
     /// <c>TableRenderer.Layout</c> regardless of how much page is actually free, which
-    /// <c>DocumentRenderer.CountPlaceRenderer</c> then reads as "this element can never render" and
+    /// the measuring pass of <c>DocumentRenderer</c> then reads as "this element can never render" and
     /// throws <c>ElementTooTall</c> even on an empty page with room to spare. Measured directly:
     /// widening this generator to include it broke both
     /// <c>PropertyTests.ValidDocument_rendersWithoutThrowing</c> and

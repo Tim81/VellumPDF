@@ -1153,7 +1153,7 @@ public sealed class Document : IDisposable
         }
     }
 
-    private DocumentRenderer CreateRenderer()
+    internal DocumentRenderer CreateRenderer()
     {
         var renderer = new DocumentRenderer(_pdf, _pdf.DefaultPageSize, Margins)
         {

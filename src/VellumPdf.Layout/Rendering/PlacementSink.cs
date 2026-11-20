@@ -32,7 +32,8 @@ internal interface IPlacementSource
 /// </summary>
 /// <param name="Key">What was placed, compared by reference.</param>
 /// <param name="PageIndex">0-based, relative to the first page of this layout.</param>
-/// <param name="Y">The layout-space y of the first placed line.</param>
+/// <param name="Y">The layout-space y of the top of <paramref name="Box"/>, which for a heading
+/// is its first placed line.</param>
 /// <param name="Renderer">The renderer whose result was accepted.</param>
 /// <param name="Box">The area the placed part occupies.</param>
 internal readonly record struct Placement(object Key, int PageIndex, double Y, IRenderer Renderer, LayoutBox Box);

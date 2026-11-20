@@ -395,13 +395,18 @@ public sealed class DocumentRenderer
                 "margins");
 
         // A check that must refuse before any renderer has measured goes here, so the document is
-        // still saveable once the caller has fixed what it names (R6). Nothing walks the added
+        // still saveable once the caller has fixed what it names: a save that fails after the
+        // layout started cannot be retried, one refused before it can. Nothing walks the added
         // elements yet.
 
         // From here the renderers measure and cache; see Document.MarkFailedIfLaidOut.
         HasStartedLayout = true;
 
         var dependents = FindPlanDependents();
+
+        // Reports are collected only when something reads them: a dependent resolves against them
+        // and the guard compares the drawing pass with them. Tests set RecordPlacements.
+        _collect = dependents is not null || RecordPlacements;
 
         int totalPages;
         if (dependents is not null)
@@ -518,6 +523,14 @@ public sealed class DocumentRenderer
     // The measuring run the drawing pass is compared with; set only when a dependent exists.
     private PlacementSink? _guard;
 
+    private bool _collect;
+
+    /// <summary>
+    /// Collect placement reports even when no dependent reads them. Off by default, so a document
+    /// pays for reports only when a dependent needs them; tests turn it on to read the plans.
+    /// </summary>
+    internal bool RecordPlacements { get; set; }
+
     private double Cursor
     {
         get => _measuring ? _measureY : _currentY;
@@ -583,6 +596,7 @@ public sealed class DocumentRenderer
         for (var i = 0; i < history.Length; i++)
             history[i] = [];
         var changedLast = new bool[dependents.Count];
+        var pageCounts = new List<int>(MaxMeasureRuns);
 
         var plan = PaginationPlan.Placeholder;
         var previousPages = -1;
@@ -597,6 +611,7 @@ public sealed class DocumentRenderer
             }
 
             var pages = RunPass(measure: true, totalPages: 0);
+            pageCounts.Add(pages);
 
             // Run 1 has no earlier run to equal. From run 2, a run that resolved nothing new laid
             // out the same strings as the run before it, so its plan is that run's plan.
@@ -607,11 +622,11 @@ public sealed class DocumentRenderer
             previousPages = pages;
         }
 
-        throw PaginationDidNotSettle(dependents, history, changedLast);
+        throw PaginationDidNotSettle(dependents, history, changedLast, pageCounts);
     }
 
     private static InvalidOperationException PaginationDidNotSettle(
-        List<IPlanDependent> dependents, List<string>[] history, bool[] changedLast)
+        List<IPlanDependent> dependents, List<string>[] history, bool[] changedLast, List<int> pageCounts)
     {
         const int named = 3;
         var parts = new List<string>(named);
@@ -626,17 +641,22 @@ public sealed class DocumentRenderer
         }
 
         var more = unstable > named ? $", and {unstable - named} more" : "";
+        // No dependent changed in the last run, so the page count was what kept moving.
+        var cause = parts.Count > 0
+            ? string.Join("; ", parts) + more
+            : "the page count read " + string.Join(", ", pageCounts);
         return new InvalidOperationException(
-            $"Pagination did not settle after {MaxMeasureRuns} layout passes: " +
-            string.Join("; ", parts) + more + ". " +
+            $"Pagination did not settle after {MaxMeasureRuns} layout passes: {cause}. " +
             "A string that depends on where its target lands can change the layout and so move " +
-            "that target, and here the passes alternate instead of settling. " +
-            "This document cannot be saved again.");
+            "that target, and here the passes keep changing it instead of settling. " +
+            "The renderers have already measured, so lay the content out again with a new Document.");
     }
 
     private static InvalidOperationException PaginationChanged() =>
-        new("Pagination changed between the measuring and the drawing pass: a renderer placed " +
-            "an element on a different page the second time. This document cannot be saved again.");
+        new("Pagination changed between the measuring and the drawing pass: the drawing pass " +
+            "reported a placement that differs from the last measuring run's, so a renderer " +
+            "answered differently the later time. " +
+            "The renderers have already measured, so lay the content out again with a new Document.");
 
     private LayoutResult CallLayout(IRenderer renderer, LayoutBox area)
     {
@@ -648,7 +668,7 @@ public sealed class DocumentRenderer
     // the cursor moves, in both passes, so the two passes record the same positions.
     private void ReportPlacements(IRenderer? accepted)
     {
-        if (accepted is not IPlacementSource source) return;
+        if (!_collect || accepted is not IPlacementSource source) return;
 
         var first = _sink.Count;
         _sink.Enter(accepted, _pageIndex);

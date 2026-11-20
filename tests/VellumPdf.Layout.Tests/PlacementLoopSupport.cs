@@ -107,8 +107,8 @@ internal static class PlacementLoopSupport
     internal static string Sha256(string text) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
 
-    internal static string NormalisedSha256(byte[] pdf) =>
-        Convert.ToHexString(SHA256.HashData(Encoding.Latin1.GetBytes(Normalise(pdf))));
+    internal static string NormalisedSha256(byte[] pdf, bool foldToUnicodeLineEnds = false) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.Latin1.GetBytes(Normalise(pdf, foldToUnicodeLineEnds))));
 
     // The same rule as CatalogGoldenTests.Normalise in VellumPdf.Kernel.Tests (#626): inflate every
     // Flate stream and blank the xref offsets, so the compressor of the runtime drops out.
@@ -116,7 +116,11 @@ internal static class PlacementLoopSupport
         @"(?<head>\d+ 0 obj\n)(?<dict><<(?:(?!\nstream\n|endobj).)*?>>)(?<mid>\nstream\n)(?<data>.*?)(?<tail>\nendstream)",
         RegexOptions.Singleline | RegexOptions.CultureInvariant);
 
-    internal static string Normalise(byte[] pdf)
+    // foldToUnicodeLineEnds: an embedded font's ToUnicode CMap is written with CR LF line ends on
+    // Windows and LF on Linux (#630), so a hash that must hold on both folds CR LF to LF inside
+    // ToUnicode streams, and nowhere else. It does nothing once #630 is fixed (#647), because
+    // every line end is then LF already.
+    internal static string Normalise(byte[] pdf, bool foldToUnicodeLineEnds = false)
     {
         var text = Encoding.Latin1.GetString(pdf);
         text = StreamObject.Replace(text, m =>
@@ -125,6 +129,8 @@ internal static class PlacementLoopSupport
             if (!dictionary.Contains("/FlateDecode", StringComparison.Ordinal))
                 return m.Value;
             var inflated = Inflate(Encoding.Latin1.GetBytes(m.Groups["data"].Value));
+            if (foldToUnicodeLineEnds && inflated.Contains("begincmap", StringComparison.Ordinal))
+                inflated = inflated.Replace("\r\n", "\n", StringComparison.Ordinal);
             dictionary = Regex.Replace(dictionary, @"/Length \d+", "/Length " + inflated.Length);
             dictionary = dictionary.Replace("/Filter /FlateDecode", "/Filter /FlateDecode (inflated)", StringComparison.Ordinal);
             return m.Groups["head"].Value + dictionary + m.Groups["mid"].Value + inflated + m.Groups["tail"].Value;

@@ -12,9 +12,10 @@ using VellumPdf.Layout.Rendering;
 namespace VellumPdf.Layout.Tests;
 
 /// <summary>
-/// DocumentRenderer.PlaceRenderer and CountPlaceRenderer used to recurse once per page
-/// continuation, so a single element spanning thousands of pages overflowed the CLR stack and
-/// killed the process (#459). The too-tall cases also pin the two passes to one verdict (#460).
+/// DocumentRenderer's placement loops used to recurse once per page continuation (the drawing
+/// pass in PlaceRenderer, the page-counting pass in a second method), so a single element spanning
+/// thousands of pages overflowed the CLR stack and killed the process (#459). One loop now runs
+/// both passes. The too-tall cases also pin the two passes to one verdict (#460).
 /// </summary>
 public sealed class PaginationDepthTests
 {
@@ -47,12 +48,12 @@ public sealed class PaginationDepthTests
     }
 
     [Fact]
-    public void CountPlaceRenderer_manyContinuations_stackDepthStaysFlat()
+    public void MeasuringPass_manyContinuations_stackDepthStaysFlat()
     {
         var probe = Paginate(new StackDepthProbeRenderer(ProbeContinuations), withFooter: true);
 
-        // A footer makes RunLayout count pages before drawing them, so the whole walk happens
-        // twice — once in each of the two methods that used to recurse.
+        // A footer makes RunLayout run a measuring pass before the drawing pass, so the whole
+        // walk happens twice, each time under the one loop.
         Assert.Equal(2 * (ProbeContinuations + 1), probe.Samples.Count);
         AssertFlat(probe.Samples);
     }
@@ -64,30 +65,22 @@ public sealed class PaginationDepthTests
     /// claim that recursion can never be flattened. Measured against the pre-fix renderer in
     /// Release with <c>DOTNET_TieredCompilation=0</c>: RyuJIT emits the tail call for
     /// <c>PlaceRenderer</c>, so its probe passes and the no-footer deep-list test renders; but
-    /// <c>CountPlaceRenderer</c> takes <c>ref</c> parameters, which block a fast tail call, so
-    /// its probe still fails and the footer deep-list test still dies of stack overflow. Half the
-    /// file therefore keeps working on the setting that defeats the other half. Release matters in
+    /// the counting method that has since been merged into it took <c>ref</c> parameters, which
+    /// block a fast tail call, so its probe still failed and the footer deep-list test still died
+    /// of stack overflow. Half the file therefore kept working on the setting that defeated the
+    /// other half. Release matters in
     /// that sentence: a Debug assembly carries <c>DebuggableAttribute</c> with optimisations off,
     /// so the JIT never flattens anything and the setting changes nothing at all.
     /// </summary>
-    private static void AssertFlat(IReadOnlyList<(int Place, int Count)> samples)
+    private static void AssertFlat(IReadOnlyList<int> samples)
     {
-        // Each frame is present (1) only while its own pass is on the stack and absent (0)
-        // otherwise — e.g. the no-footer probe never runs CountPlaceRenderer at all, so its
-        // Count component is 0 throughout. Bounding the two components separately, rather than
-        // asserting their summed value, means a regression confined to a single loop (say,
-        // PlaceRenderer alone growing past 1) is reported against that component by name instead
-        // of an ambiguous "the sum of both moved" — which would surface inside
-        // CountPlaceRenderer_manyContinuations_stackDepthStaysFlat too, since it runs PlaceRenderer
-        // as its second pass, and wrongly read as CountPlaceRenderer's fault (review round 2, #459).
-        // The trailing sum check still catches the case neither assertion above would: both
-        // frames present, or neither, at the same sample. Bounds rather than Assert.All, because
-        // a recursion regression otherwise prints one near-identical failure block per sample —
-        // measured at 200 blocks and 34,670 characters for a single test.
-        Assert.InRange(samples.Max(s => s.Place), 0, 1);
-        Assert.InRange(samples.Max(s => s.Count), 0, 1);
-        Assert.Equal(1, samples.Min(s => s.Place + s.Count));
-        Assert.Equal(1, samples.Max(s => s.Place + s.Count));
+        // The count is of PlaceRenderer frames on the stack at each Layout call. Both passes run
+        // that one method, so it is 1 whichever pass is running; a recursion regression makes it
+        // grow with the continuation count. Bounds rather than Assert.All, because a recursion
+        // regression otherwise prints one near-identical failure block per sample — measured at
+        // 200 blocks and 34,670 characters for a single test.
+        Assert.Equal(1, samples.Min());
+        Assert.Equal(1, samples.Max());
     }
 
     private static StackDepthProbeRenderer Paginate(StackDepthProbeRenderer probe, bool withFooter)
@@ -104,32 +97,30 @@ public sealed class PaginationDepthTests
     }
 
     /// <summary>
-    /// Splits a fixed number of times, recording how many PlaceRenderer and CountPlaceRenderer
-    /// frames are on the stack at each Layout call. Each overflow is a fresh instance sharing the
+    /// Splits a fixed number of times, recording how many PlaceRenderer frames are on the stack at
+    /// each Layout call. Each overflow is a fresh instance sharing the
     /// same recording list, as the library's renderers do, so a second pass repeats the walk from
     /// the start instead of resuming a spent counter.
     /// </summary>
     private sealed class StackDepthProbeRenderer : IRenderer
     {
         private readonly int _remaining;
-        private readonly List<(int Place, int Count)> _samples;
+        private readonly List<int> _samples;
 
         public StackDepthProbeRenderer(int continuations) : this(continuations, []) { }
 
-        private StackDepthProbeRenderer(int remaining, List<(int Place, int Count)> samples)
+        private StackDepthProbeRenderer(int remaining, List<int> samples)
         {
             _remaining = remaining;
             _samples = samples;
         }
 
-        public IReadOnlyList<(int Place, int Count)> Samples => _samples;
+        public IReadOnlyList<int> Samples => _samples;
 
         public LayoutResult Layout(LayoutContext context)
         {
             var frames = new StackTrace(false).GetFrames() ?? [];
-            _samples.Add((
-                frames.Count(f => f.GetMethod()?.Name == "PlaceRenderer"),
-                frames.Count(f => f.GetMethod()?.Name == "CountPlaceRenderer")));
+            _samples.Add(frames.Count(f => f.GetMethod()?.Name == "PlaceRenderer"));
 
             var occupied = context.Area.WithHeight(0);
             return _remaining > 0
@@ -176,8 +167,8 @@ public sealed class PaginationDepthTests
     [Fact]
     public void DocumentRenderer_deepList_withFooter_producesExpectedPageCount()
     {
-        // A footer makes RunLayout run CountPlaceRenderer before PlaceRenderer, so this drives
-        // both of the loops that used to recurse (#459) over a ten-thousand-page document.
+        // A footer makes RunLayout run a measuring pass before the drawing pass, so this drives
+        // both passes of the loop over a ten-thousand-page document (#459).
         var pageCount = RenderDeepList(withFooter: true);
         Assert.Equal(ExpectedPages, pageCount);
     }
@@ -239,10 +230,10 @@ public sealed class PaginationDepthTests
     // to thread it into (same pattern as MalformedInputTests' CmapFormat4 case).
 #pragma warning disable xUnit1069
     [Fact(Timeout = CapTestTimeoutMs)]
-    public void CountPlaceRenderer_nonAdvancingOverflow_throwsAfterCap()
+    public void MeasuringPass_nonAdvancingOverflow_throwsAfterCap()
     {
         var pdf = new PdfDocument();
-        // Footer set so pass 1 (CountPlaceRenderer) runs first. It never creates PDF objects
+        // Footer set so the measuring pass runs first. It never creates PDF objects
         // and never reads OccupiedArea on its Partial branch, so 50,001 trivial turns are cheap.
         var renderer = new DocumentRenderer(pdf, new PdfRectangle(0, 0, 200, 200), new EdgeInsets(10))
         {
@@ -275,7 +266,7 @@ public sealed class PaginationDepthTests
         // No header or footer, so RunLayout skips CountPages() entirely and this renderer's
         // overflow is placed straight through PlaceRenderer — the path every document with no
         // running bands takes, and the one the sibling test above never reaches (its footer makes
-        // CountPlaceRenderer throw first, so pass 2 is never entered). Small page size keeps the
+        // the measuring pass throw first, so pass 2 is never entered). Small page size keeps the
         // ~50,001 real page objects this creates cheap.
         var renderer = new DocumentRenderer(pdf, new PdfRectangle(0, 0, 200, 200), new EdgeInsets(10));
         renderer.Add(new NeverAdvancingRenderer());
@@ -444,10 +435,10 @@ public sealed class PaginationDepthTests
     // 0.7s locally, cancelled at 10s on a CI runner executing seven test assemblies at once.
     // That is #400's failure mode, and rendering ~50,001 pages twice is what makes it slow.
     [Fact]
-    public void CountPlaceRenderer_continuationCap_boundaryIsExact()
+    public void MeasuringPass_continuationCap_boundaryIsExact()
     {
         var pdf = new PdfDocument();
-        // Footer set so pass 1 (CountPlaceRenderer) is the one whose cap this pins; pass 2
+        // Footer set so the measuring pass is the one whose cap this pins; pass 2
         // (PlaceRenderer) then walks the same, freshly-instanced split chain again and must
         // also complete without error for the render to succeed at all.
         var renderer = new DocumentRenderer(pdf, new PdfRectangle(0, 0, 200, 200), new EdgeInsets(10))
@@ -475,7 +466,7 @@ public sealed class PaginationDepthTests
         });
         Assert.Contains("more than 50000 page continuations", ex.Message);
 
-        // CountPlaceRenderer never calls EnsurePage, so if pass 1 is the one that throws here,
+        // the measuring pass never calls EnsurePage, so if pass 1 is the one that throws here,
         // as it must — pass 2 never gets far enough to need 50,001 continuations of its own —
         // no PdfPage exists yet.
         Assert.Empty(pdfOverflow.Pages);
@@ -517,16 +508,16 @@ public sealed class PaginationDepthTests
     }
 
     [Fact]
-    public void CountPlaceRenderer_tooTallElement_throwsInvalidOperation()
+    public void MeasuringPass_tooTallElement_throwsInvalidOperation()
     {
-        // Footer set so pass 1 (CountPlaceRenderer) is the one that hits the too-tall element
+        // Footer set so the measuring pass is the one that hits the too-tall element
         // and must throw the same exception PlaceRenderer would. Before the fix this pass
         // silently skipped the element and undercounted the document (#460).
         //
         // Both passes reach one producer by design, so the message alone cannot tell
-        // "CountPlaceRenderer threw" apart from "the return the #460 fix replaced was restored, and
+        // "the measuring pass threw" apart from "the return the #460 fix replaced was restored, and
         // PlaceRenderer threw on the same element moments later instead". The page count can:
-        // CountPlaceRenderer never calls EnsurePage, so if pass 1 is the one that throws, RunLayout
+        // the measuring pass never calls EnsurePage, so if pass 1 is the one that throws, RunLayout
         // never reaches pass 2 and no PdfPage exists yet.
         //
         // The message names the bands here, because with a footer set they are what shrank the
@@ -573,7 +564,7 @@ public sealed class PaginationDepthTests
     // ── (e) Nothing-then-fits still counts as a page turn ────────────────────
 
     [Fact]
-    public void CountPlaceRenderer_nothingThenFitsOnFreshPage_pagesTokenMatchesActualCount()
+    public void MeasuringPass_nothingThenFitsOnFreshPage_pagesTokenMatchesActualCount()
     {
         // Regresses the Nothing branch's pages++ (#460 review): a first element that partly
         // fills page 1, followed by one that does not fit in what remains but does fit on a
@@ -600,7 +591,7 @@ public sealed class PaginationDepthTests
             Slices = [new PieSlice(1, ColorRgb.Black)],
         };
         // Nothing in page 1's remainder, then Full when retried on a fresh page — the exact
-        // branch CountPlaceRenderer's pages++ guards.
+        // branch the measuring pass's pages++ guards.
         renderer.Add(new PieChartRenderer(chart));
 
         using var ms = new MemoryStream();
@@ -642,15 +633,15 @@ public sealed class PaginationDepthTests
     //     -> Partial again, after items 1-2.
     //   page 3 (full 266.4pt): the last item (90 <= 266.4) -> Full.
     // Three pages, reached through two Partial page turns of one top-level ListRenderer — the
-    // exact path that drives CountPlaceRenderer's Partial branch, not the Nothing branch (b)/(e)
+    // exact path that drives the measuring pass's Partial branch, not the Nothing branch (b)/(e)
     // above already cover.
     private const int SplittingListItemCount = 4;
     private const int SplittingListExpectedPages = 3;
 
     [Fact]
-    public void CountPlaceRenderer_splittingElement_pagesTokenMatchesActualCount()
+    public void MeasuringPass_splittingElement_pagesTokenMatchesActualCount()
     {
-        // Regresses two lines on CountPlaceRenderer's Partial branch (#460 review round 2):
+        // Regresses two lines on the measuring pass's Partial branch (#460 review round 2):
         //   - pages++: without it, pass 1 never advances past page 1, so every footer resolves
         //     {pages} to 1 no matter how many pages pass 2 actually draws.
         //   - currentY = contentArea.Y: without it, pass 1's continuation pages measure from

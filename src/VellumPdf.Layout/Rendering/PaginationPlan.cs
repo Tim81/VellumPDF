@@ -6,7 +6,8 @@ using System.Globalization;
 namespace VellumPdf.Layout.Rendering;
 
 /// <summary>
-/// Where each reported target landed in one measuring run, and how many pages the run counted.
+/// Where each reported target landed in one pass, a measuring run or the drawing pass, and how
+/// many pages the pass counted.
 /// Page indices are 0-based and relative to the first page of the layout, whatever pages the
 /// <see cref="VellumPdf.Document.PdfDocument"/> already held.
 /// </summary>

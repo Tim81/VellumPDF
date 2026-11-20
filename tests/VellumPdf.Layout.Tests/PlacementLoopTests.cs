@@ -1,6 +1,7 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using CsCheck;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -96,7 +97,7 @@ public sealed class PlacementLoopTests
     private static Heading NewHeading(string text) => new(text, Body) { Margins = EdgeInsets.Zero };
 
     private static DocumentRenderer NewRenderer(PdfDocument pdf, RunningBand? footer = null) =>
-        new(pdf, Page, Margins) { Footer = footer };
+        new(pdf, Page, Margins) { Footer = footer, RecordPlacements = true };
 
     // ── Plan correctness ─────────────────────────────────────────────────────
 
@@ -309,8 +310,26 @@ public sealed class PlacementLoopTests
         var renderer = NewRenderer(pdf, new RunningBand("f"));
         renderer.Add(new Block(10));
         renderer.RunLayout();
-        var first = (renderer.LayoutCalls, renderer.MeasureRuns);
-        Assert.Equal((2, 1), first);
+        Assert.Equal((2, 1), (renderer.LayoutCalls, renderer.MeasureRuns));
+
+        // A second layout of the same renderer starts its counters over; accumulating would read
+        // (4, 2).
+        renderer.RunLayout();
+        Assert.Equal((2, 1), (renderer.LayoutCalls, renderer.MeasureRuns));
+    }
+
+    [Fact]
+    public void WithoutADependentAndWithoutRecording_nothingIsCollected_butThePageCountsAre()
+    {
+        var renderer = NewRenderer(NewPdf(), new RunningBand("f"));
+        renderer.RecordPlacements = false;
+        renderer.Add(new HeadingRenderer(NewHeading("Unrecorded")));
+        var bytes = Render(renderer);
+
+        Assert.Empty(renderer.DrawPlan!.Placements);
+        Assert.Empty(renderer.MeasurePlan!.Placements);
+        Assert.Equal(1, renderer.DrawPlan.PageCount);
+        Assert.Equal(1, PageCount(bytes));
     }
 
     // ── Convergence and the cap ──────────────────────────────────────────────
@@ -344,11 +363,89 @@ public sealed class PlacementLoopTests
         Assert.Equal(
             "Pagination did not settle after 5 layout passes: the text for 'target' read " +
             "'1', '2', '1', '2', '1'. A string that depends on where its target lands can change " +
-            "the layout and so move that target, and here the passes alternate instead of " +
-            "settling. This document cannot be saved again.",
+            "the layout and so move that target, and here the passes keep changing it instead of " +
+            "settling. The renderers have already measured, so lay the content out again with a " +
+            "new Document.",
             ex.Message);
         // The drawing pass never ran: the document was refused before any page was added.
         Assert.Null(renderer.DrawPlan);
+    }
+
+    /// <summary>A dependent whose text is taken from <paramref name="textOf"/> by resolve number.</summary>
+    private sealed class NamedDependent(string name, Func<int, string> textOf) : IRenderer, IPlanDependent
+    {
+        private string _text = "";
+        private int _resolves;
+
+        public string TargetName => name;
+        public string ResolvedText => _text;
+
+        public bool Resolve(PaginationPlan plan)
+        {
+            var next = textOf(_resolves++);
+            if (next == _text) return false;
+            _text = next;
+            return true;
+        }
+
+        public LayoutResult Layout(LayoutContext context) => LayoutResult.Full(context.Area.WithHeight(10));
+        public void Draw(DrawContext context) { }
+    }
+
+    private static string Flip(int n) => n % 2 == 0 ? "a" : "b";
+
+    [Fact]
+    public void FourOscillatingDependents_areRefused_namingExactlyThree()
+    {
+        var renderer = NewRenderer(NewPdf());
+        for (var i = 0; i < 4; i++)
+            renderer.Add(new NamedDependent($"d{i}", Flip));
+
+        var ex = Assert.Throws<InvalidOperationException>(() => Render(renderer));
+
+        Assert.Contains("the text for 'd0' read 'a', 'b', 'a', 'b', 'a'; ", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("the text for 'd1' read", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("the text for 'd2' read", ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("'d3'", ex.Message, StringComparison.Ordinal);
+        Assert.Contains(", and 1 more. ", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ASettledDependentBesideAnOscillatingOne_isNotNamed()
+    {
+        var renderer = NewRenderer(NewPdf());
+        renderer.Add(new NamedDependent("settled", _ => "x"));
+        renderer.Add(new NamedDependent("moving", Flip));
+
+        var ex = Assert.Throws<InvalidOperationException>(() => Render(renderer));
+
+        Assert.Contains("'moving'", ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("'settled'", ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("more.", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>Full at 250pt on its even calls and at 20pt on its odd ones.</summary>
+    private sealed class TallThenShort : IRenderer
+    {
+        private int _calls;
+        public LayoutResult Layout(LayoutContext context) =>
+            LayoutResult.Full(context.Area.WithHeight(_calls++ % 2 == 0 ? 250 : 20));
+        public void Draw(DrawContext context) { }
+    }
+
+    [Fact]
+    public void APageCountThatKeepsChanging_isNamedWhenNoDependentChanged()
+    {
+        var renderer = NewRenderer(NewPdf());
+        renderer.Add(new NamedDependent("settled", _ => "x"));
+        renderer.Add(new TallThenShort());
+        renderer.Add(new Block(100));
+
+        var ex = Assert.Throws<InvalidOperationException>(() => Render(renderer));
+
+        Assert.StartsWith(
+            "Pagination did not settle after 5 layout passes: the page count read 2, 1, 2, 1, 2. ",
+            ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -429,6 +526,54 @@ public sealed class PlacementLoopTests
         Assert.Equal(1, renderer.MeasurePlan!.PageCount);
         Assert.Equal(2, renderer.DrawPlan!.PageCount);
         Assert.Equal(2, PageCount(bytes));
+    }
+
+    // ── Measured pages against drawn pages ───────────────────────────────────
+
+    // Built-in elements only, with a footer so that both passes run, and a heading at the end so
+    // the plans hold a placement. The generator is seeded and run on one thread, so the same
+    // documents come back every time; documents the layout refuses are counted, not skipped
+    // silently.
+    [Fact]
+    public void GeneratedDocuments_measureTheSamePagesAndPlacementsAsTheyDraw()
+    {
+        const int iterations = 200;
+        var refused = 0;
+        var compared = 0;
+
+        LayoutGen.ValidDoc.Sample(spec =>
+        {
+            using var doc = LayoutGen.Build(spec);
+            doc.Footer ??= new RunningBand("{page}/{pages}");
+            var heading = new Heading("End");
+            doc.Add(heading);
+            var renderer = doc.CreateRenderer();
+            renderer.RecordPlacements = true;
+
+            try
+            {
+                renderer.RunLayout();
+            }
+            catch (InvalidOperationException)
+            {
+                refused++;
+                return;
+            }
+
+            var measured = renderer.MeasurePlan!;
+            var drawn = renderer.DrawPlan!;
+            Assert.Equal(1, renderer.MeasureRuns);
+            Assert.Equal(measured.PageCount, drawn.PageCount);
+            Assert.Equal(
+                measured.Placements.Select(p => (p.Key, p.PageIndex, p.Y)).ToList(),
+                drawn.Placements.Select(p => (p.Key, p.PageIndex, p.Y)).ToList());
+            Assert.True(drawn.TryGetTarget(heading, out var page, out _));
+            Assert.InRange(page, 0, drawn.PageCount - 1);
+            compared++;
+        }, seed: "0N0XIzNsQ0O2", iter: iterations, threads: 1);
+
+        Assert.Equal(iterations, refused + compared);
+        Assert.True(compared > iterations / 2, $"only {compared} of {iterations} documents were laid out");
     }
 
     // ── Retry, through Document ──────────────────────────────────────────────
