@@ -19,6 +19,7 @@ internal sealed class HeadingRenderer : IRenderer
 
     public HeadingRenderer(Heading heading)
     {
+        ArgumentNullException.ThrowIfNull(heading);
         _heading = heading;
         var para = new Paragraph(heading.Text, heading.Style)
         {
@@ -29,6 +30,7 @@ internal sealed class HeadingRenderer : IRenderer
         {
             StructType = HeadingStructType(heading.Level),
             ElementLanguage = heading.Language,
+            RunOwner = "A heading",
         };
     }
 

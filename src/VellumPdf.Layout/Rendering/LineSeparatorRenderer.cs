@@ -7,7 +7,10 @@ using VellumPdf.Layout.Elements;
 namespace VellumPdf.Layout.Rendering;
 
 /// <summary>Renders a <see cref="LineSeparator"/> as a horizontal rule spanning the content width.</summary>
-/// <remarks>Does not split. Non-finite width or inset is refused from Layout.</remarks>
+/// <remarks>
+/// Does not split. A line width that is not finite or is negative, an inset that is not
+/// finite and a colour channel that is not finite are refused from <see cref="Layout"/>.
+/// </remarks>
 public sealed class LineSeparatorRenderer : IRenderer
 {
     private readonly LineSeparator _sep;
@@ -15,27 +18,27 @@ public sealed class LineSeparatorRenderer : IRenderer
 
     /// <summary>Creates a renderer for the given line separator.</summary>
     /// <remarks>
-    /// A null <paramref name="sep"/> is stored, and <see cref="Layout"/> throws.
-    /// <para>Do not pass null. A later major version will throw <see cref="ArgumentNullException"/>
-    /// from this constructor.</para>
+    /// A null <paramref name="sep"/> is refused here.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised later from <see cref="Layout"/>, not from this constructor, when
+    /// <exception cref="ArgumentNullException">
     /// <paramref name="sep"/> is <see langword="null"/>.
     /// </exception>
-    public LineSeparatorRenderer(LineSeparator sep) => _sep = sep;
+    public LineSeparatorRenderer(LineSeparator sep)
+    {
+        ArgumentNullException.ThrowIfNull(sep);
+        _sep = sep;
+    }
 
     /// <summary>Reserves the separator's line width plus margins and reports the occupied region.</summary>
     /// <remarks>
-    /// This renderer does not split. It refuses a non-finite line width or inset itself. When the
-    /// document calls this method, the refusal reaches you from the save.
+    /// This renderer does not split. It refuses the line width, the insets and the colour itself,
+    /// in that order. When the document calls this method, the refusal reaches you from the save.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
-    /// <see cref="LineSeparator.LineWidth"/> or an edge of <see cref="LineSeparator.Margins"/> is
-    /// not finite.
-    /// </exception>
-    /// <exception cref="NullReferenceException">
-    /// The separator is <see langword="null"/>.
+    /// <see cref="LineSeparator.LineWidth"/> is not finite or is negative, an edge of
+    /// <see cref="LineSeparator.Margins"/> is not finite, or a channel of
+    /// <see cref="LineSeparator.Color"/> is not finite. The message names the line separator and
+    /// the value.
     /// </exception>
     public LayoutResult Layout(LayoutContext ctx)
     {
@@ -44,6 +47,7 @@ public sealed class LineSeparatorRenderer : IRenderer
         // line the device renders.
         LayoutValidation.ValidateLineWidth(_sep.LineWidth, "A line separator");
         LayoutValidation.ValidateInsets(_sep.Margins, "A line separator");
+        LayoutValidation.ValidateColor(_sep.Color, "A line separator", "colour");
 
         var totalHeight = _sep.Margins.Top + _sep.LineWidth + _sep.Margins.Bottom;
         if (ctx.Area.Height < totalHeight) return LayoutResult.Nothing();
@@ -53,6 +57,7 @@ public sealed class LineSeparatorRenderer : IRenderer
 
     /// <summary>Strokes the separator line at the configured colour and width.</summary>
     /// <remarks>See <see cref="IRenderer.Draw"/>.</remarks>
+    /// <inheritdoc cref="IRenderer.Draw" path="/exception"/>
     public void Draw(DrawContext ctx)
     {
         var (x, y, w, h) = ctx.ToPdfRect(_occupied);

@@ -55,6 +55,10 @@ public sealed class SignaturePlaceholderOptions
     /// Reserved space in bytes for the DER-encoded CMS signature blob in the /Contents
     /// hex string. Default is 8192.
     /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Raised from <see cref="PdfDocument.PrepareForSigning"/> and the signing calls, not from this
+    /// property, when the value is negative or above 536,870,894, the largest size whose <c>/Contents</c> placeholder fits in a string. <c>ParamName</c> is <c>options</c>.
+    /// </exception>
     public int EstimatedSignatureSizeBytes { get; init; } = 8192;
 
     /// <summary>Optional signer name written to /Name in the signature dictionary.</summary>
@@ -133,5 +137,9 @@ public sealed class SignaturePlaceholderOptions
     /// this is a valid page index; <see cref="PdfDocument.PrepareForSigning"/> throws
     /// <see cref="ArgumentOutOfRangeException"/> if the value is out of range.
     /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Raised from <see cref="PdfDocument.PrepareForSigning"/> and the signing calls, not from this
+    /// property, when the value is negative or not a page of the document. <c>ParamName</c> is <c>options</c>.
+    /// </exception>
     public int SignaturePage { get; init; } = 0;
 }

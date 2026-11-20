@@ -16,7 +16,7 @@ public sealed class PdfReal : PdfObject
     {
         if (double.IsNaN(value) || double.IsInfinity(value))
             throw new ArgumentException(
-                $"PDF does not support NaN or Infinity as a real number value. Got: {value}", nameof(value));
+                $"PDF does not support NaN or Infinity as a real number value. Got: {value.ToString(System.Globalization.CultureInfo.InvariantCulture)}", nameof(value));
         Value = value;
     }
 

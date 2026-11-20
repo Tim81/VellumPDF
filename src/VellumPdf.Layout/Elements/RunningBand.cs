@@ -18,16 +18,13 @@ public sealed class RunningBand
 {
     /// <summary>Text template — may contain {page} and/or {pages}.</summary>
     /// <remarks>
-    /// A template that does not fit the content box is truncated, not refused;
+    /// Not checked when it is set: the constructor stores a null template and
+    /// <see cref="Resolve"/> throws during the save. A template that does not fit the content box
+    /// is truncated, not refused;
     /// <see cref="VellumPdf.Layout.Rendering.DocumentRenderer.BandTruncations"/> says when it
     /// counts as not fitting. The cut is reported through <c>Document.BandTruncations</c> and
     /// <c>DocumentRenderer.BandTruncations</c>, so read one of those if you need to know it
-    /// happened. A <see langword="null"/> template is a different matter: the constructor does not
-    /// check it and <see cref="Resolve"/> dereferences it during the save, so pass an empty string
-    /// for a band that draws no text.
-    /// <para><b>NOTE</b>: before #365 an overlong template was drawn off the page at a negative
-    /// coordinate, with every glyph still written into the content stream. The header or footer
-    /// was then invisible in every reader while you paid for its bytes.</para>
+    /// happened. Pass an empty string for a band that draws no text, never <see langword="null"/>.
     /// <para>The cut bounds the advance width, <b>not</b> the ink. Side bearings and italic
     /// overhang can still paint a little past it. Nothing in this package sets a clip path.</para>
     /// <para><b>Attention</b>: truncation does nothing for text whose glyphs measure zero, because
@@ -43,11 +40,6 @@ public sealed class RunningBand
     /// text as the number gains digits, so the worst page is the one that tells you how much
     /// shorter the template has to be.</para>
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from a save rather than from the constructor, when the template is
-    /// <see langword="null"/>. The type is wrong for a null argument and the throw lands far from
-    /// the constructor that accepted it; both are tracked as #531.
-    /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when the band measures text that holds an unpaired surrogate in an
@@ -59,20 +51,20 @@ public sealed class RunningBand
     /// <summary>The text style of the band.</summary>
     /// <remarks>
     /// A null style passed to the constructor is replaced by <see cref="TextStyle.Default"/>; any
-    /// other is stored as given. Refusals on size, leading and font are on <see cref="TextStyle"/>
-    /// and are raised from the save. A <see cref="TextStyle.LinkUri"/> in it is ignored (#475).
+    /// other is stored as given. Refusals on size, leading, font and text colour are on
+    /// <see cref="TextStyle"/> and are raised from the save. A <see cref="TextStyle.LinkUri"/> in
+    /// it is ignored.
+    /// <para>A non-finite channel in <see cref="TextStyle.Color"/> is refused where it is written; see
+    /// <see cref="Document"/>. A band that draws nothing, because its template is empty or no part of
+    /// it fits the content width, writes no colour, so the channel is not refused there. <b>Do not pass</b> a non-finite channel: 3.0 refuses
+    /// it.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when the style's size or leading is refused; see
     /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
     /// </exception>
-    /// <exception cref="IndexOutOfRangeException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the style holds a <see cref="VellumPdf.Fonts.Standard14"/> value
-    /// the enumeration does not name and the font is selected on a page; see
-    /// <see cref="TextStyle.FontRef"/>.
-    /// </exception>
+    /// <inheritdoc cref="Heading.Style" path="/exception[@cref='T:System.IndexOutOfRangeException']"/>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when the band measures text that holds an unpaired surrogate in an
@@ -80,7 +72,9 @@ public sealed class RunningBand
     /// <see cref="TextStyle.FontRef"/>. It is also raised when <see cref="Height"/> is null and the
     /// style's size, positive infinity included, or a finite leading is large enough to leave the
     /// page's content area no positive size; see <see cref="TextStyle.FontSize"/> and
-    /// <see cref="TextStyle.Leading"/>.
+    /// <see cref="TextStyle.Leading"/>. A channel of <see cref="TextStyle.Color"/> that is not finite
+    /// raises it too, when the band is drawn and writes a colour (see the remarks), because the
+    /// canvas refuses the value.
     /// </exception>
     public TextStyle Style { get; }
 
@@ -103,58 +97,48 @@ public sealed class RunningBand
     /// the text needs therefore lets the band overlap the content rather than shrinking it.
     /// <para><b>Attention</b>: zero and negative values are not refused, and neither is useful. The
     /// height comes off the page's content box, so both leave the band no room while it is still
-    /// drawn, over your content. A later major version will reject them.</para>
-    /// <para><c>NaN</c> and positive infinity are refused on both bands; each was measured on its
-    /// own, because the two take different routes. Positive infinity gives
-    /// <see cref="ArgumentException"/> about the content area having no positive size, and names
-    /// the margins as the parameter. <c>NaN</c> gives <see cref="InvalidOperationException"/>
-    /// about an element being too tall to fit, and that one does report the height, as
-    /// <c>NaNpt of running bands</c>. Negative infinity is refused the same way, but only on a
-    /// header, where it gives that same <see cref="InvalidOperationException"/> for a different
-    /// reason, the page-continuation cap, and names nothing about the band. A finite height large
-    /// enough shares the type again: measured on a footer, 684 already throws it while the
-    /// content area is still a positive 13.9pt, and so does every height from there to 697.88.
-    /// At 697.89 the content area reaches exactly zero and the throw becomes
-    /// <see cref="ArgumentException"/>; a header takes the same route at the same values.</para>
-    /// <para>On a footer, negative infinity is not refused at all (#520). <c>Save</c> succeeds
-    /// and writes a file that stays well formed, though its content stream stops conforming. The
-    /// footer's vertical position is the page height minus the margin minus the band's own
-    /// height. With that height at negative infinity the position becomes positive infinity.
-    /// Adding it back to the band height then computes infinity plus negative infinity, which
-    /// IEEE 754 gives as <c>NaN</c>. That is the literal token that lands in the footer's
-    /// <c>Tm</c> operator where a coordinate belongs: <c>qpdf --check</c> exits 0 on the result,
-    /// while <c>pdftotext</c> reports a syntax error and drops the footer text with it.</para>
-    /// <para>Every case above that does throw does so before <c>Save</c> finishes writing. For
-    /// the string overloads, <see cref="Document.Save(string)"/> and
-    /// <see cref="Document.SaveAsync(string, System.Threading.CancellationToken)"/>, which open
-    /// the file before the layout runs, a throw here still leaves a zero-byte file in place of
-    /// whatever the path held (#508).</para>
+    /// drawn, over your content. 3.0 will reject them.</para>
+    /// <para>A height that is not a finite number is not checked before the layout; see
+    /// <see cref="Document"/>. With a one-paragraph body, a
+    /// <c>NaN</c> height is refused as too tall, positive infinity as a content area with no size, and
+    /// negative infinity as too many page continuations on a header, but on a footer it writes
+    /// <c>NaN</c> into the text matrix, which <see cref="VellumPdf.Canvas.PdfCanvas"/> refuses. Other
+    /// bodies give other outcomes: a <c>NaN</c> height above a table is refused by the canvas where
+    /// the table is drawn. A band with an empty template draws nothing,
+    /// so a negative-infinity footer height there saves when the body fits. <b>Do not pass</b> a
+    /// non-finite height: 3.0 refuses it.</para>
+    /// <para>A finite height large enough to leave the content area no room is a separate case, and
+    /// shares the type again: <see cref="InvalidOperationException"/> while the content area is
+    /// still positive, and <see cref="ArgumentException"/> once it reaches exactly zero, on a header and a
+    /// footer alike.</para>
+    /// <para>A refusal raised before the save writes anything leaves the file a path held as it was.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
-    /// Raised from a save rather than from this property, when the height is positive infinity,
-    /// or any finite value large enough on its own that the content area is left with no
-    /// positive size.
+    /// Raised from a save rather than from this property, when a finite height is large enough on
+    /// its own that the content area is left with no positive size, or the height is positive
+    /// infinity, or <c>NaN</c> or negative infinity where the layout writes the height into an
+    /// operand, which the canvas refuses: a footer that draws text with a negative-infinity height,
+    /// or a <c>NaN</c> height above a table, for example.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Raised from a save, when the height is <c>NaN</c> on either band, negative infinity on a
-    /// header, or a finite value large enough on its own that the content area is left positive
-    /// but too small for the element. The messages differ for each cause, described above. A
-    /// footer's negative infinity does not raise at all (#520).
+    /// Raised from a save, when the height is <c>NaN</c>, or negative infinity on a header, or a finite
+    /// value large enough on its own that the content area is left positive but too small for the
+    /// element. The messages differ for each cause, described above.
     /// </exception>
     public double? Height { get; init; }
 
     /// <summary>Creates a running band from a text template, with optional style and alignment (defaults to centered).</summary>
     /// <remarks>
     /// A null <paramref name="style"/> becomes <see cref="TextStyle.Default"/>. A null
-    /// <paramref name="template"/> is stored, and <see cref="Resolve"/> throws when the save calls
-    /// it (#531).
-    /// <para>Do not pass a null template. A later major version will throw
-    /// <see cref="ArgumentNullException"/> from this call.</para>
+    /// <paramref name="template"/> is stored, and <see cref="Resolve"/> refuses it where the band is
+    /// drawn, with <see cref="ArgumentNullException"/>. It is not refused earlier, because a band
+    /// that is replaced before the save never reaches <see cref="Resolve"/>. <b>Do not pass</b> a
+    /// null template: 3.0 refuses it here. An empty template is not null and is accepted.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this constructor, when <paramref name="template"/> is <see langword="null"/> and the
-    /// band is attached to a document.
+    /// <exception cref="ArgumentNullException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not from
+    /// this constructor, when <paramref name="template"/> is <see langword="null"/> and the band is
+    /// drawn. <c>ParamName</c> is <c>template</c>. The document cannot be saved again.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -192,14 +176,14 @@ public sealed class RunningBand
 
     /// <summary>Substitutes <c>{page}</c> and <c>{pages}</c> in <see cref="Template"/>.</summary>
     /// <remarks>
-    /// Any other brace text is left as given. A null template throws
-    /// <see cref="NullReferenceException"/> from this call (#531).
+    /// Any other brace text is left as given. A null template is refused here, where the band is
+    /// drawn, with <see cref="ArgumentNullException"/>.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// <see cref="Template"/> is <see langword="null"/>.
+    /// <exception cref="ArgumentNullException">
+    /// <see cref="Template"/> is <see langword="null"/>. <c>ParamName</c> is <c>template</c>.
     /// </exception>
     public string Resolve(int pageNumber, int totalPages) =>
-        Template
+        (Template ?? throw new ArgumentNullException("template", "The band's template is null."))
             .Replace("{page}", pageNumber.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 StringComparison.Ordinal)
             .Replace("{pages}", totalPages.ToString(System.Globalization.CultureInfo.InvariantCulture),

@@ -67,13 +67,9 @@ public readonly struct FontReference
     /// <remarks>
     /// A null handle is stored. <see cref="IsEmbedded"/> is then false, and text in this reference
     /// is drawn in Helvetica.
-    /// <para><b>Attention</b>: the handle is not checked against the document that saves it. A
-    /// handle from a different <see cref="VellumPdf.Layout.Document"/> saves without an exception.
-    /// The page refers to the font by its resource name and gets whatever font the saving document
-    /// registered under that name, or none. When that is the same font file, the characters the
-    /// saving document's own text also uses are drawn correctly and the rest are lost; otherwise
-    /// the text is drawn wrong or not at all (#544). Use handles from the document you add the text
-    /// to.</para>
+    /// <para>A handle from another <see cref="VellumPdf.Layout.Document"/> is refused when the saving
+    /// document defines no font under its resource name; see
+    /// <see cref="VellumPdf.Document.PdfDocument.RegisterEmbeddedFontUsage"/>.</para>
     /// <para>Text that holds an unpaired surrogate makes the save throw
     /// <see cref="ArgumentException"/> when it is measured in an embedded font; see
     /// <see cref="TextStyle.FontRef"/>.</para>
@@ -82,7 +78,9 @@ public readonly struct FontReference
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from the save, not from this call, when text measured in this font holds an unpaired
-    /// surrogate; see <see cref="TextStyle.FontRef"/>.
+    /// surrogate, see <see cref="TextStyle.FontRef"/>, or when <paramref name="handle"/> was returned
+    /// by a document other than the one that saves the text, and the saving document defines no font
+    /// under its resource name (<c>ParamName</c> <c>handle</c>).
     /// </exception>
     public FontReference(EmbeddedFontHandle handle)
     {

@@ -44,6 +44,14 @@ internal static class PdfSignatureHelper
         => "<" + new string('0', estimatedSizeBytes * 2) + ">";
 
     /// <summary>
+    /// The largest <c>EstimatedSignatureSizeBytes</c> whose placeholder can be built. The placeholder
+    /// is <c>&lt;</c>, two zeros per byte, and <c>&gt;</c>, a string of 2n + 2 characters, and a .NET
+    /// string holds at most 0x3FFFFFDF (1,073,741,791) of them, so n is at most
+    /// (0x3FFFFFDF - 2) / 2 = 536,870,894. A larger size is refused before anything is written.
+    /// </summary>
+    internal const int MaxContentsPlaceholderBytes = (0x3FFFFFDF - 2) / 2;
+
+    /// <summary>
     /// Builds the PDF date string in the format D:YYYYMMDDHHmmSS+00'00'.
     /// </summary>
     internal static string FormatPdfDate(DateTimeOffset dt)

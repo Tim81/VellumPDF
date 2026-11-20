@@ -1,0 +1,102 @@
+// Copyright © Timothy van der Ham (@Tim81)
+// SPDX-License-Identifier: Apache-2.0
+
+using VellumPdf.Document;
+using VellumPdf.Signing;
+
+namespace VellumPdf.Kernel.Tests;
+
+/// <summary>What <c>PdfDocument.EnsureCanPrepareForSigning</c> refuses before a layout engine has laid anything out; the size bound comes from the placeholder, <c>&lt;</c> + 2n zeros + <c>&gt;</c>, which has to fit in a string of at most 0x3FFFFFDF characters.</summary>
+public sealed class SigningPreCheckTests
+{
+    private const int MaxBytes = (0x3FFFFFDF - 2) / 2;
+
+    private static PdfDocument OnePage()
+    {
+        var doc = new PdfDocument();
+        doc.AddPage();
+        return doc;
+    }
+
+    [Fact]
+    public void TheBoundIsTheLargestSizeWhosePlaceholderFitsInAString()
+    {
+        Assert.Equal(536_870_894, PdfSignatureHelper.MaxContentsPlaceholderBytes);
+        Assert.Equal(MaxBytes, PdfSignatureHelper.MaxContentsPlaceholderBytes);
+
+        // "<" + 2n zeros + ">" is 2n + 2 characters: the longest string holds the bound, not one more.
+        Assert.True((2L * MaxBytes) + 2 <= 0x3FFFFFDF);
+        Assert.True((2L * (MaxBytes + 1)) + 2 > 0x3FFFFFDF);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(int.MinValue)]
+    [InlineData(MaxBytes + 1)]
+    [InlineData(1 << 29)]                                           // 536,870,912
+    [InlineData((1 << 30) - 1)]
+    [InlineData(1 << 30)]
+    [InlineData(int.MaxValue)]
+    public void ASizeWhosePlaceholderCannotBeBuilt_isRefusedWithTheOptionsParameter(int size)
+    {
+        using var doc = OnePage();
+        var options = new SignaturePlaceholderOptions { EstimatedSignatureSizeBytes = size };
+
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => doc.EnsureCanPrepareForSigning(options));
+        Assert.Equal("options", ex.ParamName);
+        Assert.Equal(size, ex.ActualValue);
+        Assert.Contains(MaxBytes.ToString(System.Globalization.CultureInfo.InvariantCulture), ex.Message, StringComparison.Ordinal);
+
+        var viaPublic = Assert.Throws<ArgumentOutOfRangeException>(() => doc.PrepareForSigning(options));
+        Assert.Equal("options", viaPublic.ParamName);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(8192)]
+    [InlineData(MaxBytes)]
+    public void ASizeThatFits_isNotRefused(int size)
+    {
+        using var doc = OnePage();
+        var options = new SignaturePlaceholderOptions { EstimatedSignatureSizeBytes = size };
+
+        doc.EnsureCanPrepareForSigning(options);
+
+        // The largest size would build a placeholder of about 1 GiB, so only the smaller two are written.
+        if (size <= 8192)
+        {
+            var text = System.Text.Encoding.Latin1.GetString(doc.PrepareForSigning(options));
+            var placeholder = System.Text.RegularExpressions.Regex.Match(text, @"/Contents\s*<(0*)>");
+            Assert.True(placeholder.Success);
+            Assert.Equal(size * 2, placeholder.Groups[1].Length);
+        }
+    }
+
+    /// <summary>A caller that holds the pages gets the document's own order, with no pages reported before any option; a layout engine that has not laid the pages out (<c>pagesKnown: false</c>) goes straight to the option.</summary>
+    [Fact]
+    public void ADocumentWithNoPages_reportsThatBeforeALookAtTheOptions()
+    {
+        using var doc = new PdfDocument();
+        var bad = new SignaturePlaceholderOptions { SignaturePage = -1, EstimatedSignatureSizeBytes = -1 };
+
+        var ex = Assert.Throws<InvalidOperationException>(() => doc.PrepareForSigning(bad));
+        Assert.Contains("no pages", ex.Message, StringComparison.Ordinal);
+        Assert.Throws<InvalidOperationException>(() => doc.EnsureCanPrepareForSigning(bad));
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => doc.EnsureCanPrepareForSigning(bad, pagesKnown: false));
+    }
+
+    [Fact]
+    public void ANegativePageIndex_namesThePageCountWhenThePagesAreKnown_andDoesNotWhenTheyAreNot()
+    {
+        using var doc = OnePage();
+        var options = new SignaturePlaceholderOptions { SignaturePage = -1 };
+
+        var known = Assert.Throws<ArgumentOutOfRangeException>(() => doc.EnsureCanPrepareForSigning(options));
+        var unknown = Assert.Throws<ArgumentOutOfRangeException>(() => doc.EnsureCanPrepareForSigning(options, pagesKnown: false));
+
+        Assert.Contains("1 page(s)", known.Message, StringComparison.Ordinal);
+        Assert.Contains("cannot be negative", unknown.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("page(s)", unknown.Message, StringComparison.Ordinal);
+    }
+}

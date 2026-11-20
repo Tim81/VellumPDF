@@ -34,31 +34,19 @@ public sealed class TableElement
     /// <summary>Text style applied to cells that have no explicit style.</summary>
     /// <remarks>
     /// Null means <see cref="TextStyle.Default"/> for cells that have no style of their own.
-    /// Refusals on size, leading and font are on <see cref="TextStyle"/> and are raised from the
-    /// save. A <see cref="TextStyle.LinkUri"/> in it is ignored (#475).
+    /// Refusals on size, leading, font and text colour are on <see cref="TextStyle"/> and are
+    /// raised from the save. A <see cref="TextStyle.LinkUri"/> in it is ignored.
     /// </remarks>
-    /// <exception cref="InvalidOperationException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the style's size or leading is refused; see
-    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
-    /// </exception>
-    /// <exception cref="IndexOutOfRangeException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the style holds a <see cref="VellumPdf.Fonts.Standard14"/> value
-    /// the enumeration does not name and the font is selected on a page; see
-    /// <see cref="TextStyle.FontRef"/>.
-    /// </exception>
-    /// <exception cref="ArgumentException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when text in this style holds an unpaired surrogate and is measured in
-    /// an embedded font; see <see cref="TextStyle.FontRef"/>.
-    /// </exception>
+    /// <inheritdoc cref="Heading.Style" path="/exception[@cref='T:System.InvalidOperationException' or @cref='T:System.IndexOutOfRangeException']"/>
+    /// <inheritdoc cref="ListElement.DefaultStyle" path="/exception[@cref='T:System.ArgumentException']"/>
     public TextStyle? DefaultCellStyle { get; init; }
 
     /// <summary>Width of the table border lines, in points.</summary>
     /// <remarks>
-    /// A non-finite width is refused. <see cref="Document.Save(System.IO.Stream)"/> throws
-    /// <see cref="InvalidOperationException"/> and names the table.
+    /// A non-finite width is refused, and so is a negative one. <see cref="Document.Save(System.IO.Stream)"/> throws
+    /// <see cref="InvalidOperationException"/> and names the table. The non-finite width is refused
+    /// when the table is laid out; the negative one where a cell border is drawn, so a table that is
+    /// laid out and not drawn, such as one with an infinite top margin, saves with a negative width.
     /// <para><b>Attention</b>: zero does <b>not</b> hide the borders. It asks the device for its
     /// thinnest line, so the grid is still drawn. Each border stays one device pixel while
     /// everything around it shrinks, so the grid reads as proportionally heavier the further the
@@ -66,49 +54,35 @@ public sealed class TableElement
     /// <para>There is at present <b>no</b> way to draw a table without a grid. Every cell is
     /// stroked unconditionally and <see cref="BorderColor"/> is not nullable. If you need a
     /// gridless table, the nearest you can get is a border colour matching the page.</para>
-    /// <para>A negative width is accepted and written as a negative line width, which ISO 32000-2,
-    /// 8.4.3.2 does not allow; see <see cref="LineSeparator.LineWidth"/>.</para>
-    /// <para>Do not pass a negative width. Whether a negative line width is refused, and in which
-    /// release, is being decided in #482.</para>
+    /// <para>A negative width is refused as well. ISO 32000-2, 8.4.3.2 says a line width
+    /// "shall be a non-negative number", so a negative one would write an operand the standard forbids. The save
+    /// throws <see cref="InvalidOperationException"/>, naming the table, the width and the clause.
+    /// Zero stays accepted; see <see cref="LineSeparator.LineWidth"/> for why it is a caller
+    /// warning and not a refusal.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this
-    /// property, when the width is not finite. The message names the table.
+    /// property, when the width is not finite, or is negative and a cell border is drawn. The
+    /// message names the table.
     /// </exception>
     public double BorderWidth { get; init; } = 0.5;
 
     /// <summary>Color of the table border lines.</summary>
     /// <remarks>
-    /// Stored as given. Channels are not checked or clamped. Each is written into the content
-    /// stream rounded to five decimals, and <c>NaN</c> or <c>Infinity</c> as that token; see
-    /// <see cref="ColorRgb"/>.
+    /// Stored as given. Channels are not clamped. A channel that is not finite is refused where it is
+    /// written; see <see cref="Document"/> and <see cref="ColorRgb"/>. <b>Do not pass</b> one: 3.0
+    /// refuses it.
     /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// Raised from a save, when a channel is <c>NaN</c> or infinite and a border is drawn. The message
+    /// says PDF does not support NaN or Infinity as a real number. A finite channel outside 0 to 1 is
+    /// not refused.
+    /// </exception>
     public ColorRgb BorderColor { get; init; } = ColorRgb.Black;
 
     /// <summary>Outer margins applied around the whole table.</summary>
-    /// <remarks>
-    /// <b>Attention</b>: no edge is checked. Each edge is taken off the area this element is given,
-    /// and the element is laid out in whatever box is left, even when that box is empty, inverted
-    /// or <c>NaN</c>. A negative or non-finite edge, or edges wider than the area, can therefore
-    /// make the save throw an exception about something else, write a <c>NaN</c> or <c>Infinity</c>
-    /// token into the content stream, re-wrap, move or mirror the content, or leave the element off
-    /// the page. The bottom edge only limits that box: it adds no space before the next element. A
-    /// negative or non-finite top edge can also move the elements placed after this one.
-    /// <para>Do not pass a negative or non-finite edge. A later major version will refuse
-    /// both.</para>
-    /// </remarks>
-    /// <exception cref="InvalidOperationException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the box the edges leave is too small for the element. The message
-    /// says the element is too tall to fit on a page and does not name the margins.
-    /// </exception>
-    /// <exception cref="ArgumentException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when an edge leaves a later element at a non-finite position, and the
-    /// save writes that position outside the content stream, as a heading's bookmark or the
-    /// rectangle of a link from <see cref="TextStyle.LinkUri"/>. Negative infinity can do this. The
-    /// message says PDF does not support NaN or Infinity as a real number.
-    /// </exception>
+    /// <inheritdoc cref="Paragraph.Margins" path="/remarks"/>
+    /// <inheritdoc cref="Paragraph.Margins" path="/exception"/>
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 
     /// <summary>The rows in the table, in render order.</summary>
@@ -132,8 +106,15 @@ public sealed class TableElement
     /// explicit widths exceed the width the auto columns leave them, they are all scaled by one
     /// ratio to that width, even when they fit the available width on their own. With no auto
     /// column, that width is the whole available width. So one very large entry leaves the other
-    /// explicit columns near zero, and entries whose sum overflows to infinity are all scaled to
-    /// zero (#546). When the auto columns take all of the available width or more, every column,
+    /// explicit columns near zero: <c>1e200, 60, 70</c> resolves to about 451, 0 and 0 on an A4
+    /// page with the default margins, and nothing reports it. That is a contract tightening for 3.0, not
+    /// a refusal in a patch, because the table still renders. Entries whose sum overflows to
+    /// infinity are accepted, and every explicit column is written at width 0 while an auto column
+    /// keeps its content width, so cells that start at the same x are drawn on top of one
+    /// another. <b>Do not pass</b> widths whose sum overflows. Nothing reports
+    /// it, because there is no diagnostics channel yet, and 3.0 will throw
+    /// <see cref="InvalidOperationException"/>.
+    /// When the auto columns take all of the available width or more, every column,
     /// auto ones included, is scaled by one ratio instead. A positive entry under 5e-6 is kept and
     /// written as width 0. None of this is reported.</para>
     /// <para>Do not rely on scaling to fit a table. Pass widths that fit the space you give
@@ -145,7 +126,9 @@ public sealed class TableElement
     /// <remarks>
     /// Replaces every width. Called with no arguments it clears them, so every column is auto. A
     /// null array is refused only after the existing widths are cleared, so they are lost. The
-    /// entries follow the rules on <see cref="ColWidths"/>; none is refused here.
+    /// entries follow the rules on <see cref="ColWidths"/>; none is refused here, and a set whose
+    /// sum overflows to infinity is accepted, with every explicit column written at width 0; see
+    /// <see cref="ColWidths"/>.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="widths"/> is <see langword="null"/>. <c>ParamName</c> is <c>collection</c>,

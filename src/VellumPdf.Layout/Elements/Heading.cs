@@ -18,15 +18,11 @@ public sealed class Heading
 {
     /// <summary>Heading text (also used as the bookmark title unless <see cref="BookmarkTitle"/> is set).</summary>
     /// <remarks>
-    /// A null value makes the save throw; see the constructor. White space is drawn as on
+    /// Never null; the constructor refuses a null. White space is drawn as on
     /// <see cref="Paragraph"/>. An empty string draws no text, but the heading still adds a
     /// bookmark, titled by <see cref="BookmarkTitle"/> or else empty, and, in a tagged document,
     /// its structure element.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the text is <see langword="null"/>.
-    /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when the text holds an unpaired surrogate and is measured in an embedded
@@ -37,13 +33,14 @@ public sealed class Heading
     /// <summary>The heading's text style.</summary>
     /// <remarks>
     /// A null style passed to the constructor becomes 14pt Helvetica; any other is stored as given.
-    /// Refusals on size, leading and font are on <see cref="TextStyle"/> and are raised from the
-    /// save.
+    /// Refusals on size, leading, font and text colour are on <see cref="TextStyle"/> and are
+    /// raised from the save.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the style's size or leading is refused; see
-    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
+    /// from this property, when the style's size or leading is refused, or a channel of its text
+    /// colour is not finite; see <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/>
+    /// and <see cref="TextStyle.Color"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -85,30 +82,8 @@ public sealed class Heading
     public string? BookmarkTitle { get; init; }
 
     /// <summary>Margins around the heading.</summary>
-    /// <remarks>
-    /// <b>Attention</b>: no edge is checked. Each edge is taken off the area this element is given,
-    /// and the element is laid out in whatever box is left, even when that box is empty, inverted
-    /// or <c>NaN</c>. A negative or non-finite edge, or edges wider than the area, can therefore
-    /// make the save throw an exception about something else, write a <c>NaN</c> or <c>Infinity</c>
-    /// token into the content stream, re-wrap, move or mirror the content, or leave the element off
-    /// the page. The bottom edge only limits that box: it adds no space before the next element. A
-    /// negative or non-finite top edge can also move the elements placed after this one.
-    /// <para>Do not pass a negative or non-finite edge. A later major version will refuse
-    /// both.</para>
-    /// </remarks>
-    /// <exception cref="InvalidOperationException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the box the edges leave is too small for the element. The message
-    /// says the element is too tall to fit on a page and does not name the margins.
-    /// </exception>
-    /// <exception cref="ArgumentException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when an edge leaves this element or a later one at a non-finite
-    /// position, and the save writes that position outside the content stream, as a heading's
-    /// bookmark or the rectangle of a link from <see cref="TextStyle.LinkUri"/>. Negative infinity
-    /// can do this, and so can <c>NaN</c> on the left edge of linked text. The message says PDF
-    /// does not support NaN or Infinity as a real number.
-    /// </exception>
+    /// <inheritdoc cref="Paragraph.Margins" path="/remarks"/>
+    /// <inheritdoc cref="Paragraph.Margins" path="/exception"/>
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 
     /// <summary>Horizontal alignment of the heading text.</summary>
@@ -133,32 +108,16 @@ public sealed class Heading
     /// <summary>Creates a heading with the given text and optional style (defaults to 14pt).</summary>
     /// <remarks>
     /// A null <paramref name="style"/> becomes 14pt Helvetica. A null <paramref name="text"/> is
-    /// stored, and the save throws when it lays out the heading.
-    /// <para>Do not pass null text. A later major version will throw
-    /// <see cref="ArgumentNullException"/> from this call.</para>
+    /// refused here. An empty string is not
+    /// null and is accepted.
     /// </remarks>
-    /// <exception cref="NullReferenceException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this constructor, when <paramref name="text"/> is <see langword="null"/>.
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="text"/> is <see langword="null"/>.
     /// </exception>
-    /// <exception cref="ArgumentException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this constructor, when the text holds an unpaired surrogate and is measured in an
-    /// embedded font; see <see cref="TextStyle.FontRef"/>.
-    /// </exception>
-    /// <exception cref="InvalidOperationException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this constructor, when the style's size or leading is refused; see
-    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
-    /// </exception>
-    /// <exception cref="IndexOutOfRangeException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this constructor, when the style holds a <see cref="VellumPdf.Fonts.Standard14"/> value
-    /// the enumeration does not name and the font is selected on a page; see
-    /// <see cref="TextStyle.FontRef"/>.
-    /// </exception>
+    /// <inheritdoc cref="Paragraph.Paragraph(string, TextStyle)" path="/exception[@cref='T:System.ArgumentException' or @cref='T:System.IndexOutOfRangeException' or @cref='T:System.InvalidOperationException']"/>
     public Heading(string text, TextStyle? style = null)
     {
+        ArgumentNullException.ThrowIfNull(text);
         Text = text;
         Style = style ?? new TextStyle { FontSize = 14 };
     }
