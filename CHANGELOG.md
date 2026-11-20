@@ -26,7 +26,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and `PageLabelTable` in `VellumPdf.Kernel` turn names and label ranges into the `/Dests` name tree
   and the `/PageLabels` number tree (ISO 32000-2, 12.3.2.4 and 12.4.2), using the tree writers above,
   and `PageLabelFormatter` computes the label a page shows. They are `internal`, so there is no public
-  API change and no output change: no document member calls them yet. A destination name is 1 to 127 characters from `A-Z a-z 0-9 . _ - :`; each value is an
+  API change and no output change: no document member calls them yet. A destination name is 1 to
+  127 characters from `A-Z a-z 0-9 . _ - :`; each value is an
   indirect `[page /XYZ left top null]` array. A table with no range at page 0 gets a decimal one there,
   because 12.4.2 requires a value for page index 0. Letters repeat (27 is `AA`, 53 is `AAA`) rather than
   counting in base 26, as Table 161 describes, and Roman numerals above 3999 add one `M` per thousand,
