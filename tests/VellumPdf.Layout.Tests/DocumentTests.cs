@@ -154,11 +154,46 @@ public sealed class DocumentTests
 
     // ── Async I/O surface (#54) ────────────────────────────────────────────────
     //
-    // /CreationDate and /ID depend on Timestamp ?? DateTimeOffset.UtcNow, and
-    // VellumPdf.Layout.Document does not expose a way to pin PdfDocument.Timestamp, so a
-    // byte-identical comparison against the sync Save/Sign methods isn't meaningful here
-    // (see FontAndIoTests.SaveAsync_producesSameBytesAsSave in VellumPdf.Kernel.Tests for that
-    // proof, where Timestamp can be pinned directly). These tests verify validity instead.
+    // With Timestamp and DocumentId pinned, the async overloads write the same bytes as the
+    // synchronous one (SaveAsync_pinned_allSavePathsGiveSameBytes); the remaining tests check
+    // that the output is a valid PDF.
+
+    [Fact]
+    public async Task SaveAsync_pinned_allSavePathsGiveSameBytes()
+    {
+        static Document Build()
+        {
+            var doc = new Document
+            {
+                Timestamp = new DateTimeOffset(2026, 11, 20, 12, 0, 0, TimeSpan.Zero),
+                DocumentId = Convert.FromHexString("000102030405060708090A0B0C0D0E0F"),
+            };
+            doc.Add(new Paragraph("Same bytes on every save path"));
+            return doc;
+        }
+
+        var sync = new MemoryStream();
+        using (var doc = Build())
+            doc.Save(sync);
+
+        var viaStream = new MemoryStream();
+        using (var doc = Build())
+            await doc.SaveAsync(viaStream, TestContext.Current.CancellationToken);
+
+        var path = Path.GetTempFileName();
+        try
+        {
+            using (var doc = Build())
+                await doc.SaveAsync(path, TestContext.Current.CancellationToken);
+
+            Assert.Equal(sync.ToArray(), viaStream.ToArray());
+            Assert.Equal(sync.ToArray(), await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
 
     [Fact]
     public async Task SaveAsync_stream_producesValidPdf()

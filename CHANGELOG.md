@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`Document.Timestamp` and `Document.DocumentId` (#597).** The Layout `Document` now forwards the
+  two pins that `PdfDocument` already had. `Timestamp` sets the instant written as the XMP creation
+  and modification date and mixed into the derived file identifier; with it pinned, two documents
+  built by the same calls save to the same bytes on one library build, one runtime and one
+  operating system. `DocumentId` sets both strings of the trailer `/ID`; a value that is not 16 bytes
+  is refused by the setter with `ArgumentException`. An encrypted document is never reproducible,
+  a signature takes its time from `PdfSignatureSettings.SigningTime`, and an embedded font's
+  ToUnicode map differs between Windows and Linux (#630). Nothing changes for a document that
+  leaves both unset. The Kernel's `DocumentId` summary and `docs/kernel-guide.md` section 9 no
+  longer say the derived identifier comes from the page content, which it never did: it comes from
+  the title, the producer, the page count and the time.
 - **Internal name tree and number tree writers (#241).** `NameTreeWriter` and `NumberTreeWriter`
   in `VellumPdf.Kernel` build the structures ISO 32000-2, 7.9.6 and 7.9.7 define, which the
   catalog's `/Names` and `/PageLabels` entries, and later named destinations and embedded files,
