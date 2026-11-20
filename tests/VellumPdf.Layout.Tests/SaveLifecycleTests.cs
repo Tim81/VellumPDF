@@ -256,6 +256,30 @@ public sealed class SaveLifecycleTests
         Assert.Equal(1, Pages(ok.ToArray()));
     }
 
+    private sealed class EmptyRenderer : IRenderer
+    {
+        public LayoutResult Layout(LayoutContext context) => LayoutResult.Full(context.Area.WithHeight(0));
+
+        public void Draw(DrawContext context) { }
+    }
+
+    /// <summary>A linearized kernel document does not check the destination up front: the stream's own Write decides, after the layout; a non-linearized one refuses an unwritable stream with ArgumentException first.</summary>
+    [Theory]
+    [InlineData(true, typeof(ObjectDisposedException))]
+    [InlineData(false, typeof(ArgumentException))]
+    public void DocumentRenderer_toAClosedMemoryStream_followsTheKernelDocumentsLinearization(bool linearize, Type expected)
+    {
+        var pdf = new PdfDocument { Linearize = linearize };
+        var renderer = new VellumPdf.Layout.Rendering.DocumentRenderer(pdf, new PdfRectangle(0, 0, 300, 200), new EdgeInsets(10));
+        renderer.Add(new EmptyRenderer());
+        var closed = new MemoryStream();
+        closed.Dispose();
+
+        var ex = Record.Exception(() => renderer.Render(closed));
+
+        Assert.IsType(expected, ex);
+    }
+
     /// <summary>A stream that is not writable and not readable but seekable, as the 2.3.3 check classified it.</summary>
     private sealed class SeekOnlyStream : Stream
     {

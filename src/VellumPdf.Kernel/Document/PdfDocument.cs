@@ -636,8 +636,10 @@ public sealed class PdfDocument : IDisposable
             throw new InvalidOperationException("The document has no pages.");
 
         // Checked here and not left to PdfWriter's constructor: that runs after _written is set, so
-        // an unusable stream would burn the document.
-        if (!destination.CanWrite)
+        // an unusable stream would burn the document. A synchronous linearized save has no such
+        // constructor: it serialises in memory and gives the destination one real Write at the end,
+        // so the stream itself decides what an unwritable destination does, as it always did.
+        if (!destination.CanWrite && (asynchronous || !Linearize))
         {
             // An asynchronous save fails inside the copy into the stream, so the type is the stream's
             // own: NotSupportedException for one that cannot be written to, and ObjectDisposedException
@@ -709,17 +711,18 @@ public sealed class PdfDocument : IDisposable
 
     /// <summary>Writes a complete PDF file to <paramref name="destination"/>.</summary>
     /// <remarks>
-    /// <b>With <see cref="Linearize"/> set, a destination that cannot be written to is refused with the
-    /// exception its own <c>Write</c> throws, not with <see cref="ArgumentException"/>.</b> A closed
-    /// stream gives <see cref="ObjectDisposedException"/>, a read-only one
-    /// <see cref="NotSupportedException"/>, and a custom one what it throws, such as
-    /// <see cref="IOException"/>. This save asks the stream with a write of no bytes before anything is
-    /// written, so the document stays unwritten and can be saved again. A stream that is not writable
-    /// but accepts a write of no bytes gives <see cref="ArgumentException"/>.
+    /// <b>With <see cref="Linearize"/> set, <paramref name="destination"/> is not checked up front.</b>
+    /// The document is serialised in memory and then given to the stream in one <c>Write</c> call, so a
+    /// destination that cannot be written to throws what its own <c>Write</c> throws:
+    /// <see cref="ObjectDisposedException"/> for a closed <see cref="MemoryStream"/>,
+    /// <see cref="NotSupportedException"/> for a read-only one, <see cref="IOException"/> for one that
+    /// throws it. A stream that reports <c>CanWrite</c> false but accepts the write receives the PDF.
+    /// That failure comes after serialisation, so the document counts as written and a second save
+    /// throws <see cref="InvalidOperationException"/>, as for any failure once writing has begun.
     /// </remarks>
     /// <exception cref="ObjectDisposedException">
-    /// The document has been disposed, or <see cref="Linearize"/> is set and <paramref name="destination"/>
-    /// was closed.
+    /// The document has been disposed, or <see cref="Linearize"/> is set and
+    /// <paramref name="destination"/> is a closed stream whose <c>Write</c> throws it.
     /// </exception>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="destination"/> is <see langword="null"/>. It is also raised from the write, not
@@ -740,8 +743,8 @@ public sealed class PdfDocument : IDisposable
     /// is set and <paramref name="destination"/> is read-only.
     /// </exception>
     /// <exception cref="IOException">
-    /// <see cref="Linearize"/> is set and a <paramref name="destination"/> that cannot be written to
-    /// throws it from <c>Write</c>; see the remarks.
+    /// <see cref="Linearize"/> is set and <paramref name="destination"/> throws it from <c>Write</c>;
+    /// see the remarks.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// A PDF/A <see cref="Conformance"/> is set together with <see cref="Encrypt"/>, or
@@ -755,18 +758,7 @@ public sealed class PdfDocument : IDisposable
     /// </exception>
     public void Save(Stream destination)
     {
-        try
-        {
-            EnsureCanSave(destination);
-        }
-        catch (ArgumentException) when (Linearize && destination is { CanWrite: false })
-        {
-            // A linearized document is built in memory and copied to the destination at the end, so
-            // the stream's own Write decides the exception type. A write of no bytes asks it the same
-            // question before anything is laid out or marked written; if it accepts, the refusal stands.
-            destination.Write(ReadOnlySpan<byte>.Empty);
-            throw;
-        }
+        EnsureCanSave(destination);
 
         if (_pages.Count == 0)
             throw new InvalidOperationException("The document has no pages.");

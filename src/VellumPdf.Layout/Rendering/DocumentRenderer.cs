@@ -299,7 +299,8 @@ public sealed class DocumentRenderer
     /// <exception cref="ArgumentException">
     /// The margins, header and footer together leave the content area no positive size, or an
     /// element refuses its own input, or <paramref name="destination"/> is not writable or is closed
-    /// (the parameter name is <c>destination</c>, and it is raised before the layout), or a
+    /// and the kernel document is not linearized (the parameter name is <c>destination</c>, and it
+    /// is raised before the layout, except in a document with nothing added), or a
     /// registered font has a value that makes a font metric
     /// non-finite, or text measured in an embedded font holds an unpaired surrogate, or a
     /// non-finite position is written outside the content stream, such as a link rectangle.
@@ -332,7 +333,10 @@ public sealed class DocumentRenderer
     /// allocate.
     /// </exception>
     /// <exception cref="IOException">
-    /// The destination stream failed to write.
+    /// The destination stream failed to write. With a linearized kernel document the destination is
+    /// not checked up front, so a destination that cannot be written to throws here after the layout
+    /// whatever its own <c>Write</c> throws, <see cref="IOException"/> or not; see
+    /// <see cref="PdfDocument.Save(System.IO.Stream)"/>.
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// The kernel document combines options it cannot write together, such as object streams with
@@ -340,7 +344,8 @@ public sealed class DocumentRenderer
     /// </exception>
     /// <exception cref="ObjectDisposedException">
     /// The kernel document was disposed. A closed <paramref name="destination"/> is an
-    /// <see cref="ArgumentException"/>, linearized or not.
+    /// <see cref="ArgumentException"/> unless the kernel document is linearized, where the stream's
+    /// own <c>Write</c> decides.
     /// </exception>
     public void Render(Stream destination)
     {

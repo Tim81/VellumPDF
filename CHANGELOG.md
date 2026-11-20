@@ -238,21 +238,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   disposed document, an unwritable stream, `UseObjectStreams` with `Encrypt`, a PDF/A conformance
   with `Encrypt`, `Encrypt` with `Sign`, a negative `SignaturePage`, and an
   `EstimatedSignatureSizeBytes` that is negative or above 536,870,894. `PdfDocument.SaveAsync` and
-  `DocumentRenderer.Render` check the destination first too. A refusal at one of these leaves the
+  `DocumentRenderer.Render` check the destination first too, except for a linearized kernel
+  document. A refusal at one of these leaves the
   document untouched, and a retry saves it once; 2.3.3 laid it out a second time and wrote doubled
   pages, a deliberate output change. A save that throws once its layout has started, including a
   `SaveAsync` cancelled after the layout, leaves the document unusable, and every later save throws
   `InvalidOperationException` asking for a new `Document`. A call with two or more defects is
   refused as before, but which defect's exception is reported may differ from 2.3.3: a save
-  precondition is reported before a layout defect, except in a document with nothing added, where
-  the page geometry and bands are checked first, and an already-cancelled token before both,
-  except that the path checks of `SaveAsync(string)` run at the open, before the token is looked at.
+  precondition is reported before a layout defect, and an already-cancelled token before both. In a
+  document with nothing added the page geometry and bands are checked before the preconditions,
+  but not before the token. The path checks of `SaveAsync(string)` are the exception: they run at
+  the open, before the token is looked at.
   **Attention**: retrying the same `Document` after a failed layout used to save, with pages doubled
   or lines broken at the first attempt's width, and now throws; build a new `Document`.
-  **Attention**: a non-linearized `Save` to a stream that cannot be written to reports `destination`
-  where it reported `stream`. A linearized `PdfDocument.Save` to one still throws the exception the
-  stream's own `Write` throws (`ObjectDisposedException` for a closed stream, `NotSupportedException`
-  for a read-only one), but now before anything is laid out, so a retry saves.
+  **Attention**: a linearized `PdfDocument.Save` or `DocumentRenderer.Render` does not check the
+  destination up front. The document is serialised in memory and the stream's own `Write` decides,
+  as on 2.3.3, so a closed or read-only stream throws `ObjectDisposedException` or
+  `NotSupportedException` after serialisation, the document counts as written, and a retry throws
+  `InvalidOperationException`. A non-linearized `Save` to a stream that cannot be written to
+  reports `destination` where it reported `stream`.
   **Attention**: a bad `EstimatedSignatureSizeBytes` throws `ArgumentOutOfRangeException` with
   `ParamName` `options` before any page is added, where 2.3.3 threw it with `ParamName` `count`, or
   threw `OutOfMemoryException` for sizes up to 2^30 - 1.
