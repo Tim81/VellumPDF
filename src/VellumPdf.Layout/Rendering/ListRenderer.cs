@@ -34,8 +34,8 @@ public sealed class ListRenderer : IRenderer
     private LayoutBox _occupied;
 
     // Items below the second level that hold a null text or a null child. Nothing below the second
-    // level is read, so these save; they are counted where the items are built and reported from
-    // Draw, by the piece that starts at the first item.
+    // level is laid out or drawn, so these save; they are counted where the items are built and
+    // reported from Draw, by the piece that starts at the first item.
     private int _nullGrandchildText;
     private int _nullGrandchild;
 
@@ -114,7 +114,7 @@ public sealed class ListRenderer : IRenderer
         var area = context.Area.Deflate(_list.Margins);
         if (area.IsEmpty) return LayoutResult.Nothing();
 
-        _items ??= BuildItems(area.Width);
+        _items ??= BuildItems(area.Width, context.ListWalk ?? new ListWalkMemo());
 
         if (_items.Count == 0)
         {
@@ -391,12 +391,13 @@ public sealed class ListRenderer : IRenderer
         return widest;
     }
 
-    private List<(ParagraphRenderer Marker, ParagraphRenderer Content)> BuildItems(double areaWidth)
+    private List<(ParagraphRenderer Marker, ParagraphRenderer Content)> BuildItems(
+        double areaWidth, ListWalkMemo walk)
     {
         var result = new List<(ParagraphRenderer, ParagraphRenderer)>();
         var indent = _list.Indent;
         var defaultStyle = _list.DefaultStyle ?? TextStyle.Default;
-        HashSet<ListItem>? visited = null;
+        HashSet<ListItem>? holders = null;
         long nullText = 0, nullChild = 0;
 
         for (var i = 0; i < _list.Items.Count; i++)
@@ -466,17 +467,17 @@ public sealed class ListRenderer : IRenderer
                     if (child.HasNullText)
                         throw new ArgumentNullException("text", "A list item has a null text.");
                     // A child's own children are neither laid out nor drawn, so a defect in them
-                    // saves. Counted here, one pass over the tree below the top level. The child
-                    // joins the same visited set as everything under it, so an item reached by
-                    // several paths, or from its own descendants, counts once.
+                    // saves. What lies below this child is counted by the save's memo, which walks
+                    // it once however many lists reach it, and this list adds each distinct child's
+                    // counts once.
                     if (child.HasNullChild || child.Children is not null)
                     {
-                        visited ??= new HashSet<ListItem>(ReferenceEqualityComparer.Instance);
-                        if (visited.Add(child))
+                        holders ??= new HashSet<ListItem>(ReferenceEqualityComparer.Instance);
+                        if (holders.Add(child))
                         {
-                            if (child.HasNullChild) nullChild++;
-                            if (child.Children is { } grandchildren)
-                                CountBelowSecondLevel(grandchildren, ref visited, ref nullText, ref nullChild);
+                            var (text, nulls) = walk.CountBelow(child);
+                            nullText += text;
+                            nullChild += nulls;
                         }
                     }
 
@@ -522,33 +523,5 @@ public sealed class ListRenderer : IRenderer
         _nullGrandchildText = (int)Math.Min(nullText, int.MaxValue);
         _nullGrandchild = (int)Math.Min(nullChild, int.MaxValue);
         return result;
-    }
-
-    // Walks every item below a child with an explicit stack and a visited set. The graph is the
-    // caller's: an item can be its own descendant (A.AddChild(A)), and one shared sub-item can be
-    // reached by exponentially many paths, so a recursive walk or one without a visited set hangs
-    // or
-    // overflows on a list that saves. An item reached by several paths counts once, and the set is
-    // shared across the whole list so the walk stays linear in the number of distinct items.
-    private static void CountBelowSecondLevel(
-        IReadOnlyList<ListItem> items,
-        ref HashSet<ListItem>? visited,
-        ref long nullText,
-        ref long nullChild)
-    {
-        visited ??= new HashSet<ListItem>(ReferenceEqualityComparer.Instance);
-        var pending = new Stack<ListItem>();
-        foreach (var item in items)
-            if (visited.Add(item)) pending.Push(item);
-
-        while (pending.Count > 0)
-        {
-            var item = pending.Pop();
-            if (item.HasNullText) nullText++;
-            if (item.HasNullChild) nullChild++;
-            if (item.Children is null) continue;
-            foreach (var next in item.Children)
-                if (visited.Add(next)) pending.Push(next);
-        }
     }
 }

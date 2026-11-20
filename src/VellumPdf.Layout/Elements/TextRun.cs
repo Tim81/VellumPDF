@@ -36,7 +36,10 @@ namespace VellumPdf.Layout.Elements;
 /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not from
 /// the constructor, when the style's size or leading is refused, or a channel of its text colour is
 /// not finite; see <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/> and
-/// <see cref="TextStyle.Color"/>.
+/// <see cref="TextStyle.Color"/>. It is also raised, with <see cref="Document.StrictDiagnostics"/>
+/// set, when the run has a null style and yields no word; see
+/// <see cref="LayoutDiagnosticCode.NullTextRunStyle"/>. Text in this run that its font cannot
+/// encode makes a strict save throw the same way; see <see cref="TextStyle.FontRef"/>.
 /// </exception>
 /// <exception cref="IndexOutOfRangeException">
 /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not from
@@ -63,6 +66,11 @@ public sealed class TextRun(string Text, TextStyle Style)
     /// embedded font; see <see cref="TextStyle.FontRef"/>.
     /// </exception>
     /// <inheritdoc cref="Heading.Style" path="/exception[@cref='T:System.InvalidOperationException' or @cref='T:System.IndexOutOfRangeException']"/>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from the save, not from this property, when <see cref="Document.StrictDiagnostics"/>
+    /// is set and this style is null on a run that yields no word, which saves otherwise; see
+    /// <see cref="LayoutDiagnosticCode.NullTextRunStyle"/>.
+    /// </exception>
     /// <exception cref="ArgumentNullException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not from
     /// the constructor or this property, by the layout of the paragraph that holds the run, when the run

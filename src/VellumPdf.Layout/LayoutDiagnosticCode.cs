@@ -51,30 +51,35 @@ public enum LayoutDiagnosticCode
     /// </summary>
     /// <remarks>
     /// Text is substituted, so strict mode refuses it. Text the library wrote itself, such as a
-    /// list marker, is not listed.
+    /// list marker, is not listed when the document draws the list; a list drawn through a
+    /// <see cref="Core.DrawContext"/> you built can list it.
     /// </remarks>
     UnencodableCharacter = 103,
 
     /// <summary>
     /// A list item that is a child of a child, or deeper, holds a null text, and the save drew
-    /// nothing of it. <see cref="LayoutDiagnostic.Count"/> is the number of distinct such items, so
-    /// an item shared by several parents counts once.
+    /// nothing of it. <see cref="LayoutDiagnostic.Count"/> is the number of such items in the list,
+    /// counted once for each second-level item that reaches them, so an item shared by several
+    /// parents of one second-level item counts once.
     /// </summary>
     /// <remarks>
     /// Items below the second level are not laid out or drawn, so this saves. Strict mode refuses
-    /// it.
+    /// it. A <see cref="Rendering.ListRenderer"/> you build to start at an item other than the
+    /// first reports nothing.
     /// </remarks>
     NullGrandchildText = 201,
 
     /// <summary>
     /// A list item that is another item's child, or deeper, below the top level, was given a null
     /// child with <see cref="Elements.ListItem.AddChild(Elements.ListItem)"/>, and the save skipped
-    /// it. <see cref="LayoutDiagnostic.Count"/> is the number of distinct items that hold at least
-    /// one null child, not the number of nulls.
+    /// it. <see cref="LayoutDiagnostic.Count"/> is the number of items that hold at least one null
+    /// child, not the number of nulls, counted as for
+    /// <see cref="NullGrandchildText"/>.
     /// </summary>
     /// <remarks>
     /// Items below the second level are not laid out or drawn, so this saves. Strict mode refuses
-    /// it.
+    /// it. A <see cref="Rendering.ListRenderer"/> you build to start at an item other than the
+    /// first reports nothing.
     /// </remarks>
     NullGrandchild = 202,
 

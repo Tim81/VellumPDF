@@ -82,14 +82,15 @@ public sealed class Document : IDisposable
     /// <para>The built-in elements and running bands pass <see cref="PdfCanvas.ShowText"/> only
     /// their Standard-14 text. Characters a custom <see cref="IRenderer"/> passes to
     /// <see cref="PdfCanvas.ShowText"/> are recorded whatever font is selected.</para>
-    /// <para>Each distinct character is also listed in <see cref="Diagnostics"/> as
-    /// <see cref="LayoutDiagnosticCode.UnencodableCharacter"/> with its count. This list stays as
-    /// it
-    /// is, one entry per substituted character and unbounded, until 3.0.</para>
+    /// <para>Each distinct character the caller's text substituted is also listed in
+    /// <see cref="Diagnostics"/> as <see cref="LayoutDiagnosticCode.UnencodableCharacter"/> with its
+    /// count, up to that list's limit of 1,000 items. A substitution in text the library wrote
+    /// itself, such as a list marker, is in this list and not in <see cref="Diagnostics"/>. This
+    /// list stays as it is, one entry per substituted character and unbounded, until 3.0.</para>
     /// </remarks>
     public IReadOnlyList<TextEncodingWarning> TextEncodingWarnings => _textEncodingWarnings;
 
-    private IReadOnlyList<LayoutDiagnostic> _diagnostics = [];
+    private IReadOnlyList<LayoutDiagnostic> _diagnostics = Array.Empty<LayoutDiagnostic>().AsReadOnly();
 
     /// <summary>
     /// What the last save noticed and kept going through, one item per condition and subject, in
@@ -120,9 +121,11 @@ public sealed class Document : IDisposable
     /// <para><b>What is not reported.</b> A <see cref="DrawContext"/> you construct carries no
     /// channel, so a built-in renderer drawn with it reports nothing of its own. A character
     /// written as <c>?</c> on the document's canvas is still listed, because it is read from the
-    /// canvas, whichever renderer wrote it. A renderer the document draws reports what the built-in
-    /// renderers it draws with the document's context report. Library-written text, such as a list
-    /// marker, is not listed. Callers of the Kernel alone have no channel, and
+    /// canvas after each element is drawn, whichever renderer wrote it. That includes the marker
+    /// of a built-in list that your renderer draws through a context you built: when the document
+    /// draws the list, its marker is not listed, and through your context it can be. A renderer
+    /// the document draws reports what the built-in renderers it draws with the document's
+    /// context report. Callers of the Kernel alone have no channel, and
     /// <see cref="VellumPdf.Layout.Rendering.DocumentRenderer.Render(System.IO.Stream)"/> exposes
     /// none. Input that is refused is thrown, not listed. <b>Do not</b> read an empty list as proof
     /// that the document is free of every defect the library keeps: only the codes above are
@@ -141,7 +144,8 @@ public sealed class Document : IDisposable
     /// through <c>VellumPdf.Signing</c> throw <see cref="InvalidOperationException"/> from the
     /// call,
     /// after the layout and before anything is written. The message names the first error item and
-    /// how many further ones were reported. A stream is left as it was. An existing file at the
+    /// how many further stored error items there were; errors dropped past the channel's limit are
+    /// not in that number. A stream is left as it was. An existing file at the
     /// path
     /// keeps its bytes, and a file the save created is removed. The document cannot be saved
     /// again, as after any failure once the layout has started.
@@ -149,7 +153,10 @@ public sealed class Document : IDisposable
     /// conflict) and a refusal raised while the document is laid out, including a non-finite value
     /// the canvas refuses, are reported first, exactly as with the switch off. A refusal that only
     /// writing the PDF would raise, such as a signature page past the last page or a null inside a
-    /// <see cref="PdfDictionary"/>, is not reached: the strict refusal comes first. The switch is
+    /// <see cref="PdfDictionary"/>, is not reached: the strict refusal comes first. So is a
+    /// cancellation seen after the layout started: a token cancelled while an element is drawn
+    /// gives the strict refusal, not <see cref="OperationCanceledException"/>. A token already
+    /// cancelled when the call starts still wins, as it does with the switch off. The switch is
     /// read when the save runs, so setting it after an element is added applies to that element.
     /// A <see cref="LayoutDiagnosticSeverity.Warning"/> item never makes the save throw.</para>
     /// <para>A later major version refuses every error item whatever this property says. Do not
@@ -1603,8 +1610,9 @@ public sealed class Document : IDisposable
     /// <paramref name="destination"/> included. The token is then looked at when the layout is queued,
     /// once it has finished, and once serialisation has finished; a cancellation seen at one of those
     /// points ends the task the same way before anything is written. Only a failure inside the layout,
-    /// such as an element that refuses its input, is reported ahead of a cancellation seen after the
-    /// layout starts. During the write, <paramref name="destination"/> receives the token and
+    /// such as an element that refuses its input, or, with <see cref="StrictDiagnostics"/> set, a
+    /// strict refusal, is reported ahead of a cancellation seen after the layout starts. During the
+    /// write, <paramref name="destination"/> receives the token and
     /// decides what to raise.
     /// </exception>
     // RS0026 flags multiple overloads with optional parameters as a future-ambiguity risk;
@@ -1665,7 +1673,8 @@ public sealed class Document : IDisposable
     /// emptied; and in the copy into the file, before each chunk. The copy passes the token to each
     /// write into the file as well, which decides what that write raises. A cancellation seen at one of the
     /// first three leaves the file that was there untouched; see the remarks. A failure that comes
-    /// first, such as a refused page geometry or an exception from an element, is reported instead.
+    /// first, such as a refused page geometry, an exception from an element or a strict refusal, is
+    /// reported instead.
     /// While the PDF is being built the token is not looked at. The copy is the one point after the
     /// file was emptied, so a cancellation there leaves it truncated or incomplete; one seen after the last chunk was written is not reported. A cancellation after the
     /// layout has run also means this <see cref="Document"/> cannot be saved again; see

@@ -27,11 +27,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   **Attention:** a running band cut to fit is now rated an error, so the earlier documentation
   that called it "not an error" no longer holds, and strict mode refuses it. Strict mode runs after
   the layout and before the write, so a refusal that only the write raises (such as a signature page
-  past the last page) is pre-empted by a strict refusal when the switch is on. A save now also
-  visits every distinct list item below the second level to look for nulls; the cost is linear in
-  the items you built there, and an item reached by several paths, or from its own descendants,
-  counts once. The list marker the library draws, such as the nested bullet in a Standard 14 font,
-  is not listed as an unencodable character, because it is not your text.
+  past the last page) is pre-empted by a strict refusal when the switch is on, and so is a
+  cancellation seen after the layout started. A save now also walks the list items below the second
+  level to look for nulls; it walks each second-level item's subtree once per save, however many
+  lists reach it, so the cost is linear in the distinct items you built there, and an item reached
+  by several paths, or from its own descendants, counts once for that second-level item. The list
+  marker the library draws, such as the nested bullet in a Standard 14 font, is not listed as an
+  unencodable character when the document draws the list, because it is not your text; a list your
+  own renderer draws through a `DrawContext` you built can still list it.
 - **Internal name tree and number tree writers (#241).** `NameTreeWriter` and `NumberTreeWriter`
   in `VellumPdf.Kernel` build the structures ISO 32000-2, 7.9.6 and 7.9.7 define, which the
   catalog's `/Names` and `/PageLabels` entries, and later named destinations and embedded files,

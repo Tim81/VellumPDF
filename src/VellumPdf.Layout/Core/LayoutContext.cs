@@ -1,6 +1,8 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using VellumPdf.Layout.Rendering;
+
 namespace VellumPdf.Layout.Core;
 
 /// <summary>
@@ -39,7 +41,14 @@ public sealed class LayoutContext
         ContentTop = contentTop;
     }
 
+    /// <summary>
+    /// The per-save memo of what the list walk found below each second-level item. Null for a
+    /// context a caller builds, so a list laid out through one walks its own items and shares
+    /// nothing.
+    /// </summary>
+    internal ListWalkMemo? ListWalk { get; init; }
+
     /// <summary>Returns a copy of this context with the available area replaced.</summary>
     /// <remarks>Nothing is refused. <see cref="ContentTop"/> is copied unchanged.</remarks>
-    public LayoutContext WithArea(LayoutBox area) => new(area, ContentTop);
+    public LayoutContext WithArea(LayoutBox area) => new(area, ContentTop) { ListWalk = ListWalk };
 }

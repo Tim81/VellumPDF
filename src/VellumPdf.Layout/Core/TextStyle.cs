@@ -43,6 +43,13 @@ public sealed class TextStyle
     /// the right edge. A run that follows a Symbol or
     /// ZapfDingbats run on the same line, in a different <see cref="TextStyle"/> instance, can
     /// start where that run starts and be drawn over it.</para>
+    /// <para>A Standard-14 font writes a character WinAnsiEncoding cannot represent as
+    /// <c>?</c>. The save lists each such character in
+    /// <see cref="VellumPdf.Layout.Document.Diagnostics"/> as
+    /// <see cref="VellumPdf.Layout.LayoutDiagnosticCode.UnencodableCharacter"/>, and with
+    /// <see cref="VellumPdf.Layout.Document.StrictDiagnostics"/> set it throws
+    /// <see cref="InvalidOperationException"/> instead of saving. <b>Do not pass</b> text the
+    /// font cannot encode; use an embedded font. A later major version refuses it always.</para>
     /// </remarks>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other

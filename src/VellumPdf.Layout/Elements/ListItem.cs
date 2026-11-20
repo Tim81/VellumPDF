@@ -80,16 +80,18 @@ public sealed class ListItem
     /// <see cref="LayoutDiagnosticCode.NullGrandchildText"/> or
     /// <see cref="LayoutDiagnosticCode.NullGrandchild"/>, and
     /// <see cref="Document.StrictDiagnostics"/> refuses the save. Any other content there is not
-    /// reported. The walk visits each distinct item once and holds it in a set, so its cost is
-    /// linear in the items you built below the second level.
+    /// reported. The save walks the items below each second-level item once, however many lists
+    /// reach them, so the cost is linear in the distinct items you built there.
     /// <para>Be aware that you have to handle this yourself: flatten a tree deeper than two
     /// levels, or compose separate lists, until arbitrary nesting lands (#479).</para>
     /// <para>In an <see cref="ListStyle.Unordered"/> list a child is marked with U+25E6, the
     /// white bullet. The standard-14 fonts cannot encode it, so with a standard-14 style the
     /// child's marker is written as the character code for <c>?</c> and recorded in
-    /// <see cref="Document.TextEncodingWarnings"/>. It is not listed in
-    /// <see cref="Document.Diagnostics"/>, because the marker is the library's text and not yours,
-    /// so <see cref="Document.StrictDiagnostics"/> does not refuse a list for it. ZapfDingbats
+    /// <see cref="Document.TextEncodingWarnings"/>. When the document draws the list it is not
+    /// listed in <see cref="Document.Diagnostics"/>, because the marker is the library's text and
+    /// not yours, so <see cref="Document.StrictDiagnostics"/> does not refuse a list for it. A
+    /// list that your own renderer draws through a <see cref="Core.DrawContext"/> you built can
+    /// list it. ZapfDingbats
     /// draws that code as a glyph other than <c>?</c>.</para>
     /// </remarks>
     public IReadOnlyList<ListItem>? Children => _children;
@@ -129,7 +131,9 @@ public sealed class ListItem
     /// from this constructor, when the style's size or leading is refused, or a channel of its text
     /// colour is not finite; see <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/>
     /// and <see cref="TextStyle.Color"/>. It is not raised for an item reached only as a
-    /// child of a child.
+    /// child of a child, except that with <see cref="Document.StrictDiagnostics"/> set, a null
+    /// <paramref name="text"/> there throws it; see
+    /// <see cref="LayoutDiagnosticCode.NullGrandchildText"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -166,6 +170,11 @@ public sealed class ListItem
     /// from this call, when <paramref name="child"/> is <see langword="null"/> and this item is laid
     /// out as a top-level item. <c>ParamName</c> is <c>child</c>. It is not raised when this item is
     /// itself another item's child, whose own children are never laid out.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from the save, not from this call, when <see cref="Document.StrictDiagnostics"/> is
+    /// set and <paramref name="child"/> is <see langword="null"/> on an item that is another
+    /// item's child, or deeper; see <see cref="LayoutDiagnosticCode.NullGrandchild"/>.
     /// </exception>
     public ListItem AddChild(ListItem child)
     {
@@ -207,7 +216,9 @@ public sealed class ListItem
     /// from this call, when the style's size or leading is refused, or a channel of its text colour
     /// is not finite; see <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/> and
     /// <see cref="TextStyle.Color"/>. It is raised only when this item is laid out as a top-level
-    /// item.
+    /// item. With <see cref="Document.StrictDiagnostics"/> set it is also raised for a null
+    /// <paramref name="text"/> on an item that is itself another item's child; see
+    /// <see cref="LayoutDiagnosticCode.NullGrandchildText"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not

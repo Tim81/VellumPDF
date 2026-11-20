@@ -134,7 +134,7 @@ internal sealed class LayoutDiagnosticSink
 
     /// <summary>The stored items in first-occurrence order, then the sentinel when anything was
     /// dropped.</summary>
-    internal IReadOnlyList<LayoutDiagnostic> Snapshot()
+    internal List<LayoutDiagnostic> Snapshot()
     {
         var result = new List<LayoutDiagnostic>((_items?.Count ?? 0) + 1);
         foreach (var item in _items ?? [])

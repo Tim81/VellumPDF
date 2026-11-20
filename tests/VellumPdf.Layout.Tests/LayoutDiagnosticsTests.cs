@@ -800,6 +800,130 @@ public sealed class LayoutDiagnosticsTests
         Assert.Empty(doc.Diagnostics);
     }
 
+    // ── The walk below the second level is linear ────────────────────────────
+
+    /// <summary>A chain of <paramref name="length"/> items, each the only child of the one before.</summary>
+    private static ListItem Chain(int length)
+    {
+        var items = Enumerable.Range(0, length).Select(i => new ListItem("link " + i)).ToArray();
+        for (var i = 0; i + 1 < length; i++) items[i].AddChild(items[i + 1]);
+        return items[0];
+    }
+
+    private static DocumentRenderer LayOutLists(IEnumerable<ListElement> lists)
+    {
+        var renderer = new DocumentRenderer(new PdfDocument());
+        foreach (var list in lists) renderer.Add(new ListRenderer(list));
+        renderer.RunLayout();
+        return renderer;
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(20)]
+    public void OneListAddedManyTimes_walksItsChainOnce(int times)
+    {
+        const int length = 1000;
+        var top = new ListItem("top");
+        top.AddChild(Chain(length));
+        var list = new ListElement(ListStyle.OrderedDecimal, [top]);
+
+        var renderer = LayOutLists(Enumerable.Repeat(list, times));
+
+        // The distinct items, not the paths and not the lists: the same count for 1 and for 20.
+        Assert.Equal(length, renderer.ListWalk.NodesVisited);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(20)]
+    public void ManyListsSharingAChain_walkItOnce_andEachReportsItsOwnCount(int lists)
+    {
+        const int length = 1000;
+        var tail = new ListItem(null!);
+        var head = Chain(length);
+        var last = head;
+        while (last.Children is { Count: > 0 } kids) last = kids[0];
+        last.AddChild(tail);
+        using var doc = NewDoc();
+        for (var i = 0; i < lists; i++)
+        {
+            var top = new ListItem("top " + i);
+            top.AddChild(head);
+            doc.Add(new ListElement(ListStyle.OrderedDecimal, [top]));
+        }
+
+        doc.Save(new MemoryStream());
+
+        Assert.Equal(lists, doc.Diagnostics.Count);
+        Assert.All(doc.Diagnostics, i =>
+        {
+            Assert.Equal(LayoutDiagnosticCode.NullGrandchildText, i.Code);
+            Assert.Equal(1, i.Count);
+        });
+        var renderer = LayOutLists(Enumerable.Range(0, lists).Select(i =>
+        {
+            var top = new ListItem("top " + i);
+            top.AddChild(head);
+            return new ListElement(ListStyle.OrderedDecimal, [top]);
+        }));
+        Assert.Equal(length + 1, renderer.ListWalk.NodesVisited);
+    }
+
+    // ── What Diagnostics hands out, and cancellation ─────────────────────────
+
+    [Fact]
+    public void Diagnostics_isAReadOnlyView()
+    {
+        using var doc = NullStyleDoc();
+        doc.Save(new MemoryStream());
+
+        var view = doc.Diagnostics;
+
+        Assert.False(view is List<LayoutDiagnostic>);
+        var list = Assert.IsAssignableFrom<IList<LayoutDiagnostic>>(view);
+        Assert.True(list.IsReadOnly);
+        Assert.Throws<NotSupportedException>(() => list.Clear());
+        Assert.Single(doc.Diagnostics);
+    }
+
+    private sealed class CancellingStarRenderer(CancellationTokenSource source) : IRenderer
+    {
+        public LayoutResult Layout(LayoutContext context) => LayoutResult.Full(context.Area.WithHeight(10));
+
+        public void Draw(DrawContext ctx)
+        {
+            source.Cancel();
+            ctx.Canvas.BeginText();
+            ctx.Canvas.SetFont(ctx.GetFont(VellumPdf.Fonts.Standard14.Helvetica), 10);
+            ctx.Canvas.ShowText("\u2605");
+            ctx.Canvas.EndText();
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ATokenCancelledWhileAnElementIsDrawn_givesTheStrictRefusalOnlyInStrictMode(bool strict)
+    {
+        using var source = new CancellationTokenSource();
+        using var doc = NewDoc();
+        doc.StrictDiagnostics = strict;
+        doc.Add(new CancellingStarRenderer(source));
+
+        if (strict)
+        {
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => doc.SaveAsync(new MemoryStream(), source.Token));
+            Assert.StartsWith("StrictDiagnostics refused the save: UnencodableCharacter in Custom 0", ex.Message, StringComparison.Ordinal);
+        }
+        else
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => doc.SaveAsync(new MemoryStream(), source.Token));
+        }
+    }
+
     // ── Reporting boundaries ─────────────────────────────────────────────────
 
     [Fact]
