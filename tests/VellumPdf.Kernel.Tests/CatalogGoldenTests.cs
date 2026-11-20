@@ -34,9 +34,8 @@ namespace VellumPdf.Kernel.Tests;
 /// </para>
 /// <para>
 /// The hash is taken over a normalised file, so it does not move with the runtime's Deflate
-/// output, which the library does not control. The two target frameworks already differ: an empty
-/// page content stream is written as <c>/Filter /FlateDecode /Length 0</c> with no data on net10.0
-/// and as the eight bytes of an empty zlib stream on net11.0, which moves every later offset.
+/// output, which the library does not control, and a changed compressed size moves every later
+/// offset.
 /// <see cref="Normalise"/> inflates every <c>/FlateDecode</c> stream, sets its
 /// <c>/Length</c> to the inflated length, and replaces what depends on a byte offset or on a
 /// compressed size: the cross-reference entries, <c>startxref</c>, the trailer or
@@ -260,7 +259,8 @@ public sealed class CatalogGoldenTests
         return text;
     }
 
-    // An empty stream has no zlib header on net10.0, so there is nothing to inflate.
+    // The library writes the empty zlib stream for an empty body, so a zero-length body is not
+    // output of this library; the guard keeps the helper total for hand-built input.
     private static string Inflate(byte[] data)
     {
         if (data.Length == 0)

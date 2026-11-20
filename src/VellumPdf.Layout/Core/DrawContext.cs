@@ -91,7 +91,7 @@ public sealed class DrawContext
     /// <exception cref="ArgumentNullException">
     /// Raised later, not from this constructor, when <paramref name="page"/> is null and
     /// <paramref name="document"/> is not: by <see cref="AddUriLinkAnnotation"/>, and by the
-    /// document's save after a call to <see cref="AddOutlineEntry"/> that passed a non-null title.
+    /// document's save after a call to <see cref="AddOutlineEntry(string, int, double)"/> that passed a non-null title.
     /// <c>ParamName</c> is <c>key</c> in both cases.
     /// </exception>
     public DrawContext(PdfCanvas canvas, LayoutBox pageBounds, RendererContext rendererContext, PdfDocument document, PdfPage page)
@@ -102,6 +102,12 @@ public sealed class DrawContext
         _document = document;
         _page = page;
     }
+
+    /// <summary>
+    /// Where the document's layout collects diagnostics. Null for a context a caller constructs, so
+    /// a custom renderer that builds its own context reports nothing and does not throw.
+    /// </summary>
+    internal LayoutDiagnosticSink? Diagnostics { get; init; }
 
     /// <summary>Returns (or creates) a font resource on the current document.</summary>
     /// <remarks>
@@ -151,7 +157,7 @@ public sealed class DrawContext
     /// <remarks>
     /// Not refused. A non-finite <paramref name="layoutY"/> yields a non-finite PDF Y, and so does
     /// a finite one when <see cref="PageBounds"/>'s height is not finite or the subtraction
-    /// overflows. A save refuses the Y it writes; see <see cref="AddOutlineEntry"/>.
+    /// overflows. A save refuses the Y it writes; see <see cref="AddOutlineEntry(string, int, double)"/>.
     /// </remarks>
     public double ToPdfY(double layoutY) => PageBounds.Height - layoutY;
 
@@ -222,7 +228,9 @@ public sealed class DrawContext
     /// <para>A null <paramref name="title"/> and a non-finite <paramref name="layoutY"/> are
     /// accepted here and make the save throw when it writes the outline.</para>
     /// <para>Do not pass a null title or a non-finite position. A later major version will refuse
-    /// both from this call.</para>
+    /// both from this call. This overload is equivalent to
+    /// <see cref="AddOutlineEntry(string, int, double, bool)"/> with <c>expanded</c> true, without
+    /// that overload's refusals at the call.</para>
     /// </remarks>
     /// <exception cref="NullReferenceException">
     /// Raised from this call when this context was constructed with a null document. Also raised
@@ -242,7 +250,59 @@ public sealed class DrawContext
     /// <see cref="PdfDocument"/> this context was constructed with, not from this call.
     /// <c>ParamName</c> is <c>key</c>.
     /// </exception>
-    public void AddOutlineEntry(string title, int level, double layoutY)
+    public void AddOutlineEntry(string title, int level, double layoutY) =>
+        AddOutlineEntryCore(title, level, layoutY, expanded: true);
+
+    /// <summary>
+    /// Registers a document-outline (bookmark) entry pointing to the current page, and says whether
+    /// the entry is shown open or closed. <paramref name="layoutY"/> is the layout-space Y of the
+    /// target position.
+    /// </summary>
+    /// <remarks>
+    /// <b>A null title is refused.</b> This call throws <see cref="ArgumentNullException"/> for
+    /// it, where the three-argument overload accepts it and fails later in the save.
+    /// <b>A position that does not map to a finite destination is refused</b> the same way, with
+    /// <see cref="ArgumentOutOfRangeException"/>, because a non-finite <c>/XYZ</c> operand is not a
+    /// valid PDF number.
+    /// <para><paramref name="level"/> is not refused. Level 0 is a top-level entry. Any other
+    /// level, negative included, nests under the most recent earlier entry at exactly one level
+    /// less, and goes to the top level when there is none. For <see cref="int.MinValue"/> the level
+    /// one less wraps to <see cref="int.MaxValue"/>.</para>
+    /// <para><paramref name="expanded"/> is not refused. <see langword="false"/> writes a negative
+    /// <c>/Count</c> (ISO 32000-2:2020, 12.3.3, Table 151), but only on an entry that has
+    /// children, and the value is not written otherwise. An entry has children when a later entry
+    /// at its level + 1 finds it as the most recent earlier entry at its level, and level 0 never
+    /// has a parent. So an entry at level -1 never has children: the entries after it at level 0
+    /// are top-level.</para>
+    /// <para>These refusals are raised from the <c>Draw</c> of the renderer that calls this
+    /// method, which <see cref="VellumPdf.Layout.Document"/> runs inside its save, so a throw
+    /// leaves that document unable to be saved again.</para>
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// Raised from this call when <paramref name="title"/> is <see langword="null"/>. Also raised
+    /// from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other save
+    /// overloads, not from this call, when this context was constructed with a null page and a
+    /// non-null document. It comes from the save of the <see cref="PdfDocument"/> this context was
+    /// constructed with. <c>ParamName</c> is <c>key</c>.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Raised from this call when the Y written for the destination, <paramref name="layoutY"/>
+    /// passed through <see cref="ToPdfY"/>, is not finite. A finite <paramref name="layoutY"/> is
+    /// refused when <see cref="PageBounds"/>'s height is not finite or the subtraction overflows.
+    /// </exception>
+    /// <exception cref="NullReferenceException">
+    /// Raised from this call when this context was constructed with a null document.
+    /// </exception>
+    public void AddOutlineEntry(string title, int level, double layoutY, bool expanded)
+    {
+        ArgumentNullException.ThrowIfNull(title);
+        if (!double.IsFinite(ToPdfY(layoutY)))
+            throw new ArgumentOutOfRangeException(
+                nameof(layoutY), layoutY, "The destination's Y is not finite.");
+        AddOutlineEntryCore(title, level, layoutY, expanded);
+    }
+
+    internal void AddOutlineEntryCore(string title, int level, double layoutY, bool expanded)
     {
         var pdfY = ToPdfY(layoutY);
         _document.AddOutlineEntry(new PdfOutlineEntry
@@ -252,6 +312,7 @@ public sealed class DrawContext
             DestLeft = 0,
             DestTop = pdfY,
             Level = level,
+            IsExpanded = expanded,
         });
     }
 

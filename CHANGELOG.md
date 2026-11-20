@@ -19,6 +19,50 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   a signature takes its time from `PdfSignatureSettings.SigningTime`, and an embedded font's
   ToUnicode map differs between Windows and Linux (#630). Nothing changes for a document that
   leaves both unset.
+- **`Heading.BookmarkExpanded` and a four-argument `DrawContext.AddOutlineEntry` (#609).** A
+  heading's bookmark can now be written closed: `BookmarkExpanded = false` gives the entry a
+  negative `/Count` (ISO 32000-2:2020, 12.3.3, Table 151). The value only takes effect when later
+  bookmarks nest under the entry; an entry without children has no `/Count`, so the file is the
+  same as with `true`. The new `AddOutlineEntry(title, level, layoutY, expanded)` overload refuses
+  a null title (`ArgumentNullException`) and a position that maps to a non-finite destination
+  (`ArgumentOutOfRangeException`) at the call. The three-argument overload is unchanged and writes
+  an open entry.
+
+- **`Document.Diagnostics` and `Document.StrictDiagnostics` (#607).** One channel for what a save
+  keeps while it loses, misplaces or substitutes content, and an opt-in switch that turns each
+  report into a refusal.
+  - `Diagnostics` lists `LayoutDiagnostic` items (`Code`, `Severity`, `Message`, `Clause`,
+    `ElementKind`, `ElementIndex`, `PageNumber`, `Count`), one per code and subject, replaced by
+    each save that succeeds. It is a read-only view.
+  - The codes are `NullTextRunStyle` (a `TextRun` with a null style that yields no word),
+    `UnencodableCharacter` (a character written as `?`, one item per character with its count,
+    mirroring `TextEncodingWarnings`), `NullGrandchildText` and `NullGrandchild` (a null text or a
+    null child below the second level of a list), `BandTruncated` (mirroring `BandTruncations`) and
+    `DiagnosticsDropped`.
+  - A save stores at most 1,000 distinct items. When it drops any, the list ends with
+    `DiagnosticsDropped`, whose `Count` is the number of occurrences dropped.
+  - `TextEncodingWarnings` and `BandTruncations` keep their content and order.
+  - With `StrictDiagnostics = true`, a save that would report an error item throws
+    `InvalidOperationException` after the layout and before anything is written. That holds for
+    every save overload and for signing. An existing file at the path keeps its bytes, and a file
+    the save created is removed.
+  - The switch is off by default. No document that saved on 2.3.3 stops saving, and the bytes of a
+    saved document do not change. 3.0 refuses every error item (#614).
+
+  **Attention:**
+  - A running band cut to fit is now an error, so the earlier documentation that called it "not an
+    error" no longer holds, and strict mode refuses it.
+  - Strict mode runs after the layout and before the write. A refusal that only the write raises,
+    such as a signature page past the last page, and a cancellation seen after the layout started,
+    give way to the strict refusal when the switch is on.
+  - A save now walks the list items below the second level to look for nulls. It visits each
+    item once, however many lists and second-level items reach it, so the work is linear in the
+    items and child links you built there. A null text or null child is counted once in the save,
+    under the first list the document draws, in drawing order, that reaches it. A list that
+    starts at a later item, or that your own renderer lays out and does not draw, takes no part.
+  - The marker the library draws on a list item, such as the nested bullet in a Standard 14 font,
+    is not listed as an unencodable character when the document draws the list. A list that your
+    own renderer draws through a `DrawContext` you built can still list it.
 - **Internal name tree and number tree writers (#241).** `NameTreeWriter` and `NumberTreeWriter`
   in `VellumPdf.Kernel` build the structures ISO 32000-2, 7.9.6 and 7.9.7 define, which the
   catalog's `/Names` and `/PageLabels` entries, and later named destinations and embedded files,
@@ -183,6 +227,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **On .NET 10 an empty stream was written as `/FlateDecode` with no data (#640).** `PdfStream`
+  compressed through `ZLibStream`, which on .NET 10.0.15 writes nothing for empty input, so an empty
+  page's `/Contents` came out as `/Filter /FlateDecode /Length 0` with an empty body, which is not
+  an RFC 1950 stream (no header, no Adler-32). .NET 11.0.0 writes the 8 bytes of an empty zlib
+  stream, and so does `PdfStream` now on both: `78 9C 03 00 00 00 00 01`. This is a deliberate
+  output change on net10.0 only: every saved document that holds an empty unencrypted `PdfStream`
+  gains 8 bytes for it, which moves the `/Length`, the body and every later offset. An
+  AES-256-encrypted document with an empty page saves the same 2,002 bytes and `/Length 32` as
+  before, because the body is encrypted; only the decrypted plaintext changes. net11.0 output is
+  byte-identical, and a stream of one byte or more is unchanged on both. qpdf 12.4.2 `--check`,
+  `pdftotext` (poppler) and veraPDF 1.30.4 (PDF/A-2u) accepted the empty body, so only the bytes
+  show it in those tools. `Document.Timestamp` no longer lists this runtime difference among the
+  cases where output can differ.
 - **A deep structure tree saves instead of ending the process (#638).** A tagged document whose
   structure tree was deeper than the calling thread's stack allowed overflowed the stack inside
   `Save`, and .NET cannot catch that. The six walks that number the tree, order its pages, derive
@@ -205,6 +262,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   identifier wrongly (#597).** They said it comes from the page content, which it never did: it
   comes from the title, the producer, the page count and the time. They also said the bytes of two
   identical saves differ, where they depend on when the document is saved.
+- **A heading that splits across pages gets its bookmark where it starts (#464).** The split
+  piece, on the page where the heading starts, now carries the box it was placed in, so the
+  bookmark's `/XYZ` top is where the heading starts instead of the top of the page. Deliberate
+  output change: only that top value changes, and only for a heading whose split piece does not
+  start at layout y 0. That includes a split piece that starts above y 0, through a negative
+  margin, whose top moves from the page height to a value above it. The byte offsets that follow
+  the value move with it.
+
 - **`PdfCanvas` refuses NaN and infinity in every operand it writes (#519).** Every content-stream
   operator that writes a number now throws `ArgumentException` for `NaN` or infinity, with the same
   message as `PdfReal`, instead of writing `NaN 0 0 rg`, which is not a PDF number (ISO 32000-2
