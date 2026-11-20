@@ -36,21 +36,22 @@ namespace VellumPdf.Kernel.Tests;
 /// The hash is taken over a normalised file, so it does not move with the runtime's Deflate
 /// output, which the library does not control. The two target frameworks already differ: an empty
 /// page content stream is written as <c>/Filter /FlateDecode /Length 0</c> with no data on net10.0
-/// and as the eight bytes of an empty zlib stream on net11.0, which moves every later offset. <see cref="Normalise"/> inflates every <c>/FlateDecode</c> stream, sets its
+/// and as the eight bytes of an empty zlib stream on net11.0, which moves every later offset.
+/// <see cref="Normalise"/> inflates every <c>/FlateDecode</c> stream, sets its
 /// <c>/Length</c> to the inflated length, and replaces what depends on a byte offset or on a
 /// compressed size: the cross-reference entries, <c>startxref</c>, the trailer or
 /// cross-reference stream <c>/Prev</c> offset (not an outline item's <c>/Prev N 0 R</c>), the
-/// linearization dictionary's <c>/L</c>, <c>/H</c>, <c>/E</c> and <c>/T</c> (its <c>/O</c> and <c>/N</c>
-/// stay pinned), and the contents of a hint stream or a cross-reference stream.
+/// linearization dictionary's <c>/L</c>, <c>/H</c>, <c>/E</c> and <c>/T</c> (its <c>/O</c> and
+/// <c>/N</c> stay pinned), and the contents of a hint stream or a cross-reference stream.
 /// Everything else is hashed as written, so object order, object numbers, every dictionary key
-/// and every stream's decoded content stay pinned; what the normalisation drops, <c>qpdf --check</c>
-/// checks in the same file. One hash therefore serves both target frameworks.
+/// and every stream's decoded content stay pinned; what the normalisation drops,
+/// <c>qpdf --check</c> checks in the same file. One hash therefore serves both target frameworks.
 /// </para>
 /// <para>
 /// An encrypted file has no hash here: the file key, the <c>/U</c> and <c>/O</c> salts and every
 /// initialisation vector come from the system random number generator, so the same document saved
-/// twice differs in content and can differ in length. Its catalog object and trailer are stable, and are pinned
-/// structurally instead.
+/// twice differs in content and can differ in length. Its catalog object and trailer are stable,
+/// and are pinned structurally instead.
 /// </para>
 /// </remarks>
 public sealed class CatalogGoldenTests
@@ -58,9 +59,9 @@ public sealed class CatalogGoldenTests
     private static readonly DateTimeOffset Pinned = new(2026, 11, 19, 12, 0, 0, TimeSpan.Zero);
 
     /// <summary>
-    /// One configuration's expected output: the SHA-256 (upper-case hex) of the normalised file, and
-    /// the exact catalog object text (<see langword="null"/> where the catalog sits inside an object
-    /// stream and has no plain text).
+    /// One configuration's expected output: the SHA-256 (upper-case hex) of the normalised file,
+    /// and the exact catalog object text (<see langword="null"/> where the catalog sits inside an
+    /// object stream and has no plain text).
     /// </summary>
     private sealed record Golden(string Sha, string? CatalogText);
 
@@ -178,7 +179,8 @@ public sealed class CatalogGoldenTests
                 document.Language = "en";
                 break;
             case "outline-pdfa2u":
-                // The one configuration in which the two paths number the output-intent object differently.
+                // The one configuration in which the two paths number the output-intent object
+                // differently.
                 document.AddOutlineEntry(new PdfOutlineEntry { Title = "A", DestPage = page, DestTop = 700 });
                 document.Conformance = PdfConformance.PdfA2u;
                 break;
@@ -210,15 +212,15 @@ public sealed class CatalogGoldenTests
 
     private static string Sha256(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes));
 
-    // An object whose dictionary is followed by a stream. The dictionary may not cross an endobj or a
-    // stream keyword, so it is always the one dictionary of one object.
+    // An object whose dictionary is followed by a stream. The dictionary may not cross an endobj
+    // or a stream keyword, so it is always the one dictionary of one object.
     private static readonly Regex StreamObject = new(
         @"(?<head>\d+ 0 obj\n)(?<dict><<(?:(?!\nstream\n|endobj).)*?>>)(?<mid>\nstream\n)(?<data>.*?)(?<tail>\nendstream)",
         RegexOptions.Singleline | RegexOptions.CultureInvariant);
 
     /// <summary>
-    /// The file with everything that depends on the runtime's compressor removed, as the type remarks
-    /// describe, as Latin-1 text (one char per byte).
+    /// The file with everything that depends on the runtime's compressor removed, as the type
+    /// remarks describe, as Latin-1 text (one char per byte).
     /// </summary>
     private static string Normalise(byte[] pdf)
     {
@@ -299,8 +301,8 @@ public sealed class CatalogGoldenTests
     [Fact]
     public void PrepareForSigning_ignoresLinearize()
     {
-        // The signing path writes one fixed layout; the flag is accepted and has no effect (a shared catalog
-        // builder must not make the signing catalog vary with it, #606).
+        // The signing path writes one fixed layout; the flag is accepted and has no effect (a
+        // shared catalog builder must not make the signing catalog vary with it, #606).
         var plain = Sign("plain");
         var linearized = Sign("plain", d => d.Linearize = true);
         Assert.True(Sha256(plain) == Sha256(linearized), "Linearize changed the signing path's bytes.");
@@ -310,8 +312,8 @@ public sealed class CatalogGoldenTests
     [Fact]
     public void Save_withObjectStreams_keepsTheCatalogKeysInOrder()
     {
-        // The catalog is compressed into an object stream, so there is no plain text to compare; read
-        // it back and assert key order and every value.
+        // The catalog is compressed into an object stream, so there is no plain text to compare;
+        // read it back and assert key order and every value.
         var pdf = Save("objstm");
         Assert.DoesNotContain("/Type /Catalog", Encoding.Latin1.GetString(pdf), StringComparison.Ordinal);
 
@@ -327,8 +329,8 @@ public sealed class CatalogGoldenTests
     [Fact]
     public void Save_withEncryption_keepsTheCatalogObjectAndTrailer()
     {
-        // No hash: see the type remarks. The catalog holds no string, so its text is not encrypted and
-        // is stable; so are the object count and the /Encrypt reference.
+        // No hash: see the type remarks. The catalog holds no string, so its text is not
+        // encrypted and is stable; so are the object count and the /Encrypt reference.
         var document = Build("plain");
         document.Encrypt(new PdfEncryptionSettings { UserPassword = "u", OwnerPassword = "o" });
         using var ms = new MemoryStream();
@@ -365,8 +367,8 @@ public sealed class CatalogGoldenTests
         AssertQpdfCheckClean(ms.ToArray(), password: "u");
     }
 
-    // Asserts the exit code (qpdf exits 2 for an error and 3 for a warning) and qpdf's own verdict line,
-    // so a change to either shows here.
+    // Asserts the exit code (qpdf exits 2 for an error and 3 for a warning) and qpdf's own
+    // verdict line, so a change to either shows here.
     private static void AssertQpdfCheckClean(byte[] pdf, string? password)
     {
         var dir = Path.Combine(Path.GetTempPath(), "vellum_catalog_golden_" + Guid.NewGuid().ToString("N"));
