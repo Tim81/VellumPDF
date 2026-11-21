@@ -7,6 +7,8 @@ using VellumPdf.Document;
 using VellumPdf.Fonts;
 using VellumPdf.Layout.Core;
 using VellumPdf.Layout.Elements.Table;
+using VellumPdf.Layout.Rendering;
+using VellumPdf.Layout.Rendering.Table;
 
 namespace VellumPdf.Layout.Tests;
 
@@ -742,30 +744,34 @@ public sealed partial class TableColumnAxisTests
 
     /// <summary>
     /// D2: hard-breaking a cell word that used to draw as a single over-wide line (#473) can make
-    /// the row taller than the page has room for, so a document that rendered before this pull
-    /// request now throws instead. This is a deliberate, disclosed consequence of measuring the
-    /// cell correctly rather than a new validation rule — see the CHANGELOG entry this pins. Page
-    /// 400x200, zero margins, one 100pt column with zero padding, one cell holding 300 "W"s at the
-    /// default 10pt size: the hard-broken lines do not fit a 200pt page height.
+    /// the row taller than the page has room for. A row taller than a page is cut between its lines
+    /// and continues on the next page (#516), so the document saves; before that it threw "too
+    /// tall", and this test pinned the refusal. Page 400x200, zero margins, one 100pt column with
+    /// zero padding, one cell holding 300 "W"s at the default 10pt size: the hard-broken lines are
+    /// ten "W"s each, 30 lines of 12pt, and a 200pt page holds 16 of them. Page 1 draws lines 1 to
+    /// 16 and page 2 lines 17 to 30, every "W" once and in order.
     /// </summary>
     [Fact]
-    public void CellText_hardBrokenRowTallerThanThePage_throwsElementTooTall()
+    public void CellText_hardBrokenRowTallerThanThePage_continuesOnTheNextPage()
     {
-        const string elementTooTallMessage =
-            "An element is too tall to fit on a single page and cannot be rendered. " +
-            "Reduce the element's content or increase the page size.";
-
-        using var doc = new Document
-        {
-            PageSize = new PdfRectangle(0, 0, 400, 200),
-            Margins = EdgeInsets.Zero,
-        };
+        var pdf = new PdfDocument();
+        var renderer = new DocumentRenderer(pdf, new PdfRectangle(0, 0, 400, 200), EdgeInsets.Zero);
         var t = new TableElement { DefaultCellStyle = Style() };
         t.SetColumnWidths(100);
         t.AddRow().AddCell(new Cell(new string('W', 300)) { Padding = EdgeInsets.Zero });
-        doc.Add(t);
+        renderer.Add(new TableRenderer(t));
+        using var ms = new MemoryStream();
+        renderer.Render(ms);
 
-        var ex = Assert.Throws<InvalidOperationException>(() => doc.Save(new MemoryStream()));
-        Assert.Equal(elementTooTallMessage, ex.Message);
+        var pages = pdf.Pages
+            .Select(p => ContentStreamReadback.TextPlacements(System.Text.Encoding.Latin1.GetString(p.ContentBytes!)))
+            .ToList();
+
+        Assert.Equal(2, pages.Count);
+        Assert.Equal(16, pages[0].Count);
+        Assert.Equal(14, pages[1].Count);
+        Assert.All(pages.SelectMany(p => p), p => Assert.Equal(new string('W', 10), p.Text));
+        Assert.Equal(200.0 - 10.0, pages[0][0].Y, 0.001);
+        Assert.Equal(pages[0][0].Y, pages[1][0].Y, 0.001);
     }
 }
