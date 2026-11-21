@@ -31,6 +31,7 @@ public sealed class PdfRectangle
     /// <param name="lly">Lower-left Y coordinate.</param>
     /// <param name="urx">Upper-right X coordinate.</param>
     /// <param name="ury">Upper-right Y coordinate.</param>
+    /// <remarks>A magnitude above 3.403 × 10^38 is written but fails PDF/A validation; see <see cref="PdfReal"/>.</remarks>
     public PdfRectangle(double llx, double lly, double urx, double ury)
     {
         LlX = llx; LlY = lly; UrX = urx; UrY = ury;

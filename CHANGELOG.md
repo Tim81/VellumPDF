@@ -16,9 +16,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   identifier then follows the current culture's minus sign, and pinning `DocumentId` as well
   removes the dependence. `DocumentId` sets both strings of the trailer `/ID`; a value that is not 16 bytes
   is refused by the setter with `ArgumentException`. An encrypted document is never reproducible,
-  a signature takes its time from `PdfSignatureSettings.SigningTime`, and an embedded font's
-  ToUnicode map differs between Windows and Linux (#630). Nothing changes for a document that
-  leaves both unset.
+  and a signature takes its time from `PdfSignatureSettings.SigningTime`. Nothing changes for a
+  document that leaves both unset.
 - **`Heading.BookmarkExpanded` and a four-argument `DrawContext.AddOutlineEntry` (#609).** A
   heading's bookmark can now be written closed: `BookmarkExpanded = false` gives the entry a
   negative `/Count` (ISO 32000-2:2020, 12.3.3, Table 151). The value only takes effect when later
@@ -257,6 +256,75 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `pdftotext` (poppler) and veraPDF 1.30.4 (PDF/A-2u) accepted the empty body, so only the bytes
   show it in those tools. `Document.Timestamp` no longer lists this runtime difference among the
   cases where output can differ.
+- **A deep structure tree saves instead of ending the process (#638).** A tagged document whose
+  structure tree was deeper than the calling thread's stack allowed overflowed the stack inside
+  `Save`, and .NET cannot catch that. The six walks that number the tree, order its pages, derive
+  each element's `/Pg` and check its types no longer recurse, so the depth of the tree is not limited
+  by `Save`, `SaveAsync` or `PrepareForSigning`. Where each element has one parent, the walks take
+  time and memory in proportion to the number of elements; `Linearize` takes longer than that on a
+  very large tree, because the linearization planner searches a list once for each object. An
+  element added under two parents is walked once per path, so the time can grow exponentially with
+  the depth before `Save` refuses the tree with `InvalidOperationException`.
+  The page of a grouping element is now found in one pass over the tree rather than by walking the
+  subtree of every element, which made a chain's cost grow with the square of its depth. A
+  duplicate MCID, an MCID above the supported maximum, a non-standard type and a shared element
+  without an MCID are refused with the same exception and message as on 2.3.3, the cycle and
+  null-child refusals stay as #521 introduced them, and a tree that saved before saves to the same
+  bytes. **Attention**: a tree deeper than the stack allowed ended the
+  process on 2.3.3 and now saves; the file is valid, but a reader that walks the structure tree
+  recursively can fail on it, so do not build a tree deeper than your readers can walk (ISO 32000-2
+  Annex C, Table C.1, "Nested objects").
+- **A whole number outside the 32-bit range is written as a real token, not an integer token
+  (#639).** `PdfReal`, every `PdfCanvas` operand, and the numbers in the AcroForm appearance
+  streams and `/DA` strings all wrote `2147483648` for 2147483648.0. ISO 32000-1, Table C.1 gives
+  2,147,483,647 as the largest integer (ISO 32000-2, Table C.1 says only that integers "can often
+  be expressed within 32 bits"), and ISO 19005-2, 6.1.13 fails a PDF/A file with an integer outside
+  that range. From 2^63 up, `qpdf --check` reported "overflow/underflow converting
+  9223372036854780000 to 64-bit integer" and treated the object as null, so a link annotation or a
+  content stream was dropped. One internal formatter now formats all three, and when the rounded
+  text has no decimal point and is not a 32-bit integer it appends `.0`. **Deliberate output
+  change:** 2147483648 is written as `2147483648.0`, -2147483649 as `-2147483649.0` and 3e9 as
+  `3000000000.0`; 2147483647, -2147483648, 3, 0.5 and `-0` keep their 2.3.3 bytes, and so does
+  every document that holds no such number. `SaveDecrypted` writes a read-back real of that size
+  the same way. A magnitude above 3.403 × 10^38 is now a valid real token, but it is still outside
+  the real range of ISO 19005-2, 6.1.13, so the XML documentation of `PdfReal`, `PdfCanvas`,
+  `PdfRectangle` and the destination coordinates of links and outline entries says not to pass it.
+- **`AddTextField`, `AddCheckBox`, `AddChoiceField`, `AddRadioButtonGroup` and `AddPushButton` write
+  names, values, options and captions as PDF text strings (#641).** The field dictionary used its
+  own encoder: a string with no character above U+00FF became Latin-1 bytes, which a reader
+  decodes differently where PDFDocEncoding differs (ISO 32000-2, Table D.3). **Deliberate output
+  change:** a string containing U+0018 to U+001F, U+007F, U+0080 to U+00A0 or U+00AD, or starting
+  with U+00FE U+00FF or U+00EF U+00BB U+00BF, is now UTF-16BE with a byte order mark and decodes
+  as passed, except that U+001B is written as it stands and a reader takes it for the start of a
+  language escape sequence (ISO 32000-2, 7.9.2.2.2), so do not pass it. A lone surrogate is
+  written as U+FFFD, where it used to be written alone. Strings with only printable ASCII, U+00A1
+  to U+00FF except U+00AD, or U+0000 to U+0017, that do not start with a byte order mark, and
+  strings with a character above U+00FF that are well formed, keep their bytes. The appearance stream still
+  draws each character as a WinAnsiEncoding byte, so U+0080 is drawn as the euro sign. The XML
+  documentation now says all this and lists the exceptions `Save`, `SaveAsync` and
+  `PrepareForSigning` raise for a drawn value outside WinAnsiEncoding.
+
+- **An embedded font's ToUnicode map ends every line with a line feed on every operating system
+  (#630).** It was written with `StringBuilder.AppendLine`, so on Windows each line ended with a
+  carriage return and a line feed, and the same document saved to different bytes on Windows and
+  Linux. Deliberate output change: on Windows only, a document with an embedded TrueType or
+  OpenType font has a ToUnicode stream with one byte less per line, which is 18 bytes for the text
+  `Hello` in DejaVu Sans (398 bytes inflated before, 380 after). The compressed length and every
+  later byte offset follow. Linux output is unchanged, and so is a document without an embedded
+  font. For a one-page Kernel document that draws `Hello` in DejaVu Sans or in Source Sans 3, with
+  the time and identifier pinned, the whole file saved by 2.3.3 on Linux, by this build on Linux
+  and by this build on Windows has one SHA-256. A ToUnicode CMap is a stream
+  body, so the end-of-line rules of ISO 32000-2:2020, 7.2.3 do not cover it; it follows 9.10.3 and
+  9.7.5.4, which point to Adobe Technical Note #5014, and that note calls a CMap file an ASCII text
+  file in a subset and extension of PostScript. The PostScript language reference that defines its
+  line ends is not held, so this entry does not claim the old form was invalid, and 2.3.3 already
+  wrote line feeds on Linux. The build now refuses the framework calls that write or read the
+  platform line end (`StringBuilder.AppendLine`, `Environment.NewLine`, `TextWriter.WriteLine`
+  and `TextWriter.NewLine`, `Console.WriteLine`, the parameterless `String.ReplaceLineEndings`,
+  `File.WriteAllLines` and `File.AppendAllLines`, `XNode.ToString`, and the `Save` overloads of
+  `XDocument`, `XElement` and `XmlDocument` that do not take an `XmlWriter`) in every library
+  project except the command-line tool. A literal CR LF in a string, an `XmlWriter` that indents
+  without setting `NewLineChars`, and any call not on that list are not caught by the build.
 - **The Kernel's `DocumentId` summary and `docs/kernel-guide.md` section 9 described the derived
   identifier wrongly (#597).** They said it comes from the page content, which it never did: it
   comes from the title, the producer, the page count and the time. They also said the bytes of two
@@ -663,7 +731,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   which was `?`, is now U+FFFD. Printable ASCII and U+00A1 to U+00FF except U+00AD are
   byte-identical to 2.3.3, and none of the 13 values probed fails to sign. U+001B is written as it
   stands and a reader takes it for a language escape; the documentation says not to pass it.
-  `AcroFormBuilder` writes field text strings its own way and is not changed here. The public XML
+  The AcroForm field text strings are changed separately (#641). The public XML
   documentation on the four signing properties and the output-intent methods now says all this, and
   replaces the sentence that described the best-fit substitution as the behaviour.
 - **`ExternalToolTests.TryRun_CapturesOutputLargerThanTheOsPipeBuffer` no longer times out on a

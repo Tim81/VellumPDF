@@ -22,12 +22,12 @@ namespace VellumPdf.Document;
 /// </remarks>
 internal sealed class NamedDestinationTable
 {
-    // ISO 32000-1 Table C.1 gives 2,147,483,647 (2^31 - 1) as the largest integer, and PdfReal
-    // writes a whole value with no decimal point, so a coordinate this large reaches the file as an
-    // integer token. PDF/A-2 6.1.13 holds a file to that range, and veraPDF fails it from
-    // 2,147,483,648 and from -2,147,483,649. The bound is symmetric on purpose, so -2,147,483,648,
-    // which Table C.1 allows, is refused too. The Table C.1 limit for a real number
-    // (3.403e38) is not the bound that matters.
+    // ISO 32000-1 Table C.1 gives 2,147,483,647 (2^31 - 1) as the largest integer. PdfReal writes
+    // a whole value outside that range as a real token (2147483648.0), so a larger coordinate is
+    // writable, and the real range of PDF/A-2 6.1.13 (3.403e38) would admit it. This table is
+    // internal and has no caller in src, so the stricter bound is kept: refusing is safe, and
+    // widening it would need its own tests. The bound is symmetric,
+    // so -2,147,483,648, which Table C.1 allows, is refused too.
     private const double MaxCoordinate = 2_147_483_647;
 
     private readonly Dictionary<string, (PdfPage Page, double Left, double Top)> _entries = new(StringComparer.Ordinal);

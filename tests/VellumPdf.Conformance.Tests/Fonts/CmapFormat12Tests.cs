@@ -267,13 +267,10 @@ public sealed class CmapFormat12Tests
     /// zlib on another platform cannot move them. A change to which glyph a BMP code point maps to,
     /// or to what is embedded for it, changes a digest.
     ///
-    /// <para>The ToUnicode map is written with <c>StringBuilder.AppendLine</c>, so its line breaks
-    /// are CRLF on Windows and LF on Linux: the map is 18 bytes shorter for these 4 characters,
-    /// measured on a Windows build and under WSL Ubuntu 24.04, and a digest over the raw bytes
-    /// failed on the Linux runner for that reason. That is 2.3.3's own behaviour, so
-    /// <see cref="StreamBodies"/> folds CRLF to LF in that one stream before hashing, and the
-    /// digests are the 2.3.3 bytes under that fold. The fold is limited to the ToUnicode map
-    /// because a font program can hold a CR LF pair that is data.</para>
+    /// <para>2.3.3 wrote the ToUnicode map with the platform line end, so on Windows these digests
+    /// matched only after folding CR LF to LF in that one stream. The map ends its lines with LF on
+    /// every platform now, so the digests are over the raw inflated bytes and are the ones 2.3.3
+    /// gave on Linux.</para>
     /// </summary>
     [Theory]
     [InlineData("DejaVuSans.ttf", "intact", "3E4AEB889F5F4A0C6FCD224C50417ABAD966CAF6A8DA17E1322AEB506F46E2A1")]
@@ -644,9 +641,7 @@ public sealed class CmapFormat12Tests
     }
 
     /// <summary>
-    /// Every stream body of the PDF, inflated where it is deflated, concatenated. The ToUnicode
-    /// map's line breaks are folded from CRLF to LF, because the library writes them with
-    /// <c>AppendLine</c> and they follow the platform.
+    /// Every stream body of the PDF, inflated where it is deflated, concatenated.
     /// </summary>
     private static byte[] StreamBodies(byte[] pdf)
     {
@@ -672,8 +667,6 @@ public sealed class CmapFormat12Tests
             {
                 body = pdf[s..e];
             }
-            if (body.AsSpan().StartsWith("/CIDInit"u8))
-                body = Encoding.Latin1.GetBytes(Encoding.Latin1.GetString(body).Replace("\r\n", "\n", StringComparison.Ordinal));
             all.Write(body);
             pos = e + "\nendstream".Length;   // past the keyword, which itself contains "stream\n"
         }
