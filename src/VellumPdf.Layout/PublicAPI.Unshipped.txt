@@ -41,6 +41,26 @@ override VellumPdf.Layout.LayoutDiagnostic.ToString() -> string!
 VellumPdf.Layout.Core.DrawContext.AddOutlineEntry(string! title, int level, double layoutY, bool expanded) -> void
 VellumPdf.Layout.Elements.Heading.BookmarkExpanded.get -> bool
 VellumPdf.Layout.Elements.Heading.BookmarkExpanded.init -> void
+VellumPdf.Layout.Core.TabAlignment
+VellumPdf.Layout.Core.TabAlignment.Center = 2 -> VellumPdf.Layout.Core.TabAlignment
+VellumPdf.Layout.Core.TabAlignment.Decimal = 3 -> VellumPdf.Layout.Core.TabAlignment
+VellumPdf.Layout.Core.TabAlignment.Left = 0 -> VellumPdf.Layout.Core.TabAlignment
+VellumPdf.Layout.Core.TabAlignment.Right = 1 -> VellumPdf.Layout.Core.TabAlignment
+VellumPdf.Layout.Core.TabLeader
+VellumPdf.Layout.Core.TabLeader.Dashes = 2 -> VellumPdf.Layout.Core.TabLeader
+VellumPdf.Layout.Core.TabLeader.Dots = 1 -> VellumPdf.Layout.Core.TabLeader
+VellumPdf.Layout.Core.TabLeader.None = 0 -> VellumPdf.Layout.Core.TabLeader
+VellumPdf.Layout.Core.TabLeader.Rule = 3 -> VellumPdf.Layout.Core.TabLeader
+VellumPdf.Layout.Core.TabStop
+VellumPdf.Layout.Core.TabStop.Alignment.get -> VellumPdf.Layout.Core.TabAlignment
+VellumPdf.Layout.Core.TabStop.DecimalCharacter.get -> char
+VellumPdf.Layout.Core.TabStop.DecimalCharacter.init -> void
+VellumPdf.Layout.Core.TabStop.Leader.get -> VellumPdf.Layout.Core.TabLeader
+VellumPdf.Layout.Core.TabStop.Position.get -> double
+VellumPdf.Layout.Core.TabStop.TabStop(double position, VellumPdf.Layout.Core.TabAlignment alignment = VellumPdf.Layout.Core.TabAlignment.Left, VellumPdf.Layout.Core.TabLeader leader = VellumPdf.Layout.Core.TabLeader.None) -> void
+VellumPdf.Layout.Elements.Paragraph.TabStops.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Layout.Core.TabStop!>?
+VellumPdf.Layout.Elements.Paragraph.TabStops.init -> void
+VellumPdf.Layout.LayoutDiagnosticCode.TabStopBeyondWidth = 106 -> VellumPdf.Layout.LayoutDiagnosticCode
 VellumPdf.Layout.Core.PageBreakMode
 VellumPdf.Layout.Core.PageBreakMode.None = 0 -> VellumPdf.Layout.Core.PageBreakMode
 VellumPdf.Layout.Core.PageBreakMode.Page = 1 -> VellumPdf.Layout.Core.PageBreakMode
@@ -64,3 +84,7 @@ VellumPdf.Layout.Elements.Heading.Heading(System.Collections.Generic.IEnumerable
 VellumPdf.Layout.Elements.Heading.Runs.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Layout.Elements.TextRun!>!
 VellumPdf.Layout.Elements.ListItem.ListItem(System.Collections.Generic.IEnumerable<VellumPdf.Layout.Elements.TextRun!>! runs) -> void
 VellumPdf.Layout.Elements.ListItem.Runs.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Layout.Elements.TextRun!>!
+
+VellumPdf.Layout.Elements.Table.TableElement.Add(VellumPdf.Layout.Elements.Table.Row! row) -> VellumPdf.Layout.Elements.Table.Row!
+VellumPdf.Layout.LayoutDiagnosticCode.NotdefGlyph = 102 -> VellumPdf.Layout.LayoutDiagnosticCode
+VellumPdf.Layout.LayoutDiagnosticCode.UnembeddedFont = 601 -> VellumPdf.Layout.LayoutDiagnosticCode

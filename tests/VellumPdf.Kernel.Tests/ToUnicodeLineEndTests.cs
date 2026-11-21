@@ -144,7 +144,7 @@ public sealed class ToUnicodeLineEndTests
     private static int Count(byte[] data, byte value) => data.Count(b => b == value);
 
     /// <summary>The inflated body of every stream that starts with <c>/CIDInit</c>, which is only the ToUnicode maps.</summary>
-    private static List<byte[]> ToUnicodeMaps(byte[] pdf)
+    internal static List<byte[]> ToUnicodeMaps(byte[] pdf)
     {
         var text = Encoding.Latin1.GetString(pdf);
         var maps = new List<byte[]>();

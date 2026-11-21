@@ -15,7 +15,8 @@ namespace VellumPdf.Layout.Elements.Table;
 /// </summary>
 /// <remarks>
 /// A table that resolves to no columns is refused at save; see <see cref="Rows"/>. A table whose
-/// rows are all headers has no repeatable header and draws each row once; see <see cref="AddRow"/>.
+/// rows are all headers has no repeatable header and draws each row once; see
+/// <see cref="AddRow(bool)"/>.
 /// The table is one element for the page limit described on <see cref="IRenderer.Layout"/>: a
 /// table that needs more than <b>50,000</b> page continuations makes the save throw.
 /// </remarks>
@@ -36,9 +37,26 @@ public sealed class TableElement
     /// Null means <see cref="TextStyle.Default"/> for cells that have no style of their own.
     /// Refusals on size, leading, font and text colour are on <see cref="TextStyle"/> and are
     /// raised from the save. A <see cref="TextStyle.LinkUri"/> in it is ignored.
+    /// <para>A table with no default cell style does not take
+    /// <see cref="Document.SetDefaultFont"/>; its cells take <see cref="TextStyle.Default"/>. The
+    /// font is then Helvetica, which is not embedded. While <see cref="Document.Conformance"/> is
+    /// not <see cref="VellumPdf.Document.PdfConformance.None"/> the save reports the element as
+    /// <see cref="LayoutDiagnosticCode.UnembeddedFont"/> in <see cref="Document.Diagnostics"/> and
+    /// still saves; only <see cref="Document.StrictDiagnostics"/> refuses it. <b>Do not leave the
+    /// style out</b> of an element in a PDF/A or PDF/UA document; give it a style with an embedded
+    /// font. A later major version refuses an element that falls back to Helvetica under either
+    /// claim.</para>
     /// </remarks>
     /// <inheritdoc cref="Heading.Style" path="/exception[@cref='T:System.InvalidOperationException' or @cref='T:System.IndexOutOfRangeException']"/>
     /// <inheritdoc cref="ListElement.DefaultStyle" path="/exception[@cref='T:System.ArgumentException']"/>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from here, when <see cref="Document.StrictDiagnostics"/> is set and text of the element is
+    /// written as glyph 0, or the document has a conformance claim and the element writes Helvetica
+    /// or another Standard 14 font; the save reports them as
+    /// <see cref="LayoutDiagnosticCode.NotdefGlyph"/> and
+    /// <see cref="LayoutDiagnosticCode.UnembeddedFont"/>.
+    /// </exception>
     public TextStyle? DefaultCellStyle { get; init; }
 
     /// <summary>Width of the table border lines, in points.</summary>
@@ -186,7 +204,42 @@ public sealed class TableElement
     }
 
     /// <summary>
-    /// Appends a new header row and returns it. See <see cref="AddRow"/> for when a header row
+    /// Appends a row you built, so that its <see cref="Row.Background"/> takes effect, and returns
+    /// it.
+    /// </summary>
+    /// <remarks>
+    /// <b>A null row is refused, and so is a row whose <see cref="Row.Background"/> has a channel
+    /// that is not finite or lies outside 0 to 1.</b> This call throws
+    /// <see cref="ArgumentNullException"/> or <see cref="ArgumentOutOfRangeException"/>, and the
+    /// table is left as it was. The range is that of ISO 32000-2:2020, 8.6.4.3, which says each
+    /// DeviceRGB component is a number from 0.0 to 1.0. The check is on the value as given, not on
+    /// the token written, so 1.000001 is refused although it would be written as <c>1</c>. A
+    /// background of exactly 0 or 1 in a channel is accepted.
+    /// <para>The table holds the row itself, not a copy. A cell added to the row afterwards is
+    /// drawn, and adding the same row twice draws it twice. A row with no cells is accepted, as
+    /// <see cref="AddRow(bool)"/> accepts one. <see cref="Row.IsHeader"/> is honoured as it is for
+    /// <see cref="AddRow(bool)"/>. A cell's own <see cref="Cell.Background"/> is drawn in place of
+    /// the row's; see <see cref="Row.Background"/> for which cells get the row's fill.</para>
+    /// </remarks>
+    /// <param name="row">The row to append.</param>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="row"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// A channel of <c>row.Background</c> is <c>NaN</c>, infinite, below 0 or above 1.
+    /// <c>ParamName</c> is <c>row</c>, <c>ActualValue</c> is the channel's value, and the message
+    /// names the channel.
+    /// </exception>
+    public Row Add(Row row)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        LayoutValidation.ValidateRowBackground(row.Background, nameof(row));
+        _rows.Add(row);
+        return row;
+    }
+
+    /// <summary>
+    /// Appends a new header row and returns it. See <see cref="AddRow(bool)"/> for when a header row
     /// repeats across continuation pages.
     /// </summary>
     /// <remarks>

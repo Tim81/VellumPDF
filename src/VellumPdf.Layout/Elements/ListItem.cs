@@ -45,6 +45,15 @@ public sealed class ListItem
     /// <see cref="TextStyle.Default"/>. On a child, null means the parent item's style after that
     /// same fallback. Refusals on size, leading, font and text colour are on
     /// <see cref="TextStyle"/> and are raised from the save.
+    /// <para>An item that resolves to no style of its own does not take
+    /// <see cref="Document.SetDefaultFont"/>. The font is then Helvetica, which is not embedded.
+    /// While <see cref="Document.Conformance"/> is not
+    /// <see cref="VellumPdf.Document.PdfConformance.None"/> the save reports the element as
+    /// <see cref="LayoutDiagnosticCode.UnembeddedFont"/> in <see cref="Document.Diagnostics"/> and
+    /// still saves; only <see cref="Document.StrictDiagnostics"/> refuses it. <b>Do not leave the
+    /// style out</b> of an element in a PDF/A or PDF/UA document; give it a style with an embedded
+    /// font. A later major version refuses an element that falls back to Helvetica under either
+    /// claim.</para>
     /// <para>On an item built from runs this styles the marker and the children that set no style
     /// of their own, and none of this item's runs, because each run has its own style. The
     /// marker of a child item takes its own style, or its parent's. A run is a link only through
@@ -70,6 +79,14 @@ public sealed class ListItem
     /// from this property, when text in this style holds an unpaired surrogate and is measured in
     /// an embedded font; see <see cref="TextStyle.FontRef"/>.
     /// It is not raised for an item reached only as a child of a child.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from here, when <see cref="Document.StrictDiagnostics"/> is set and text of the element is
+    /// written as glyph 0, or the document has a conformance claim and the element writes Helvetica
+    /// or another Standard 14 font; the save reports them as
+    /// <see cref="LayoutDiagnosticCode.NotdefGlyph"/> and
+    /// <see cref="LayoutDiagnosticCode.UnembeddedFont"/>.
     /// </exception>
     public TextStyle? Style { get; init; }
 

@@ -12,6 +12,11 @@ namespace VellumPdf.Canvas;
 /// warning. Use an embedded font (via <c>SetFontByName</c> + <c>ShowGlyphs</c>) to render glyphs
 /// outside WinAnsi.
 /// </summary>
+/// <remarks>
+/// Only the Standard-14 <see cref="PdfCanvas.ShowText"/> path lists a character here. A glyph 0
+/// that <see cref="PdfCanvas.ShowGlyphs(System.ReadOnlySpan{ushort})"/> writes is listed in
+/// <see cref="PdfCanvas.NotdefGlyphs"/>, not in this type.
+/// </remarks>
 /// <param name="Character">
 /// The unrepresentable scalar. A <see cref="Rune"/> rather than a <see cref="char"/> so that a
 /// character outside the Basic Multilingual Plane is reported once, as itself, instead of twice as
