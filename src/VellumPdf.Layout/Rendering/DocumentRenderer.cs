@@ -44,13 +44,13 @@ public sealed class DocumentRenderer
     // instead. The message names the causes it can, because only one of them is the caller's own.
     private const int MaxContinuationsPerElement = 50_000;
 
-    // Shared by PlaceRenderer and CountPlaceRenderer so the two passes cannot drift to different
-    // wording, or different verdicts, on an element neither can place (#460). It does not make the
-    // passes agree in general: with a running band and no content at all, pass 1 still counts one
-    // page where pass 2 creates none, which predates this change. Making pass 1 throw also moves
-    // the throw earlier when a band is set, so a caller that catches it is left holding an empty
-    // PdfDocument rather than the pages pass 2 had already committed; PdfDocument.Save then reports
-    // that the document has no pages.
+    // Thrown from the one placement loop, which both passes run, so the two passes cannot drift to
+    // different wording, or different verdicts, on an element neither can place (#460). It does not
+    // make the passes agree in general: with a running band and no content at all, the measuring
+    // pass still counts one page where the drawing pass creates none, which predates the loop.
+    // The throw comes in the measuring pass when a band is set, so a caller that catches it is left
+    // holding an empty PdfDocument rather than the pages the drawing pass had already committed;
+    // PdfDocument.Save then reports that the document has no pages.
     private const string ElementTooTallMessage =
         "An element is too tall to fit on a single page and cannot be rendered. " +
         "Reduce the element's content or increase the page size.";
@@ -207,9 +207,6 @@ public sealed class DocumentRenderer
     /// <inheritdoc cref="Header" path="/remarks"/>
     /// <inheritdoc cref="Header" path="/exception"/>
     public RunningBand? Footer { get; set; }
-
-    // Pending bookmarks: queued by Document.AddBookmark, drained on next Draw.
-    internal readonly List<BookmarkEntry> PendingBookmarks = [];
 
     /// <summary>Creates a renderer that paginates content onto <paramref name="pdf"/> using the given page size and margins.</summary>
     /// <remarks>
@@ -410,6 +407,11 @@ public sealed class DocumentRenderer
     {
         // A refusal belongs to the layout that raised it; a renderer reused for another layout starts clean.
         _deferredCanvasRefusal = null;
+        MeasureRuns = 0;
+        LayoutCalls = 0;
+        _measureSink = null;
+        _drawSink = null;
+        _guard = null;
 
         var contentArea = ContentArea;
         if (contentArea.Width <= 0 || contentArea.Height <= 0)
@@ -420,35 +422,42 @@ public sealed class DocumentRenderer
                 "Reduce the margins or band heights.",
                 "margins");
 
+        // The check above refuses before any renderer has measured, so the document is still
+        // saveable once the caller has fixed what it names: a save that fails after the layout
+        // started cannot be retried, one refused before it can. The walk below, over the added
+        // elements, finds the plan-dependent ones.
+
         // From here the renderers measure and cache; see Document.MarkFailedIfLaidOut.
         HasStartedLayout = true;
 
+        var dependents = FindPlanDependents();
+
+        // Reports are collected only when something reads them: a dependent resolves against them
+        // and the guard compares the drawing pass with them. Tests set RecordPlacements.
+        _collect = dependents is not null || RecordPlacements;
+
         int totalPages;
-        if (Header is not null || Footer is not null)
+        if (dependents is not null)
         {
-            // Pass 1: count pages via the same PlaceRenderer code path (no PDF objects created).
-            totalPages = CountPages();
+            // Resolves the dependents against each run's plan until they stop changing, so what the
+            // drawing pass prints names the page its target is drawn on.
+            totalPages = MeasureUntilStable(dependents);
+        }
+        else if (Header is not null || Footer is not null)
+        {
+            // One measuring run: the same loop as the drawing pass, with no PDF objects created.
+            totalPages = RunPass(measure: true, totalPages: 0);
         }
         else
         {
             totalPages = 0; // unknown / irrelevant
         }
 
-        // Pass 2 (or only pass): full render with running bands resolved.
-        // The location is that of the element the document added, set here and not in
-        // PlaceRenderer: PlaceRenderer's variable becomes the overflow renderer, which for a
-        // heading is a plain paragraph renderer, and mapping that would call a heading's second
-        // page a paragraph.
-        for (var i = 0; i < _renderers.Count; i++)
-        {
-            _sink.CurrentKind = KindOf(_renderers[i]);
-            _sink.CurrentIndex = i;
-            PlaceRenderer(_renderers[i], totalPages);
-        }
-
-        _sink.CurrentKind = LayoutElementKind.Document;
-        _sink.CurrentIndex = null;
-        FinishCurrentPage(totalPages);
+        // The drawing pass, with running bands resolved. A document with a dependent compares each
+        // placement it reports with the last measuring run's, which is what the dependents were
+        // resolved against.
+        _guard = dependents is not null ? _measureSink : null;
+        RunPass(measure: false, totalPages);
         ReportBandTruncations();
 
         if (_deferredCanvasRefusal is not null)
@@ -536,39 +545,277 @@ public sealed class DocumentRenderer
         }
     }
 
+    // ── The placement loop ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The most measuring runs a document with a plan-dependent renderer gets before the save
+    /// refuses it. The first run resolves against the placeholder and each later one against the
+    /// run before it, so five runs allow four refinements.
+    /// </summary>
+    internal const int MaxMeasureRuns = 5;
+
+    /// <summary>Measuring runs of the last <see cref="RunLayout"/>, read by tests.</summary>
+    internal int MeasureRuns { get; private set; }
+
+    /// <summary>
+    /// <see cref="IRenderer.Layout"/> calls the placement loop made in the last
+    /// <see cref="RunLayout"/>, both passes together. Read by tests.
+    /// </summary>
+    internal int LayoutCalls { get; private set; }
+
+    /// <summary>
+    /// The plan of the last measuring run, or null when none ran. Built on each read.
+    /// </summary>
+    internal PaginationPlan? MeasurePlan =>
+        _measureSink is null ? null : new PaginationPlan(_measureSink.Placements, _measurePages);
+
+    /// <summary>
+    /// The plan the drawing pass reported, or null before it ran. Built on each read.
+    /// </summary>
+    internal PaginationPlan? DrawPlan =>
+        _drawSink is null ? null : new PaginationPlan(_drawSink.Placements, _drawPages);
+
+    // The pass the loop is in. A measuring pass creates no page and keeps its own cursor, so a
+    // page a failed drawing pass left open is not disturbed by it.
+    private bool _measuring;
+    private LayoutBox _measureArea;
+    private double _measureY;
+
+    // 0-based page of the cursor, counted the same way in both passes and from this layout's first
+    // page. _pdf.Pages.Count would differ between the passes for a kernel document that already
+    // holds pages.
+    private int _pageIndex;
+
+    private PlacementSink _placements = new();
+    private PlacementSink? _measureSink;
+    private PlacementSink? _drawSink;
+    private int _measurePages;
+    private int _drawPages;
+
+    // The measuring run the drawing pass is compared with; set only when a dependent exists.
+    private PlacementSink? _guard;
+
+    private bool _collect;
+
+    /// <summary>
+    /// Collect placement reports even when no dependent reads them. Off by default, so a document
+    /// pays for reports only when a dependent needs them; tests turn it on to read the plans.
+    /// </summary>
+    internal bool RecordPlacements { get; set; }
+
+    private double Cursor
+    {
+        get => _measuring ? _measureY : _currentY;
+        set
+        {
+            if (_measuring) _measureY = value;
+            else _currentY = value;
+        }
+    }
+
+    // The measuring pass reads the content area once, as it always has; the drawing pass reads it
+    // as it goes.
+    private LayoutBox PlaceArea => _measuring ? _measureArea : ContentArea;
+
+    // Only the renderers added to this document are searched, not ones a renderer holds inside
+    // itself.
+    private List<IPlanDependent>? FindPlanDependents()
+    {
+        List<IPlanDependent>? found = null;
+        foreach (var renderer in _renderers)
+            if (renderer is IPlanDependent dependent)
+                (found ??= []).Add(dependent);
+        return found;
+    }
+
+    /// <summary>
+    /// Runs one pass over every renderer. Returns the pages it counted: in a measuring pass, one
+    /// more than the pages it moved past, so a band with no content still counts one page.
+    /// </summary>
+    private int RunPass(bool measure, int totalPages)
+    {
+        _measuring = measure;
+        _pageIndex = 0;
+        _placements = new PlacementSink();
+        if (measure)
+        {
+            _measureArea = ContentArea;
+            _measureY = _margins.Top + HeaderHeight;
+            MeasureRuns++;
+        }
+
+        for (var i = 0; i < _renderers.Count; i++)
+        {
+            // The diagnostics location is that of the element the document added, set here and not
+            // in PlaceRenderer: its variable becomes the overflow renderer, which for a heading is
+            // a plain paragraph renderer, and mapping that would call a heading's second page a
+            // paragraph. Diagnostics are reported from the drawing pass only, so the measuring
+            // pass leaves them alone.
+            if (!measure)
+            {
+                _sink.CurrentKind = KindOf(_renderers[i]);
+                _sink.CurrentIndex = i;
+            }
+
+            PlaceRenderer(_renderers[i], totalPages);
+        }
+
+        if (!measure)
+        {
+            _sink.CurrentKind = LayoutElementKind.Document;
+            _sink.CurrentIndex = null;
+            FinishCurrentPage(totalPages);
+            if (_guard is not null && _placements.Count != _guard.Count)
+                throw PaginationChanged();
+            _drawSink = _placements;
+            _drawPages = _pageIndex + 1;
+            return _drawPages;
+        }
+
+        _measureSink = _placements;
+        _measurePages = _pageIndex + 1;
+        return _measurePages;
+    }
+
+    private int MeasureUntilStable(List<IPlanDependent> dependents)
+    {
+        var history = new List<string>[dependents.Count];
+        for (var i = 0; i < history.Length; i++)
+            history[i] = [];
+        var changedLast = new bool[dependents.Count];
+        var pageCounts = new List<int>(MaxMeasureRuns);
+
+        var plan = PaginationPlan.Placeholder;
+        var previousPages = -1;
+        for (var run = 1; run <= MaxMeasureRuns; run++)
+        {
+            var anyChanged = false;
+            for (var i = 0; i < dependents.Count; i++)
+            {
+                changedLast[i] = dependents[i].Resolve(plan);
+                anyChanged |= changedLast[i];
+                history[i].Add(dependents[i].ResolvedText);
+            }
+
+            var pages = RunPass(measure: true, totalPages: 0);
+            pageCounts.Add(pages);
+
+            // Run 1 has no earlier run to equal. From run 2, a run that resolved nothing new laid
+            // out the same strings as the run before it, so its plan is that run's plan.
+            if (run >= 2 && !anyChanged && pages == previousPages)
+                return pages;
+
+            plan = new PaginationPlan(_measureSink!.Placements, pages);
+            previousPages = pages;
+        }
+
+        throw PaginationDidNotSettle(dependents, history, changedLast, pageCounts);
+    }
+
+    private static InvalidOperationException PaginationDidNotSettle(
+        List<IPlanDependent> dependents, List<string>[] history, bool[] changedLast, List<int> pageCounts)
+    {
+        const int named = 3;
+        var parts = new List<string>(named);
+        var unstable = 0;
+        for (var i = 0; i < dependents.Count; i++)
+        {
+            if (!changedLast[i]) continue;
+            if (++unstable > named) continue;
+            parts.Add(
+                $"the text for '{dependents[i].TargetName}' read " +
+                string.Join(", ", history[i].Select(s => $"'{s}'")));
+        }
+
+        var more = unstable > named ? $", and {unstable - named} more" : "";
+        // No dependent changed in the last run, so the page count was what kept moving.
+        var cause = parts.Count > 0
+            ? string.Join("; ", parts) + more
+            : "the page count read " + string.Join(", ", pageCounts);
+        return new InvalidOperationException(
+            $"Pagination did not settle after {MaxMeasureRuns} layout passes: {cause}. " +
+            "A string that depends on where its target lands can change the layout and so move " +
+            "that target, and here the passes keep changing it instead of settling. " +
+            "The renderers have already measured, so lay the content out again in a new renderer " +
+            "or document.");
+    }
+
+    private static InvalidOperationException PaginationChanged() =>
+        new("Pagination changed between the measuring and the drawing pass: the drawing pass " +
+            "reported a placement that differs from the last measuring run's, so a renderer " +
+            "answered differently the later time. " +
+            "The renderers have already measured, so lay the content out again in a new renderer " +
+            "or document.");
+
+    private LayoutResult CallLayout(IRenderer renderer, LayoutBox area)
+    {
+        LayoutCalls++;
+        return renderer.Layout(new LayoutContext(area));
+    }
+
+    // Tells the renderer whose result was just accepted to report where it landed. Called before
+    // the cursor moves, in both passes, so the two passes record the same positions.
+    private void ReportPlacements(IRenderer? accepted)
+    {
+        if (!_collect || accepted is not IPlacementSource source) return;
+
+        var first = _placements.Count;
+        _placements.Enter(accepted, _pageIndex);
+        source.ReportPlacements(_placements);
+
+        if (_measuring || _guard is null) return;
+        for (var i = first; i < _placements.Count; i++)
+            if (i >= _guard.Count
+                || _guard[i].PageIndex != _placements[i].PageIndex
+                || !ReferenceEquals(_guard[i].Key, _placements[i].Key))
+                throw PaginationChanged();
+    }
+
+    // Moves the cursor to the top of the next page. The drawing pass commits the open page; the
+    // measuring pass has none.
+    private void AdvancePage(int totalPages)
+    {
+        if (!_measuring) FinishCurrentPage(totalPages);
+        _pageIndex++;
+        if (_measuring) _measureY = _measureArea.Y;
+    }
+
     private void PlaceRenderer(IRenderer renderer, int totalPages)
     {
         var continuations = 0;
         while (true)
         {
-            EnsurePage();
+            if (!_measuring) EnsurePage();
 
+            var contentArea = PlaceArea;
             var availableArea = new LayoutBox(
-                ContentArea.X, _currentY,
-                ContentArea.Width, ContentArea.Bottom - _currentY);
+                contentArea.X, Cursor,
+                contentArea.Width, contentArea.Bottom - Cursor);
 
-            var result = renderer.Layout(new LayoutContext(availableArea));
+            var result = CallLayout(renderer, availableArea);
 
             switch (result.Status)
             {
                 case LayoutResult.Outcome.Full:
-                    DrawRenderer(renderer);
-                    _currentY = result.OccupiedArea!.Value.Bottom;
+                    ReportPlacements(renderer);
+                    if (!_measuring) DrawRenderer(renderer);
+                    Cursor = result.OccupiedArea!.Value.Bottom;
                     return;
 
                 case LayoutResult.Outcome.Partial:
-                    DrawRenderer(result.SplitRenderer!);
-                    FinishCurrentPage(totalPages);
+                    ReportPlacements(result.SplitRenderer);
+                    if (!_measuring) DrawRenderer(result.SplitRenderer!);
+                    AdvancePage(totalPages);
                     renderer = result.OverflowRenderer!;
                     break;
 
                 case LayoutResult.Outcome.Nothing:
-                    FinishCurrentPage(totalPages);
-                    EnsurePage();
-                    var retry = renderer.Layout(new LayoutContext(ContentArea));
+                    AdvancePage(totalPages);
+                    if (!_measuring) EnsurePage();
+                    var retry = CallLayout(renderer, PlaceArea);
                     if (retry.Status == LayoutResult.Outcome.Nothing)
                     {
-                        FinishCurrentPage(totalPages);
+                        if (!_measuring) FinishCurrentPage(totalPages);
                         throw ElementTooTall();
                     }
                     break;
@@ -583,11 +830,11 @@ public sealed class DocumentRenderer
 
             if (++continuations > MaxContinuationsPerElement)
             {
-                // Symmetry with the too-tall throw above: commit the open page rather than leave
-                // its canvas unflushed. The page still stays in the document. Both
-                // branches reach this throw, but only the Nothing branch can arrive with a page
-                // still open, because the Partial branch has already finished one.
-                FinishCurrentPage(totalPages);
+                // Commit the open page rather than leave its canvas unflushed; the page still
+                // stays in the document. Both branches reach this throw, but only the Nothing
+                // branch can arrive with a page still open, because the Partial branch has
+                // already finished one. The measuring pass has no page to commit.
+                if (!_measuring) FinishCurrentPage(totalPages);
                 throw TooManyContinuations();
             }
         }
@@ -874,70 +1121,6 @@ public sealed class DocumentRenderer
         return lastSpaceCut > 0
             ? (text[..lastSpaceCut], lastSpaceWidth)
             : (text[..cut], width);
-    }
-
-    // ── Pass 1: page counting ─────────────────────────────────────────────────
-
-    /// <summary>
-    /// Counts pages by running the same placement logic as the real render pass,
-    /// but without creating PDF objects. This guarantees the count matches the actual render.
-    /// </summary>
-    private int CountPages()
-    {
-        var pages = 1;
-        var currentY = _margins.Top + HeaderHeight;
-        var contentArea = ContentArea;
-
-        foreach (var renderer in _renderers)
-            CountPlaceRenderer(renderer, ref currentY, ref pages, contentArea);
-
-        return pages;
-    }
-
-    private void CountPlaceRenderer(IRenderer renderer, ref double currentY, ref int pages, LayoutBox contentArea)
-    {
-        var continuations = 0;
-        while (true)
-        {
-            var availableArea = new LayoutBox(
-                contentArea.X, currentY,
-                contentArea.Width, contentArea.Bottom - currentY);
-
-            var result = renderer.Layout(new LayoutContext(availableArea));
-
-            switch (result.Status)
-            {
-                case LayoutResult.Outcome.Full:
-                    currentY = result.OccupiedArea!.Value.Bottom;
-                    return;
-
-                case LayoutResult.Outcome.Partial:
-                    pages++;
-                    currentY = contentArea.Y;
-                    renderer = result.OverflowRenderer!;
-                    break;
-
-                case LayoutResult.Outcome.Nothing:
-                    pages++;
-                    currentY = contentArea.Y;
-                    var retry = renderer.Layout(new LayoutContext(contentArea));
-                    if (retry.Status == LayoutResult.Outcome.Nothing)
-                    {
-                        // This pass used to skip the element and undercount here while
-                        // PlaceRenderer threw on it; the two passes must agree (#460).
-                        throw ElementTooTall();
-                    }
-                    break;
-
-                default:
-                    // Unreachable for the same reason as PlaceRenderer's arm above, and kept for
-                    // the same reason (#459).
-                    throw new InvalidOperationException($"Unknown layout outcome {result.Status}.");
-            }
-
-            if (++continuations > MaxContinuationsPerElement)
-                throw TooManyContinuations();
-        }
     }
 
     // ── Validation ────────────────────────────────────────────────────────────
