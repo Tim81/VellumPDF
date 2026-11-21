@@ -165,8 +165,8 @@ public sealed class RunningBandTemplateTests
     // The issue's shape: a document deep enough that page count multiplies the per-page cost.
     // Measured with the template resolved in full on every page, the 100,000-character template
     // allocated about 277 MB against about 37 MB for the 200-character one on 600 pages. The count
-    // does not depend on machine speed or load, but repeated saves of one document in one process
-    // land on two levels about 0.53 MB apart, and the bounds below leave room for that.
+    // is not a timing, but repeated saves of one document in one process land on two levels about
+    // 0.53 MB apart, and the bounds below leave room for that.
     [Fact]
     public void LongTemplate_costsAboutWhatAShortOneDoes_onADeepDocument()
     {
@@ -182,7 +182,8 @@ public sealed class RunningBandTemplateTests
         var large = SaveAllocation(longTemplate, Words);
 
         Assert.True((double)large / small <= 1.05, $"ratio {(double)large / small}: {large} against {small}");
-        // 2 MB is about four times the 0.53 MB step between the two levels; main differs by about 240 MB.
+        // 2 MB is about four times the 0.53 MB step between the two levels; main differs by about
+        // 240 MB.
         Assert.True(
             large - small < 2_000_000,
             $"{large - small} more bytes for 99,800 more template characters");
@@ -327,8 +328,8 @@ public sealed class RunningBandTemplateTests
 
     // Token-dense: 16,666 tokens of 6 characters. The scan is built once per band, which costs the
     // long template 1.2 MB more than the short one on net11.0; with the cache removed it was 886 MB
-    // more. The bound sits between the two. The count does not depend on machine speed or load, but
-    // repeated saves vary by about 0.5 MB, and the bound leaves room for that.
+    // more. The bound sits between the two. The count is not a timing, but repeated saves vary by
+    // about 0.5 MB, and the bound leaves room for that.
     [Fact]
     public void LongTokenDenseTemplate_costsAboutWhatAShortOneDoes_onADeepDocument()
     {
