@@ -232,6 +232,32 @@ internal static class LayoutValidation
     }
 
     /// <summary>
+    /// Rejects a row background whose channel is not a number from 0 to 1, the DeviceRGB component
+    /// range of ISO 32000-2:2020, 8.6.4.3. The value is tested as given, not as the token
+    /// <c>PdfCanvas</c> would write, so 1.000001 is refused although it is written as <c>1</c>.
+    /// </summary>
+    /// <param name="color">The row's background, or null for none.</param>
+    /// <param name="paramName">The name of the parameter the row arrived through.</param>
+    internal static void ValidateRowBackground(ColorRgb? color, string paramName)
+    {
+        if (color is not { } c) return;
+
+        var channel = !IsUnit(c.R) ? ("red", c.R)
+            : !IsUnit(c.G) ? ("green", c.G)
+            : !IsUnit(c.B) ? ("blue", c.B)
+            : default;
+        if (channel.Item1 is null) return;
+
+        throw new ArgumentOutOfRangeException(
+            paramName,
+            channel.Item2,
+            $"The row's background has a {channel.Item1} channel of {FormatExact(channel.Item2)}. " +
+            "ISO 32000-2:2020, 8.6.4.3 says each DeviceRGB component is a number from 0.0 to 1.0.");
+
+        static bool IsUnit(double value) => value is >= 0 and <= 1;
+    }
+
+    /// <summary>
     /// Renders a rejected number for a message. <c>NaN</c> and the infinities are the values this
     /// exists for and they have no useful "0.##" form, so they are named rather than formatted.
     /// </summary>
@@ -240,4 +266,13 @@ internal static class LayoutValidation
         : double.IsPositiveInfinity(value) ? "positive infinity"
         : double.IsNegativeInfinity(value) ? "negative infinity"
         : value.ToString("0.#######", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Renders a rejected number exactly, so a value that <see cref="Format"/> would round to zero
+    /// is still told apart from zero.
+    /// </summary>
+    private static string FormatExact(double value) =>
+        double.IsFinite(value)
+            ? value.ToString("R", CultureInfo.InvariantCulture)
+            : Format(value);
 }
