@@ -112,8 +112,8 @@ public sealed class PreformattedRefusalTests
         { "negative size", new TextStyle { FontSize = -1 }, "The style's FontSize is -1. It must be a finite number of at least 0.000005 points; a smaller size is written as zero." },
         { "size below the written threshold", new TextStyle { FontSize = 4.9e-6 }, "The style's FontSize is 4.9E-06. It must be a finite number of at least 0.000005 points; a smaller size is written as zero." },
         { "infinite size", new TextStyle { FontSize = double.PositiveInfinity }, "The style's FontSize is positive infinity. It must be a finite number of at least 0.000005 points; a smaller size is written as zero." },
-        { "size above the ceiling", new TextStyle { FontSize = Math.BitIncrement(1e30) }, "The style's FontSize is 1.0000000000000002E+30. It must be at most 1E+30 points, so that no number the block writes passes the 3.403 \u00D7 10^38 limit of ISO 32000-1, Annex C, Table C.1." },
-        { "size of 1e39", new TextStyle { FontSize = 1e39 }, "The style's FontSize is 1E+39. It must be at most 1E+30 points, so that no number the block writes passes the 3.403 \u00D7 10^38 limit of ISO 32000-1, Annex C, Table C.1." },
+        { "size above the ceiling", new TextStyle { FontSize = Math.BitIncrement(1e30) }, "The style's FontSize is 1.0000000000000002E+30. It must be at most 1E+30 points, which keeps the numbers the block writes far inside the 3.403 \u00D7 10^38 limit of ISO 32000-1, Annex C, Table C.1." },
+        { "size of 1e39", new TextStyle { FontSize = 1e39 }, "The style's FontSize is 1E+39. It must be at most 1E+30 points, which keeps the numbers the block writes far inside the 3.403 \u00D7 10^38 limit of ISO 32000-1, Annex C, Table C.1." },
         { "NaN leading", new TextStyle { Leading = double.NaN }, "The style's Leading is NaN. It must be a finite number; zero or less means automatic leading." },
         { "infinite leading", new TextStyle { Leading = double.PositiveInfinity }, "The style's Leading is positive infinity. It must be a finite number; zero or less means automatic leading." },
         { "red above 1", new TextStyle { Color = new ColorRgb(1.5, 0, 0) }, "The style's Color has a red channel of 1.5. Each channel must be a number from 0 to 1 (ISO 32000-2:2020, 8.6.8)." },
@@ -360,7 +360,7 @@ public sealed class PreformattedRefusalTests
     public void ALineNumber_countsCrLfOnce_andALoneCrOnce()
     {
         using var doc = Claimed(PdfConformance.PdfA2u);
-        doc.Add(new Preformatted("a\rb\r\nc⚹", MonoStyle(doc)));
+        doc.Add(new Preformatted("a\rb\r\nc\u26B9", MonoStyle(doc)));
 
         Assert.Equal(
             "Preformatted element 0 holds U+26B9 at index 6 of its text (line 3), which font TT1 has no glyph for, and the document claims PDF/A-2u. ISO 19005-2:2011, 6.2.11.8 does not allow a reference to the .notdef glyph. Use a font that covers the character, or set Document.Conformance to None.",
@@ -372,7 +372,7 @@ public sealed class PreformattedRefusalTests
     {
         Assert.Equal(0, Gid(MonoPath, 0x1F600));
         using var doc = Claimed(PdfConformance.PdfA2u);
-        doc.Add(new Preformatted("a😀b", MonoStyle(doc)));
+        doc.Add(new Preformatted("a\U0001F600b", MonoStyle(doc)));
 
         Assert.Equal(
             "Preformatted element 0 holds U+1F600 at index 1 of its text (line 1), which font TT1 has no glyph for, and the document claims PDF/A-2u. ISO 19005-2:2011, 6.2.11.8 does not allow a reference to the .notdef glyph. Use a font that covers the character, or set Document.Conformance to None.",

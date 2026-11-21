@@ -239,8 +239,8 @@ public sealed class PreformattedWrapTests
             string.Concat(HexStrings(content).Select(r => r[1..^1])));
     }
 
-    // A show is cut by scalars, not UTF-16 units. At 0.01 pt the 4,097 glyphs are 25 pt wide, so
-    // the line does not wrap and only the run limit cuts it. The high surrogate of the pair is
+    // A show is cut by scalars, not UTF-16 units. At 0.01 pt the 4,106 glyphs are about 24.6 pt wide,
+    // so the line does not wrap and only the run limit cuts it. The high surrogate of the pair is
     // unit 4,095 and the low one unit 4,096, so a cut after 4,096 units would separate them.
     [Fact]
     public void ASurrogatePairAtTheRunBoundary_staysInOneRun()

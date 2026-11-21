@@ -34,7 +34,9 @@ namespace VellumPdf.Layout.Elements;
 /// the last holds the longest run of whole clusters that leaves room for the continuation marker,
 /// and at least one cluster, so the wrap always advances. A small hook is drawn at the right end of
 /// each such segment, as an artifact, so it enters neither the structure tree nor extracted text.
-/// No character is dropped: the segments of a line, joined, are its expanded text. The one text
+/// The hook scales with the size: its stroke is 0.06 times the size wide and it reaches 0.2, 0.35
+/// and 0.6 times the size above the baseline, among other heights. No
+/// character is dropped: the segments of a line, joined, are its expanded text. The one text
 /// drawn outside the box is a segment of a single cluster wider than the box with the marker. The
 /// save lists the wrapped lines as <see cref="LayoutDiagnosticCode.PreformattedLineWrapped"/>. The
 /// element splits between drawn lines and never inside one; a wrapped line can continue on the next
@@ -59,11 +61,13 @@ namespace VellumPdf.Layout.Elements;
 /// <para>In a tagged document each drawn piece, the part of the block on one page, is one <c>P</c>
 /// structure element. Nothing in the character stream separates two lines, so a reader that follows
 /// the structure order alone sees the lines run together.</para>
-/// <para><b>Do not rely on</b> columns lining up in a proportional font, after a zero-width, wide
-/// or non-BMP character, or in a Standard-14 font for a character WinAnsiEncoding lacks, which is
-/// drawn as one or two question marks; see <see cref="TextStyle.FontRef"/>. The block draws and
-/// measures such text without refusing it, and its tabs still expand to spaces. In a monospace
-/// font, a cluster of one glyph with a non-zero advance is one column wide.</para>
+/// <para><b>Do not rely on</b> columns lining up in a proportional font, after a zero-width
+/// character that forms a cluster of its own (a combining mark at the start of a line or after a
+/// tab), after a wide or non-BMP character, or in a Standard-14 font for a character
+/// WinAnsiEncoding lacks, which is drawn as one or two question marks; see
+/// <see cref="TextStyle.FontRef"/>. The block draws and measures such text without refusing it,
+/// and its tabs still expand to spaces. In a monospace font, a cluster of one glyph with a non-zero
+/// advance is one column wide.</para>
 /// </remarks>
 public sealed class Preformatted
 {
@@ -81,9 +85,10 @@ public sealed class Preformatted
     /// The largest font size accepted, in points. The block writes the size as a <c>Tf</c> operand
     /// and as part of each baseline, and writes the continuation marker's x as the width of the
     /// segment plus 0.48 times the size. Each number must stay within the ±3.403 × 10^38 of
-    /// ISO 32000-1, Annex C, Table C.1, which ISO 19005-2, 6.1.13 applies. 1e30 leaves a factor of
-    /// about 3.4 × 10^8 below the limit, so a single cluster would have to be that many ems wide to
-    /// pass it.
+    /// ISO 32000-1, Annex C, Table C.1, which ISO 19005-2, 6.1.13 applies. 1e30 is a
+    /// margin, not the boundary: on a page within the 14,400-unit limit of ISO 32000-1 Annex C it
+    /// leaves a factor of about 3.4 × 10^8 below the limit, so a single cluster would have to be
+    /// that many ems wide to pass it.
     /// </summary>
     private const double LargestFontSize = 1e30;
 
@@ -276,8 +281,9 @@ public sealed class Preformatted
 
         if (size > LargestFontSize)
             throw Refused(
-                $"The style's FontSize is {Format(size)}. It must be at most 1E+30 points, so that no " +
-                "number the block writes passes the 3.403 × 10^38 limit of ISO 32000-1, Annex C, Table C.1.");
+                $"The style's FontSize is {Format(size)}. It must be at most 1E+30 points, " +
+                "which keeps the numbers the block writes far inside the 3.403 × 10^38 limit of " +
+                "ISO 32000-1, Annex C, Table C.1.");
 
         if (!double.IsFinite(style.Leading))
             throw Refused(
