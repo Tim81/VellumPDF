@@ -23,7 +23,8 @@ namespace VellumPdf.Layout.Tests;
 /// #262, Layout half: page-label ranges (<see cref="Document.PageLabel"/>,
 /// <see cref="PageBreak.PageLabel"/>), <c>{page}</c> printing the label, and an element's
 /// <c>Anchor</c> becoming a named destination. A page is 300 x 300 pt with 20 pt margins, so a
-/// paragraph with a 200 pt top margin fills its page and each such paragraph starts the next one.
+/// paragraph with a 200 pt top margin is 214.4 pt of the 260 pt content height and two of them
+/// never share a page.
 /// Expected positions are worked out from that geometry and the style's leading, not read back
 /// from the files.
 /// </summary>
