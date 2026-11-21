@@ -160,7 +160,7 @@ internal sealed class PreformattedRenderer : IRenderer, IPageBreakSource
 
             if (!fontSelected)
             {
-                FontReference? current = null;
+                TextEmitter.SelectedFont? current = null;
                 TextEmitter.SelectFont(ctx, canvas, style, ref current);
                 canvas.SetFillColorRgb(style.Color.R, style.Color.G, style.Color.B);
                 fontSelected = true;
