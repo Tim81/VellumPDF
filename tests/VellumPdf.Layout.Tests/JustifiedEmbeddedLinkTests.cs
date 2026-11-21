@@ -16,8 +16,8 @@ namespace VellumPdf.Layout.Tests;
 /// The rectangle of a <see cref="TextStyle.LinkUri"/> link on a line in an embedded font. The drawn
 /// positions are read back from the content stream (the <c>Tm</c> in front of every shown glyph
 /// run), so the expected rectangle never comes from the code that computes it: it starts at the x
-/// of the linked run's first glyph and ends at the x of the next run's first glyph, or at the
-/// right edge of the box when the link closes a stretched line.
+/// of the linked run's first glyph and ends at the x of the next run's first glyph, or, when the
+/// linked text closes the line, where its last glyph ends.
 /// </summary>
 public sealed class JustifiedEmbeddedLinkTests
 {
@@ -27,7 +27,9 @@ public sealed class JustifiedEmbeddedLinkTests
 
     private static readonly string Liberation = Path.Combine(AppContext.BaseDirectory, "Fonts", "LiberationSans-Regular.ttf");
 
-    /// <summary>One shown run: its text matrix origin and either its glyph ids in hex or its literal.</summary>
+    /// <summary>
+    /// One shown run: its text matrix origin and either its glyph ids in hex or its literal.
+    /// </summary>
     private sealed record Shown(double X, double Y, string Key);
 
     private static Document Page() => new()
@@ -83,8 +85,9 @@ public sealed class JustifiedEmbeddedLinkTests
     // ── Justified, embedded ───────────────────────────────────────────────────
 
     /// <summary>
-    /// The rectangle of a link in the middle of a stretched line starts at the linked word's drawn x
-    /// and ends where the next word is drawn, the stretched gap after the closing space included.
+    /// The rectangle of a link in the middle of a stretched line starts at the linked word's
+    /// drawn x and ends where the next word is drawn, the stretched gap after the closing space
+    /// included.
     /// </summary>
     [Fact]
     public void MidLine_rectangleRunsFromTheLinkedGlyphToTheNextRunsGlyph()
@@ -99,7 +102,8 @@ public sealed class JustifiedEmbeddedLinkTests
         var next = First(runs, Hex(font, "ff"));
         var rect = Assert.Single(Rects(pdf));
 
-        // The change is in the fixture: the word is drawn well right of where an unstretched line puts it.
+        // The change is in the fixture: the word is drawn well right of where an unstretched line
+        // puts it.
         var unstretched = Left + Embedded(font).MeasureString(Lead);
         Assert.True(dd.X > unstretched + 0.5, $"dd at {dd.X}, unstretched {unstretched}");
 
@@ -109,7 +113,9 @@ public sealed class JustifiedEmbeddedLinkTests
         Assert.Equal(dd.Y + 12, rect[3], 0.001);
     }
 
-    /// <summary>A link that closes a stretched line ends at the right edge of the box, where the line ends.</summary>
+    /// <summary>
+    /// A link that closes a stretched line ends at the right edge of the box, where the line ends.
+    /// </summary>
     [Fact]
     public void LineEnd_rectangleEndsAtTheRightEdge()
     {
@@ -130,6 +136,35 @@ public sealed class JustifiedEmbeddedLinkTests
 
         Assert.Equal(ii.X, rect[0], 0.001);
         Assert.Equal(Right, rect[2], 0.01);
+    }
+
+    /// <summary>
+    /// A justified line that is not the last of its paragraph and holds one word has no gap to
+    /// stretch, so its link ends where its own last glyph ends, not at the right edge of the box.
+    /// </summary>
+    [Fact]
+    public void NonLastLineWithoutAGap_rectangleEndsAtTheLastGlyph()
+    {
+        using var doc = Page();
+        var font = doc.LoadTrueTypeFont(Liberation);
+        var plain = Embedded(font);
+        const string Word = "mmmmmmmmmmmm";
+        doc.Add(new Paragraph(
+        [
+            new TextRun(Word, Embedded(font, Uri)),
+            new TextRun(" nnnnnnnnnnnn", plain),
+        ])
+        { Alignment = HorizontalAlignment.Justify });
+        var pdf = Save(doc);
+
+        var word = First(Runs(pdf), Hex(font, Word));
+        var rect = Assert.Single(Rects(pdf));
+
+        // The fixture holds a second line, and the first line is narrower than the box.
+        var end = word.X + plain.MeasureString(Word);
+        Assert.True(end < Right - 10, $"the word ends at {end}");
+        Assert.Equal(word.X, rect[0], 0.001);
+        Assert.Equal(end, rect[2], 0.001);
     }
 
     /// <summary>A link that opens a stretched line starts at the left edge.</summary>
@@ -207,8 +242,8 @@ public sealed class JustifiedEmbeddedLinkTests
     }
 
     /// <summary>
-    /// The embedded face is metric-compatible with Helvetica, so a stretched line in either gives the
-    /// same rectangle; the two paths place and size it by one rule.
+    /// The embedded face is metric-compatible with Helvetica, so a stretched line in either
+    /// gives the same rectangle; the two paths place and size it by one rule.
     /// </summary>
     [Fact]
     public void LiberationSansAndHelvetica_giveTheSameRectangle()
@@ -226,7 +261,9 @@ public sealed class JustifiedEmbeddedLinkTests
             Assert.Equal(standard[i], embedded[i], 0.05);
     }
 
-    /// <summary>A standard-14 link that closes a stretched line also ends at the right edge.</summary>
+    /// <summary>
+    /// A standard-14 link that closes a stretched line also ends at the right edge.
+    /// </summary>
     [Fact]
     public void Standard14LineEnd_rectangleEndsAtTheRightEdge()
     {
@@ -272,8 +309,8 @@ public sealed class JustifiedEmbeddedLinkTests
     // ── Lines that are not stretched ─────────────────────────────────────────
 
     /// <summary>
-    /// Left, centre and right lines draw each run in one piece, so the rectangle is the linked run's
-    /// drawn x to the next run's drawn x.
+    /// Left, centre and right lines draw each run in one piece, so the rectangle is the linked
+    /// run's drawn x to the next run's drawn x.
     /// </summary>
     [Theory]
     [InlineData(HorizontalAlignment.Left)]
@@ -308,7 +345,9 @@ public sealed class JustifiedEmbeddedLinkTests
         Assert.Equal(expectedLeft, runs[0].X, 0.001);
     }
 
-    /// <summary>The last line of a justified paragraph is not stretched, and its link is drawn as it is.</summary>
+    /// <summary>
+    /// The last line of a justified paragraph is not stretched, and its link is drawn as it is.
+    /// </summary>
     [Fact]
     public void LastLineOfAJustifiedParagraph_isNotStretched()
     {
@@ -353,8 +392,8 @@ public sealed class JustifiedEmbeddedLinkTests
     // ── Oracles ───────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// <c>pdftotext -bbox</c> puts the words of the link inside its rectangle and the words around it
-    /// outside, on the stretched line, and qpdf finds the file well formed.
+    /// <c>pdftotext -bbox</c> puts the words of the link inside its rectangle and the words
+    /// around it outside, on the stretched line, and qpdf finds the file well formed.
     /// </summary>
     [Fact]
     public void Oracles_pdftotextBoxesLieInsideTheRectangle_qpdfIsClean()
@@ -384,7 +423,8 @@ public sealed class JustifiedEmbeddedLinkTests
             Assert.False(timedOut);
             Assert.Equal(0, exit);
 
-            // pdftotext measures y downwards from the top of the 400 pt page; the rectangle upwards.
+            // pdftotext measures y downwards from the top of the 400 pt page; the rectangle
+            // upwards.
             var words = Regex.Matches(stdout, "<word xMin=\"([\\d.]+)\" yMin=\"([\\d.]+)\" xMax=\"([\\d.]+)\" yMax=\"([\\d.]+)\">(\\w+)</word>")
                 .ToDictionary(m => m.Groups[5].Value, m => new[] { Num(m.Groups[1].Value), Num(m.Groups[2].Value), Num(m.Groups[3].Value), Num(m.Groups[4].Value) });
 

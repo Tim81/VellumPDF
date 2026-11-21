@@ -434,9 +434,11 @@ public sealed class ParagraphRenderer : IRenderer, IPageBreakSource
     /// For each fragment of an embedded-font justified line that carries a
     /// <see cref="TextStyle.LinkUri"/>, registers a link annotation over the span
     /// <see cref="DrawJustifiedEmbeddedLine"/> measured while drawing it: from the x of the
-    /// fragment's first glyph to the x at which the next fragment's first glyph is drawn. That is
-    /// the rectangle the <c>Tw</c> path gives a standard-14 fragment, so a space that closes the
-    /// fragment is covered together with the stretch added after it.
+    /// fragment's first glyph to the x at which the next fragment's first glyph is drawn, or, for
+    /// the last fragment of the line, to where its last glyph ends. That is the rectangle the
+    /// <c>Tw</c> path gives a standard-14 fragment, so a space that closes the fragment is covered
+    /// together with the stretch added after it. Every fragment the wrap builds holds a word, so
+    /// each one has a span.
     /// </summary>
     private static void RegisterLineLinks(
         DrawContext ctx,
@@ -447,8 +449,7 @@ public sealed class ParagraphRenderer : IRenderer, IPageBreakSource
     {
         for (var i = 0; i < fragments.Length; i++)
         {
-            // A fragment that holds only spaces draws nothing, so there is nothing to cover.
-            if (fragments[i].Style.LinkUri is null || !spans[i].Drawn)
+            if (fragments[i].Style.LinkUri is null)
                 continue;
 
             var box = new LayoutBox(spans[i].Start, lineTop, spans[i].End - spans[i].Start, lineHeight);
@@ -458,9 +459,8 @@ public sealed class ParagraphRenderer : IRenderer, IPageBreakSource
 
     /// <summary>
     /// The horizontal extent one fragment occupies on a justified embedded-font line, as drawn.
-    /// <see cref="Drawn"/> is false when the fragment produced no glyph run.
     /// </summary>
-    private readonly record struct FragmentSpan(double Start, double End, bool Drawn);
+    private readonly record struct FragmentSpan(double Start, double End);
 
     // ── Justified embedded draw ───────────────────────────────────────────────
 
@@ -497,7 +497,7 @@ public sealed class ParagraphRenderer : IRenderer, IPageBreakSource
             {
                 if (open >= 0)
                     spans[open] = spans[open] with { End = curX };
-                spans[owner] = new FragmentSpan(curX, curX, true);
+                spans[owner] = new FragmentSpan(curX, curX);
                 open = owner;
             }
 
@@ -507,7 +507,7 @@ public sealed class ParagraphRenderer : IRenderer, IPageBreakSource
             ShowText(canvas, style, text);
             curX += width;
 
-            // The last token of a fragment ends where its glyphs end, until a later fragment starts.
+            // A fragment ends where its last glyph ends, until a later fragment starts.
             spans[owner] = spans[owner] with { End = curX };
 
             // Add extra spacing after this token if there's a gap before the next

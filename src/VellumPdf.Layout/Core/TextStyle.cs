@@ -245,10 +245,11 @@ public sealed class TextStyle
     /// 14289-1, 7.18.5 (#550). A link whose rectangle lies wholly outside the page's crop box is
     /// exempt: clause 7.18.1 lifts the requirements of clause 7.18 for it. On a justified line,
     /// in a standard-14 or an embedded face, the link's rectangle starts where the linked text's
-    /// first glyph is drawn and ends where the next run's first glyph is drawn, spaces stretched
-    /// included. A space that closes the linked run is inside the rectangle, and so is the
-    /// stretch after it; a line that is not justified, and the last line of a justified
-    /// paragraph, use the unstretched widths they are drawn with.
+    /// first glyph is drawn and ends where the text that follows it on the line starts, spaces
+    /// stretched included, or, when the linked text closes the line, where its last glyph ends
+    /// (the right edge of the box on a stretched line). A space that closes the linked run is
+    /// inside the rectangle, and so is the stretch after it; a line that is not justified, and
+    /// the last line of a justified paragraph, use the unstretched widths they are drawn with.
     /// <para>Do not pass a value that is not an absolute URI. A later major version will refuse
     /// one.</para>
     /// </remarks>
