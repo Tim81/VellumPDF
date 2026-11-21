@@ -18,14 +18,14 @@ public sealed class LayoutContext
     /// When the document lays out an element, the area runs from the current position to the bottom
     /// of the page's content area. The content area already excludes the page margins and any
     /// header or footer band.
-    /// <para>At the top of a page, which is a new page or the page after a
-    /// <see cref="LayoutResult.Outcome.Partial"/>, the height is the larger of the content area's
+    /// <para>The first area offered at the top of a page, which is a new page or the page after a
+    /// <see cref="LayoutResult.Outcome.Partial"/>, is as tall as the larger of the content area's
     /// height and the height from the top of the content area to its bottom. The two can differ by
     /// one rounding step. The larger one is offered so that an element exactly as tall as the
-    /// content area is placed there, as it is on the retry after a
-    /// <see cref="LayoutResult.Outcome.Nothing"/>. Elsewhere on a page the area ends at the bottom
-    /// of the content area. A renderer that fits a smaller area but not a larger one is not
-    /// supported; see <see cref="IRenderer.Layout"/>.</para>
+    /// content area is placed there. The retry after a <see cref="LayoutResult.Outcome.Nothing"/>
+    /// is offered the content area itself. Elsewhere on a page the area ends at the bottom of the
+    /// content area. A renderer that fits a smaller area but not a larger one is not supported;
+    /// see <see cref="IRenderer.Layout"/>.</para>
     /// </remarks>
     public LayoutBox Area { get; }
 

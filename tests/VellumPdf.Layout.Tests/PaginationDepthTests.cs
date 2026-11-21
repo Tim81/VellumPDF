@@ -329,10 +329,12 @@ public sealed class PaginationDepthTests
     /// Answers Nothing on odd Layout calls and Full on even ones, which drives the continuation cap
     /// through the Nothing branch rather than Partial (review round 4, #459). Real renderers give
     /// the same verdict for the same object on the same area every time, so this deliberately
-    /// breaks IRenderer's documented purity contract. That is not the only route to that branch: a
-    /// perfectly pure renderer reaches it too when an element's height sits within a rounding error
-    /// of the content area, because the two boxes the loop and its retry probe offer are not bitwise
-    /// equal (#463). This probe is simply the one that does not depend on that geometry.
+    /// breaks IRenderer's documented purity contract. That was not the only route to that branch: a
+    /// perfectly pure renderer reached it too when an element's height sat within a rounding error
+    /// of the content area, because the two boxes the loop and its retry probe offered were not
+    /// bitwise equal (#463). The page-top offer is now the larger of the two (#549), which closes
+    /// that route for a renderer that fits whatever a larger area fits. This probe does not depend
+    /// on that geometry.
     /// </summary>
     private sealed class NothingThenFullRenderer : IRenderer
     {
