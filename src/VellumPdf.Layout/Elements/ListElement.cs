@@ -158,6 +158,22 @@ public sealed class ListElement
 
     private PageBreakMode _breakBefore;
 
+    /// <summary>
+    /// A name that a link or an outside reference can jump to: the save adds a named destination at
+    /// the first placed line of this list, which is the top of its first item. <see langword="null"/>, the default, adds none.
+    /// </summary>
+    /// <remarks>
+    /// The rule, the refusals and the position are those of <see cref="Paragraph.Anchor"/>. A list with no items has no line; its destination is at the top of the box the list would fill.
+    /// </remarks>
+    /// <inheritdoc cref="Paragraph.Anchor" path="/exception"/>
+    public string? Anchor
+    {
+        get => _anchor;
+        init => _anchor = AnchorNames.Validate(value);
+    }
+
+    private string? _anchor;
+
     /// <summary>Text style applied to items that have no explicit style.</summary>
     /// <remarks>
     /// Used by a top-level item with no style of its own, and through that item by its children.

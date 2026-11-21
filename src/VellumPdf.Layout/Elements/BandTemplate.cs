@@ -47,8 +47,10 @@ internal static class BandTokens
 /// with ordinal comparison, which is what <see cref="RunningBand.Resolve"/> does. The two tokens
 /// cannot overlap, because each holds one brace, at its start, and neither is a prefix of the
 /// other. A replacement is made of digits and a minus sign, so it can neither create nor destroy an
-/// occurrence of the other token, which is made of braces and letters. Immutable once built, so one
-/// instance may serve every save and every thread.
+/// occurrence of the other token, which is made of braces and letters. The one exception is a page
+/// label (<see cref="BandText.Reset"/>), which a caller's prefix can make hold braces: it is copied
+/// as given and never scanned, which is what a single scan does and what two replacements in turn
+/// would not. Immutable once built, so one instance may serve every save and every thread.
 /// </remarks>
 internal sealed class BandTemplate
 {
@@ -159,9 +161,16 @@ internal sealed class BandText
     /// <summary>Characters produced for the current page so far.</summary>
     internal int Produced => _produced;
 
-    internal void Reset(int pageNumber, int totalPages)
+    /// <param name="pageNumber">The physical page number, 1-based.</param>
+    /// <param name="totalPages">The total page count.</param>
+    /// <param name="pageLabel">
+    /// What <c>{page}</c> prints, or null for the decimal <paramref name="pageNumber"/>. The text is
+    /// copied as it is and never scanned for a token.
+    /// </param>
+    internal void Reset(int pageNumber, int totalPages, string? pageLabel = null)
     {
-        _values[(int)BandToken.Page] = pageNumber.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        _values[(int)BandToken.Page] =
+            pageLabel ?? pageNumber.ToString(System.Globalization.CultureInfo.InvariantCulture);
         _values[(int)BandToken.Pages] = totalPages.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
         long length = Template.LiteralLength;
