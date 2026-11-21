@@ -258,6 +258,63 @@ public sealed class RunningBandTemplateTests
         Assert.Same(band.Compiled, band.Compiled);
     }
 
+    // The public Resolve scans a template with its own pass per token, apart from the save's table.
+    // A token added to BandTokens and BandText.Reset but not to Resolve shows here as a token left
+    // in the text, and a token that is a prefix of another shows as a differing scan.
+    [Fact]
+    public void Resolve_substitutesEveryEntryOfBandTokens_asTheSaveDoes()
+    {
+        var entries = BandTokens.Entries.ToArray();
+        Assert.NotEmpty(entries);
+
+        foreach (var (text, _) in entries)
+        {
+            foreach (var (other, _) in entries)
+            {
+                if (!ReferenceEquals(text, other))
+                    Assert.False(other.StartsWith(text, StringComparison.Ordinal), $"{text} is a prefix of {other}");
+            }
+        }
+
+        var template = "<" + string.Concat(entries.Select(e => e.Text + "-")) + ">";
+        var viaSave = Resolve(template, 7, 4321);
+        var viaPublic = new RunningBand(template, Ten).Resolve(7, 4321);
+
+        Assert.Equal(viaSave.Prefix(viaSave.Length), viaPublic);
+        foreach (var (text, _) in entries)
+            Assert.DoesNotContain(text, viaPublic, StringComparison.Ordinal);
+    }
+
+    // Header and footer each keep their own BandText for the whole save. A footer that reused the
+    // header's cache would allocate two BandText per page, about 313 KB over 632 pages on a 38 MB
+    // save in a reviewer's measurement, which is too thin a margin to bound across runtimes. The
+    // fields are checked instead: after a save each holds the text for its own band, never the
+    // other's. With the footer passed `ref _headerText`, both asserts on null fail.
+    [Fact]
+    public void HeaderAndFooter_keepTheirOwnBandText_acrossTheSave()
+    {
+        var header = new RunningBand("Head {page}", Ten);
+        var footer = new RunningBand("Foot", Ten);
+        var renderer = new DocumentRenderer(NewPdf(), new PdfRectangle(0, 0, 200, 300), new EdgeInsets(20))
+        {
+            Header = header,
+            Footer = footer,
+        };
+        renderer.Add(new ParagraphRenderer(LongBody(4000)));
+        Assert.True(PageCount(Render(renderer)) > 2);
+
+        const System.Reflection.BindingFlags Flags =
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+        var headerText = (BandText?)typeof(DocumentRenderer).GetField("_headerText", Flags)!.GetValue(renderer);
+        var footerText = (BandText?)typeof(DocumentRenderer).GetField("_footerText", Flags)!.GetValue(renderer);
+
+        Assert.NotNull(headerText);
+        Assert.NotNull(footerText);
+        Assert.NotSame(headerText, footerText);
+        Assert.Same(header.Compiled, headerText.Template);
+        Assert.Same(footer.Compiled, footerText.Template);
+    }
+
     // Token-dense: 16,666 tokens of 6 characters. The scan is built once per band, which costs the
     // long template 1.2 MB more than the short one on net11.0; with the cache removed it was 886 MB
     // more. The bound sits between the two. Allocation on the calling thread is deterministic where

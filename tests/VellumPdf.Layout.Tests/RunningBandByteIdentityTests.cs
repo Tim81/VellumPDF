@@ -15,7 +15,7 @@ namespace VellumPdf.Layout.Tests;
 /// #518 pins for running bands: the bytes after normalisation and the truncation report of fixed
 /// documents. Each pin is a document class (tokens, truncation, zero-width glyphs, tagging, blank
 /// pages) with its recorded normalised SHA-256, page count and report, so a banded document whose
-/// output changes fails here whichever way a band's text is resolved.
+/// output changes fails here. This pins those documents, not every band.
 /// </summary>
 public sealed class RunningBandByteIdentityTests
 {
