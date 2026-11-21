@@ -41,3 +41,7 @@ override VellumPdf.Layout.LayoutDiagnostic.ToString() -> string!
 VellumPdf.Layout.Core.DrawContext.AddOutlineEntry(string! title, int level, double layoutY, bool expanded) -> void
 VellumPdf.Layout.Elements.Heading.BookmarkExpanded.get -> bool
 VellumPdf.Layout.Elements.Heading.BookmarkExpanded.init -> void
+VellumPdf.Layout.Elements.Heading.Heading(System.Collections.Generic.IEnumerable<VellumPdf.Layout.Elements.TextRun!>! runs) -> void
+VellumPdf.Layout.Elements.Heading.Runs.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Layout.Elements.TextRun!>!
+VellumPdf.Layout.Elements.ListItem.ListItem(System.Collections.Generic.IEnumerable<VellumPdf.Layout.Elements.TextRun!>! runs) -> void
+VellumPdf.Layout.Elements.ListItem.Runs.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Layout.Elements.TextRun!>!

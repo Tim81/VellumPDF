@@ -50,7 +50,7 @@ public sealed class NullDeferralTests
         ("SetHeader(null) kept", false, () => { var d = new Document(); d.SetHeader(null); d.Add("hello"); return d; }),
         ("listitem null child on grandchild", true, () => { var d = new Document(); var c=new ListItem("c"); c.AddChild((ListItem)null); d.Add(new ListElement().Add(new ListItem("p").AddChild(c))); return d; }),
         ("listitem null child on top-level item", false, () => { var d = new Document(); d.Add(new ListElement().Add(new ListItem("p").AddChild((ListItem)null))); return d; }),
-        ("listitem null text top-level", false, () => { var d = new Document(); d.Add(new ListElement().Add(new ListItem(null))); return d; }),
+        ("listitem null text top-level", false, () => { var d = new Document(); d.Add(new ListElement().Add(new ListItem((string)null!))); return d; }),
         ("listitem null text child", false, () => { var d = new Document(); d.Add(new ListElement().Add(new ListItem("p").AddChild((string)null))); return d; }),
         ("listitem null text grandchild", true, () => { var d = new Document(); var c=new ListItem("c"); c.AddChild((string)null); d.Add(new ListElement().Add(new ListItem("p").AddChild(c))); return d; }),
         ("listitem null child, list never added", true, () => { var d = new Document(); _=new ListElement().Add(new ListItem("p").AddChild((ListItem)null)); d.Add("ok"); return d; }),

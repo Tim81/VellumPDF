@@ -23,7 +23,7 @@ public sealed class NullArgumentTests
         // Text and runs
         new("new Paragraph((string)null)", "text", () => _ = new Paragraph((string)null!)),
         new("Paragraph.Add(null)", "text", () => new Paragraph("x").Add(null!)),
-        new("new Heading(null)", "text", () => _ = new Heading(null!)),
+        new("new Heading(null)", "text", () => _ = new Heading((string)null!)),
         new("new Paragraph(runs: null)", "runs", () => _ = new Paragraph((IEnumerable<TextRun>)null!)),
         new("new Paragraph([null run])", "runs", () => _ = new Paragraph(new TextRun[] { null! })),
         new("new TextRun(null, style)", "Text", () => _ = new TextRun(null!, Style())),
@@ -256,7 +256,7 @@ public sealed class NullArgumentTests
         foreach (var make in new Func<ListItem, ListItem>[]
         {
             c => c.AddChild((string)null!),
-            c => c.AddChild(new ListItem(null!)),
+            c => c.AddChild(new ListItem((string)null!)),
         })
         {
             using var withNull = ListWithGrandchild(c => make(c));
@@ -269,14 +269,14 @@ public sealed class NullArgumentTests
     [Fact]
     public void NullText_isStoredAsAnEmptyString()
     {
-        Assert.Equal(string.Empty, new ListItem(null!).Text);
+        Assert.Equal(string.Empty, new ListItem((string)null!).Text);
     }
 
     [Fact]
     public void NullTextOnATopLevelItem_isRefusedBySaveNamingText()
     {
         using var doc = new Document();
-        doc.Add(new ListElement(ListStyle.Unordered).Add(new ListItem(null!, Style())));
+        doc.Add(new ListElement(ListStyle.Unordered).Add(new ListItem((string)null!, Style())));
         using var ms = new MemoryStream();
 
         var ex = Assert.Throws<ArgumentNullException>(() => doc.Save(ms));

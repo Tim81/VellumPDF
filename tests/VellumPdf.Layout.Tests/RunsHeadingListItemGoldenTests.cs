@@ -103,7 +103,7 @@ public sealed class RunsHeadingListItemGoldenTests
         doc.Add(new ListElement(ListStyle.OrderedAlpha, [new ListItem("a"), new ListItem("b")]));
         doc.Add(new ListElement(ListStyle.OrderedRoman, Enumerable.Range(1, 30).Select(i => new ListItem($"Roman {i}"))));
         doc.Add(new ListElement(ListStyle.Unordered, [new ListItem("Top").AddChild(new ListItem("Child").AddChild(null!))]));
-        doc.Add(new ListElement(ListStyle.Unordered, [new ListItem("Top").AddChild(new ListItem("Child").AddChild(new ListItem(null!)))]));
+        doc.Add(new ListElement(ListStyle.Unordered, [new ListItem("Top").AddChild(new ListItem("Child").AddChild(new ListItem((string)null!)))]));
         return doc;
     }
 
@@ -143,7 +143,7 @@ public sealed class RunsHeadingListItemGoldenTests
     public void NullTextItemAtTheTop_stillThrowsNamingText()
     {
         var doc = NewDocument();
-        doc.Add(new ListElement(ListStyle.Unordered, [new ListItem(null!)]));
+        doc.Add(new ListElement(ListStyle.Unordered, [new ListItem((string)null!)]));
         var ex = Assert.Throws<ArgumentNullException>(() => doc.Save(new MemoryStream()));
         Assert.Equal("text", ex.ParamName);
     }

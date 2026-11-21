@@ -289,8 +289,8 @@ public sealed class LayoutDiagnosticsTests
         var top = new ListItem("a");
         var child = new ListItem("b");
         child.AddChild((ListItem)null!);
-        child.AddChild(new ListItem(null!));
-        child.AddChild(new ListItem(null!));
+        child.AddChild(new ListItem((string)null!));
+        child.AddChild(new ListItem((string)null!));
         top.AddChild(child);
         using var doc = new Document();
         doc.Add(new ListElement(ListStyle.OrderedDecimal, [top]));
@@ -354,7 +354,7 @@ public sealed class LayoutDiagnosticsTests
     {
         var items = Enumerable.Range(0, 60).Select(i => new ListItem("item " + i)).ToList();
         var child = new ListItem("child");
-        child.AddChild(new ListItem(null!));
+        child.AddChild(new ListItem((string)null!));
         items[0].AddChild(child);
         using var doc = NewDoc();
         doc.Add(new ListElement(ListStyle.OrderedDecimal, items));
@@ -376,7 +376,7 @@ public sealed class LayoutDiagnosticsTests
         a.AddChild(a);
         var b = new ListItem("b");
         b.AddChild(b);
-        b.AddChild(new ListItem(null!));
+        b.AddChild(new ListItem((string)null!));
         var top = new ListItem("top");
         top.AddChild(b);
         using var doc = new Document();
@@ -501,7 +501,7 @@ public sealed class LayoutDiagnosticsTests
         doc.Add(new Paragraph("Black star: ⚹ and a bullet ★", style));
         var top = new ListItem("top");
         var child = new ListItem("child");
-        child.AddChild(new ListItem(null!));
+        child.AddChild(new ListItem((string)null!));
         top.AddChild(child);
         doc.Add(new ListElement(ListStyle.OrderedDecimal, [top]));
         doc.Timestamp = new DateTimeOffset(2026, 1, 2, 3, 4, 5, TimeSpan.Zero);
@@ -897,7 +897,7 @@ public sealed class LayoutDiagnosticsTests
         var head = Chain(length);
         var last = head;
         while (last.Children is { Count: > 0 } kids) last = kids[0];
-        last.AddChild(new ListItem(null!));
+        last.AddChild(new ListItem((string)null!));
         return head;
     }
 
@@ -933,7 +933,7 @@ public sealed class LayoutDiagnosticsTests
                 {
                     var holders = Enumerable.Range(0, a).Select(i => new ListItem("holder " + i)).ToArray();
                     for (var i = 0; i + 1 < a; i++) holders[i].AddChild(holders[i + 1]);
-                    holders[^1].AddChild(new ListItem(null!));
+                    holders[^1].AddChild(new ListItem((string)null!));
                     var top = new ListItem("top");
                     foreach (var holder in holders) top.AddChild(holder);
                     return ([Ordered(top)], a + 1);
@@ -977,7 +977,7 @@ public sealed class LayoutDiagnosticsTests
     [Fact]
     public void TwoSecondLevelItemsReachingOneNullTextItem_countItOnceUnderTheFirstList()
     {
-        var nullText = new ListItem(null!);
+        var nullText = new ListItem((string)null!);
         ListElement MakeList() => Ordered(new ListItem("top")
             .AddChild(new ListItem("first").AddChild(nullText))
             .AddChild(new ListItem("second").AddChild(nullText)));
@@ -999,7 +999,7 @@ public sealed class LayoutDiagnosticsTests
     public void TheTotalDoesNotDependOnTheOrderOfTheLists(bool reversed)
     {
         // Two lists share a second-level item that holds a null child and a null-text item.
-        var nullText = new ListItem(null!);
+        var nullText = new ListItem((string)null!);
         var shared = new ListItem("shared");
         shared.AddChild(nullText);
         shared.AddChild((ListItem)null!);
@@ -1038,7 +1038,7 @@ public sealed class LayoutDiagnosticsTests
     [InlineData(true)]
     public void AListStartingAtALaterItem_leavesItsNullsForTheListThatReports(bool strict)
     {
-        var nullText = new ListItem(null!);
+        var nullText = new ListItem((string)null!);
         using var doc = NewDoc();
         doc.StrictDiagnostics = strict;
         doc.Add(new ListRenderer(ListReaching(nullText), startItem: 2));
@@ -1072,7 +1072,7 @@ public sealed class LayoutDiagnosticsTests
     [Fact]
     public void AListMeasuredAndNeverDrawn_leavesItsNullsForTheListThatIsDrawn()
     {
-        var list = ListReaching(new ListItem(null!));
+        var list = ListReaching(new ListItem((string)null!));
         using var doc = NewDoc();
         doc.StrictDiagnostics = true;
         doc.Add(new MeasuringRenderer(new ListRenderer(list)));
