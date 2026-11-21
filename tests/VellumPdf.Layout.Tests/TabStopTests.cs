@@ -1019,7 +1019,7 @@ public sealed partial class TabStopTests
     [Fact]
     public void ADecimalStopWithinTheToleranceOfTheWidth_isPlacedAtTheWidth()
     {
-        foreach (var width in new[] { 100.1, 123.456, 77.7, 250.123, 301.37, 199.99, 87.3, 140.01, 163.37 })
+        foreach (var width in new[] { 100.1, 123.456, 77.7, 250.123, 301.37, 199.99, 87.3, 140.01, 163.37, 113.344041, 213.344042, 163.344043 })
         {
             using var doc = new Document { PageSize = new PdfRectangle(0, 0, 400, 600), Margins = EdgeInsets.Zero };
             doc.Add(new Narrow(
@@ -1105,9 +1105,9 @@ public sealed partial class TabStopTests
     [Fact]
     public void ARightStopAtTheWidthOfARendererOfYours_isUsedAndNeverMovesTheTextOnAfterARoundingStep()
     {
-        foreach (var width in new[] { 100.1, 123.456, 77.7, 250.123, 301.37, 199.99, 87.3, 140.01 })
+        foreach (var width in new[] { 100.1, 123.456, 77.7, 250.123, 301.37, 199.99, 87.3, 140.01, 113.344041, 213.344042, 163.344043 })
         {
-            foreach (var position in new[] { width, width + 1e-9 })
+            foreach (var position in new[] { width, width + 4.9e-6 })
             {
                 using var doc = new Document { PageSize = new PdfRectangle(0, 0, 400, 600), Margins = EdgeInsets.Zero };
                 doc.Add(new Narrow(
@@ -1118,7 +1118,7 @@ public sealed partial class TabStopTests
 
                 Assert.Equal(["(a )", "(12)"], shows.Select(s => s.Text));
                 AssertNear(shows[0].Y, shows[1].Y, $"one line at {width}, stop {position}");
-                AssertNear(width - Width("12"), shows[1].X, $"the number ends at the width {width}", 1e-4);
+                Assert.Equal(Num(width - Width("12")), Num(shows[1].X));
                 Assert.Empty(doc.Diagnostics);
             }
         }
