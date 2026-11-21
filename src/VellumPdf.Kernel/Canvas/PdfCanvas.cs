@@ -60,6 +60,12 @@ public sealed class PdfCanvas
 
     private readonly List<TextEncodingWarning> _textEncodingWarnings = [];
 
+    // Glyph-0 writes, created on the first one. The resource name is kept apart from _currentFont
+    // because SetFontByName selects a font the canvas holds no resource object for.
+    private NotdefGlyphTally? _notdef;
+    private string? _currentFontResource;
+    private static readonly IReadOnlyList<NotdefGlyphWarning> NoNotdefGlyphs = [];
+
     /// <summary>
     /// Characters passed to <see cref="ShowText"/> that WinAnsiEncoding could not represent and
     /// that were therefore substituted with '?' in the content stream. Empty when every character
@@ -67,7 +73,49 @@ public sealed class PdfCanvas
     /// fonts; with a Symbol or ZapfDingbats font this list is not meaningful, since those fonts
     /// use their own symbolic encoding rather than WinAnsi.
     /// </summary>
+    /// <remarks>
+    /// Only <see cref="ShowText"/> adds to this list. A glyph 0 written by
+    /// <see cref="ShowGlyphs(System.ReadOnlySpan{ushort})"/> is listed in
+    /// <see cref="NotdefGlyphs"/>.
+    /// </remarks>
     public IReadOnlyList<TextEncodingWarning> TextEncodingWarnings => _textEncodingWarnings;
+
+    /// <summary>
+    /// The characters this canvas wrote as glyph 0 (<c>.notdef</c>), one entry per character and
+    /// font resource, in order of first occurrence. Empty until the first one.
+    /// </summary>
+    /// <remarks>
+    /// <b>Nothing here is refused and nothing throws.</b> The list takes no input, and the canvas
+    /// writes glyph 0 as it always has. ISO 19005-2, 6.2.11.8, and ISO 14289-1, 7.21.8, forbid a
+    /// reference to <c>.notdef</c> in a PDF/A-2 or PDF/UA-1 file, so this list is how a caller of
+    /// the Kernel finds out. It is separate from <see cref="TextEncodingWarnings"/>, which lists
+    /// characters that <see cref="ShowText"/> wrote as '?'; glyph 0 is not listed there.
+    /// <para>The list is live: it holds everything this canvas wrote since it was created, and the
+    /// entries' counts grow as the canvas draws. At most 1,000 entries are held;
+    /// <see cref="NotdefGlyphsDropped"/> counts the occurrences of entries past that. Glyph ids
+    /// passed to <see cref="ShowGlyphs(System.ReadOnlySpan{ushort})"/> are listed with no
+    /// character, because the canvas sees ids and not text. <b>Do not</b> read an empty list as
+    /// proof that the file holds no glyph 0: content bytes set directly on the page are not
+    /// scanned, and a <c>Tj</c> written through another route is not seen.</para>
+    /// <para>Reading the list while another thread draws on this canvas is not supported.
+    /// <see cref="VellumPdf.Document.PdfDocument.NotdefGlyphs"/> gathers the lists of a document's
+    /// finished pages.</para>
+    /// </remarks>
+    public IReadOnlyList<NotdefGlyphWarning> NotdefGlyphs => _notdef?.Entries ?? NoNotdefGlyphs;
+
+    /// <summary>
+    /// The number of glyph-0 writes not listed in <see cref="NotdefGlyphs"/> because the list
+    /// already held 1,000 entries, saturating at <see cref="int.MaxValue"/>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Nothing here is refused and nothing throws.</b> A write for an entry already in the list
+    /// is counted in that entry, not here. <b>Do not</b> read zero as proof that the list is
+    /// complete for content written some other way; see <see cref="NotdefGlyphs"/>.
+    /// </remarks>
+    public int NotdefGlyphsDropped => _notdef?.Dropped ?? 0;
+
+    // For the layout channel, which reads the tally by difference.
+    internal NotdefGlyphTally? NotdefTally => _notdef;
 
     /// <summary>Creates a content stream builder targeting the given page.</summary>
     public PdfCanvas(PdfPage page) => _page = page;
@@ -539,6 +587,7 @@ public sealed class PdfCanvas
         var sizeToken = N(size);
         _usedFonts[font.ResourceName] = font;
         _currentFont = font;
+        _currentFontResource = font.ResourceName;
         _currentFontSize = size;
         WriteEscapedName(font.ResourceName);
         _ops.Write(Encoding.ASCII.GetBytes($" {sizeToken} Tf\n"));
@@ -555,6 +604,7 @@ public sealed class PdfCanvas
     {
         var sizeToken = N(size);
         _currentFont = null;
+        _currentFontResource = resourceName;
         WriteEscapedName(resourceName);
         _ops.Write(Encoding.ASCII.GetBytes($" {sizeToken} Tf\n"));
         return this;
@@ -631,7 +681,46 @@ public sealed class PdfCanvas
     /// Emits a hex-encoded glyph-id run using the PDF <c>Tj</c> operator.
     /// Each glyph id is encoded as 2 bytes big-endian (Identity-H CIDFont encoding).
     /// </summary>
+    /// <remarks>
+    /// Every id is written as given and nothing is refused. Each id 0 is counted in
+    /// <see cref="NotdefGlyphs"/> with no character and no font name, under the resource name of
+    /// the last font selected on this canvas; it is not counted in
+    /// <see cref="TextEncodingWarnings"/>. <c>EmbeddedFontHandle.GetGlyphId</c> returns 0 for a
+    /// character the font has no glyph for, so a caller holding the text can find which characters
+    /// those are. A PDF/A-2 or PDF/UA-1 file must not reference glyph 0 (ISO 19005-2, 6.2.11.8; ISO
+    /// 14289-1, 7.21.8). <b>Do not pass</b> glyph 0 for either claim; the save accepts it, and a
+    /// validator then reports the file.
+    /// </remarks>
     public PdfCanvas ShowGlyphs(ReadOnlySpan<ushort> glyphIds)
+    {
+        WriteGlyphs(glyphIds);
+        var zeros = 0;
+        foreach (var gid in glyphIds)
+            if (gid == 0) zeros++;
+        if (zeros > 0) (_notdef ??= new()).Add(null, _currentFontResource, null, zeros);
+        return this;
+    }
+
+    /// <summary>
+    /// Maps <paramref name="text"/> to glyph ids in <paramref name="font"/> and writes the run as
+    /// <see cref="ShowGlyphs(System.ReadOnlySpan{ushort})"/> does, but lists each glyph 0 with its
+    /// character and the font's name. The bytes written are the same.
+    /// </summary>
+    internal PdfCanvas ShowEmbeddedText(EmbeddedFontHandle font, string text)
+    {
+        var gids = new ushort[text.Length];
+        var count = 0;
+        foreach (var rune in text.EnumerateRunes())
+        {
+            var gid = font.GetGlyphId(rune.Value);
+            gids[count++] = gid;
+            if (gid == 0) (_notdef ??= new()).Add(rune, font.ResourceName, font.PostScriptName);
+        }
+        WriteGlyphs(gids.AsSpan(0, count));
+        return this;
+    }
+
+    private void WriteGlyphs(ReadOnlySpan<ushort> glyphIds)
     {
         _ops.WriteByte((byte)'<');
         foreach (var gid in glyphIds)
@@ -642,7 +731,6 @@ public sealed class PdfCanvas
             _ops.WriteByte(HexNibble(gid & 0xF));
         }
         _ops.Write("> Tj\n"u8);
-        return this;
     }
 
     private static byte HexNibble(int v) => (byte)(v < 10 ? '0' + v : 'A' + v - 10);
@@ -773,11 +861,18 @@ public sealed class PdfCanvas
     /// <see cref="Document.PdfDocument.Save"/>) and stores the accumulated operator bytes
     /// as the page content. Call exactly once when the page is complete.
     /// </summary>
+    /// <remarks>
+    /// Also stores a snapshot of <see cref="NotdefGlyphs"/> and <see cref="NotdefGlyphsDropped"/>
+    /// on the page, which <see cref="VellumPdf.Document.PdfDocument.NotdefGlyphs"/> gathers. The
+    /// snapshot replaces whatever an earlier canvas finished on the same page stored, as the
+    /// content bytes replace the earlier canvas's bytes. Drawing after <c>Finish</c> is not part of
+    /// the snapshot until <c>Finish</c> runs again.
+    /// </remarks>
     public void Finish()
     {
         foreach (var (name, font) in _usedFonts)
             _page.RegisterStandard14FontUsage(name, font);
-        _page.ContentBytes = _ops.ToArray();
+        _page.SetContent(_ops.ToArray(), _notdef?.Snapshot());
     }
 
     // ── Private helpers ─────────────────────────────────────────────────────

@@ -135,9 +135,9 @@ public sealed class NoBreakSpaceBundledFontTests
         Assert.Contains((narrow, NarrowNoBreakSpace), entries);
     }
 
-    /// <summary>Characters the font lacks that are not one of the two spaces get no stand-in, so each keeps its own glyph-0 entry in the CMap.</summary>
+    /// <summary>Characters the font lacks that are not one of the two spaces get no stand-in, so they stay glyph 0, and the CMap maps glyph 0 to U+FFFD once instead of listing each of them.</summary>
     [Fact]
-    public void LiberationMono_toUnicode_missingCharactersThatAreNotSpacesKeepTheirNotdefEntries()
+    public void LiberationMono_toUnicode_missingCharactersThatAreNotSpacesShareOneReplacementEntryForGlyphZero()
     {
         using var doc = new PdfDocument();
         var courier = doc.EmbedStandard14Font(Standard14.Courier);
@@ -146,8 +146,9 @@ public sealed class NoBreakSpaceBundledFontTests
 
         var entries = ToUnicodeEntries(courier);
 
-        Assert.Contains((0, 0x4E00), entries);
-        Assert.Contains((0, 0x4E01), entries);
+        Assert.Contains((0, 0xFFFD), entries);
+        Assert.DoesNotContain((0, 0x4E00), entries);
+        Assert.DoesNotContain((0, 0x4E01), entries);
     }
 
     /// <summary>
