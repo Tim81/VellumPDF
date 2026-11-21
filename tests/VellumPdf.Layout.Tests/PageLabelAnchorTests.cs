@@ -605,6 +605,28 @@ public sealed class PageLabelAnchorTests
     }
 
     [Fact]
+    public void TableWhoseFirstRowIsTallerThanAPage_hasOneDestination_atTheTableTop()
+    {
+        // A 300 x 600 pt page with 10 pt margins has a 580 pt content box, top edge at y = 590.
+        // The first row has 100 lines of 12 pt in a 40 pt column, so it is cut between its lines
+        // over three pages, and its continuations are overflow renderers that start at row 0.
+        using var doc = new Document { PageSize = new PdfRectangle(0, 0, 300, 600), Margins = new EdgeInsets(10) };
+        var style = new TextStyle { Font = VellumPdf.Fonts.Standard14.Helvetica, FontSize = 10 };
+        var table = new TableElement { DefaultCellStyle = style, Anchor = "tall" }.SetColumnWidths(40, 100);
+        var row = new Row();
+        row.AddCell(string.Join(' ', Enumerable.Repeat("aaaa", 100))).AddCell("short");
+        table.Add(row);
+        doc.Add(table);
+        var pdf = Save(doc);
+
+        using var reader = PdfReader.Open(pdf);
+        Assert.True(reader.PageCount >= 3);
+        var dests = Dests(pdf);
+        Assert.Equal(["tall"], dests.Keys);
+        Assert.Equal(new Dest(0, 0, 590), dests["tall"]);
+    }
+
+    [Fact]
     public void ImageAnchor_isTheTopOfTheImageInsideItsMargins()
     {
         using var doc = NewDocument();
