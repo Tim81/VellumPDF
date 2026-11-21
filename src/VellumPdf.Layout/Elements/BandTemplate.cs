@@ -168,7 +168,7 @@ internal sealed class BandText
         for (var k = 0; k < _values.Length; k++)
             length += (long)Template.TokenCounts[k] * _values[k].Length;
         // Defensive: a string over 1,073,741,823 characters throws OutOfMemoryException first, a
-        // token is at least 6 characters and a number is at most 11 characters, so this cannot overflow.
+        // token is at least 6 characters and a number is at most 11, so this cannot overflow.
         Length = checked((int)length);
 
         _produced = 0;

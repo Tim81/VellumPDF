@@ -47,9 +47,9 @@ public sealed class RunningBand
     /// width, not the length of the template. The save produces those characters plus one of
     /// look-ahead, two when that character is a high surrogate and more text follows, and the
     /// word-boundary cut then drops some of them from what is drawn. A template of 100,000
-    /// characters of which thirty-two fit costs a page about what one of 200 does. Text that
-    /// measures zero is drawn in full, as the attention above says, and so costs its whole length
-    /// on every page.</para>
+    /// characters costs a page about what one of 200 does when both are cut at the same width.
+    /// Text that measures zero is drawn in full, as the attention above says, and so costs its
+    /// whole length on every page.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not

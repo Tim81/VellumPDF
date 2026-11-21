@@ -212,13 +212,14 @@ public sealed class RunningBandTemplateTests
     }
 
     // The cost is what fits, not what is drawn: the walk reads one character past the cut, and
-    // the word-boundary cut then drops back to the last space. A template that fits "1/600" before
-    // a long word draws 5 characters and produces 33.
+    // the word-boundary cut then drops back to the last space. On this 40-page document page 1
+    // draws "1/40", 4 characters, and produces 33.
     [Fact]
     public void Band_producesWhatFits_notWhatIsDrawn_whenTheCutFallsBackToAWordBoundary()
     {
         var template = "{page}/{pages} " + new string('x', 200);
-        var renderer = new DocumentRenderer(NewPdf(), new PdfRectangle(0, 0, 200, 300), new EdgeInsets(20))
+        var renderer = new DocumentRenderer(
+            NewPdf(), new PdfRectangle(0, 0, 200, 300), new EdgeInsets(20))
         {
             Footer = new RunningBand(template, Ten),
         };
@@ -226,17 +227,18 @@ public sealed class RunningBandTemplateTests
         var bytes = Render(renderer);
         var pages = PageCount(bytes);
 
-        Assert.True(pages > 30, $"{pages} pages");
+        Assert.Equal(40, pages);
         Assert.Equal(33L * pages, renderer.BandCharactersProduced);
 
         var report = Assert.Single(renderer.BandTruncations);
-        Assert.True(report.DrawnCharacters < 33, $"{report.DrawnCharacters} drawn");
+        Assert.Equal(1, report.PageNumber);
+        Assert.Equal(4, report.DrawnCharacters);
     }
 
     // A high surrogate at the cut costs two characters of look-ahead, because the walk reads the
     // next unit to decide whether the pair is whole. Thirty-one 'x' take 155 pt of the 160 pt
-    // content width, and the pair is measured as one question-mark glyph of 5.56 pt, which does
-    // not fit; 31 that fit plus the pair is 33, where one character of look-ahead would give 32.
+    // content width and the pair does not fit in the 5 pt left, which the count confirms: 31 that
+    // fit plus the pair is 33, where one character of look-ahead would give 32.
     [Fact]
     public void Band_atASurrogatePairAtTheCut_producesTwoCharactersOfLookAhead()
     {
@@ -257,9 +259,9 @@ public sealed class RunningBandTemplateTests
     }
 
     // Token-dense: 16,666 tokens of 6 characters. The scan is built once per band, which costs the
-    // long template about 1.2 MB more than the short one on net11.0; a band that rebuilt it on each
-    // of 600 pages would cost about 600 times that. The bound sits between the two. Allocation on
-    // the calling thread is deterministic where a clock is not.
+    // long template 1.2 MB more than the short one on net11.0; with the cache removed it was 886 MB
+    // more. The bound sits between the two. Allocation on the calling thread is deterministic where
+    // a clock is not.
     [Fact]
     public void LongTokenDenseTemplate_costsAboutWhatAShortOneDoes_onADeepDocument()
     {
@@ -273,7 +275,9 @@ public sealed class RunningBandTemplateTests
         var small = SaveAllocation(shortTemplate, Words);
         var large = SaveAllocation(longTemplate, Words);
 
-        Assert.True(large - small < 10_000_000, $"{large - small} more bytes for 16,633 more tokens ({large} against {small})");
+        Assert.True(
+            large - small < 10_000_000,
+            $"{large - small} more bytes for 16,633 more tokens ({large} against {small})");
     }
 
     [Fact]

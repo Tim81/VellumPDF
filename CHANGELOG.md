@@ -438,8 +438,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   template once and produces the text as the walk reads it, so a page costs the characters that
   fit the content width plus one character of look-ahead, two when that character is a high
   surrogate and more text follows. The cut at a word boundary then drops some of those from what
-  is drawn, so a page can produce more than it draws: the fixture below produces 33 characters
-  on each of its 600 pages and draws 5. On a 60,000-word paragraph that saves as 600 pages of
+  is drawn, so a page can produce more than it draws: `{page}/{pages} ` followed by 200 `x`, on
+  a 40-page document in Helvetica 10 on a 200 pt page with 20 pt margins, produces 33 characters
+  on every page and draws 4 on page 1. On a 60,000-word paragraph that saves as 600 pages of
   200 x 300 pt with a footer in Helvetica 10, `Save` allocated 276,551,992 bytes with a
   100,000-character template against 37,413,456 with a 200-character one; it now allocates
   36,367,704 against 36,881,216. Those are allocation counts on one machine and one fixture, not
