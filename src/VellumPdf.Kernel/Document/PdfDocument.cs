@@ -244,6 +244,16 @@ public sealed class PdfDocument : IDisposable
     /// (e.g. "TT1"). Call <see cref="RegisterEmbeddedFontUsage"/> during drawing to record
     /// per-page usage so <see cref="Save"/> wires each page's resource dictionary.
     /// </summary>
+    /// <remarks>
+    /// A variable font (one with an <c>fvar</c> table) is accepted. When its outlines are glyf, or
+    /// CFF that this library can subset, it is drawn as its default instance: the embedded program
+    /// leaves out its variation tables, so no other instance can be drawn. A CFF font that cannot
+    /// be subset (CID-keyed, or with a <c>CFF </c> table that does not parse) is embedded whole and
+    /// keeps its variation tables. A variable font whose outlines are in a <c>CFF2</c> table has
+    /// no <c>CFF </c> table: this call accepts it, and the save throws
+    /// <see cref="InvalidOperationException"/> with the message "Font is missing required table
+    /// 'CFF '.". <b>Do not pass</b> a CFF2 font and expect it to embed.
+    /// </remarks>
     /// <exception cref="NotSupportedException">
     /// The font's <c>cmap</c> has no Unicode subtable this library reads (format 0, 4 or 6, or
     /// format 12 on platform 3 / encoding 10 or platform 0 / encoding 4, or on platform 0 /
