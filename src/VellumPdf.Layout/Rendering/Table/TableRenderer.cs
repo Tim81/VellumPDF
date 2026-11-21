@@ -230,8 +230,10 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
     /// that is laid out and not drawn is not refused for either. See <see cref="Document"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// A cell or row background, the table's border colour or a coordinate written here is <c>NaN</c> or
+    /// A cell background, the table's border colour or a coordinate written here is <c>NaN</c> or
     /// infinite, which <see cref="VellumPdf.Canvas.PdfCanvas"/> refuses (<c>ParamName</c> is null).
+    /// A row background reaches here unchecked only if the row was put into the table some way
+    /// other than <see cref="TableElement.Add(Row)"/>, which refuses such a channel.
     /// </exception>
     public void Draw(DrawContext ctx)
     {
