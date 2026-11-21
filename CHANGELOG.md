@@ -191,6 +191,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   output-intent object differently when a document has an outline and a PDF/A claim. A catalog
   holding every optional key and one holding only `/Lang` cover the key order and the `/Lang`
   condition. Every file also goes through `qpdf --check`. Tests only.
+- **`TableElement.Add(Row)` gives a row a background (#543).** `Row.Background` could not take
+  effect before: it is `init`-only, and `AddRow` and `AddHeaderRow` build their own rows without
+  one. `Add(Row)` appends a row you built with `new Row { Background = ... }` and returns it. Each
+  cell the row draws is filled with the colour, ahead of its border and text, unless the cell has
+  a `Background` of its own; a row that repeats as a header repeats its fill, and a cell that
+  spans rows is filled with the colour of the row it starts in. The call refuses a null row
+  (`ArgumentNullException`) and a background channel that is not finite or lies outside 0 to 1
+  (`ArgumentOutOfRangeException`, `ParamName` `row`), ISO 32000-2:2020, 8.6.4.3, and leaves the
+  table unchanged. `AddRow` and `AddHeaderRow` are unchanged: a table built with them
+  is saved as before.
 
 - **`PageBreak`, `BreakBefore` and a blank page before a recto chapter (#311).** A document can now
   start an element on a new page without a custom renderer. `Document.Add(PageBreak)` ends the
