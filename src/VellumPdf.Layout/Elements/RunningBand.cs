@@ -43,6 +43,10 @@ public sealed class RunningBand
     /// than the first page cut. A <c>{page}</c> or <c>{pages}</c> token lengthens the resolved
     /// text as the number gains digits, so the worst page is the one that tells you how much
     /// shorter the template has to be.</para>
+    /// <para>The cost of drawing a band on a page follows the characters it draws, not the length
+    /// of the template. A template of 100,000 characters that draws forty costs a page about what
+    /// one of 200 does. Text that measures zero is drawn in full, as the attention above says, and
+    /// so costs its whole length on every page.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -184,8 +188,13 @@ public sealed class RunningBand
 
     /// <summary>Substitutes <c>{page}</c> and <c>{pages}</c> in <see cref="Template"/>.</summary>
     /// <remarks>
-    /// Any other brace text is left as given. A null template is refused here, where the band is
-    /// drawn, with <see cref="ArgumentNullException"/>.
+    /// Only the exact lower-case text <c>{page}</c> or <c>{pages}</c> is substituted. Any other
+    /// brace text, <c>{Page}</c>, <c>{ page }</c> and a lone <c>{page</c> included, is left as
+    /// given, and a substituted number is never scanned again. A null template is refused here,
+    /// where the band is drawn, with <see cref="ArgumentNullException"/>.
+    /// <para>This builds the whole text, so its cost is the template's length. A save does not call
+    /// it: the save resolves a template as it draws, and its cost per page follows the characters
+    /// drawn, as <see cref="Template"/> describes.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <see cref="Template"/> is <see langword="null"/>. <c>ParamName</c> is <c>template</c>.
@@ -196,4 +205,13 @@ public sealed class RunningBand
                 StringComparison.Ordinal)
             .Replace("{pages}", totalPages.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 StringComparison.Ordinal);
+
+    private BandTemplate? _compiled;
+
+    /// <summary>
+    /// The template scanned into literal runs and tokens, built on first use and kept: the template
+    /// is read-only, so the scan never goes stale. A null template is refused here, with the
+    /// exception <see cref="Resolve"/> throws, at the point the band is first drawn.
+    /// </summary>
+    internal BandTemplate Compiled => _compiled ??= BandTemplate.Compile(Template);
 }

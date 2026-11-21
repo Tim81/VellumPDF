@@ -124,6 +124,16 @@ public sealed class DocumentRenderer
     private BandTruncationWarning? _headerTruncation;
     private BandTruncationWarning? _footerTruncation;
 
+    // Each band's template, scanned once and resolved lazily for every page, so a long template
+    // costs what is drawn from it rather than its length on each page. Kept per renderer because
+    // BandText holds the page's buffer; the compiled template itself belongs to the RunningBand.
+    private BandText? _headerText;
+    private BandText? _footerText;
+
+    // Characters produced across every band draw of the save. Read by tests that pin the cost per
+    // page, which no timing can pin at this size.
+    internal long BandCharactersProduced { get; private set; }
+
     // What the layout noticed and kept going through; see Document.Diagnostics. Created with the
     // renderer, but it allocates its collections on the first report.
     private readonly LayoutDiagnosticSink _sink = new();
@@ -984,7 +994,7 @@ public sealed class DocumentRenderer
         if (Header is not null)
         {
             _sink.CurrentKind = LayoutElementKind.Header;
-            var text = Header.Resolve(pageNumber, totalPages);
+            var text = ResolveBand(Header, ref _headerText, pageNumber, totalPages);
             var bandY = _margins.Top;
             var bandHeight = Header.EffectiveHeight;
             DrawBandText(ctx, canvas, text, Header, RunningBandKind.Header, pageNumber, bandY, bandHeight);
@@ -995,11 +1005,22 @@ public sealed class DocumentRenderer
         if (Footer is not null)
         {
             _sink.CurrentKind = LayoutElementKind.Footer;
-            var text = Footer.Resolve(pageNumber, totalPages);
+            var text = ResolveBand(Footer, ref _footerText, pageNumber, totalPages);
             var bandY = _pageSize.Height - _margins.Bottom - Footer.EffectiveHeight;
             var bandHeight = Footer.EffectiveHeight;
             DrawBandText(ctx, canvas, text, Footer, RunningBandKind.Footer, pageNumber, bandY, bandHeight);
         }
+    }
+
+    // A null template is refused here, where the band is first drawn, as RunningBand.Resolve
+    // refuses it. The cached BandText is replaced when the band was, since Header and Footer are
+    // settable between renders.
+    private static BandText ResolveBand(RunningBand band, ref BandText? cache, int pageNumber, int totalPages)
+    {
+        if (cache is null || !ReferenceEquals(cache.Template, band.Compiled))
+            cache = new BandText(band.Compiled);
+        cache.Reset(pageNumber, totalPages);
+        return cache;
     }
 
     // Drops the RendererContext the old signature took and never read: the body reaches everything
@@ -1007,7 +1028,7 @@ public sealed class DocumentRenderer
     private void DrawBandText(
         DrawContext ctx,
         PdfCanvas canvas,
-        string text,
+        BandText text,
         RunningBand band,
         RunningBandKind kind,
         int pageNumber,
@@ -1023,6 +1044,8 @@ public sealed class DocumentRenderer
 
         var contentWidth = _pageSize.Width - _margins.Horizontal;
         var (drawn, textWidth) = FitToWidth(style, text, contentWidth);
+
+        BandCharactersProduced += text.Produced;
 
         if (drawn.Length < text.Length) RecordTruncation(kind, pageNumber, drawn.Length, text.Length);
 
@@ -1134,7 +1157,9 @@ public sealed class DocumentRenderer
     /// the alignment arithmetic safe, because the width it returns can never exceed maxWidth.
     ///
     /// It walks forward and stops, rather than measuring the whole string first, so the work is
-    /// proportional to what fits rather than to what was passed. That bound has one hole, and it is
+    /// proportional to what fits rather than to what was passed. The text is produced as the walk
+    /// asks for it, so the characters of the template that are never reached are never copied
+    /// either. That bound has one hole, and it is
     /// worth stating its consequence and not only its mechanism. A glyph may advance zero: the 38
     /// code points U+0000 to U+001F, U+007F and WinAnsi's five undefined codes measure zero in
     /// every face, and every character measures zero in Symbol and ZapfDingbats, the two of the
@@ -1169,9 +1194,10 @@ public sealed class DocumentRenderer
     /// move bands. No test defends this line, since the mutation is invisible to the suite, so
     /// this comment is what defends it.
     /// </summary>
-    private static (string Drawn, double Width) FitToWidth(TextStyle style, string text, double maxWidth)
+    private static (string Drawn, double Width) FitToWidth(TextStyle style, BandText text, double maxWidth)
     {
-        if (text.Length == 0) return (text, 0);
+        var length = text.Length;
+        if (length == 0) return (string.Empty, 0);
 
         var width = 0.0;
         var cut = 0;
@@ -1182,13 +1208,13 @@ public sealed class DocumentRenderer
         var lastSpaceWidth = 0.0;
 
         var i = 0;
-        while (i < text.Length)
+        while (i < length)
         {
-            var len = char.IsHighSurrogate(text[i]) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1])
+            var len = char.IsHighSurrogate(text[i]) && i + 1 < length && char.IsLowSurrogate(text[i + 1])
                 ? 2
                 : 1;
 
-            var piece = style.MeasureString(text.Substring(i, len));
+            var piece = style.MeasureString(text.Slice(i, len));
             if (width + piece > maxWidth) break;
 
             width += piece;
@@ -1207,15 +1233,19 @@ public sealed class DocumentRenderer
             }
         }
 
-        if (cut == text.Length) return (text, style.MeasureString(text));
+        if (cut == length)
+        {
+            var whole = text.Prefix(length);
+            return (whole, style.MeasureString(whole));
+        }
 
         // Prefer the last word boundary. For a band this is not only tidier: a template ending in
         // a page number cut mid-token would show a number that is simply wrong, where dropping the
         // token shows none. Fall back to the mid-token cut when the fitted prefix holds no interior
         // space, which is the case a single overlong word produces.
         return lastSpaceCut > 0
-            ? (text[..lastSpaceCut], lastSpaceWidth)
-            : (text[..cut], width);
+            ? (text.Prefix(lastSpaceCut), lastSpaceWidth)
+            : (text.Prefix(cut), width);
     }
 
     // ── Validation ────────────────────────────────────────────────────────────

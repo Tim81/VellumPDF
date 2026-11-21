@@ -321,6 +321,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **A long running-band template costs what the band draws, not the template's length, on every
+  page (#518).** `RunningBand.Resolve` built the whole substituted text for each band on each
+  page, and the fitting walk then used the first few dozen characters of it. A save now scans each
+  template once and produces the text as the walk reads it, so a page costs the characters drawn
+  plus one character of look-ahead. On a 60,000-word paragraph that saves as 600 pages of
+  200 x 300 pt with a footer in Helvetica 10, `Save` allocated 276,551,992 bytes with a
+  100,000-character template against 37,413,456 with a 200-character one; it now allocates
+  36,367,704 against 36,881,216. Those are allocation counts on one machine and one fixture, not
+  timings.
+  - Output is byte-identical for every band measured: `{page}`, `{pages}`, both and neither;
+    truncated bands with the same `BandTruncations` (page, characters drawn, characters resolved);
+    Symbol and ZapfDingbats bands; tagged and untagged documents; blank recto pages. A null
+    template still throws `ArgumentNullException` named `template` from the save, where the band is
+    first drawn.
+  - The public `RunningBand.Resolve` is unchanged. It still builds the whole text, so calling it
+    costs the template's length; the save no longer calls it.
+  - A template whose characters measure zero is drawn in full and costs its whole length on every
+    page, as before. The documentation of `RunningBand.Template` now says so.
+  - The tokens a template substitutes now sit in one internal table, so a later token is one row
+    and one value rather than another pass over the template.
 - **On .NET 10 an empty stream was written as `/FlateDecode` with no data (#640).** `PdfStream`
   compressed through `ZLibStream`, which on .NET 10.0.15 writes nothing for empty input, so an empty
   page's `/Contents` came out as `/Filter /FlateDecode /Length 0` with an empty body, which is not
