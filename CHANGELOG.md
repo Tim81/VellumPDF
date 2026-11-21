@@ -412,7 +412,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   right edge and drew its words closer together than the same text without the tab. Each space is
   now shown as a glyph of its own and advanced by its width, and takes the same share of the slack
   as the other spaces, as `Tw` gives every space on a Standard 14 line. The line ends at the right
-  edge. A link on a run of spaces gets the rectangle of the glyphs drawn. **Deliberate output
+  edge. A link on a run of spaces, such as a tab with no stop to its right at the start of a line,
+  now covers the spaces drawn. It got no annotation before, and still gets none where the space is
+  dropped because the line ends there. **Deliberate output
   change:** a justified embedded-font line that holds a leading space, or two spaces in a row
   (reachable through tab stops), is drawn with those spaces and a different spread. Every other
   document keeps its bytes.
@@ -496,10 +498,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   gap before them) and could lie over other text. The rectangle now starts at the x where the linked
   run's first glyph is drawn and ends at the x where the text that follows it on the line starts, or
   where its own last glyph ends when it closes the line. A space that closes the run is inside the
-  rectangle, with the stretch after it, as on a standard-14 line. On a line that holds an
-  embedded-font run, a link run that draws no glyph, such as a tab with no stop to its right at a
-  line start, gets no annotation; on a line in standard-14 faces only that tab is drawn as a space
-  and its link covers it. This is a deliberate output change for one class of input: a justified
+  rectangle, with the stretch after it, as on a standard-14 line. A link run that
+  draws no glyph gets no annotation. A tab with no stop to its right is drawn as a space, in a
+  standard-14 or an embedded face, and its link covers that space, unless the space is dropped
+  because the line ends there. This is a deliberate output change for one class of input: a justified
   line, other than the last of its paragraph, that holds an embedded-font run and a `LinkUri` run. A
   standard-14 link on such a mixed line moves the same way, and so does the link in a justified
   `Heading` built from runs. Left, centred and right lines, the last line of a justified paragraph,
