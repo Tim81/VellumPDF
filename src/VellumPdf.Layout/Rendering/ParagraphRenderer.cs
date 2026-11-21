@@ -26,6 +26,7 @@ public sealed class ParagraphRenderer : IRenderer
 
     // Computed during Layout:
     private List<LineFragment[]>? _lines;
+    private List<LineEnd>? _lineEnds;  // one per entry of _lines
 
     /// <summary>How many times this instance wrapped its text; the cache keeps it at one.</summary>
     internal int WrapCalls { get; private set; }
@@ -99,7 +100,7 @@ public sealed class ParagraphRenderer : IRenderer
 
         if (_lines is null)
         {
-            _lines = WordWrap(_para.Runs, area.Width, out var nullStyleRuns);
+            (_lines, _lineEnds) = WordWrap(_para.Runs, area.Width, out var nullStyleRuns);
             _nullStyleRuns = nullStyleRuns;
             WrapCalls++;
         }
@@ -140,6 +141,7 @@ public sealed class ParagraphRenderer : IRenderer
         var overflow = new ParagraphRenderer(_para, _endLine)
         {
             _lines = _lines,
+            _lineEnds = _lineEnds,
             _nullStyleRuns = _nullStyleRuns,
             StructType = StructType,
             ParentStructElem = ParentStructElem,
@@ -149,6 +151,7 @@ public sealed class ParagraphRenderer : IRenderer
         var split = new ParagraphRenderer(_para, _startLine)
         {
             _lines = _lines,
+            _lineEnds = _lineEnds,
             _endLine = _endLine,
             _lineHeight = _lineHeight,
             _occupied = _occupied,
@@ -168,6 +171,11 @@ public sealed class ParagraphRenderer : IRenderer
     /// Set to "H1"…"H6" by <see cref="HeadingRenderer"/> before calling Draw.
     /// </summary>
     internal string StructType { get; set; } = "P";
+
+    /// <summary>
+    /// How each wrapped line ended, once <see cref="Layout"/> has run; null before.
+    /// </summary>
+    internal IReadOnlyList<LineEnd>? LineEnds => _lineEnds;
 
     /// <summary>
     /// When non-null, the struct elem produced by this renderer is added as a child
@@ -271,7 +279,7 @@ public sealed class ParagraphRenderer : IRenderer
             // Baseline X for left, center, right — for Justify treat as Left (we use Tw or Tm).
             //
             // Center and Right are floored at zero. The precondition is a single rune wider than
-            // the box, not a word: HardBreakWord flushes whenever fragmentW + charW > maxWidth, so
+            // the box, not a word: HardBreakWord flushes whenever lineW + charW > maxWidth, so
             // every line it emits stays within maxWidth except the one line consisting of a
             // single over-wide rune, and that is the only way (area.Width - lineWidth) goes
             // negative here. Measured: "W" at 160pt in a 150pt box gives x 50, the floor; "WWW" at
@@ -286,10 +294,12 @@ public sealed class ParagraphRenderer : IRenderer
             // asserted false by keeping the origin legal.
             //
             // The floor moves no bytes for a line that already fits, but the reason is the number
-            // format rather than an equality of sums. The acceptance check,
-            // lineWidth + prevSpaceW + wordW, and the fragment width the merge arm records,
-            // last.Width + prevSpaceW + wordW, associate identically, both left to right, so they
-            // cannot diverge from each other on their own. What can diverge is the running total
+            // format rather than an equality of sums. For a word of one piece, the acceptance
+            // check, lineWidth + prevSpaceW + wordW, and the fragment width the merge arm records,
+            // last.Width + prevSpaceW + pieceWidths[0], associate identically, both left to right,
+            // so they cannot diverge from each other on their own. For a word of several pieces
+            // wordW is the sum of the piece widths while each fragment keeps its own width, so the
+            // two can differ in the last bit. What can also diverge is the running total
             // itself: lineWidth += prevSpaceW + wordW groups the space and word together before
             // adding them to the total, and that total becomes the left operand of the next
             // word's own check, so the check and the recorded fragment width can part company
@@ -662,12 +672,30 @@ public sealed class ParagraphRenderer : IRenderer
         return sb.ToString();
     }
 
+    private enum TokenKind : byte
+    {
+        /// <summary>The first piece of a word.</summary>
+        WordStart,
+
+        /// <summary>
+        /// A further piece of the word before it, from a run whose text continued it.
+        /// </summary>
+        WordContinue,
+
+        /// <summary>A line break; it carries no text.</summary>
+        HardBreak,
+    }
+
     /// <summary>
-    /// Greedy word-wrap across all runs. Words inherit the style of the run they belong to.
+    /// Greedy word-wrap across all runs. A word is a maximal sequence of characters other than
+    /// U+0020 and line feed, counted across the runs, so it can change style part-way; each style
+    /// change inside it is a fragment boundary, and nothing is drawn between the pieces.
     /// <para>
     /// Hard line breaks: <c>\n</c>, <c>\r\n</c>, and lone <c>\r</c> all produce explicit line
-    /// breaks. Input is normalised so that <c>\r\n</c> and lone <c>\r</c> are replaced with
-    /// <c>\n</c> before splitting, preventing stray <c>\r</c> glyphs in Standard-14 output.
+    /// breaks. The normalisation is per run, so a <c>\r</c> ending one run and a <c>\n</c> starting
+    /// the next are two breaks. Input is normalised so that <c>\r\n</c> and lone <c>\r</c> are
+    /// replaced with <c>\n</c> before splitting, preventing stray <c>\r</c> glyphs in Standard-14
+    /// output.
     /// </para>
     /// <para>
     /// Word splitting uses <see cref="NormaliseWhitespace"/> to convert Unicode whitespace
@@ -677,14 +705,23 @@ public sealed class ParagraphRenderer : IRenderer
     /// before the question mark cannot wrap between the two.
     /// </para>
     /// </summary>
-    private static List<LineFragment[]> WordWrap(IReadOnlyList<TextRun> runs, double maxWidth, out int nullStyleRuns)
+    /// <returns>
+    /// The lines, and for each line how it ended. A line that holds a word's last piece after a
+    /// forced cut ends where the word ends, so what follows decides its kind.
+    /// </returns>
+    internal static (List<LineFragment[]> Lines, List<LineEnd> Ends) WordWrap(
+        IReadOnlyList<TextRun> runs, double maxWidth, out int nullStyleRuns)
     {
         nullStyleRuns = 0;
         var lines = new List<LineFragment[]>();
+        var ends = new List<LineEnd>();
 
-        // Flatten all runs into a sequence of (word, style) tokens.
-        // Hard newlines in the text produce explicit line breaks.
-        var tokens = new List<(string Word, TextStyle Style, bool HardBreakBefore)>();
+        // Flatten all runs into a sequence of word pieces and line breaks. Pieces of one word that
+        // share a style instance are joined here, before anything is measured, so that two runs
+        // sharing an instance measure and draw as the single run holding their text would. A piece
+        // from another instance stays a piece of its own even when its values are equal.
+        var tokens = new List<(string Text, TextStyle? Style, TokenKind Kind)>();
+        var openWord = false;
         foreach (var run in runs)
         {
             // Normalise line endings: \r\n => \n, lone \r => \n.
@@ -694,25 +731,39 @@ public sealed class ParagraphRenderer : IRenderer
             var hardLines = normalised.Split('\n');
             for (var hl = 0; hl < hardLines.Length; hl++)
             {
-                var hardLine = hardLines[hl];
-                // Normalise all Unicode whitespace (except \n and NBSP) to plain spaces,
-                // then split on space so tabs, en/em spaces, etc. all act as word separators.
-                var normalizedLine = NormaliseWhitespace(hardLine);
-                var words = normalizedLine.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                var isFirstHardLine = hl == 0;
-                var isFirstWord = true;
-                foreach (var w in words)
+                // A line break ends the word before it. An empty hard line (two consecutive \n)
+                // still forces a break.
+                if (hl > 0)
                 {
-                    // Only a run that yields a word is refused; empty text, white space or line breaks
-                    // alone save with a null style.
+                    openWord = false;
+                    tokens.Add((string.Empty, null, TokenKind.HardBreak));
+                }
+
+                // Normalise all Unicode whitespace (except \n and the three no-break spaces) to
+                // plain spaces, then split on space so tabs, en/em spaces, etc. all act as word
+                // separators. A space ends the word before it; a run that starts or ends without
+                // one continues or leaves the word open for the next run.
+                var segments = NormaliseWhitespace(hardLines[hl]).Split(' ');
+                for (var si = 0; si < segments.Length; si++)
+                {
+                    if (si > 0)
+                        openWord = false;
+
+                    var segment = segments[si];
+                    if (segment.Length == 0)
+                        continue;
+
+                    // Only a run that yields a word is refused; empty text, or text of word
+                    // separators alone, saves with a null style.
                     if (run.Style is null)
                         throw new ArgumentNullException("Style", "A paragraph run with text has a null style.");
-                    tokens.Add((w, run.Style, !isFirstHardLine && isFirstWord));
-                    isFirstWord = false;
+
+                    if (openWord && ReferenceEquals(tokens[^1].Style, run.Style))
+                        tokens[^1] = (tokens[^1].Text + segment, run.Style, tokens[^1].Kind);
+                    else
+                        tokens.Add((segment, run.Style, openWord ? TokenKind.WordContinue : TokenKind.WordStart));
+                    openWord = true;
                 }
-                // An empty hardLine (e.g. two consecutive \n) still forces a break.
-                if (words.Length == 0 && !isFirstHardLine)
-                    tokens.Add((string.Empty, run.Style!, true));
             }
 
             // A null style that yielded a word threw above, so what is left here yielded none.
@@ -722,92 +773,144 @@ public sealed class ParagraphRenderer : IRenderer
         if (tokens.Count == 0)
         {
             lines.Add([]);
-            return lines;
+            ends.Add(LineEnd.Last);
+            return (lines, ends);
         }
 
         // Greedy wrap
         var lineFrags = new List<(string Word, TextStyle Style, double Width)>();
         var lineWidth = 0.0;
+        var pieceWidths = new List<double>();
 
-        for (var ti = 0; ti < tokens.Count; ti++)
+        // The line that holds the last piece of a word cut by HardBreakWord: it ends where the
+        // word ends, which is only known once the next token is.
+        var unresolved = -1;
+
+        void CommitLine(LineEnd end)
         {
-            var (word, style, hardBreakBefore) = tokens[ti];
+            lines.Add(BuildFragments(lineFrags));
+            ends.Add(end);
+            lineFrags.Clear();
+        }
 
+        void ResolveCutWord(LineEnd end)
+        {
+            if (unresolved >= 0)
+                ends[unresolved] = end;
+            unresolved = -1;
+        }
+
+        for (var ti = 0; ti < tokens.Count;)
+        {
             // Hard break: commit current line and start a new one.
-            if (hardBreakBefore)
+            if (tokens[ti].Kind == TokenKind.HardBreak)
             {
-                lines.Add(BuildFragments(lineFrags));
-                lineFrags.Clear();
+                ResolveCutWord(LineEnd.Hard);
+                CommitLine(LineEnd.Hard);
                 lineWidth = 0.0;
+                ti++;
+                continue;
             }
 
-            if (word.Length == 0) continue;
+            var tj = ti + 1;
+            while (tj < tokens.Count && tokens[tj].Kind == TokenKind.WordContinue)
+                tj++;
 
-            var spaceW = style.FontRef.MeasureString(" ", style.FontSize);
-            var wordW = style.FontRef.MeasureString(word, style.FontSize);
+            // A word's width is its pieces' widths, each measured in its own style. A one-piece
+            // word is measured by the one call the unsplit word always made.
+            pieceWidths.Clear();
+            var wordW = 0.0;
+            for (var k = ti; k < tj; k++)
+            {
+                var (pieceText, pieceStyle, _) = tokens[k];
+
+                // The width is not used. Measuring in an embedded font records the glyphs
+                // measured, so this keeps the space in the font's subset (its /W and ToUnicode
+                // entries) as the wrap has always done, and a document with no glued boundary
+                // keeps its bytes.
+                _ = pieceStyle!.FontRef.MeasureString(" ", pieceStyle.FontSize);
+                var w = pieceStyle.FontRef.MeasureString(pieceText, pieceStyle.FontSize);
+                pieceWidths.Add(w);
+                wordW = k == ti ? w : wordW + w;
+            }
+
+            // A word follows a word that ended, so a space the wrap drops ended the line before it.
+            ResolveCutWord(LineEnd.Soft);
 
             if (lineFrags.Count == 0)
             {
                 if (wordW > maxWidth)
                 {
                     // Hard-break oversized word
-                    HardBreakWord(word, style, maxWidth, lines);
+                    unresolved = HardBreakWord(tokens, ti, tj, maxWidth, lines, ends);
                     lineWidth = 0.0;
-                    continue;
                 }
-                lineFrags.Add((word, style, wordW));
-                lineWidth = wordW;
+                else
+                {
+                    for (var k = ti; k < tj; k++)
+                        lineFrags.Add((tokens[k].Text, tokens[k].Style!, pieceWidths[k - ti]));
+                    lineWidth = wordW;
+                }
             }
             else
             {
                 // Check if adding a space + this word still fits
-                // Space belongs to the style of the PRECEDING word for measurement purposes
+                // Space belongs to the style of the PRECEDING word's last piece for measurement
                 var prevStyle = lineFrags[^1].Style;
                 var prevSpaceW = prevStyle.FontRef.MeasureString(" ", prevStyle.FontSize);
 
                 if (lineWidth + prevSpaceW + wordW <= maxWidth)
                 {
                     // Fits — append to current line
-                    // Merge into the same fragment if styles match; otherwise new fragment
-                    if (lineFrags[^1].Style == style)
+                    // Merge the first piece into the same fragment if styles match; otherwise new
+                    // fragment. Every further piece is a style change, so it is a fragment of its
+                    // own.
+                    var firstStyle = tokens[ti].Style!;
+                    if (lineFrags[^1].Style == firstStyle)
                     {
                         var last = lineFrags[^1];
-                        lineFrags[^1] = (last.Word + " " + word, style, last.Width + prevSpaceW + wordW);
-                        lineWidth += prevSpaceW + wordW;
+                        lineFrags[^1] = (last.Word + " " + tokens[ti].Text, firstStyle, last.Width + prevSpaceW + pieceWidths[0]);
                     }
                     else
                     {
                         // Different style: append a space to the preceding fragment and start a new one
                         var last = lineFrags[^1];
                         lineFrags[^1] = (last.Word + " ", last.Style, last.Width + prevSpaceW);
-                        lineFrags.Add((word, style, wordW));
-                        lineWidth += prevSpaceW + wordW;
+                        lineFrags.Add((tokens[ti].Text, firstStyle, pieceWidths[0]));
                     }
+
+                    for (var k = ti + 1; k < tj; k++)
+                        lineFrags.Add((tokens[k].Text, tokens[k].Style!, pieceWidths[k - ti]));
+                    lineWidth += prevSpaceW + wordW;
                 }
                 else
                 {
                     // Doesn't fit — commit current line and start new one
-                    lines.Add(BuildFragments(lineFrags));
-                    lineFrags.Clear();
+                    CommitLine(LineEnd.Soft);
 
                     if (wordW > maxWidth)
                     {
-                        HardBreakWord(word, style, maxWidth, lines);
+                        unresolved = HardBreakWord(tokens, ti, tj, maxWidth, lines, ends);
                         lineWidth = 0.0;
                     }
                     else
                     {
-                        lineFrags.Add((word, style, wordW));
+                        for (var k = ti; k < tj; k++)
+                            lineFrags.Add((tokens[k].Text, tokens[k].Style!, pieceWidths[k - ti]));
                         lineWidth = wordW;
                     }
                 }
             }
+
+            ti = tj;
         }
 
         if (lineFrags.Count > 0)
-            lines.Add(BuildFragments(lineFrags));
+            CommitLine(LineEnd.Last);
+        else
+            ResolveCutWord(LineEnd.Last);
 
-        return lines;
+        return (lines, ends);
     }
 
     private static LineFragment[] BuildFragments(List<(string Word, TextStyle Style, double Width)> frags)
@@ -818,27 +921,68 @@ public sealed class ParagraphRenderer : IRenderer
         return result;
     }
 
-    /// <summary>Hard-breaks a single word wider than maxWidth at character granularity.</summary>
-    private static void HardBreakWord(string word, TextStyle style, double maxWidth, List<LineFragment[]> lines)
+    /// <summary>
+    /// Hard-breaks a single word wider than maxWidth at character granularity. The word is the
+    /// pieces <paramref name="first"/> up to <paramref name="end"/> of <paramref name="tokens"/>;
+    /// each rune is measured in its piece's style and a line holds one fragment for each style
+    /// change. Every line but the last is recorded as ending inside the word. Returns the index
+    /// of the last line, whose end the caller settles.
+    /// </summary>
+    private static int HardBreakWord(
+        List<(string Text, TextStyle? Style, TokenKind Kind)> tokens,
+        int first,
+        int end,
+        double maxWidth,
+        List<LineFragment[]> lines,
+        List<LineEnd> ends)
     {
+        var lineFragments = new List<LineFragment>();
         var fragment = new System.Text.StringBuilder();
         var fragmentW = 0.0;
+        var lineW = 0.0;
+        TextStyle? fragmentStyle = null;
 
-        foreach (var rune in word.EnumerateRunes())
+        void CloseFragment()
         {
-            var ch = rune.ToString();
-            var charW = style.FontRef.MeasureString(ch, style.FontSize);
-            if (fragment.Length > 0 && fragmentW + charW > maxWidth)
-            {
-                var text = fragment.ToString();
-                lines.Add([new LineFragment(text, style, fragmentW)]);
-                fragment.Clear();
-                fragmentW = 0.0;
-            }
-            fragment.Append(ch);
-            fragmentW += charW;
+            if (fragment.Length == 0)
+                return;
+            lineFragments.Add(new LineFragment(fragment.ToString(), fragmentStyle!, fragmentW));
+            fragment.Clear();
+            fragmentW = 0.0;
         }
-        if (fragment.Length > 0)
-            lines.Add([new LineFragment(fragment.ToString(), style, fragmentW)]);
+
+        for (var k = first; k < end; k++)
+        {
+            var style = tokens[k].Style!;
+
+            // A piece in another style starts a fragment of its own.
+            CloseFragment();
+            fragmentStyle = style;
+
+            foreach (var rune in tokens[k].Text.EnumerateRunes())
+            {
+                var ch = rune.ToString();
+                var charW = style.FontRef.MeasureString(ch, style.FontSize);
+                if ((fragment.Length > 0 || lineFragments.Count > 0) && lineW + charW > maxWidth)
+                {
+                    CloseFragment();
+                    lines.Add([.. lineFragments]);
+                    ends.Add(LineEnd.Forced);
+                    lineFragments.Clear();
+                    lineW = 0.0;
+                }
+                fragment.Append(ch);
+                fragmentW += charW;
+                lineW += charW;
+            }
+        }
+
+        CloseFragment();
+        if (lineFragments.Count > 0)
+        {
+            lines.Add([.. lineFragments]);
+            ends.Add(LineEnd.Last);
+        }
+        return lines.Count - 1;
     }
 }
