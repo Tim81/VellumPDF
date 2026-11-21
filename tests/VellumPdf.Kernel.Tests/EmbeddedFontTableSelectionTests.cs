@@ -19,12 +19,16 @@ public sealed class EmbeddedFontTableSelectionTests
 {
     private static readonly string[] VariationTags = ["HVAR", "MVAR", "STAT", "VVAR", "avar", "cvar", "fvar", "gvar"];
 
-    // DejaVu Sans as shipped, read with fontTools 4.62.1; the sort is by tag bytes, as the directory is.
-    private static readonly string[] DejaVuTags =
+    // DejaVu Sans as shipped, read with fontTools 4.62.1; the sort is by tag bytes, as the
+    // directory is.
+    private static readonly string[] DejaVuSourceTags =
     [
         "FFTM", "GDEF", "GPOS", "GSUB", "MATH", "OS/2", "cmap", "cvt ", "fpgm", "gasp", "glyf", "head", "hhea",
         "hmtx", "kern", "loca", "maxp", "name", "post", "prep",
     ];
+
+    // What the embedded glyf program holds: the source's tables without cmap (#632).
+    private static readonly string[] DejaVuTags = [.. DejaVuSourceTags.Where(t => t != "cmap")];
 
     private static readonly string[] SourceSansTags =
         ["BASE", "CFF ", "DSIG", "GDEF", "GPOS", "GSUB", "OS/2", "cmap", "head", "hhea", "hmtx", "maxp", "name", "post"];
@@ -48,7 +52,7 @@ public sealed class EmbeddedFontTableSelectionTests
     {
         var plain = EmbeddedFontFixtures.Load("DejaVuSans.ttf");
         var variable = EmbeddedFontFixtures.WithTables(plain, Variation(VariationTags));
-        Assert.Equal(DejaVuTags.Concat(VariationTags).Order(StringComparer.Ordinal), EmbeddedFontFixtures.Tags(variable));
+        Assert.Equal(DejaVuSourceTags.Concat(VariationTags).Order(StringComparer.Ordinal), EmbeddedFontFixtures.Tags(variable));
 
         var embeddedVariable = Program(variable);
         var embeddedPlain = Program(plain);
@@ -59,9 +63,8 @@ public sealed class EmbeddedFontTableSelectionTests
 
     /// <summary>
     /// A 64-byte fvar and a 96-byte gvar added 192 bytes to the program (two 16-byte directory
-    /// entries and the 160 bytes of table data). Now the program is byte-equal to the plain font's, and
-    /// its digest is pinned. The digest is also the program 2.3.3 wrote for the plain font and the
-    /// same text, because the tables dropped here are not in that font.
+    /// entries and the 160 bytes of table data). Now the program is byte-equal to the plain font's,
+    /// and its digest is pinned.
     /// </summary>
     [Fact]
     public void DejaVuWithFvarAndGvar_embedsAsPlainDejaVu_whoseDigestIsPinned()
@@ -73,9 +76,9 @@ public sealed class EmbeddedFontTableSelectionTests
         var embeddedPlain = Program(plain);
 
         Assert.Equal(embeddedPlain, embeddedVariable);
-        Assert.Equal(201_668, embeddedPlain.Length);
+        Assert.Equal(195_736, embeddedPlain.Length);
         Assert.Equal(
-            "5BB876349A57F0A3099375F1F91F9E65A9E1C04592D4DC876EF8AEF8BA034736",
+            "4392B930C6B87B90C9422D602441266F12571ACEC446F48A70A4B0F7A87C61E6",
             Convert.ToHexString(SHA256.HashData(embeddedPlain)));
     }
 

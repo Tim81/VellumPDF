@@ -376,17 +376,21 @@ public sealed class TrueTypeFontEmbedder
     /// <summary>Builds the embedded font program stream: a subsetted glyf font, or a subsetted CFF/OTTO program as /FontFile3.</summary>
     /// <remarks>
     /// <b>A variable font is embedded as its default instance.</b> When the source font has an
-    /// <c>fvar</c> table, the program omits the eight tables avar, cvar, fvar, gvar, HVAR, MVAR, VVAR
-    /// and STAT, so the program holds the default instance alone; every other table is kept. A font without <c>fvar</c> keeps all its tables, a stray <c>gvar</c> or STAT
-    /// included. The outlines, advance widths and descriptor metrics are the default instance's in
-    /// either case, and no other instance of the font can be drawn.
+    /// <c>fvar</c> table, the program omits the eight tables avar, cvar, fvar, gvar, HVAR, MVAR,
+    /// VVAR and STAT, so the program holds the default instance alone; every other table is kept.
+    /// A font without <c>fvar</c> keeps all its tables, a stray <c>gvar</c> or STAT included. The
+    /// outlines, advance widths and descriptor metrics are the default instance's in either case,
+    /// and no other instance of the font can be drawn.
+    /// <para>A glyf program is written without its <c>cmap</c> table. Every glyf font is used with
+    /// a CIDFontType2 descendant, which maps codes to glyphs itself, and ISO 32000-2, 9.9.1 says
+    /// that with a CIDFont dictionary the table is not needed and shall not be present. An OpenType
+    /// CFF program keeps its <c>cmap</c>, because Table 124 requires it there. A source font with
+    /// no <c>cmap</c> table is refused when the embedder is created, not here.</para>
     /// <para>A CID-keyed or unparseable OpenType CFF font cannot be subset here, so it is embedded
     /// whole, and a variable one of those keeps its variation tables.</para>
-    /// <para><b>Do not rely on</b> GSUB, GPOS or GDEF being free of variation data: they are kept as
-    /// they are, and a variable font's own variation data inside them still names axes that the
-    /// program no longer has. A PDF processor does not use those tables to draw.</para>
-    /// <para>This member throws nothing for a variable font that the same font without variation
-    /// tables would not throw for.</para>
+    /// <para><b>Do not rely on</b> GSUB, GPOS or GDEF being free of variation data: they are kept
+    /// as they are, and a variable font's own variation data inside them still names axes that
+    /// the program no longer has. A PDF processor does not use those tables to draw.</para>
     /// </remarks>
     public Core.PdfStream BuildFontFileStream()
     {
@@ -546,7 +550,7 @@ public sealed class TrueTypeFontEmbedder
 
         // Tables to keep verbatim: every table except CFF  and those ShouldCopyTable drops.
         var tablesToKeep = _sfnt.Tables.Keys
-            .Where(t => t != _cffTag && ShouldCopyTable(t, _sfnt.HasTable(FvarTag)))
+            .Where(t => t != _cffTag && ShouldCopyTable(t, _sfnt.HasTable(FvarTag), glyfPath: false))
             .OrderBy(t => t.ToString())
             .ToList();
 
@@ -636,17 +640,25 @@ public sealed class TrueTypeFontEmbedder
         new("avar"), new("cvar"), new("fvar"), new("gvar"), new("HVAR"), new("MVAR"), new("VVAR"), new("STAT"),
     ];
 
+    private static readonly Tag CmapTag = new("cmap");
+
     /// <summary>
     /// Whether a table of the source font is copied into the embedded program, the one place that
-    /// decides it for both assemblers. The outline and location tables, which the callers replace
-    /// with the subset's, are not asked about here. A font that has an <c>fvar</c> table is
-    /// variable, and its variation tables are not copied: the glyf, hmtx, OS/2 and hhea tables it
-    /// keeps are the default instance's, and a gvar table left beside a glyf table whose unused
-    /// glyphs are emptied would describe outlines that are no longer there. A font without
-    /// <c>fvar</c> keeps every table, whatever it carries.
+    /// decides it for both assemblers (<paramref name="glyfPath"/> is true for the glyf path). The
+    /// outline and location tables, which the callers replace with the subset's, are not asked
+    /// about here. Two rules apply.
+    /// <para>A font that has an <c>fvar</c> table is variable, and its variation tables are not
+    /// copied: the glyf, hmtx, OS/2 and hhea tables it keeps are the default instance's, and a
+    /// gvar table left beside a glyf table whose unused glyphs are emptied would describe outlines
+    /// that are no longer there. A font without <c>fvar</c> keeps every table, whatever it
+    /// carries.</para>
+    /// <para>A glyf program never carries <c>cmap</c>. Every glyf font is written as a CIDFontType2
+    /// descendant, whose /CIDToGIDMap gives the code-to-glyph mapping, and ISO 32000-2, 9.9.1 says
+    /// that for a CIDFont the table is not needed and shall not be present. An OpenType CFF program
+    /// keeps it, because Table 124 requires it there.</para>
     /// </summary>
-    internal static bool ShouldCopyTable(Tag tag, bool sourceHasFvar) =>
-        !(sourceHasFvar && VariationTables.Contains(tag));
+    internal static bool ShouldCopyTable(Tag tag, bool sourceHasFvar, bool glyfPath) =>
+        !(sourceHasFvar && VariationTables.Contains(tag)) && !(glyfPath && tag == CmapTag);
 
     private byte[] AssembleFont(byte[] newGlyf, byte[] newLoca)
     {
@@ -656,7 +668,7 @@ public sealed class TrueTypeFontEmbedder
         var head = new Tag("head");
 
         var tablesToKeep = _sfnt.Tables.Keys
-            .Where(t => t != glyf && t != loca && ShouldCopyTable(t, _sfnt.HasTable(FvarTag)))
+            .Where(t => t != glyf && t != loca && ShouldCopyTable(t, _sfnt.HasTable(FvarTag), glyfPath: true))
             .OrderBy(t => t.ToString())
             .ToList();
 

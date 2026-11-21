@@ -260,23 +260,46 @@ public sealed class CmapFormat12Tests
 
     /// <summary>
     /// A document that draws only BMP text must come out as it did on 2.3.3, whichever subtables
-    /// the font has. The digests are SHA-256 over the inflated stream bodies of a document with the
+    /// the font has. The digest is SHA-256 over the inflated stream bodies of a document with the
     /// clock and document id pinned, taken from the 2.3.3 build (informational version
     /// <c>2.3.3+cbbf7d5136f640d0a5b2a9bc8b5ded298bc7d1f2</c>, a detached worktree at <c>v2.3.3</c>)
-    /// and found equal on this build. They are over inflated bodies, not the file, so a different
-    /// zlib on another platform cannot move them. A change to which glyph a BMP code point maps to,
-    /// or to what is embedded for it, changes a digest.
+    /// and found equal on this build. It is over inflated bodies, not the file, so a different
+    /// zlib on another platform cannot move it. A change to which glyph a BMP code point maps to,
+    /// or to what is embedded for it, changes the digest.
     ///
-    /// <para>2.3.3 wrote the ToUnicode map with the platform line end, so on Windows these digests
-    /// matched only after folding CR LF to LF in that one stream. The map ends its lines with LF on
-    /// every platform now, so the digests are over the raw inflated bytes and are the ones 2.3.3
+    /// <para>Only the Source Sans row is here. It is an OpenType CFF font, whose program keeps its
+    /// <c>cmap</c> table, so its stream bodies are the ones 2.3.3 wrote. The two DejaVu rows moved
+    /// when a glyf program stopped carrying <c>cmap</c>; see
+    /// <see cref="BmpOnlyDocument_dejaVu_hasTheStreamBodiesOfTheCurrentBuild"/>.</para>
+    ///
+    /// <para>2.3.3 wrote the ToUnicode map with the platform line end, so on Windows the digest
+    /// matched only after folding CR LF to LF in that one stream. The map ends its lines with LF
+    /// on every platform now, so the digest is over the raw inflated bytes and is the one 2.3.3
     /// gave on Linux.</para>
     /// </summary>
     [Theory]
-    [InlineData("DejaVuSans.ttf", "intact", "3E4AEB889F5F4A0C6FCD224C50417ABAD966CAF6A8DA17E1322AEB506F46E2A1")]
-    [InlineData("DejaVuSans.ttf", "format4Only", "F5E4EEC0EAE5413C9C87D17A5258FD7DBEF1F9A9FED87128070C81D6AC263BB2")]
     [InlineData("SourceSans3-ExtraLight.otf", "intact", "3F4D3BBA526BBC8396431AAB288AB9162C1C992D1AB5B911672F162CCE0E737B")]
-    public void BmpOnlyDocument_hasTheStreamBodiesItHadOn233(string asset, string variant, string expectedSha256)
+    public void BmpOnlyDocument_hasTheStreamBodiesItHadOn233(string asset, string variant, string expectedSha256) =>
+        AssertStreamBodyDigest(asset, variant, expectedSha256);
+
+    /// <summary>
+    /// The same document with DejaVu Sans, whole and with its <c>cmap</c> cut to the format 4
+    /// subtable. The digests are no longer 2.3.3's: the embedded glyf program has no <c>cmap</c>
+    /// table and the descriptor's <c>/FontBBox</c> is the font's own box (the descriptor is a
+    /// dictionary, not a stream, so only the program moves the digest). They were taken from this
+    /// build and are equal on Windows and on Linux. The two are equal to each other, since cutting
+    /// the font's <c>cmap</c> to one subtable was the only difference between the two programs and
+    /// the table is not embedded now. Beside them, <c>FontFile2</c> of the 2.3.3
+    /// document and of this build differ by the <c>cmap</c> table and the <c>head</c> table's
+    /// checksum adjustment, and by no other table.
+    /// </summary>
+    [Theory]
+    [InlineData("DejaVuSans.ttf", "intact", "5D85E4D67046BE1A4AF0D2983057B2C16B7AAA525830249FBD1129DD2CB15220")]
+    [InlineData("DejaVuSans.ttf", "format4Only", "5D85E4D67046BE1A4AF0D2983057B2C16B7AAA525830249FBD1129DD2CB15220")]
+    public void BmpOnlyDocument_dejaVu_hasTheStreamBodiesOfTheCurrentBuild(string asset, string variant, string expectedSha256) =>
+        AssertStreamBodyDigest(asset, variant, expectedSha256);
+
+    private static void AssertStreamBodyDigest(string asset, string variant, string expectedSha256)
     {
         var font = LoadAsset(asset);
         if (variant == "format4Only")

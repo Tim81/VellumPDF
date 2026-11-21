@@ -246,7 +246,7 @@ public sealed class PlacementLoopGoldenTests
 
     [Fact]
     public void PdfA2uDocument_pinsBytes() =>
-        Pin("D22E268F15EA5215C2CBF9D6DCFAF58C80049C4AA6D1128D32C18553165E36C9", NormalisedSha256(PdfA2uDocument(), foldToUnicodeLineEnds: true));
+        Pin("4B68A71A0FFD37E61E4C3770077A9A18CDBB9004000C9C974325F3F965AFAFD1", NormalisedSha256(PdfA2uDocument(), foldToUnicodeLineEnds: true));
 
     [Fact]
     public void PdfA2uDocument_veraPdfReportsCompliant()

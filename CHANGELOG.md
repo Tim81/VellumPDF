@@ -275,6 +275,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   OpenType CFF font that cannot be subset here (CID-keyed, or one whose `CFF ` table does not parse)
   is embedded whole and keeps its variation tables, and `GSUB`, `GPOS` and `GDEF` stay in every
   program; PDF processors do not read them to draw.
+- **An embedded TrueType program no longer carries a `cmap` table (#632).** Every glyf font is
+  written as a Type 0 font whose CIDFontType2 descendant maps codes to glyphs through
+  `/CIDToGIDMap`, and ISO 32000-2, 9.9.1 says that for a CIDFont dictionary the `cmap` table "is
+  not needed and shall not be present". The embedded `/FontFile2` program kept the source font's
+  table anyway: for a five-letter line, the DejaVu Sans program is 5,932 bytes smaller without it and
+  the Liberation Sans one 1,704. It is left out now, and the table directory, the per-table
+  checksums and `head.checkSumAdjustment` follow. This is one more clause in the rule
+  that decides which source tables are copied (#612), on the glyf path only: an OpenType CFF
+  program written as `/FontFile3` keeps its `cmap`, because Table 124 requires it there.
+  **Deliberate output change:** the `/FontFile2` stream of every document that embeds a glyf font
+  through `UseTrueTypeFont`, `LoadTrueTypeFont`, `EmbedStandard14Font` (the Liberation substitutes)
+  or `PrepareForSigning` is smaller, and its offsets and the cross-reference follow. Against the
+  2.3.3 bytes, DejaVu Sans and Liberation Sans programs for the same text differ in the `cmap`
+  table and in the four bytes of `head.checkSumAdjustment`, and in no other table. A document
+  whose only embedded fonts are CFF, and a document without an embedded font, keep their bytes. A
+  font with no `cmap` table was and stays refused when it is loaded. The output of veraPDF 1.30.4
+  (PDF/A-2u and PDF/UA-1), `qpdf --check` and `pdftotext` accepted the new programs, and a 150 dpi
+  `pdftoppm` (poppler 26.08.0) render of the same text was pixel-equal to the 2.3.3 render for DejaVu
+  Sans, Liberation Sans, Liberation Mono and Source Sans 3.
 - **On .NET 10 an empty stream was written as `/FlateDecode` with no data (#640).** `PdfStream`
   compressed through `ZLibStream`, which on .NET 10.0.15 writes nothing for empty input, so an empty
   page's `/Contents` came out as `/Filter /FlateDecode /Length 0` with an empty body, which is not
