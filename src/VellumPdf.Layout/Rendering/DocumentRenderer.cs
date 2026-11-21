@@ -592,8 +592,9 @@ public sealed class DocumentRenderer
     private PageBreakMode _pendingBreak;
     private List<IRenderer>? _pendingBreakers;
 
-    // Whether the current page has had anything accepted on it. A page without is already a new page,
-    // so a break asks nothing of it.
+    // Whether anything has been accepted on the current page; a zero-height element counts. A page
+    // without is already a new page, so a break adds no page to end it; a Recto break may still add
+    // a blank page for parity.
     private bool _placedOnPage;
 
     private PlacementSink _placements = new();
@@ -802,9 +803,10 @@ public sealed class DocumentRenderer
                 throw PaginationChanged();
     }
 
-    // Applies the break in force before `renderer` is placed. The strongest pending mode is applied
-    // once: after any break the current page is empty, so a later Page adds nothing and a later Recto
-    // only settles parity, and one application gives the pages the breaks would give one at a time.
+    // Applies the break in force before `renderer` is placed. The strongest pending mode is
+    // applied once: after any break the current page is empty, so a later Page adds nothing and a
+    // later Recto only settles parity, and one application gives the pages the breaks would give
+    // one at a time.
     private void ApplyBreak(PageBreakMode mode, IRenderer renderer, bool ownBreak, int totalPages)
     {
         _pendingBreak = PageBreakMode.None;

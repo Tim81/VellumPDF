@@ -11,9 +11,10 @@ using static VellumPdf.Layout.Tests.PlacementLoopSupport;
 namespace VellumPdf.Layout.Tests;
 
 /// <summary>
-/// #311 pins for documents that use no break: the bytes after normalisation. Each value was recorded
-/// on the commit before the break step existed, with the same test bodies, so a difference means a
-/// document that asks for no break came out differently. These bodies use no page-break member.
+/// #311 pins for documents that use no break: the bytes after normalisation. Each value was
+/// recorded on the commit before the break step existed, with the same test bodies, so a
+/// difference means a document that asks for no break came out differently. These bodies use no
+/// page-break member.
 /// </summary>
 public sealed class PageBreakByteIdentityTests
 {

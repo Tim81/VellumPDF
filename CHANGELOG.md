@@ -15,21 +15,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `Paragraph`, `Heading`, `TableElement`, `ListElement` and `LayoutImage` also take
   `BreakBefore` (`PageBreakMode.None`, `Page` or `Recto`). Page 1 is a right-hand page and parity
   is the physical position in the document, never a page label.
-  - A break adds no page when it is the first element, follows another break, or ends an empty
-    page; where two breaks meet, the stronger one applies. A break with nothing after it is
-    dropped, so there is no trailing blank page, and a document of breaks alone throws
-    `InvalidOperationException` saying it has no pages and can still be saved once an element is
-    added.
+  - A break adds no page when it is the first element, follows another break, or ends a page with
+    nothing laid out on it (an element of zero height still counts as laid out); where two breaks
+    meet, the stronger one applies. A break with nothing after it is dropped, so there is no
+    trailing blank page. A document of breaks alone is treated like an empty one: a save throws
+    `InvalidOperationException` saying it has no pages, before the destination is checked, and the
+    document can still be saved once an element is added.
   - The blank page has no header or footer and no content, and it counts in `{page}`, `{pages}`
     and the page tree. In a tagged document no structure element refers to it.
-  - A built-in renderer added through `Document.Add(IRenderer)` honours its element's
-    `BreakBefore`; a renderer you wrote yourself cannot ask for a break, and neither can anything
-    nested in a list or a table.
+  - `BreakBefore` is read from a top-level element added with its own `Document.Add` overload, or
+    from the public renderer of a paragraph, table, list or image added with
+    `Document.Add(IRenderer)` or `DocumentRenderer.Add`. It is ignored for an element a renderer of your own wraps, for the
+    overflow pieces of a split element, and for the paragraph a heading draws with. A renderer you
+    wrote yourself cannot ask for a break.
   - An undefined `PageBreakMode` throws `ArgumentOutOfRangeException` from the `init` accessor, and
     a null `PageBreak` throws `ArgumentNullException` from `Document.Add`.
-  - A document that uses no break saves byte for byte as before. A form feed (U+000C) in text is
-    still drawn as a space, and a custom renderer that returns a zero-height `Partial` still forces
-    a page.
+  - A document that uses no break saves byte for byte as before. A form feed (U+000C) in text does
+    not start a page: a paragraph, a heading and a list item draw it as a space, and a table cell
+    and a running band write it to the font as it is, as before. A custom renderer that returns a
+    zero-height `Partial` still forces a page.
 
 - **`Document.Timestamp` and `Document.DocumentId` (#597).** The Layout `Document` now forwards the
   two pins that `PdfDocument` already had. `Timestamp` sets the instant written as the XMP creation

@@ -11,20 +11,27 @@ namespace VellumPdf.Layout.Core;
 /// <b>An undefined value is refused.</b> Setting a <c>BreakBefore</c> property to a number this
 /// enumeration does not name throws <see cref="ArgumentOutOfRangeException"/> from that
 /// property's <c>init</c> accessor, so the error names the line that wrote the bad value.
-/// <para>Only an element the document itself holds can break: a <see cref="Elements.Paragraph"/>,
-/// <see cref="Elements.Heading"/>, <see cref="Elements.Table.TableElement"/>,
-/// <see cref="Elements.ListElement"/> or <see cref="Elements.LayoutImage"/> added to a
-/// <see cref="Document"/>, or the renderer of one of them added with
-/// <see cref="Document.Add(IRenderer)"/>. A renderer you wrote yourself cannot ask for a break, and
-/// neither can anything nested inside a list or a table, an overflow piece, or the paragraph a
-/// heading draws its text with. Add a <see cref="Elements.PageBreak"/> before such a
-/// renderer.</para>
+/// <para>The mode is read when the document places a top-level element: a
+/// <see cref="Elements.Paragraph"/>, <see cref="Elements.Heading"/>,
+/// <see cref="Elements.Table.TableElement"/>, <see cref="Elements.ListElement"/> or
+/// <see cref="Elements.LayoutImage"/> added with its own <c>Document.Add</c> overload, or the
+/// public renderer of a paragraph, table, list or image added with
+/// <see cref="Document.Add(IRenderer)"/> or
+/// <see cref="Rendering.DocumentRenderer.Add(IRenderer)"/>. A heading's renderer is internal, so a
+/// heading has no other route.</para>
+/// <para>The mode is ignored in three places: an element whose renderer a custom
+/// <see cref="IRenderer"/> wraps, the overflow pieces a split element returns, and the paragraph a
+/// heading draws its text with. A renderer you wrote yourself cannot ask for a break; add a
+/// <see cref="Elements.PageBreak"/> before it. A renderer built to continue an element, such as
+/// <c>new ParagraphRenderer(paragraph, startLine: 2)</c>, reads the same element and breaks
+/// like the first piece when you add it directly. Do not add one expecting it not to break.</para>
 /// <para>The page a mode counts from is the physical position in the kernel document, with page 1
 /// on the right. A page label does not change it: a document whose front matter is numbered
 /// i, ii, iii still starts a <see cref="Recto"/> chapter on an odd physical page.</para>
-/// <para>Do not rely on a form feed (U+000C) inside text to break the page. The layout draws it
-/// as a space, as it does most white-space characters other than a line feed, and 2.x does not
-/// change that.
+/// <para>Do not rely on a form feed (U+000C) in text to break the page. It does not start a page in
+/// any built-in element, and 2.x does not change that. A paragraph, a heading and a list item draw
+/// it as a space, like most white-space characters other than a line feed. A table cell and a
+/// running band pass it to the font unchanged, so the content stream holds the raw 0x0C character.
 /// Use <see cref="Page"/> or a <see cref="Elements.PageBreak"/>.</para>
 /// </remarks>
 public enum PageBreakMode
@@ -33,8 +40,9 @@ public enum PageBreakMode
     None = 0,
 
     /// <summary>
-    /// The element starts at the top of a page. When the current page has nothing on it yet, as at
-    /// the start of the document or straight after another break, no page is added.
+    /// The element starts at the top of a page. When nothing is laid out on the current page yet,
+    /// as at the start of the document or straight after another break, no page is added to end
+    /// it. An element of zero height still counts as laid out.
     /// </summary>
     Page = 1,
 

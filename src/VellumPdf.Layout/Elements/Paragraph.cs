@@ -96,15 +96,16 @@ public sealed class Paragraph
     /// <summary>Whether the paragraph starts a new page, or the next right-hand page.</summary>
     /// <remarks>
     /// <b>An undefined value is refused.</b> A number <see cref="PageBreakMode"/> does not name
-    /// makes this <c>init</c> accessor throw <see cref="ArgumentOutOfRangeException"/>. The default,
-    /// <see cref="PageBreakMode.None"/>, starts the element where the previous one ended, as before.
-    /// <para>The mode is read from the element the document holds. It is honoured when the element is
-    /// added with <see cref="Document.Add(Paragraph)"/>, or when its built-in renderer is added with
-    /// <see cref="Document.Add(IRenderer)"/>; it is not honoured when the element sits inside a list
-    /// item or a table cell. It applies to the top of the element, so on a split element only the
-    /// first piece is affected. A break at the start of the document, or straight after another
-    /// break, adds no page; see <see cref="Elements.PageBreak"/> for how breaks combine and
-    /// <see cref="PageBreakMode.Recto"/> for the blank page.</para>
+    /// makes this <c>init</c> accessor throw <see cref="ArgumentOutOfRangeException"/>. The
+    /// default, <see cref="PageBreakMode.None"/>, starts the element where the previous one ended.
+    /// <para>It is honoured when the paragraph is added with <see cref="Document.Add(Paragraph)"/>,
+    /// or when its <see cref="Rendering.ParagraphRenderer"/> is added with
+    /// <see cref="Document.Add(IRenderer)"/> or
+    /// <see cref="Rendering.DocumentRenderer.Add(IRenderer)"/>. It applies to the top of the
+    /// paragraph: the overflow of a split paragraph never breaks again, and a renderer built to
+    /// continue the paragraph from a later line breaks like the first piece when it is added
+    /// directly. See <see cref="PageBreakMode"/> for what else is ignored and how parity is
+    /// counted, and <see cref="PageBreak"/> for how breaks combine.</para>
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// Raised from this <c>init</c> accessor when the value is not one of

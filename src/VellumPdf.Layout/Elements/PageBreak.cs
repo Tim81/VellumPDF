@@ -11,8 +11,9 @@ namespace VellumPdf.Layout.Elements;
 /// <b>A null break is refused.</b> <see cref="Document.Add(PageBreak)"/> throws
 /// <see cref="ArgumentNullException"/> from that call. Nothing else about a break can be refused.
 /// <para>A break takes effect before the next element, so it adds nothing when it is the first
-/// element, when it follows another break, or when the page it ends has nothing on it. A break
-/// with nothing after it is dropped, which means no trailing blank page. A document that holds
+/// element, when it follows another break, or when nothing is laid out on the page it ends; an
+/// element of zero height still counts as laid out. A break with nothing after it is dropped,
+/// which means no trailing blank page. A document that holds
 /// only breaks has no content, so a save throws <see cref="InvalidOperationException"/> saying
 /// the document has no pages, and the document can still be saved once an element is added.</para>
 /// <para>Where two breaks meet, the stronger one wins: a <see cref="Recto"/> break next to a plain
@@ -24,8 +25,9 @@ namespace VellumPdf.Layout.Elements;
 /// <para>A blank page that a <see cref="Recto"/> break inserts has no header or footer. Its page
 /// number is counted by <c>{page}</c> on the pages after it and by <c>{pages}</c>. Page 1 is a
 /// right-hand page and parity is the physical position in the document, not a page label.</para>
-/// <para>Do not rely on a form feed (U+000C) in text to break the page: it is drawn as a space and
-/// that does not change in 2.x. See <see cref="Core.PageBreakMode"/>.</para>
+/// <para>Do not rely on a form feed (U+000C) in text to break the page. No built-in element starts
+/// a page for it, and 2.x does not change that; see <see cref="Core.PageBreakMode"/> for what each
+/// element does with the character.</para>
 /// </remarks>
 public sealed class PageBreak
 {

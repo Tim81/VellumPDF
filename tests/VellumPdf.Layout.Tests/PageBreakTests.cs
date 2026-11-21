@@ -20,9 +20,10 @@ using static VellumPdf.Layout.Tests.PlacementLoopSupport;
 namespace VellumPdf.Layout.Tests;
 
 /// <summary>
-/// #311: <see cref="PageBreak"/>, <c>BreakBefore</c> and the blank page a recto break inserts. Every
-/// page assertion reads the decoded content stream of each page, in page-tree order, so a blank page
-/// is a page whose stream holds no operator at all and not a page that merely drew no text.
+/// #311: <see cref="PageBreak"/>, <c>BreakBefore</c> and the blank page a recto break inserts.
+/// Every page assertion reads the decoded content stream of each page, in page-tree order, so a
+/// blank page is a page whose stream holds no operator at all and not a page that merely drew no
+/// text.
 /// </summary>
 public sealed class PageBreakTests : IDisposable
 {
@@ -61,15 +62,15 @@ public sealed class PageBreakTests : IDisposable
         return ms.ToArray();
     }
 
-    private sealed record PageContent(int ObjectNumber, string Operators)
+    private sealed record PageContent(int ObjectNumber, string Operators, int ContentObject)
     {
         internal IReadOnlyList<string> Texts { get; } =
             [.. Regex.Matches(Operators, @"\((?<t>(?:\\.|[^\\)])*)\) Tj").Select(m => m.Groups["t"].Value)];
     }
 
-    // The pages in page-tree order with their decoded content. Decoded, never raw: net10.0 writes an
-    // empty body as /Length 0 with no zlib header and net11.0 as eight bytes, so the raw bytes of an
-    // empty page differ by runtime and its decoded stream does not.
+    // The pages in page-tree order with their decoded content. An empty page body is the eight
+    // bytes of an empty zlib stream on both runtimes (see BlankPage_hasTheEightByteEmptyBody), so
+    // decoding it needs no special case.
     private static List<PageContent> Pages(byte[] pdf)
     {
         var text = Encoding.Latin1.GetString(pdf);
@@ -82,7 +83,8 @@ public sealed class PageBreakTests : IDisposable
             Assert.True(page.Success, $"page object {number}");
             var contents = Regex.Match(page.Groups["d"].Value, @"/Contents (\d+) 0 R");
             Assert.True(contents.Success, $"page object {number} has no /Contents reference");
-            pages.Add(new PageContent(number, StreamOf(pdf, text, int.Parse(contents.Groups[1].Value, CultureInfo.InvariantCulture))));
+            var contentObject = int.Parse(contents.Groups[1].Value, CultureInfo.InvariantCulture);
+            pages.Add(new PageContent(number, StreamOf(pdf, text, contentObject), contentObject));
         }
 
         return pages;
@@ -93,8 +95,7 @@ public sealed class PageBreakTests : IDisposable
         var head = Regex.Match(text, $@"(?m)^{objectNumber} 0 obj\n(?<d><<.*?>>)\nstream\n", RegexOptions.Singleline);
         Assert.True(head.Success, $"stream object {objectNumber}");
         var length = int.Parse(Regex.Match(head.Groups["d"].Value, @"/Length (\d+)").Groups[1].Value, CultureInfo.InvariantCulture);
-        if (length == 0)
-            return string.Empty;
+        Assert.True(length > 0, $"stream object {objectNumber} has no body");
         using var input = new MemoryStream(pdf, head.Index + head.Length, length);
         using var zlib = new ZLibStream(input, CompressionMode.Decompress);
         using var output = new MemoryStream();
@@ -123,13 +124,25 @@ public sealed class PageBreakTests : IDisposable
     }
 
     [Fact]
-    public void PageBreakFirst_addsNoBlankPage()
+    public void PageBreakFirst_addsNoPage_andBothPassesCountOne()
     {
+        // The footer is what makes a wrong count visible: a page wrongly counted would print 1/2,
+        // and pages are created lazily, so no extra page object would show it otherwise.
         using var doc = NewDocument();
+        doc.Footer = Footer();
         doc.Add(new PageBreak());
         doc.Add(new Paragraph("A", Body));
 
-        Assert.Equal(["A"], Labels(Save(doc)));
+        Assert.Equal(["A|1/1"], Labels(Save(doc)));
+
+        var renderer = BandedRenderer(
+            NewPdf(),
+            new PageBreakRenderer(new PageBreak()),
+            new ParagraphRenderer(new Paragraph("A", Body)));
+        Render(renderer);
+
+        Assert.Equal(1, renderer.MeasurePlan!.PageCount);
+        Assert.Equal(1, renderer.DrawPlan!.PageCount);
     }
 
     [Fact]
@@ -354,14 +367,23 @@ public sealed class PageBreakTests : IDisposable
         Assert.Equal(5, Pages(Save(doc)).Count);
     }
 
-    private sealed class Probe : IRenderer
+    private sealed class Probe(double height = 10) : IRenderer
     {
-        public LayoutResult Layout(LayoutContext context) => LayoutResult.Full(context.Area.WithHeight(10));
+        public LayoutResult Layout(LayoutContext context) => LayoutResult.Full(context.Area.WithHeight(height));
+        public void Draw(DrawContext context) { }
+    }
+
+    // The zero-height workaround: a Partial whose split has no height ends the page.
+    private sealed class ForceNextPage : IRenderer
+    {
+        public LayoutResult Layout(LayoutContext context) =>
+            LayoutResult.Partial(context.Area.WithHeight(0), new Probe(0), new Probe(0));
+
         public void Draw(DrawContext context) { }
     }
 
     [Fact]
-    public void ACustomRenderer_cannotBreak_andAZeroHeightPartialStillMakesAPage()
+    public void ACustomRenderer_cannotBreak()
     {
         using var doc = NewDocument();
         doc.Add(new Paragraph("A", Body));
@@ -369,6 +391,41 @@ public sealed class PageBreakTests : IDisposable
         doc.Add(new Paragraph("B", Body));
 
         Assert.Equal(["A|B"], Labels(Save(doc)));
+    }
+
+    [Fact]
+    public void ACustomRendererThatReturnsAZeroHeightPartial_stillMakesAPage()
+    {
+        using var doc = NewDocument();
+        doc.Add(new Paragraph("A", Body));
+        doc.Add(new ForceNextPage());
+        doc.Add(new Paragraph("B", Body));
+
+        Assert.Equal(["A", "B"], Labels(Save(doc)));
+    }
+
+    [Fact]
+    public void AZeroHeightElement_countsAsLaidOut_soTheNextBreakStartsAPage()
+    {
+        using var doc = NewDocument();
+        doc.Add(new Probe(0));
+        doc.Add(new PageBreak());
+        doc.Add(new Paragraph("B", Body));
+
+        // Page 1 holds only the zero-height element and stays empty; B is on page 2.
+        Assert.Equal(["", "B"], Labels(Save(doc)));
+    }
+
+    [Fact]
+    public void ARendererBuiltToContinueAnElement_breaksLikeTheFirstPiece_whenAddedDirectly()
+    {
+        var continued = new Paragraph("l0\nl1\nl2", Body) { BreakBefore = PageBreakMode.Page };
+
+        using var doc = NewDocument();
+        doc.Add(new Paragraph("A", Body));
+        doc.Add(new ParagraphRenderer(continued, startLine: 1));
+
+        Assert.Equal(["A", "l1|l2"], Labels(Save(doc)));
     }
 
     // ── Measured equals drawn, calls, plans ──────────────────────────────────
@@ -540,6 +597,169 @@ public sealed class PageBreakTests : IDisposable
         Assert.DoesNotContain(pages[1].ObjectNumber, pgRefs);
     }
 
+    // ── Text that is not a break ─────────────────────────────────────────────
+
+    [Fact]
+    public void AFormFeedInText_neverStartsAPage_andEachElementTreatsItAsItAlwaysDid()
+    {
+        var table = new TableElement();
+        table.AddRow().AddCell("cell\fx");
+        var list = new ListElement();
+        list.Add("item\fy", Body);
+
+        using var doc = NewDocument();
+        doc.Header = new RunningBand("H\fX");
+        doc.Add(new Paragraph("para\fz", Body));
+        doc.Add(new Heading("head\fw", Body));
+        doc.Add(list);
+        doc.Add(table);
+
+        var pages = Pages(Save(doc));
+
+        Assert.Single(pages);
+        // A paragraph, a heading and a list item draw the character as a space; a table cell and a
+        // running band hand the raw 0x0C character to the font.
+        Assert.Contains("para z", pages[0].Texts);
+        Assert.Contains("head w", pages[0].Texts);
+        Assert.Contains("item y", pages[0].Texts);
+        Assert.Contains("cell\fx", pages[0].Texts);
+        Assert.Contains("H\fX", pages[0].Texts);
+    }
+
+    // ── A document of breaks alone ───────────────────────────────────────────
+
+    [Fact]
+    public void BreaksAlone_reportNoPagesBeforeTheDestinationIsChecked()
+    {
+        using var doc = NewDocument();
+        doc.Add(new PageBreak());
+        using var readOnly = new MemoryStream(new byte[16], writable: false);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => doc.Save(readOnly));
+
+        Assert.Equal("The document has no pages.", ex.Message);
+    }
+
+    [Fact]
+    public void BreaksAlone_refusePrepareForSigning_andTheDocumentStaysUsable()
+    {
+        using var doc = NewDocument();
+        doc.Add(new PageBreak { Recto = true });
+        var options = new SignaturePlaceholderOptions();
+
+        var ex = Assert.Throws<InvalidOperationException>(() => doc.PrepareForSigning(options));
+        Assert.Contains("no pages", ex.Message, StringComparison.Ordinal);
+
+        doc.Add(new Paragraph("A", Body));
+        Assert.NotEmpty(doc.PrepareForSigning(options));
+    }
+
+    // ── An element's own BreakBefore, a header band, a split element ─────────
+
+    [Fact]
+    public void AnElementsOwnRecto_afterOnePage_insertsABlank_forEveryKind()
+    {
+        var table = new TableElement { BreakBefore = PageBreakMode.Recto };
+        table.AddRow().AddCell("Chapter");
+        var list = new ListElement { BreakBefore = PageBreakMode.Recto };
+        list.Add("Chapter", Body);
+        var chapter = new Paragraph("Chapter", Body) { BreakBefore = PageBreakMode.Recto };
+        var heading = new Heading("Chapter", Body) { BreakBefore = PageBreakMode.Recto };
+        var image = new LayoutImage(FixtureImage) { Width = 20, Height = 20, BreakBefore = PageBreakMode.Recto };
+
+        var kinds = new Dictionary<string, Action<Document>>
+        {
+            ["paragraph"] = d => d.Add(chapter),
+            ["heading"] = d => d.Add(heading),
+            ["table"] = d => d.Add(table),
+            ["list"] = d => d.Add(list),
+            ["image"] = d => d.Add(image),
+        };
+
+        foreach (var (kind, add) in kinds)
+        {
+            using var doc = NewDocument();
+            doc.Footer = Footer();
+            doc.Add(new Paragraph("A", Body));
+            add(doc);
+
+            var pages = Pages(Save(doc));
+
+            Assert.True(pages.Count == 3, $"{kind}: {pages.Count} pages");
+            Assert.Equal(string.Empty, pages[1].Operators);
+            Assert.Equal("3/3", pages[2].Texts[^1]);
+            Assert.True(kind == "image" || pages[2].Texts.Contains("Chapter"), kind);
+        }
+    }
+
+    [Fact]
+    public void ARectoBlank_hasNoHeader_andTheHeaderOnPageThreeCountsIt()
+    {
+        using var doc = NewDocument();
+        doc.Header = new RunningBand("Head {page}");
+        doc.Add(new Paragraph("A", Body));
+        doc.Add(new PageBreak { Recto = true });
+        doc.Add(new Paragraph("B", Body));
+
+        var pages = Pages(Save(doc));
+
+        Assert.Equal(["A|Head 1", "", "B|Head 3"], pages.Select(p => string.Join('|', p.Texts)).ToArray());
+        Assert.Equal(string.Empty, pages[1].Operators);
+    }
+
+    [Fact]
+    public void ASplitElementWithARectoBreak_breaksOnceAtItsTop_notAgainOnItsOverflow()
+    {
+        using var doc = NewDocument();
+        doc.Add(new Paragraph("A", Body));
+        doc.Add(new Paragraph(string.Join(' ', Enumerable.Repeat("word", 200)), Body) { BreakBefore = PageBreakMode.Recto });
+
+        var pages = Pages(Save(doc));
+
+        // A, a blank page, then the paragraph on pages 3 and 4. Page 4 is even, and a second
+        // application of the mode to the overflow would insert a blank page before it.
+        Assert.Equal(4, pages.Count);
+        Assert.Equal(string.Empty, pages[1].Operators);
+        Assert.NotEmpty(pages[2].Texts);
+        Assert.NotEmpty(pages[3].Texts);
+    }
+
+    [Fact]
+    public void AHeadingsBookmark_afterARectoBlank_pointsAtPageThree()
+    {
+        using var doc = NewDocument();
+        doc.Add(new Paragraph("A", Body));
+        doc.Add(new Heading("Chapter", Body) { BreakBefore = PageBreakMode.Recto });
+        var pdf = Save(doc);
+
+        var pages = Pages(pdf);
+        var dest = Regex.Match(Encoding.Latin1.GetString(pdf), @"/Dest \[(\d+) 0 R /XYZ (\S+) (\S+) null\]");
+
+        Assert.True(dest.Success);
+        Assert.Equal(pages[2].ObjectNumber, int.Parse(dest.Groups[1].Value, CultureInfo.InvariantCulture));
+        Assert.Equal(280, double.Parse(dest.Groups[3].Value, CultureInfo.InvariantCulture));
+    }
+
+    [Fact]
+    public void ABlankPage_hasTheEightByteEmptyBody()
+    {
+        using var doc = NewDocument();
+        doc.Add(new Paragraph("A", Body));
+        doc.Add(new PageBreak { Recto = true });
+        doc.Add(new Paragraph("B", Body));
+        var pdf = Save(doc);
+        var text = Encoding.Latin1.GetString(pdf);
+
+        var blank = Pages(pdf)[1];
+        var head = Regex.Match(text, $@"(?m)^{blank.ContentObject} 0 obj\n(?<d><<.*?>>)\nstream\n", RegexOptions.Singleline);
+
+        // The same on net10.0 and net11.0: an empty zlib stream.
+        Assert.Equal("<<\n/Filter /FlateDecode\n/Length 8\n>>", head.Groups["d"].Value);
+        Assert.Equal(
+            new byte[] { 0x78, 0x9C, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01 },
+            pdf.AsSpan(head.Index + head.Length, 8).ToArray());
+    }
+
     // ── Oracles ──────────────────────────────────────────────────────────────
 
     private string WriteToTemp(Document doc, string name)
@@ -604,6 +824,37 @@ public sealed class PageBreakTests : IDisposable
         Assert.Equal(3, Pages(File.ReadAllBytes(path)).Count);
 
         ExternalTool.TryRun("verapdf", ["--flavour", "2u", path],
+            out var exit, out var report, out var stderr, out var timedOut, timeoutMs: 120_000);
+
+        Assert.False(timedOut, "veraPDF timed out");
+        Assert.True(exit is 0 or 1, $"veraPDF exited {exit}: {VeraPdfExitCode.Describe(exit)}\n{report}\n{stderr}");
+        Assert.True(
+            report.Contains("isCompliant=\"true\"", StringComparison.Ordinal),
+            $"veraPDF reported the document non-compliant (exit {exit}).\n{report}");
+    }
+
+    [Theory]
+    [InlineData(PdfConformance.PdfA2a, "2a")]
+    [InlineData(PdfConformance.PdfUA1, "ua1")]
+    public void TaggedConformance_withARectoBlank_veraPdfReportsCompliant(PdfConformance conformance, string flavour)
+    {
+        var fontPath = PdfTestUtil.FindPlatformFont();
+        if (fontPath is null) { OracleGate.Unavailable("platform font for the conformance oracle"); }
+
+        using var doc = NewDocument();
+        doc.Conformance = conformance;
+        doc.Tagged = true;
+        doc.Language = "en-US";
+        doc.Info.Title = "VellumPdf page break oracle";
+        var style = new TextStyle { FontRef = doc.LoadTrueTypeFont(fontPath), FontSize = 12 };
+        doc.Add(new Heading("Alpha", style));
+        doc.Add(new Paragraph("Text of the first chapter.", style));
+        doc.Add(new Heading("Bravo", style) { BreakBefore = PageBreakMode.Recto });
+        doc.Add(new Paragraph("Text of the second chapter.", style));
+        var path = WriteToTemp(doc, $"recto-{flavour}.pdf");
+        Assert.Equal(3, Pages(File.ReadAllBytes(path)).Count);
+
+        ExternalTool.TryRun("verapdf", ["--flavour", flavour, path],
             out var exit, out var report, out var stderr, out var timedOut, timeoutMs: 120_000);
 
         Assert.False(timedOut, "veraPDF timed out");
