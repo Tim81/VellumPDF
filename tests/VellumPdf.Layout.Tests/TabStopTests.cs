@@ -930,6 +930,28 @@ public sealed partial class TabStopTests
         Save(close);
     }
 
+    [Fact]
+    public void ARightStopAtTheWidthOfARendererOfYours_isUsedAndNeverMovesTheTextOnAfterARoundingStep()
+    {
+        foreach (var width in new[] { 100.1, 123.456, 77.7, 250.123, 301.37, 199.99, 87.3, 140.01 })
+        {
+            foreach (var position in new[] { width, width + 1e-9 })
+            {
+                using var doc = new Document { PageSize = new PdfRectangle(0, 0, 400, 600), Margins = EdgeInsets.Zero };
+                doc.Add(new Narrow(
+                    new ParagraphRenderer(new Paragraph("a\t12", Helvetica()) { TabStops = [new TabStop(position, TabAlignment.Right)] }),
+                    width));
+
+                var shows = Shows(PdfTestUtil.DecompressAllFlatStreams(Save(doc)));
+
+                Assert.Equal(["(a )", "(12)"], shows.Select(s => s.Text));
+                AssertNear(shows[0].Y, shows[1].Y, $"one line at {width}, stop {position}");
+                AssertNear(width - Width("12"), shows[1].X, $"the number ends at the width {width}", 1e-4);
+                Assert.Empty(doc.Diagnostics);
+            }
+        }
+    }
+
     // ── A leader's size, checked where the renderer builds its wrap ──────────
 
     [Theory]
