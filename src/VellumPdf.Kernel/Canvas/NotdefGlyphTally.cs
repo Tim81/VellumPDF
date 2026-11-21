@@ -23,14 +23,19 @@ internal sealed class NotdefGlyphTally
     internal const int UnknownCodePoint = 0x110000;
 
     private readonly List<NotdefGlyphWarning> _entries = [];
-    private readonly Dictionary<(int CodePoint, string? Resource), int>? _index;
+    private readonly Dictionary<(int CodePoint, string? Resource), int> _index = [];
 
-    internal NotdefGlyphTally() => _index = [];
+    internal NotdefGlyphTally()
+    {
+    }
 
     private NotdefGlyphTally(NotdefGlyphTally source)
     {
         foreach (var e in source._entries)
+        {
+            _index[(CodePointOf(e.Character), e.FontResourceName)] = _entries.Count;
             _entries.Add(new NotdefGlyphWarning(e.Character, e.FontResourceName, e.FontName, e.Count));
+        }
         Dropped = source.Dropped;
         Total = source.Total;
     }
@@ -49,7 +54,7 @@ internal sealed class NotdefGlyphTally
     {
         Total = Saturate(Total, count);
         var key = (CodePointOf(character), resource);
-        if (_index!.TryGetValue(key, out var at))
+        if (_index.TryGetValue(key, out var at))
         {
             var entry = _entries[at];
             entry.Count = Saturate(entry.Count, count);

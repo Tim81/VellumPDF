@@ -135,7 +135,10 @@ public sealed class NoBreakSpaceBundledFontTests
         Assert.Contains((narrow, NarrowNoBreakSpace), entries);
     }
 
-    /// <summary>Characters the font lacks that are not one of the two spaces get no stand-in, so they stay glyph 0, and the CMap maps glyph 0 to U+FFFD once instead of listing each of them.</summary>
+    /// <summary>
+    /// Characters the font lacks that are not one of the two spaces get no stand-in, so they stay
+    /// glyph 0, and the CMap maps glyph 0 to U+FFFD once instead of listing each of them.
+    /// </summary>
     [Fact]
     public void LiberationMono_toUnicode_missingCharactersThatAreNotSpacesShareOneReplacementEntryForGlyphZero()
     {

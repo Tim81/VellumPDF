@@ -18,7 +18,8 @@ namespace VellumPdf.Layout.Tests;
 /// The reports for glyph 0 and for an unembedded font add diagnostics and one ToUnicode entry; they
 /// do not change what the save writes otherwise (#592, #593). These pin the bytes of documents that
 /// reach the changed drawing sites, hashed after the same normalisation the placement-loop pins
-/// use. The hashes were taken before the change.
+/// use. The hashes are those of a build without the reports, so they move when a change to the
+/// library alters what it writes for these documents.
 /// </summary>
 public sealed class FontReportByteIdentityTests
 {
@@ -33,7 +34,7 @@ public sealed class FontReportByteIdentityTests
     }
 
     // A claim, a default style, and a list and a table that do not use it.
-    private static byte[] G3()
+    private static byte[] DefaultFontWithUnstyledListAndTable()
     {
         using var doc = Embedded(PdfConformance.PdfA2u, out var style);
         doc.SetDefaultFont(style);
@@ -48,7 +49,7 @@ public sealed class FontReportByteIdentityTests
     }
 
     // The same, with an unstyled paragraph, heading and footer too.
-    private static byte[] B593()
+    private static byte[] UnstyledElementsAndFooterUnderAClaim()
     {
         using var doc = Embedded(PdfConformance.PdfA2u, out var style);
         doc.SetDefaultFont(style);
@@ -66,7 +67,7 @@ public sealed class FontReportByteIdentityTests
     }
 
     // An empty cell in the default font.
-    private static byte[] B3()
+    private static byte[] EmptyUnstyledCell()
     {
         using var doc = Embedded(PdfConformance.PdfA2u, out var style, 12);
         doc.Add(new Paragraph("x", style));
@@ -77,7 +78,7 @@ public sealed class FontReportByteIdentityTests
     }
 
     // Two runs of one font at two sizes: the second is drawn at the size of the first.
-    private static byte[] Sizes()
+    private static byte[] TwoSizesOfOneFont()
     {
         using var doc = NewDocument(PdfConformance.None);
         var font = doc.UseTrueTypeFont(DejaVuBytes);
@@ -117,25 +118,25 @@ public sealed class FontReportByteIdentityTests
     }
 
     [Fact]
-    public void G3_pinsBytes() => Pin("017D92FAF138AA27AA9017AA0E14A3FD74A6A492E81D17BF8B1F2EE4A6BB583E", G3());
+    public void DefaultFontWithUnstyledListAndTable_pinsBytes() => Pin("AA73683C89C619860C1C6F8186CBC71627EA9DF9536F8842BDF5C61A17062624", DefaultFontWithUnstyledListAndTable());
 
     [Fact]
-    public void B593_pinsBytes() => Pin("2734A24F2D1468EE6595743EF9DCC2AF8710E7E27A58254103572BC682D534E8", B593());
+    public void UnstyledElementsAndFooterUnderAClaim_pinsBytes() => Pin("75D28BEF643ED0314FBFA1BD2BAF650323D5C1C49991149DEE87DA9D03B25EC1", UnstyledElementsAndFooterUnderAClaim());
 
     [Fact]
-    public void B3_pinsBytes() => Pin("DC5A7C047A27937AE8831209F13C63C3D199C30670AE38288BB05E7CFD7C661D", B3());
+    public void EmptyUnstyledCell_pinsBytes() => Pin("4E8A3E5ED673875A32D725DFA2580A780458527DA36CE7C10D2EED34873F19F3", EmptyUnstyledCell());
 
     [Fact]
-    public void Sizes_pinsBytes_andWritesOneFontOperator()
+    public void TwoSizesOfOneFont_pinsBytes_andWritesOneFontOperator()
     {
-        var pdf = Sizes();
+        var pdf = TwoSizesOfOneFont();
 
         Assert.Equal(["/TT1 10 Tf"], TfLines(pdf));
-        Pin("1176E8A54DA85123D336594E0DFB5BD7BB4461DE3AF0F83FE24E64B9BF522E53", pdf);
+        Pin("F43A4C9947E3A4630FC0A7F3AF69141EFEC37C1F6295FE2727B2AB37E57588D0", pdf);
     }
 
     [Fact]
-    public void MixedNoClaimDocument_pinsBytes() => Pin("48AEBB1188593377629E948FCA1E73363BC6AE47B6A27493DC3E005B8A5C974F", Mixed());
+    public void MixedNoClaimDocument_pinsBytes() => Pin("55AE9646D345D4F18987546EEF5A862346A8E1C800B826286F6266C4464E9681", Mixed());
 
     // The ToUnicode stream is the one place the change moves a byte for a document that draws a
     // missing character, so a projection without it is what must equal the file from before.
@@ -161,6 +162,6 @@ public sealed class FontReportByteIdentityTests
         var pdf = Save(doc);
 
         Assert.Contains("<0000> <FFFD>", BfcharLines(pdf));
-        Assert.True("E0FA95F4D77D310F8359CBF807FA884EA934D40132B2F00B1090D6078031E92C" == ProjectionWithoutToUnicode(pdf), $"computed {ProjectionWithoutToUnicode(pdf)}");
+        Assert.True("418EEEA4A3F947CB0DDAB22D49AE6AE9993B24796C377E384E953CC14A8FBF71" == ProjectionWithoutToUnicode(pdf), $"computed {ProjectionWithoutToUnicode(pdf)}");
     }
 }

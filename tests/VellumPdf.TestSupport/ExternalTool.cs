@@ -10,8 +10,8 @@ using System.Threading;
 namespace VellumPdf.TestSupport;
 
 /// <summary>
-/// Runs an external oracle CLI — qpdf, pdftotext, pdftoppm, pdfsig, or veraPDF — and captures its
-/// output. Consolidates six process runners duplicated across the tree (#198): five
+/// Runs an external oracle CLI — qpdf, pdftotext, pdftoppm, pdfsig, pdffonts, or veraPDF — and
+/// captures its output. Consolidates six process runners duplicated across the tree (#198): five
 /// near-identical copies across the Barcodes, Kernel and Layout test projects, plus a sixth of
 /// its own shape, the conformance suite's own veraPDF runner, which now calls only into this type
 /// too but never shared the defect below — it already drained with a bounded <c>Wait(5_000)</c>.
@@ -33,11 +33,11 @@ public static class ExternalTool
 
     /// <summary>
     /// Attempts to run <paramref name="tool"/> with <paramref name="arguments"/>, resolving the
-    /// executable as described on <see cref="ResolveLauncher"/> and, for the five known oracle
+    /// executable as described on <see cref="ResolveLauncher"/> and, for the six known oracle
     /// tools, verifying its reported identity first (see <see cref="EnsureUsable(string)"/>). A
     /// resolution that turns out not to be usable is gated before any output reaches the caller,
     /// rather than handed back as if it came from the tool the caller asked for. <see
-    /// cref="EnsureUsable(string)"/> only returns when the tool checks out, so for the five known
+    /// cref="EnsureUsable(string)"/> only returns when the tool checks out, so for the six known
     /// tools this method never returns <see langword="false"/>; a caller-side <c>if
     /// (!TryRun(...))</c> guard for one of them is
     /// unreachable; <see langword="false"/> is only still live for a tool name this type has no
@@ -387,7 +387,7 @@ public static class ExternalTool
     /// additionally skips <see cref="OracleGate.Unavailable(string, string)"/>'s escalation under
     /// CI in favour of <see
     /// cref="OracleGate.Transient(string, string)"/>, which always skips (see <see
-    /// cref="EnsureUsable(IdentityResult)"/>): a start failure for one of the five known tools is
+    /// cref="EnsureUsable(IdentityResult)"/>): a start failure for one of the six known tools is
     /// still a real, actionable absence even though it is not worth caching (#198 review, round
     /// 4). That leniency is itself bounded: a probe that times out on <see
     /// cref="ConsecutiveTimeoutEscalationBound"/> consecutive attempts is no longer distinguishable
@@ -437,7 +437,7 @@ public static class ExternalTool
     private sealed record IdentityProbe(string[] VersionArgs, string ExpectedBannerPrefix, string HomeVariable);
 
     // veraPDF is a JVM process launched fresh for every probe, so its startup cost dwarfs the
-    // other four tools' — all native executables with no comparable cost — even before CI adds a
+    // other five tools' — all native executables with no comparable cost — even before CI adds a
     // container on top (ci.yml installs a `/bin/sh` shim around `docker run verapdf/cli`; the
     // Windows `.bat` launcher below is a separate, developer-machine path that ResolveBatViaHome
     // only takes under OperatingSystem.IsWindows() and CI does not use). The old, shared
@@ -503,7 +503,7 @@ public static class ExternalTool
 
     /// <summary>
     /// Verifies that <paramref name="tool"/> resolves to what it claims to be, caching a
-    /// definitive verdict for the lifetime of the process — each of the five known oracle tools is
+    /// definitive verdict for the lifetime of the process — each of the six known oracle tools is
     /// probed with its own version flag at most once per test run in the common case, the pattern
     /// the conformance suite's own <c>VeraPdf.IsAvailable</c> uses for a single tool. <see
     /// cref="Lazy{T}"/> as the cached value (rather than a plain
@@ -621,6 +621,7 @@ public static class ExternalTool
             "pdftotext" => new IdentityProbe(["-v"], "pdftotext version ", "POPPLER_HOME"),
             "pdftoppm" => new IdentityProbe(["-v"], "pdftoppm version ", "POPPLER_HOME"),
             "pdfsig" => new IdentityProbe(["-v"], "pdfsig version ", "POPPLER_HOME"),
+            "pdffonts" => new IdentityProbe(["-v"], "pdffonts version ", "POPPLER_HOME"),
             "verapdf" => new IdentityProbe(["--version"], "veraPDF ", "VERAPDF_HOME"),
             _ => null,
         };
@@ -727,16 +728,15 @@ public static class ExternalTool
 
     /// <summary>
     /// Resolves the launcher for a known oracle tool. qpdf, pdftotext, pdftoppm, pdfsig and
-    /// pdffonts are
-    /// always resolved through an explicit <c>*_HOME</c> environment variable first — never a bare
-    /// name as the primary answer, because PATH order alone already picks the wrong
+    /// pdffonts are always resolved through an explicit <c>*_HOME</c> environment variable first —
+    /// never a bare name as the primary answer, because PATH order alone already picks the wrong
     /// <c>pdftotext</c> depending on which shell launched the test host (see the type doc).
     /// veraPDF only gets that same <c>*_HOME</c>-first treatment on Windows, where it needs one to
     /// find its <c>.bat</c> launcher at all (see below); on every other platform, including CI's
     /// ubuntu-latest runner, <c>VERAPDF_HOME</c> is not read here and veraPDF resolves by bare name
-    /// only, same as an unset <c>*_HOME</c> would for the other four. The bare name remains the
+    /// only, same as an unset <c>*_HOME</c> would for the other five. The bare name remains the
     /// fallback when the variable is unset (or not read), which is what a package-manager install
-    /// already on PATH (CI's case, for all five) needs; when the variable is set but does not
+    /// already on PATH (CI's case, for all six) needs; when the variable is set but does not
     /// resolve, <see cref="Launcher.UnresolvedHomeDetail"/> is populated instead of silently
     /// falling back (see <see cref="ProbeIdentity"/>).
     ///
@@ -745,7 +745,7 @@ public static class ExternalTool
     /// interpreter to run at all, so once resolved it is routed through <c>cmd.exe</c> (anchored
     /// to <see cref="Environment.SystemDirectory"/> rather than resolved bare, since a PATH
     /// without System32 on it would otherwise make a present veraPDF report as unavailable). The
-    /// other four ship a ".exe" the runtime can invoke directly.
+    /// other five ship a ".exe" the runtime can invoke directly.
     /// </summary>
     private static Launcher ResolveLauncher(string tool) => tool switch
     {

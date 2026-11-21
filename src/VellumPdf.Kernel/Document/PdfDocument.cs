@@ -263,7 +263,8 @@ public sealed class PdfDocument : IDisposable
     /// <remarks>
     /// <b>Nothing here is refused and nothing throws.</b> The value is computed on each read, like
     /// <see cref="NotdefGlyphs"/>, and has the same boundary. <b>Do not</b> read zero as proof that
-    /// the file holds no glyph 0 the list does not see.
+    /// the file holds no glyph 0 the list does not see. Reading it while another thread calls
+    /// <see cref="PdfCanvas.Finish"/> on one of the document's pages is not supported.
     /// </remarks>
     public int NotdefGlyphsDropped => GatherNotdefGlyphs().Dropped;
 

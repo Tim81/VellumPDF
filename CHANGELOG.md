@@ -96,11 +96,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   claim and ISO 14289-1:2014, 7.21.8 under PDF/UA-1; it is null with no claim. The save still
   succeeds. `StrictDiagnostics` refuses it.
 - **`LayoutDiagnosticCode.UnembeddedFont` (#593).** While `Document.Conformance` is not `None`,
-  each element that selects a named Standard 14 font is reported once per element and font, with
-  the number of font operators it wrote. A list, table, heading, paragraph or running band
-  without a style of its own reaches this, because `SetDefaultFont` still applies only to
-  `Document.Add(string)`. The clause is ISO 19005-2:2011, 6.2.11.4.1 or ISO 14289-1:2014,
-  7.21.4.1. The save still succeeds, and `StrictDiagnostics` refuses it.
+  each paragraph, heading, list, table cell or running band that selects a named Standard 14 font
+  is reported once per element and font, with the number of font operators it wrote. A list,
+  table, heading, paragraph or running band without a style of its own reaches this, because
+  `SetDefaultFont` still applies only to `Document.Add(string)`. The clause is ISO
+  19005-2:2011, 6.2.11.4.1 or ISO 14289-1:2014, 7.21.4.1. The save still succeeds, and
+  `StrictDiagnostics` refuses it.
+
+  **Attention:** the report follows the font operator, so an empty table cell in Helvetica is
+  reported. That matches veraPDF, which fails 6.2.11.4.1 on it, while ISO 14289-1, 7.21.4.1,
+  counts a font as used only when a glyph is referenced. The human-readable text of a
+  one-dimensional barcode, set in `Barcode1D.TextFont` (Helvetica by default), selects its font
+  without the diagnostics channel and is not reported.
 - **Internal name tree and number tree writers (#241).** `NameTreeWriter` and `NumberTreeWriter`
   in `VellumPdf.Kernel` build the structures ISO 32000-2, 7.9.6 and 7.9.7 define, which the
   catalog's `/Names` and `/PageLabels` entries, and later named destinations and embedded files,
@@ -404,9 +411,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   OpenType CFF program is a `/FontFile3` stream and carries no `/Length1`, as before.
 - **The ToUnicode map no longer lists a code point against glyph 0 (#592).** A font whose
   subset used glyph 0 wrote one `<0000> <...>` line per missing character. On a test file with
-  U+26B9 and U+1F31F, pdftotext (poppler 26.08) extracted U+1F31F for both. The map now has one entry for glyph 0,
-  `<0000> <FFFD>`, and no other. A document that draws no glyph 0 is unchanged byte for byte. A
-  document that does changes only in that stream; the content stream still shows glyph 0.
+  U+26B9 and U+1F31F, pdftotext (poppler 26.08) extracted U+1F31F for both. The map now has one
+  entry for glyph 0, `<0000> <FFFD>`, and no other. The entry exists because glyph 0 is itself
+  what ISO 19005-2, 6.2.11.8, and ISO 14289-1, 7.21.8, refuse, and U+FFFD satisfies the value
+  rule of 7.21.7. A document in which no character was mapped to glyph 0, drawn or only
+  measured, is unchanged. One in which a character was mapped to it changes only in that
+  stream, and the content stream still shows glyph 0. Glyph ids passed straight to
+  `PdfCanvas.ShowGlyphs` add no entry.
 
   **Attention:** the file still references `.notdef`, so veraPDF still fails ISO 19005-2,
   6.2.11.8 and ISO 14289-1, 7.21.8. The reports above are how to find it.

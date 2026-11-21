@@ -62,7 +62,8 @@ public sealed class TextStyle
     /// <see cref="VellumPdf.Layout.LayoutDiagnosticCode.NotdefGlyph"/>, with the clause that
     /// forbids it under a PDF/A or PDF/UA claim, and still saves. The font's ToUnicode map gives
     /// glyph 0 the one entry U+FFFD. <b>Do not pass</b> text the font cannot draw to such a
-    /// document. A later major version refuses it always.</para>
+    /// document. A later major version refuses text the font cannot draw, and a Standard 14 font,
+    /// under either claim.</para>
     /// <para>A Standard 14 font is not embedded. While
     /// <see cref="VellumPdf.Layout.Document.Conformance"/> is not
     /// <see cref="VellumPdf.Document.PdfConformance.None"/>, each element whose style selects one
@@ -71,7 +72,7 @@ public sealed class TextStyle
     /// font, and the save still succeeds. With
     /// <see cref="VellumPdf.Layout.Document.StrictDiagnostics"/> set, either report refuses the
     /// save. <b>Do not pass</b> a Standard 14 font under either claim. A later major version
-    /// refuses it always.</para>
+    /// refuses text the font cannot draw, and a Standard 14 font, under either claim.</para>
     /// </remarks>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other

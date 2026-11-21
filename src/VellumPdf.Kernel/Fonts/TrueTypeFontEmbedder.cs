@@ -450,9 +450,14 @@ public sealed class TrueTypeFontEmbedder
     /// project, so this member does not claim that a carriage return and line feed pair is
     /// invalid; the single form keeps the output reproducible. The compressed bytes can still
     /// differ between .NET runtimes. This member refuses no input and throws nothing.
-    /// <para>Glyph 0 gets one entry, <c>&lt;0000&gt; &lt;FFFD&gt;</c>, when any code point was
-    /// assigned glyph 0, and no code point is listed against it; every other glyph gets the code
-    /// point or points that were assigned to it, as before.</para>
+    /// <para>Glyph 0 gets one entry, <c>&lt;0000&gt; &lt;FFFD&gt;</c>, when any character was
+    /// mapped to it, whether the character was drawn or only measured, and no character is listed
+    /// against it; every other glyph gets the character or characters mapped to it. The entry is
+    /// there because glyph 0 is itself what ISO 14289-1, 7.21.8, and ISO 19005-2, 6.2.11.8,
+    /// refuse, so there is no character to name, and U+FFFD satisfies the value rule of ISO
+    /// 14289-1, 7.21.7. Glyph ids passed straight to
+    /// <see cref="VellumPdf.Canvas.PdfCanvas.ShowGlyphs(System.ReadOnlySpan{ushort})"/> add no
+    /// entry.</para>
     /// </remarks>
     public Core.PdfStream BuildToUnicodeCMap()
     {

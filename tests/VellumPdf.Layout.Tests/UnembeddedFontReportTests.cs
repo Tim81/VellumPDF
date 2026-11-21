@@ -203,7 +203,6 @@ public sealed class UnembeddedFontReportTests
         Assert.Empty(doc.Diagnostics);
     }
 
-    // ── One document per drawing site ────────────────────────────────────────
 
     private static LayoutDiagnostic OnlyItem(Document doc)
     {
@@ -249,7 +248,6 @@ public sealed class UnembeddedFontReportTests
             d.SetFooter("foot", s);
         })), "Helvetica", Clause2u, LayoutElementKind.Footer, null, 1);
 
-    // ── Oracles ──────────────────────────────────────────────────────────────
 
     [Fact]
     public void VeraPdf_failsOnlyTheEmbeddingRule_forTheDefaultFontDocument_andForTheEmptyCell()
@@ -264,7 +262,10 @@ public sealed class UnembeddedFontReportTests
         var table = new TableElement();
         table.AddRow().AddCell("");
         empty.Add(table);
-        Assert.Equal(["6.2.11.4.1-1"], FailedRules(VeraPdf("2u", Save(empty))));
+        var emptyPdf = Save(empty);
+        Assert.Equal(["/TT1 12 Tf", "/F1 12 Tf"], TfLines(emptyPdf));
+        Assert.Contains(PdfFontsNames(emptyPdf), n => n.StartsWith("Helvetica", StringComparison.Ordinal));
+        Assert.Equal(["6.2.11.4.1-1"], FailedRules(VeraPdf("2u", emptyPdf)));
     }
 
     [Fact]
@@ -281,14 +282,19 @@ public sealed class UnembeddedFontReportTests
         doc.Add(table);
         var pdf = Save(doc);
 
-        Assert.DoesNotContain(PdfFontsRows(pdf), r => !r.Embedded);
-        Assert.Empty(FailedRules(VeraPdf("2u", pdf)));
+        var rows = PdfFontsRows(pdf);
+        Assert.Single(rows, r => r.Name.EndsWith("DejaVuSans", StringComparison.Ordinal) && r.Embedded);
+        Assert.DoesNotContain(rows, r => !r.Embedded);
+        var report = VeraPdf("2u", pdf);
+        Assert.Contains("isCompliant=" + '"' + "true" + '"', report, StringComparison.Ordinal);
+        Assert.Empty(FailedRules(report));
     }
 
     [Fact]
     public void Qpdf_checksTheDefaultFontDocument_clean()
     {
         var pdf = Save(DefaultFontDocument(PdfConformance.PdfA2u));
+        Assert.Contains("/F1 12 Tf", TfLines(pdf));
         using var dir = new TempDir();
         var path = dir.Path("subject.pdf");
         File.WriteAllBytes(path, pdf);
@@ -321,4 +327,36 @@ public sealed class UnembeddedFontReportTests
 
     private static List<string> PdfFontsNames(byte[] pdf) =>
         [.. PdfFontsRows(pdf).Where(r => !r.Embedded).Select(r => r.Name)];
+
+
+    [Fact]
+    public void TwoStandard14FontsInOneParagraph_areTwoItems()
+    {
+        using var doc = NewDocument(PdfConformance.PdfA2u);
+        var paragraph = new Paragraph("helv ", new TextStyle { Font = Standard14.Helvetica });
+        paragraph.Add("times", new TextStyle { Font = Standard14.TimesRoman });
+        doc.Add(paragraph);
+
+        Save(doc);
+
+        Assert.Equal(2, doc.Diagnostics.Count);
+        AssertItem(doc.Diagnostics[0], "Helvetica", Clause2u, LayoutElementKind.Paragraph, 0, 1);
+        AssertItem(doc.Diagnostics[1], "Times-Roman", Clause2u, LayoutElementKind.Paragraph, 0, 1);
+    }
+
+    [Fact]
+    public void AListOfThreeItems_isOneItemWhoseCountIsSix()
+    {
+        using var doc = NewDocument(PdfConformance.PdfA2u);
+        var list = new ListElement();
+        list.Add("one");
+        list.Add("two");
+        list.Add("three");
+        doc.Add(list);
+
+        Save(doc);
+
+        var item = Assert.Single(doc.Diagnostics);
+        AssertItem(item, "Helvetica", Clause2u, LayoutElementKind.List, 0, 6);
+    }
 }

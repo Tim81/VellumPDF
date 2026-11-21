@@ -48,7 +48,6 @@ public sealed class NotdefGlyphReportTests
     private const string MessageStar = "U+26B9 has no glyph in DejaVuSans (TT1) and is drawn as glyph 0 (.notdef).";
     private const string MessageSun = "U+1F31F has no glyph in DejaVuSans (TT1) and is drawn as glyph 0 (.notdef).";
 
-    // \u2500\u2500 The report, the content stream and the ToUnicode map \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
     [Fact]
     public void MissingCharacters_areReportedOnceEach_andTheContentIsUnchanged()
@@ -158,7 +157,6 @@ public sealed class NotdefGlyphReportTests
         Assert.DoesNotContain(BfcharLines(pdf), l => l.StartsWith("<0000>", StringComparison.Ordinal));
     }
 
-    // \u2500\u2500 One document per drawing site, so a site that stops reporting changes the item list \u2500\u2500\u2500\u2500
 
     private static Document SiteDocument(Action<Document, TextStyle> add)
     {
@@ -214,7 +212,6 @@ public sealed class NotdefGlyphReportTests
         using (doc) AssertSite(doc, kind, index);
     }
 
-    // \u2500\u2500 A custom renderer, and the sink on its own \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
     [Fact]
     public void AnIdPassedToShowGlyphs_isReportedWithTheCharacterUnknown_andStrictRefusesIt()
@@ -287,7 +284,6 @@ public sealed class NotdefGlyphReportTests
         Assert.Equal(1003, sink.ErrorReports);
     }
 
-    // \u2500\u2500 The same data through the Kernel list \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
     [Fact]
     public void ThroughADocumentRenderer_theKernelListHoldsTheSameEntries()
@@ -324,7 +320,6 @@ public sealed class NotdefGlyphReportTests
             doc.Diagnostics.Select(i => i.Message));
     }
 
-    // \u2500\u2500 What byte-identity means here: only the ToUnicode map moves \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
     [Fact]
     public void TheMissingCharacterDocument_differsFromOneWithoutThemOnlyInItsToUnicodeMap()
@@ -337,7 +332,6 @@ public sealed class NotdefGlyphReportTests
         Assert.DoesNotContain("<0000> <D83CDF1F>", BfcharLines(pdf));
     }
 
-    // \u2500\u2500 Oracles \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
     [Fact]
     public void VeraPdf_failsOnlyTheNotdefRule_andNotTheToUnicodeRule()
@@ -397,5 +391,39 @@ public sealed class NotdefGlyphReportTests
         Assert.False(timedOut);
         Assert.True(exit == 0, $"qpdf --check exit {exit}\n{stdout}\n{stderr}");
         Assert.Contains("No syntax or stream encoding errors found", stdout, StringComparison.Ordinal);
+    }
+
+
+    [Fact]
+    public void TheSameCharacter_isOneItemPerFont_countedAcrossElements()
+    {
+        using var doc = NewDocument(PdfConformance.None);
+        var dejaVu = new TextStyle { FontRef = doc.UseTrueTypeFont(DejaVuBytes) };
+        var mono = new TextStyle { FontRef = doc.UseTrueTypeFont(LiberationMonoBytes) };
+        doc.Add(new Paragraph("a\u26B9", dejaVu));
+        doc.Add(new Paragraph("b\u26B9", dejaVu));
+        doc.Add(new Paragraph("c\u26B9", mono));
+
+        Save(doc);
+
+        Assert.Equal(2, doc.Diagnostics.Count);
+        AssertItem(doc.Diagnostics[0], MessageStar, null, LayoutElementKind.Paragraph, 0, 2);
+        AssertItem(
+            doc.Diagnostics[1],
+            "U+26B9 has no glyph in LiberationMono (TT2) and is drawn as glyph 0 (.notdef).",
+            null, LayoutElementKind.Paragraph, 2, 1);
+    }
+
+    [Fact]
+    public void ARendererThatPassesIds_addsNoToUnicodeEntryForGlyphZero()
+    {
+        using var doc = NewDocument(PdfConformance.PdfA2u);
+        var font = doc.UseTrueTypeFont(DejaVuBytes);
+        doc.Add(new Paragraph("A", new TextStyle { FontRef = font }));
+        doc.Add(new GlyphIdRenderer(font, [0, 36]));
+
+        var pdf = Save(doc);
+
+        Assert.DoesNotContain(BfcharLines(pdf), l => l.StartsWith("<0000>", StringComparison.Ordinal));
     }
 }

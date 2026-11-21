@@ -66,8 +66,10 @@ public sealed class EmbeddedFontHandle
     /// <para><b>Nothing here is refused and nothing throws.</b> A 0 is not an error at this call,
     /// but <see cref="VellumPdf.Canvas.PdfCanvas.ShowGlyphs(System.ReadOnlySpan{ushort})"/> writes
     /// it as CID 0, which ISO 19005-2, 6.2.11.8, and ISO 14289-1, 7.21.8, forbid in a PDF/A-2 or
-    /// PDF/UA-1 file. The font's ToUnicode CMap maps glyph 0 to U+FFFD. A Kernel caller sees the
-    /// write in <see cref="VellumPdf.Canvas.PdfCanvas.NotdefGlyphs"/>, without the character. <b>Do
+    /// PDF/UA-1 file. Asking for a character that gives 0 is enough for the font's ToUnicode CMap
+    /// to list glyph 0 once, as U+FFFD, whether or not it is drawn; the entry is there because
+    /// glyph 0 is itself refused by those clauses. A Kernel caller sees a write in
+    /// <see cref="VellumPdf.Canvas.PdfCanvas.NotdefGlyphs"/>, without the character. <b>Do
     /// not pass</b> a code point this method answers 0 for to <c>ShowGlyphs</c> under either
     /// claim.</para>
     /// </remarks>

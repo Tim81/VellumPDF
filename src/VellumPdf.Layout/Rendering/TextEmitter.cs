@@ -47,7 +47,9 @@ internal static class TextEmitter
                 sink.Report(
                     LayoutDiagnosticCode.UnembeddedFont,
                     (long)style.Font,
-                    $"{fontResource.BaseFontName} is a Standard 14 font and is not embedded. Give this element a style with an embedded font; SetDefaultFont applies only to Document.Add(string).",
+                    static font => new PdfFontResource((Standard14)font, "F").BaseFontName
+                        + " is a Standard 14 font and is not embedded. Give this element a style with an embedded"
+                        + " font; SetDefaultFont applies only to Document.Add(string).",
                     perElement: true,
                     clause: LayoutDiagnosticSink.ClauseFor(LayoutDiagnosticCode.UnembeddedFont, sink.Conformance));
         }

@@ -16,13 +16,14 @@ namespace VellumPdf.Canvas;
 /// getters, so it takes no input that could be wrong. ISO 19005-2, 6.2.11.8, and ISO 14289-1,
 /// 7.21.8, forbid a reference to the <c>.notdef</c> glyph in a PDF/A-2 or PDF/UA-1 file; this
 /// type reports that a canvas wrote one and leaves the decision to the caller.
-/// <para>An entry exists for every glyph id 0 the canvas wrote through
-/// <see cref="PdfCanvas.ShowGlyphs(System.ReadOnlySpan{ushort})"/> and through the library's own
-/// text drawing. It does not exist for content bytes set directly on a
-/// <see cref="VellumPdf.Document.PdfPage"/>, for a canvas whose <see cref="PdfCanvas.Finish"/> has
-/// not run, or for entries past the 1,000 the list holds;
-/// <see cref="PdfCanvas.NotdefGlyphsDropped"/> counts those. <b>Do not</b> read an empty list as
-/// proof that the file holds no glyph 0.</para>
+/// <para><see cref="PdfCanvas.NotdefGlyphs"/> lists an entry at once for every glyph id 0 the
+/// canvas writes through <see cref="PdfCanvas.ShowGlyphs(System.ReadOnlySpan{ushort})"/> and
+/// through the library's own text drawing, past the 1,000 entries it holds;
+/// <see cref="PdfCanvas.NotdefGlyphsDropped"/> counts the occurrences of those. It has none for
+/// content bytes set directly on a <see cref="VellumPdf.Document.PdfPage"/>.
+/// <see cref="VellumPdf.Document.PdfDocument.NotdefGlyphs"/> lists only what each page's last
+/// <see cref="PdfCanvas.Finish"/> stored, so a canvas whose <c>Finish</c> has not run adds
+/// nothing there. <b>Do not</b> read an empty list as proof that the file holds no glyph 0.</para>
 /// <para>Reading an entry while another thread draws on the canvas that holds it is not
 /// supported.</para>
 /// </remarks>

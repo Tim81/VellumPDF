@@ -86,7 +86,8 @@ public sealed class PdfCanvas
     /// </summary>
     /// <remarks>
     /// <b>Nothing here is refused and nothing throws.</b> The list takes no input, and the canvas
-    /// writes glyph 0 as it always has. ISO 19005-2, 6.2.11.8, and ISO 14289-1, 7.21.8, forbid a
+    /// writes glyph 0 whatever the list says. ISO 19005-2, 6.2.11.8, and ISO 14289-1, 7.21.8,
+    /// forbid a
     /// reference to <c>.notdef</c> in a PDF/A-2 or PDF/UA-1 file, so this list is how a caller of
     /// the Kernel finds out. It is separate from <see cref="TextEncodingWarnings"/>, which lists
     /// characters that <see cref="ShowText"/> wrote as '?'; glyph 0 is not listed there.
@@ -110,7 +111,8 @@ public sealed class PdfCanvas
     /// <remarks>
     /// <b>Nothing here is refused and nothing throws.</b> A write for an entry already in the list
     /// is counted in that entry, not here. <b>Do not</b> read zero as proof that the list is
-    /// complete for content written some other way; see <see cref="NotdefGlyphs"/>.
+    /// complete for content written some other way; see <see cref="NotdefGlyphs"/>. Reading it
+    /// while another thread draws on this canvas is not supported.
     /// </remarks>
     public int NotdefGlyphsDropped => _notdef?.Dropped ?? 0;
 
@@ -859,7 +861,8 @@ public sealed class PdfCanvas
     /// <summary>
     /// Records the fonts used on this page (materialised as shared indirect objects by
     /// <see cref="Document.PdfDocument.Save"/>) and stores the accumulated operator bytes
-    /// as the page content. Call exactly once when the page is complete.
+    /// as the page content. Call it when the page is complete; a later call replaces the content
+    /// and the glyph-0 snapshot with the canvas's state at that call.
     /// </summary>
     /// <remarks>
     /// Also stores a snapshot of <see cref="NotdefGlyphs"/> and <see cref="NotdefGlyphsDropped"/>

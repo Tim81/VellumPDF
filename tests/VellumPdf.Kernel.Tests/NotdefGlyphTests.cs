@@ -31,7 +31,6 @@ public sealed class NotdefGlyphTests
         IReadOnlyList<NotdefGlyphWarning> list) =>
         [.. list.Select(e => (e.Character?.ToString(), e.FontResourceName, e.FontName, e.Count))];
 
-    // \u2500\u2500 The ToUnicode CMap \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
     private static List<string> BfcharLines(string map) =>
         [.. map.Split('\n').Where(l => l.StartsWith("<", StringComparison.Ordinal) && l != "<0000> <FFFF>")];
@@ -110,7 +109,6 @@ public sealed class NotdefGlyphTests
         Assert.Equal(["<0000> <FFFD>", "<0024> <0041>"], BfcharLines(map));
     }
 
-    // \u2500\u2500 The canvas list \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
     [Fact]
     public void ShowEmbeddedText_writesTheBytesGetGlyphIdsAndShowGlyphsWrite_andListsEachCharacter()
@@ -258,7 +256,6 @@ public sealed class NotdefGlyphTests
         Assert.Equal(int.MaxValue, tally.Dropped);
     }
 
-    // \u2500\u2500 The page and the document \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
     private static PdfPage FinishedPage(PdfDocument doc, params string[] resources)
     {
@@ -401,6 +398,94 @@ public sealed class NotdefGlyphTests
         {
             SigningTime = new DateTimeOffset(2026, 1, 2, 3, 4, 5, TimeSpan.Zero),
         });
+
+        Assert.Equal(expected, Project(doc.NotdefGlyphs));
+    }
+
+
+    [Fact]
+    public void TheSameCharacterInTwoFonts_isTwoEntries()
+    {
+        using var doc = NewDocument();
+        var dejaVu = doc.UseTrueTypeFont(Font("DejaVuSans.ttf"));
+        var mono = doc.UseTrueTypeFont(Font("LiberationMono-Regular.ttf"));
+        var canvas = new PdfCanvas(doc.AddPage());
+        canvas.BeginText();
+        canvas.SetFontByName(dejaVu.ResourceName, 12).ShowEmbeddedText(dejaVu, "\u26B9");
+        canvas.SetFontByName(mono.ResourceName, 12).ShowEmbeddedText(mono, "\u26B9");
+        canvas.EndText();
+
+        Assert.Equal(
+            [("\u26B9", "TT1", "DejaVuSans", 1), ("\u26B9", "TT2", "LiberationMono", 1)],
+            Project(canvas.NotdefGlyphs));
+    }
+
+    [Fact]
+    public void ACharacterThatWasOnlyMeasuredAsGlyphZero_getsTheToUnicodeEntry_andNoWrite()
+    {
+        using var doc = NewDocument();
+        var page = doc.AddPage();
+        var handle = doc.UseTrueTypeFont(Font("DejaVuSans.ttf"));
+        doc.RegisterEmbeddedFontUsage(page, handle);
+        handle.MeasureString("\u26B9", 12);
+        var canvas = new PdfCanvas(page);
+        canvas.BeginText().SetFontByName(handle.ResourceName, 12).ShowEmbeddedText(handle, "A").EndText();
+        canvas.Finish();
+        using var ms = new MemoryStream();
+        doc.Save(ms);
+
+        var map = Encoding.ASCII.GetString(Assert.Single(ToUnicodeLineEndTests.ToUnicodeMaps(ms.ToArray())));
+
+        Assert.Equal(["<0000> <FFFD>", "<0024> <0041>"], BfcharLines(map));
+        Assert.Empty(canvas.NotdefGlyphs);
+        Assert.Empty(doc.NotdefGlyphs);
+    }
+
+    [Fact]
+    public void GlyphIdsPassedStraightToShowGlyphs_addNoToUnicodeEntryForGlyphZero()
+    {
+        using var doc = NewDocument();
+        var page = doc.AddPage();
+        var handle = doc.UseTrueTypeFont(Font("DejaVuSans.ttf"));
+        doc.RegisterEmbeddedFontUsage(page, handle);
+        var ids = new ushort[1];
+        handle.GetGlyphIds("A", ids);
+        var canvas = new PdfCanvas(page);
+        canvas.BeginText().SetFontByName(handle.ResourceName, 12).ShowGlyphs([0, ids[0]]).EndText();
+        canvas.Finish();
+        using var ms = new MemoryStream();
+        doc.Save(ms);
+
+        var map = Encoding.ASCII.GetString(Assert.Single(ToUnicodeLineEndTests.ToUnicodeMaps(ms.ToArray())));
+
+        Assert.Equal(["<0024> <0041>"], BfcharLines(map));
+        Assert.Equal([(null, "TT1", null, 1)], Project(canvas.NotdefGlyphs));
+    }
+
+    [Fact]
+    public async Task ARefusedSaveAsync_leavesTheDocumentListAsItWas()
+    {
+        var (doc, expected) = DocumentWithOneEntry();
+        using var _ = doc;
+        var closed = new MemoryStream();
+        closed.Dispose();
+
+        await Assert.ThrowsAnyAsync<Exception>(() => doc.SaveAsync(closed, TestContext.Current.CancellationToken));
+
+        Assert.Equal(expected, Project(doc.NotdefGlyphs));
+    }
+
+    [Fact]
+    public void ARefusedPrepareForSigning_leavesTheDocumentListAsItWas()
+    {
+        var (doc, expected) = DocumentWithOneEntry();
+        using var _ = doc;
+
+        Assert.ThrowsAny<Exception>(() => doc.PrepareForSigning(new SignaturePlaceholderOptions
+        {
+            SignaturePage = -1,
+            SigningTime = new DateTimeOffset(2026, 1, 2, 3, 4, 5, TimeSpan.Zero),
+        }));
 
         Assert.Equal(expected, Project(doc.NotdefGlyphs));
     }
