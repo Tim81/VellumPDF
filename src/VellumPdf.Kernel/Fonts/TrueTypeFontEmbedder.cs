@@ -232,10 +232,10 @@ public sealed class TrueTypeFontEmbedder
     }
 
     /// <summary>
-    /// The glyph id <see cref="GetGlyphId"/> returns for <paramref name="codePoint"/>, found without
-    /// registering it: the subset and the ToUnicode map are left as they were. A caller that checks
-    /// text before drawing it uses this, so a check that refuses leaves nothing behind for a retry
-    /// to inherit.
+    /// The glyph id <see cref="GetGlyphId"/> returns for <paramref name="codePoint"/>, found
+    /// without registering it: the subset and the ToUnicode map are left as they were. A caller
+    /// that checks text before drawing it uses this, so a check that refuses leaves nothing behind
+    /// for a retry to inherit.
     /// </summary>
     internal ushort PeekGlyphId(int codePoint) =>
         _unicodeToGid.TryGetValue(codePoint, out var cachedGid)

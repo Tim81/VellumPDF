@@ -51,6 +51,7 @@ walkthrough this table summarizes.
 | Paragraph flow: wrapping, alignment (left/center/right/justify), mixed-style inline runs | ✅ Supported | — |
 | Tables: rows, columns, row spanning, borders | ✅ Supported | — |
 | Lists: ordered (decimal/alpha/roman), unordered, nested | ✅ Supported | — |
+| Preformatted text: spaces and tabs kept, wrap marked | ✅ Supported | — |
 | Headers and footers with page-number templates | ✅ Supported | — |
 | Images: JPEG, PNG (incl. interlaced and 16-bit), CCITT G4, TIFF-LZW | ✅ Supported | — |
 | Font embedding and subsetting: TrueType (`glyf`) and OpenType/CFF | ✅ Supported | — |
