@@ -239,6 +239,11 @@ public sealed class PdfDocument : IDisposable
     /// (e.g. "TT1"). Call <see cref="RegisterEmbeddedFontUsage"/> during drawing to record
     /// per-page usage so <see cref="Save"/> wires each page's resource dictionary.
     /// </summary>
+    /// <remarks>
+    /// A variable font (one with an <c>fvar</c> table) is accepted and drawn as its default
+    /// instance: the embedded program leaves out its variation tables, so no other instance can be
+    /// drawn, and this call does not refuse a font for being variable.
+    /// </remarks>
     /// <exception cref="NotSupportedException">
     /// The font's <c>cmap</c> has no Unicode subtable this library reads (format 0, 4 or 6, or
     /// format 12 on platform 3 / encoding 10 or platform 0 / encoding 4, or on platform 0 /

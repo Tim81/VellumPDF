@@ -259,6 +259,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   bytes, and so does every document without an embedded font. A font whose `head.unitsPerEm` is 0
   is still refused when the descriptor is built, with the same `ArgumentException`, and a box the
   font states with its minima above its maxima is written as read.
+- **A variable font embeds as its default instance, without its variation tables (#612).** The
+  embedded program kept every table of the source font except `glyf` and `loca`, so a font with an
+  `fvar` table carried `avar`, `cvar`, `fvar`, `gvar`, `HVAR`, `MVAR`, `VVAR` and `STAT` beside an
+  outline table whose unused glyphs the subsetter had emptied, so the `gvar` no longer matched the
+  glyph data beside it. When the source font has `fvar`, the program now omits those eight tables, on both the
+  glyf path (`/FontFile2`) and the CFF path (`/FontFile3`); the `glyf`, `hmtx`, `OS/2` and `hhea`
+  tables it keeps are the default instance's, so outlines, `/W` and the descriptor are unchanged.
+  The rule keys on `fvar`: a font without it keeps every table it has, a stray `gvar` or `STAT`
+  included. **Deliberate output change:** the font program stream of a document that embeds a
+  variable font gets shorter, and its `head.checkSumAdjustment` and every later offset follow;
+  nothing else in that document changes. Every document whose fonts have no `fvar`, which is every
+  font in the repository, keeps its bytes. **Attention:** only the default instance can be drawn,
+  as before, and the documentation of `UseTrueTypeFont` and `BuildFontFileStream` now says so. An
+  OpenType CFF font that cannot be subset here (CID-keyed, or one whose `CFF ` table does not parse)
+  is embedded whole and keeps its variation tables, and `GSUB`, `GPOS` and `GDEF` stay in every
+  program; PDF processors do not read them to draw.
 - **On .NET 10 an empty stream was written as `/FlateDecode` with no data (#640).** `PdfStream`
   compressed through `ZLibStream`, which on .NET 10.0.15 writes nothing for empty input, so an empty
   page's `/Contents` came out as `/Filter /FlateDecode /Length 0` with an empty body, which is not

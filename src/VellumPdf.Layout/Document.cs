@@ -574,6 +574,9 @@ public sealed class Document : IDisposable
     /// missing outline table, <see cref="InvalidDataException"/> for malformed outline data, and
     /// <see cref="ArgumentException"/> for a value that makes a font metric non-finite, such as a
     /// <c>unitsPerEm</c> of 0. An OpenType font with CFF outlines is accepted.</para>
+    /// <para>A variable font (one with an <c>fvar</c> table) is accepted and drawn as its default
+    /// instance: the embedded program leaves out its variation tables, so no other instance can be
+    /// drawn, and this call does not refuse a font for being variable.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="fontData"/> is <see langword="null"/>. <c>ParamName</c> is <c>source</c>.

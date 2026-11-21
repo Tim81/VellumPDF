@@ -374,6 +374,20 @@ public sealed class TrueTypeFontEmbedder
     }
 
     /// <summary>Builds the embedded font program stream: a subsetted glyf font, or a subsetted CFF/OTTO program as /FontFile3.</summary>
+    /// <remarks>
+    /// <b>A variable font is embedded as its default instance.</b> When the source font has an
+    /// <c>fvar</c> table, the program omits the eight tables avar, cvar, fvar, gvar, HVAR, MVAR, VVAR
+    /// and STAT, so the program holds the default instance alone; every other table is kept. A font without <c>fvar</c> keeps all its tables, a stray <c>gvar</c> or STAT
+    /// included. The outlines, advance widths and descriptor metrics are the default instance's in
+    /// either case, and no other instance of the font can be drawn.
+    /// <para>A CID-keyed or unparseable OpenType CFF font cannot be subset here, so it is embedded
+    /// whole, and a variable one of those keeps its variation tables.</para>
+    /// <para><b>Do not rely on</b> GSUB, GPOS or GDEF being free of variation data: they are kept as
+    /// they are, and a variable font's own variation data inside them still names axes that the
+    /// program no longer has. A PDF processor does not use those tables to draw.</para>
+    /// <para>This member throws nothing for a variable font that the same font without variation
+    /// tables would not throw for.</para>
+    /// </remarks>
     public Core.PdfStream BuildFontFileStream()
     {
         if (_sfnt.IsCff)
@@ -530,9 +544,9 @@ public sealed class TrueTypeFontEmbedder
     {
         var head = new Tag("head");
 
-        // Tables to keep verbatim (every table except CFF )
+        // Tables to keep verbatim: every table except CFF  and those ShouldCopyTable drops.
         var tablesToKeep = _sfnt.Tables.Keys
-            .Where(t => t != _cffTag)
+            .Where(t => t != _cffTag && ShouldCopyTable(t, _sfnt.HasTable(FvarTag)))
             .OrderBy(t => t.ToString())
             .ToList();
 
@@ -611,6 +625,29 @@ public sealed class TrueTypeFontEmbedder
         return fontBytes;
     }
 
+    private static readonly Tag FvarTag = new("fvar");
+
+    // The tables that make a font variable (OpenType Font Variations Overview: avar, cvar, fvar,
+    // gvar, HVAR, MVAR, VVAR; "if they were to be removed from the font or ignored, the remaining
+    // data would comprise a complete font for the default instance") plus STAT, which only names
+    // the axes. Adding a later variation table is one entry here.
+    private static readonly HashSet<Tag> VariationTables =
+    [
+        new("avar"), new("cvar"), new("fvar"), new("gvar"), new("HVAR"), new("MVAR"), new("VVAR"), new("STAT"),
+    ];
+
+    /// <summary>
+    /// Whether a table of the source font is copied into the embedded program, the one place that
+    /// decides it for both assemblers. The outline and location tables, which the callers replace
+    /// with the subset's, are not asked about here. A font that has an <c>fvar</c> table is
+    /// variable, and its variation tables are not copied: the glyf, hmtx, OS/2 and hhea tables it
+    /// keeps are the default instance's, and a gvar table left beside a glyf table whose unused
+    /// glyphs are emptied would describe outlines that are no longer there. A font without
+    /// <c>fvar</c> keeps every table, whatever it carries.
+    /// </summary>
+    internal static bool ShouldCopyTable(Tag tag, bool sourceHasFvar) =>
+        !(sourceHasFvar && VariationTables.Contains(tag));
+
     private byte[] AssembleFont(byte[] newGlyf, byte[] newLoca)
     {
         // Collect tables from the original, replacing glyf, loca; patching head.
@@ -619,7 +656,7 @@ public sealed class TrueTypeFontEmbedder
         var head = new Tag("head");
 
         var tablesToKeep = _sfnt.Tables.Keys
-            .Where(t => t != glyf && t != loca)
+            .Where(t => t != glyf && t != loca && ShouldCopyTable(t, _sfnt.HasTable(FvarTag)))
             .OrderBy(t => t.ToString())
             .ToList();
 

@@ -130,7 +130,15 @@ internal static class EmbeddedFontFixtures
         return found;
     }
 
-    /// <summary>The four /FontBBox numbers of a descriptor, each written as an integer or a real.</summary>
+    internal static double Number(PdfDictionary descriptor, string key) => descriptor.Get(new PdfName(key)) switch
+    {
+        PdfInteger n => n.Value,
+        PdfReal r => r.Value,
+        var o => throw new InvalidOperationException($"/{key} is {o?.GetType().Name ?? "missing"}"),
+    };
+
+    /// <summary>The four /FontBBox numbers of a descriptor, each written as an integer or a
+    /// real.</summary>
     internal static double[] FontBBox(PdfDictionary descriptor)
     {
         var array = (PdfArray)descriptor.Get(new PdfName("FontBBox"))!;
