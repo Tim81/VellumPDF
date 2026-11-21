@@ -8,6 +8,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`Document.MirrorMargins` for double-sided print (#608).** With it set, `Margins.Left` is the
+  inside margin and `Margins.Right` the outside one. The inside margin is on the left of a
+  right-hand page (an odd physical page number, page 1 first) and on the right of a left-hand
+  page; top and bottom do not change. The default is `false`, where every page keeps `Margins`
+  as before and a document that does not set it saves to the same bytes.
+  - The content box has the same width on every page, so a paragraph wraps the same way on a
+    right-hand and a left-hand page and only its left edge moves. Nothing new is refused: the
+    margins a save refuses are the ones it refuses without the property, with the same exceptions.
+  - A header or footer aligned `Left` or `Right` swaps sides on a left-hand page, so a page number
+    aligned right stays on the outside edge. `Center` centres in that page's content box. Body
+    alignment never swaps.
+  - The side follows the page's position in the file, not its page label, and the blank page a
+    recto break inserts counts. The first page is always right-hand.
+  - A custom `IRenderer` is offered the content area of the page it lands on, so its `Area.X`
+    differs between pages. One that keeps an X from an earlier `Layout` call must not reuse it.
+
 - **`Preformatted`, a block that keeps every space and tab (#591).** `Document.Add(Preformatted)`
   draws text whose spacing is its meaning: command blocks, configuration, ASCII tables. The default
   style is Courier at 10 pt. `Document.SetDefaultFont` does not apply.

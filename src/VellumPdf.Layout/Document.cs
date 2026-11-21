@@ -423,6 +423,9 @@ public sealed class Document : IDisposable
     /// would otherwise have no positive size.
     /// <para>The header and footer count toward this. Their heights come off the same box, so
     /// margins that fit on their own can still leave nothing once you set a running band.</para>
+    /// <para>With <see cref="MirrorMargins"/> set, <see cref="EdgeInsets.Left"/> is the inside margin
+    /// and <see cref="EdgeInsets.Right"/> the outside one, and every refusal here applies to the
+    /// pair as it does without it.</para>
     /// <para><b>Attention</b>: a finite negative inset is not refused. That edge of the content
     /// area then lies at the inset plus the height of any header or footer there, measured inward
     /// from the page's edge, so a negative total places it beyond the page, where a reader clips
@@ -453,6 +456,41 @@ public sealed class Document : IDisposable
     /// negative-infinity top inset gives a paragraph.
     /// </exception>
     public EdgeInsets Margins { get; set; } = new EdgeInsets(72); // 1 inch
+
+    /// <summary>
+    /// Mirrors the left and right margins for double-sided print. Defaults to <see langword="false"/>,
+    /// where <see cref="Margins"/> applies unchanged to every page.
+    /// </summary>
+    /// <remarks>
+    /// <b>Nothing new is refused.</b> <see cref="EdgeInsets.Left"/> becomes the inside margin and
+    /// <see cref="EdgeInsets.Right"/> the outside one, and the content box keeps the width
+    /// <c>page width - Left - Right</c> on every page, so a save refuses exactly the margins it
+    /// refuses with this property off, with the same exception and message; see
+    /// <see cref="Margins"/>. The refusal raised for the size and the refusal raised for a
+    /// non-finite inset are therefore unchanged by this property.
+    /// <para>The inside margin is on the left of a right-hand page (an odd physical page number,
+    /// page 1 first) and on the right of a left-hand page. The top and bottom margins and the
+    /// header and footer heights are the same on every page. Every renderer is laid out in the same
+    /// width on every page, so a paragraph wraps the same way wherever it falls, and only its left
+    /// edge moves. Body alignment never swaps.</para>
+    /// <para>A running band's <see cref="HorizontalAlignment.Left"/> and
+    /// <see cref="HorizontalAlignment.Right"/> alignments swap on a left-hand page, so a page
+    /// number aligned right stays on the outside edge; <see cref="HorizontalAlignment.Center"/>
+    /// centres in that page's content box. A value the enumeration does not name is drawn as
+    /// <see cref="HorizontalAlignment.Left"/> on a right-hand page, so it swaps with it.</para>
+    /// <para>The side follows the page's position in the file, not its page label, and a blank page
+    /// that a <see cref="PageBreak.Recto"/> inserts counts as a page. The first page is always a
+    /// right-hand page: nothing configures the other side.</para>
+    /// <para>A custom <see cref="IRenderer"/> is offered the content area of the page it is laid
+    /// out on, so its <see cref="LayoutContext.Area"/> has a different X from one page to the
+    /// next. A renderer that keeps an X from an earlier <see cref="IRenderer.Layout"/> call must
+    /// not reuse it on the next page.</para>
+    /// <para>The value is read when a save lays the document out. A value set after the document
+    /// has saved is stored and never used, because a document saves once. A refused save that
+    /// failed before layout started leaves the document usable, and a value set before the retry
+    /// is the one used.</para>
+    /// </remarks>
+    public bool MirrorMargins { get; set; }
 
     /// <summary>
     /// Optional header band drawn at the top of every page.
@@ -1430,6 +1468,7 @@ public sealed class Document : IDisposable
         {
             Header = Header,
             Footer = Footer,
+            MirrorMargins = MirrorMargins,
         };
         foreach (var r in _content) renderer.Add(r);
         return renderer;
