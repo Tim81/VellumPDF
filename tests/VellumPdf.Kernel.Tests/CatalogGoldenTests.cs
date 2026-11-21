@@ -272,7 +272,7 @@ public sealed class CatalogGoldenTests
         return Encoding.Latin1.GetString(output.ToArray());
     }
 
-    private static string NormalisedSha256(byte[] pdf) => Sha256(Encoding.Latin1.GetBytes(Normalise(pdf)));
+    internal static string NormalisedSha256(byte[] pdf) => Sha256(Encoding.Latin1.GetBytes(Normalise(pdf)));
 
     private static string CatalogObject(byte[] pdf)
     {

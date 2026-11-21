@@ -11,7 +11,7 @@ namespace VellumPdf.Layout.Rendering;
 /// <see cref="ParagraphRenderer"/> and additionally registers a document
 /// outline entry at the exact position where the heading lands.
 /// </summary>
-internal sealed class HeadingRenderer : IRenderer
+internal sealed class HeadingRenderer : IRenderer, IPlacementSource
 {
     private readonly Heading _heading;
     private readonly ParagraphRenderer _inner;
@@ -77,6 +77,11 @@ internal sealed class HeadingRenderer : IRenderer
 
         return result;
     }
+
+    // Explicit, and for the same y the outline entry below uses, so the plan and the /Dest it
+    // writes are two routes to one fact. A split heading reports from the piece that holds its
+    // first line; the overflow is a plain paragraph and reports nothing.
+    void IPlacementSource.ReportPlacements(PlacementSink sink) => sink.Report(_heading, _occupied);
 
     public void Draw(DrawContext ctx)
     {
