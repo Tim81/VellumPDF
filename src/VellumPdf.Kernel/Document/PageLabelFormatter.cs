@@ -11,7 +11,7 @@ namespace VellumPdf.Document;
 /// </summary>
 /// <remarks>
 /// <b>What is refused.</b> <see cref="Format"/> throws <see cref="ArgumentOutOfRangeException"/>
-/// for a number below 1, for a style that is not a defined <see cref="PageLabelNumbering"/>, and
+/// for a number below 1, for a style that is not a defined <see cref="PdfPageLabelStyle"/>, and
 /// for a label longer than <see cref="MaxLength"/> characters. The length is worked out
 /// arithmetically before anything is allocated (the digits of a decimal number are counted, not
 /// formatted), so a number near <see cref="int.MaxValue"/> in letters (82,595,525 characters)
@@ -34,7 +34,7 @@ internal static class PageLabelFormatter
 
     /// <summary>
     /// The label of a page whose number within its range is <paramref name="number"/>: the prefix,
-    /// then the number in <paramref name="style"/>. <see cref="PageLabelNumbering.None"/> gives the
+    /// then the number in <paramref name="style"/>. <see cref="PdfPageLabelStyle.None"/> gives the
     /// prefix alone, and a <see langword="null"/> prefix counts as empty.
     /// </summary>
     /// <remarks>
@@ -53,7 +53,7 @@ internal static class PageLabelFormatter
     /// than <see cref="MaxLength"/> characters. The parameter name is <c>prefix</c> when the prefix
     /// alone is longer than that, and <c>number</c> when the number is what makes the label too
     /// long.</exception>
-    internal static string Format(PageLabelNumbering style, string? prefix, long number)
+    internal static string Format(PdfPageLabelStyle style, string? prefix, long number)
     {
         if (!Enum.IsDefined(style))
             throw new ArgumentOutOfRangeException(nameof(style), style, "The numbering style is not a defined value.");
@@ -63,19 +63,19 @@ internal static class PageLabelFormatter
         prefix ??= string.Empty;
         if (prefix.Length > MaxLength)
             throw new ArgumentOutOfRangeException(nameof(prefix), prefix.Length, $"The label prefix has {prefix.Length} characters; the limit is {MaxLength}.");
-        if (style == PageLabelNumbering.None)
+        if (style == PdfPageLabelStyle.None)
             return prefix;
 
         string numeric;
         switch (style)
         {
-            case PageLabelNumbering.Decimal:
+            case PdfPageLabelStyle.Decimal:
                 CheckLength(prefix.Length, DigitCount(number), number);
                 numeric = number.ToString(CultureInfo.InvariantCulture);
                 break;
-            case PageLabelNumbering.UpperRoman:
-            case PageLabelNumbering.LowerRoman:
-                var upper = style == PageLabelNumbering.UpperRoman;
+            case PdfPageLabelStyle.UpperRoman:
+            case PdfPageLabelStyle.LowerRoman:
+                var upper = style == PdfPageLabelStyle.UpperRoman;
                 var thousands = number / 1000;
                 var rest = Roman((int)(number % 1000), upper);
                 // The thousands are the only unbounded part; check before building them.
@@ -85,7 +85,7 @@ internal static class PageLabelFormatter
             default:
                 var length = (number - 1) / 26 + 1;
                 CheckLength(prefix.Length, length, number);
-                var letter = (char)((style == PageLabelNumbering.UpperLetters ? 'A' : 'a') + (int)((number - 1) % 26));
+                var letter = (char)((style == PdfPageLabelStyle.UpperLetters ? 'A' : 'a') + (int)((number - 1) % 26));
                 numeric = new string(letter, (int)length);
                 break;
         }

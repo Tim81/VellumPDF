@@ -155,13 +155,13 @@ public sealed class NamedDestinationTableTests
     [InlineData(double.NaN, 0.0, "left")]
     [InlineData(double.PositiveInfinity, 0.0, "left")]
     [InlineData(double.NegativeInfinity, 0.0, "left")]
-    [InlineData(2147483648.0, 0.0, "left")]
-    [InlineData(-2147483648.0, 0.0, "left")]
+    [InlineData(3.404e38, 0.0, "left")]
+    [InlineData(-3.404e38, 0.0, "left")]
     [InlineData(0.0, double.NaN, "top")]
     [InlineData(0.0, double.PositiveInfinity, "top")]
     [InlineData(0.0, double.NegativeInfinity, "top")]
-    [InlineData(0.0, 2147483648.0, "top")]
-    [InlineData(0.0, -2147483648.0, "top")]
+    [InlineData(0.0, 3.404e38, "top")]
+    [InlineData(0.0, -3.404e38, "top")]
     public void Add_refusesACoordinateThatIsNotAFiniteReal(double left, double top, string paramName)
     {
         var table = new NamedDestinationTable();
@@ -173,7 +173,11 @@ public sealed class NamedDestinationTableTests
     [Theory]
     [InlineData(2147483647.0)]
     [InlineData(-2147483647.0)]
-    public void Add_acceptsTheLargestIntegerTheStandardGives(double value)
+    [InlineData(2147483648.0)]
+    [InlineData(-2147483648.0)]
+    [InlineData(3.403e38)]
+    [InlineData(-3.403e38)]
+    public void Add_acceptsEveryValueUpToTheRealRangeOfTheStandard(double value)
     {
         var table = new NamedDestinationTable();
         table.Add("a", NewPage(), value, value);
@@ -194,6 +198,20 @@ public sealed class NamedDestinationTableTests
         table.Build(registry, new Dictionary<PdfPage, PdfIndirectReference> { [page] = pageRef });
 
         Assert.Equal("[1 0 R /XYZ 2147483647 -2147483647 null]", ObjectText(registry, 2));
+    }
+
+    [Fact]
+    public void Build_writesAWholeValueOutsideTheIntegerRangeAsARealToken()
+    {
+        var registry = new PdfObjectRegistry();
+        var page = NewPage();
+        var pageRef = ReservePage(registry);
+        var table = new NamedDestinationTable();
+        table.Add("a", page, 2147483648.0, -2147483649.0);
+
+        table.Build(registry, new Dictionary<PdfPage, PdfIndirectReference> { [page] = pageRef });
+
+        Assert.Equal("[1 0 R /XYZ 2147483648.0 -2147483649.0 null]", ObjectText(registry, 2));
     }
 
     // ---- exact bytes --------------------------------------------------------------------------

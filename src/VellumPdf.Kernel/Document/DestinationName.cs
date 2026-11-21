@@ -5,7 +5,8 @@ namespace VellumPdf.Document;
 
 /// <summary>
 /// The rule for the name of a named destination, and its encoding as a name-tree key (#262).
-/// Internal: no public API refers to it.
+/// Internal: <see cref="Annotations.PdfLinkAnnotation.DestName"/> and
+/// <see cref="PdfDocument.AddNamedDestination"/> apply it, and their documentation states it.
 /// </summary>
 /// <remarks>
 /// A name is 1 to 127 characters, each one of <c>A-Z a-z 0-9 . _ - :</c>. ISO 32000-2, 12.3.2.4 has

@@ -65,9 +65,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Internal name tree and number tree writers (#241).** `NameTreeWriter` and `NumberTreeWriter`
   in `VellumPdf.Kernel` build the structures ISO 32000-2, 7.9.6 and 7.9.7 define, which the
   catalog's `/Names` and `/PageLabels` entries, and later named destinations and embedded files,
-  will hang from. They are `internal`, so there is no public API change and no output change: no
-  document member calls them yet, and wiring them into the catalog is left to the work that
-  consumes them. Up to 64 entries make a root that holds `/Names` (`/Nums`) itself; more are cut
+  will hang from. They are `internal`, so they add no public API. `PdfDocument` calls them through
+  the named-destination and page-label members below, and a document that uses neither writes
+  no tree. Up to 64 entries make a root that holds `/Names` (`/Nums`) itself; more are cut
   into evenly sized leaves of at most 64 entries under groups of at most 64 kids, so 100,000
   entries are three levels deep. Keys sort by unsigned byte value, and `/Limits` sit on every
   node except the root, which both editions of the standard require. A duplicate key, a null key or
@@ -79,17 +79,49 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Internal tables for named destinations and page labels (#262, part 1).** `NamedDestinationTable`
   and `PageLabelTable` in `VellumPdf.Kernel` turn names and label ranges into the `/Dests` name tree
   and the `/PageLabels` number tree (ISO 32000-2, 12.3.2.4 and 12.4.2), using the tree writers above,
-  and `PageLabelFormatter` computes the label a page shows. They are `internal`, so there is no public
-  API change and no output change: no document member calls them yet. A destination name is 1 to
+  and `PageLabelFormatter` computes the label a page shows. They are `internal`; the next entry
+  makes them reachable through `PdfDocument`. A destination name is 1 to
   127 characters from `A-Z a-z 0-9 . _ - :`; each value is an
   indirect `[page /XYZ left top null]` array. A table with no range at page 0 gets a decimal one there,
   because 12.4.2 requires a value for page index 0. Letters repeat (27 is `AA`, 53 is `AAA`) rather than
   counting in base 26, as Table 161 describes, and Roman numerals above 3999 add one `M` per thousand,
   a choice of this library because 12.4.2 sets no rule there. An empty table builds nothing and leaves
   the object numbers alone. A bad name, a duplicate, a coordinate that is not finite or lies beyond
-  ±2,147,483,647 (the largest integer of ISO 32000-1, Table C.1; a whole coordinate is written as
-  an integer), a first number below 1, an unpaired surrogate in a prefix and a label over 32,767
-  characters are refused.
+  ±3.403 × 10^38 (the real range of ISO 32000-1, Table C.1), a first number below 1, an unpaired
+  surrogate in a prefix and a prefix over 16,382 characters (written as UTF-16BE with a byte order
+  mark, 2 + 2n bytes, so 16,382 characters are 32,766 bytes within the 32,767 bytes of ISO 19005-2,
+  6.1.13) are refused. A whole coordinate inside the 32-bit integer range is written as an
+  integer, and a whole one outside it as a real, as `PdfReal` does since #646.
+- **Named destinations, links by name and page labels on `PdfDocument` (#262, part 2).**
+  `AddNamedDestination(name, page, left, top)` names a point on a page; a save writes the names
+  into the catalog's `/Names` tree under `/Dests` (ISO 32000-2, 12.3.2.4), so an outside reference
+  such as `#nameddest=chap-1` finds the point and a link to it keeps working when the pages are
+  reordered. `PdfLinkAnnotation.DestName` makes a link write `/Dest (name)` instead of a page
+  reference. `AddPageLabelRange(startPageIndex, style, prefix, firstNumber)` starts a range of
+  page labels with the new `PdfPageLabelStyle` (`None`, `Decimal`, `UpperRoman`, `LowerRoman`,
+  `UpperLetters`, `LowerLetters`); a save writes them as `/PageLabels` (12.4.2). Both save paths,
+  `Save` and `PrepareForSigning`, write the same trees, so a signed document and its extensions
+  keep them. A name has 1 to 127 characters from `A-Z a-z 0-9 . _ - :`. These are refused at
+  the call: a repeated name or a second range at the same start (`ArgumentException`); a page
+  that this document's `AddPage` did not return (`ArgumentException`); a prefix with an unpaired
+  surrogate or over 16,382 characters (`ArgumentException`, `ParamName` `prefix`); a null name or
+  page (`ArgumentNullException`); a coordinate that is NaN, infinite or beyond
+  ±3.403 × 10^38 (the real range of ISO 32000-1, Table C.1), a negative start index, a first number
+  below 1 or an undefined style (`ArgumentOutOfRangeException` for these four); a call after the
+  document was written (`InvalidOperationException`) or disposed (`ObjectDisposedException`); a
+  `DestName` outside the rule (`ArgumentException`, from the initializer); and a link that sets
+  `DestName` together with `Uri` (`ArgumentException` from `RegisterLinkAnnotation`, because
+  ISO 32000-2, Table 176 does not permit `Dest` beside `A`) or with `DestPage` (the same
+  exception, because both fill `Dest`).
+  `Save`, `SaveAsync`, `PrepareForSigning`, `Sign` and `SignAsync` refuse, with
+  `InvalidOperationException` and before anything is written, a link on one of the document's
+  pages whose `DestName` no destination carries, and a label range that starts at or after the page
+  count; the document stays usable, so adding the destination or the page and saving again
+  succeeds. `DocumentRenderer.Render` raises the same refusal after its layout, and the layout's
+  pages stay in the kernel document: fix it and call `PdfDocument.Save`, because a second `Render`
+  lays them out again. A `Uri` together with `DestPage` still writes only the `/A` action; the
+  docs now say so, and 3.0 will refuse the pair. A document that uses none of the new members writes the same bytes as
+  before. With no range at page 0 the save adds a decimal one there, as 12.4.2 requires.
 - **`GifLoadOptions` and `GifImageLoader.Load(byte[], GifLoadOptions)` (#498).** One property,
   `PlaceOnLogicalScreen`, default `false`. With it set the loader refuses what section 20.a rules
   out ("Each image must fit within the boundaries of the Logical Screen"): a screen with a width
@@ -140,6 +172,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   output-intent object differently when a document has an outline and a PDF/A claim. A catalog
   holding every optional key and one holding only `/Lang` cover the key order and the `/Lang`
   condition. Every file also goes through `qpdf --check`. Tests only.
+
+- **`PageBreak`, `BreakBefore` and a blank page before a recto chapter (#311).** A document can now
+  start an element on a new page without a custom renderer. `Document.Add(PageBreak)` ends the
+  current page, and `new PageBreak { Recto = true }` starts the next element on a right-hand
+  (odd-numbered) page, adding one blank page first when the next page would be an even one.
+  `Paragraph`, `Heading`, `TableElement`, `ListElement` and `LayoutImage` also take
+  `BreakBefore` (`PageBreakMode.None`, `Page` or `Recto`). Page 1 is a right-hand page and parity
+  is the physical position in the document, never a page label.
+  - A break adds no page when it is the first element, follows another break, or ends a page with
+    nothing laid out on it (an element of zero height still counts as laid out); where two breaks
+    meet, the stronger one applies. A break with nothing after it is dropped, so there is no
+    trailing blank page. A document of breaks alone is treated like an empty one: a save throws
+    `InvalidOperationException` saying it has no pages, before the destination is checked, and the
+    document can still be saved once an element is added.
+  - The blank page has no header or footer and no content, and it counts in `{page}`, `{pages}`
+    and the page tree. In a tagged document no structure element refers to it.
+  - `BreakBefore` is read from a top-level element added with its own `Document.Add` overload, or
+    from the public renderer of a paragraph, table, list or image added with
+    `Document.Add(IRenderer)` or `DocumentRenderer.Add`. It is ignored for an element a renderer of your own wraps, for the
+    overflow pieces of a split element, and for the paragraph a heading draws with. A renderer you
+    wrote yourself cannot ask for a break.
+  - An undefined `PageBreakMode` throws `ArgumentOutOfRangeException` from the `init` accessor, and
+    a null `PageBreak` throws `ArgumentNullException` from `Document.Add`.
+  - A document that uses no break saves byte for byte as before. A form feed (U+000C) in text does
+    not start a page: a paragraph, a heading and a list item draw it as a space, and a table cell
+    and a running band write it to the font as it is, as before. A custom renderer that returns a
+    zero-height `Partial` still forces a page.
 
 ### Changed
 
@@ -911,6 +970,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `Open Instellingen . Daarna astro logie en ( vet ).`. **Attention:** a caller that split one word
   across runs and relied on the inserted space now gets the words joined. To keep a space, put it in
   the text of one of the runs.
+- **A table whose every row is a header saves (#488).** The repeatable header is the leading run of
+  header rows only when a row that is not a header follows it. A table with no such row has no
+  header to repeat, so its rows are laid out and drawn as the body, each once and in order, and it
+  splits between rows like any other. On 2.3.3 a table of one, two or three header rows, or of
+  thirty, threw `InvalidOperationException` ("An element is too tall to fit on a single page") from
+  `Save` on a page of any size, because the header run covered every row and nothing was left to
+  fit. Each row is still tagged as a header row: `TH` with `/Scope /Column`. Output for a table
+  with a data row after its header rows, or a header row after a data row, is unchanged. This is a
+  deliberate change of behaviour for the input that used to throw, and three outputs change with it.
+  `TableRenderer.Layout` returns `Full` or `Partial` for such a table where 2.3.3 returned `Nothing`
+  on every area, so a caller's renderer that composes it and skips `Nothing` now draws the table. An
+  all-header table with a cell background or border colour that has a NaN or infinite channel, or a
+  table margin that is NaN, threw the "too tall" `InvalidOperationException` first; now the canvas
+  throws `ArgumentException`, as it does for any table with a data row. Calling
+  `TableRenderer.Draw` before `Layout` on a table with no repeatable header, that is no header row or
+  every row a header, draws nothing; a table with leading header rows and a data row after them
+  still throws `IndexOutOfRangeException`, as documented. The XML documentation of `TableElement`,
+  `TableElement.AddRow`, `TableElement.AddHeaderRow`, `Row.IsHeader`, `Cell.RowSpan` and
+  `TableRenderer` says so.
 
 ### Documentation
 
