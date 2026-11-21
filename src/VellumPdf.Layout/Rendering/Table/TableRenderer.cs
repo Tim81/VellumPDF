@@ -955,13 +955,18 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
         }
     }
 
-    /// <summary>The TH or TD for a cell, with its attributes and the paragraph it holds.</summary>
+    /// <summary>
+    /// The TH or TD for a cell, with its attributes and the paragraph it holds. A cell that holds
+    /// nothing is always a TD, never a TH, because the Tagged PDF Best Practice Guide (3.5) reserves
+    /// TH for cells that head something; only a slice with no line left passes no paragraph.
+    /// </summary>
     private static PdfStructElem NewCellElement(Cell cell, Row row, int rowSpan, int colSpan, PdfStructElem? paragraph)
     {
-        var cellElem = new PdfStructElem(row.IsHeader ? "TH" : "TD");
+        var header = row.IsHeader && paragraph is not null;
+        var cellElem = new PdfStructElem(header ? "TH" : "TD");
         if (cell.Language is not null)
             cellElem.Language = cell.Language;
-        if (row.IsHeader)
+        if (header)
             cellElem.TableHeaderScope = "Column";
         if (rowSpan > 1)
             cellElem.TableRowSpan = rowSpan;

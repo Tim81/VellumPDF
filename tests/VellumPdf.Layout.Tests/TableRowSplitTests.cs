@@ -486,6 +486,32 @@ public sealed class TableRowSplitTests : IDisposable
         Assert.Equal(6, PdfTestUtil.CountOccurrences(flat, "/S /TD"));
     }
 
+    /// <summary>
+    /// In a table of nothing but header rows, a cut row's cell with no line on page 2 is an empty
+    /// <c>TD</c>, not a <c>TH</c>: an empty cell is never a header (Tagged PDF Best Practice Guide,
+    /// 3.5). The cells that hold text stay <c>TH</c> with a column scope: two on page 1, one on page 2.
+    /// </summary>
+    [Fact]
+    public void ACutHeaderRow_givesItsEmptyCellATd()
+    {
+        using var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, 300, 600),
+            Margins = new EdgeInsets(10),
+            Tagged = true,
+            Language = "en-US",
+        };
+        var t = Table();
+        t.Add(new Row { IsHeader = true }.AddCell(Words(48)).AddCell("short"));
+        doc.Add(t);
+
+        var flat = Regex.Replace(Encoding.Latin1.GetString(Save(doc)), @"\s+", " ");
+
+        Assert.Equal(3, PdfTestUtil.CountOccurrences(flat, "/S /TH"));
+        Assert.Equal(1, PdfTestUtil.CountOccurrences(flat, "/S /TD"));
+        Assert.Equal(3, PdfTestUtil.CountOccurrences(flat, "/Scope /Column"));
+    }
+
     // ── Rows that are never cut ──────────────────────────────────────────────
 
     /// <summary>A header row taller than the page is refused, and the message names the rows.</summary>
