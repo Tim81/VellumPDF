@@ -284,11 +284,16 @@ public sealed class TextStyle
     /// untagged and without an alternate description, whatever the conformance, and no exception
     /// reports it. In a document whose <c>Conformance</c> is PDF/UA-1, the link breaks ISO
     /// 14289-1, 7.18.5 (#550). A link whose rectangle lies wholly outside the page's crop box is
-    /// exempt: clause 7.18.1 lifts the requirements of clause 7.18 for it. On a justified line in a
-    /// standard-14 text face the link's rectangle starts where the linked text is drawn and covers
-    /// its drawn width, spaces stretched included. On a justified line in an embedded font
-    /// the rectangle is still sized and placed as if the line were not stretched, so the linked
-    /// words can run past it and can lie away from it.
+    /// exempt: clause 7.18.1 lifts the requirements of clause 7.18 for it. On a justified line,
+    /// in a standard-14 or an embedded face, the link's rectangle starts where the linked text's
+    /// first glyph is drawn and ends where the text that follows it on the line starts, spaces
+    /// stretched included, or, when the linked text closes the line, where its last glyph ends.
+    /// A space that closes the linked run is inside the rectangle, and so is the stretch after it.
+    /// On such a line that holds an embedded-font run, a run that draws no glyph, such as a tab
+    /// with no stop to its right at the start of a line, gets no annotation; on one in standard-14
+    /// faces only, that tab is drawn as a space and its link covers that space. A line that is not
+    /// justified, and the last line of a justified paragraph, use the unstretched widths they are
+    /// drawn with.
     /// <para>Do not pass a value that is not an absolute URI. A later major version will refuse
     /// one.</para>
     /// <para>A <see cref="VellumPdf.Layout.Elements.Preformatted"/> refuses any value from its
