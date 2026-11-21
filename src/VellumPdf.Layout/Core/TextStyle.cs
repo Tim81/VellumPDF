@@ -63,7 +63,9 @@ public sealed class TextStyle
     /// from U+D800 to U+DFFF without its partner. The built-in elements measure their text during
     /// layout, and a running band can measure part of its template that it then does not draw. Text
     /// drawn without being measured, as a custom renderer can draw it, has the surrogate replaced
-    /// by U+FFFD instead. <c>ParamName</c> is <c>s</c>.
+    /// by U+FFFD instead. <c>ParamName</c> is <c>s</c>. A pair split between two runs of a
+    /// paragraph that share one style instance is joined and measured as a pair, so it saves; split
+    /// between runs of different instances, each half is unpaired and the save throws.
     /// </exception>
     public FontReference FontRef { get; init; } = Standard14.Helvetica;
 

@@ -559,7 +559,8 @@ public sealed class BoundaryContractTests
             Alignment = HorizontalAlignment.Center,
         };
         p.Add("SYM", new TextStyle { FontRef = Standard14.Symbol, FontSize = 12 });
-        p.Add("HELVETICA", new TextStyle { FontRef = Standard14.Helvetica, FontSize = 12 });
+        // The run starts with a space: without one, the runs would be a single word.
+        p.Add(" HELVETICA", new TextStyle { FontRef = Standard14.Helvetica, FontSize = 12 });
         doc.Add(p);
 
         var stream = Stream(doc);
