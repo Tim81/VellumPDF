@@ -32,7 +32,7 @@ namespace VellumPdf.Layout.Rendering.Table;
 /// a header row. A table that has a row that is not a header after its leading header rows
 /// repeats those header rows on every page.
 /// </remarks>
-public sealed class TableRenderer : IRenderer
+public sealed class TableRenderer : IRenderer, IPageBreakSource
 {
     private readonly TableElement _table;
     private readonly int _startRow;  // first data row index (0-based)
@@ -66,6 +66,11 @@ public sealed class TableRenderer : IRenderer
         _table = table;
         _startRow = startRow;
     }
+
+    // Explicit, because the renderer is a public class and an implicit member would be public API.
+    // The mode belongs to the element, so a renderer added through Document.Add(IRenderer) honours
+    // it as well.
+    PageBreakMode IPageBreakSource.BreakBefore => _table.BreakBefore;
 
     /// <summary>Resolves column widths and row heights, fitting as many rows as possible and splitting at row boundaries on overflow.</summary>
     /// <remarks>

@@ -6,42 +6,21 @@ using VellumPdf.IO;
 
 namespace VellumPdf.Document;
 
-/// <summary>The numbering style of a page-label range (ISO 32000-2, Table 161, entry
-/// <c>S</c>).</summary>
-internal enum PageLabelNumbering
-{
-    /// <summary>No numeric part: the label is the prefix alone. <c>/S</c> is left out.</summary>
-    None = 0,
-
-    /// <summary>Decimal Arabic numerals (<c>/D</c>).</summary>
-    Decimal,
-
-    /// <summary>Upper-case Roman numerals (<c>/R</c>).</summary>
-    UpperRoman,
-
-    /// <summary>Lower-case Roman numerals (<c>/r</c>).</summary>
-    LowerRoman,
-
-    /// <summary>Upper-case letters, A to Z, then AA to ZZ, then AAA (<c>/A</c>).</summary>
-    UpperLetters,
-
-    /// <summary>Lower-case letters, a to z, then aa to zz, then aaa (<c>/a</c>).</summary>
-    LowerLetters,
-}
-
 /// <summary>
 /// A document's page-label ranges (#262): each range starts at a page index and says how that page
 /// and the pages after it are numbered, until the next range. <see cref="Build"/> turns the table
-/// into the <c>/PageLabels</c> number tree (ISO 32000-2, 12.4.2 and 7.9.7). Internal: no document
-/// member holds one, and nothing writes the tree into a catalog.
+/// into the <c>/PageLabels</c> number tree (ISO 32000-2, 12.4.2 and 7.9.7). Internal: a
+/// <see cref="PdfDocument"/> holds one, filled by <see cref="PdfDocument.AddPageLabelRange"/>, and
+/// both save paths write its tree into the catalog.
 /// </summary>
 /// <remarks>
 /// <b>What is refused.</b> <see cref="Set"/> throws at the call for a negative start index, a first
-/// number below 1, a style that is not a defined <see cref="PageLabelNumbering"/>, a second range
+/// number below 1, a style that is not a defined <see cref="PdfPageLabelStyle"/>, a second range
 /// at a start already in the table, and a prefix that holds an unpaired surrogate or encodes to
-/// more than 32,767 bytes. <see cref="Build"/> throws <see cref="InvalidOperationException"/> for a
-/// range that starts at or after the page count (past the last page), because that needs the page
-/// count.
+/// more than 32,767 bytes. <see cref="RefuseRangePast"/> and <see cref="Build"/> throw
+/// <see cref="InvalidOperationException"/> for a range that starts at or after the page count
+/// (past the last page), because that needs the page count; the document calls the first before
+/// it marks itself written.
 /// <para><see cref="Build"/> reads the table and never changes it, so a save that is retried after
 /// a precondition failure builds the same objects again.</para>
 /// </remarks>
@@ -58,10 +37,28 @@ internal sealed class PageLabelTable
     private static readonly PdfName PrefixKey = new("P");
     private static readonly PdfName StartKey = new("St");
 
-    private readonly SortedDictionary<int, (PageLabelNumbering Style, string? Prefix, int FirstNumber)> _ranges = [];
+    private readonly SortedDictionary<int, (PdfPageLabelStyle Style, string? Prefix, int FirstNumber)> _ranges = [];
 
     /// <summary>The number of ranges set.</summary>
     internal int Count => _ranges.Count;
+
+    // The largest start index in the table, kept as ranges are added so the save-time check does
+    // not walk them. -1 while the table is empty.
+    private int _lastStart = -1;
+
+    /// <summary>
+    /// Refuses a table with a range that starts at or after <paramref name="pageCount"/>, which
+    /// no page can show (ISO 32000-2, Table 29, <c>PageLabels</c>: each index "shall denote the
+    /// first page in a labelling range"). Reads and changes nothing else.
+    /// </summary>
+    /// <param name="pageCount">The number of pages in the document.</param>
+    /// <exception cref="InvalidOperationException">The largest start index is
+    /// <paramref name="pageCount"/> or more.</exception>
+    internal void RefuseRangePast(int pageCount)
+    {
+        if (_lastStart >= pageCount)
+            throw new InvalidOperationException($"A page label range starts at page index {_lastStart}, but the document has {pageCount} pages.");
+    }
 
     /// <summary>
     /// Starts a range at <paramref name="startPageIndex"/>. Its first page is numbered
@@ -79,7 +76,7 @@ internal sealed class PageLabelTable
     /// <exception cref="ArgumentException">A range already starts at
     /// <paramref name="startPageIndex"/>, or <paramref name="prefix"/> holds an unpaired surrogate
     /// or is longer than 16,382 characters.</exception>
-    internal void Set(int startPageIndex, PageLabelNumbering style, string? prefix, int firstNumber)
+    internal void Set(int startPageIndex, PdfPageLabelStyle style, string? prefix, int firstNumber)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(startPageIndex);
         if (!Enum.IsDefined(style))
@@ -102,6 +99,8 @@ internal sealed class PageLabelTable
         }
         if (!_ranges.TryAdd(startPageIndex, (style, prefix, firstNumber)))
             throw new ArgumentException($"A label range already starts at page index {startPageIndex}.", nameof(startPageIndex));
+        if (startPageIndex > _lastStart)
+            _lastStart = startPageIndex;
     }
 
     /// <summary>
@@ -124,29 +123,29 @@ internal sealed class PageLabelTable
         if (_ranges.Count == 0)
             return null;
 
+        RefuseRangePast(pageCount);
+
         var entries = new List<KeyValuePair<long, PdfObject>>(_ranges.Count + 1);
         foreach (var (start, range) in _ranges)
         {
-            if (start >= pageCount)
-                throw new InvalidOperationException($"A page label range starts at page index {start}, but the document has {pageCount} pages.");
             entries.Add(new KeyValuePair<long, PdfObject>(start, BuildValue(range.Style, range.Prefix, range.FirstNumber)));
         }
         if (!_ranges.ContainsKey(0))
-            entries.Add(new KeyValuePair<long, PdfObject>(0, BuildValue(PageLabelNumbering.Decimal, null, 1)));
+            entries.Add(new KeyValuePair<long, PdfObject>(0, BuildValue(PdfPageLabelStyle.Decimal, null, 1)));
         return NumberTreeWriter.Write(entries, registry);
     }
 
     /// <summary>
     /// A page label dictionary, direct as in 12.4.2's example, with <c>/S</c>, <c>/P</c>,
-    /// <c>/St</c> in that order. <c>/S</c> is left out for <see cref="PageLabelNumbering.None"/>;
+    /// <c>/St</c> in that order. <c>/S</c> is left out for <see cref="PdfPageLabelStyle.None"/>;
     /// <c>/P</c> for a null or empty prefix, which adds nothing to the label (Table 161's note
     /// treats a missing and an empty <c>P</c> alike); <c>/St</c> when it is 1, its default.
     /// <c>/Type /PageLabel</c> is optional and not written.
     /// </summary>
-    private static PdfDictionary BuildValue(PageLabelNumbering style, string? prefix, int firstNumber)
+    private static PdfDictionary BuildValue(PdfPageLabelStyle style, string? prefix, int firstNumber)
     {
         var dictionary = new PdfDictionary();
-        if (style != PageLabelNumbering.None)
+        if (style != PdfPageLabelStyle.None)
             dictionary.Set(StyleKey, StyleName(style));
         if (!string.IsNullOrEmpty(prefix))
             dictionary.Set(PrefixKey, PdfLiteralString.FromUnicode(prefix));
@@ -155,13 +154,13 @@ internal sealed class PageLabelTable
         return dictionary;
     }
 
-    private static string StyleName(PageLabelNumbering style) => style switch
+    private static string StyleName(PdfPageLabelStyle style) => style switch
     {
-        PageLabelNumbering.Decimal => "D",
-        PageLabelNumbering.UpperRoman => "R",
-        PageLabelNumbering.LowerRoman => "r",
-        PageLabelNumbering.UpperLetters => "A",
-        PageLabelNumbering.LowerLetters => "a",
+        PdfPageLabelStyle.Decimal => "D",
+        PdfPageLabelStyle.UpperRoman => "R",
+        PdfPageLabelStyle.LowerRoman => "r",
+        PdfPageLabelStyle.UpperLetters => "A",
+        PdfPageLabelStyle.LowerLetters => "a",
         _ => throw new ArgumentOutOfRangeException(nameof(style), style, null),
     };
 }

@@ -48,8 +48,8 @@ namespace VellumPdf.Layout;
 /// <para>A call with two or more defects is refused, but which defect's exception is reported can
 /// differ between releases. A save precondition (null destination, disposed document, an unwritable
 /// stream, an option conflict) is reported before a layout defect, and an already cancelled token
-/// before both. In a document with nothing added the page geometry and bands are checked before the
-/// preconditions, but not before the token. The path checks of
+/// before both. In a document with nothing added, or only page breaks, the page geometry and bands
+/// are checked before the preconditions, but not before the token. The path checks of
 /// <see cref="SaveAsync(string, System.Threading.CancellationToken)"/> are the exception: they run
 /// when the file is opened, before the token is looked at.</para>
 /// <para><b>Do not pass</b> a non-finite number to any of these members. The saved cases are not
@@ -879,6 +879,29 @@ public sealed class Document : IDisposable
         return this;
     }
 
+    /// <summary>
+    /// Adds a page break: the next element starts on a new page, or on the next right-hand page
+    /// when <see cref="PageBreak.Recto"/> is set. Returns this document for chaining.
+    /// </summary>
+    /// <remarks>
+    /// <b>A null break is refused.</b> It throws <see cref="ArgumentNullException"/> from this
+    /// call. A break itself is never refused later. A break adds no page when it is first, follows
+    /// another break, or ends a page with nothing laid out on it, and a break with nothing after it
+    /// is dropped. A document of breaks alone has no content, so it takes the same path as a
+    /// document with nothing added: a save throws <see cref="InvalidOperationException"/> saying it
+    /// has no pages, before the destination is checked, and leaves the document usable. See
+    /// <see cref="PageBreak"/>.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="pageBreak"/> is <see langword="null"/>.
+    /// </exception>
+    public Document Add(PageBreak pageBreak)
+    {
+        ArgumentNullException.ThrowIfNull(pageBreak);
+        _content.Add(new PageBreakRenderer(pageBreak));
+        return this;
+    }
+
     /// <summary>Adds a paragraph built from the given text, using the supplied style or the default style. Returns this document for chaining.</summary>
     /// <remarks>
     /// With <paramref name="style"/> null, the paragraph takes the style from the most recent
@@ -914,6 +937,10 @@ public sealed class Document : IDisposable
     /// never gets smaller reaches that limit; <see cref="IRenderer.Layout"/> has the rule. The save
     /// then throws <see cref="InvalidOperationException"/> naming the limit. Split a long element
     /// yourself.
+    /// <para>A renderer you wrote yourself cannot ask for a page break. The library's own
+    /// <see cref="ParagraphRenderer"/>, <see cref="TableRenderer"/>, <see cref="ListRenderer"/> and
+    /// <see cref="LayoutImageRenderer"/> honour their element's <c>BreakBefore</c> when added here.
+    /// Add a <see cref="PageBreak"/> before a custom renderer instead.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="renderer"/> is <see langword="null"/>.
@@ -1090,8 +1117,9 @@ public sealed class Document : IDisposable
         // An empty document lays out no pages, so its page count is already known. The page
         // geometry and the bands are still checked, then "no pages", before the destination and
         // the options.
-        if (_content.Count == 0) CreateRenderer().RunLayout();
-        _pdf.EnsureCanSave(destination, pagesKnown: _content.Count == 0, asynchronous: asynchronous);
+        var empty = HasNoContent;
+        if (empty) CreateRenderer().RunLayout();
+        _pdf.EnsureCanSave(destination, pagesKnown: empty, asynchronous: asynchronous);
         ThrowIfLayoutFailed();
         _pdf.ValidateSaveOptions();
     }
@@ -1227,6 +1255,20 @@ public sealed class Document : IDisposable
         }
         catch (UnauthorizedAccessException)
         {
+        }
+    }
+
+    // A page break is not content: a document of breaks alone lays out no page, so it takes the
+    // empty-document path, which reports "no pages" before the layout and leaves the document
+    // usable.
+    private bool HasNoContent
+    {
+        get
+        {
+            foreach (var renderer in _content)
+                if (renderer is not PageBreakRenderer)
+                    return false;
+            return true;
         }
     }
 
@@ -1371,9 +1413,10 @@ public sealed class Document : IDisposable
     /// <paramref name="destination"/>, a document already written, <see cref="UseObjectStreams"/>
     /// together with <see cref="Encrypt"/>, a PDF/A <see cref="Conformance"/> together with
     /// <see cref="Encrypt"/>, and PDF/UA-1 with settings that omit
-    /// <see cref="PdfPermissions.Extract"/>. In a document with nothing added the page geometry and
-    /// bands are checked before these. The document is untouched, so correct the cause and
-    /// save again. A refused page geometry, such as margins that meet the page, is raised before any
+    /// <see cref="PdfPermissions.Extract"/>. In a document with nothing added, or only page breaks,
+    /// the page geometry and bands are checked before these. The document is untouched, so correct
+    /// the cause and save again. A refused page geometry, such as margins that meet the page, is
+    /// raised before any
     /// page is added and is just as recoverable. A save that threw <b>after</b> its layout had
     /// added pages cannot be undone, whether the layout itself threw, such as for an element too
     /// tall for the page, or a later step did, such as building the PDF or a cancellation seen once
@@ -1388,8 +1431,9 @@ public sealed class Document : IDisposable
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="destination"/> is <see langword="null"/>. This is checked before the layout
-    /// runs, except in a document with nothing added, where the page geometry and bands are checked
-    /// first. The document is untouched, so it can be saved again; see the remarks.
+    /// runs, except in a document with nothing added, or only page breaks, where the page geometry
+    /// and bands are checked first. The document is untouched, so it can be saved again; see the
+    /// remarks.
     /// It is also raised, from the layout and not from the call that stored the null, for a null an
     /// element holds that is refused where it is used: a <see cref="TextRun"/> style that yields a
     /// word (<c>ParamName</c> <c>Style</c>), a <see cref="Cell"/> text in a table with an
@@ -1422,8 +1466,8 @@ public sealed class Document : IDisposable
     /// <exception cref="ArgumentException">
     /// Many unrelated conditions share this type, so <b>do not</b> switch on the parameter name to
     /// tell them apart. A non-writable <paramref name="destination"/> is refused before the layout
-    /// runs and reports <c>destination</c>; a document with nothing added throws "The document
-    /// has no pages." first. The margin check reports <c>margins</c>. A
+    /// runs and reports <c>destination</c>; a document with nothing added, or only page breaks,
+    /// throws "The document has no pages." first. The margin check reports <c>margins</c>. A
     /// non-finite position the save writes outside the content stream, such as a link rectangle
     /// moved by a non-finite margin, reports <c>value</c>; see <see cref="Margins"/>. An element
     /// that refuses its own input reports a name of its own choosing, which is not always the
@@ -1628,9 +1672,10 @@ public sealed class Document : IDisposable
     /// <paramref name="destination"/>, a document already written, <see cref="UseObjectStreams"/>
     /// together with <see cref="Encrypt"/>, a PDF/A <see cref="Conformance"/> together with
     /// <see cref="Encrypt"/>, and PDF/UA-1 with settings that omit
-    /// <see cref="PdfPermissions.Extract"/>. In a document with nothing added the page geometry and
-    /// bands are checked before these. The document is untouched, so correct the cause and
-    /// save again. A refused page geometry, such as margins that meet the page, is raised before any
+    /// <see cref="PdfPermissions.Extract"/>. In a document with nothing added, or only page breaks,
+    /// the page geometry and bands are checked before these. The document is untouched, so correct
+    /// the cause and save again. A refused page geometry, such as margins that meet the page, is
+    /// raised before any
     /// page is added and is just as recoverable. A save that threw <b>after</b> its layout had
     /// added pages cannot be undone, whether the layout itself threw, such as for an element too
     /// tall for the page, or a later step did, such as building the PDF or a cancellation seen once
@@ -1646,13 +1691,14 @@ public sealed class Document : IDisposable
     /// <inheritdoc cref="Save(System.IO.Stream)" path="/exception[@cref='T:System.ArgumentNullException' or @cref='T:System.InvalidOperationException' or @cref='T:System.IO.IOException' or @cref='T:System.ArgumentOutOfRangeException' or @cref='T:System.NullReferenceException' or @cref='T:System.IndexOutOfRangeException' or @cref='T:System.IO.InvalidDataException' or @cref='T:System.OverflowException' or @cref='T:System.OutOfMemoryException']"/>
     /// <exception cref="NotSupportedException">
     /// <paramref name="destination"/> cannot be written to. That is refused before the layout runs,
-    /// so the document is untouched; a document with nothing added throws "The document has no
-    /// pages." first. It is also raised when <see cref="UseObjectStreams"/> is true and
-    /// <see cref="Encrypt"/> has been called.
+    /// so the document is untouched; a document with nothing added, or only page breaks, throws
+    /// "The document has no pages." first. It is also raised when <see cref="UseObjectStreams"/> is
+    /// true and <see cref="Encrypt"/> has been called.
     /// </exception>
     /// <exception cref="ObjectDisposedException">
     /// <paramref name="destination"/> was already closed, which is refused before the layout runs
-    /// (a document with nothing added throws "The document has no pages." first), or this
+    /// (a document with nothing added, or only page breaks, throws "The document has no pages."
+    /// first), or this
     /// <see cref="Document"/> was already disposed.
     /// </exception>
     /// <exception cref="ArgumentException">
@@ -1823,7 +1869,7 @@ public sealed class Document : IDisposable
         // A document with nothing in it lays out no pages, so its pages are already known: none. It
         // gets the document's own order, which reports "no pages" before looking at the options, as
         // it did before the pre-check existed, and nothing is laid out or marked as failed.
-        _pdf.EnsureCanPrepareForSigning(options, pagesKnown: _content.Count == 0);
+        _pdf.EnsureCanPrepareForSigning(options, pagesKnown: HasNoContent);
         ThrowIfLayoutFailed();
 
         var renderer = CreateRenderer();

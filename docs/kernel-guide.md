@@ -431,6 +431,40 @@ doc.RegisterLinkAnnotation(page1, new PdfLinkAnnotation
 });
 ```
 
+### Named destinations and links by name
+
+A named destination gives a point on a page a stable name. A reader finds it from a link, and from
+outside the file as `file.pdf#nameddest=chapter-2`. A link that names the destination keeps working
+if the pages are later reordered.
+
+```csharp
+doc.AddNamedDestination("chapter-2", page2, left: 0, top: 800);
+
+doc.RegisterLinkAnnotation(page1, new PdfLinkAnnotation
+{
+    Rect     = new PdfRectangle(72, 650, 200, 664),
+    DestName = "chapter-2",
+});
+```
+
+A name has 1 to 127 characters from `A-Z a-z 0-9 . _ - :`. Set `DestName` instead of `Uri` and
+`DestPage`, not beside them. `Save` refuses a link on one of the document's pages whose name no
+destination carries, so add the destination and save again.
+
+### Page labels
+
+```csharp
+doc.AddPageLabelRange(0, PdfPageLabelStyle.LowerRoman);                  // i, ii, iii
+doc.AddPageLabelRange(4, PdfPageLabelStyle.Decimal, firstNumber: 1);     // 1, 2, 3 from page 5
+doc.AddPageLabelRange(20, PdfPageLabelStyle.Decimal, "A-", firstNumber: 1); // A-1, A-2, ...
+```
+
+A range runs from its start page to the page before the next range. A start at or past the page
+count makes `Save` throw before anything is written. Without a range at page 0 the first pages are
+numbered 1, 2, 3 as in a document with no labels. A prefix has at most 16,382 characters (32,766
+bytes as UTF-16BE, inside the 32,767 bytes of ISO 19005-2, 6.1.13) and may not hold an unpaired
+surrogate.
+
 ### Document outline (bookmarks)
 
 ```csharp
