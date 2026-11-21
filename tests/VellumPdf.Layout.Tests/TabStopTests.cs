@@ -710,7 +710,7 @@ public sealed partial class TabStopTests
         Assert.Empty(quiet.Diagnostics);
     }
 
-    // ── Review round: placement again at the same stop, one rule for stopless tabs ──────────────
+    // ── Placement at a stop: segments that do not fit, one rule for tabs with no stop ──
 
     [Fact]
     public void ATextThatFitsOnlyFromTheLeftEdge_isPlacedThereAtItsStop_withNoLeaderBeforeIt()
@@ -747,8 +747,8 @@ public sealed partial class TabStopTests
     [Fact]
     public void ATocNumberThatDoesNotFitAfterTheTitle_goesToTheNextLineAtTheStop_withALeaderFromTheLeftEdge()
     {
-        // 49 letters x are 294 pt; the pen after the space is 297.336, and "12" needs 13.344, so the
-        // number would end at 310.68 on a 300 pt line.
+        // 49 letters x are 294 pt; the pen after the space is 297.336, and "12" needs 13.344, so
+        // the number would end at 310.68 on a 300 pt line.
         var title = new string('x', 49);
         var content = Content(
             new Paragraph(title + "\t12", Helvetica())
@@ -890,6 +890,178 @@ public sealed partial class TabStopTests
         Save(doc);
 
         Assert.DoesNotContain(doc.Diagnostics, d => d.Code == LayoutDiagnosticCode.TabStopBeyondWidth);
+    }
+
+    // ── A segment that does not fit at its stop, and stops at the width ──────────────────────────
+
+    private static double Mm(double mm) => mm / 25.4 * 72;
+
+    [Fact]
+    public void ARightStopAtTheWidth_keepsItsNumberOnTheLine_onGeometriesWhereTheSumRoundsUp()
+    {
+        // (W - w) + w rounds one step above W for these, so a fit test with no tolerance drops the
+        // number to the next line without its leader.
+        var cases = new (PdfRectangle Page, double Margin, double Size, string Number)[]
+        {
+            (PageSize.A5, Mm(30), 11, "100"),
+            (PageSize.A5, Mm(30), 11, "101"),
+            (PageSize.A5, Mm(30), 11, "102"),
+            (new PdfRectangle(0, 0, 235.9, 400), 0, 12, "12345"),
+        };
+        foreach (var (page, margin, size, number) in cases)
+            AssertNumberAtTheRightEdge(page, margin, size, number);
+    }
+
+    [Fact]
+    public void ARightStopAtTheWidth_keepsItsNumberOnTheLine_acrossAGridOfGeometries()
+    {
+        foreach (var page in new[] { PageSize.A4, PageSize.Letter, PageSize.A5 })
+            foreach (var marginMm in new[] { 15d, 20, 25, 30 })
+                foreach (var size in new[] { 9d, 10, 10.5, 11, 11.5 })
+                    foreach (var number in new[] { "1", "12", "100", "101", "102", "300" })
+                        AssertNumberAtTheRightEdge(page, Mm(marginMm), size, number);
+    }
+
+    private static void AssertNumberAtTheRightEdge(PdfRectangle page, double margin, double size, string number)
+    {
+        using var doc = new Document { PageSize = page, Margins = new EdgeInsets(36, margin, 36, margin) };
+        var width = page.Width - (margin + margin);
+        doc.Add(new Paragraph("Inleiding\t" + number, Helvetica(size))
+        {
+            TabStops = [new TabStop(width, TabAlignment.Right, TabLeader.Dots)],
+        });
+
+        var content = Content(doc);
+        var shows = Shows(content);
+        var what = $"page {page.Width}, margin {margin}, size {size}, number {number}";
+        Assert.Equal(2, shows.Count);
+        AssertNear(shows[0].Y, shows[1].Y, $"{what}: one line");
+        AssertNear(margin + width - Width(number, size), shows[1].X, $"{what}: the number ends at the edge", 1e-4);
+        Assert.True(QBlocks(content).Count == 1, $"{what}: the leader is drawn");
+    }
+
+    [Fact]
+    public void ATitleThatEndsWithinOneSpaceOfTheStop_stillPutsTheNumberAtTheStopWithALeader()
+    {
+        // 30 letters m are 299.88 pt; the separator space carries the pen to 303.2, past the stop
+        // at 300, so the stop is the one the pen was at before the space.
+        var title = new string('m', 30);
+        var content = Content(
+            new Paragraph(title + "\t1", Helvetica())
+            {
+                TabStops = [new TabStop(300, TabAlignment.Right, TabLeader.Dots)],
+            },
+            width: 300);
+
+        var shows = Shows(content);
+        Assert.Equal(["(" + title + ")", "(1)"], shows.Select(s => s.Text));
+        Assert.True(shows[0].Y > shows[1].Y, "the number is on the next line");
+        AssertNear(300 - Width("1"), shows[1].X, "at the stop");
+        var block = Assert.Single(QBlocks(content));
+        AssertNear(0, Numbers(block[5]).First(), "the leader runs from the left edge");
+    }
+
+    [Fact]
+    public void ASegmentThatFitsAtItsStopNowhere_staysOnTheLineAsOrdinaryText()
+    {
+        // A centred "1" at the right edge would end 3.3 pt past the line wherever it is placed.
+        var shows = Shows(Content(
+            new Paragraph("Inleiding\t1", Helvetica())
+            {
+                TabStops = [new TabStop(300, TabAlignment.Center, TabLeader.Dots)],
+            },
+            width: 300));
+
+        Assert.Equal(["(Inleiding 1)"], shows.Select(s => s.Text));
+    }
+
+    [Fact]
+    public void ALeftStopWhoseFirstWordDoesNotFitAtTheStop_setsTheTextAfterTheTabAsOrdinaryText()
+    {
+        var word = new string('b', 20);
+        var content = Content(
+            new Paragraph("A\t" + word, Helvetica())
+            {
+                TabStops = [new TabStop(100, TabAlignment.Left, TabLeader.Dots)],
+            },
+            width: 150);
+
+        var shows = Shows(content);
+        Assert.Equal(["(A " + word + ")"], shows.Select(s => s.Text));
+        AssertNear(0, shows[0].X, "after the text before the tab, with no leader");
+        Assert.Empty(QBlocks(content));
+    }
+
+    [Theory]
+    [InlineData(TabAlignment.Center, 292d, "12", 48)]
+    [InlineData(TabAlignment.Decimal, 288d, "12.5", 47)]
+    public void ACentreOrDecimalSegmentThatFitsOnlyOnAFreshLine_isPlacedThereAtItsStop(
+        TabAlignment alignment, double stop, string number, int titleLength)
+    {
+        // The title leaves the pen just short of the stop but past where the segment would have to
+        // start, so the segment does not fit after it and does fit at its stop on a fresh line.
+        var title = new string('x', titleLength);
+        var content = Content(
+            new Paragraph(title + "\t" + number, Helvetica())
+            {
+                TabStops = [new TabStop(stop, alignment, TabLeader.Dots)],
+            },
+            width: 300);
+
+        var shows = Shows(content);
+        Assert.Equal(["(" + title + ")", "(" + number + ")"], shows.Select(s => s.Text));
+        Assert.True(shows[0].Y > shows[1].Y, "the number is on the next line");
+        var offset = alignment == TabAlignment.Center ? Width(number) / 2 : Width("12");
+        AssertNear(stop - offset, shows[1].X, "at its stop");
+        AssertNear(0, Numbers(Assert.Single(QBlocks(content))[5]).First(), "leader from the left edge");
+    }
+
+    [Fact]
+    public void ADecimalStopWithinTheToleranceOfTheWidth_isPlacedAtTheWidth()
+    {
+        foreach (var width in new[] { 100.1, 123.456, 77.7, 250.123, 301.37, 199.99, 87.3, 140.01, 163.37 })
+        {
+            using var doc = new Document { PageSize = new PdfRectangle(0, 0, 400, 600), Margins = EdgeInsets.Zero };
+            doc.Add(new Narrow(
+                new ParagraphRenderer(new Paragraph("a\t12", Helvetica())
+                {
+                    TabStops = [new TabStop(width + 4.9e-6, TabAlignment.Decimal)],
+                }),
+                width));
+
+            var shows = Shows(PdfTestUtil.DecompressAllFlatStreams(Save(doc)));
+
+            Assert.Equal(Num(width - Width("12")), Num(shows[1].X));
+        }
+    }
+
+    [Fact]
+    public void ASplitParagraph_reportsAStopBeyondTheWidthOnce()
+    {
+        using var doc = new Document { PageSize = new PdfRectangle(0, 0, 400, 100), Margins = EdgeInsets.Zero };
+        var text = string.Join('\n', Enumerable.Repeat("a\tb", 30));
+        doc.Add(new Narrow(
+            new ParagraphRenderer(new Paragraph(text, Helvetica()) { TabStops = [new TabStop(250)] }), 100));
+
+        var bytes = Save(doc);
+
+        Assert.True(Regex.Matches(PdfTestUtil.DecompressAllFlatStreams(bytes), @"(?m)^BT\r?$").Count > 1, "the paragraph splits");
+        var item = Assert.Single(doc.Diagnostics);
+        Assert.Equal(1, item.Count);
+    }
+
+    [Fact]
+    public void WhenEveryStopLiesBeyondARenderersWidth_tabsAreStillOneSpaceEach()
+    {
+        using var doc = new Document { PageSize = new PdfRectangle(0, 0, 400, 600), Margins = EdgeInsets.Zero };
+        doc.Add(new Narrow(
+            new ParagraphRenderer(new Paragraph("abc\t\tdef", Helvetica()) { TabStops = [new TabStop(250)] }), 100));
+        doc.Add(new Narrow(
+            new ParagraphRenderer(new Paragraph("\tb", Helvetica()) { TabStops = [new TabStop(250)] }), 100));
+
+        var shows = Shows(PdfTestUtil.DecompressAllFlatStreams(Save(doc)));
+
+        Assert.Equal(["(abc  def)", "( b)"], shows.Select(s => s.Text));
     }
 
     // ── A stop at the width, computed two ways ───────────────────────────────
@@ -1123,20 +1295,38 @@ public sealed partial class TabStopTests
         return Save(doc);
     }
 
+    // The change is in the file before any oracle is asked about it: two leaders, and the show
+    // string that ends in the separator space.
+    private static void AssertFixtureHoldsTheTabs(byte[] bytes)
+    {
+        var content = PdfTestUtil.DecompressAllFlatStreams(bytes);
+        Assert.Equal(2, QBlocks(content).Count);
+        Assert.Contains("(Inleiding ) Tj", content, StringComparison.Ordinal);
+    }
+
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void PdftotextPrintsTheTextAndNoLeader(bool tagged)
+    [InlineData(false, TabLeader.Dots)]
+    [InlineData(true, TabLeader.Dots)]
+    [InlineData(true, TabLeader.Dashes)]
+    [InlineData(false, TabLeader.Rule)]
+    public void PdftotextPrintsTheTextAndNoLeader(bool tagged, TabLeader leader)
     {
         using var dir = new TempDir();
         var path = dir.Path("toc.pdf");
-        File.WriteAllBytes(path, ContentsPage(tagged, TabLeader.Dots));
+        var bytes = ContentsPage(tagged, leader);
+        AssertFixtureHoldsTheTabs(bytes);
+        File.WriteAllBytes(path, bytes);
 
         ExternalTool.TryRun("pdftotext", ["-layout", path, "-"], out _, out var layout, out var err, out _);
         Assert.Matches(@"Inleiding\s+12", layout);
         Assert.Matches(@"Achtergrond en doelstelling\s+14", layout);
-        Assert.False(layout.Contains("..", StringComparison.Ordinal), $"a leader was extracted as text:\n{layout}\n{err}");
-        Assert.False(layout.Contains("--", StringComparison.Ordinal));
+
+        // Nothing but letters, digits and white space comes out: no dot, dash or underscore run.
+        foreach (var line in layout.Split('\n'))
+        {
+            var rest = Regex.Replace(line, @"[\p{L}\p{N}\s]", "");
+            Assert.True(rest.Length == 0, $"a leader was extracted as '{rest}':\n{layout}\n{err}");
+        }
 
         // Without -layout, the words of a tagged page are still apart.
         ExternalTool.TryRun("pdftotext", ["-raw", path, "-"], out _, out var raw, out _, out _);
@@ -1151,7 +1341,9 @@ public sealed partial class TabStopTests
     {
         using var dir = new TempDir();
         var path = dir.Path("toc.pdf");
-        File.WriteAllBytes(path, ContentsPage(tagged, leader));
+        var bytes = ContentsPage(tagged, leader);
+        AssertFixtureHoldsTheTabs(bytes);
+        File.WriteAllBytes(path, bytes);
 
         ExternalTool.TryRun("qpdf", ["--check", path], out var exit, out var stdout, out var stderr, out var timedOut);
 

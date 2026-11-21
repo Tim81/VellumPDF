@@ -46,13 +46,13 @@ internal static class LayoutValidation
     /// A stop beyond the width could only be reached by text that overflows the line, so it is a
     /// stop the caller cannot have meant. A stop counts as beyond only when it is past the width by
     /// the scale <c>PdfCanvas</c> writes (5e-6 points): two ways of computing one width, such as
-    /// <c>Width - Left - Right</c> and <c>Width - (Left + Right)</c>, differ by a rounding step, and
-    /// a stop placed at the right edge must not depend on which one the caller used.
+    /// <c>Width - Left - Right</c> and <c>Width - (Left + Right)</c>, differ by a rounding step,
+    /// and a stop placed at the right edge must not depend on which one the caller used.
     /// </summary>
     /// <param name="paragraph">The paragraph to check.</param>
     /// <param name="contentWidth">
-    /// The width the paragraph's content is laid out in, with its margins taken off. A width that is
-    /// not finite or not positive skips the check, because the margin refusals deal with it.
+    /// The width the paragraph's content is laid out in, with its margins taken off. A width that
+    /// is not finite or not positive skips the check, because the margin refusals deal with it.
     /// </param>
     internal static void ValidateTabStops(Paragraph paragraph, double contentWidth)
     {

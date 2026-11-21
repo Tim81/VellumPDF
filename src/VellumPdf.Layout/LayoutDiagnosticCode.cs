@@ -69,8 +69,8 @@ public enum LayoutDiagnosticCode
     /// the layout starts, with <see cref="InvalidOperationException"/>. It arises from a
     /// <see cref="Rendering.ParagraphRenderer"/> that a renderer of yours lays out in a narrower
     /// area than the page's. A tab then uses the next stop within the width, and advances as one
-    /// space only when no such stop lies to its right. It is reported when the paragraph is drawn from its first line, so a renderer you
-    /// build to start at a later line reports nothing.
+    /// space only when no such stop lies to its right. It is reported when the paragraph is drawn
+    /// from its first line, so a renderer you build to start at a later line reports nothing.
     /// </remarks>
     TabStopBeyondWidth = 106,
 

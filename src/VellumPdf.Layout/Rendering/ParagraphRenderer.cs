@@ -765,7 +765,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource
         IReadOnlyList<TabStop>? stops = null)
     {
         nullStyleRuns = 0;
-        var tabbed = stops is { Count: > 0 };
+        var tabbed = stops is not null;
         var lines = new List<LineFragment[]>();
         var ends = new List<LineEnd>();
 

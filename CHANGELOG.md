@@ -172,6 +172,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   output-intent object differently when a document has an outline and a PDF/A claim. A catalog
   holding every optional key and one holding only `/Lang` cover the key order and the `/Lang`
   condition. Every file also goes through `qpdf --check`. Tests only.
+
 - **`PageBreak`, `BreakBefore` and a blank page before a recto chapter (#311).** A document can now
   start an element on a new page without a custom renderer. `Document.Add(PageBreak)` ends the
   current page, and `new PageBreak { Recto = true }` starts the next element on a right-hand
@@ -198,6 +199,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     not start a page: a paragraph, a heading and a list item draw it as a space, and a table cell
     and a running band write it to the font as it is, as before. A custom renderer that returns a
     zero-height `Partial` still forces a page.
+
 - **Tab stops with leaders (#298).** `Paragraph.TabStops` takes a list of `TabStop` values, and a
   tab character in the text then places the text after it at the first stop to the right of the end
   of the text before it. A `TabStop` has a position in points from the paragraph's left content
@@ -212,11 +214,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - The text before a tab is followed by one space, so extracted text keeps `Inleiding 12` apart.
   - Text that would start left of the end of the text before it starts there instead. A tab with no
     stop to its right is one space, whether or not text comes straight before it. Text at a right,
-    centre or decimal stop that does not fit after the text before the tab moves to the next line
-    and is placed again at the same stop, its leader running from the left edge; only text that
-    does not fit even there is set as ordinary text. Text at a left stop wraps word by word from the
-    stop. A line with a tab at a stop starts at the left edge and is not justified, whatever the
-    paragraph's alignment.
+    centre or decimal stop that does not fit after the text before the tab is placed at the same
+    stop on the next line when it fits there, its leader running from the left edge; when it fits
+    at its stop nowhere, the line does not end and the text is ordinary text from the pen, so a
+    centred `1` at the right edge draws as `Inleiding 1`. Text at a left stop wraps word by word
+    from the stop. A line with a tab at a stop starts at the left edge and is not justified,
+    whatever the paragraph's alignment.
   - `TabStop` refuses a position that is not a finite number of zero or more, and an undefined
     alignment or leader, with `ArgumentOutOfRangeException`. `DecimalCharacter` refuses white space,
     a control character and a surrogate with `ArgumentException`. `TabStops` refuses a null stop and

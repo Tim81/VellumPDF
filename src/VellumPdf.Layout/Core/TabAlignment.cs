@@ -3,7 +3,9 @@
 
 namespace VellumPdf.Layout.Core;
 
-/// <summary>How the text after a tab sits against the <see cref="TabStop"/> it is placed at.</summary>
+/// <summary>
+/// How the text after a tab sits against the <see cref="TabStop"/> it is placed at.
+/// </summary>
 /// <remarks>
 /// <b>A value this enumeration does not name is refused.</b> The <see cref="TabStop"/> constructor
 /// throws <see cref="ArgumentOutOfRangeException"/>, because the stop could not say where the text

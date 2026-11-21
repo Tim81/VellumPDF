@@ -14,7 +14,9 @@ public sealed partial class ParagraphRenderer
     // A leader is stroked, not typeset, and every measure of it is a fraction of the font size of
     // the text it leads to, so it scales with that text.
 
-    /// <summary>Line width of a leader: thin enough to read as a rule beside the text's strokes.</summary>
+    /// <summary>
+    /// Line width of a leader: thin enough to read as a rule beside the text's strokes.
+    /// </summary>
     internal const double LeaderWidthFactor = 0.08;
 
     /// <summary>
@@ -32,7 +34,9 @@ public sealed partial class ParagraphRenderer
     /// </summary>
     internal const double LeaderRaiseFactor = 0.25;
 
-    /// <summary>Dash length, in line widths. Zero-length dashes make dots; see <see cref="DrawLeaders"/>.</summary>
+    /// <summary>
+    /// Dash length, in line widths. Zero-length dashes make dots; see <see cref="DrawLeaders"/>.
+    /// </summary>
     internal const double DashLengthInWidths = 3;
 
     /// <summary>Gap between dashes, in line widths.</summary>
@@ -91,7 +95,9 @@ public sealed partial class ParagraphRenderer
             }
         }
 
-        return within == 0 ? null : [.. stops.Take(within)];
+        // With none within the width the list is empty, not null: the text still holds tabs and
+        // the one-space rule for a tab with no stop applies to them.
+        return [.. stops.Take(within)];
     }
 
     /// <summary>Whether a tab stop placed any fragment of the line.</summary>
@@ -336,6 +342,7 @@ public sealed partial class ParagraphRenderer
 
             // The text before the tab ends in one space, so a reader that extracts the text sees
             // the words apart (ISO 32000-2, 14.8.2.6.2). The space is part of the pen.
+            var penBeforeSeparator = pen;
             var separatorWritten = false;
             if (NeedsSeparator())
             {
@@ -343,7 +350,11 @@ public sealed partial class ParagraphRenderer
                 separatorWritten = true;
             }
 
+            // The separator can carry the pen past a stop the text itself stayed within; that stop
+            // is still the one this tab is for.
             var stop = FindStop(stops, pen);
+            if (stop is null && separatorWritten)
+                stop = FindStop(stops, penBeforeSeparator);
             if (stop is null)
             {
                 // No stop to the right: the tab advances the pen by one space. The space written
@@ -365,7 +376,8 @@ public sealed partial class ParagraphRenderer
 
             // A stop within the written-token scale of the width is the right edge, and is placed
             // there; a stop the pen has not passed is never placed left of the pen.
-            var stopX = Math.Max(pen, Math.Min(stop.Position, maxWidth));
+            var stopClamp = Math.Min(stop.Position, maxWidth);
+            var stopX = Math.Max(pen, stopClamp);
             var penBefore = pen;
             if (first == end)
             {
@@ -421,34 +433,40 @@ public sealed partial class ParagraphRenderer
             };
 
             // A segment that would start left of the pen starts at the pen. A left stop needs room
-            // for the first word only, since the rest wraps; the others need the whole segment.
+            // for the first word only, since the rest wraps; the others need the whole segment. A
+            // segment overflows when it ends at least one written unit past the width: two ways of
+            // adding the same widths differ by a rounding step.
             var needs = stop.Alignment == TabAlignment.Left ? firstWordW : segmentW;
+            bool Overflows(double from) => from + needs - maxWidth >= WidthTolerance;
             var start = Math.Max(pen, stopX - offset);
             var atLineStart = cur.Count == 0;
-            if (start + needs > maxWidth && cur.Count > 0)
+            if (Overflows(start))
             {
-                // It does not fit after the text before it: that line ends, and the segment is
-                // placed again at the same stop on the next line, its leader running from the left
-                // edge.
-                Commit(LineEnd.Soft);
-                penBefore = 0.0;
-                start = Math.Max(0.0, stopX - offset);
-                atLineStart = true;
-            }
-
-            if (start + needs > maxWidth)
-            {
-                // It does not fit even from the left edge: ordinary text from there, with no tab
-                // pending.
-                for (var a = first; a < end;)
+                var fresh = Math.Max(0.0, stopClamp - offset);
+                if (cur.Count > 0 && !Overflows(fresh))
                 {
-                    var b = a + 1;
-                    while (b < end && tokens[b].Kind == TokenKind.WordContinue)
-                        b++;
-                    FlowWord(a, b);
-                    a = b;
+                    // It does not fit after the text before it but fits at its stop on a fresh
+                    // line: that line ends and the segment is placed there, its leader running from
+                    // the left edge.
+                    Commit(LineEnd.Soft);
+                    penBefore = 0.0;
+                    start = fresh;
+                    atLineStart = true;
                 }
-                return;
+                else
+                {
+                    // It fits at its stop nowhere: ordinary text from the pen, with no tab pending
+                    // and the line not ended.
+                    for (var a = first; a < end;)
+                    {
+                        var b = a + 1;
+                        while (b < end && tokens[b].Kind == TokenKind.WordContinue)
+                            b++;
+                        FlowWord(a, b);
+                        a = b;
+                    }
+                    return;
+                }
             }
 
             var placed = MakeLeader(stop, penBefore, start, tokens[first].Style!, atLineStart);
