@@ -167,7 +167,9 @@ internal static class LayoutValidation
     /// ISO 32000-2, 8.4.3.2 (Line width) says the operand "shall be a non-negative number", so a
     /// negative width is a non-conforming operand even though it parses. That is why this refuses
     /// it where the neighbouring out-of-range inputs, such as a colour channel above 1, are only
-    /// documented: those render a valid file, and this writes an operand the standard forbids.
+    /// documented (the one exception is a row background, which <c>TableElement.Add(Row)</c>
+    /// refuses at the call): those render a valid file, and this writes an operand the standard
+    /// forbids.
     ///
     /// Zero is left alone, unlike an image extent: <c>0 w</c> is a defined operator asking for the
     /// thinnest line the device renders, not a degenerate matrix. The same clause says such lines

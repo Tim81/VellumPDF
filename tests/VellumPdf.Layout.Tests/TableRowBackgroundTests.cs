@@ -201,7 +201,8 @@ public sealed class TableRowBackgroundTests : IDisposable
 
     /// <summary>
     /// A cell spanning two rows is filled over both rows with the colour of the row it starts in;
-    /// the row below keeps its own colour for the cell it holds, and gets no fill for the column the
+    /// the row below keeps its own colour for the cell it holds, and gets no fill for the column
+    /// the
     /// span covers.
     /// </summary>
     [Fact]
@@ -224,7 +225,21 @@ public sealed class TableRowBackgroundTests : IDisposable
     }
 
     /// <summary>
-    /// A tagged table writes the fill as an artifact, like the cell fill, so the fill is not content
+    /// A cell that spans both columns and has no background of its own is filled over its whole
+    /// width, 100 + 80 = 180pt, not over one column.
+    /// </summary>
+    [Fact]
+    public void RowBackground_withAColSpan_fillsTheSpannedWidth()
+    {
+        var table = Table();
+        table.Add(new Row { Background = Grey }.AddCell(new Cell("wide") { ColSpan = 2 }));
+
+        Assert.Equal(["0.9 0.8 0.7 rg|10 570 180 20"], Fills(Content(table)));
+    }
+
+    /// <summary>
+    /// A tagged table writes the fill as an artifact, like the cell fill, so the fill is not
+    /// content
     /// the structure tree has to account for.
     /// </summary>
     [Fact]
@@ -369,7 +384,8 @@ public sealed class TableRowBackgroundTests : IDisposable
             Fills(Content(table)));
     }
 
-    /// <summary>The overloads of <c>AddRow</c> still bind to the flag, and still add a row with no fill.</summary>
+    /// <summary>The overloads of <c>AddRow</c> still bind to the flag, and still add a row with no
+    /// fill.</summary>
     [Fact]
     public void AddRow_overloads_areUnchanged()
     {
@@ -414,8 +430,10 @@ public sealed class TableRowBackgroundTests : IDisposable
     }
 
     /// <summary>
-    /// Each refused value, in each channel: <c>ArgumentOutOfRangeException</c> from <c>Add</c> itself,
-    /// <c>ParamName</c> <c>row</c>, <c>ActualValue</c> the channel's value, a message naming the channel,
+    /// Each refused value, in each channel: <c>ArgumentOutOfRangeException</c> from <c>Add</c>
+    /// itself,
+    /// <c>ParamName</c> <c>row</c>, <c>ActualValue</c> the channel's value, a message naming the
+    /// channel,
     /// the value and the clause, and a table that is exactly as it was before the call, so a save
     /// afterwards is the save of the table without the row.
     /// </summary>
@@ -597,7 +615,8 @@ public sealed class TableRowBackgroundTests : IDisposable
     }
 
     /// <summary>
-    /// A tagged PDF/A-2u table in an embedded font whose row is coloured passes veraPDF. The fixture
+    /// A tagged PDF/A-2u table in an embedded font whose row is coloured passes veraPDF. The
+    /// fixture
     /// is asserted to hold the fill first.
     /// </summary>
     [Fact]

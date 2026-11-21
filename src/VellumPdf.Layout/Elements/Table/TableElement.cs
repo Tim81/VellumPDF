@@ -15,7 +15,8 @@ namespace VellumPdf.Layout.Elements.Table;
 /// </summary>
 /// <remarks>
 /// A table that resolves to no columns is refused at save; see <see cref="Rows"/>. A table whose
-/// rows are all headers has no repeatable header and draws each row once; see <see cref="AddRow(bool)"/>.
+/// rows are all headers has no repeatable header and draws each row once; see
+/// <see cref="AddRow(bool)"/>.
 /// The table is one element for the page limit described on <see cref="IRenderer.Layout"/>: a
 /// table that needs more than <b>50,000</b> page continuations makes the save throw.
 /// </remarks>
@@ -186,28 +187,31 @@ public sealed class TableElement
     }
 
     /// <summary>
-    /// Appends a row you built, so that its <see cref="Row.Background"/> takes effect, and returns it.
+    /// Appends a row you built, so that its <see cref="Row.Background"/> takes effect, and returns
+    /// it.
     /// </summary>
     /// <remarks>
-    /// <b>A null row is refused, and so is a row whose <see cref="Row.Background"/> has a channel that
-    /// is not finite or lies outside 0 to 1.</b> This call throws <see cref="ArgumentNullException"/>
-    /// or <see cref="ArgumentOutOfRangeException"/> and the table is left as it was, because
-    /// ISO 32000-2:2020, 8.6.4.3 says each DeviceRGB component is a number from 0.0 to 1.0. The
-    /// check is on the value as given, not on the token written, so 1.000001 is refused although
-    /// it would be written as <c>1</c>. A background of exactly 0 or 1 in a channel is accepted.
-    /// <para>The table holds the row itself, not a copy. A cell added to the row afterwards is drawn,
-    /// and adding the same row twice draws it twice. A row with no cells is accepted, as
+    /// <b>A null row is refused, and so is a row whose <see cref="Row.Background"/> has a channel
+    /// that is not finite or lies outside 0 to 1.</b> This call throws
+    /// <see cref="ArgumentNullException"/> or <see cref="ArgumentOutOfRangeException"/>, and the
+    /// table is left as it was. The range is that of ISO 32000-2:2020, 8.6.4.3, which says each
+    /// DeviceRGB component is a number from 0.0 to 1.0. The check is on the value as given, not on
+    /// the token written, so 1.000001 is refused although it would be written as <c>1</c>. A
+    /// background of exactly 0 or 1 in a channel is accepted.
+    /// <para>The table holds the row itself, not a copy. A cell added to the row afterwards is
+    /// drawn, and adding the same row twice draws it twice. A row with no cells is accepted, as
     /// <see cref="AddRow(bool)"/> accepts one. <see cref="Row.IsHeader"/> is honoured as it is for
-    /// <see cref="AddRow(bool)"/>. A cell's own <see cref="Cell.Background"/> is drawn in place of the
-    /// row's; see <see cref="Row.Background"/> for which cells get the row's fill.</para>
+    /// <see cref="AddRow(bool)"/>. A cell's own <see cref="Cell.Background"/> is drawn in place of
+    /// the row's; see <see cref="Row.Background"/> for which cells get the row's fill.</para>
     /// </remarks>
     /// <param name="row">The row to append.</param>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="row"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// A channel of <c>row.Background</c> is <c>NaN</c>, infinite, below 0 or above 1. <c>ParamName</c>
-    /// is <c>row</c>, <c>ActualValue</c> is the channel's value, and the message names the channel.
+    /// A channel of <c>row.Background</c> is <c>NaN</c>, infinite, below 0 or above 1.
+    /// <c>ParamName</c> is <c>row</c>, <c>ActualValue</c> is the channel's value, and the message
+    /// names the channel.
     /// </exception>
     public Row Add(Row row)
     {

@@ -47,15 +47,23 @@ public sealed class Row
     /// <see cref="TableElement.Add(Row)"/>: <see cref="TableElement.AddRow(bool)"/> and
     /// <see cref="TableElement.AddHeaderRow"/> create rows with no background, and the property
     /// cannot be set afterwards. <see cref="TableElement.Add(Row)"/> refuses a channel that is not
-    /// finite or lies outside 0 to 1, because ISO 32000-2:2020, 8.6.4.3 says each DeviceRGB component
-    /// is a number in that range. Setting the property refuses nothing, and a row that is never added
-    /// is never checked.
-    /// <para>The fill is drawn cell by cell, in each cell's rectangle, ahead of the cell's border and
-    /// text. A cell's own <see cref="Cell.Background"/> replaces it for that cell. A column the row
-    /// has no cell for, because the row is shorter than the table or a <see cref="Cell.RowSpan"/> from
-    /// an earlier row covers it, gets no fill from this row. A cell that spans rows is filled over its
-    /// whole height with the background of the row it starts in. The row's fill is drawn again with
-    /// the row when a leading run of header rows repeats on a continuation page.</para>
+    /// finite or lies outside 0 to 1, because ISO 32000-2:2020, 8.6.4.3 says each DeviceRGB
+    /// component is a number in that range. Setting the property refuses nothing, and a row that is
+    /// never added is never checked.
+    /// <para>The fill is drawn cell by cell, in the rectangle of each cell the row draws, ahead of
+    /// the cell's border and text. A cell that a <see cref="Cell.RowSpan"/> from an earlier row
+    /// pushes past the last column is not drawn, so it is not filled either; see
+    /// <see cref="AddCell(Cell)"/>. A cell's own <see cref="Cell.Background"/> replaces the row's
+    /// for that cell. A column the row has no cell for, because the row is shorter than the table
+    /// or a <see cref="Cell.RowSpan"/> from an earlier row covers it, gets no fill from this row. A
+    /// cell that spans rows is filled over its whole height with the background of the row it
+    /// starts in, and a cell that spans columns over its whole width. The row's fill is drawn again
+    /// with the row when a leading run of header rows repeats on a continuation page.</para>
+    /// <para>The check in <see cref="TableElement.Add(Row)"/> is the only one. A row that reaches a
+    /// table another way, such as through a downcast of <see cref="TableElement.Rows"/> to
+    /// <c>List&lt;Row&gt;</c>, is not checked: a channel that is not finite is refused from the
+    /// save, and a finite channel outside 0 to 1 is written as given. <b>Do not</b> add rows that
+    /// way.</para>
     /// </remarks>
     public ColorRgb? Background { get; init; }
 

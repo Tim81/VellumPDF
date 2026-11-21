@@ -175,7 +175,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`TableElement.Add(Row)` gives a row a background (#543).** `Row.Background` could not take
   effect before: it is `init`-only, and `AddRow` and `AddHeaderRow` build their own rows without
   one. `Add(Row)` appends a row you built with `new Row { Background = ... }` and returns it. Each
-  cell the row holds is filled with the colour, ahead of its border and text, unless the cell has
+  cell the row draws is filled with the colour, ahead of its border and text, unless the cell has
   a `Background` of its own; a row that repeats as a header repeats its fill, and a cell that
   spans rows is filled with the colour of the row it starts in. The call refuses a null row
   (`ArgumentNullException`) and a background channel that is not finite or lies outside 0 to 1
