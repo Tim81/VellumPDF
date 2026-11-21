@@ -264,6 +264,70 @@ public sealed class PageTopAreaTests
         Assert.Equal(shown, Regex.Matches(Streams(pdf), @"\)\s*Tj").Count);
     }
 
+    // The class the CHANGELOG states: an element whose whole height needs exactly H saves on the
+    // short geometry, where it used to reach the continuation limit.
+    public static TheoryData<string> SingleElementKinds => new()
+    {
+        "paragraph", "heading", "separator", "list", "preformatted",
+    };
+
+    [Theory]
+    [MemberData(nameof(SingleElementKinds))]
+    public void OneLineElementWhoseHeightIsTheContentArea_savesOnePage_onTheShortGeometry(string kind)
+    {
+        const double top = 440.16;
+        var content = Content(top, false);
+        var style = new TextStyle { FontRef = new FontReference(Standard14.Helvetica), FontSize = 10, Leading = content.Height };
+        IRenderer element = kind switch
+        {
+            "paragraph" => new ParagraphRenderer(new Paragraph("one", style)),
+            "heading" => new HeadingRenderer(new Heading("one", style)),
+            "separator" => new LineSeparatorRenderer(new LineSeparator { LineWidth = content.Height, Margins = EdgeInsets.Zero }),
+            "list" => new ListRenderer(new ListElement().Add("one", style)),
+            _ => new PreformattedRenderer(new Preformatted("one", style)),
+        };
+        var renderer = Renderer(top, false);
+        renderer.Add(element);
+
+        var pdf = Save(renderer);
+
+        Assert.Equal(1, PageCount(pdf));
+    }
+
+    // ── Which test of "the top of a page" the document applies ──
+
+    [Fact]
+    public void ExactContentHeight_afterAHalfPointElement_isPlacedOnTheNextPage_inTheShortGeometry()
+    {
+        // The cursor is 0.5pt below the top of the content area: not a page top, so the
+        // second element is offered what is left, which is shorter than H.
+        const double top = 440.16;
+        var content = Content(top, false);
+        var renderer = Renderer(top, false);
+        renderer.Add(new Recording(0.5));
+        renderer.Add(new Recording(content.Height));
+
+        var pdf = Save(renderer);
+
+        Assert.Equal(2, PageCount(pdf));
+    }
+
+    [Fact]
+    public void ExactContentHeight_afterAZeroHeightElement_staysOnPageOne_inTheShortGeometry()
+    {
+        // A zero-height element leaves the cursor on the content area's Y, so this is still a
+        // page top even though an element was placed on the page.
+        const double top = 440.16;
+        var content = Content(top, false);
+        var renderer = Renderer(top, false);
+        renderer.Add(new Recording(0));
+        renderer.Add(new Recording(content.Height));
+
+        var pdf = Save(renderer);
+
+        Assert.Equal(1, PageCount(pdf));
+    }
+
     // ── {pages} agrees with the pages drawn ──
 
     [Theory]
