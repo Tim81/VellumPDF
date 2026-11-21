@@ -30,6 +30,13 @@ internal sealed class TableGridResolver
     public double[] ColWidths { get; private set; } = [];
     public int ColCount { get; private set; }
 
+    /// <summary>
+    /// The cells, as (row, cell) positions in authoring order, that are sized from their whole
+    /// text, control characters included, because the table could not hold their line breaks. Null
+    /// when every cell's breaks are honoured.
+    /// </summary>
+    public IReadOnlySet<(int Row, int Cell)>? OneLineCells { get; init; }
+
     public void Resolve(TableElement table, double availableWidth)
     {
         // The column count is the widest row, not merely the first (#480 section 1). Nothing stops
@@ -234,7 +241,7 @@ internal sealed class TableGridResolver
     /// Distributes <paramref name="available"/> across every column proportionally to its
     /// max-content width, floored at its own min-content (longest word) width (#468).
     /// </summary>
-    private static double[] AutoWidth(TableElement table, double available, int cols)
+    private double[] AutoWidth(TableElement table, double available, int cols)
     {
         var (minW, maxW) = ContentWidths(table, cols);
 
@@ -277,26 +284,39 @@ internal sealed class TableGridResolver
     /// fully-auto path and the residual distribution <see cref="ReconcileExplicitWidths"/> runs for
     /// the columns an explicit array leaves auto.
     /// </summary>
-    private static (double[] MinW, double[] MaxW) ContentWidths(TableElement table, int cols)
+    private (double[] MinW, double[] MaxW) ContentWidths(TableElement table, int cols)
     {
         var minW = new double[cols];
         var maxW = new double[cols];
 
         var style = table.DefaultCellStyle ?? TextStyle.Default;
 
-        foreach (var row in table.Rows)
+        for (var r = 0; r < table.Rows.Count; r++)
         {
             var col = 0;
-            foreach (var cell in row.Cells)
+            var cells = table.Rows[r].Cells;
+            for (var c = 0; c < cells.Count; c++)
             {
+                var cell = cells[c];
                 if (col >= cols) break;
                 var cellStyle = cell.Style ?? style;
                 if (cell.Content is null)
                     throw new ArgumentNullException("content", "A table cell has a null text and a column is sized automatically.");
-                var words = cell.Content.Split(' ');
-                var longest = words.Max(w => cellStyle.FontRef.MeasureString(w, cellStyle.FontSize));
-                var full = cellStyle.FontRef.MeasureString(cell.Content, cellStyle.FontSize)
-                              + cell.Padding.Horizontal;
+
+                // The widest word and the widest line of the lines the cell is measured in. A cell
+                // of one line, which is every cell that holds no line break, measures as it always has.
+                var lines = TableRenderer.CellLines(cell.Content, honourBreaks: OneLineCells?.Contains((r, c)) != true);
+                var longest = 0.0;
+                var widest = 0.0;
+                for (var l = 0; l < lines.Length; l++)
+                {
+                    var words = lines[l].Split(' ');
+                    var lineLongest = words.Max(w => cellStyle.FontRef.MeasureString(w, cellStyle.FontSize));
+                    var lineWidth = cellStyle.FontRef.MeasureString(lines[l], cellStyle.FontSize);
+                    longest = l == 0 ? lineLongest : Math.Max(longest, lineLongest);
+                    widest = l == 0 ? lineWidth : Math.Max(widest, lineWidth);
+                }
+                var full = widest + cell.Padding.Horizontal;
 
                 var share = cell.ColSpan;
                 for (var s = 0; s < share && col + s < cols; s++)

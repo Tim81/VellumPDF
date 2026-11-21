@@ -20,12 +20,32 @@ public sealed class Cell
     /// the cell then draws no text, and the save refuses it only where a column is sized
     /// automatically, as the constructor describes.
     /// Spaces are the only break points between words, and a word wider than the cell is broken
-    /// between characters. A line feed, carriage return or tab is not a break. In a standard-14
-    /// font each is written into the cell as it is; in an embedded font each is drawn as whatever
-    /// glyph the font's character map gives it, which is .notdef (glyph 0) when the map has no
-    /// entry. The save lists each such character as
-    /// <see cref="VellumPdf.Layout.LayoutDiagnosticCode.NotdefGlyph"/>, and
-    /// <see cref="Document.StrictDiagnostics"/> refuses it; see <see cref="TextStyle.FontRef"/>.
+    /// between characters.
+    /// <para><b>A carriage return and line feed pair, a lone carriage return and a lone line feed
+    /// each end a line</b>, as they do in a <see cref="Elements.Paragraph"/>. An empty line between
+    /// two of them, or after the last, is a blank line one leading tall. A column sized
+    /// automatically is as wide as the widest line, and no narrower than the widest word on any
+    /// line. Every other white-space control character, which is a tab, a form feed, a line
+    /// tabulation, a next-line character, U+2028 and U+2029, is drawn as one space, so it
+    /// reaches no font as a control character. The no-break spaces and the other space
+    /// separators, such as U+2003, are written as they are.</para>
+    /// <para>A control character that is not white space, such as U+0001, is written as it is: in a
+    /// standard-14 font as its WinAnsi code, and in an embedded font as whatever glyph the font's
+    /// character map gives it, which is .notdef (glyph 0) when the map has no entry. The save lists
+    /// each such character as <see cref="VellumPdf.Layout.LayoutDiagnosticCode.NotdefGlyph"/>, and
+    /// <see cref="Document.StrictDiagnostics"/> refuses it; see <see cref="TextStyle.FontRef"/>.</para>
+    /// <para>A cell has no tab stops, so a tab is one space. <b>A line break in a cell of a header
+    /// row, or of rows joined by a <see cref="RowSpan"/>, is drawn as a space when honouring it
+    /// would make those rows taller than a page,</b> because such rows are never cut between their
+    /// lines. The cell is then wrapped at spaces alone and sized from its whole text, and each
+    /// break in it is a space, and the save lists it as
+    /// <see cref="VellumPdf.Layout.LayoutDiagnosticCode.CellBreakDrawnAsSpace"/>, a warning that
+    /// <see cref="Document.StrictDiagnostics"/> saves. Every other cell keeps its breaks, and a
+    /// row of them that is taller than a page is cut between its lines. <b>Do not pass</b> a line
+    /// break in a header row or a span group that is that tall and expect the lines to be drawn:
+    /// move the text to a row that can be cut, or shorten it. A renderer you lay out without the
+    /// document, through a <see cref="LayoutContext"/> built with the public constructor, knows no
+    /// page and keeps every break.</para>
     /// </remarks>
     /// <inheritdoc cref="Heading.Text" path="/exception[@cref='T:System.ArgumentException']"/>
     public string Content { get; }

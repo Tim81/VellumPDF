@@ -30,6 +30,11 @@ namespace VellumPdf.Layout.Elements.Table;
 /// page, so the cells of a cut row appear on each page it spans: a cell that holds a line on the
 /// page is a <c>TD</c>, or a <c>TH</c> in a header row, and a cell with no line on the page is an
 /// empty <c>TD</c>, also in a header row.</para>
+/// <para>A carriage return or line feed in a cell ends a line, so it makes the row taller. A
+/// header row, or rows joined by a <see cref="Cell.RowSpan"/>, whose breaks would make them taller
+/// than a page are never cut, so the cells of them that hold a break are wrapped at spaces alone
+/// with each break drawn as a space, and the save lists each as
+/// <see cref="LayoutDiagnosticCode.CellBreakDrawnAsSpace"/>; see <see cref="Cell.Content"/>.</para>
 /// <para><b>These are refused, and never cut.</b> <see cref="Document.Save(System.IO.Stream)"/>
 /// throws <see cref="InvalidOperationException"/> whose message starts with the standard
 /// too-tall text and ends with a sentence naming the rows, for: header rows that together do not

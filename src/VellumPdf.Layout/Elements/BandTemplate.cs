@@ -1,6 +1,8 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using VellumPdf.Layout.Core;
+
 namespace VellumPdf.Layout.Elements;
 
 /// <summary>
@@ -212,7 +214,14 @@ internal sealed class BandText
             var take = Math.Min(runLength - _offset, count - _produced);
 
             if (kind < 0)
+            {
                 template.Source.CopyTo(template.Starts[_segment] + _offset, _buffer, _produced, take);
+
+                // A band draws one line, so a tab, a line break or a form feed in the template is a
+                // space: left as written it would reach the font as a control character.
+                for (var i = _produced; i < _produced + take; i++)
+                    if (LayoutText.IsControlSpace(_buffer[i])) _buffer[i] = ' ';
+            }
             else
                 _values[kind].CopyTo(_offset, _buffer, _produced, take);
 

@@ -100,4 +100,5 @@ VellumPdf.Layout.Elements.Preformatted.TabWidth.get -> int
 VellumPdf.Layout.Elements.Preformatted.TabWidth.init -> void
 VellumPdf.Layout.Elements.Preformatted.Text.get -> string!
 VellumPdf.Layout.LayoutDiagnosticCode.PreformattedLineWrapped = 104 -> VellumPdf.Layout.LayoutDiagnosticCode
+VellumPdf.Layout.LayoutDiagnosticCode.CellBreakDrawnAsSpace = 301 -> VellumPdf.Layout.LayoutDiagnosticCode
 VellumPdf.Layout.LayoutElementKind.Preformatted = 11 -> VellumPdf.Layout.LayoutElementKind

@@ -18,7 +18,10 @@ public sealed class RunningBand
 {
     /// <summary>Text template — may contain {page} and/or {pages}.</summary>
     /// <remarks>
-    /// Not checked when it is set: the constructor stores a null template, and the save throws
+    /// A band is one line: a tab, a line break, a form feed or any other white-space control
+    /// character in the template is drawn as one space each, and is measured as one, so no control
+    /// character reaches the font from it.
+    /// <para>Not checked when it is set: the constructor stores a null template, and the save throws
     /// <see cref="ArgumentNullException"/> where the band is first drawn. A template that does not
     /// fit the content box is truncated, and refused only in strict mode;
     /// <see cref="VellumPdf.Layout.Rendering.DocumentRenderer.BandTruncations"/> says when it
@@ -28,17 +31,18 @@ public sealed class RunningBand
     /// <see cref="Document.StrictDiagnostics"/> set, the save throws
     /// <see cref="InvalidOperationException"/> from the save, not from this property, and 3.0 will
     /// refuse it always. Pass an empty string for a band that draws no text, never
-    /// <see langword="null"/>.
+    /// <see langword="null"/>.</para>
     /// <para>The cut bounds the advance width, <b>not</b> the ink. Side bearings and italic
     /// overhang can still paint a little past it. Nothing in this package sets a clip path.</para>
     /// <para><b>Attention</b>: truncation does nothing for text whose glyphs measure zero, because
     /// each character is measured at the advance of the glyph the font gives it. Every glyph of
     /// <see cref="VellumPdf.Fonts.Standard14.Symbol"/> and
     /// <see cref="VellumPdf.Fonts.Standard14.ZapfDingbats"/> measures zero, and so do the control
-    /// characters U+0000 to U+001F in every standard-14 font. Any length of such text fits and is
+    /// characters U+0000 to U+001F in every standard-14 font, except U+0009 to U+000D, which the
+    /// band draws as spaces. Any length of such text fits and is
     /// drawn in full. Courier measures U+007F at 600 units where Helvetica measures it at zero. In
-    /// an embedded font the control characters take the font's own widths: Calibri measures U+0000
-    /// and U+000D at zero, and Arial measures every C0 control at 750 units.</para>
+    /// an embedded font the other control characters take the font's own widths: Calibri measures
+    /// U+0000 at zero, and Arial measures every C0 control at 750 units.</para>
     /// <para>You get one report per band per render, naming the page that lost the most rather
     /// than the first page cut. A <c>{page}</c> or <c>{pages}</c> token lengthens the resolved
     /// text as the number gains digits, so the worst page is the one that tells you how much

@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`LayoutDiagnosticCode.CellBreakDrawnAsSpace` (301).** A table cell of a header row, or of rows
+  joined by a `RowSpan`, holds a line break that was drawn as a space because honouring it would
+  have made those rows taller than a page. A warning: no text is lost, and `StrictDiagnostics`
+  saves. `Count` is the number of times the cell was drawn, so a repeated header row counts once
+  per page. See the entry for #611 under Fixed.
+
 - **`Preformatted`, a block that keeps every space and tab (#591).** `Document.Add(Preformatted)`
   draws text whose spacing is its meaning: command blocks, configuration, ASCII tables. The default
   style is Courier at 10 pt. `Document.SetDefaultFont` does not apply.
@@ -282,8 +288,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     a null `PageBreak` throws `ArgumentNullException` from `Document.Add`.
   - A document that uses no break saves byte for byte as before. A form feed (U+000C) in text does
     not start a page: a paragraph, a heading and a list item draw it as a space, and a table cell
-    and a running band write it to the font as it is, as before. A custom renderer that returns a
-    zero-height `Partial` still forces a page.
+    and a running band wrote it to the font as it was until #611 made them draw it as a space too.
+    A custom renderer that returns a zero-height `Partial` still forces a page.
 
 - **Tab stops with leaders (#298).** `Paragraph.TabStops` takes a list of `TabStop` values, and a
   tab character in the text then places the text after it at the first stop to the right of the end
@@ -425,6 +431,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **A tab, a line break or a form feed in a table cell or a running band no longer reaches glyph
+  lookup (#611, #613).** A cell split its text on spaces only, so a tab was written as glyph 0
+  in an embedded font (the ToUnicode map held `<0000> <0009>`, and veraPDF failed PDF/A-2u clause
+  6.2.11.8) and as a raw 0x09 byte in a Standard 14 font, and a line feed was one line holding glyph
+  0, or a string-escaped `\n`. A cell now reads its text as a paragraph does. A carriage return and
+  line feed pair, a lone carriage return and a lone line feed each end a line, and an empty line
+  between two of them, or after the last, is a blank line. Every other white-space control
+  character (a tab, a form feed, a line tabulation, a next-line character, U+2028 and U+2029) is
+  drawn as one space. A column sized automatically is as wide as the widest line. The no-break
+  spaces and the other space separators, such as U+2003, are written as before.
+  A running band draws the same characters as spaces, so the form feed of #613 item 34 is a space
+  there too, and a band's text is measured and cut as drawn.
+  **Deliberate output changes:** `A<TAB>B` in a cell is `(A B)` in Standard 14 and glyph 3 between
+  the two letters in an embedded font, with no `<0000>` entry in the ToUnicode map. `line1<LF>line2`
+  is two show strings, the second one leading lower, in a row 14.4 + 14.4 + 8 pt tall at 12 pt,
+  where it was one. A cell with none of these characters, in a table with none of them, saves to
+  the same bytes as before. A table whose cell holds a line break gets taller rows and different
+  automatic column widths, and a paragraph is unchanged.
+  - **A header row, or rows joined by a `RowSpan`, whose breaks would make them taller than a page
+    keep the one-line layout.** Those rows are never cut between their lines, so honouring the
+    breaks would turn a table that saved into a too-tall refusal. A cell of them that holds a
+    carriage return or line feed is wrapped at spaces alone and sized from its whole text, as
+    2.3.3 did, with each break drawn as a space, and the save lists the cell as the new
+    `LayoutDiagnosticCode.CellBreakDrawnAsSpace` (301, a warning, so `StrictDiagnostics` still
+    saves). A header row of 46 two-letter lines, 560pt tall, keeps its lines on a 580pt page
+    beside a 20pt row; one of 47 does not. Every other row keeps its breaks and is cut between
+    its lines when it is taller than a page. When a header or a group is still too tall, the
+    header's cells go the same way, and then every cell that holds a tab or a form feed, so a table
+    that 2.3.3 saved keeps its 2.3.3 row heights and is not refused. A renderer laid out through a
+    context built with the public constructor knows no page and keeps every break.
 - **`/FontBBox` of an embedded font is the font's own bounding box (#596).** The descriptor of every
   embedded TrueType and OpenType font held `[0, hhea descender, 1000 * 1000 / unitsPerEm, hhea
   ascender]`: a zero for xMin and a constant for xMax, so DejaVu Sans, Liberation Sans and Liberation

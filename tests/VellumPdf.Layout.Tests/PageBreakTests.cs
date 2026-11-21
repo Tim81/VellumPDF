@@ -600,7 +600,7 @@ public sealed class PageBreakTests : IDisposable
     // ── Text that is not a break ─────────────────────────────────────────────
 
     [Fact]
-    public void AFormFeedInText_neverStartsAPage_andEachElementTreatsItAsItAlwaysDid()
+    public void AFormFeedInText_neverStartsAPage_andEveryElementDrawsItAsASpace()
     {
         var table = new TableElement();
         table.AddRow().AddCell("cell\fx");
@@ -617,13 +617,13 @@ public sealed class PageBreakTests : IDisposable
         var pages = Pages(Save(doc));
 
         Assert.Single(pages);
-        // A paragraph, a heading and a list item draw the character as a space; a table cell and a
-        // running band hand the raw 0x0C character to the font.
+        // A paragraph, a heading, a list item, a table cell and a running band all draw the
+        // character as a space.
         Assert.Contains("para z", pages[0].Texts);
         Assert.Contains("head w", pages[0].Texts);
         Assert.Contains("item y", pages[0].Texts);
-        Assert.Contains("cell\fx", pages[0].Texts);
-        Assert.Contains("H\fX", pages[0].Texts);
+        Assert.Contains("cell x", pages[0].Texts);
+        Assert.Contains("H X", pages[0].Texts);
     }
 
     // ── A document of breaks alone ───────────────────────────────────────────

@@ -52,6 +52,13 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
     private RowSlice? _headSlice;
     private RowSlice? _tailSlice;
 
+    // The cells, as (row, cell) in authoring order, that this table lays out unbroken: wrapped at
+    // spaces alone and measured with their control characters, and drawn with each of those as a
+    // space, because honouring their breaks would make rows that cannot be cut taller than a page.
+    // Layout writes it and gives it to the renderers that draw the pages; null when every break is
+    // kept.
+    private HashSet<(int Row, int Cell)>? _oneLine;
+
     /// <summary>The lines each cell of one row wraps into, at one table width.</summary>
     private sealed class RowLines(int row, double width, List<string>?[] cells)
     {
@@ -132,6 +139,12 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
     /// cut keeps cutting under such a context only at the width it was cut at. At another width
     /// the saved lines are dropped and the row is laid out again from its first line, which
     /// under a context without the box is not cut.</para>
+    /// <para>A carriage return or line feed in a cell ends a line. When honouring the breaks of a
+    /// header row or of rows joined by a <see cref="Cell.RowSpan"/> would make those rows taller
+    /// than a page, which is known only under a context the document built, the cells that hold
+    /// them are wrapped at spaces alone and drawn with each break a space, and are reported as
+    /// <see cref="LayoutDiagnosticCode.CellBreakDrawnAsSpace"/>. A context built with the public
+    /// constructor of <see cref="LayoutContext"/> keeps every break.</para>
     /// <para>These are refused with the too-tall exception, extended with a sentence naming the
     /// rows or the cell, and are never cut: the repeated header rows when they do not fit a page;
     /// a row that declares a <see cref="Cell.RowSpan"/> above one, or lies under one; a row with a
@@ -187,10 +200,16 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
             && _colWidths.Length > 0
             && _rowHeights.Length == rows.Count;
 
+        // The boxes a fresh page offers, when the caller says so. A row is cut between its lines
+        // only when neither box would hold it whole, so a row that fits one of them still moves to
+        // the next page intact.
+        var fresh = FreshBoxes(context);
+
         if (!resumed)
         {
             _resumeLines = null;
             _resumeFrom = null;
+            _oneLine = null;
 
             // Before the grid resolves: a ColSpan of zero gives a column count of zero, so Resolve
             // returns no widths and Layout gives up below, and the caller was told the table was too
@@ -204,40 +223,22 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
 
             LayoutValidation.ValidateLineWidthIsFinite(_table.BorderWidth, "A table");
 
-            var grid = new TableGridResolver();
-            grid.Resolve(_table, area.Width);
-            _colWidths = grid.ColWidths;
+            ResolveGrid(area.Width, style);
 
-            // #481's third refusal, and the one route to it that no span check covers: a table with no
-            // rows, or rows holding no cells, resolves to no columns without any bad ColSpan, and
-            // reporting Nothing here made DocumentRenderer blame the page size.
-            LayoutValidation.ValidateColumnCount(_colWidths.Length);
-
-            // Compute row heights
-            _rowHeights = new double[rows.Count];
-
-            for (var r = 0; r < rows.Count; r++)
+            // A line break makes a cell taller than a layout that draws it on one line, and a tab
+            // is one space wide where the raw character was measured at its own width. Rows that
+            // cannot be cut between their lines must not become too tall for a page because of
+            // either, so the cells that would make them so are laid out unbroken, and the grid and
+            // the heights are taken again. Each pass adds cells, so this ends; most tables, which
+            // hold no control white space, take no second pass.
+            if (fresh is not null && AnyControlSpace(rows))
             {
-                var row = rows[r];
-                var maxH = 0.0;
-                var col = 0;
-                var cellIndex = -1;
-                foreach (var cell in row.Cells)
+                while (CellsToReadAsOneLine(fresh, style) is { } more)
                 {
-                    cellIndex++;
-                    if (col >= _colWidths.Length) break;
-                    var cs = cell.Style ?? style;
-                    // The authoring index, not col: the two diverge as soon as an earlier cell spans
-                    // more than one column, and naming the column points at a cell nobody wrote.
-                    LayoutValidation.ValidateFontSize(cs, $"Table row {r}, cell {cellIndex}");
-                    var colW = ColSpanWidth(col, cell.ColSpan);
-                    var innerW = colW - cell.Padding.Horizontal;
-                    var lines = WordWrapCount(cell.Content, cs, Math.Max(1, innerW));
-                    var cellH = lines * cs.EffectiveLeading + cell.Padding.Vertical;
-                    maxH = Math.Max(maxH, cellH);
-                    col += cell.ColSpan;
+                    _oneLine ??= [];
+                    _oneLine.UnionWith(more);
+                    ResolveGrid(area.Width, style);
                 }
-                _rowHeights[r] = maxH;
             }
         }
 
@@ -254,10 +255,6 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
         // that continues into the next row.
         var rowspanBlockedAfter = BuildRowspanBlockedSet(rows, lastHeaderRow);
 
-        // The boxes a fresh page offers, when the caller says so. A row is cut between its lines
-        // only when neither box would hold it whole, so a row that fits one of them still moves to
-        // the next page intact.
-        var fresh = FreshBoxes(context);
         var refusal = new RefusalContext(fresh, headerRowIndices, headerHeight, lastHeaderRow);
 
         var y = area.Y;
@@ -341,17 +338,175 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
             _occupied = _occupied,
             _headSlice = head,
             _tailSlice = tail,
+            _oneLine = _oneLine,
         };
         var overflow = tail is null
-            ? new TableRenderer(_table, lastFit + 1) { _colWidths = _colWidths, _rowHeights = _rowHeights }
+            ? new TableRenderer(_table, lastFit + 1) { _colWidths = _colWidths, _rowHeights = _rowHeights, _oneLine = _oneLine }
             : new TableRenderer(_table, tail.Row)
             {
                 _colWidths = _colWidths,
                 _rowHeights = _rowHeights,
                 _resumeLines = tail.Source,
                 _resumeFrom = tail.Next(),
+                _oneLine = _oneLine,
             };
         return LayoutResult.Partial(_occupied, split, overflow);
+    }
+
+    /// <summary>
+    /// Resolves the column widths and every row's height, reading the breaks of the cells in
+    /// <c>_oneLine</c> unbroken. The checks run in the order the exceptions are documented in.
+    /// </summary>
+    private void ResolveGrid(double areaWidth, TextStyle style)
+    {
+        var rows = _table.Rows;
+        var grid = new TableGridResolver { OneLineCells = _oneLine };
+        grid.Resolve(_table, areaWidth);
+        _colWidths = grid.ColWidths;
+
+        // #481's third refusal, and the one route to it that no span check covers: a table with no
+        // rows, or rows holding no cells, resolves to no columns without any bad ColSpan, and
+        // reporting Nothing here made DocumentRenderer blame the page size.
+        LayoutValidation.ValidateColumnCount(_colWidths.Length);
+
+        // Compute row heights
+        _rowHeights = new double[rows.Count];
+
+        for (var r = 0; r < rows.Count; r++)
+        {
+            var row = rows[r];
+            var maxH = 0.0;
+            var col = 0;
+            var cellIndex = -1;
+            foreach (var cell in row.Cells)
+            {
+                cellIndex++;
+                if (col >= _colWidths.Length) break;
+                var cs = cell.Style ?? style;
+                // The authoring index, not col: the two diverge as soon as an earlier cell spans
+                // more than one column, and naming the column points at a cell nobody wrote.
+                LayoutValidation.ValidateFontSize(cs, $"Table row {r}, cell {cellIndex}");
+                var colW = ColSpanWidth(col, cell.ColSpan);
+                var innerW = colW - cell.Padding.Horizontal;
+                var lines = WordWrapCount(cell.Content, cs, Math.Max(1, innerW), HonoursBreaks(r, cellIndex));
+                var cellH = lines * cs.EffectiveLeading + cell.Padding.Vertical;
+                maxH = Math.Max(maxH, cellH);
+                col += cell.ColSpan;
+            }
+            _rowHeights[r] = maxH;
+        }
+    }
+
+    /// <summary>
+    /// True when the cell's line breaks are kept; false when the table lays the cell out unbroken.
+    /// </summary>
+    private bool HonoursBreaks(int row, int cell) => _oneLine?.Contains((row, cell)) != true;
+
+    private static bool AnyControlSpace(IReadOnlyList<Row> rows)
+    {
+        foreach (var row in rows)
+            foreach (var cell in row.Cells)
+                if (LayoutText.HasControlSpace(cell.Content)) return true;
+        return false;
+    }
+
+    // ── Cells that read their breaks as spaces ──
+
+    /// <summary>
+    /// The cells that hold a line break and sit in rows that cannot be cut between their lines,
+    /// when those rows do not fit a fresh page with the breaks honoured, or null when there are
+    /// none that are not already laid out unbroken. The rows are the repeated header rows and the
+    /// rows joined by a <see cref="Cell.RowSpan"/>; the document would refuse them as too tall.
+    /// A group of rows is relieved first by its own cells. When it holds none left, the header
+    /// rows' cells go next, because they take room from every group under them. When those hold
+    /// none either, every cell that holds a tab or another control white-space character is laid out
+    /// unbroken too, because the width it takes from a column then no longer differs from a plain
+    /// text's; the rows then measure as a table with no line break measures them.
+    /// </summary>
+    private HashSet<(int Row, int Cell)>? CellsToReadAsOneLine(LayoutBox[] fresh, TextStyle style)
+    {
+        var rows = _table.Rows;
+        var header = FindHeaderRowIndices(rows);
+        var lastHeaderRow = header.Count > 0 ? header[^1] + 1 : 0;
+        var headerHeight = 0.0;
+        foreach (var i in header) headerHeight += _rowHeights[i];
+
+        HashSet<(int Row, int Cell)>? found = null;
+
+        // True when a cell was added that the table did not already lay out unbroken. A cell
+        // qualifies when it holds a line break, or, with anyControlSpace, any control white space,
+        // which changes a column's width as well.
+        bool Collect(int first, int last, bool anyControlSpace = false)
+        {
+            var added = false;
+            for (var r = first; r <= last && r < rows.Count; r++)
+            {
+                var cells = rows[r].Cells;
+                for (var c = 0; c < cells.Count; c++)
+                {
+                    var text = cells[c].Content;
+                    if (!HonoursBreaks(r, c)) continue;
+                    if (!(anyControlSpace ? LayoutText.HasControlSpace(text) : LayoutText.HasLineBreak(text))) continue;
+                    added |= (found ??= []).Add((r, c));
+                }
+            }
+            return added;
+        }
+
+        // The header rows are too tall when they do not fit a page, and when they leave a row below
+        // them no room for one line of one of its cells.
+        if (header.Count > 0 && (!FitsFresh(fresh, 0, headerHeight) || LeavesNoRoomForALine(fresh, headerHeight, lastHeaderRow, style))
+            && !Collect(0, header[^1]))
+            Collect(0, rows.Count - 1, anyControlSpace: true);
+
+        foreach (var (first, last) in SpanGroups(lastHeaderRow))
+        {
+            var height = 0.0;
+            for (var i = first; i <= last; i++) height += _rowHeights[i];
+            if (FitsFresh(fresh, headerHeight, height)) continue;
+            if (!Collect(first, last) && !Collect(0, header.Count > 0 ? header[^1] : -1))
+                Collect(0, rows.Count - 1, anyControlSpace: true);
+        }
+
+        return found;
+    }
+
+    /// <summary>
+    /// True when a row from <paramref name="firstDataRow"/> on has a cell that cannot hold one line
+    /// under the header rows.
+    /// </summary>
+    private bool LeavesNoRoomForALine(LayoutBox[] fresh, double headerHeight, int firstDataRow, TextStyle style)
+    {
+        for (var r = firstDataRow; r < _table.Rows.Count; r++)
+            if (CellBeyondProgress(r, fresh, headerHeight, style) is not null) return true;
+        return false;
+    }
+
+    /// <summary>
+    /// The runs of rows held together by <see cref="Cell.RowSpan"/> declarations, from the first
+    /// data row on, merged where one reaches into another. The same runs as
+    /// <see cref="SpanGroupOf"/> finds one at a time, found in one pass over the rows.
+    /// </summary>
+    private List<(int First, int Last)> SpanGroups(int firstDataRow)
+    {
+        var rows = _table.Rows;
+        var groups = new List<(int First, int Last)>();
+        for (var q = 0; q < rows.Count; q++)
+        {
+            var reach = 1;
+            foreach (var cell in rows[q].Cells) reach = Math.Max(reach, cell.RowSpan);
+            if (reach <= 1) continue;
+
+            var end = (int)Math.Min((long)q + reach - 1, rows.Count - 1);
+            var start = Math.Max(q, firstDataRow);
+            if (end < start) continue;
+
+            if (groups.Count > 0 && start <= groups[^1].Last)
+                groups[^1] = (groups[^1].First, Math.Max(groups[^1].Last, end));
+            else
+                groups.Add((start, end));
+        }
+        return groups;
     }
 
     // ── Cutting a row between its lines ──
@@ -447,7 +602,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
             var cell = row.Cells[c];
             var cs = cell.Style ?? style;
             var innerW = ColSpanWidth(col, cell.ColSpan) - cell.Padding.Horizontal;
-            cells[c] = WordWrapLines(cell.Content, cs, Math.Max(1, innerW));
+            cells[c] = WordWrapLines(cell.Content, cs, Math.Max(1, innerW), HonoursBreaks(rowIndex, c));
             col += cell.ColSpan;
         }
         return new RowLines(rowIndex, width, cells);
@@ -873,8 +1028,22 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
         }
         else
         {
-            wrappedLines = WordWrapLines(cell.Content, cs, Math.Max(1, innerBox.Width));
+            wrappedLines = WordWrapLines(cell.Content, cs, Math.Max(1, innerBox.Width), HonoursBreaks(rowIndex, cellIndex));
             lineCount = wrappedLines.Count;
+        }
+
+        // A cell whose breaks the table read as spaces is reported where it is first drawn: once per
+        // page for a repeated header row, and from its first slice for a cut row.
+        if (!HonoursBreaks(rowIndex, cellIndex) && LayoutText.HasLineBreak(cell.Content)
+            && (slice is null || slice.First[cellIndex] == 0))
+        {
+            ctx.Diagnostics?.Report(
+                LayoutDiagnosticCode.CellBreakDrawnAsSpace,
+                ((long)rowIndex << 32) | (uint)cellIndex,
+                static subject => string.Create(
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    $"Table row {subject >> 32}, cell {subject & 0xFFFFFFFF} holds a line break that is drawn as a space, because honouring it would make the repeated header rows or rows joined by a RowSpan taller than a page."),
+                perElement: true);
         }
 
         // A cell with no line on this page keeps its rectangle and writes no text, and is tagged as
@@ -1032,8 +1201,8 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
     /// let the hard-break below (#473) reach both call sites from a single change instead of two
     /// that would otherwise have to be kept in step by hand.
     /// </summary>
-    private static int WordWrapCount(string text, TextStyle style, double maxWidth) =>
-        WordWrapLines(text, style, maxWidth).Count;
+    private static int WordWrapCount(string text, TextStyle style, double maxWidth, bool honourBreaks) =>
+        WordWrapLines(text, style, maxWidth, honourBreaks).Count;
 
     /// <summary>
     /// Word-wraps text into lines for drawing. A word wider than <paramref name="maxWidth"/> on
@@ -1058,7 +1227,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
     /// it in the source. <c>ParagraphRenderer</c> already guards on <c>lineFrags.Count == 0</c> for
     /// the same reason, which is why it never had this.
     /// </summary>
-    private static List<string> WordWrapLines(string text, TextStyle style, double maxWidth)
+    private static List<string> WrapLine(string text, TextStyle style, double maxWidth)
     {
         var result = new List<string>();
         if (string.IsNullOrEmpty(text)) { result.Add(string.Empty); return result; }
@@ -1107,6 +1276,51 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
         if (result.Count == 0)
             result.Add(string.Empty);
         return result;
+    }
+
+    /// <summary>
+    /// The lines a cell's text is drawn in: each hard line of the text, wrapped by
+    /// <see cref="WrapLine"/>. A hard line ends at a carriage return and line feed pair, a lone
+    /// carriage return or a lone line feed; an empty hard line is a blank line, as in a paragraph.
+    /// Any other tab, form feed or similar control white space is a space. A null text, and text
+    /// with nothing in it, is one empty line. With <paramref name="honourBreaks"/> false the text is
+    /// wrapped at spaces alone, measuring each control white-space character at its own width, and
+    /// the lines are drawn with each of them as a space.
+    /// </summary>
+    private static List<string> WordWrapLines(string text, TextStyle style, double maxWidth, bool honourBreaks)
+    {
+        if (string.IsNullOrEmpty(text)) return WrapLine(string.Empty, style, maxWidth);
+
+        var hardLines = CellLines(text, honourBreaks);
+        if (!honourBreaks)
+        {
+            var wrapped = WrapLine(hardLines[0], style, maxWidth);
+            for (var i = 0; i < wrapped.Count; i++)
+                wrapped[i] = LayoutText.ControlSpacesToSpaces(wrapped[i]);
+            return wrapped;
+        }
+
+        if (hardLines.Length == 1) return WrapLine(hardLines[0], style, maxWidth);
+
+        var result = new List<string>();
+        foreach (var line in hardLines)
+            result.AddRange(WrapLine(line, style, maxWidth));
+        return result;
+    }
+
+    /// <summary>
+    /// The lines a cell's text is measured in. When <paramref name="honourBreaks"/> is true, the
+    /// hard lines of the text with their control white space turned into spaces. Otherwise the
+    /// text itself as the one line it is measured as, control characters and all.
+    /// </summary>
+    internal static string[] CellLines(string text, bool honourBreaks)
+    {
+        if (!honourBreaks) return [text];
+
+        var lines = LayoutText.SplitHardLines(text);
+        for (var i = 0; i < lines.Length; i++)
+            lines[i] = LayoutText.ControlSpacesToSpaces(lines[i]);
+        return lines;
     }
 
     /// <summary>Hard-breaks a word wider than <paramref name="maxWidth"/> at character granularity.</summary>

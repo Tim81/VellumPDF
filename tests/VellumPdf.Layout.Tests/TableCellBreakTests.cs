@@ -1,0 +1,848 @@
+// Copyright © Timothy van der Ham (@Tim81)
+// SPDX-License-Identifier: Apache-2.0
+
+using System.Globalization;
+using System.Text;
+using System.Text.RegularExpressions;
+using VellumPdf.Document;
+using VellumPdf.Fonts;
+using VellumPdf.Layout.Core;
+using VellumPdf.Layout.Elements;
+using VellumPdf.Layout.Elements.Table;
+using VellumPdf.Layout.Rendering.Table;
+using VellumPdf.TestSupport;
+
+namespace VellumPdf.Layout.Tests;
+
+/// <summary>
+/// A tab, a line break or a form feed in a table cell or a running band no longer reaches glyph
+/// lookup (#611, #613 item 34). A cell breaks its lines as a paragraph does, and every other
+/// control white-space character is a space.
+///
+/// The fixtures with a short page are 300x400pt with 10pt margins and two 100pt columns, in
+/// Helvetica 12pt: a line is 14.4pt and the default padding adds 8pt, so a cell of n lines is
+/// 14.4 n + 8 pt tall. The wide fixtures are 2000x600pt in Helvetica 10pt, where a line is 12pt, a
+/// cell of n lines is 12 n + 8 pt tall, and a page holds 580pt.
+/// </summary>
+public sealed class TableCellBreakTests : IDisposable
+{
+    private static readonly string DejaVu = Path.Combine(AppContext.BaseDirectory, "Fonts", "DejaVuSans.ttf");
+
+    private readonly string _tempDir;
+
+    public TableCellBreakTests()
+    {
+        _tempDir = Path.Combine(Path.GetTempPath(), $"vellumcellbreak_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(_tempDir);
+    }
+
+    public void Dispose()
+    {
+        try { Directory.Delete(_tempDir, recursive: true); }
+        catch (IOException) { /* best-effort cleanup */ }
+        catch (UnauthorizedAccessException) { /* best-effort cleanup */ }
+    }
+
+    // ── Fixtures ─────────────────────────────────────────────────────────────
+
+    private static TextStyle Helvetica(double size) => new()
+    {
+        FontRef = new FontReference(Standard14.Helvetica),
+        FontSize = size,
+    };
+
+    private static Document ShortPage() => new()
+    {
+        PageSize = new PdfRectangle(0, 0, 300, 400),
+        Margins = new EdgeInsets(10),
+    };
+
+    private static Document WidePage() => new()
+    {
+        PageSize = new PdfRectangle(0, 0, 2000, 600),
+        Margins = new EdgeInsets(10),
+    };
+
+    private static TableElement Table12() =>
+        new TableElement { DefaultCellStyle = Helvetica(12) }.SetColumnWidths(100, 100);
+
+    private static TableElement Wide10(params double[] widths) =>
+        new TableElement { DefaultCellStyle = Helvetica(10) }.SetColumnWidths(widths);
+
+    /// <summary>n two-letter words, joined by <paramref name="separator"/>.</summary>
+    private static string Words(int n, string separator = "\n") =>
+        string.Join(separator, Enumerable.Repeat("ab", n));
+
+    private static byte[] Save(Document doc)
+    {
+        using var ms = new MemoryStream();
+        doc.Save(ms);
+        return ms.ToArray();
+    }
+
+    private static string Content(byte[] pdf) => PdfTestUtil.DecompressAllFlatStreams(pdf);
+
+    private static int PageCount(byte[] pdf) =>
+        Regex.Matches(Encoding.Latin1.GetString(pdf), @"/Type\s*/Page\b").Count;
+
+    private static readonly Regex Rect = new(
+        @"(?<r>\S+ \S+ \S+ \S+) re\s+(?<op>[fS])\b", RegexOptions.CultureInvariant);
+
+    /// <summary>Every cell border a page paints, as "x y w h".</summary>
+    private static string[] Borders(string content) =>
+        [.. Rect.Matches(content).Where(m => m.Groups["op"].Value == "S").Select(m => m.Groups["r"].Value)];
+
+    private static double[] Heights(string content) =>
+        [.. Borders(content).Select(b => double.Parse(b.Split(' ')[3], CultureInfo.InvariantCulture))];
+
+    private static double[] Widths(string content) =>
+        [.. Borders(content).Select(b => double.Parse(b.Split(' ')[2], CultureInfo.InvariantCulture))];
+
+    private static List<ContentStreamReadback.TextPlacement> Placements(string content) =>
+        [.. ContentStreamReadback.TextPlacements(content).Where(p => p.Text.Length > 0)];
+
+    private static string[] Texts(string content) => [.. Placements(content).Select(p => p.Text)];
+
+    private static List<string> HexShows(string content) =>
+        [.. Regex.Matches(content, @"(?m)^<([0-9A-Fa-f]*)> Tj$").Select(m => m.Groups[1].Value.ToLowerInvariant())];
+
+    // ── Standard 14: no control byte is written ──────────────────────────────
+
+    /// <summary>
+    /// A tab is one space, so the cell draws "A B" and not a string with a raw 0x09 in it. The row
+    /// is one line tall.
+    /// </summary>
+    [Fact]
+    public void Standard14_aTabIsOneSpace()
+    {
+        using var doc = ShortPage();
+        var t = Table12();
+        t.AddRow().AddCell("A\tB").AddCell("x");
+        doc.Add(t);
+
+        var content = Content(Save(doc));
+
+        Assert.Equal(["A B", "x"], Texts(content));
+        Assert.Equal([22.4, 22.4], Heights(content).Select(h => Math.Round(h, 4)));
+        Assert.DoesNotContain('\t', content);
+    }
+
+    /// <summary>
+    /// A line feed breaks the line: two show strings, the second baseline one leading (14.4pt)
+    /// lower, and a row of 2 x 14.4 + 8 = 36.8pt. No string holds the 0x0A byte or its escape.
+    /// </summary>
+    [Fact]
+    public void Standard14_aLineFeedBreaksTheLine()
+    {
+        using var doc = ShortPage();
+        var t = Table12();
+        t.AddRow().AddCell("line1\nline2").AddCell("x");
+        doc.Add(t);
+
+        var content = Content(Save(doc));
+        var placements = Placements(content);
+
+        Assert.Equal(["line1", "line2", "x"], placements.Select(p => p.Text));
+        Assert.Equal(14.4, placements[0].Y - placements[1].Y, 4);
+        Assert.Equal(placements[0].X, placements[1].X);
+        Assert.Equal([36.8, 36.8], Heights(content).Select(h => Math.Round(h, 4)));
+        AssertNoControlCharacter(placements);
+    }
+
+    /// <summary>A carriage return and line feed pair is one break, and a lone carriage return is one.</summary>
+    [Theory]
+    [InlineData("cr1\r\ncr2")]
+    [InlineData("cr1\rcr2")]
+    [InlineData("cr1\ncr2")]
+    public void Standard14_everyLineBreakFormIsOneBreak(string text)
+    {
+        using var doc = ShortPage();
+        var t = Table12();
+        t.AddRow().AddCell(text).AddCell("x");
+        doc.Add(t);
+
+        var content = Content(Save(doc));
+
+        Assert.Equal(["cr1", "cr2", "x"], Texts(content));
+        Assert.Equal(36.8, Heights(content)[0], 4);
+        AssertNoControlCharacter(Placements(content));
+    }
+
+    /// <summary>
+    /// A trailing break leaves a blank last line, and two breaks in a row a blank line between,
+    /// as in a paragraph: "a\n" is two lines tall and "a\n\nb" three.
+    /// </summary>
+    [Theory]
+    [InlineData("a\n", 36.8, new[] { "a" })]
+    [InlineData("a\n\nb", 51.2, new[] { "a", "b" })]
+    [InlineData("\nb", 36.8, new[] { "b" })]
+    public void Standard14_anEmptyHardLineIsABlankLine(string text, double height, string[] drawn)
+    {
+        using var doc = ShortPage();
+        var t = Table12();
+        t.AddRow().AddCell(text).AddCell("x");
+        doc.Add(t);
+
+        var content = Content(Save(doc));
+
+        Assert.Equal([.. drawn, "x"], Texts(content));
+        Assert.Equal(height, Heights(content)[0], 4);
+    }
+
+    /// <summary>
+    /// A form feed, a line tabulation and a next-line character are spaces: neither a break nor a
+    /// raw control byte. The text between them stays one word run, so the cell is one line.
+    /// </summary>
+    [Fact]
+    public void Standard14_aFormFeedIsOneSpace()
+    {
+        using var doc = ShortPage();
+        var t = Table12();
+        t.AddRow().AddCell("cell\fx").AddCell("a\vb\u0085c\u2028d\u2029e");
+        doc.Add(t);
+
+        var content = Content(Save(doc));
+
+        Assert.Equal(["cell x", "a b c d e"], Texts(content));
+        Assert.Equal(22.4, Heights(content)[0], 4);
+        Assert.DoesNotContain('\f', content);
+    }
+
+    /// <summary>
+    /// A cell and a paragraph read the same text the same way: the same lines for a text that holds
+    /// a tab, a form feed and each form of line break.
+    /// </summary>
+    [Fact]
+    public void ACellAndAParagraphBreakTheSameTextIntoTheSameLines()
+    {
+        const string text = "x\tb\fc\r\nd\re\nf";
+
+        using var cellDoc = ShortPage();
+        var t = new TableElement { DefaultCellStyle = Helvetica(12) }.SetColumnWidths(250);
+        t.AddRow().AddCell(text);
+        cellDoc.Add(t);
+
+        using var paragraphDoc = ShortPage();
+        paragraphDoc.Add(new Paragraph(text, Helvetica(12)));
+
+        var inCell = Texts(Content(Save(cellDoc)));
+        var inParagraph = Texts(Content(Save(paragraphDoc)));
+
+        Assert.Equal(["x b c", "d", "e", "f"], inParagraph);
+        Assert.Equal(inParagraph, inCell);
+    }
+
+    /// <summary>
+    /// A space separator that a font draws, such as U+2003, is left as written, so a cell that held
+    /// one before this change is drawn as it was: Helvetica has no glyph for it and the canvas
+    /// writes a question mark, and the cell is still one line. The no-break spaces keep their
+    /// meaning.
+    /// </summary>
+    [Fact]
+    public void Standard14_aSpaceSeparatorIsLeftAlone()
+    {
+        using var doc = ShortPage();
+        var t = Table12();
+        t.AddRow().AddCell("a\u2003b").AddCell("c\u00A0d");
+        doc.Add(t);
+
+        var content = Content(Save(doc));
+
+        Assert.Equal(["a?b", "c\u00A0d"], Texts(content));
+        Assert.Equal(22.4, Heights(content)[0], 4);
+    }
+
+    /// <summary>
+    /// Every character that is white space, written alone into a cell between two letters, leaves
+    /// no control character in a show string, and a control character that is not white space is
+    /// not touched.
+    /// </summary>
+    [Fact]
+    public void Standard14_noWhiteSpaceCharacterReachesTheFontAsAControlCharacter()
+    {
+        var whiteSpace = Enumerable.Range(0, 0x10000).Select(i => (char)i).Where(char.IsWhiteSpace).ToList();
+        Assert.Contains('\t', whiteSpace);
+        Assert.Contains('\f', whiteSpace);
+        Assert.Contains('\u0085', whiteSpace);
+        Assert.Contains('\u2028', whiteSpace);
+
+        foreach (var c in whiteSpace)
+        {
+            using var doc = ShortPage();
+            var t = Table12();
+            t.AddRow().AddCell("x" + c + "y").AddCell("z");
+            doc.Add(t);
+
+            var placements = Placements(Content(Save(doc)));
+            foreach (var p in placements)
+                Assert.True(
+                    p.Text.All(ch => ch >= 0x20),
+                    $"U+{(int)c:X4} reached the font as a control character in \"{p.Text}\".");
+        }
+    }
+
+    // ── Column sizing reads the same lines ───────────────────────────────────
+
+    /// <summary>
+    /// An automatic column is sized from the widest line, not from the whole text: two columns
+    /// whose widest lines are the same word are the same width, though one of them holds a second
+    /// line as well.
+    /// </summary>
+    [Fact]
+    public void AnAutoColumn_isSizedFromItsWidestLine()
+    {
+        using var doc = ShortPage();
+        var t = new TableElement { DefaultCellStyle = Helvetica(12) };
+        t.AddRow().AddCell("aa\nbbbbbbbb").AddCell("bbbbbbbb");
+        doc.Add(t);
+
+        var widths = Widths(Content(Save(doc)));
+
+        Assert.Equal(2, widths.Length);
+        Assert.Equal(widths[0], widths[1], 6);
+        Assert.Equal(140, widths[0], 6);
+    }
+
+    // ── Null text ────────────────────────────────────────────────────────────
+
+    /// <summary>A null cell text with explicit widths still saves and draws nothing, as before.</summary>
+    [Fact]
+    public void ANullText_withExplicitWidths_drawsNothing()
+    {
+        using var doc = ShortPage();
+        var t = Table12();
+        t.AddRow().AddCell(new Cell(null!)).AddCell("x");
+        doc.Add(t);
+
+        var content = Content(Save(doc));
+
+        Assert.Equal(["x"], Texts(content));
+    }
+
+    /// <summary>A null cell text in an automatically sized column is still refused, naming <c>content</c>.</summary>
+    [Fact]
+    public void ANullText_inAnAutoColumn_isStillRefused()
+    {
+        using var doc = ShortPage();
+        var t = new TableElement { DefaultCellStyle = Helvetica(12) };
+        t.AddRow().AddCell(new Cell(null!)).AddCell("x");
+        doc.Add(t);
+
+        var ex = Assert.Throws<ArgumentNullException>(() => Save(doc));
+
+        Assert.Equal("content", ex.ParamName);
+    }
+
+    // ── Embedded font: no glyph 0 ────────────────────────────────────────────
+
+    private static string GlyphHex(EmbeddedFontHandle font, string text)
+    {
+        var ids = new ushort[text.Length];
+        var n = font.GetGlyphIds(text, ids);
+        return string.Concat(ids.Take(n).Select(id => id.ToString("x4", CultureInfo.InvariantCulture)));
+    }
+
+    private static Document EmbeddedDoc(out EmbeddedFontHandle font, PdfConformance conformance = PdfConformance.None)
+    {
+        var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, 300, 400),
+            Margins = new EdgeInsets(10),
+            Conformance = conformance,
+        };
+        doc.Info.Title = "Cell breaks";
+        font = doc.UseTrueTypeFont(File.ReadAllBytes(DejaVu));
+        return doc;
+    }
+
+    private static void RequireDejaVu()
+    {
+        if (!File.Exists(DejaVu))
+            OracleGate.Unavailable("DejaVuSans.ttf", "DejaVu Sans is needed for an embedded font.");
+    }
+
+    /// <summary>
+    /// The three cells of the report, in an embedded font: each show string is the font's glyph ids
+    /// for the text as a paragraph reads it, with glyph 3 (the space) where the tab was and one
+    /// string per line, and the font's ToUnicode map has no entry for glyph 0 as U+0009, U+000A or
+    /// U+000D.
+    /// </summary>
+    [Fact]
+    public void Embedded_aTabAndALineBreakAreNotGlyphZero()
+    {
+        RequireDejaVu();
+        using var doc = EmbeddedDoc(out var font, PdfConformance.PdfA2u);
+        var t = new TableElement { DefaultCellStyle = new TextStyle { FontRef = font, FontSize = 12 } }
+            .SetColumnWidths(100, 100);
+        t.AddRow().AddCell("A\tB").AddCell("line1\nline2");
+        t.AddRow().AddCell("cr1\r\ncr2").AddCell("tail");
+        doc.Add(t);
+
+        var content = Content(Save(doc));
+        var shows = HexShows(content);
+
+        Assert.Equal(
+            [
+                GlyphHex(font, "A B"),
+                GlyphHex(font, "line1"),
+                GlyphHex(font, "line2"),
+                GlyphHex(font, "cr1"),
+                GlyphHex(font, "cr2"),
+                GlyphHex(font, "tail"),
+            ],
+            shows);
+        Assert.Equal("0003", GlyphHex(font, "A B")[4..8]);
+        foreach (var show in shows)
+            for (var i = 0; i < show.Length; i += 4)
+                Assert.NotEqual("0000", show.Substring(i, 4));
+
+        Assert.DoesNotContain("<0000> <0009>", content, StringComparison.Ordinal);
+        Assert.DoesNotContain("<0000> <000A>", content, StringComparison.Ordinal);
+        Assert.DoesNotContain("<0000> <000D>", content, StringComparison.Ordinal);
+        Assert.DoesNotContain(doc.Diagnostics, d => d.Code == LayoutDiagnosticCode.NotdefGlyph);
+    }
+
+    /// <summary>
+    /// A white-space character, between two letters in an embedded font, never produces glyph 0
+    /// unless it is a space separator the font has no glyph for, which is written as it always was.
+    /// A control character that is not white space is not touched: U+0001 still reaches glyph 0.
+    /// </summary>
+    [Fact]
+    public void Embedded_noControlWhiteSpaceIsGlyphZero_andOtherControlsStillAre()
+    {
+        RequireDejaVu();
+
+        foreach (var c in Enumerable.Range(0, 0x10000).Select(i => (char)i).Where(char.IsWhiteSpace))
+        {
+            using var doc = EmbeddedDoc(out var font);
+            var t = new TableElement { DefaultCellStyle = new TextStyle { FontRef = font, FontSize = 12 } }
+                .SetColumnWidths(250);
+            t.AddRow().AddCell("x" + c + "y");
+            doc.Add(t);
+
+            var shows = HexShows(Content(Save(doc)));
+
+            if (char.GetUnicodeCategory(c) == UnicodeCategory.SpaceSeparator)
+            {
+                // Written as the font maps it, exactly as before this change.
+                Assert.Equal([GlyphHex(font, "x" + c + "y")], shows);
+            }
+            else
+            {
+                // A line feed and a carriage return break the line; every other one is a space.
+                var expected = c is '\n' or '\r'
+                    ? new[] { GlyphHex(font, "x"), GlyphHex(font, "y") }
+                    : [GlyphHex(font, "x y")];
+                Assert.True(
+                    shows.SequenceEqual(expected),
+                    $"U+{(int)c:X4}: {string.Join(",", shows)} against {string.Join(",", expected)}.");
+                Assert.DoesNotContain("0000", shows.SelectMany(s => Enumerable.Range(0, s.Length / 4).Select(i => s.Substring(i * 4, 4))));
+            }
+        }
+
+        using var control = EmbeddedDoc(out var controlFont);
+        var ct = new TableElement { DefaultCellStyle = new TextStyle { FontRef = controlFont, FontSize = 12 } }
+            .SetColumnWidths(250);
+        ct.AddRow().AddCell("x\u0001y");
+        control.Add(ct);
+
+        var controlShows = HexShows(Content(Save(control)));
+
+        Assert.Equal([GlyphHex(controlFont, "x\u0001y")], controlShows);
+        Assert.Contains("0000", Enumerable.Range(0, controlShows[0].Length / 4).Select(i => controlShows[0].Substring(i * 4, 4)));
+    }
+
+    /// <summary>
+    /// The embedded file passes veraPDF at PDF/A-2u and PDF/A-2u preflight finds no glyph 0, after
+    /// the fixture is asserted to hold the construct: a tab, a line feed and a carriage return line
+    /// feed in cells, with the second lines drawn.
+    /// </summary>
+    [Fact]
+    public void Embedded_theFileIsPdfA2uClean()
+    {
+        RequireDejaVu();
+        using var doc = EmbeddedDoc(out var font, PdfConformance.PdfA2u);
+        var t = new TableElement { DefaultCellStyle = new TextStyle { FontRef = font, FontSize = 12 } }
+            .SetColumnWidths(100, 100);
+        t.AddRow().AddCell("A\tB").AddCell("line1\nline2");
+        t.AddRow().AddCell("cr1\r\ncr2").AddCell("end\ffeed");
+        doc.Add(t);
+        var bytes = Save(doc);
+        var path = Path.Combine(_tempDir, "cells-a2u.pdf");
+        File.WriteAllBytes(path, bytes);
+
+        var shows = HexShows(Content(bytes));
+        Assert.Contains(GlyphHex(font, "line2"), shows);
+        Assert.Contains(GlyphHex(font, "cr2"), shows);
+        Assert.Contains(GlyphHex(font, "end feed"), shows);
+
+        ExternalTool.TryRun("verapdf", ["--flavour", "2u", path],
+            out var vexit, out var report, out var verr, out var vtimed, timeoutMs: 120_000);
+        Assert.False(vtimed);
+        Assert.True(vexit is 0 or 1, $"veraPDF exited {vexit}\n{report}\n{verr}");
+        Assert.True(report.Contains("isCompliant=\"true\"", StringComparison.Ordinal), report);
+
+        var rules = VellumPdf.Conformance.PdfPreflight
+            .Validate(bytes, VellumPdf.Conformance.PdfConformance.PdfA2U)
+            .Assertions.Select(a => a.RuleId).ToList();
+        Assert.DoesNotContain("ISO19005-2:6.2.11.8-notdef", rules);
+
+        ExternalTool.TryRun("pdftotext", ["-layout", path, "-"], out var texit, out var text, out var terr, out _);
+        Assert.True(texit == 0, terr);
+        Assert.Contains("end feed", text, StringComparison.Ordinal);
+        var lines = text.Split('\n').Select(l => l.Trim()).ToList();
+        Assert.Contains(lines, l => l.Contains("line1", StringComparison.Ordinal) && !l.Contains("line2", StringComparison.Ordinal));
+        Assert.Contains(lines, l => l.Contains("line2", StringComparison.Ordinal));
+    }
+
+    // ── Running bands ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// A form feed in a running band's template is a space, as it is in a paragraph, and so is a
+    /// tab or a line break: the band draws one line, and none of them reaches the font.
+    /// </summary>
+    [Theory]
+    [InlineData("H\fX", "H X")]
+    [InlineData("H\tX", "H X")]
+    [InlineData("H\nX", "H X")]
+    [InlineData("H\r\nX", "H  X")]
+    public void ABandDrawsAControlSpaceAsASpace(string template, string drawn)
+    {
+        using var doc = ShortPage();
+        doc.SetHeader(template, Helvetica(10));
+        doc.Add(new Paragraph("body", Helvetica(10)));
+
+        var content = Content(Save(doc));
+
+        Assert.Contains(drawn, Texts(content));
+        Assert.DoesNotContain('\f', content);
+        Assert.DoesNotContain('\t', content);
+    }
+
+    /// <summary>
+    /// The band's width is measured on the text it draws, so a template cut to fit is cut at the
+    /// space a form feed became: only "aaa" fits beside the form feed's neighbour.
+    /// </summary>
+    [Fact]
+    public void ABandCutsAtTheSpaceAFormFeedBecame()
+    {
+        var style = Helvetica(10);
+        var width = style.MeasureString("aaa bb") - 0.1;
+        using var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, width + 20, 400),
+            Margins = new EdgeInsets(10),
+        };
+        doc.SetHeader("aaa\fbbbb", style);
+        doc.Add(new Paragraph("body", style));
+
+        var content = Content(Save(doc));
+
+        Assert.Contains("aaa", Texts(content));
+        Assert.Single(doc.BandTruncations);
+    }
+
+    // ── Rows that cannot be cut ──────────────────────────────────────────────
+
+    /// <summary>The diagnostic a cell that reads its breaks as spaces is reported with, or null.</summary>
+    private static LayoutDiagnostic? CellReport(Document doc) =>
+        doc.Diagnostics.SingleOrDefault(d => d.Code == LayoutDiagnosticCode.CellBreakDrawnAsSpace);
+
+    /// <summary>
+    /// A header row whose breaks, honoured, leave no room under it for the row below: 2.3.3 drew
+    /// the cell on one line. The cell is drawn as one line of spaces and reported as a warning.
+    /// A header of 46 lines is 560pt and leaves 20pt, which holds the 20pt row below, so its
+    /// breaks are kept.
+    /// </summary>
+    [Theory]
+    [InlineData(46, false)]
+    [InlineData(47, true)]
+    [InlineData(48, true)]
+    [InlineData(100, true)]
+    public void AHeaderThatWouldLeaveNoRoomForTheRowBelowReadsItsBreaksAsSpaces(int n, bool asSpaces)
+    {
+        using var doc = WidePage();
+        var t = Wide10(1900);
+        t.AddRow(isHeader: true).AddCell(Words(n));
+        t.AddRow().AddCell("x");
+        doc.Add(t);
+
+        var bytes = Save(doc);
+        var texts = Texts(Content(bytes));
+        var report = CellReport(doc);
+
+        Assert.Equal(1, PageCount(bytes));
+        if (asSpaces)
+        {
+            Assert.Equal([Words(n, " "), "x"], texts);
+            Assert.NotNull(report);
+            Assert.Equal(LayoutDiagnosticSeverity.Warning, report.Severity);
+            Assert.Equal(1, report.Count);
+            Assert.Contains("row 0, cell 0", report.Message, StringComparison.Ordinal);
+            Assert.Equal(LayoutElementKind.Table, report.ElementKind);
+        }
+        else
+        {
+            Assert.Equal([.. Enumerable.Repeat("ab", n), "x"], texts);
+            Assert.Null(report);
+        }
+    }
+
+    /// <summary>
+    /// A header row whose own height, honoured, is more than a page: the same fallback, and a
+    /// table that 2.3.3 saved still saves with nothing refused.
+    /// </summary>
+    [Fact]
+    public void AHeaderTallerThanAPageReadsItsBreaksAsSpaces()
+    {
+        using var doc = WidePage();
+        var t = Wide10(1900);
+        t.AddRow(isHeader: true).AddCell(Words(100));
+        t.AddRow().AddCell("x");
+        doc.Add(t);
+
+        var texts = Texts(Content(Save(doc)));
+
+        Assert.Equal([Words(100, " "), "x"], texts);
+        Assert.Equal(LayoutDiagnosticSeverity.Warning, CellReport(doc)!.Severity);
+    }
+
+    /// <summary>
+    /// Rows joined by a RowSpan are never cut, so when their breaks, honoured, make the group taller
+    /// than a page, the cells that hold them read the breaks as spaces. A group of 46 lines plus a
+    /// 20pt row is 580pt, which fits; 47 lines does not.
+    /// </summary>
+    [Theory]
+    [InlineData(46, false)]
+    [InlineData(47, true)]
+    [InlineData(100, true)]
+    public void ARowSpanGroupThatWouldBeTallerThanAPageReadsItsBreaksAsSpaces(int n, bool asSpaces)
+    {
+        using var doc = WidePage();
+        var t = Wide10(1500, 400);
+        t.AddRow().AddCell(new Cell(Words(n)) { RowSpan = 2 }).AddCell("b");
+        t.AddRow().AddCell("c");
+        doc.Add(t);
+
+        var bytes = Save(doc);
+        var texts = Texts(Content(bytes));
+
+        Assert.Equal(1, PageCount(bytes));
+        if (asSpaces)
+        {
+            Assert.Contains(Words(n, " "), texts);
+            Assert.NotNull(CellReport(doc));
+        }
+        else
+        {
+            Assert.Equal(n, texts.Count(x => x == "ab"));
+            Assert.Null(CellReport(doc));
+        }
+    }
+
+    /// <summary>
+    /// Two rows that are each short enough, joined by a RowSpan, are too tall together: both
+    /// cells that hold breaks read them as spaces, and each is reported. 23 lines in each row is
+    /// 2 x 284 = 568pt, which fits; 24 lines is 592pt.
+    /// </summary>
+    [Theory]
+    [InlineData(23, 0)]
+    [InlineData(24, 2)]
+    public void ARowSpanGroupOfTwoRowsReadsEachBreakingCellAsOneLine(int n, int reported)
+    {
+        using var doc = WidePage();
+        var t = Wide10(1000, 900);
+        t.AddRow().AddCell(new Cell("a") { RowSpan = 2 }).AddCell(Words(n));
+        t.AddRow().AddCell(Words(n));
+        doc.Add(t);
+
+        var bytes = Save(doc);
+
+        Assert.Equal(1, PageCount(bytes));
+        Assert.Equal(reported, doc.Diagnostics.Count(d => d.Code == LayoutDiagnosticCode.CellBreakDrawnAsSpace));
+        if (reported > 0)
+            Assert.Equal(2, Texts(Content(bytes)).Count(x => x == Words(n, " ")));
+    }
+
+    /// <summary>
+    /// A row that can be cut keeps its breaks however tall they make it: 48 lines are 584pt, which
+    /// no page holds, so the row is cut between its lines and nothing is reported.
+    /// </summary>
+    [Fact]
+    public void AnOrdinaryRowKeepsItsBreaksAndIsCut()
+    {
+        using var doc = WidePage();
+        var t = Wide10(1900);
+        t.AddRow().AddCell(Words(48));
+        doc.Add(t);
+
+        var bytes = Save(doc);
+
+        Assert.Equal(2, PageCount(bytes));
+        Assert.Equal(48, Texts(Content(bytes)).Count(x => x == "ab"));
+        Assert.Empty(doc.Diagnostics);
+    }
+
+    /// <summary>
+    /// A header that reads its breaks as spaces is drawn the same way on every page, including the
+    /// pages a cut row continues on: the long header string is shown once per page, each page
+    /// reports it, and the report's count is the number of pages.
+    /// </summary>
+    [Fact]
+    public void AHeaderThatReadsItsBreaksAsSpacesDoesSoOnEveryPage()
+    {
+        using var doc = WidePage();
+        var t = Wide10(1900);
+        t.AddRow(isHeader: true).AddCell(Words(60));
+        t.AddRow().AddCell(Words(100));
+        doc.Add(t);
+
+        var bytes = Save(doc);
+        var texts = Texts(Content(bytes));
+        var pages = PageCount(bytes);
+
+        Assert.True(pages >= 2, "the row was not cut");
+        Assert.Equal(pages, texts.Count(x => x == Words(60, " ")));
+        Assert.Equal(100, texts.Count(x => x == "ab"));
+        Assert.Equal(pages, CellReport(doc)!.Count);
+    }
+
+    /// <summary>
+    /// A cell that reads its breaks as spaces is measured and wrapped as a cell with no break is, so
+    /// the table's rectangles are exactly those the same table had when a line feed was one more
+    /// character of the line: the four borders below are what 2.3.3 drew for it, though 2.3.3 wrote
+    /// the line feeds into the string.
+    /// </summary>
+    [Fact]
+    public void AFallbackHeaderKeepsTheGeometryOfAnUnbrokenLine()
+    {
+        using var doc = WidePage();
+        var t = new TableElement { DefaultCellStyle = Helvetica(10) };
+        t.AddRow(isHeader: true).AddCell(Words(60)).AddCell("h");
+        t.AddRow().AddCell("x").AddCell("y");
+        doc.Add(t);
+
+        var content = Content(Save(doc));
+
+        Assert.NotNull(CellReport(doc));
+        Assert.Equal(
+            ["10 570 1930.09932 20", "1940.09932 570 49.90068 20", "10 550 1930.09932 20", "1940.09932 550 49.90068 20"],
+            Borders(content));
+        Assert.Equal([Words(60, " "), "h", "x", "y"], Texts(content));
+    }
+
+    /// <summary>
+    /// A header whose breaks, honoured, take the room a RowSpan group needs under it: the group has
+    /// no break of its own to give up, so the header's cell reads its breaks as spaces. The header
+    /// of 30 lines is 368pt and the group 268pt, which do not fit 580pt together; with the header
+    /// on one line they do.
+    /// </summary>
+    [Fact]
+    public void AHeaderThatTakesTheRoomOfARowSpanGroupReadsItsBreaksAsSpaces()
+    {
+        using var doc = WidePage();
+        var t = Wide10(30, 1870);
+        t.AddRow(isHeader: true).AddCell("h").AddCell(Words(30));
+        t.AddRow().AddCell(new Cell(Words(20, " ")) { RowSpan = 2 }).AddCell("b");
+        t.AddRow().AddCell("c");
+        doc.Add(t);
+
+        var bytes = Save(doc);
+        var texts = Texts(Content(bytes));
+        var report = CellReport(doc);
+
+        Assert.Equal(1, PageCount(bytes));
+        Assert.Contains(Words(30, " "), texts);
+        Assert.Equal(20, texts.Count(x => x == "ab"));
+        Assert.NotNull(report);
+        Assert.Contains("row 0, cell 1", report.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A tab is one space wide where the raw character was measured at its own width, which can
+    /// wrap a cell one line taller and push a RowSpan group over the page. "ab" and a tab and "ab"
+    /// fits a 24pt column on one line as one word, and as two words does not; the group of 46 plain
+    /// lines under it is exactly 580pt with the one line and 592pt with two. The cell is laid out
+    /// as it was measured before, with the tab drawn as a space, and nothing is reported because it
+    /// holds no line break. The borders are 2.3.3's.
+    /// </summary>
+    [Fact]
+    public void ATabThatWouldTipARowSpanGroupOverThePageIsLaidOutUnbroken()
+    {
+        using var doc = WidePage();
+        var t = Wide10(36, 36);
+        t.AddRow().AddCell(new Cell("a") { RowSpan = 2 }).AddCell("ab\tab");
+        t.AddRow().AddCell(Words(46, " "));
+        doc.Add(t);
+
+        var bytes = Save(doc);
+        var content = Content(bytes);
+
+        Assert.Equal(1, PageCount(bytes));
+        Assert.Equal(["10 10 36 580", "46 570 36 20", "46 10 36 560"], Borders(content));
+        Assert.Contains("ab ab", Texts(content));
+        Assert.Empty(doc.Diagnostics);
+    }
+
+    /// <summary>
+    /// A renderer laid out without the document, through a context built with the public
+    /// constructor, knows no page: it keeps every break, and a header that is then too tall is
+    /// the same refusal as before. The document supplies the page and reads them as spaces.
+    /// </summary>
+    [Fact]
+    public void WithoutThePageTheBreaksAreKept()
+    {
+        var t = Wide10(1900);
+        t.AddRow(isHeader: true).AddCell(Words(60));
+        t.AddRow().AddCell("x");
+
+        var result = new TableRenderer(t).Layout(new LayoutContext(new LayoutBox(10, 10, 1980, 580)));
+
+        Assert.Equal(LayoutResult.Outcome.Nothing, result.Status);
+    }
+
+    /// <summary>
+    /// Strict diagnostics saves a table whose cell reads its breaks as spaces: the report is a
+    /// warning, because nothing is lost.
+    /// </summary>
+    [Fact]
+    public void StrictDiagnosticsSavesTheWarning()
+    {
+        using var doc = WidePage();
+        doc.StrictDiagnostics = true;
+        var t = Wide10(1900);
+        t.AddRow(isHeader: true).AddCell(Words(60));
+        t.AddRow().AddCell("x");
+        doc.Add(t);
+
+        var bytes = Save(doc);
+
+        Assert.Equal(1, PageCount(bytes));
+        Assert.Equal(LayoutDiagnosticSeverity.Warning, CellReport(doc)!.Severity);
+    }
+
+    /// <summary>
+    /// A tab in a header or span-group cell is not a break, so it changes no height and is never
+    /// reported: only a carriage return or a line feed can make a row taller.
+    /// </summary>
+    [Fact]
+    public void ATabAloneIsNeverReported()
+    {
+        using var doc = WidePage();
+        var t = Wide10(1900);
+        t.AddRow(isHeader: true).AddCell(Words(60, "\t"));
+        t.AddRow().AddCell("x");
+        doc.Add(t);
+
+        var texts = Texts(Content(Save(doc)));
+
+        Assert.Equal([Words(60, " "), "x"], texts);
+        Assert.Empty(doc.Diagnostics);
+    }
+
+    private static void AssertNoControlCharacter(IEnumerable<ContentStreamReadback.TextPlacement> placements)
+    {
+        foreach (var p in placements)
+            Assert.DoesNotContain(p.Text, ch => ch < 0x20);
+    }
+}

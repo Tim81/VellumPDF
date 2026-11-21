@@ -87,8 +87,9 @@ public sealed class Row
 
     /// <summary>Adds a text cell to the row. Returns this row.</summary>
     /// <remarks>
-    /// Creates the cell with <see cref="Cell(string)"/> and adds it, so a line break in the text is
-    /// not honoured; see <see cref="Cell.Content"/>. A null <paramref name="text"/> is added as an
+    /// Creates the cell with <see cref="Cell(string)"/> and adds it, so a line break in the text
+    /// ends a line, a tab is a space, and the rest is as <see cref="Cell.Content"/> describes. A
+    /// null <paramref name="text"/> is added as an
     /// empty cell. In a row that a cell
     /// above covers through <see cref="Cell.RowSpan"/>, the row's cells fill the columns left over,
     /// in order, and a cell past the last column is not drawn, though its text is still measured.

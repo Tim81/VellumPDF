@@ -118,7 +118,9 @@ public sealed class Document : IDisposable
     /// selects a Standard 14 font under a conformance claim),
     /// <see cref="LayoutDiagnosticCode.BandTruncated"/> (mirroring <see cref="BandTruncations"/>),
     /// <see cref="LayoutDiagnosticCode.PreformattedLineWrapped"/> (a preformatted line split with
-    /// a marker; a warning, which <see cref="StrictDiagnostics"/> saves)
+    /// a marker; a warning, which <see cref="StrictDiagnostics"/> saves),
+    /// <see cref="LayoutDiagnosticCode.CellBreakDrawnAsSpace"/> (a table cell's line break drawn as
+    /// a space; also a warning)
     /// and <see cref="LayoutDiagnosticCode.DiagnosticsDropped"/>. Every other one saves by
     /// default; only <see cref="StrictDiagnostics"/> refuses it, and a later major version refuses
     /// them all.</para>
