@@ -9,11 +9,13 @@ namespace VellumPdf.Layout.Elements;
 /// </summary>
 /// <remarks>
 /// <b>A null break is refused.</b> <see cref="Document.Add(PageBreak)"/> throws
-/// <see cref="ArgumentNullException"/> from that call. Nothing else about a break can be refused.
+/// <see cref="ArgumentNullException"/> from that call. The only other refusal is of a break that
+/// holds a <see cref="PageLabel"/> and has no element after it, which the save raises.
 /// <para>A break takes effect before the next element, so it adds nothing when it is the first
 /// element, when it follows another break, or when nothing is laid out on the page it ends; an
 /// element of zero height still counts as laid out. A break with nothing after it is dropped,
-/// which means no trailing blank page. A document that holds
+/// which means no trailing blank page, unless it holds a <see cref="PageLabel"/>, which the save
+/// refuses instead. A document that holds
 /// only breaks has no content, so a save throws <see cref="InvalidOperationException"/> saying
 /// the document has no pages, and the document can still be saved once an element is added.</para>
 /// <para>Where two breaks meet, the stronger one wins: a <see cref="Recto"/> break next to a plain
@@ -44,4 +46,31 @@ public sealed class PageBreak
     /// <see cref="Core.PageBreakMode.Recto"/> for the blank page.
     /// </remarks>
     public bool Recto { get; init; }
+
+    /// <summary>
+    /// Starts a page-label range at the page the next element is placed on, or
+    /// <see langword="null"/> (the default) to start none.
+    /// </summary>
+    /// <remarks>
+    /// <b>A labelled break that no element follows is refused by the save.</b>
+    /// <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads throw
+    /// <see cref="InvalidOperationException"/> before any layout runs, because a break with nothing
+    /// after it is dropped and the page its range would start on is never created. The document can
+    /// be saved once an element is added after the break. Nothing else about the value is checked
+    /// here: <see cref="PageLabelRange"/> refuses its own bad input.
+    /// <para>The range starts at the page the following element starts on: the page the break
+    /// opened, the next right-hand page when <see cref="Recto"/> is set (the blank page a recto
+    /// break inserts keeps the label of the range before it), or the current page when the break
+    /// added no page. When two breaks put their ranges on the same page, the later break's range
+    /// is the one that applies, and <see cref="Document.PageLabel"/> counts as the earliest. A
+    /// running band's <c>{page}</c> prints the label once any range exists; see
+    /// <see cref="RunningBand"/>.</para>
+    /// <para>A custom <see cref="Core.IRenderer"/> added with
+    /// <see cref="Document.Add(Core.IRenderer)"/> cannot start a range itself. Put a labelled
+    /// break before it.</para>
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from the save, not from this property, when no element follows the break.
+    /// </exception>
+    public PageLabelRange? PageLabel { get; init; }
 }

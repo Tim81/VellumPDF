@@ -37,6 +37,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - In a tagged document each drawn piece is one `P` structure element. Nothing in the character
     stream separates two lines. Documents without the element save to the same bytes as before.
 
+- **Page labels and anchors (#262, Layout).** A document can set the page numbers a viewer shows,
+  and name places that other documents and links can open it at.
+  - `PageLabelRange(style, prefix, firstNumber)` describes a run of pages: decimal, upper or lower
+    case Roman numerals, or upper or lower case letters, with an optional prefix and a first
+    number. `Document.PageLabel` starts a range at the first page and `PageBreak.PageLabel` at the
+    page the next element lands on. The save writes them as the catalog's `/PageLabels` number
+    tree. When no range starts at the first page it adds a decimal one there, because ISO 32000-2,
+    12.4.2 requires a value for page index 0. When two ranges land on one page the later one
+    applies, and `Document.PageLabel` counts as the earliest.
+  - `{page}` in a running band prints the page's label once any range exists (`iv`, `A-9`).
+    `{pages}` stays the number of pages, and a document with no range prints the decimal number
+    as before and writes no `/PageLabels`. A label is copied as it is and never scanned for
+    tokens.
+  - `Anchor` on `Paragraph`, `Heading`, `TableElement`, `ListElement`, `ListItem` and `LayoutImage`
+    adds a named destination, `[page /XYZ 0 top null]`, to the `/Names` `/Dests` tree at the
+    element's first placed line, whether or not a link refers to it, so `file.pdf#nameddest=name`
+    opens there. A name is 1 to 127 characters from `A-Z a-z 0-9 . _ - :`; any other name throws
+    `ArgumentException` from the `init` accessor, and so does a bad `PageLabelRange` argument from
+    its constructor.
+  - The save throws `InvalidOperationException` before any layout, leaving the document saveable,
+    for an anchor held by two elements and for a labelled `PageBreak` with no element after it.
+    It throws after the layout, leaving the document unsaveable, for an anchor on content the
+    renderer never draws, such as a list item below the second level.
+  - A custom `IRenderer` reports no anchor and cannot start a range; put a labelled `PageBreak`
+    before it.
+  - Nothing changes for a document that uses none of these members. Nine documents (bands,
+    headings, lists, tables, breaks, PDF/A-2u, tagged) saved to identical bytes before and after.
+
 - **`Heading` and `ListItem` take runs (#367).** `new Heading(IEnumerable<TextRun>)` and
   `new ListItem(IEnumerable<TextRun>)` build the element from runs in their own styles, as a
   `Paragraph` does, so one word of a heading can be bold and one run of a list item can be a link.

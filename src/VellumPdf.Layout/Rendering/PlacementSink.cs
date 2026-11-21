@@ -36,7 +36,10 @@ internal interface IPlacementSource
 /// is its first placed line.</param>
 /// <param name="Renderer">The renderer whose result was accepted.</param>
 /// <param name="Box">The area the placed part occupies.</param>
-internal readonly record struct Placement(object Key, int PageIndex, double Y, IRenderer Renderer, LayoutBox Box);
+/// <param name="Anchor">The caller's anchor name when this placement is where that anchor lands
+/// (#262), otherwise null. The drawing pass registers a named destination for it.</param>
+internal readonly record struct Placement(
+    object Key, int PageIndex, double Y, IRenderer Renderer, LayoutBox Box, string? Anchor = null);
 
 /// <summary>
 /// Collects the placements of one pass. The loop says which renderer is reporting and on which page
@@ -66,5 +69,17 @@ internal sealed class PlacementSink
     {
         _placements ??= [];
         _placements.Add(new Placement(key, _pageIndex, box.Y, _renderer!, box));
+    }
+
+    /// <summary>
+    /// Reports that the element <paramref name="key"/>, which holds the anchor
+    /// <paramref name="anchor"/>, has its first line at the top of <paramref name="box"/>. A
+    /// renderer calls it for the piece that holds that line and no other, so a split element
+    /// reports once, on the page its first line is on.
+    /// </summary>
+    internal void ReportAnchor(object key, string anchor, LayoutBox box)
+    {
+        _placements ??= [];
+        _placements.Add(new Placement(key, _pageIndex, box.Y, _renderer!, box, anchor));
     }
 }

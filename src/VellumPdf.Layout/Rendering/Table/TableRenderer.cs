@@ -33,10 +33,14 @@ namespace VellumPdf.Layout.Rendering.Table;
 /// is tagged as a header cell. A table that has a row that is not a header after its leading
 /// header rows repeats those header rows on every page.
 /// </remarks>
-public sealed class TableRenderer : IRenderer, IPageBreakSource
+public sealed class TableRenderer : IRenderer, IPageBreakSource, IPlacementSource
 {
     private readonly TableElement _table;
     private readonly int _startRow;  // first data row index (0-based)
+
+    // True for an overflow renderer and for the split pieces made from one: it resumes a table
+    // that an earlier renderer began, so it never holds the table's top.
+    private bool _continuation;
 
     private double[] _colWidths = [];
     private double[] _rowHeights = [];
@@ -113,6 +117,22 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
     // The mode belongs to the element, so a renderer added through Document.Add(IRenderer) honours
     // it as well.
     PageBreakMode IPageBreakSource.BreakBefore => _table.BreakBefore;
+
+    // Explicit, as above. The anchor lands on the first line the table draws, which is its top
+    // edge, so only the renderer the caller built, or the split piece made from it, reports it.
+    // An overflow renderer never does, and a row cut between its lines resumes in an overflow
+    // renderer whose start row is the cut row, which is row 0 when the first row is the one cut:
+    // a test on the start row alone would report the table again from the next page. When the
+    // overflow is laid out at another width the cut row restarts from its first line (see
+    // Layout), but the table's top was already drawn by the first piece, so that restart is not
+    // the top and reports nothing either.
+    void IPlacementSource.ReportPlacements(PlacementSink sink)
+    {
+        if (!_continuation && _startRow == 0 && _table.Anchor is { } anchor)
+            sink.ReportAnchor(_table, anchor, _occupied);
+    }
+
+    internal TableElement Element => _table;
 
     /// <summary>Resolves column widths and row heights, fitting as many rows as possible and splitting at row boundaries on overflow, or between the lines of a row that fits no fresh page.</summary>
     /// <remarks>
@@ -336,6 +356,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
         // Partial
         var split = new TableRenderer(_table, _startRow)
         {
+            _continuation = _continuation,
             _colWidths = _colWidths,
             _rowHeights = _rowHeights,
             _occupied = _occupied,
@@ -343,9 +364,10 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
             _tailSlice = tail,
         };
         var overflow = tail is null
-            ? new TableRenderer(_table, lastFit + 1) { _colWidths = _colWidths, _rowHeights = _rowHeights }
+            ? new TableRenderer(_table, lastFit + 1) { _continuation = true, _colWidths = _colWidths, _rowHeights = _rowHeights }
             : new TableRenderer(_table, tail.Row)
             {
+                _continuation = true,
                 _colWidths = _colWidths,
                 _rowHeights = _rowHeights,
                 _resumeLines = tail.Source,

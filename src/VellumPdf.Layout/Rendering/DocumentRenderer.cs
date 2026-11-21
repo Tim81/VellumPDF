@@ -424,6 +424,8 @@ public sealed class DocumentRenderer
         _measureSink = null;
         _drawSink = null;
         _guard = null;
+        _navigation = new NavigationPlan();
+        _labels = new PageLabelMap();
 
         var contentArea = ContentArea;
         if (contentArea.Width <= 0 || contentArea.Height <= 0)
@@ -453,6 +455,10 @@ public sealed class DocumentRenderer
             }
         }
 
+        // What the elements alone decide about anchors and label ranges is refused here too, so the
+        // document stays saveable: a repeated anchor, and a labelled break with nothing after it.
+        _navigation = NavigationPlan.Build(_renderers);
+
         // From here the renderers measure and cache; see Document.MarkFailedIfLaidOut.
         HasStartedLayout = true;
 
@@ -464,7 +470,7 @@ public sealed class DocumentRenderer
 
         // Reports are collected only when something reads them: a dependent resolves against them
         // and the guard compares the drawing pass with them. Tests set RecordPlacements.
-        _collect = dependents is not null || RecordPlacements;
+        _collect = dependents is not null || RecordPlacements || _navigation.HasAnchors || _navigation.HasBreakLabels;
 
         int totalPages;
         if (dependents is not null)
@@ -488,6 +494,10 @@ public sealed class DocumentRenderer
         // resolved against.
         _guard = dependents is not null ? _measureSink : null;
         RunPass(measure: false, totalPages);
+
+        // An anchor whose element the drawing pass never reported leaves no destination, and the
+        // caller was promised one.
+        if (_navigation.HasAnchors) _navigation.RefuseUnplaced();
         ReportBandTruncations();
 
         if (_deferredCanvasRefusal is not null)
@@ -598,13 +608,13 @@ public sealed class DocumentRenderer
     /// The plan of the last measuring run, or null when none ran. Built on each read.
     /// </summary>
     internal PaginationPlan? MeasurePlan =>
-        _measureSink is null ? null : new PaginationPlan(_measureSink.Placements, _measurePages);
+        _measureSink is null ? null : new PaginationPlan(_measureSink.Placements, _measurePages, DocumentPageLabel);
 
     /// <summary>
     /// The plan the drawing pass reported, or null before it ran. Built on each read.
     /// </summary>
     internal PaginationPlan? DrawPlan =>
-        _drawSink is null ? null : new PaginationPlan(_drawSink.Placements, _drawPages);
+        _drawSink is null ? null : new PaginationPlan(_drawSink.Placements, _drawPages, DocumentPageLabel);
 
     // The pass the loop is in. A measuring pass creates no page and keeps its own cursor, so a
     // page a failed drawing pass left open is not disturbed by it.
@@ -641,6 +651,21 @@ public sealed class DocumentRenderer
     private PlacementSink? _guard;
 
     private bool _collect;
+
+    // The anchors and labelled breaks the added elements hold; see NavigationPlan.
+    private NavigationPlan _navigation = new();
+
+    // The label ranges the drawing pass has started so far, by kernel page index. A range starts
+    // when its break is applied, which is before any page it labels is finished, so a running
+    // band reads the label of its own page from here.
+    private PageLabelMap _labels = new();
+
+    /// <summary>
+    /// The page-label range that starts at the first page of the layout, or null. Set by
+    /// <see cref="Document"/> from <see cref="Document.PageLabel"/>; a renderer built directly has
+    /// none, and no element it can be given starts a range.
+    /// </summary>
+    internal PageLabelRange? DocumentPageLabel { get; set; }
 
     /// <summary>
     /// Collect placement reports even when no dependent reads them. Off by default, so a document
@@ -691,6 +716,13 @@ public sealed class DocumentRenderer
             _measureY = _margins.Top + HeaderHeight;
             MeasureRuns++;
         }
+        else
+        {
+            // Ranges are kept by kernel page index, the one {page} and the file use. The document's
+            // own range is the earliest, so a break's range on the same page replaces it.
+            _labels = new PageLabelMap();
+            if (DocumentPageLabel is { } first) _labels.Add(_pagesBefore, first);
+        }
 
         for (var i = 0; i < _renderers.Count; i++)
         {
@@ -733,6 +765,11 @@ public sealed class DocumentRenderer
             FinishCurrentPage(totalPages);
             if (_guard is not null && _placements.Count != _guard.Count)
                 throw PaginationChanged();
+
+            // One call per range, after every page exists: the kernel refuses a range that starts
+            // at or after the page count when the file is written.
+            foreach (var (start, range) in _labels.Ranges)
+                _pdf.AddPageLabelRange(start, range.Style, range.Prefix, range.FirstNumber);
             _drawSink = _placements;
             _drawPages = _pageIndex + 1;
             return _drawPages;
@@ -771,7 +808,7 @@ public sealed class DocumentRenderer
             if (run >= 2 && !anyChanged && pages == previousPages)
                 return pages;
 
-            plan = new PaginationPlan(_measureSink!.Placements, pages);
+            plan = new PaginationPlan(_measureSink!.Placements, pages, DocumentPageLabel);
             previousPages = pages;
         }
 
@@ -829,6 +866,15 @@ public sealed class DocumentRenderer
         _placements.Enter(accepted, _pageIndex);
         source.ReportPlacements(_placements);
 
+        // The drawing pass turns each anchor placement into a named destination, from the same
+        // report the measuring pass made, so the destination and a page reference to the same
+        // element cannot disagree. It is the one place an anchor becomes a destination (#600 adds
+        // a structure destination for the same placement here).
+        if (!_measuring && _navigation.HasAnchors)
+            for (var i = first; i < _placements.Count; i++)
+                if (_placements[i].Anchor is { } name && _navigation.TryRegister(name))
+                    _pdf.AddNamedDestination(name, _currentPage!, 0, _pageSize.Height - _placements[i].Y);
+
         if (_measuring || _guard is null) return;
         for (var i = first; i < _placements.Count; i++)
             if (i >= _guard.Count
@@ -866,6 +912,14 @@ public sealed class DocumentRenderer
                 _placements.Enter(breaker, _pageIndex);
                 _placements.Report(breaker, top);
             }
+
+        // A labelled break starts its range at the page the element after it lands on, which is
+        // the page the cursor is on now, after the blank page a recto break adds. Only the drawing
+        // pass keeps the ranges; the measuring pass reports the same placements for a plan.
+        if (!_measuring && _pendingBreakers is not null)
+            foreach (var breaker in _pendingBreakers)
+                if (breaker is PageBreakRenderer { PageBreak.PageLabel: { } range })
+                    _labels.Add(_pagesBefore + _pageIndex, range);
 
         _pendingBreakers = null;
         if (ownBreak)
@@ -1033,7 +1087,7 @@ public sealed class DocumentRenderer
         if (Header is not null)
         {
             _sink.CurrentKind = LayoutElementKind.Header;
-            var text = ResolveBand(Header, ref _headerText, pageNumber, totalPages);
+            var text = ResolveBand(Header, ref _headerText, pageNumber, totalPages, LabelFor(Header, pageNumber));
             var bandY = _margins.Top;
             var bandHeight = Header.EffectiveHeight;
             DrawBandText(ctx, canvas, text, Header, RunningBandKind.Header, pageNumber, bandY, bandHeight);
@@ -1044,7 +1098,7 @@ public sealed class DocumentRenderer
         if (Footer is not null)
         {
             _sink.CurrentKind = LayoutElementKind.Footer;
-            var text = ResolveBand(Footer, ref _footerText, pageNumber, totalPages);
+            var text = ResolveBand(Footer, ref _footerText, pageNumber, totalPages, LabelFor(Footer, pageNumber));
             var bandY = _pageSize.Height - _margins.Bottom - Footer.EffectiveHeight;
             var bandHeight = Footer.EffectiveHeight;
             DrawBandText(ctx, canvas, text, Footer, RunningBandKind.Footer, pageNumber, bandY, bandHeight);
@@ -1054,13 +1108,23 @@ public sealed class DocumentRenderer
     // A null template is refused here, where the band is first drawn, as RunningBand.Resolve
     // refuses it. The cached BandText is replaced when the band was: Header and Footer are
     // settable, and a renderer's Draw can replace one between two pages of the same render.
-    private static BandText ResolveBand(RunningBand band, ref BandText? cache, int pageNumber, int totalPages)
+    private static BandText ResolveBand(
+        RunningBand band, ref BandText? cache, int pageNumber, int totalPages, string? pageLabel)
     {
         if (cache is null || !ReferenceEquals(cache.Template, band.Compiled))
             cache = new BandText(band.Compiled);
-        cache.Reset(pageNumber, totalPages);
+        cache.Reset(pageNumber, totalPages, pageLabel);
         return cache;
     }
+
+    // What {page} prints on this page: its label once the document defines any range, and null
+    // otherwise, which leaves the decimal number every template printed before labels existed. A
+    // band with no {page} asks for nothing, so a label too long to print is refused only where it
+    // would be shown.
+    private string? LabelFor(RunningBand band, int pageNumber) =>
+        _labels.IsEmpty || band.Compiled.TokenCounts[(int)BandToken.Page] == 0
+            ? null
+            : _labels.LabelOf(pageNumber - 1);
 
     // Drops the RendererContext the old signature took and never read: the body reaches everything
     // it needs through DrawContext, which carries the same canvas.

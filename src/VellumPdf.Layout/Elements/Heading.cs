@@ -141,6 +141,23 @@ public sealed class Heading
 
     private PageBreakMode _breakBefore;
 
+    /// <summary>
+    /// A name that a link or an outside reference can jump to: the save adds a named destination at
+    /// the first line of this heading. <see langword="null"/>, the default, adds none.
+    /// </summary>
+    /// <remarks>
+    /// The rule, the refusals and the position are those of <see cref="Paragraph.Anchor"/>. A
+    /// heading that splits across pages is anchored on the page its first line is on.
+    /// </remarks>
+    /// <inheritdoc cref="Paragraph.Anchor" path="/exception"/>
+    public string? Anchor
+    {
+        get => _anchor;
+        init => _anchor = AnchorNames.Validate(value);
+    }
+
+    private string? _anchor;
+
     /// <summary>Horizontal alignment of the heading text.</summary>
     /// <remarks>
     /// Same as <see cref="Paragraph.Alignment"/>.

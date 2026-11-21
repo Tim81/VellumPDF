@@ -497,6 +497,26 @@ public sealed class Document : IDisposable
     public RunningBand? Footer { get; set; }
 
     /// <summary>
+    /// The page-label range that starts at the first page, or <see langword="null"/> (the default)
+    /// for none. A viewer shows the labels in its page box, and a running band's <c>{page}</c>
+    /// prints them.
+    /// </summary>
+    /// <remarks>
+    /// <b>Nothing is refused here.</b> <see cref="PageLabelRange"/> refuses its own bad input, and
+    /// a break's range is on <see cref="PageBreak.PageLabel"/>. Setting this is the same as a
+    /// labelled <see cref="PageBreak"/> before the first element, except that it needs no element
+    /// to follow. A range that a <see cref="PageBreak.PageLabel"/> starts on the first page
+    /// replaces it.
+    /// <para>Once any range exists, the save writes a <c>/PageLabels</c> number tree, and when no
+    /// range starts at the first page it adds one there that numbers in decimal from 1, which is
+    /// what a viewer shows without labels. A document with no range writes no <c>/PageLabels</c>
+    /// tree. <c>{pages}</c> stays the number of pages, whatever the labels are.</para>
+    /// <para>A page that a custom <see cref="IRenderer"/> fills is labelled like any
+    /// other, but such a renderer cannot start a range of its own.</para>
+    /// </remarks>
+    public PageLabelRange? PageLabel { get; set; }
+
+    /// <summary>
     /// Sets the text style that later <see cref="Add(string, TextStyle)"/> calls use when they are
     /// given no style. Returns this document for chaining.
     /// </summary>
@@ -1020,9 +1040,10 @@ public sealed class Document : IDisposable
     /// </summary>
     /// <remarks>
     /// <b>A null break is refused.</b> It throws <see cref="ArgumentNullException"/> from this
-    /// call. A break itself is never refused later. A break adds no page when it is first, follows
-    /// another break, or ends a page with nothing laid out on it, and a break with nothing after it
-    /// is dropped. A document of breaks alone has no content, so it takes the same path as a
+    /// call. A break holding a <see cref="PageBreak.PageLabel"/> that no element follows is refused
+    /// by the save, before any layout; no other break is refused later. A break adds no page when it
+    /// is first, follows another break, or ends a page with nothing laid out on it, and a break
+    /// with nothing after it is dropped. A document of breaks alone has no content, so it takes the same path as a
     /// document with nothing added: a save throws <see cref="InvalidOperationException"/> saying it
     /// has no pages, before the destination is checked, and leaves the document usable. See
     /// <see cref="PageBreak"/>.
@@ -1093,6 +1114,10 @@ public sealed class Document : IDisposable
     /// <see cref="ParagraphRenderer"/>, <see cref="TableRenderer"/>, <see cref="ListRenderer"/> and
     /// <see cref="LayoutImageRenderer"/> honour their element's <c>BreakBefore</c> when added here.
     /// Add a <see cref="PageBreak"/> before a custom renderer instead.</para>
+    /// <para>Those four renderers also report their element's <c>Anchor</c>, so the save writes its
+    /// named destination as if the element had been added directly. A custom renderer has no
+    /// anchor, and cannot start a page-label range: put a <see cref="PageBreak"/> with a
+    /// <see cref="PageBreak.PageLabel"/> before it.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="renderer"/> is <see langword="null"/>.
@@ -1101,7 +1126,10 @@ public sealed class Document : IDisposable
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
     /// call, when this renderer, or an overflow it returns, needs more than 50,000 page
     /// continuations, or when it returns <see cref="LayoutResult.Outcome.Nothing"/> twice in a row,
-    /// the second time on a new page.
+    /// the second time on a new page. It is also raised when the anchor of one of the four renderers
+    /// above is held by another element too, before any layout, and when a
+    /// <see cref="ParagraphRenderer"/> built to continue its paragraph from a later line holds an
+    /// anchor, because that piece never draws the first line; see <see cref="Paragraph.Anchor"/>.
     /// </exception>
     /// <exception cref="NullReferenceException">
     /// Raised from the save, not from this call, when <paramref name="renderer"/> returns a null
@@ -1430,6 +1458,7 @@ public sealed class Document : IDisposable
         {
             Header = Header,
             Footer = Footer,
+            DocumentPageLabel = PageLabel,
         };
         foreach (var r in _content) renderer.Add(r);
         return renderer;
@@ -1606,7 +1635,11 @@ public sealed class Document : IDisposable
     /// The document has already been written, or has no pages, or an element's input cannot be laid
     /// out, or <see cref="Encrypt"/> is combined with a PDF/A <see cref="Conformance"/>, or with
     /// PDF/UA-1 when the settings leave out <see cref="PdfPermissions.Extract"/>; see
-    /// <see cref="Conformance"/>. It is also raised when a font registered with
+    /// <see cref="Conformance"/>. It is also raised when two elements hold the same
+    /// <c>Anchor</c> or a <see cref="PageBreak"/> holds a <see cref="PageBreak.PageLabel"/> with no
+    /// element after it, both before any layout, so the document stays saveable; and when an anchor's
+    /// element was never drawn, after the layout, so the document cannot be saved again. It is also
+    /// raised when a font registered with
     /// <see cref="UseTrueTypeFont"/> lacks a table the save needs, and by every save after one whose
     /// save threw once its layout had started. For the element inputs, the boundary
     /// documentation on the property you set says which values reach this. It is also raised when
