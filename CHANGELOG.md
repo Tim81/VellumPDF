@@ -459,6 +459,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     `IRenderer.Layout` and `LayoutContext.Area` states the boundary.
   - An element that needs the larger `(Y + H) - Y` is still placed at the top of a page and still
     refused after other content, as before: the retry offers `H`.
+- **A run in the font of the run before it, at another size, is drawn at its own size (#664).**
+  The font operator was skipped whenever the face matched the one in force, so a 20 pt run after a
+  10 pt run in the same font was drawn at 10 pt while the line was measured with the 20 pt width.
+  The operator is now written when the size differs as well, and a size is compared as the number
+  the file holds, so two sizes that write the same number write one operator. A cell
+  and a running band hold one style each, so only paragraph, heading and list text can change.
+  **Deliberate output change:** a paragraph, heading or list item with a run in the same font as
+  the run before it and a different size gains a `Tf` for that run, and the run is drawn at its
+  own size. Every other document keeps its bytes. Under a PDF/A or PDF/UA claim the report of a
+  non-embedded font counts one entry per `Tf` written, so the extra `Tf` is counted.
+- **A justified line in an embedded font draws every space it measures (#665).** The line width
+  counted a leading space and every space of a run of spaces after the first, but the drawing
+  skipped them, so a line that opened with a tab at a stop, or held two tabs in a row, ended short
+  of the right edge by each space it dropped and drew its words closer together than the same text
+  without the tab. Each space is now shown as a glyph of its own and advanced by its width. A space
+  between two words takes one share of the slack, as `Tw` gives it on a Standard 14 line, and the
+  line ends at the right edge. A space that ends the line takes half a share, where `Tw` gives it a
+  whole one; that is unchanged. A link run that opens the line at a tab stop now covers the spaces
+  drawn; it got no annotation before. A link on a run of only spaces or tabs that does not open a
+  line still gets none, because those spaces are drawn in the style of the run before them, and
+  neither does a link on a leading tab with no stop to its right, since the space is dropped at the
+  start of a line. **Deliberate output change:** a justified embedded-font line that holds a leading
+  space, or two spaces in a row (reachable through tab stops), is drawn with those spaces and a
+  different spread. Every other document keeps its bytes.
 - **`/FontBBox` of an embedded font is the font's own bounding box (#596).** The descriptor of every
   embedded TrueType and OpenType font held `[0, hhea descender, 1000 * 1000 / unitsPerEm, hhea
   ascender]`: a zero for xMin and a constant for xMax, so DejaVu Sans, Liberation Sans and Liberation
@@ -539,14 +563,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   gap before them) and could lie over other text. The rectangle now starts at the x where the linked
   run's first glyph is drawn and ends at the x where the text that follows it on the line starts, or
   where its own last glyph ends when it closes the line. A space that closes the run is inside the
-  rectangle, with the stretch after it, as on a standard-14 line. On a line that holds an
-  embedded-font run, a link run that draws no glyph, such as a tab with no stop to its right at a
-  line start, gets no annotation; on a line in standard-14 faces only that tab is drawn as a space
-  and its link covers it. This is a deliberate output change for one class of input: a justified
-  line, other than the last of its paragraph, that holds an embedded-font run and a `LinkUri` run. A
-  standard-14 link on such a mixed line moves the same way, and so does the link in a justified
-  `Heading` built from runs. Left, centred and right lines, the last line of a justified paragraph,
-  a line with no link and a line in standard-14 fonts only save the same bytes as before.
+  rectangle, with the stretch after it, as on a standard-14 line. A link run that
+  draws no glyph gets no annotation. A link run that opens the line at a tab stop covers the space
+  the tab is drawn as, in a standard-14 or an embedded face. A link on a run of only spaces or tabs
+  that does not open a line gets none, and neither does a link on a leading tab with no stop to
+  its right, because the space is dropped at the start of a line. This is a deliberate output
+  change for one class of input: a justified line, other than the last of its paragraph, that holds
+  an embedded-font run and a `LinkUri` run. A standard-14 link on such a mixed line moves the same
+  way, and so does the link in a justified `Heading` built from runs. Left, centred and right
+  lines, the last line of a justified paragraph, a line with no link and a line in standard-14
+  fonts only save the same bytes as before.
   `TextStyle.LinkUri` now states the rule once for both kinds of face.
 - **A long running-band template costs what fits the content width, not the template's length, on
   every page (#518).** `RunningBand.Resolve` built the whole substituted text for each band on each

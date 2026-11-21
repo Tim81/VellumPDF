@@ -141,6 +141,8 @@ public sealed class Paragraph
     /// <see cref="HorizontalAlignment.Justify"/> for trailing line breaks. A justified line in the
     /// standard-14 text faces (every standard-14 font but Symbol and ZapfDingbats) ends at the right
     /// edge, including one holding runs with different <see cref="TextStyle"/> instances; see <see cref="HorizontalAlignment.Justify"/> for Symbol and ZapfDingbats.
+    /// A justified line in an embedded font ends at the right edge too, and draws every space it
+    /// holds.
     /// </remarks>
     public HorizontalAlignment Alignment { get; init; } = HorizontalAlignment.Left;
 
