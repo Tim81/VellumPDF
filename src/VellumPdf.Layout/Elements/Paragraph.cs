@@ -133,6 +133,59 @@ public sealed class Paragraph
 
     private PageBreakMode _breakBefore;
 
+    /// <summary>
+    /// A name that a link or an outside reference can jump to: the save adds a named destination at
+    /// the first line of this paragraph. <see langword="null"/>, the default, adds none.
+    /// </summary>
+    /// <remarks>
+    /// <b>A name outside the rule is refused by this <c>init</c> accessor.</b> It throws
+    /// <see cref="ArgumentException"/> for an empty name, one longer than 127 characters, or one
+    /// with a character outside <c>A-Z a-z 0-9 . _ - :</c>. The rule is the library's own and is
+    /// narrower than ISO 32000-2, 7.9.6 needs, so that a name is the same bytes in every encoding
+    /// and within the limits ISO 19005-2, 6.1.13 puts on a name (127 bytes) and a string (32,767
+    /// bytes). Names are compared byte by byte, so <c>Intro</c> and <c>intro</c> differ.
+    /// <para><b>A repeated anchor is refused by the save, before any layout.</b>
+    /// <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads throw
+    /// <see cref="InvalidOperationException"/> naming the anchor and the kind and zero-based
+    /// position, in the order the elements were added, of both elements that hold it. Nothing has
+    /// been laid out then, so the document can be saved once the elements are replaced. The same
+    /// instance added twice holds its anchor twice.</para>
+    /// <para><b>An anchor on content the renderer never draws is refused after the layout.</b> The
+    /// save throws <see cref="InvalidOperationException"/> naming the anchor, for example for an
+    /// item of a list below the second level, which is neither laid out nor drawn (see
+    /// <see cref="ListItem.Children"/>). The layout had started, so the document cannot be saved
+    /// again.</para>
+    /// <para>The destination is written whether or not a link refers to it, so a reader can open
+    /// the file at it by name (<c>file.pdf#nameddest=name</c>). Its position is the top edge of the
+    /// first placed line, at the left edge of the page, with the viewer's zoom unchanged. When the
+    /// paragraph splits across pages, that is the page its first line is on. The destinations are
+    /// written in the order of their names, so the order the elements were added in does not
+    /// change a key, and content inserted before an anchored element moves its value and not its
+    /// key.</para>
+    /// <para>A custom <see cref="IRenderer"/> reports no anchors, so content it draws
+    /// has none and cannot be given one. A <see cref="Rendering.ParagraphRenderer"/> built to
+    /// continue a paragraph from a later line reports none either, and is refused as an anchor on
+    /// content never drawn.</para>
+    /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// Raised from this <c>init</c> accessor when the name breaks the rule above. It is also
+    /// raised from the save, not from this property, as <see cref="ArgumentOutOfRangeException"/>
+    /// naming <c>top</c>, when a negative margin puts the destination's top beyond ±3.403 × 10^38,
+    /// the range of a PDF real (ISO 32000-1, Table C.1). The layout had started, so the document
+    /// cannot be saved again.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from the save, not from this property, when another element in the document holds the
+    /// same anchor, or when the element is never drawn.
+    /// </exception>
+    public string? Anchor
+    {
+        get => _anchor;
+        init => _anchor = AnchorNames.Validate(value);
+    }
+
+    private string? _anchor;
+
     /// <summary>Horizontal alignment of the paragraph text.</summary>
     /// <remarks>
     /// <see cref="HorizontalAlignment.Justify"/> stretches every line except the paragraph's last,

@@ -20,7 +20,7 @@ namespace VellumPdf.Layout.Rendering;
 /// <see cref="Layout"/> during a save, so the exceptions on that method reach you from the save. A
 /// negative start line makes <see cref="Draw"/> throw.
 /// </remarks>
-public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource
+public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IPlacementSource
 {
     private readonly Paragraph _para;
 
@@ -75,6 +75,15 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource
     // The mode belongs to the element, so a renderer added through Document.Add(IRenderer) honours
     // it as well.
     PageBreakMode IPageBreakSource.BreakBefore => _para.BreakBefore;
+
+    // Explicit, as above. The paragraph's anchor lands where its first line does, so only the piece
+    // that starts at line 0 reports it; the overflow of a split paragraph starts later and reports
+    // nothing, which is what keeps the destination on the page the first line is on.
+    void IPlacementSource.ReportPlacements(PlacementSink sink)
+    {
+        if (_startLine == 0 && _para.Anchor is { } anchor)
+            sink.ReportAnchor(_para, anchor, _occupied);
+    }
 
     // ── Phase 1: Layout ───────────────────────────────────────────────────────
 

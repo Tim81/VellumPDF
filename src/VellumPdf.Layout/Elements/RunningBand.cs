@@ -7,12 +7,22 @@ namespace VellumPdf.Layout.Elements;
 
 /// <summary>
 /// A header or footer band repeated on every page.
-/// Text supports <c>{page}</c> (current page number) and <c>{pages}</c> (total page count)
+/// Text supports <c>{page}</c> (the current page number, or its label when the document defines
+/// page-label ranges) and <c>{pages}</c> (total page count)
 /// tokens, which are substituted at render time.
 /// </summary>
 /// <remarks>
 /// A null template throws from <see cref="Resolve"/> / save (#531). Overlong text is
 /// truncated, and refused only in strict mode; see <see cref="Template"/>.
+/// <para><b><c>{page}</c> prints the page's label once the document defines a page-label
+/// range.</b> A range comes from <see cref="Document.PageLabel"/> or
+/// <see cref="PageBreak.PageLabel"/>; with none, <c>{page}</c> prints the decimal page number, byte
+/// for byte as it always has. With one, it prints what a viewer shows for the page, such as
+/// <c>iv</c> or <c>A-9</c>, and a page before the first range reads its decimal number. The label
+/// is copied as it is and is never scanned again, so a prefix that holds <c>{pages}</c> prints that
+/// text. <c>{pages}</c> stays the number of pages in the document, a recto break's blank page
+/// included, and that blank page has no band. <see cref="Resolve"/> is given the number and knows no
+/// range, so it never substitutes a label.</para>
 /// </remarks>
 public sealed class RunningBand
 {
@@ -208,6 +218,9 @@ public sealed class RunningBand
 
     /// <summary>Substitutes <c>{page}</c> and <c>{pages}</c> in <see cref="Template"/>.</summary>
     /// <remarks>
+    /// <c>{page}</c> becomes the number passed, as a decimal. A save prints the page's label in its
+    /// place when the document defines a page-label range; this method is given no range, so it
+    /// cannot.
     /// Only the exact lower-case text <c>{page}</c> or <c>{pages}</c> is substituted. Any other
     /// brace text, <c>{Page}</c>, <c>{ page }</c> and a lone <c>{page</c> included, is left as
     /// given, and a substituted number is never scanned again. A null template is refused here with
