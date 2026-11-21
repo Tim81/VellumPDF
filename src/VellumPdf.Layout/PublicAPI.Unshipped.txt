@@ -61,3 +61,22 @@ VellumPdf.Layout.Core.TabStop.TabStop(double position, VellumPdf.Layout.Core.Tab
 VellumPdf.Layout.Elements.Paragraph.TabStops.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Layout.Core.TabStop!>?
 VellumPdf.Layout.Elements.Paragraph.TabStops.init -> void
 VellumPdf.Layout.LayoutDiagnosticCode.TabStopBeyondWidth = 106 -> VellumPdf.Layout.LayoutDiagnosticCode
+VellumPdf.Layout.Core.PageBreakMode
+VellumPdf.Layout.Core.PageBreakMode.None = 0 -> VellumPdf.Layout.Core.PageBreakMode
+VellumPdf.Layout.Core.PageBreakMode.Page = 1 -> VellumPdf.Layout.Core.PageBreakMode
+VellumPdf.Layout.Core.PageBreakMode.Recto = 2 -> VellumPdf.Layout.Core.PageBreakMode
+VellumPdf.Layout.Document.Add(VellumPdf.Layout.Elements.PageBreak! pageBreak) -> VellumPdf.Layout.Document!
+VellumPdf.Layout.Elements.PageBreak
+VellumPdf.Layout.Elements.PageBreak.PageBreak() -> void
+VellumPdf.Layout.Elements.PageBreak.Recto.get -> bool
+VellumPdf.Layout.Elements.PageBreak.Recto.init -> void
+VellumPdf.Layout.Elements.Heading.BreakBefore.get -> VellumPdf.Layout.Core.PageBreakMode
+VellumPdf.Layout.Elements.Heading.BreakBefore.init -> void
+VellumPdf.Layout.Elements.LayoutImage.BreakBefore.get -> VellumPdf.Layout.Core.PageBreakMode
+VellumPdf.Layout.Elements.LayoutImage.BreakBefore.init -> void
+VellumPdf.Layout.Elements.ListElement.BreakBefore.get -> VellumPdf.Layout.Core.PageBreakMode
+VellumPdf.Layout.Elements.ListElement.BreakBefore.init -> void
+VellumPdf.Layout.Elements.Paragraph.BreakBefore.get -> VellumPdf.Layout.Core.PageBreakMode
+VellumPdf.Layout.Elements.Paragraph.BreakBefore.init -> void
+VellumPdf.Layout.Elements.Table.TableElement.BreakBefore.get -> VellumPdf.Layout.Core.PageBreakMode
+VellumPdf.Layout.Elements.Table.TableElement.BreakBefore.init -> void

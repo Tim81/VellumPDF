@@ -5,7 +5,8 @@ namespace VellumPdf.Core;
 
 /// <summary>
 /// Builds a number tree (ISO 32000-2:2020, 7.9.7): keys are integers in ascending numerical order, and the
-/// entries array is named <c>/Nums</c>. Internal. Nothing calls it yet.
+/// entries array is named <c>/Nums</c>. Internal. <c>PageLabelTable</c> calls it for the
+/// <c>/PageLabels</c> tree.
 /// </summary>
 /// <remarks>
 /// Node layout, <c>/Limits</c> and the no-limits-on-the-root rule are as for <see cref="NameTreeWriter"/>

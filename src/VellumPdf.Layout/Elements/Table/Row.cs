@@ -32,17 +32,12 @@ public sealed class Row
 
     /// <summary>Whether this row is a header row (may be repeated on each page).</summary>
     /// <remarks>
-    /// Only the leading run of header rows repeats on each continuation page. A header row after a
-    /// data row is drawn once, where it is. A table whose rows are all headers cannot be drawn: it
-    /// lays out as nothing, so the save throws <see cref="InvalidOperationException"/> even when
-    /// the table would fit (#488).
+    /// Only the leading run of header rows repeats on each continuation page, and only when a row
+    /// that is not a header follows it. A header row after a data row is drawn once, where it is.
+    /// A table whose rows are all headers has no run to repeat: each row is drawn once, in order,
+    /// and the table splits between rows like any other. A tagged table marks every header row's
+    /// cells as header cells either way.
     /// </remarks>
-    /// <exception cref="InvalidOperationException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when every row of the table is a header row. The message says the
-    /// element is too tall to fit on a page (#488), or, when no header row has a cell, that the
-    /// table resolved to no columns.
-    /// </exception>
     public bool IsHeader { get; init; }
 
     /// <summary>Optional background fill color for the row.</summary>

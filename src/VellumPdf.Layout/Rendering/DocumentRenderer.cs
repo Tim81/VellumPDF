@@ -313,7 +313,14 @@ public sealed class DocumentRenderer
     /// An element needs more than <b>50,000</b> page continuations or is too tall for one page, or
     /// the kernel document has no pages, or this document has already been written, or the kernel
     /// document's conformance level refuses its encryption settings, or an element's input cannot
-    /// be laid out, or a registered font lacks a table the write needs.
+    /// be laid out, or a registered font lacks a table the write needs. It is also thrown, by the
+    /// final write and so after the layout, when the kernel document holds a link on one of
+    /// its pages whose <see cref="VellumPdf.Annotations.PdfLinkAnnotation.DestName"/> no
+    /// <see cref="PdfDocument.AddNamedDestination"/> call added, or a
+    /// <see cref="PdfDocument.AddPageLabelRange"/> range that starts at or after the number of
+    /// pages the layout produced. The layout's pages are then already in the kernel document, which
+    /// is not marked written: calling this method again lays them out a second time, so fix the
+    /// kernel document and save it with <see cref="PdfDocument.Save(System.IO.Stream)"/> instead.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// The margins, header and footer together leave the content area no positive size, or an
@@ -373,7 +380,9 @@ public sealed class DocumentRenderer
         // them there with the document not marked as written, so a retry laid out again on top of
         // them and wrote every page twice (#530). The kernel document marks itself written once
         // these checks have passed, and a failure after that burns it; so after this point a failure
-        // either added no pages or leaves the document unable to be written again.
+        // either added no pages, or leaves the document unable to be written again, or is the
+        // navigation refusal (a link to a missing name, a label range past the last page), which
+        // adds the pages and leaves the kernel document writable.
         // With nothing added the layout only checks the page geometry and the bands and adds no page,
         // so it runs first and "no pages" follows, as it always did.
         if (_renderers.Count == 0) RunLayout();
@@ -434,6 +443,10 @@ public sealed class DocumentRenderer
 
         // From here the renderers measure and cache; see Document.MarkFailedIfLaidOut.
         HasStartedLayout = true;
+
+        // The pages the kernel document already holds. A recto break counts physical pages, as
+        // {page} does, so it counts from here and not from this layout's first page.
+        _pagesBefore = _pdf.Pages.Count;
 
         var dependents = FindPlanDependents();
 
@@ -591,6 +604,20 @@ public sealed class DocumentRenderer
     // holds pages.
     private int _pageIndex;
 
+    // Pages the kernel document held when the layout started; see RunLayout.
+    private int _pagesBefore;
+
+    // The strongest break asked for since the last element was placed, and the renderers that asked
+    // (kept only when placements are collected). A break takes effect before the next element, so a
+    // break with nothing after it is dropped at the end of the pass.
+    private PageBreakMode _pendingBreak;
+    private List<IRenderer>? _pendingBreakers;
+
+    // Whether anything has been accepted on the current page; a zero-height element counts. A page
+    // without is already a new page, so a break adds no page to end it; a Recto break may still add
+    // a blank page for parity.
+    private bool _placedOnPage;
+
     private PlacementSink _placements = new();
     private PlacementSink? _measureSink;
     private PlacementSink? _drawSink;
@@ -641,6 +668,9 @@ public sealed class DocumentRenderer
     {
         _measuring = measure;
         _pageIndex = 0;
+        _placedOnPage = false;
+        _pendingBreak = PageBreakMode.None;
+        _pendingBreakers = null;
         _placements = new PlacementSink();
         if (measure)
         {
@@ -662,8 +692,26 @@ public sealed class DocumentRenderer
                 _sink.CurrentIndex = i;
             }
 
-            PlaceRenderer(_renderers[i], totalPages);
+            var renderer = _renderers[i];
+            var own = renderer is IPageBreakSource source ? source.BreakBefore : PageBreakMode.None;
+            if (renderer is PageBreakRenderer)
+            {
+                // Never laid out: a break has no size. It joins the pending one.
+                if (own > _pendingBreak) _pendingBreak = own;
+                if (_collect) (_pendingBreakers ??= []).Add(renderer);
+                continue;
+            }
+
+            var mode = own > _pendingBreak ? own : _pendingBreak;
+            if (mode != PageBreakMode.None)
+                ApplyBreak(mode, renderer, own != PageBreakMode.None, totalPages);
+
+            PlaceRenderer(renderer, totalPages);
         }
+
+        // A break with nothing after it is dropped: it would only add a trailing blank page.
+        _pendingBreak = PageBreakMode.None;
+        _pendingBreakers = null;
 
         if (!measure)
         {
@@ -776,11 +824,63 @@ public sealed class DocumentRenderer
                 throw PaginationChanged();
     }
 
+    // Applies the break in force before `renderer` is placed. The strongest pending mode is
+    // applied once: after any break the current page is empty, so a later Page adds nothing and a
+    // later Recto only settles parity, and one application gives the pages the breaks would give
+    // one at a time.
+    private void ApplyBreak(PageBreakMode mode, IRenderer renderer, bool ownBreak, int totalPages)
+    {
+        _pendingBreak = PageBreakMode.None;
+
+        // A page nothing has been placed on is already new, so consecutive breaks, and a break
+        // before the first element, add no page.
+        if (_placedOnPage) AdvancePage(totalPages);
+
+        // Parity is the physical position in the kernel document and page 1 is recto; a page label
+        // never enters it, because labels may restart.
+        if (mode == PageBreakMode.Recto && (_pagesBefore + _pageIndex + 1) % 2 == 0)
+            AddBlankPage(totalPages);
+
+        if (!_collect) return;
+
+        // One report per applied break, at the top of the content area of the page the element
+        // starts on, in both passes.
+        var area = PlaceArea;
+        var top = new LayoutBox(area.X, area.Y, area.Width, 0);
+        if (_pendingBreakers is not null)
+            foreach (var breaker in _pendingBreakers)
+            {
+                _placements.Enter(breaker, _pageIndex);
+                _placements.Report(breaker, top);
+            }
+
+        _pendingBreakers = null;
+        if (ownBreak)
+        {
+            _placements.Enter(renderer, _pageIndex);
+            _placements.Report(renderer, top);
+        }
+    }
+
+    // A page that holds nothing and shows no running band: it counts as a page in both passes, in
+    // {page} and in {pages}, but is never routed through FinishCurrentPage, which draws the bands.
+    private void AddBlankPage(int totalPages)
+    {
+        if (!_measuring)
+        {
+            FinishCurrentPage(totalPages);
+            new PdfCanvas(_pdf.AddPage(_pageSize)).Finish();
+        }
+
+        _pageIndex++;
+    }
+
     // Moves the cursor to the top of the next page. The drawing pass commits the open page; the
     // measuring pass has none.
     private void AdvancePage(int totalPages)
     {
         if (!_measuring) FinishCurrentPage(totalPages);
+        _placedOnPage = false;
         _pageIndex++;
         if (_measuring) _measureY = _measureArea.Y;
     }
@@ -802,12 +902,14 @@ public sealed class DocumentRenderer
             switch (result.Status)
             {
                 case LayoutResult.Outcome.Full:
+                    _placedOnPage = true;
                     ReportPlacements(renderer);
                     if (!_measuring) DrawRenderer(renderer);
                     Cursor = result.OccupiedArea!.Value.Bottom;
                     return;
 
                 case LayoutResult.Outcome.Partial:
+                    _placedOnPage = true;
                     ReportPlacements(result.SplitRenderer);
                     if (!_measuring) DrawRenderer(result.SplitRenderer!);
                     AdvancePage(totalPages);

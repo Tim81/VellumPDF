@@ -38,7 +38,7 @@ public sealed class PageLabelTableTests
     public void Build_lowerRomanFromPageZero_writesOneRange()
     {
         var table = new PageLabelTable();
-        table.Set(0, PageLabelNumbering.LowerRoman, null, 1);
+        table.Set(0, PdfPageLabelStyle.LowerRoman, null, 1);
         Assert.Equal("<<\n/Nums [0 <<\n/S /r\n>>]\n>>", Build(table, 10));
     }
 
@@ -46,8 +46,8 @@ public sealed class PageLabelTableTests
     public void Build_twoRanges_writesThemInPageIndexOrder_whateverTheOrderTheyWereSetIn()
     {
         var table = new PageLabelTable();
-        table.Set(4, PageLabelNumbering.Decimal, null, 1);
-        table.Set(0, PageLabelNumbering.LowerRoman, null, 1);
+        table.Set(4, PdfPageLabelStyle.Decimal, null, 1);
+        table.Set(0, PdfPageLabelStyle.LowerRoman, null, 1);
         Assert.Equal("<<\n/Nums [0 <<\n/S /r\n>> 4 <<\n/S /D\n>>]\n>>", Build(table, 10));
     }
 
@@ -55,7 +55,7 @@ public sealed class PageLabelTableTests
     public void Build_noRangeAtPageZero_addsADecimalRangeThere()
     {
         var table = new PageLabelTable();
-        table.Set(3, PageLabelNumbering.Decimal, null, 1);
+        table.Set(3, PdfPageLabelStyle.Decimal, null, 1);
         Assert.Equal("<<\n/Nums [0 <<\n/S /D\n>> 3 <<\n/S /D\n>>]\n>>", Build(table, 10));
     }
 
@@ -63,7 +63,7 @@ public sealed class PageLabelTableTests
     public void Build_aRangeAtPageZeroIsNotReplacedByTheSynthesisedOne()
     {
         var table = new PageLabelTable();
-        table.Set(0, PageLabelNumbering.UpperLetters, null, 1);
+        table.Set(0, PdfPageLabelStyle.UpperLetters, null, 1);
         Assert.Equal("<<\n/Nums [0 <<\n/S /A\n>>]\n>>", Build(table, 10));
     }
 
@@ -71,7 +71,7 @@ public sealed class PageLabelTableTests
     public void Build_prefixAndFirstNumber_areWrittenInTheOrderOfTheStandardsExample()
     {
         var table = new PageLabelTable();
-        table.Set(7, PageLabelNumbering.Decimal, "A-", 8);
+        table.Set(7, PdfPageLabelStyle.Decimal, "A-", 8);
         Assert.Equal("<<\n/Nums [0 <<\n/S /D\n>> 7 <<\n/S /D\n/P (þÿ\0A\0-)\n/St 8\n>>]\n>>", Build(table, 10));
     }
 
@@ -79,20 +79,20 @@ public sealed class PageLabelTableTests
     public void Build_firstNumberTwo_writesSt2()
     {
         var table = new PageLabelTable();
-        table.Set(0, PageLabelNumbering.Decimal, null, 2);
+        table.Set(0, PdfPageLabelStyle.Decimal, null, 2);
         Assert.Equal("<<\n/Nums [0 <<\n/S /D\n/St 2\n>>]\n>>", Build(table, 1));
     }
 
     [Theory]
-    [InlineData((int)PageLabelNumbering.Decimal, "/D")]
-    [InlineData((int)PageLabelNumbering.UpperRoman, "/R")]
-    [InlineData((int)PageLabelNumbering.LowerRoman, "/r")]
-    [InlineData((int)PageLabelNumbering.UpperLetters, "/A")]
-    [InlineData((int)PageLabelNumbering.LowerLetters, "/a")]
+    [InlineData((int)PdfPageLabelStyle.Decimal, "/D")]
+    [InlineData((int)PdfPageLabelStyle.UpperRoman, "/R")]
+    [InlineData((int)PdfPageLabelStyle.LowerRoman, "/r")]
+    [InlineData((int)PdfPageLabelStyle.UpperLetters, "/A")]
+    [InlineData((int)PdfPageLabelStyle.LowerLetters, "/a")]
     public void Build_writesTheStyleNameOfTable161(int style, string name)
     {
         var table = new PageLabelTable();
-        table.Set(0, (PageLabelNumbering)style, null, 1);
+        table.Set(0, (PdfPageLabelStyle)style, null, 1);
         Assert.Equal($"<<\n/Nums [0 <<\n/S {name}\n>>]\n>>", Build(table, 1));
     }
 
@@ -100,7 +100,7 @@ public sealed class PageLabelTableTests
     public void Build_firstNumberOne_writesNoSt()
     {
         var table = new PageLabelTable();
-        table.Set(0, PageLabelNumbering.Decimal, null, 1);
+        table.Set(0, PdfPageLabelStyle.Decimal, null, 1);
         Assert.DoesNotContain("/St", Build(table, 1));
     }
 
@@ -108,9 +108,9 @@ public sealed class PageLabelTableTests
     public void Build_emptyPrefix_writesNoP_anAbsentOneDoesNotEither()
     {
         var empty = new PageLabelTable();
-        empty.Set(0, PageLabelNumbering.Decimal, string.Empty, 1);
+        empty.Set(0, PdfPageLabelStyle.Decimal, string.Empty, 1);
         var absent = new PageLabelTable();
-        absent.Set(0, PageLabelNumbering.Decimal, null, 1);
+        absent.Set(0, PdfPageLabelStyle.Decimal, null, 1);
 
         Assert.DoesNotContain("/P", Build(empty, 1));
         Assert.Equal(Build(absent, 1), Build(empty, 1));
@@ -120,7 +120,7 @@ public sealed class PageLabelTableTests
     public void Build_noStyle_writesNoS_andKeepsThePrefix()
     {
         var table = new PageLabelTable();
-        table.Set(0, PageLabelNumbering.None, "Cover", 1);
+        table.Set(0, PdfPageLabelStyle.None, "Cover", 1);
         Assert.Equal("<<\n/Nums [0 <<\n/P (þÿ\0C\0o\0v\0e\0r)\n>>]\n>>", Build(table, 1));
     }
 
@@ -128,7 +128,7 @@ public sealed class PageLabelTableTests
     public void Build_prefixWithAParenthesis_isEscapedByTheWriter()
     {
         var table = new PageLabelTable();
-        table.Set(0, PageLabelNumbering.None, "(", 1);
+        table.Set(0, PdfPageLabelStyle.None, "(", 1);
         // FE FF 00 28 serialises as ( FE FF 00 \ ( ): the 0x28 byte is escaped, the rest is not.
         Assert.Equal("<<\n/Nums [0 <<\n/P (þÿ\0\\()\n>>]\n>>", Build(table, 1));
     }
@@ -137,7 +137,7 @@ public sealed class PageLabelTableTests
     public void Build_prefixWithANonAsciiCharacter_isUtf16BigEndianWithAByteOrderMark()
     {
         var table = new PageLabelTable();
-        table.Set(0, PageLabelNumbering.None, "é", 1);
+        table.Set(0, PdfPageLabelStyle.None, "é", 1);
         Assert.Equal("<<\n/Nums [0 <<\n/P (þÿ\0é)\n>>]\n>>", Build(table, 1));
     }
 
@@ -145,7 +145,7 @@ public sealed class PageLabelTableTests
     public void Build_prefixWithASurrogatePair_isWrittenAsTwoCodeUnits()
     {
         var table = new PageLabelTable();
-        table.Set(0, PageLabelNumbering.None, "\U0001F600", 1);
+        table.Set(0, PdfPageLabelStyle.None, "\U0001F600", 1);
         // U+1F600 is the pair D83D DE00.
         Assert.Equal("<<\n/Nums [0 <<\n/P (þÿØ=Þ\0)\n>>]\n>>", Build(table, 1));
     }
@@ -154,7 +154,7 @@ public sealed class PageLabelTableTests
     public void Build_valuesAreDirectDictionaries()
     {
         var table = new PageLabelTable();
-        table.Set(0, PageLabelNumbering.Decimal, null, 1);
+        table.Set(0, PdfPageLabelStyle.Decimal, null, 1);
         var registry = new PdfObjectRegistry();
         var root = table.Build(registry, 1)!;
         var nums = Assert.IsType<PdfArray>(root.Get(new PdfName("Nums")));
@@ -180,8 +180,8 @@ public sealed class PageLabelTableTests
     public void Build_aRangeAtOrBeyondThePageCount_isRefused(int start, int pageCount)
     {
         var table = new PageLabelTable();
-        table.Set(0, PageLabelNumbering.Decimal, null, 1);
-        table.Set(start, PageLabelNumbering.LowerRoman, null, 1);
+        table.Set(0, PdfPageLabelStyle.Decimal, null, 1);
+        table.Set(start, PdfPageLabelStyle.LowerRoman, null, 1);
         var registry = new PdfObjectRegistry();
         var ex = Assert.Throws<InvalidOperationException>(() => table.Build(registry, pageCount));
         Assert.Contains($"page index {start}", ex.Message);
@@ -192,7 +192,7 @@ public sealed class PageLabelTableTests
     public void Build_lastRangeOnTheLastPage_isAccepted()
     {
         var table = new PageLabelTable();
-        table.Set(2, PageLabelNumbering.Decimal, null, 1);
+        table.Set(2, PdfPageLabelStyle.Decimal, null, 1);
         Assert.NotNull(table.Build(new PdfObjectRegistry(), 3));
     }
 
@@ -206,8 +206,8 @@ public sealed class PageLabelTableTests
     public void Build_twice_givesTheSameBytes_andLeavesTheTableAlone()
     {
         var table = new PageLabelTable();
-        table.Set(0, PageLabelNumbering.LowerRoman, "x", 3);
-        table.Set(2, PageLabelNumbering.Decimal, null, 1);
+        table.Set(0, PdfPageLabelStyle.LowerRoman, "x", 3);
+        table.Set(2, PdfPageLabelStyle.Decimal, null, 1);
         Assert.Equal(Build(table, 5), Build(table, 5));
         Assert.Equal(2, table.Count);
     }
@@ -221,7 +221,7 @@ public sealed class PageLabelTableTests
     public void Set_refusesANegativeStartAndAFirstNumberBelowOne(int start, int first, string paramName)
     {
         var table = new PageLabelTable();
-        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => table.Set(start, PageLabelNumbering.Decimal, null, first));
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => table.Set(start, PdfPageLabelStyle.Decimal, null, first));
         Assert.Equal(paramName, ex.ParamName);
         Assert.Equal(0, table.Count);
     }
@@ -230,7 +230,7 @@ public sealed class PageLabelTableTests
     public void Set_refusesAnUndefinedStyle()
     {
         var table = new PageLabelTable();
-        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => table.Set(0, (PageLabelNumbering)99, null, 1));
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => table.Set(0, (PdfPageLabelStyle)99, null, 1));
         Assert.Equal("style", ex.ParamName);
         Assert.Equal(0, table.Count);
     }
@@ -239,8 +239,8 @@ public sealed class PageLabelTableTests
     public void Set_secondRangeAtTheSameStart_isRefused_andTheFirstStays()
     {
         var table = new PageLabelTable();
-        table.Set(2, PageLabelNumbering.Decimal, null, 1);
-        Assert.Throws<ArgumentException>(() => table.Set(2, PageLabelNumbering.LowerRoman, null, 1));
+        table.Set(2, PdfPageLabelStyle.Decimal, null, 1);
+        Assert.Throws<ArgumentException>(() => table.Set(2, PdfPageLabelStyle.LowerRoman, null, 1));
         Assert.Equal(1, table.Count);
         Assert.Contains("/S /D", Build(table, 3));
     }
@@ -249,10 +249,10 @@ public sealed class PageLabelTableTests
     public void Set_prefixWithAnUnpairedSurrogate_isRefused()
     {
         var table = new PageLabelTable();
-        Assert.Equal("prefix", Assert.Throws<ArgumentException>(() => table.Set(0, PageLabelNumbering.Decimal, "\uD800", 1)).ParamName);
-        Assert.Throws<ArgumentException>(() => table.Set(0, PageLabelNumbering.Decimal, "a\uDC00", 1));
-        Assert.Throws<ArgumentException>(() => table.Set(0, PageLabelNumbering.Decimal, "\uD800a", 1));
-        table.Set(0, PageLabelNumbering.Decimal, "😀", 1);
+        Assert.Equal("prefix", Assert.Throws<ArgumentException>(() => table.Set(0, PdfPageLabelStyle.Decimal, "\uD800", 1)).ParamName);
+        Assert.Throws<ArgumentException>(() => table.Set(0, PdfPageLabelStyle.Decimal, "a\uDC00", 1));
+        Assert.Throws<ArgumentException>(() => table.Set(0, PdfPageLabelStyle.Decimal, "\uD800a", 1));
+        table.Set(0, PdfPageLabelStyle.Decimal, "😀", 1);
         Assert.Equal(1, table.Count);
     }
 
@@ -260,8 +260,8 @@ public sealed class PageLabelTableTests
     public void Set_prefixAt16382Characters_isAccepted_and16383IsRefused()
     {
         var table = new PageLabelTable();
-        table.Set(0, PageLabelNumbering.Decimal, new string('x', 16_382), 1);
-        var ex = Assert.Throws<ArgumentException>(() => table.Set(1, PageLabelNumbering.Decimal, new string('x', 16_383), 1));
+        table.Set(0, PdfPageLabelStyle.Decimal, new string('x', 16_382), 1);
+        var ex = Assert.Throws<ArgumentException>(() => table.Set(1, PdfPageLabelStyle.Decimal, new string('x', 16_383), 1));
         Assert.Equal("prefix", ex.ParamName);
 
         // 16,382 characters are 2 + 2 x 16,382 = 32,766 bytes, inside the 32,767 of ISO 19005-2,
@@ -275,29 +275,29 @@ public sealed class PageLabelTableTests
     // ---- the formatter ------------------------------------------------------------------------
 
     [Theory]
-    [InlineData((int)PageLabelNumbering.Decimal, null, 1L, "1")]
-    [InlineData((int)PageLabelNumbering.LowerRoman, null, 4L, "iv")]
-    [InlineData((int)PageLabelNumbering.LowerRoman, null, 9L, "ix")]
-    [InlineData((int)PageLabelNumbering.LowerRoman, null, 14L, "xiv")]
-    [InlineData((int)PageLabelNumbering.LowerRoman, null, 3999L, "mmmcmxcix")]
-    [InlineData((int)PageLabelNumbering.LowerRoman, null, 4000L, "mmmm")]
-    [InlineData((int)PageLabelNumbering.UpperRoman, null, 1994L, "MCMXCIV")]
-    [InlineData((int)PageLabelNumbering.UpperLetters, null, 1L, "A")]
-    [InlineData((int)PageLabelNumbering.UpperLetters, null, 26L, "Z")]
-    [InlineData((int)PageLabelNumbering.UpperLetters, null, 27L, "AA")]
-    [InlineData((int)PageLabelNumbering.UpperLetters, null, 52L, "ZZ")]
-    [InlineData((int)PageLabelNumbering.UpperLetters, null, 53L, "AAA")]
-    [InlineData((int)PageLabelNumbering.LowerLetters, null, 28L, "bb")]
-    [InlineData((int)PageLabelNumbering.Decimal, "A-", 8L, "A-8")]
-    [InlineData((int)PageLabelNumbering.None, "Contents", 1L, "Contents")]
-    [InlineData((int)PageLabelNumbering.None, null, 1L, "")]
-    [InlineData((int)PageLabelNumbering.Decimal, null, 2147483648L, "2147483648")]
+    [InlineData((int)PdfPageLabelStyle.Decimal, null, 1L, "1")]
+    [InlineData((int)PdfPageLabelStyle.LowerRoman, null, 4L, "iv")]
+    [InlineData((int)PdfPageLabelStyle.LowerRoman, null, 9L, "ix")]
+    [InlineData((int)PdfPageLabelStyle.LowerRoman, null, 14L, "xiv")]
+    [InlineData((int)PdfPageLabelStyle.LowerRoman, null, 3999L, "mmmcmxcix")]
+    [InlineData((int)PdfPageLabelStyle.LowerRoman, null, 4000L, "mmmm")]
+    [InlineData((int)PdfPageLabelStyle.UpperRoman, null, 1994L, "MCMXCIV")]
+    [InlineData((int)PdfPageLabelStyle.UpperLetters, null, 1L, "A")]
+    [InlineData((int)PdfPageLabelStyle.UpperLetters, null, 26L, "Z")]
+    [InlineData((int)PdfPageLabelStyle.UpperLetters, null, 27L, "AA")]
+    [InlineData((int)PdfPageLabelStyle.UpperLetters, null, 52L, "ZZ")]
+    [InlineData((int)PdfPageLabelStyle.UpperLetters, null, 53L, "AAA")]
+    [InlineData((int)PdfPageLabelStyle.LowerLetters, null, 28L, "bb")]
+    [InlineData((int)PdfPageLabelStyle.Decimal, "A-", 8L, "A-8")]
+    [InlineData((int)PdfPageLabelStyle.None, "Contents", 1L, "Contents")]
+    [InlineData((int)PdfPageLabelStyle.None, null, 1L, "")]
+    [InlineData((int)PdfPageLabelStyle.Decimal, null, 2147483648L, "2147483648")]
     public void Format_knownAnswers(int style, string? prefix, long number, string expected)
-        => Assert.Equal(expected, PageLabelFormatter.Format((PageLabelNumbering)style, prefix, number));
+        => Assert.Equal(expected, PageLabelFormatter.Format((PdfPageLabelStyle)style, prefix, number));
 
     [Theory]
-    [InlineData((int)PageLabelNumbering.LowerRoman)]
-    [InlineData((int)PageLabelNumbering.UpperRoman)]
+    [InlineData((int)PdfPageLabelStyle.LowerRoman)]
+    [InlineData((int)PdfPageLabelStyle.UpperRoman)]
     public void Format_romanFollowsTheSubtractiveFormForEveryNumberUpTo3999(int style)
     {
         // An independent reference: greedy subtraction over the full table, written separately from
@@ -315,8 +315,8 @@ public sealed class PageLabelTableTests
                     remaining -= value;
                 }
             }
-            var reference = (PageLabelNumbering)style == PageLabelNumbering.UpperRoman ? expected.ToString().ToUpperInvariant() : expected.ToString();
-            Assert.Equal(reference, PageLabelFormatter.Format((PageLabelNumbering)style, null, n));
+            var reference = (PdfPageLabelStyle)style == PdfPageLabelStyle.UpperRoman ? expected.ToString().ToUpperInvariant() : expected.ToString();
+            Assert.Equal(reference, PageLabelFormatter.Format((PdfPageLabelStyle)style, null, n));
         }
     }
 
@@ -326,7 +326,7 @@ public sealed class PageLabelTableTests
         for (var n = 1; n <= 26 * 5; n++)
         {
             var expected = new string((char)('A' + (n - 1) % 26), (n - 1) / 26 + 1);
-            Assert.Equal(expected, PageLabelFormatter.Format(PageLabelNumbering.UpperLetters, null, n));
+            Assert.Equal(expected, PageLabelFormatter.Format(PdfPageLabelStyle.UpperLetters, null, n));
         }
     }
 
@@ -336,47 +336,47 @@ public sealed class PageLabelTableTests
     [InlineData(long.MinValue)]
     public void Format_numberBelowOne_isRefused(long number)
     {
-        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PageLabelNumbering.Decimal, null, number));
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PdfPageLabelStyle.Decimal, null, number));
         Assert.Equal("number", ex.ParamName);
     }
 
     [Fact]
     public void Format_undefinedStyle_isRefused()
     {
-        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format((PageLabelNumbering)99, null, 1));
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format((PdfPageLabelStyle)99, null, 1));
         Assert.Equal("style", ex.ParamName);
     }
 
     [Fact]
     public void Format_lettersAtTheLengthBound_areAccepted_andOneMoreIsRefused()
     {
-        Assert.Equal(32_767, PageLabelFormatter.Format(PageLabelNumbering.UpperLetters, null, 851_942).Length);
-        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PageLabelNumbering.UpperLetters, null, 851_943));
+        Assert.Equal(32_767, PageLabelFormatter.Format(PdfPageLabelStyle.UpperLetters, null, 851_942).Length);
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PdfPageLabelStyle.UpperLetters, null, 851_943));
         Assert.Equal("number", ex.ParamName);
-        Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PageLabelNumbering.UpperLetters, null, int.MaxValue));
-        Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PageLabelNumbering.LowerLetters, null, long.MaxValue));
+        Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PdfPageLabelStyle.UpperLetters, null, int.MaxValue));
+        Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PdfPageLabelStyle.LowerLetters, null, long.MaxValue));
     }
 
     [Fact]
     public void Format_romanAtTheLengthBound_isAccepted_andOneThousandMoreIsRefused()
     {
         // Thousands are one M each: 32,767 M, plus nothing for a remainder of 0.
-        Assert.Equal(32_767, PageLabelFormatter.Format(PageLabelNumbering.UpperRoman, null, 32_767_000).Length);
-        Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PageLabelNumbering.UpperRoman, null, 32_768_000));
+        Assert.Equal(32_767, PageLabelFormatter.Format(PdfPageLabelStyle.UpperRoman, null, 32_767_000).Length);
+        Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PdfPageLabelStyle.UpperRoman, null, 32_768_000));
         // The remainder counts too: 32,766 M and one I fill the bound, 32,767 M and one I pass it,
         // and 32,766 M with CMXCIX (6 characters) passes it.
-        Assert.Equal(32_767, PageLabelFormatter.Format(PageLabelNumbering.UpperRoman, null, 32_766_001).Length);
-        Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PageLabelNumbering.UpperRoman, null, 32_767_001));
-        Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PageLabelNumbering.UpperRoman, null, 32_766_999));
-        Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PageLabelNumbering.LowerRoman, null, long.MaxValue));
+        Assert.Equal(32_767, PageLabelFormatter.Format(PdfPageLabelStyle.UpperRoman, null, 32_766_001).Length);
+        Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PdfPageLabelStyle.UpperRoman, null, 32_767_001));
+        Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PdfPageLabelStyle.UpperRoman, null, 32_766_999));
+        Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PdfPageLabelStyle.LowerRoman, null, long.MaxValue));
     }
 
     [Fact]
     public void Format_boundIncludesThePrefix()
     {
         var prefix = new string('p', 32_000);
-        Assert.Equal(32_000 + 767, PageLabelFormatter.Format(PageLabelNumbering.UpperLetters, prefix, 19_942).Length);
-        var over = Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PageLabelNumbering.UpperLetters, prefix, 19_943));
+        Assert.Equal(32_000 + 767, PageLabelFormatter.Format(PdfPageLabelStyle.UpperLetters, prefix, 19_942).Length);
+        var over = Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PdfPageLabelStyle.UpperLetters, prefix, 19_943));
         Assert.Equal("number", over.ParamName);
     }
 
@@ -384,19 +384,19 @@ public sealed class PageLabelTableTests
     public void Format_decimalCountsItsDigits_againstThePrefix()
     {
         var prefix = new string('p', 32_766);
-        Assert.Equal(32_767, PageLabelFormatter.Format(PageLabelNumbering.Decimal, prefix, 1).Length);
-        Assert.Equal("number", Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PageLabelNumbering.Decimal, prefix, 10)).ParamName);
+        Assert.Equal(32_767, PageLabelFormatter.Format(PdfPageLabelStyle.Decimal, prefix, 1).Length);
+        Assert.Equal("number", Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PdfPageLabelStyle.Decimal, prefix, 10)).ParamName);
 
         // The widest long has 19 digits.
-        Assert.Equal(32_767, PageLabelFormatter.Format(PageLabelNumbering.Decimal, new string('p', 32_748), long.MaxValue).Length);
-        Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PageLabelNumbering.Decimal, new string('p', 32_749), long.MaxValue));
+        Assert.Equal(32_767, PageLabelFormatter.Format(PdfPageLabelStyle.Decimal, new string('p', 32_748), long.MaxValue).Length);
+        Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PdfPageLabelStyle.Decimal, new string('p', 32_749), long.MaxValue));
     }
 
     [Fact]
     public void Format_prefixAloneOverTheBound_isRefusedWithTheParameterPrefix()
     {
-        Assert.Equal(32_767, PageLabelFormatter.Format(PageLabelNumbering.None, new string('p', 32_767), 1).Length);
-        foreach (var style in Enum.GetValues<PageLabelNumbering>())
+        Assert.Equal(32_767, PageLabelFormatter.Format(PdfPageLabelStyle.None, new string('p', 32_767), 1).Length);
+        foreach (var style in Enum.GetValues<PdfPageLabelStyle>())
         {
             var ex = Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(style, new string('p', 32_768), 1));
             Assert.Equal("prefix", ex.ParamName);
@@ -406,9 +406,9 @@ public sealed class PageLabelTableTests
     [Fact]
     public void Format_lengthIsCheckedBeforeAnythingIsBuilt()
     {
-        PageLabelFormatter.Format(PageLabelNumbering.UpperLetters, null, 851_942); // warm the JIT
+        PageLabelFormatter.Format(PdfPageLabelStyle.UpperLetters, null, 851_942); // warm the JIT
         var before = GC.GetAllocatedBytesForCurrentThread();
-        var label = PageLabelFormatter.Format(PageLabelNumbering.UpperLetters, null, 851_942);
+        var label = PageLabelFormatter.Format(PdfPageLabelStyle.UpperLetters, null, 851_942);
         var accepted = GC.GetAllocatedBytesForCurrentThread() - before;
         Assert.Equal(32_767, label.Length);
         // One string of 32,767 two-byte characters is 65,534 bytes plus a header (65,560 measured
@@ -419,14 +419,14 @@ public sealed class PageLabelTableTests
         // still stay below what building the label costs, so no buffer was made before the length
         // check.
         before = GC.GetAllocatedBytesForCurrentThread();
-        Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PageLabelNumbering.UpperLetters, null, int.MaxValue));
+        Assert.Throws<ArgumentOutOfRangeException>(() => PageLabelFormatter.Format(PdfPageLabelStyle.UpperLetters, null, int.MaxValue));
         var refused = GC.GetAllocatedBytesForCurrentThread() - before;
         Assert.True(refused < accepted, $"refused case allocated {refused} bytes, accepted case {accepted}");
     }
 
     // ---- read back through the reader ---------------------------------------------------------
 
-    private sealed record LabelRange(int Start, PageLabelNumbering Style, string? Prefix, int First);
+    private sealed record LabelRange(int Start, PdfPageLabelStyle Style, string? Prefix, int First);
 
     // The label a viewer shows for each page, worked out from the ranges the table was given.
     private static string[] ExpectedLabels(IReadOnlyList<LabelRange> ranges, int pageCount)
@@ -435,7 +435,7 @@ public sealed class PageLabelTableTests
         for (var page = 0; page < pageCount; page++)
         {
             var range = ranges.Where(r => r.Start <= page).OrderBy(r => r.Start).LastOrDefault()
-                ?? new LabelRange(0, PageLabelNumbering.Decimal, null, 1);
+                ?? new LabelRange(0, PdfPageLabelStyle.Decimal, null, 1);
             labels[page] = PageLabelFormatter.Format(range.Style, range.Prefix, range.First + (page - range.Start));
         }
         return labels;
@@ -443,10 +443,10 @@ public sealed class PageLabelTableTests
 
     private static readonly LabelRange[] FrontMatterRanges =
     [
-        new(0, PageLabelNumbering.LowerRoman, null, 1),
-        new(4, PageLabelNumbering.Decimal, "A-", 8),
-        new(9, PageLabelNumbering.UpperLetters, null, 1),
-        new(11, PageLabelNumbering.None, "Index", 1),
+        new(0, PdfPageLabelStyle.LowerRoman, null, 1),
+        new(4, PdfPageLabelStyle.Decimal, "A-", 8),
+        new(9, PdfPageLabelStyle.UpperLetters, null, 1),
+        new(11, PdfPageLabelStyle.None, "Index", 1),
     ];
 
     private static (PageLabelTable Table, int PageCount) FrontMatter()
@@ -478,9 +478,9 @@ public sealed class PageLabelTableTests
             var style = value.Get(new PdfName("S")) is PdfName name ? name.Value : null;
             Assert.Equal(range.Style switch
             {
-                PageLabelNumbering.Decimal => "D",
-                PageLabelNumbering.LowerRoman => "r",
-                PageLabelNumbering.UpperLetters => "A",
+                PdfPageLabelStyle.Decimal => "D",
+                PdfPageLabelStyle.LowerRoman => "r",
+                PdfPageLabelStyle.UpperLetters => "A",
                 _ => null,
             }, style);
             Assert.Equal(range.Prefix, value.Get(new PdfName("P")) is PdfLiteralString p ? Encoding.BigEndianUnicode.GetString(p.Bytes.Span[2..]) : null);
@@ -561,9 +561,9 @@ public sealed class PageLabelTableTests
             parts.Add("/P=u:" + range.Prefix);
         var style = range.Style switch
         {
-            PageLabelNumbering.Decimal => "/D",
-            PageLabelNumbering.LowerRoman => "/r",
-            PageLabelNumbering.UpperLetters => "/A",
+            PdfPageLabelStyle.Decimal => "/D",
+            PdfPageLabelStyle.LowerRoman => "/r",
+            PdfPageLabelStyle.UpperLetters => "/A",
             _ => null,
         };
         if (style is not null)
