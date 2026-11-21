@@ -394,14 +394,14 @@ public sealed class JustifiedEmbeddedLinkTests
     /// <summary>
     /// A tab with no stop to its right (a stop at 0 is not right of the pen) at the start of a line
     /// leaves a fragment of one space. In the second case a hard break closes the line there, so
-    /// the space trims to nothing; in the first it stays, and the embedded path still draws no
-    /// glyph run for it. A link on it has no drawn text to cover, so it gets no annotation, and the
-    /// link on a run that is drawn keeps its rectangle.
+    /// the space trims to nothing and the link on it has no drawn text to cover and gets no
+    /// annotation. In the first the space stays and is drawn, and its rectangle runs from the left
+    /// edge to where the next word is drawn. The link on a run that is drawn keeps its rectangle.
     /// </summary>
     [Theory]
-    [InlineData("aa bb cc dd ee ff gg hh ii jj kk ll mm nn oo pp qq rr")]
-    [InlineData("\naa bb cc dd ee ff gg hh ii jj kk ll mm nn oo pp qq rr")]
-    public void TabWithNoStopAtLineStart_linkOnItGetsNoRectangle(string after)
+    [InlineData("aa bb cc dd ee ff gg hh ii jj kk ll mm nn oo pp qq rr", true)]
+    [InlineData("\naa bb cc dd ee ff gg hh ii jj kk ll mm nn oo pp qq rr", false)]
+    public void TabWithNoStopAtLineStart_linkOnItCoversTheSpaceItDraws(string after, bool drawn)
     {
         using var doc = Page();
         var font = doc.LoadTrueTypeFont(Liberation);
@@ -420,12 +420,20 @@ public sealed class JustifiedEmbeddedLinkTests
         var runs = Runs(pdf);
         Assert.Contains(runs, r => r.Key == Hex(font, "aa"));
         var bb = First(runs, Hex(font, "bb"));
-        var unstretched = Left + Embedded(font).MeasureString("aa ");
+        var unstretched = Left + Embedded(font).MeasureString(drawn ? " aa " : "aa ");
         Assert.True(bb.X > unstretched + 0.5, $"bb at {bb.X}, unstretched {unstretched}");
 
         var text = Encoding.Latin1.GetString(pdf);
-        Assert.DoesNotContain("https://a.example", text, StringComparison.Ordinal);
         Assert.All(Rects(pdf), r => Assert.True(r[2] > r[0], string.Join(' ', r)));
+        if (drawn)
+        {
+            var rect = Assert.Single(Rects(pdf), r => r[0] == Left);
+            Assert.Equal(First(runs, Hex(font, "aa")).X, rect[2], 0.001);
+        }
+        else
+        {
+            Assert.DoesNotContain("https://a.example", text, StringComparison.Ordinal);
+        }
     }
 
     // ── Oracles ───────────────────────────────────────────────────────────────
