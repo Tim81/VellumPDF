@@ -344,8 +344,10 @@ RULES_DIR = os.path.join(os.path.dirname(__file__), "..", "src", "VellumPdf.Conf
 
 
 def rule_class_provenance():
-    """Counts behind the PDF/A-2 and PDF/UA-1 disclosure below, read from the rule classes
-    themselves rather than typed.
+    """Counts behind the PDF/A-2 and PDF/UA-1 disclosure below: how many rule classes there are
+    and how many cite each standard, read from the rule classes themselves rather than typed.
+    The audit verdict counts and the number of rule classes each audit compared are not derived
+    from the tree: they are typed from the two audit reports (#418, #428) in render().
 
     A rule class is a .cs file under Rules/ containing ": IConformanceRule"; Rules/ also holds
     helper files that are not rule classes, and counting those instead gives a larger
@@ -402,20 +404,22 @@ def render():
     w("> **This is a coverage inventory, not a conformance test.** Whether output actually conforms is")
     w("> settled by the test suite, not by this page.")
     w("")
-    w("> **The PDF/A-2 clause citations were not derived from the text.** ISO 19005-2 is not among the")
+    w("> **Apart from two rules, the PDF/A-2 clause citations were not derived from the text.** ISO 19005-2 is not among the")
     w(f"> specifications held locally. {rule_19005_2} of the {rule_total} rule classes in `VellumPdf.Conformance` cite")
     w("> it, and they were written against veraPDF's bundled profiles, which encode the standard as")
-    w("> test cases rather than reproducing its text. For PDF/A-2, and only there, veraPDF is what CI")
-    w("> fails the build on rather than a cross-check. Of those")
+    w("> test cases rather than reproducing its text; two were later re-derived from the clause text")
+    w("> (`FontEmbeddingRule` and `ActionRule`, #418). CI fails the build when an oracle fixture makes")
+    w("> this library and veraPDF disagree, for PDF/A-2 and PDF/UA-1 alike. Of those")
     w(f"> {rule_19005_2}, {rule_19005_2_dated} carry a dated `ISO 19005-2:2011` citation; the other two are PDF/UA-1")
     w("> rules mentioning a PDF/A clause in prose. An audit on 2026-11-21 read clause 6 and Annexes A and")
     w(f"> B on a licensed online copy and compared those {rule_19005_2_dated} rule classes with it. By primary verdict, 13")
     w("> match the clause, 26 are narrower, 3 are broader and 6 cite the wrong clause (#418).")
     w("> ISO 14289-1 was acquired on 2026-09-07, after its rules were written; the")
     w(f"> {rule_14289_1} rule classes citing it are checkable against the text. A second audit on 2026-11-21")
-    w("> compared 52 of them with clause 7: 8 match, 23 are narrower, 12 are broader, 6 cite the wrong")
-    w("> clause and 3 are unsure (#428). The audits compared the rules with the text and did not")
-    w("> re-derive them; the corrections are tracked in those issues.")
+    w("> read clauses 5, 6.1 to 6.2 and 7 and compared 52 of them with them: 8 match, 23 are narrower,")
+    w("> 12 are broader, 6 cite the wrong clause and 3 are unsure (#428). Apart from the two re-derived PDF/A-2 rules, the audits compared")
+    w("> the rules with the text and did not re-derive them; the corrections are tracked in those")
+    w("> issues.")
     w("")
     w("## Normative references")
     w("")

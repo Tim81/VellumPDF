@@ -46,6 +46,12 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// <para><strong>FP-safety — null StandardType.</strong> Elements with an unknown/unmapped /S
 /// are skipped for all three checks.</para>
 /// <para>Cross-validated against veraPDF 1.30.2 for each probe (violating + compliant fixture).</para>
+/// <para>Its behaviour was checked against veraPDF's PDF/UA-1 profile, and ISO 14289-1 was not
+/// held when it was written. The 2026-11-21 audit against the clause text (#428) found 7.4.4-1
+/// in agreement and 7.4.4-2 and 7.4.4-3 unsure. The text lets a strongly structured document
+/// use numbered headings, and also says a document is strongly or weakly structured but not
+/// both; this rule and veraPDF 1.30.4 fail any mix of H and H1 to H6 on a hand-built file. An
+/// interpretation of "both" would settle it.</para>
 /// </remarks>
 internal sealed class UaHeadingRule : IConformanceRule
 {

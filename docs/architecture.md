@@ -31,10 +31,11 @@ unified read-modify-write model that supersedes the write-once document API
   authored against veraPDF's profiles instead. See Provenance below for which,
   and #418 and #428.
 - **No** source code from any third-party PDF or barcode library is copied or
-  referenced. Nothing is copied from veraPDF either; the exception noted above is
-  narrower and different in kind, that some rule predicates were derived by reading a
-  third-party validation profile in place of a standard's text. A reference decoder, zxing-cpp, is used only as an
-  interoperability cross-check in the test suite, never as a source of
+  referenced, with veraPDF as the exception noted above. veraPDF's validation profiles were a
+  source of rule predicates, and some remarks quote them. `ConformanceCatalog` carries veraPDF's
+  check ids as data, and the Adobe Glyph List copy bundled in the Conformance package was
+  extracted from the veraPDF distribution (`NOTICE` records it). A reference decoder, zxing-cpp,
+  is used only as an interoperability cross-check in the test suite, never as a source of
   implementation; this includes verifying the exact Aztec placement
   coordinates, since the relevant ISO/IEC 24778 figures are not freely
   available.
@@ -57,19 +58,23 @@ what is held, what is missing and what each missing document unblocks.
 The archival standards are the gap. ISO 19005-2 is not held, and 50 of the 101 rule classes in
 `VellumPdf.Conformance` cite it. Those rules were written against veraPDF's bundled profiles,
 which encode the standard as test cases rather than reproducing its text, so their clause numbers
-have no locally checkable source. An audit on 2026-11-21 read clause 6 and Annexes A and B on a
-licensed online copy and compared 48 of those rule classes with it (#418). By primary verdict, 13
-match the clause, 26 are narrower, 3 are broader and 6 cite the wrong clause. The audit compared
-the rules with the text and did not re-derive them, so treat a citation to ISO 19005 as unverified
-until the standard is held and the rule re-derived against it.
+have no locally checkable source. Two were later re-derived from the clause text (`FontEmbeddingRule`
+and `ActionRule`, #418). An audit on 2026-11-21 read clause 6 and Annexes A and B on a licensed
+online copy and compared 48 of those rule classes with the clause text (#418). By primary verdict,
+13 match the clause, 26 are narrower, 3 are broader and 6 cite the wrong clause. Apart from the
+two re-derived rules, the audit compared the rules with the text and did not re-derive them, so
+treat a citation to ISO 19005 as unverified until the standard is held and the rule re-derived
+against it.
 
 ISO 14289-1 was in the same position until it was acquired on 2026-09-07, so the 53 rule classes
-citing it are now checkable against the text. A second audit on 2026-11-21 compared 52 of them
-with clause 7 (#428): 8 match, 23 are narrower, 12 are broader, 6 cite the wrong clause and 3 are
-unsure. Those rules were written from veraPDF's profiles before the text was held, and they have
-not been re-derived. A rule's XML-doc remarks say which clause it cites and what it was checked
-against; remarks that claimed derivation from the specification text, which the audits found
-untrue for most of the rules making them, were corrected under #675.
+citing it are now checkable against the text. A second audit on 2026-11-21 read clauses 5, 6.1 to
+6.2 and 7 in full and compared 52 of those rule classes with them (#428): 8 match, 23 are narrower,
+12 are broader, 6 cite the wrong clause and 3 are unsure. Those rules were written from veraPDF's
+profiles before the text was held, except the section 7.16 encryption rule, whose remarks quote
+ISO 32000-2 for its requirement. None has been re-derived. A rule's XML-doc remarks say
+which clause it cites and what it was checked against; remarks that claimed derivation from the
+specification text, which the audits found untrue for most of the rules making them, were
+corrected under #675.
 
 Holding a standard is not implementing one, so this licenses no conformance claim. See
 [PDF 2.0 conformance](pdf20-conformance.md) for what the library actually does, and note it
@@ -197,9 +202,13 @@ to retrofit:
   the target, not yet the state. For PDF/A-2 it is currently false in both directions, because
   ISO 19005-2 has never been held: veraPDF's profiles are the source those rules were authored
   from and the arbiter CI fails the build on. #418 tracks closing that. For PDF/UA-1 the text is
-  held, but its rules were also authored from veraPDF's profiles, and in two places (the
-  CIDSystemInfo Supplement comparison and the Popup annotation exemption) the text disagrees with
-  both veraPDF and this library (#428).
+  held, but its rules were also authored from veraPDF's profiles. On hand-built probe files the
+  text disagrees with both veraPDF 1.30.4 and this library on nine constructs: the Popup
+  annotation exemption, the /Tabs requirement on a page with only a hidden annotation, an optional
+  content /D configuration with no /Name, a Formula with /ActualText and no /Alt, a standard type
+  remapped in a /RoleMap that no element uses, a Widget annotation with /Contents, the
+  CIDSystemInfo Supplement comparison, an embedded CMap named Identity, and an unused ToUnicode
+  code mapped to U+0000 (#428).
 - **A missing tool fails the build rather than skipping the test**: almost every oracle
   test routes through a shared `OracleGate`, which calls `Assert.Fail` instead of
   `Assert.Skip` when `CI`, `GITHUB_ACTIONS`, or `REQUIRE_ORACLES` is set — the one exception

@@ -239,8 +239,8 @@ internal sealed class EmbeddedFilePdfaRule : IConformanceRule
                 RuleId, Clause, PreflightSeverity.Error,
                 "An embedded PDF file claims to be PDF/A-2 but fails in-process PDF/A-2 "
                 + "validation and is therefore not a valid PDF/A-2 document, as required by §6.8-5. "
-                + "Note: the in-process validator covers approximately 83 % of the veraPDF rule set; "
-                + "a marginally non-conformant embedded file may not be detected here.");
+                + "Note: the in-process validator does not implement every veraPDF check, so a "
+                + "marginally non-conformant embedded file may not be detected here.");
         }
     }
 

@@ -1234,18 +1234,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   veraPDF's profiles before the text of either standard was available to the project, that many of
   them differ from the clause text, and that several cite the wrong clause. The package README, the
   repository README, `docs/architecture.md`, the generated `docs/pdf20-conformance.md`, the
-  `ConformanceCatalog` remarks and the XML remarks of 87 rule classes said otherwise or said nothing
-  about it. They now state which clause a rule cites, what it was checked against, and where the
-  audit found it narrower or broader than the clause or citing another clause. A rule whose reported
-  id or clause is wrong says so and points to #418 or #428; the ids and clauses themselves are not
-  changed.
-  - **Catalog status.** 18 PDF/A-2 clause tests that the audit probed (veraPDF fails a file the
-    rule passes) and six PDF/UA-1 tests that cover one font form only are now `Partial`, each with a
-    note naming the construct. `6.2.11.7.3-1`, which no rule implements, is now `Deferred`.
-    `ConformanceCatalog.Coverage` therefore reports 93.7%, 93.5% and 92.8% for PDF/A-2b, 2u and 2a
-    (99.3% at each level before) and 96.7% for PDF/UA-1 (99.5% before). The READMEs' "veraPDF parity
-    is about 99%" is replaced by those figures, rounded, with a statement of what they measure:
-    which veraPDF checks a rule covers, not agreement with the standards' text.
+  `ConformanceCatalog` remarks, the package description and the XML remarks of `PdfPreflight` and
+  of the rule classes said otherwise or said nothing about it. The remarks of all 101 rule classes
+  now state which clause a rule cites, what it was checked against, and where the audit found it
+  narrower or broader than the clause or citing another clause. `DocumentCatalogRule` was in
+  neither audit and says so. A rule whose reported id or clause is wrong says so and points to #418
+  or #428; the ids and clauses themselves are not changed. Two PDF/A-2 rules, `FontEmbeddingRule`
+  and `ActionRule`, were re-derived from the clause text under #418 and say so; the READMEs and
+  `ConformanceCatalog` name them as the exception.
+  - **Catalog status.** 17 PDF/A-2 clause tests that the audit probed (veraPDF fails a file the
+    rule passes) and 10 PDF/UA-1 tests are now `Partial`, each with a note naming the construct:
+    six where the rule covers one font form only, and `7.20-1`, `7.21.3.3-3`, `7.5-1` and `7.1-3`,
+    where a hand-built file that veraPDF 1.30.4 fails passes the rule. `6.2.10-2`, which no rule
+    checks (`BlendModeRule` checks the blend mode, not the page group colour space), and
+    `6.2.11.7.3-1`, which no rule implements, are now `Deferred`.
+    `ConformanceCatalog.Coverage` therefore reports 93.4%, 93.1% and 92.4% for PDF/A-2b, 2u and 2a
+    (99.3% at each level before) and 94.8% for PDF/UA-1 (99.5% before), each computed from
+    `Coverage(...).Percent` on the built assembly. The denominator leaves out the one PDF/A-2 check
+    marked `OutOfScope` (`6.8-5`); PDF/UA-1 has none. The READMEs' "veraPDF parity is about 99%"
+    is replaced by those figures, with a statement of what they measure: which veraPDF checks a
+    rule covers, not agreement with the standards' text.
   - **`docs/conformance-divergences.md`.** 6.6.5 is no longer listed as checked here and by no
     veraPDF rule: `eng/clause-coverage.py` matched it inside the ISO 32000-1 citation `§8.6.6.5`,
     and the pattern now ignores a number that follows a digit or a dot. 6.2.7 is scoped `reader`
@@ -1257,9 +1265,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     structured" now say the reverse, as ISO 32000-1 14.8.4.3.5 does. Remarks that said ISO 14289-1 7.2
     requires a catalog `/Lang`, that `Table 333` lists every standard structure type, or that a
     requirement sits in a clause it does not sit in are corrected.
-  - **Attention.** No rule changes what it reports on any file, with one exception: the messages
-    of `ISO14289-1:7.4.4-2` and `ISO14289-1:7.4.4-3` now call `H` "strongly structured" and `H1` to
-    `H6` "weakly structured" (they said the opposite). The rule ids and clauses are unchanged, so a
+  - **Attention.** No rule changes what it reports on any file, with two exceptions in message
+    text. The messages of `ISO14289-1:7.4.4-2` and `ISO14289-1:7.4.4-3` now call `H` "strongly
+    structured" and `H1` to `H6` "weakly structured" (they said the opposite). The message of
+    `ISO19005-2:6.8-5-embedded-pdfa` no longer says the validator covers "approximately 83 %" of veraPDF's rules,
+    a figure the catalog does not support; no test pinned the old wording. The rule ids and clauses are unchanged, so a
     caller that suppresses by id is unaffected. `ConformanceCatalog.All` and `Coverage` return the
     corrected statuses and the new notes. Messages that cite a wrong clause (for example the
     `Table 333` wording in the role-map messages) are left as they are and are corrected with their

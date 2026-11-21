@@ -17,8 +17,9 @@ namespace VellumPdf.Conformance.Rules.Graphics;
 /// images is the subset of stream filters listed in Table 6 that are allowed in inline images:
 /// ASCIIHexDecode (abbrev. AHx), ASCII85Decode (A85), FlateDecode (Fl), RunLengthDecode (RL),
 /// CCITTFaxDecode (CCF), and DCTDecode (DCT). JPXDecode, LZWDecode, Crypt, and any other filter
-/// name fail the rule. Refusing <c>JPXDecode</c> and the other filters outside that set rests on
-/// ISO 32000-1:2008 §8.9.7, not on the 6.1.10 text. The scope below was set by probing veraPDF
+/// name fail the rule. Refusing <c>LZWDecode</c>, <c>Crypt</c> and any filter outside Table 6 is
+/// the text of 6.1.10 itself; refusing <c>JPXDecode</c> and <c>JBIG2Decode</c>, which Table 6 does
+/// list, rests on ISO 32000-1:2008 §8.9.7, which bars those two from inline images. The scope below was set by probing veraPDF
 /// 1.30.2. Its behaviour was checked against veraPDF's PDF/A-2 profile, and ISO 19005-2 was not
 /// held when it was written. The 2026-11-21 audit against the clause text (#418) found the rule
 /// narrower only in that tiling-pattern content streams are not scanned.

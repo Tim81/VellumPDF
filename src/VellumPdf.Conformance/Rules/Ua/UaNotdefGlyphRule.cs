@@ -33,6 +33,11 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// (a) draws glyph 0x0000 with Identity-H CIDFontType2 → veraPDF fires 7.21.8-1 (exit 1);
 /// (b) draws normal glyphs (no 0x0000) → veraPDF does NOT fire 7.21.8-1 (exit 0).
 /// </para>
+/// <para>Its behaviour was checked against veraPDF's PDF/UA-1 profile, and ISO 14289-1 was not
+/// held when it was written. The 2026-11-21 audit against the clause text (#428) found it
+/// narrower: simple fonts and every composite form other than Identity CIDFontType2 are out of
+/// scope. A simple font whose <c>/Differences</c> maps a shown code to .notdef passes here and
+/// fails veraPDF 1.30.4 on a hand-built file.</para>
 /// </remarks>
 internal sealed class UaNotdefGlyphRule : IConformanceRule
 {

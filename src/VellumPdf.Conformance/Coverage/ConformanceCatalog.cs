@@ -38,7 +38,9 @@ public enum CoverageStatus
 /// veraPDF profile content is embodied here as data. The titles, notes, and status are this
 /// project's own assessment. The rules behind these ids were written from veraPDF's profiles and
 /// checked against veraPDF, because ISO 19005-2 was not held and ISO 14289-1 was acquired after its
-/// rules were written. The status says whether a rule covers the veraPDF check, not that it agrees
+/// rules were written. Two PDF/A-2 rules, <c>FontEmbeddingRule</c> and <c>ActionRule</c>, were
+/// later re-derived from the clause text (#418), and a rule's own remarks say what it was checked
+/// against. The status says whether a rule covers the veraPDF check, not that it agrees
 /// with the clause text: the 2026-11-21 audits (#418, #428) found rules narrower than the clauses.
 /// docs/pdf20-conformance.md records which citations are checkable against a held copy and which
 /// are not.
@@ -108,7 +110,7 @@ public sealed class CoverageSummary
 
 /// <summary>
 /// The catalog of every veraPDF validation check across the conformance profiles the library targets
-/// (PDF/A-2b, PDF/A-2u, PDF/A-2a, PDF/UA-1), each tagged with its implementation status. This is the
+/// (PDF/A-2b, PDF/A-2u, PDF/A-2a, PDF/UA-1), each tagged with its implementation status. This is
 /// this project's record of which veraPDF checks a rule covers. It does not record agreement with
 /// the text of either standard (#418, #428).
 /// </summary>
@@ -218,7 +220,6 @@ public static class ConformanceCatalog
         ["6.2.5-1"] = "Only ExtGStates that page content applies are checked: a /TR applied inside a form passes here and fails veraPDF (#418).",
         ["6.2.6-1"] = "An image's /Intent is not checked: /Intent /Bogus passes here and fails veraPDF (#418).",
         ["6.2.8-3"] = "An Interpolate true image drawn from a form XObject, and an inline image with /I true, pass here and fail veraPDF (#418).",
-        ["6.2.10-2"] = "A page that uses transparency, with no PDF/A output intent and no page group colour space, passes here and fails veraPDF (#418).",
         ["6.2.11.7.2-1"] = "Only Type 0 fonts using Identity-H or Identity-V are checked: a Type 3 font with glyph names outside the Adobe Glyph List and no /ToUnicode passes here and fails veraPDF (#418).",
         ["6.2.11.8-1"] = "A .notdef glyph shown in text rendering mode 3 passes here and fails veraPDF (#418).",
         ["6.3.1-1"] = "An annotation of an unknown subtype passes here and fails veraPDF (#418).",
@@ -311,6 +312,7 @@ public static class ConformanceCatalog
 
     private static readonly Dictionary<string, string> PdfADeferred = new(StringComparer.Ordinal)
     {
+        ["6.2.10-2"] = "No rule checks the page group colour space: a page that uses transparency, with no PDF/A output intent and no page group colour space, passes here and fails veraPDF (#418).",
         ["6.2.11.7.3-1"] = "No rule implements the Level A requirement that a private-use character has an ActualText replacement (#418).",
         // 6.1.6-2 moved to Implemented (HexStringRule: byte scan runs before lazy object resolution;
         //   oracle fixture pdfa2b-hex-invalid-digit confirmed veraPDF fires on <1G0> in page dict;
@@ -395,7 +397,7 @@ public static class ConformanceCatalog
         "7.18.5-2",            // UaLinkAnnotRule: Link annots require non-empty /Contents
         "7.18.6.2-1",          // UaMediaClipRule: media clip data dict must have /CT
         "7.18.6.2-2",          // UaMediaClipRule: media clip data dict must have /Alt
-        "7.20-1",              // UaReferenceXObjectRule: Form XObjects shall not contain /Ref
+        // 7.20-1 is Partial, see PdfUaPartial (UaReferenceXObjectRule)
         "7.20-2",              // UaFormXObjectSemanticParentRule: structure-linked form drawn from 2+ distinct pages
         // Batch A3 — font clauses:
         "7.21.3.2-1",          // UaCidToGidMapRule: embedded CIDFontType2 must have /CIDToGIDMap
@@ -407,7 +409,7 @@ public static class ConformanceCatalog
         // Batch A4 — font clauses (CMap, CharSet, CIDSet):
         "7.21.3.3-1",          // UaCMapRule: composite /Encoding must be predefined or embedded CMap
         "7.21.3.3-2",          // UaCMapRule: embedded CMap WMode dict must equal program WMode
-        "7.21.3.3-3",          // UaCMapRule: usecmap-referenced name must be a predefined CMap
+        // 7.21.3.3-3 is Partial, see PdfUaPartial (UaCMapRule)
         "7.21.4.2-1",          // UaType1CharSetRule: Type1 subset CharSet must list all glyphs
         "7.21.4.2-2",          // UaCidSetRule: CIDFontType2 subset CIDSet must list all CIDs
         // Batch A5a — rendering-mode-scoped font embedding:
@@ -450,7 +452,7 @@ public static class ConformanceCatalog
         "7.2-25",              // UaNaturalLanguageRule: FormField /TU → associated struct-elem must have /Lang
         // Batch B10 — §7.4.2 heading nesting, §7.5 connected headers:
         "7.4.2-1",             // UaHeadingNestingRule: Hn heading levels must not skip (hasCorrectNestingLevel)
-        "7.5-1",               // UaTableHeaderRule: TD must have connected header (hasConnectedHeader, unknownHeaders='')
+        // 7.5-1 is Partial, see PdfUaPartial (UaTableHeaderRule)
         "7.5-2",               // UaTableHeaderRule: TD /Headers references unknown IDs (hasConnectedHeader, unknownHeaders!='')
         // Batch C1 — §7.2 natural-language determination for marked-content sequences:
         "7.2-30",              // UaMarkedContentLangRule: /Span BDC /ActualText → BDC or ancestor must have /Lang
@@ -461,7 +463,7 @@ public static class ConformanceCatalog
         "7.1-1",               // UaArtifactTaggingRule: Artifact BDC inside struct-linked (tagged) ancestor BDC
         "7.1-2",               // UaArtifactTaggingRule: non-Artifact BDC with MCID in ParentTree inside Artifact ancestor
         // Batch C3 — §7.1-3 SESimpleContentItem: real content must be tagged or marked as Artifact:
-        "7.1-3",               // UaSimpleContentItemRule: content item (text/path/image/sh/EI) with no MCID and no Artifact ancestor
+        // 7.1-3 is Partial, see PdfUaPartial (UaSimpleContentItemRule)
         // §7.16-1 — encryption dictionary /P bit 10 (#138):
         "7.16-1",              // UaEncryptionPermissionsRule: /Encrypt /P bit 10 set
     };
@@ -476,13 +478,17 @@ public static class ConformanceCatalog
         // predefined-CJK-CMap sub-condition needs a conformant CJK CIDFont oracle asset. Tracked in #139.
         ["7.21.3.1-1"] = "Identity and embedded-CMap CIDSystemInfo compared; the predefined-CMap registry match is authored but not cross-validated (needs a conformant CJK CIDFont oracle asset). Tracked in #139.",
         // Partial: the 2026-11-21 audit (#428) found a construct that veraPDF refuses and the rule
-        // accepts, or a font form the rule skips. Each note names it.
+        // accepts, or a font form or content stream the rule skips. Each note names it.
         ["7.21.4.1-1"] = "Type 0 fonts are skipped and only fonts that page content selects with Tf are examined: a visible non-embedded CIDFontType2 passes here and fails veraPDF (#428).",
         ["7.21.7-1"] = "Type 0, Type 3 and MMType1 fonts and fonts with no /Encoding are skipped: a visible non-embedded CIDFontType2 with no /ToUnicode passes here and fails veraPDF (#428).",
         ["7.21.7-2"] = "Only Identity CIDFontType2 fonts are examined: a simple font whose /ToUnicode maps the shown code to U+0000 passes here and fails veraPDF (#428).",
         ["7.21.8-1"] = "Only Identity CIDFontType2 fonts are examined: a /Differences entry that maps a shown code to .notdef in a simple font passes here and fails veraPDF (#428).",
         ["7.21.4.1-2"] = "Only visible shows of Identity CIDFontType2 fonts are examined; simple and CFF fonts are not (#428).",
         ["7.21.5-1"] = "Only Identity CIDFontType2 fonts are examined, and a width mismatch of 2 units passes where 7.21.5 allows at most 1 (#428).",
+        ["7.20-1"] = "Only forms that page content draws directly are checked: a /Ref in a form drawn from inside another form passes here and fails veraPDF (#428).",
+        ["7.21.3.3-3"] = "Only the usecmap operator is read, not the CMap stream's /UseCMap key: a /UseCMap naming a CMap outside the predefined set passes here and fails veraPDF (#428).",
+        ["7.5-1"] = "One TH with a /Scope satisfies every TD in its table: a table whose other TH lacks /Scope, and whose TDs have no /Headers, passes here and fails veraPDF 1.30.4 (#428).",
+        ["7.1-3"] = "Only page content streams are scanned: untagged text drawn inside a form XObject, outside marked content, passes here and fails veraPDF (#428).",
     };
 
     // PDF/UA-1 checks deliberately not implemented in-process (tracked in follow-up issues; excluded

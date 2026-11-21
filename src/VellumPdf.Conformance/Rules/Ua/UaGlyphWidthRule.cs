@@ -54,6 +54,10 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// (c) /W removed on a font that is NOT selected via Tf (unused) → does NOT fire; exit 0.
 /// (d) /W removed, font shown only with Tr=3 → does NOT fire (Tr-3 exemption); exit 0.
 /// </para>
+/// <para>Its behaviour was checked against veraPDF's PDF/UA-1 profile, and ISO 14289-1 was not
+/// held when it was written. The 2026-11-21 audit against the clause text (#428) found it
+/// narrower. Only Identity CIDFontType2 fonts are examined, and the threshold of 2 units, set
+/// to absorb veraPDF's rounding, passes a mismatch of 2 units where 7.21.5 allows at most 1.</para>
 /// </remarks>
 internal sealed class UaGlyphWidthRule : IConformanceRule
 {

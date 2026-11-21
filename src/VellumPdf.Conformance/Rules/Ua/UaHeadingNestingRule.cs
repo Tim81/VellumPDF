@@ -58,6 +58,12 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// unmapped (StandardType == null) are skipped, preserving the invariant that unknown structure
 /// types do not trigger rules.</para>
 /// <para>Cross-validated against veraPDF 1.30.2 for each probe (violating + compliant fixtures).</para>
+/// <para>Its behaviour was checked against veraPDF's PDF/UA-1 profile, and ISO 14289-1 was not
+/// held when it was written. The 2026-11-21 audit against the clause text (#428) found it
+/// unsure and narrower. 7.4.2 scopes the requirement to documents that are not strongly
+/// structured, and ISO 32000-1 14.8.4.3.5 gives no decidable test, yet the rule applies it to
+/// every document; an interpretation of the clause would settle that. It also stops at H6, so
+/// the H7 and higher that 7.4.3 subjects to the same usage requirements go unchecked.</para>
 /// </remarks>
 internal sealed class UaHeadingNestingRule : IConformanceRule
 {

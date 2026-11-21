@@ -56,6 +56,10 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// (c) the normal UA-1 tagged baseline (in-range glyphs, visible) → veraPDF does NOT fire
 ///     7.21.4.1-2 (exit 0).
 /// </para>
+/// <para>Its behaviour was checked against veraPDF's PDF/UA-1 profile, and ISO 14289-1 was not
+/// held when it was written. The 2026-11-21 audit against the clause text (#428) found it
+/// narrower: only visible shows of Identity CIDFontType2 fonts are examined, and simple and CFF
+/// fonts are not.</para>
 /// </remarks>
 internal sealed class UaGlyphPresenceRule : IConformanceRule
 {

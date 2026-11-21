@@ -44,6 +44,11 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// pdfua1-non-standard-type-rolemapped: veraPDF exits 0 (compliant);
 /// pdfua1-tagged (standard type baseline): veraPDF exits 0 (compliant).
 /// </para>
+/// <para>Its behaviour was checked against veraPDF's PDF/UA-1 profile, and ISO 14289-1 was not
+/// held when it was written. The 2026-11-21 audit against the clause text (#428) found
+/// agreement with 7.1. "Nearest functionally equivalent" is a judgement the rule cannot make,
+/// so it checks only that a mapping reaches a standard type. The message cites Table 333 for
+/// the whole standard set, which Table 333 does not list.</para>
 /// </remarks>
 internal sealed class UaNonStandardTypeRule : IConformanceRule
 {

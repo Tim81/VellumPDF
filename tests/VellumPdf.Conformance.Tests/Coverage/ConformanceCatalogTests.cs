@@ -48,8 +48,8 @@ public sealed class ConformanceCatalogTests
         //     the predefined-CJK-CMap sub-conditions.
         //   - Partial, found by the 2026-11-21 audits: PDF/A-2 clause tests that veraPDF fails
         //     on a probe file the rule passes (#418), and PDF/UA-1 tests whose rule covers one
-        //     font form only (#428).
-        //   - Deferred: 6.2.11.7.3-1, which no rule implements (#418).
+        //     font form or one content scope only (#428).
+        //   - Deferred: 6.2.10-2 and 6.2.11.7.3-1, which no rule implements (#418).
         //   - OutOfScope: 6.8-5 (needs a PDF/A-1 profile, #140).
         // 7.16-1 moved to Implemented in #138: UaEncryptionPermissionsRule checks /Encrypt /P bit
         // 10, and PdfPreflight/the CLI gained a password parameter so a password-protected document
@@ -58,12 +58,13 @@ public sealed class ConformanceCatalogTests
         {
             "6.1.13-10", "6.2.11.3.1-1", "7.21.3.1-1",
             "6.1.2-1", "6.1.13-2", "6.1.13-5", "6.2.3-1", "6.2.4.3-2", "6.2.5-1", "6.2.6-1",
-            "6.2.8-3", "6.2.10-2", "6.2.11.7.2-1", "6.2.11.8-1", "6.3.1-1", "6.3.3-1", "6.5.1-1",
+            "6.2.8-3", "6.2.11.7.2-1", "6.2.11.8-1", "6.3.1-1", "6.3.3-1", "6.5.1-1",
             "6.6.2.1-2", "6.6.2.3.1-1", "6.6.2.3.1-2", "6.7.4-1",
             "7.21.4.1-1", "7.21.7-1", "7.21.7-2", "7.21.8-1", "7.21.4.1-2", "7.21.5-1",
+            "7.20-1", "7.21.3.3-3", "7.5-1", "7.1-3",
         };
         var expectedDeferred = new HashSet<string>(StringComparer.Ordinal)
-            { "6.2.11.7.3-1" };
+            { "6.2.10-2", "6.2.11.7.3-1" };
         var expectedOutOfScope = new HashSet<string>(StringComparer.Ordinal)
             { "6.8-5" };
         Assert.Equal(

@@ -38,6 +38,11 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// (c) ToUnicode maps an UNUSED code to U+0000, only good codes shown → veraPDF does NOT fire
 ///     7.21.7-2 (exit 0) — the critical regression guard for the prior FP.
 /// </para>
+/// <para>Its behaviour was checked against veraPDF's PDF/UA-1 profile, and ISO 14289-1 was not
+/// held when it was written. The 2026-11-21 audit against the clause text (#428) found it
+/// narrower: only shown codes of Identity CIDFontType2 fonts are examined, where the text
+/// speaks of all values in the ToUnicode CMap, and a simple font whose ToUnicode maps the shown
+/// code to U+0000 passes here and fails veraPDF 1.30.4.</para>
 /// </remarks>
 internal sealed class UaToUnicodeForbiddenRule : IConformanceRule
 {

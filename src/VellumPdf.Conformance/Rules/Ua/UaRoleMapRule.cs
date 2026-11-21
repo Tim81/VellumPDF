@@ -48,6 +48,12 @@ namespace VellumPdf.Conformance.Rules.Ua;
 ///     with only a /Document element is accepted (no fire);
 /// (c) the normal UA-1 tagged baseline (no /RoleMap) fires neither.
 /// </para>
+/// <para>Its behaviour was checked against veraPDF's PDF/UA-1 profile, and ISO 14289-1 was not
+/// held when it was written. The 2026-11-21 audit against the clause text (#428) found it
+/// narrower: it fires only when an element uses the remapped type, while 7.1 forbids the
+/// remapping whether or not an element uses it. On a hand-built file whose /RoleMap remaps a
+/// standard type that no element uses, this rule and veraPDF 1.30.4 both pass. Its messages
+/// cite Table 333 for every standard type, which Table 333 does not list.</para>
 /// </remarks>
 internal sealed class UaRoleMapRule : IConformanceRule
 {
