@@ -1028,6 +1028,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   still throws `IndexOutOfRangeException`, as documented. The XML documentation of `TableElement`,
   `TableElement.AddRow`, `TableElement.AddHeaderRow`, `Row.IsHeader`, `Cell.RowSpan` and
   `TableRenderer` says so.
+- **A table row taller than a page continues on the next page (#516).** A row is cut between the
+  lines of its cells when it does not fit the room left and would not fit a page of its own either.
+  On 2.3.3 `Save` threw `InvalidOperationException` ("An element is too tall to fit on a single
+  page") for such a row, so a table with one long cell could not be saved. Each cell is cut at its
+  own line, and every slice is drawn as a whole cell: background, border and padding, with the
+  repeated header rows above it. The row starts on the page the rows before it are on when at least
+  one line of it fits there, and otherwise on the next page. A row that fits a page of its own still
+  moves to the next page whole, so a table whose rows each fit a page is laid out as
+  before.
+  - **Deliberate output change:** every input that threw the too-tall exception because of a row
+    that can be cut now saves. A tagged table gets one `Table` per page and a `TD` per cell of each
+    slice, so a cut cell is a `TD` on each page it spans, and a cell with no line on a page is an
+    empty `TD`.
+  - **Still refused,** with the same exception type and a message that starts with the old text and
+    ends with a sentence naming what cannot be cut: repeated header rows that do not fit a page, a
+    row that declares a `RowSpan` or lies under one, and a row with a cell that cannot hold one line
+    and its vertical padding on a page under the header rows.
+  - **Attention:** a table with a non-finite cell background, row background or border colour in
+    such a row, or a NaN or infinite table margin, threw `InvalidOperationException` first. Its row
+    is now drawn, so the canvas throws `ArgumentException`, as it does for the same value in any row
+    that fits. This is the same change as for all-header tables above.
+  - A `TableRenderer` laid out with a `LayoutContext` built through the public constructor never
+    cuts a row and returns `Nothing` for one that does not fit, as before. The XML documentation of
+    `TableElement`, `Cell.RowSpan`, `Cell.Padding`, `Document.Add(TableElement)` and `TableRenderer`
+    says so.
 
 ### Documentation
 

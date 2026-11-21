@@ -19,6 +19,25 @@ namespace VellumPdf.Layout.Elements.Table;
 /// <see cref="AddRow(bool)"/>.
 /// The table is one element for the page limit described on <see cref="IRenderer.Layout"/>: a
 /// table that needs more than <b>50,000</b> page continuations makes the save throw.
+/// <para>A row that is taller than a page is cut between its lines and continues on the next
+/// page. It starts on the page the rows before it are on when at least one line of it fits
+/// there. Each cell is cut at its own line, every slice is drawn as a whole cell with its
+/// background, border and padding, and the repeated header rows are drawn above each slice. A
+/// tagged table gets one <c>Table</c> per page, so the cells of a cut row appear as a <c>TD</c>
+/// on each page it spans, and a cell with no line on a page is an empty <c>TD</c>. A row that
+/// fits a page of its own is never cut: it moves to the next page whole.</para>
+/// <para><b>These are refused, and never cut.</b> <see cref="Document.Save(System.IO.Stream)"/>
+/// throws <see cref="InvalidOperationException"/> whose message starts with the standard
+/// too-tall text and ends with a sentence naming the rows, for: header rows that together do not
+/// fit a page, because they repeat on every page; a row that declares a
+/// <see cref="Cell.RowSpan"/> above one, or lies under such a span, and does not fit a page,
+/// because the group is held together; and a row with a cell whose vertical padding and one line
+/// do not fit the page under the repeated header rows, because that cell would make no progress.
+/// A table of nothing but header rows has no repeated header, so its rows are cut like any other.
+/// Rows are cut only when the document lays the table out: a
+/// <see cref="Rendering.Table.TableRenderer"/> given a context built through the public
+/// constructor of <see cref="LayoutContext"/> still returns <see cref="LayoutResult.Nothing()"/>
+/// for a row taller than its area.</para>
 /// </remarks>
 public sealed class TableElement
 {

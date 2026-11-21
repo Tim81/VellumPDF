@@ -69,7 +69,9 @@ public sealed class Cell
     /// group that starts in a data row. A header row placed after the first data row counts as a
     /// data row here, and so does every row of a table whose rows are all headers. Such groups
     /// that share a row are held together as one block, and the save throws when a group or block
-    /// is taller than the space the page leaves below the repeated header rows. Two kinds of group
+    /// is taller than the space the page leaves below the repeated header rows. A row that declares
+    /// a span, or lies under one, is never cut between its lines either; see
+    /// <see cref="TableElement"/>. Two kinds of group
     /// can still be split across pages. One starts in the table's leading header rows, when a row
     /// that is not a header follows them: on each continuation page its cell is drawn again, only
     /// as tall as the header rows it covers there, and the data rows it covers stop skipping its
@@ -88,8 +90,9 @@ public sealed class Cell
     /// Raised from a save rather than from this property, when a spanning group that starts in a
     /// data row, in a header row placed after the first data row, or in a table whose rows are all
     /// headers, is taller than the space the page leaves below the repeated header rows, unless its
-    /// last row overflows <see cref="int"/>. Such groups that share a row count as one. The remarks
-    /// name the groups that can be split instead.
+    /// last row overflows <see cref="int"/>. Such groups that share a row count as one. The message
+    /// names the rows of the group and the height the page leaves. The remarks name the groups that
+    /// can be split instead.
     /// </exception>
     public int RowSpan { get; init; } = 1;
 
@@ -124,13 +127,15 @@ public sealed class Cell
     /// lands the text at x = 220, back inside the 300-point page. Giving <c>Left</c> the same 400
     /// lands the text at x = 420 whatever <c>Right</c> holds. The vertical edges are a separate
     /// limit: at 400 on all four the row outgrows the page, and the save refuses it as too tall,
-    /// with no text drawn at all.</para>
+    /// with no text drawn at all. A row is cut between its lines only when its cells can each hold
+    /// a line and their vertical padding on a page; see <see cref="TableElement"/>.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property.
-    /// A non-finite inset gives a message naming the row and the cell. A finite inset large
-    /// enough to grow the row past the page (above, with all four edges at 400) throws the
-    /// generic too-tall exception instead, whose message names neither.
+    /// A non-finite inset gives a message naming the row and the cell. A finite vertical inset
+    /// so large that the cell cannot hold one line and its padding on a page (above, with all four
+    /// edges at 400) throws the too-tall exception, whose message ends with a sentence naming the
+    /// row and the cell.
     /// </exception>
     public EdgeInsets Padding { get; init; } = new EdgeInsets(4, 6, 4, 6);
 

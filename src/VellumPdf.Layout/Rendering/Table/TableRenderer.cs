@@ -14,7 +14,8 @@ namespace VellumPdf.Layout.Rendering.Table;
 /// Layout:
 ///   • Resolves column widths.
 ///   • Computes row heights (max cell content height in each row).
-///   • Splits at row boundaries if the table crosses a page break.
+///   • Splits at row boundaries if the table crosses a page break, and between the lines of a
+///     row that is taller than a page.
 ///   • The leading run of header rows is repeated at the top of each continuation page, when a
 ///     row that is not a header follows it.
 ///   • Rowspan cells: the page break is not placed inside a rowspan group that starts in a
@@ -40,6 +41,47 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
     private double[] _colWidths = [];
     private double[] _rowHeights = [];
     private LayoutBox _occupied;
+
+    // A row cut between two of its lines. The overflow renderer of a cut row carries the lines the
+    // row was wrapped into and the line each of its cells resumes at, so a row of L lines over P
+    // pages wraps its text once and not P times. _headSlice is the part of row _startRow this
+    // renderer draws when that row resumes here; _tailSlice is the part of its last row, when that
+    // row is cut again. Layout writes both, and gives them to the renderer that draws the page.
+    private RowLines? _resumeLines;
+    private int[]? _resumeFrom;
+    private RowSlice? _headSlice;
+    private RowSlice? _tailSlice;
+
+    /// <summary>The lines each cell of one row wraps into, at one table width.</summary>
+    private sealed class RowLines(int row, double width, List<string>?[] cells)
+    {
+        public int Row { get; } = row;
+        public double Width { get; } = width;
+
+        /// <summary>One entry per cell of the row; null for a cell past the last column.</summary>
+        public List<string>?[] Cells { get; } = cells;
+    }
+
+    /// <summary>
+    /// The part of a cut row that one page draws: for each cell, <c>Count</c> lines from line
+    /// <c>First</c>, and the height of the tallest cell slice.
+    /// </summary>
+    private sealed class RowSlice(RowLines source, int[] first, int[] count, double height, bool complete)
+    {
+        public RowLines Source { get; } = source;
+        public int Row => Source.Row;
+        public int[] First { get; } = first;
+        public int[] Count { get; } = count;
+        public double Height { get; } = height;
+
+        /// <summary>True when every cell has all its remaining lines in this slice.</summary>
+        public bool Complete { get; } = complete;
+
+        public int TotalLines => Count.Sum();
+
+        /// <summary>For each cell, the line a following slice resumes at.</summary>
+        public int[] Next() => [.. First.Zip(Count, (f, c) => f + c)];
+    }
 
     /// <summary>
     /// Creates a renderer for the table, optionally starting at row <paramref name="startRow"/>
@@ -72,17 +114,34 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
     // it as well.
     PageBreakMode IPageBreakSource.BreakBefore => _table.BreakBefore;
 
-    /// <summary>Resolves column widths and row heights, fitting as many rows as possible and splitting at row boundaries on overflow.</summary>
+    /// <summary>Resolves column widths and row heights, fitting as many rows as possible and splitting at row boundaries on overflow, or between the lines of a row taller than a page.</summary>
     /// <remarks>
-    /// Overflow splits at a row boundary. An area with no width returns
-    /// <see cref="LayoutResult.Outcome.Nothing"/> before anything is checked. When the document
-    /// calls this method, the exceptions it lists reach you from the save.
+    /// Overflow splits at a row boundary. A row that does not fit the area is cut between its
+    /// lines instead when it would not fit a page of its own either, and at least one line of one
+    /// of its cells fits the area; otherwise the table breaks before it. Each cell is cut at its
+    /// own line, and the split renderer and the overflow renderer between them draw every line of
+    /// the row once. An area with no width returns <see cref="LayoutResult.Outcome.Nothing"/>
+    /// before anything is checked. When the document calls this method, the exceptions it lists
+    /// reach you from the save.
+    /// <para><b>A context the document did not build never cuts a row.</b> The document tells the
+    /// renderer what a fresh page offers through the context; a context built with the public
+    /// constructor of <see cref="LayoutContext"/> carries no such box, so a row that does not fit
+    /// is not cut, and the call returns <see cref="LayoutResult.Outcome.Nothing"/> as it did
+    /// before rows were cut. A cut row resumed with a context of another width is laid out again
+    /// from its first line.</para>
+    /// <para>These are refused with the too-tall exception, extended with a sentence naming the
+    /// rows or the cell, and are never cut: the repeated header rows when they do not fit a page;
+    /// a row that declares a <see cref="Cell.RowSpan"/> above one, or lies under one; a row with a
+    /// cell that cannot hold one line and its vertical padding on a page under the header rows.
+    /// See <see cref="TableElement"/>.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// The table resolves to no columns, or a cell's span, padding or font size, or the table's border
     /// width when it is not finite, is refused; see <see cref="TableElement.Rows"/>, <see cref="Cell.ColSpan"/>,
     /// <see cref="Cell.Padding"/>, <see cref="TableElement.BorderWidth"/>. A cell's text colour, and a negative
-    /// border width, are refused the same way where the cell is drawn.
+    /// border width, are refused the same way where the cell is drawn. The retry on a new page also
+    /// throws it, saying the element is too tall, when the rows that remain cannot be placed on a
+    /// page; the message then ends with the rows or the cell it names.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// <see cref="VellumPdf.Canvas.PdfCanvas"/> refuses a non-finite <see cref="Cell.Background"/> or
@@ -108,54 +167,75 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
         var area = context.Area.Deflate(_table.Margins);
         if (area.Width <= 0) return LayoutResult.Nothing();
 
-        // Before the grid resolves: a ColSpan of zero gives a column count of zero, so Resolve
-        // returns no widths and Layout gives up below, and the caller was told the table was too
-        // tall to fit (#481). Checking here names the cell instead.
-        for (var r = 0; r < _table.Rows.Count; r++)
-        {
-            var cells = _table.Rows[r].Cells;
-            for (var c = 0; c < cells.Count; c++)
-                LayoutValidation.ValidateCell(cells[c], r, c);
-        }
+        _headSlice = null;
+        _tailSlice = null;
 
-        LayoutValidation.ValidateLineWidthIsFinite(_table.BorderWidth, "A table");
-
-        var grid = new TableGridResolver();
-        grid.Resolve(_table, area.Width);
-        _colWidths = grid.ColWidths;
-
-        // #481's third refusal, and the one route to it that no span check covers: a table with no
-        // rows, or rows holding no cells, resolves to no columns without any bad ColSpan, and
-        // reporting Nothing here made DocumentRenderer blame the page size.
-        LayoutValidation.ValidateColumnCount(_colWidths.Length);
-
-        // Compute row heights
         var rows = _table.Rows;
         var style = _table.DefaultCellStyle ?? TextStyle.Default;
-        _rowHeights = new double[rows.Count];
 
-        for (var r = 0; r < rows.Count; r++)
+        // A cut row resumed at the width it was cut at keeps the grid and heights the cut was made
+        // with, and the lines it wrapped into. At another width they no longer describe the area,
+        // so the row is laid out from its first line, like any other. Equals, not ==, because a
+        // width that is NaN is the same width on the next page, and == would restart the row on
+        // every page until the continuation limit.
+        var resumed = _resumeLines is { } carried
+            && carried.Width.Equals(area.Width)
+            && _resumeFrom is not null
+            && _colWidths.Length > 0
+            && _rowHeights.Length == rows.Count;
+
+        if (!resumed)
         {
-            var row = rows[r];
-            var maxH = 0.0;
-            var col = 0;
-            var cellIndex = -1;
-            foreach (var cell in row.Cells)
+            _resumeLines = null;
+            _resumeFrom = null;
+
+            // Before the grid resolves: a ColSpan of zero gives a column count of zero, so Resolve
+            // returns no widths and Layout gives up below, and the caller was told the table was too
+            // tall to fit (#481). Checking here names the cell instead.
+            for (var r = 0; r < _table.Rows.Count; r++)
             {
-                cellIndex++;
-                if (col >= _colWidths.Length) break;
-                var cs = cell.Style ?? style;
-                // The authoring index, not col: the two diverge as soon as an earlier cell spans
-                // more than one column, and naming the column points at a cell nobody wrote.
-                LayoutValidation.ValidateFontSize(cs, $"Table row {r}, cell {cellIndex}");
-                var colW = ColSpanWidth(col, cell.ColSpan);
-                var innerW = colW - cell.Padding.Horizontal;
-                var lines = WordWrapCount(cell.Content, cs, Math.Max(1, innerW));
-                var cellH = lines * cs.EffectiveLeading + cell.Padding.Vertical;
-                maxH = Math.Max(maxH, cellH);
-                col += cell.ColSpan;
+                var cells = _table.Rows[r].Cells;
+                for (var c = 0; c < cells.Count; c++)
+                    LayoutValidation.ValidateCell(cells[c], r, c);
             }
-            _rowHeights[r] = maxH;
+
+            LayoutValidation.ValidateLineWidthIsFinite(_table.BorderWidth, "A table");
+
+            var grid = new TableGridResolver();
+            grid.Resolve(_table, area.Width);
+            _colWidths = grid.ColWidths;
+
+            // #481's third refusal, and the one route to it that no span check covers: a table with no
+            // rows, or rows holding no cells, resolves to no columns without any bad ColSpan, and
+            // reporting Nothing here made DocumentRenderer blame the page size.
+            LayoutValidation.ValidateColumnCount(_colWidths.Length);
+
+            // Compute row heights
+            _rowHeights = new double[rows.Count];
+
+            for (var r = 0; r < rows.Count; r++)
+            {
+                var row = rows[r];
+                var maxH = 0.0;
+                var col = 0;
+                var cellIndex = -1;
+                foreach (var cell in row.Cells)
+                {
+                    cellIndex++;
+                    if (col >= _colWidths.Length) break;
+                    var cs = cell.Style ?? style;
+                    // The authoring index, not col: the two diverge as soon as an earlier cell spans
+                    // more than one column, and naming the column points at a cell nobody wrote.
+                    LayoutValidation.ValidateFontSize(cs, $"Table row {r}, cell {cellIndex}");
+                    var colW = ColSpanWidth(col, cell.ColSpan);
+                    var innerW = colW - cell.Padding.Horizontal;
+                    var lines = WordWrapCount(cell.Content, cs, Math.Max(1, innerW));
+                    var cellH = lines * cs.EffectiveLeading + cell.Padding.Vertical;
+                    maxH = Math.Max(maxH, cellH);
+                    col += cell.ColSpan;
+                }
+                _rowHeights[r] = maxH;
+            }
         }
 
         // The repeatable header is the leading contiguous run of IsHeader rows — see
@@ -171,21 +251,66 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
         // that continues into the next row.
         var rowspanBlockedAfter = BuildRowspanBlockedSet(rows, lastHeaderRow);
 
-        // Fit as many data rows as possible
+        // The boxes a fresh page offers, when the caller says so. A row is cut between its lines
+        // only when neither box would hold it whole, so a row that fits a page of its own still
+        // moves to the next page intact.
+        var fresh = FreshBoxes(context);
+        var refusal = new RefusalContext(fresh, headerRowIndices, headerHeight, lastHeaderRow);
+
         var y = area.Y;
         var lastFit = dataStartRow - 1;
         var runHeight = headerHeight;
+        var next = dataStartRow;
+        RowSlice? head = null;
+        RowSlice? tail = null;
 
-        for (var r = dataStartRow; r < rows.Count; r++)
+        if (resumed)
         {
-            if (y + runHeight + _rowHeights[r] > area.Bottom + 0.001)
-                break;
-            runHeight += _rowHeights[r];
-            lastFit = r;
+            // The cut row goes first, with as much of it as this area holds.
+            var slice = CutRow(rows[_startRow], _resumeLines!, _resumeFrom!, y + runHeight, area.Bottom, style);
+            if (slice.TotalLines == 0)
+                return NothingFor(dataStartRow, refusal, style);
+
+            runHeight += slice.Height;
+            lastFit = dataStartRow;
+            next = dataStartRow + 1;
+            if (slice.Complete) head = slice;
+            else tail = slice;
+        }
+
+        // Fit as many data rows as possible
+        var breakRow = -1;
+        if (tail is null)
+        {
+            for (var r = next; r < rows.Count; r++)
+            {
+                if (y + runHeight + _rowHeights[r] > area.Bottom + 0.001)
+                {
+                    breakRow = r;
+                    break;
+                }
+                runHeight += _rowHeights[r];
+                lastFit = r;
+            }
+        }
+
+        // The first row that did not fit is cut between its lines when it would not fit a page of
+        // its own either, and at least one line of it fits here. When no line fits, the table
+        // breaks before the row, as it does for a row that fits a page of its own.
+        if (breakRow >= 0 && CanCut(breakRow, refusal, style))
+        {
+            var lines = WrapRow(rows[breakRow], breakRow, area.Width, style);
+            var slice = CutRow(rows[breakRow], lines, new int[lines.Cells.Length], y + runHeight, area.Bottom, style);
+            if (slice.TotalLines > 0)
+            {
+                runHeight += slice.Height;
+                lastFit = breakRow;
+                tail = slice;
+            }
         }
 
         // Walk back from lastFit to find a row we're allowed to break after.
-        while (lastFit >= dataStartRow && rowspanBlockedAfter.Contains(lastFit))
+        while (tail is null && lastFit >= dataStartRow && rowspanBlockedAfter.Contains(lastFit))
         {
             // Can't break after lastFit — back up one row.
             runHeight -= _rowHeights[lastFit];
@@ -195,19 +320,265 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
         if (lastFit < dataStartRow)
         {
             // Nothing fits beyond headers (or all fitted rows are inside a span)
-            if (dataStartRow >= rows.Count) return LayoutResult.Nothing();
-            return LayoutResult.Nothing();
+            return NothingFor(dataStartRow, refusal, style);
         }
 
+        _headSlice = head;
+        _tailSlice = tail;
         _occupied = area.WithHeight(runHeight);
 
-        if (lastFit == rows.Count - 1)
+        if (tail is null && lastFit == rows.Count - 1)
             return LayoutResult.Full(_occupied);
 
         // Partial
-        var split = new TableRenderer(_table, _startRow) { _colWidths = _colWidths, _rowHeights = _rowHeights, _occupied = _occupied };
-        var overflow = new TableRenderer(_table, lastFit + 1) { _colWidths = _colWidths, _rowHeights = _rowHeights };
+        var split = new TableRenderer(_table, _startRow)
+        {
+            _colWidths = _colWidths,
+            _rowHeights = _rowHeights,
+            _occupied = _occupied,
+            _headSlice = head,
+            _tailSlice = tail,
+        };
+        var overflow = tail is null
+            ? new TableRenderer(_table, lastFit + 1) { _colWidths = _colWidths, _rowHeights = _rowHeights }
+            : new TableRenderer(_table, tail.Row)
+            {
+                _colWidths = _colWidths,
+                _rowHeights = _rowHeights,
+                _resumeLines = tail.Source,
+                _resumeFrom = tail.Next(),
+            };
         return LayoutResult.Partial(_occupied, split, overflow);
+    }
+
+    // ── Cutting a row between its lines ──
+
+    /// <summary>What a layout call knows about the page a refused row would have to fit.</summary>
+    private readonly record struct RefusalContext(
+        LayoutBox[]? Fresh, List<int> HeaderRows, double HeaderHeight, int LastHeaderRow);
+
+    /// <summary>
+    /// The two boxes a fresh page can offer this table, or null when the caller did not say. The
+    /// document offers the content area to the retry, and the area from the top of the content area
+    /// to its bottom after a page break, which can differ from it by a rounding step.
+    /// </summary>
+    private LayoutBox[]? FreshBoxes(LayoutContext context)
+    {
+        if (context.FreshPageArea is not { } page) return null;
+        var pageTop = new LayoutBox(page.X, page.Y, page.Width, page.Bottom - page.Y);
+        return [page.Deflate(_table.Margins), pageTop.Deflate(_table.Margins)];
+    }
+
+    /// <summary>True when a block of <paramref name="height"/> fits a fresh box.</summary>
+    private static bool FitsFresh(LayoutBox[] fresh, double headerHeight, double height)
+    {
+        foreach (var box in fresh)
+            if (!(box.Y + headerHeight + height > box.Bottom + 0.001))
+                return true;
+        return false;
+    }
+
+    /// <summary>
+    /// True when row <paramref name="r"/>, which did not fit the area, can be cut between its
+    /// lines: the caller supplied the fresh boxes, the row would fit neither of them whole, nothing
+    /// forbids cutting it, and every cell of it holds a line on a fresh page.
+    /// </summary>
+    private bool CanCut(int r, RefusalContext ctx, TextStyle style)
+    {
+        if (ctx.Fresh is not { } fresh) return false;
+        if (FitsFresh(fresh, ctx.HeaderHeight, _rowHeights[r])) return false;
+        if (ctx.HeaderRows.Contains(r)) return false;
+        if (InSpanGroup(r)) return false;
+        return CellBeyondProgress(r, fresh, ctx.HeaderHeight, style) is null;
+    }
+
+    /// <summary>
+    /// True when row <paramref name="r"/> declares a <see cref="Cell.RowSpan"/> above one, or lies
+    /// under one declared by an earlier row, header rows included.
+    /// </summary>
+    private bool InSpanGroup(int r)
+    {
+        var rows = _table.Rows;
+        for (var q = 0; q <= r && q < rows.Count; q++)
+            foreach (var cell in rows[q].Cells)
+                if (cell.RowSpan > 1 && (long)q + cell.RowSpan - 1 >= r)
+                    return true;
+        return false;
+    }
+
+    /// <summary>
+    /// The first cell of row <paramref name="r"/> that cannot hold one line, with its padding, in a
+    /// fresh box under the header rows, or null when every cell can. Such a cell would make no
+    /// progress however many pages the row was given.
+    /// </summary>
+    private (int Cell, double Needed, double Available)? CellBeyondProgress(
+        int r, LayoutBox[] fresh, double headerHeight, TextStyle style)
+    {
+        var cells = _table.Rows[r].Cells;
+        var col = 0;
+        for (var c = 0; c < cells.Count; c++)
+        {
+            if (col >= _colWidths.Length) break;
+            var cell = cells[c];
+            var cs = cell.Style ?? style;
+            var needed = 1 * cs.EffectiveLeading + cell.Padding.Vertical;
+            foreach (var box in fresh)
+                if (box.Y + headerHeight + needed > box.Bottom + 0.001)
+                    return (c, needed, Math.Min(fresh[0].Bottom, fresh[1].Bottom) - fresh[0].Y - headerHeight);
+            col += cell.ColSpan;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Wraps every cell of a row once, at the widths the grid gave it. The lines are what a cut row
+    /// is drawn from, on every page it spans.
+    /// </summary>
+    private RowLines WrapRow(Row row, int rowIndex, double width, TextStyle style)
+    {
+        var cells = new List<string>?[row.Cells.Count];
+        var col = 0;
+        for (var c = 0; c < row.Cells.Count; c++)
+        {
+            if (col >= _colWidths.Length) break;
+            var cell = row.Cells[c];
+            var cs = cell.Style ?? style;
+            var innerW = ColSpanWidth(col, cell.ColSpan) - cell.Padding.Horizontal;
+            cells[c] = WordWrapLines(cell.Content, cs, Math.Max(1, innerW));
+            col += cell.ColSpan;
+        }
+        return new RowLines(rowIndex, width, cells);
+    }
+
+    /// <summary>
+    /// Takes from each cell of the row, starting at the line given for it, the most lines whose
+    /// height with the cell's padding fits between <paramref name="top"/> and
+    /// <paramref name="bottom"/>, by the same test the fit loop applies to a whole row.
+    /// </summary>
+    private static RowSlice CutRow(Row row, RowLines lines, int[] from, double top, double bottom, TextStyle style)
+    {
+        var count = new int[lines.Cells.Length];
+        var height = 0.0;
+        var complete = true;
+        for (var c = 0; c < lines.Cells.Length; c++)
+        {
+            if (lines.Cells[c] is not { } cellLines) continue;
+            var cell = row.Cells[c];
+            var cs = cell.Style ?? style;
+            var remaining = cellLines.Count - from[c];
+            var n = LinesThatFit(top, bottom, cs.EffectiveLeading, cell.Padding.Vertical, remaining);
+            count[c] = n;
+            if (n < remaining) complete = false;
+            if (n > 0) height = Math.Max(height, n * cs.EffectiveLeading + cell.Padding.Vertical);
+        }
+        return new RowSlice(lines, from, count, height, complete);
+    }
+
+    /// <summary>
+    /// The largest number of lines, up to <paramref name="remaining"/>, for which
+    /// <c>top + (n * leading + padding) &gt; bottom + 0.001</c> is false: the fit loop's test for a
+    /// whole row, so a cut and a fit agree on a block sitting exactly on the boundary.
+    /// </summary>
+    private static int LinesThatFit(double top, double bottom, double leading, double padding, int remaining)
+    {
+        if (remaining <= 0) return 0;
+        bool Fits(int n) => !(top + (n * leading + padding) > bottom + 0.001);
+
+        // A leading that is not positive makes a taller block no taller, so all of it fits or none.
+        if (!(leading > 0)) return Fits(remaining) ? remaining : 0;
+
+        var estimate = Math.Floor((bottom + 0.001 - top - padding) / leading);
+        var n = double.IsNaN(estimate) ? 0 : (int)Math.Clamp(estimate, 0, remaining);
+        while (n > 0 && !Fits(n)) n--;
+        while (n < remaining && Fits(n + 1)) n++;
+        return n;
+    }
+
+    // ── Refusals ──
+
+    /// <summary>
+    /// <see cref="LayoutResult.Nothing()"/>, with the reason when the content starting at
+    /// <paramref name="row"/> could not be placed on a fresh page either.
+    /// </summary>
+    private LayoutResult NothingFor(int row, RefusalContext ctx, TextStyle style) =>
+        RefusalReason(row, ctx, style) is { } reason ? LayoutResult.Nothing(reason) : LayoutResult.Nothing();
+
+    /// <summary>
+    /// Why the content starting at data row <paramref name="r"/> cannot be placed on a page of its
+    /// own, or null when a fresh page holds it, or the caller did not supply the fresh boxes.
+    /// </summary>
+    private string? RefusalReason(int r, RefusalContext ctx, TextStyle style)
+    {
+        if (ctx.Fresh is not { } fresh || r >= _table.Rows.Count) return null;
+        var smallest = fresh[0].Bottom <= fresh[1].Bottom ? fresh[0] : fresh[1];
+        var pageHeight = smallest.Bottom - smallest.Y;
+
+        if (ctx.HeaderRows.Count > 0 && !FitsFresh(fresh, 0, ctx.HeaderHeight))
+        {
+            return $"The repeated header ({RowRange(ctx.HeaderRows[0], ctx.HeaderRows[^1])}) is {Pt(ctx.HeaderHeight)} tall, " +
+                $"but a page leaves {Pt(pageHeight)} for the table. Header rows repeat on every page and are never split.";
+        }
+
+        var below = ctx.HeaderRows.Count > 0 ? $" under the {Pt(ctx.HeaderHeight)} of repeated header rows" : "";
+
+        if (InSpanGroup(r))
+        {
+            var (first, last) = SpanGroupOf(r, ctx.LastHeaderRow);
+            var groupHeight = 0.0;
+            for (var i = first; i <= last; i++) groupHeight += _rowHeights[i];
+            if (FitsFresh(fresh, ctx.HeaderHeight, groupHeight)) return null;
+            var leaves = Pt(pageHeight - ctx.HeaderHeight);
+            return first == last
+                ? $"Table row {first} takes part in a RowSpan, so it is never split between pages. " +
+                  $"It is {Pt(groupHeight)} tall, but a page leaves {leaves}{below}."
+                : $"Table rows {first} to {last} are joined by a RowSpan, so they are never split between pages. " +
+                  $"Together they are {Pt(groupHeight)} tall, but a page leaves {leaves}{below}.";
+        }
+
+        if (FitsFresh(fresh, ctx.HeaderHeight, _rowHeights[r])) return null;
+
+        if (CellBeyondProgress(r, fresh, ctx.HeaderHeight, style) is { } stuck)
+        {
+            return $"Table row {r}, cell {stuck.Cell} needs {Pt(stuck.Needed)} for its vertical padding and one line, " +
+                $"but a page leaves {Pt(stuck.Available)}{below}, so the row cannot be split between pages.";
+        }
+
+        return null;
+    }
+
+    private static string Pt(double points) =>
+        points.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) + "pt";
+
+    private static string RowRange(int first, int last) =>
+        first == last ? $"table row {first}" : $"table rows {first} to {last}";
+
+    /// <summary>
+    /// The data rows from the first to the last of the run of rows held together by RowSpan
+    /// declarations that includes <paramref name="r"/>; the row alone when none holds it. A span
+    /// declared in a header row starts the run at the first data row, because the header rows are
+    /// counted separately.
+    /// </summary>
+    private (int First, int Last) SpanGroupOf(int r, int firstDataRow)
+    {
+        var rows = _table.Rows;
+        var first = r;
+        var last = r;
+        var changed = true;
+        while (changed)
+        {
+            changed = false;
+            for (var q = 0; q < rows.Count; q++)
+            {
+                var reach = 1;
+                foreach (var cell in rows[q].Cells) reach = Math.Max(reach, cell.RowSpan);
+                var end = (int)Math.Min((long)q + reach - 1, rows.Count - 1);
+                if (reach <= 1 || end < first || q > last) continue;
+                var start = Math.Max(q, firstDataRow);
+                if (start < first) { first = start; changed = true; }
+                if (end > last) { last = end; changed = true; }
+            }
+        }
+        return (first, last);
     }
 
     /// <summary>Draws cell backgrounds, borders and text (repeating header rows) and builds the tagged Table struct tree when tagging is enabled.</summary>
@@ -279,7 +650,8 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
         {
             if (probeY >= _occupied.Bottom - 0.001) break;
             drawnRows.Add(r);
-            probeY += _rowHeights[r];
+            probeY += HeightOf(r);
+            if (_tailSlice?.Row == r) break;
         }
 
         // Draw the leading contiguous run of header rows; every later row, header-flagged or not,
@@ -294,20 +666,32 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
             rowY += _rowHeights[hi];
         }
 
-        // Then data rows
+        // Then data rows. A row cut between its lines is drawn from its slice, and is the last row
+        // drawn when the cut falls inside it, whatever the accumulated height says.
         for (var r = dataStartRow; r < rows.Count; r++)
         {
             if (rowY >= _occupied.Bottom - 0.001) break;
             var trElem = tableElem is not null ? new PdfStructElem("TR") : null;
             DrawRow(ctx, rows[r], r, rowY, area.X, style, spanMap, trElem, drawnRows);
             if (trElem is not null && trElem.Children.Count > 0) tableElem!.AddChild(trElem);
-            rowY += _rowHeights[r];
+            rowY += HeightOf(r);
+            if (_tailSlice?.Row == r) break;
         }
 
         // Register the complete Table struct elem tree with the document.
         if (tableElem is not null)
             ctx.RegisterStructElemTree(tableElem);
     }
+
+    /// <summary>
+    /// The slice of row <paramref name="r"/> this renderer draws, when the row is cut: the part it
+    /// ends with when it is cut here, else the part it resumes with. Null for a row drawn whole.
+    /// </summary>
+    private RowSlice? SliceOf(int r) =>
+        _tailSlice?.Row == r ? _tailSlice : _headSlice?.Row == r ? _headSlice : null;
+
+    /// <summary>The height row <paramref name="r"/> takes on this page.</summary>
+    private double HeightOf(int r) => SliceOf(r)?.Height ?? _rowHeights[r];
 
     private void DrawRow(DrawContext ctx, Row row, int rowIdx, double rowY, double startX,
         TextStyle style,
@@ -374,13 +758,14 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
             var rowSpan = EffectiveRowSpan(cell.RowSpan, rowIdx, drawnRows);
             var colSpan = Math.Min(cell.ColSpan, _colWidths.Length - col);
             var colW = ColSpanWidth(col, colSpan);
-            var h = _rowHeights[rowIdx];
+            var slice = SliceOf(rowIdx);
+            var h = slice?.Height ?? _rowHeights[rowIdx];
 
             if (rowSpan <= 1)
             {
                 // Normal single-row cell — draw immediately
                 DrawCell(ctx, cell, row, col, colXPositions[col], rowY, colW, h, style, trElem,
-                    rowSpan, colSpan, rowIdx, cellIdx - 1);
+                    rowSpan, colSpan, rowIdx, cellIdx - 1, slice);
             }
             else
             {
@@ -388,10 +773,10 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
                 // covers, with the rows below marked occupied so they skip this column range.
                 var totalSpanH = 0.0;
                 for (var sr = rowIdx; sr < rowIdx + rowSpan; sr++)
-                    totalSpanH += _rowHeights[sr];
+                    totalSpanH += HeightOf(sr);
 
                 DrawCell(ctx, cell, row, col, colXPositions[col], rowY, colW, totalSpanH, style,
-                    trElem, rowSpan, colSpan, rowIdx, cellIdx - 1);
+                    trElem, rowSpan, colSpan, rowIdx, cellIdx - 1, null);
 
                 for (var sr = rowIdx + 1; sr < rowIdx + rowSpan; sr++)
                     for (var sc = col; sc < col + colSpan; sc++)
@@ -435,7 +820,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
     private void DrawCell(DrawContext ctx, Cell cell, Row row, int colIdx,
         double cellX, double cellY, double colW, double h,
         TextStyle style, PdfStructElem? trElem, int rowSpan, int colSpan,
-        int rowIndex, int cellIndex)
+        int rowIndex, int cellIndex, RowSlice? slice)
     {
         var cs = cell.Style ?? style;
 
@@ -471,7 +856,32 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
             cellX + cell.Padding.Left, cellY + cell.Padding.Top,
             colW - cell.Padding.Horizontal, h - cell.Padding.Vertical);
 
-        var wrappedLines = WordWrapLines(cell.Content, cs, Math.Max(1, innerBox.Width));
+        // A cell of a cut row draws the lines this page was given of the ones the row was wrapped
+        // into when it was cut, so the page break falls where the cut put it. Every other cell
+        // wraps here.
+        List<string> wrappedLines;
+        var firstLine = 0;
+        int lineCount;
+        if (slice is not null)
+        {
+            wrappedLines = slice.Source.Cells[cellIndex] ?? [];
+            firstLine = slice.First[cellIndex];
+            lineCount = slice.Count[cellIndex];
+        }
+        else
+        {
+            wrappedLines = WordWrapLines(cell.Content, cs, Math.Max(1, innerBox.Width));
+            lineCount = wrappedLines.Count;
+        }
+
+        // A cell with no line on this page keeps its rectangle and writes no text, and is tagged as
+        // an empty cell: a marked-content sequence around nothing would describe nothing.
+        if (lineCount == 0)
+        {
+            if (ctx.Tagged)
+                trElem?.AddChild(NewCellElement(cell, row, rowSpan, colSpan, null));
+            return;
+        }
 
         // Tagged PDF: TH (header) or TD (data), containing a P with the MCID.
         // Structure: TR → TH/TD → P
@@ -499,9 +909,9 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
         canvas.SetFillColorRgb(cs.Color.R, cs.Color.G, cs.Color.B);
 
         var lineHeight = cs.EffectiveLeading;
-        for (var lineIdx = 0; lineIdx < wrappedLines.Count; lineIdx++)
+        for (var lineIdx = 0; lineIdx < lineCount; lineIdx++)
         {
-            var line = wrappedLines[lineIdx];
+            var line = wrappedLines[firstLine + lineIdx];
             var lineW = cs.FontRef.MeasureString(line, cs.FontSize);
 
             // Floored at the cell's own left edge (#473), the same clamp #472 applied to a
@@ -539,21 +949,27 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
             ctx.Canvas.EndMarkedContent();
 
             // Build: TR → TH/TD → P
-            var cellType = row.IsHeader ? "TH" : "TD";
-            var cellElem = new PdfStructElem(cellType);
-            if (cell.Language is not null)
-                cellElem.Language = cell.Language;
-            if (row.IsHeader)
-                cellElem.TableHeaderScope = "Column";
-            if (rowSpan > 1)
-                cellElem.TableRowSpan = rowSpan;
-            if (colSpan > 1)
-                cellElem.TableColSpan = colSpan;
             var pElem = new PdfStructElem("P") { Mcid = mcid };
             ctx.StampStructElemPage(pElem);
-            cellElem.AddChild(pElem);
-            trElem?.AddChild(cellElem);
+            trElem?.AddChild(NewCellElement(cell, row, rowSpan, colSpan, pElem));
         }
+    }
+
+    /// <summary>The TH or TD for a cell, with its attributes and the paragraph it holds.</summary>
+    private static PdfStructElem NewCellElement(Cell cell, Row row, int rowSpan, int colSpan, PdfStructElem? paragraph)
+    {
+        var cellElem = new PdfStructElem(row.IsHeader ? "TH" : "TD");
+        if (cell.Language is not null)
+            cellElem.Language = cell.Language;
+        if (row.IsHeader)
+            cellElem.TableHeaderScope = "Column";
+        if (rowSpan > 1)
+            cellElem.TableRowSpan = rowSpan;
+        if (colSpan > 1)
+            cellElem.TableColSpan = colSpan;
+        if (paragraph is not null)
+            cellElem.AddChild(paragraph);
+        return cellElem;
     }
 
     /// <summary>Maps every code point to a glyph id and emits a single hex glyph run.</summary>

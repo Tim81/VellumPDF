@@ -747,7 +747,10 @@ public sealed class Document : IDisposable
     /// <remarks>
     /// A null table is refused here. A table's own
     /// refusals are on <see cref="TableElement"/>, among them a table that needs more than 50,000
-    /// page continuations.
+    /// page continuations. A row taller than a page is cut between its lines and continues on the
+    /// next page; the header rows, a row held in a <see cref="Cell.RowSpan"/> group, and a row with
+    /// a cell that cannot hold one line are refused instead, and <see cref="TableElement"/> says
+    /// which.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="table"/> is <see langword="null"/>.
@@ -760,7 +763,9 @@ public sealed class Document : IDisposable
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
     /// call, when a style the table uses has a size or leading that is refused; see
-    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
+    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>. Also raised from the
+    /// save, with a message that ends in the rows or the cell it names, when a row cannot be placed
+    /// on a page and cannot be cut; see <see cref="TableElement"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
