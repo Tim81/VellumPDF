@@ -816,7 +816,7 @@ public sealed class DocumentRenderer
     private LayoutResult CallLayout(IRenderer renderer, LayoutBox area)
     {
         LayoutCalls++;
-        return renderer.Layout(new LayoutContext(area));
+        return renderer.Layout(new LayoutContext(area) { FreshPageArea = PlaceArea });
     }
 
     // Tells the renderer whose result was just accepted to report where it landed. Called before
@@ -936,7 +936,13 @@ public sealed class DocumentRenderer
                     if (retry.Status == LayoutResult.Outcome.Nothing)
                     {
                         if (!_measuring) FinishCurrentPage(totalPages);
-                        throw ElementTooTall();
+
+                        // The renderer's own reason follows the standard sentence, so every
+                        // message starts as it always has and a caller matching on that start
+                        // still matches.
+                        throw retry.Reason is { } reason
+                            ? new InvalidOperationException(ElementTooTall().Message + " " + reason)
+                            : ElementTooTall();
                     }
                     break;
 

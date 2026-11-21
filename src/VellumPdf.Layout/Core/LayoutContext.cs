@@ -24,6 +24,20 @@ public sealed class LayoutContext
     /// </remarks>
     public LayoutBox Area { get; }
 
+    /// <summary>
+    /// The content area every fresh page offers, which is what the document offers the retry after
+    /// a <see cref="LayoutResult.Outcome.Nothing"/>. Null on a context built through the public
+    /// constructor.
+    /// </summary>
+    /// <remarks>
+    /// The document sets it on every layout call, in both passes, so a renderer can tell whether
+    /// an element that does not fit the area it was offered could fit a page of its own. A fresh
+    /// page can offer one rounding step less than this box; see <see cref="Area"/> (#549). A
+    /// renderer that splits an element only when it fits neither box therefore leaves alone
+    /// every element that either box places whole.
+    /// </remarks>
+    internal LayoutBox? FreshPageArea { get; init; }
+
     /// <summary>A minimum Y position, carried for callers that set one.</summary>
     /// <remarks>
     /// Nothing in this package acts on it, and the document passes <b>0</b> on every call. Use
@@ -40,6 +54,10 @@ public sealed class LayoutContext
     }
 
     /// <summary>Returns a copy of this context with the available area replaced.</summary>
-    /// <remarks>Nothing is refused. <see cref="ContentTop"/> is copied unchanged.</remarks>
-    public LayoutContext WithArea(LayoutBox area) => new(area, ContentTop);
+    /// <remarks>
+    /// Nothing is refused. <see cref="ContentTop"/> is copied unchanged, and so is the content area
+    /// a fresh page offers, which this package reads and which is null on a context built through
+    /// the public constructor.
+    /// </remarks>
+    public LayoutContext WithArea(LayoutBox area) => new(area, ContentTop) { FreshPageArea = FreshPageArea };
 }
