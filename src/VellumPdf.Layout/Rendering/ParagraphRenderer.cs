@@ -739,10 +739,10 @@ public sealed class ParagraphRenderer : IRenderer
                     tokens.Add((string.Empty, null, TokenKind.HardBreak));
                 }
 
-                // Normalise all Unicode whitespace (except \n and the three no-break spaces) to plain spaces, then
-                // split on space so tabs, en/em spaces, etc. all act as word separators. A space
-                // ends the word before it; a run that starts or ends without one continues or
-                // leaves the word open for the next run.
+                // Normalise all Unicode whitespace (except \n and the three no-break spaces) to
+                // plain spaces, then split on space so tabs, en/em spaces, etc. all act as word
+                // separators. A space ends the word before it; a run that starts or ends without
+                // one continues or leaves the word open for the next run.
                 var segments = NormaliseWhitespace(hardLines[hl]).Split(' ');
                 for (var si = 0; si < segments.Length; si++)
                 {
@@ -753,8 +753,8 @@ public sealed class ParagraphRenderer : IRenderer
                     if (segment.Length == 0)
                         continue;
 
-                    // Only a run that yields a word is refused; empty text, white space or line
-                    // breaks alone save with a null style.
+                    // Only a run that yields a word is refused; empty text, or text of word
+                    // separators alone, saves with a null style.
                     if (run.Style is null)
                         throw new ArgumentNullException("Style", "A paragraph run with text has a null style.");
 

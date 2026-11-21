@@ -50,7 +50,7 @@ public sealed partial class RunBoundaryTests
 
     private static string Content(Document doc) => PdfTestUtil.DecompressAllFlatStreams(Save(doc));
 
-    /// <summary>A page whose content width is exactly <paramref name="width"/>, no margins.</summary>
+    /// <summary>A page, without margins, whose content width is <paramref name="width"/>.</summary>
     private static Document Page(double width) => new()
     {
         PageSize = new PdfRectangle(0, 0, width, 400),
@@ -294,7 +294,7 @@ public sealed partial class RunBoundaryTests
         Assert.Equal([Lit("astro"), Lit("logie "), Lit("end")], lines[1]);
     }
 
-    // ── What keeps its bytes: the boundaries that hold white space ───────────
+    // ── What keeps its bytes: the boundaries that hold a separator ───────────
 
     public static TheoryData<string[], string[][]> WhiteSpaceBoundaries() => new()
     {
