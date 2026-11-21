@@ -154,8 +154,11 @@ public sealed class Cell
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> rather than from this property.
     /// A non-finite inset gives a message naming the row and the cell. A finite vertical inset
     /// so large that the cell cannot hold one line and its padding on a page (above, with all four
-    /// edges at 400) throws the too-tall exception, whose message ends with a sentence naming the
-    /// row and the cell.
+    /// edges at 400) throws the too-tall exception, whose message ends with a sentence. That
+    /// sentence names the row and the cell for a data row that is not held in a
+    /// <see cref="RowSpan"/> group. For a cell in a header row it names only the header rows, and
+    /// for a row held in a <see cref="RowSpan"/> group it names the rows of the group, with no
+    /// cell; see <see cref="TableElement"/>.
     /// </exception>
     public EdgeInsets Padding { get; init; } = new EdgeInsets(4, 6, 4, 6);
 

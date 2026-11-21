@@ -29,9 +29,9 @@ namespace VellumPdf.Layout.Rendering.Table;
 /// <remarks>
 /// A table that resolves to no columns is refused from <see cref="Layout"/>. A table whose rows
 /// are all headers has no repeatable header: its rows are laid out and drawn as the body, each
-/// once, and the table splits between rows like any other. Each of those rows is still tagged as
-/// a header row. A table that has a row that is not a header after its leading header rows
-/// repeats those header rows on every page.
+/// once, and the table splits between rows like any other. A cell of those rows that holds a line
+/// is tagged as a header cell. A table that has a row that is not a header after its leading
+/// header rows repeats those header rows on every page.
 /// </remarks>
 public sealed class TableRenderer : IRenderer, IPageBreakSource
 {
@@ -114,21 +114,23 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
     // it as well.
     PageBreakMode IPageBreakSource.BreakBefore => _table.BreakBefore;
 
-    /// <summary>Resolves column widths and row heights, fitting as many rows as possible and splitting at row boundaries on overflow, or between the lines of a row taller than a page.</summary>
+    /// <summary>Resolves column widths and row heights, fitting as many rows as possible and splitting at row boundaries on overflow, or between the lines of a row that fits no fresh page.</summary>
     /// <remarks>
     /// Overflow splits at a row boundary. A row that does not fit the area is cut between its
-    /// lines instead when it would not fit a page of its own either, and at least one line of one
+    /// lines instead when it fits neither box a fresh page offers, and at least one line of one
     /// of its cells fits the area; otherwise the table breaks before it. Each cell is cut at its
     /// own line, and the split renderer and the overflow renderer between them draw every line of
     /// the row once. An area with no width returns <see cref="LayoutResult.Outcome.Nothing"/>
     /// before anything is checked. When the document calls this method, the exceptions it lists
     /// reach you from the save.
-    /// <para><b>A context the document did not build never cuts a row.</b> The document tells the
-    /// renderer what a fresh page offers through the context; a context built with the public
-    /// constructor of <see cref="LayoutContext"/> carries no such box, so a row that does not fit
-    /// is not cut, and the call returns <see cref="LayoutResult.Outcome.Nothing"/> as it did
-    /// before rows were cut. A cut row resumed with a context of another width is laid out again
-    /// from its first line.</para>
+    /// <para><b>A row is first cut only under a context the document built.</b> The document
+    /// tells the renderer what a fresh page offers through the context; a context built with the
+    /// public constructor of <see cref="LayoutContext"/> carries no such box, so a row that does
+    /// not fit is not cut. When it is the first row in the area the call returns
+    /// <see cref="LayoutResult.Outcome.Nothing"/>; when rows before it fit, the call returns the
+    /// rows that fit and the overflow renderer starts with the row. A row that was already cut
+    /// keeps cutting when its overflow renderer is laid out under such a context. A cut row
+    /// resumed with a context of another width is laid out again from its first line.</para>
     /// <para>These are refused with the too-tall exception, extended with a sentence naming the
     /// rows or the cell, and are never cut: the repeated header rows when they do not fit a page;
     /// a row that declares a <see cref="Cell.RowSpan"/> above one, or lies under one; a row with a
@@ -252,8 +254,8 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
         var rowspanBlockedAfter = BuildRowspanBlockedSet(rows, lastHeaderRow);
 
         // The boxes a fresh page offers, when the caller says so. A row is cut between its lines
-        // only when neither box would hold it whole, so a row that fits a page of its own still
-        // moves to the next page intact.
+        // only when neither box would hold it whole, so a row that fits one of them still moves to
+        // the next page intact.
         var fresh = FreshBoxes(context);
         var refusal = new RefusalContext(fresh, headerRowIndices, headerHeight, lastHeaderRow);
 
@@ -294,9 +296,9 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
             }
         }
 
-        // The first row that did not fit is cut between its lines when it would not fit a page of
-        // its own either, and at least one line of it fits here. When no line fits, the table
-        // breaks before the row, as it does for a row that fits a page of its own.
+        // The first row that did not fit is cut between its lines when it fits neither fresh box,
+        // and at least one line of it fits here. When no line fits, the table breaks before the
+        // row, as it does for a row that fits a fresh box.
         if (breakRow >= 0 && CanCut(breakRow, refusal, style))
         {
             var lines = WrapRow(rows[breakRow], breakRow, area.Width, style);
@@ -947,8 +949,8 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
     /// <summary>
     /// The TH or TD for a cell, with its attributes and the paragraph it holds. A cell that holds
     /// nothing is always a TD, never a TH: the table checklist in the Tagged PDF Best Practice
-    /// Guide (4.2.6.2) says "empty cells are always TD cells, never TH cells". Only a slice with
-    /// no line left passes no paragraph.
+    /// Guide (4.2.6.2) says "empty cells are always &lt;TD&gt; cells, never &lt;TH&gt; cells".
+    /// Only a slice with no line left passes no paragraph.
     /// </summary>
     private static PdfStructElem NewCellElement(Cell cell, Row row, int rowSpan, int colSpan, PdfStructElem? paragraph)
     {

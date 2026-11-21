@@ -62,6 +62,10 @@ public sealed class TableRowSplitTests : IDisposable
     private static TableElement Table() =>
         new TableElement { DefaultCellStyle = Style() }.SetColumnWidths(40, 100);
 
+    private static TableElement MarginTable() =>
+        new TableElement { DefaultCellStyle = Style(), Margins = new EdgeInsets(10) }
+            .SetColumnWidths(40, 100);
+
     private static string Words(int count) => string.Join(' ', Enumerable.Repeat("aaaa", count));
 
     /// <summary>The row the tests cut: <paramref name="lines"/> lines in the first cell, and "short" beside it.</summary>
@@ -169,6 +173,43 @@ public sealed class TableRowSplitTests : IDisposable
         Assert.Equal(["10 570 40 20", "50 570 100 20", "10 10 40 560", "50 10 100 560"], Borders(page));
     }
 
+    /// <summary>
+    /// The table's own margins take room from the page a row has to fit. With a margin of 10 on
+    /// every side the table has 560pt of a 580pt page, so a 46-line row (560pt) fits and is not
+    /// cut.
+    /// </summary>
+    [Fact]
+    public void ARowThatFillsThePageInsideTheTableMargins_isNotCut()
+    {
+        var t = MarginTable();
+        Tall(t, 46);
+
+        var page = Assert.Single(Pages(t));
+
+        Assert.Equal(["20 20 40 560", "60 20 100 560"], Borders(page));
+    }
+
+    /// <summary>
+    /// A 47-line row (572pt) fits the 580pt page, so a table without margins places it whole, but
+    /// not the 560pt left inside a table margin of 10: it is cut, with 46 lines on page 1 and the
+    /// 47th on page 2. 2.3.3 refused this table as too tall. The fresh page the row has to fit is
+    /// deflated by the margins, so a row that fits the page alone is still cut.
+    /// </summary>
+    [Fact]
+    public void ARowThatFitsThePageButNotInsideTheTableMargins_isCut()
+    {
+        var t = MarginTable();
+        Tall(t, 47);
+
+        var pages = Pages(t);
+
+        Assert.Equal(2, pages.Count);
+        Assert.Equal(["20 20 40 560", "60 20 100 560"], Borders(pages[0]));
+        Assert.Equal(Concat(Run("aaaa", 46), ["short"]), Texts(pages[0]));
+        Assert.Equal(["20 560 40 20", "60 560 100 20"], Borders(pages[1]));
+        Assert.Equal(["aaaa"], Texts(pages[1]));
+    }
+
     // ── Rows taller than a page are cut between lines ────────────────────────
 
     /// <summary>
@@ -245,7 +286,7 @@ public sealed class TableRowSplitTests : IDisposable
 
     /// <summary>
     /// When no line of the row fits under the rows already on the page, the table breaks before the
-    /// row, as it does for a row that fits a page of its own, and the row is cut from the top of page 2.
+    /// row, as it does for a row that fits a fresh page, and the row is cut from the top of page 2.
     /// Thirty 20pt rows leave 0pt under them on a 580pt page less one row, so 29 rows fill it exactly.
     /// </summary>
     [Fact]
@@ -761,11 +802,11 @@ public sealed class TableRowSplitTests : IDisposable
 
     /// <summary>
     /// A renderer laid out with a context built through the public constructor has no fresh-page box
-    /// and never cuts: the 48-line row is <c>Nothing</c>, with no reason, as before. The same call with
-    /// the box set cuts it.
+    /// and does not start a cut: the 48-line row, first in its area, is <c>Nothing</c> with no
+    /// reason. The same call with the box set cuts it.
     /// </summary>
     [Fact]
-    public void ARendererWithoutAFreshPageBox_neverCutsARow()
+    public void ARendererWithoutAFreshPageBox_doesNotStartACut()
     {
         var t = Table();
         Tall(t, 48);
@@ -777,6 +818,67 @@ public sealed class TableRowSplitTests : IDisposable
         Assert.Equal(LayoutResult.Outcome.Nothing, plain.Status);
         Assert.Null(plain.Reason);
         Assert.Equal(LayoutResult.Outcome.Partial, withBox.Status);
+    }
+
+    /// <summary>
+    /// Without the box a row that follows rows that fit is still not cut, but the call is not
+    /// <c>Nothing</c>: it returns the rows that fit, and the overflow renderer is <c>Nothing</c>
+    /// for the row, which is then the first in its area.
+    /// </summary>
+    [Fact]
+    public void ARendererWithoutAFreshPageBox_returnsTheRowsThatFit_thenNothingForTheTallRow()
+    {
+        var t = Table();
+        t.AddRow().AddCell("x").AddCell("y");
+        Tall(t, 48);
+        var area = new LayoutBox(10, 10, 280, 580);
+
+        var first = new TableRenderer(t).Layout(new LayoutContext(area));
+        var overflow = first.OverflowRenderer!.Layout(new LayoutContext(area));
+
+        Assert.Equal(LayoutResult.Outcome.Partial, first.Status);
+        Assert.Equal(20.0, first.OccupiedArea!.Value.Height, 0.001);
+        Assert.Equal(LayoutResult.Outcome.Nothing, overflow.Status);
+    }
+
+    /// <summary>
+    /// A row the document began to cut keeps being cut when its overflow renderer is laid out under
+    /// a context without the box: the first layout, with the box, cuts the 48-line row after 47
+    /// lines, and the second, without it, places the 48th line.
+    /// </summary>
+    [Fact]
+    public void ACutRow_thatBegan_isResumedUnderAContextWithoutTheBox()
+    {
+        var t = Table();
+        Tall(t, 48);
+        var area = new LayoutBox(10, 10, 280, 580);
+        var first = new TableRenderer(t).Layout(new LayoutContext(area) { FreshPageArea = area });
+
+        var resumed = first.OverflowRenderer!.Layout(new LayoutContext(area));
+
+        Assert.Equal(LayoutResult.Outcome.Partial, first.Status);
+        Assert.Equal(LayoutResult.Outcome.Full, resumed.Status);
+        Assert.Equal(20.0, resumed.OccupiedArea!.Value.Height, 0.001);
+    }
+
+    /// <summary>
+    /// A resumed row in an area that holds no line of it is <c>Nothing</c>, not a slice with no
+    /// line: a zero-line slice would be <c>Partial</c> with an overflow renderer for the same row,
+    /// and the save would turn pages until the continuation limit.
+    /// </summary>
+    [Fact]
+    public void ACutRow_resumedInAnAreaThatHoldsNoLine_isNothing()
+    {
+        var t = Table();
+        Tall(t, 48);
+        var area = new LayoutBox(10, 10, 280, 580);
+        var first = new TableRenderer(t).Layout(new LayoutContext(area) { FreshPageArea = area });
+        var tooShort = new LayoutBox(10, 10, 280, 10);
+
+        var resumed = first.OverflowRenderer!.Layout(
+            new LayoutContext(tooShort) { FreshPageArea = area });
+
+        Assert.Equal(LayoutResult.Outcome.Nothing, resumed.Status);
     }
 
     /// <summary><c>WithArea</c> keeps the fresh-page box, so a wrapper that narrows the area does not lose it.</summary>

@@ -830,9 +830,9 @@ public sealed class Document : IDisposable
     /// A null table is refused here. A table's own
     /// refusals are on <see cref="TableElement"/>, among them a table that needs more than 50,000
     /// page continuations. A row taller than a page is cut between its lines and continues on the
-    /// next page; the header rows, a row held in a <see cref="Cell.RowSpan"/> group, and a row with
-    /// a cell that cannot hold one line are refused instead, and <see cref="TableElement"/> says
-    /// which.
+    /// next page. Repeated header rows that do not fit a page, a row held in a
+    /// <see cref="Cell.RowSpan"/> group, and a row with a cell that cannot hold one line are
+    /// refused instead, and <see cref="TableElement"/> says which.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="table"/> is <see langword="null"/>.
