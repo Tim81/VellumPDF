@@ -2,20 +2,22 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using System.Globalization;
+using VellumPdf.Fonts;
 
 namespace VellumPdf.Layout.Core;
 
 /// <summary>
 /// How a table cell and a running band read the white space in their text, so that a character
-/// no font draws never reaches glyph lookup. A paragraph applies the same line-break rule in
-/// <see cref="Rendering.ParagraphRenderer"/>; this class is the cell's and the band's copy of it.
+/// no font draws never reaches glyph lookup.
 /// </summary>
 /// <remarks>
 /// A character is a control space when <see cref="char.IsWhiteSpace(char)"/> holds for it and it is
 /// not in the Unicode category Space Separator: the C0 and C1 controls tab, line feed, line
 /// tabulation, form feed, carriage return and next line, and the line and paragraph separators
-/// U+2028 and U+2029. The no-break spaces and the other space separators, such as U+2003 EM SPACE,
-/// are not control spaces: a font draws them, so they are left as written.
+/// U+2028 and U+2029. The Unicode space separators other than the no-break spaces, such as U+2003
+/// EM SPACE, are separator spaces: a cell reads each as U+0020, as
+/// <see cref="Rendering.ParagraphRenderer"/> reads every white-space character except a line
+/// feed and the no-break spaces U+00A0, U+202F and U+2007. A band reads only the control spaces.
 /// </remarks>
 internal static class LayoutText
 {
@@ -64,10 +66,24 @@ internal static class LayoutText
     }
 
     /// <summary>
-    /// Returns <paramref name="text"/> with every control space replaced by U+0020, or the same
-    /// instance when it holds none.
+    /// True for a Unicode space separator that a cell reads as U+0020: every character of the
+    /// category Space Separator except U+0020 itself and the no-break spaces.
     /// </summary>
-    internal static string ControlSpacesToSpaces(string text)
+    internal static bool IsSeparatorSpace(char c) =>
+        c != ' ' && !NoBreakSpaces.IsNoBreakSpace(c)
+        && char.GetUnicodeCategory(c) == UnicodeCategory.SpaceSeparator;
+
+    /// <summary>
+    /// Returns <paramref name="text"/> with every separator space replaced by U+0020, or the same
+    /// instance when it holds none. A control space is left as it is.
+    /// </summary>
+    internal static string SeparatorSpacesToSpaces(string text) => Replace(text, IsSeparatorSpace);
+
+    /// <summary>
+    /// Returns <paramref name="text"/> with every control space removed, or the same instance when
+    /// it holds none.
+    /// </summary>
+    internal static string RemoveControlSpaces(string text)
     {
         var at = -1;
         for (var i = 0; i < text.Length; i++)
@@ -76,11 +92,33 @@ internal static class LayoutText
         }
         if (at < 0) return text;
 
-        return string.Create(text.Length, (text, at), static (span, state) =>
+        var sb = new System.Text.StringBuilder(text.Length);
+        sb.Append(text, 0, at);
+        for (var i = at + 1; i < text.Length; i++)
+            if (!IsControlSpace(text[i])) sb.Append(text[i]);
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Returns <paramref name="text"/> with every control space replaced by U+0020, or the same
+    /// instance when it holds none.
+    /// </summary>
+    internal static string ControlSpacesToSpaces(string text) => Replace(text, IsControlSpace);
+
+    private static string Replace(string text, Func<char, bool> test)
+    {
+        var at = -1;
+        for (var i = 0; i < text.Length; i++)
+        {
+            if (test(text[i])) { at = i; break; }
+        }
+        if (at < 0) return text;
+
+        return string.Create(text.Length, (text, at, test), static (span, state) =>
         {
             state.text.AsSpan().CopyTo(span);
             for (var i = state.at; i < span.Length; i++)
-                if (IsControlSpace(span[i])) span[i] = ' ';
+                if (state.test(span[i])) span[i] = ' ';
         });
     }
 }

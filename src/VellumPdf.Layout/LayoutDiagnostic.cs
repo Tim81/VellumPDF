@@ -85,7 +85,7 @@ public sealed class LayoutDiagnostic
     {
         LayoutDiagnosticCode.DiagnosticsDropped => LayoutDiagnosticSeverity.Warning,
         LayoutDiagnosticCode.PreformattedLineWrapped => LayoutDiagnosticSeverity.Warning,
-        LayoutDiagnosticCode.CellBreakDrawnAsSpace => LayoutDiagnosticSeverity.Warning,
+        LayoutDiagnosticCode.CellWhiteSpaceDropped => LayoutDiagnosticSeverity.Warning,
         _ => LayoutDiagnosticSeverity.Error,
     };
 

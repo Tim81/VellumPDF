@@ -117,24 +117,31 @@ public enum LayoutDiagnosticCode
     TabStopBeyondWidth = 106,
 
     /// <summary>
-    /// A table cell holds a line break, and the save drew it as a space because honouring it
+    /// A table cell holds a tab, a line break or another control white-space character, and the
+    /// save left it out of what it drew, because honouring the line breaks of the cells around it
     /// would have made rows that cannot be cut between their lines taller than a page.
     /// <see cref="LayoutDiagnostic.Count"/> is the number of times the cell was drawn, so a header
     /// row that repeats on every page counts once per page, and the message names the row and the
     /// cell, counted from zero in the order they were added.
     /// </summary>
     /// <remarks>
-    /// <b>No text is lost, so this is a warning and strict mode saves.</b> The rows in question are
-    /// the leading header rows, which repeat on every page and are never cut, and the rows joined
-    /// by a <see cref="Elements.Table.Cell.RowSpan"/>, which are never cut either. When the
-    /// breaks of such a row, honoured, would leave it taller than the page, each cell of it that
-    /// holds a carriage return or a line feed is wrapped at spaces alone and sized from its whole
-    /// text, as a cell with no line break is, and each break in it is drawn as a space. A row that is
-    /// cut between its lines, and any other table, keeps its breaks and is not reported.
+    /// <b>The words such a character separated run together in the cell, in drawing and in
+    /// extracted text, and nothing else is lost, so this is a warning and strict mode saves.</b>
+    /// The cell is wrapped at spaces alone and sized from its whole text, each such character
+    /// measured at the width its font gives it and then not drawn, so no line is wider than it was
+    /// measured and nothing crosses the cell. The rows in question are the leading header rows,
+    /// which repeat on every page and are never cut, and the rows joined by a
+    /// <see cref="Elements.Table.Cell.RowSpan"/>, which are never cut either. A cell is read this
+    /// way in three steps, each taken only when the rows still do not fit a page: a cell of the
+    /// group that holds a carriage return or a line feed; then such a cell of the header rows; then
+    /// a cell that holds any control white space and sits in the group, in the header rows, or in
+    /// an automatically sized column that one of those cells is in. A cell that holds only a line
+    /// feed can be read this way by any of the three. A cell no step reaches keeps its breaks and
+    /// is not reported, in a table that has other cells read this way as in any other.
     /// <b>Do not pass</b> a header row or a span group whose line breaks do not fit one page: put
     /// the breaks in rows that can be cut, or shorten the text.
     /// </remarks>
-    CellBreakDrawnAsSpace = 301,
+    CellWhiteSpaceDropped = 301,
 
     /// <summary>
     /// A list item that is a child of a child, or deeper, holds a null text, and the save drew

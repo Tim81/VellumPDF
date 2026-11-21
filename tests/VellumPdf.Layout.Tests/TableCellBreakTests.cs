@@ -16,8 +16,8 @@ namespace VellumPdf.Layout.Tests;
 
 /// <summary>
 /// A tab, a line break or a form feed in a table cell or a running band no longer reaches glyph
-/// lookup (#611, #613 item 34). A cell breaks its lines as a paragraph does, and every other
-/// control white-space character is a space.
+/// lookup (#611, #613 item 34). A carriage return, a line feed and a pair of them each end a
+/// line in a cell, and every other white-space character except the no-break spaces is a space.
 ///
 /// The fixtures with a short page are 300x400pt with 10pt margins and two 100pt columns, in
 /// Helvetica 12pt: a line is 14.4pt and the default padding adds 8pt, so a cell of n lines is
@@ -169,8 +169,8 @@ public sealed class TableCellBreakTests : IDisposable
     }
 
     /// <summary>
-    /// A trailing break leaves a blank last line, and two breaks in a row a blank line between,
-    /// as in a paragraph: "a\n" is two lines tall and "a\n\nb" three.
+    /// A trailing break leaves a blank last line, and two breaks in a row a blank line between:
+    /// "a\n" is two lines tall and "a\n\nb" three. A paragraph drops the trailing one.
     /// </summary>
     [Theory]
     [InlineData("a\n", 36.8, new[] { "a" })]
@@ -209,11 +209,13 @@ public sealed class TableCellBreakTests : IDisposable
     }
 
     /// <summary>
-    /// A cell and a paragraph read the same text the same way: the same lines for a text that holds
-    /// a tab, a form feed and each form of line break.
+    /// A cell and a paragraph draw the same lines for one text that holds a tab, a form feed and
+    /// each form of line break. They differ on a trailing break, which a cell keeps as a blank
+    /// line, and on a run of spaces, which a paragraph collapses; the tests above and below pin
+    /// the cell's side of both.
     /// </summary>
     [Fact]
-    public void ACellAndAParagraphBreakTheSameTextIntoTheSameLines()
+    public void ACellAndAParagraphDrawOneMixedTextAsTheSameLines()
     {
         const string text = "x\tb\fc\r\nd\re\nf";
 
@@ -233,22 +235,25 @@ public sealed class TableCellBreakTests : IDisposable
     }
 
     /// <summary>
-    /// A space separator that a font draws, such as U+2003, is left as written, so a cell that held
-    /// one before this change is drawn as it was: Helvetica has no glyph for it and the canvas
-    /// writes a question mark, and the cell is still one line. The no-break spaces keep their
-    /// meaning.
+    /// A space separator other than the no-break spaces is one space, as a paragraph reads it:
+    /// U+2003, U+3000, U+2009 and U+1680 are each one space and none is a question mark with the
+    /// not-encodable diagnostic. The no-break spaces keep their meaning, and a run of spaces is
+    /// kept as written.
     /// </summary>
     [Fact]
-    public void Standard14_aSpaceSeparatorIsLeftAlone()
+    public void Standard14_aSpaceSeparatorIsOneSpace_andTheNoBreakSpacesAreKept()
     {
         using var doc = ShortPage();
         var t = Table12();
-        t.AddRow().AddCell("a\u2003b").AddCell("c\u00A0d");
+        t.AddRow().AddCell("a\u2003b\u3000c\u2009d\u1680e").AddCell("f\u00A0g\u202Fh\u2007i");
+        t.AddRow().AddCell("j  k").AddCell("l");
         doc.Add(t);
 
         var content = Content(Save(doc));
 
-        Assert.Equal(["a?b", "c\u00A0d"], Texts(content));
+        // The Standard 14 encoding has no U+202F or U+2007 and reads each back as U+00A0.
+        Assert.Equal(["a b c d e", "f\u00A0g\u00A0h\u00A0i", "j  k", "l"], Texts(content));
+        Assert.DoesNotContain(doc.Diagnostics, d => d.Code == LayoutDiagnosticCode.UnencodableCharacter);
         Assert.Equal(22.4, Heights(content)[0], 4);
     }
 
@@ -301,6 +306,25 @@ public sealed class TableCellBreakTests : IDisposable
         Assert.Equal(2, widths.Length);
         Assert.Equal(widths[0], widths[1], 6);
         Assert.Equal(140, widths[0], 6);
+    }
+
+    /// <summary>
+    /// The minimum an automatic column is squeezed to is the widest word of any line, not of the
+    /// whole text. On a page too narrow for both columns, two columns whose widest word is the
+    /// same "bbbbbbbb" get the same width, though one cell holds a shorter first line.
+    /// </summary>
+    [Fact]
+    public void AnAutoColumn_hasItsMinimumFromTheWordsOfEachLine()
+    {
+        using var doc = new Document { PageSize = new PdfRectangle(0, 0, 120, 400), Margins = new EdgeInsets(10) };
+        var t = new TableElement { DefaultCellStyle = Helvetica(12) };
+        t.AddRow().AddCell("aa\nbbbbbbbb").AddCell("bbbbbbbb");
+        doc.Add(t);
+
+        var widths = Widths(Content(Save(doc)));
+
+        Assert.Equal(2, widths.Length);
+        Assert.Equal(widths[0], widths[1], 6);
     }
 
     // ── Null text ────────────────────────────────────────────────────────────
@@ -404,8 +428,8 @@ public sealed class TableCellBreakTests : IDisposable
 
     /// <summary>
     /// A white-space character, between two letters in an embedded font, never produces glyph 0
-    /// unless it is a space separator the font has no glyph for, which is written as it always was.
-    /// A control character that is not white space is not touched: U+0001 still reaches glyph 0.
+    /// and is written as the paragraph rule writes it: a space for every one but a line feed, a
+    /// carriage return and the no-break spaces, which are written as they are. A control character that is not white space is not touched: U+0001 still reaches glyph 0.
     /// </summary>
     [Fact]
     public void Embedded_noControlWhiteSpaceIsGlyphZero_andOtherControlsStillAre()
@@ -422,9 +446,9 @@ public sealed class TableCellBreakTests : IDisposable
 
             var shows = HexShows(Content(Save(doc)));
 
-            if (char.GetUnicodeCategory(c) == UnicodeCategory.SpaceSeparator)
+            if (c is '\u00A0' or '\u202F' or '\u2007')
             {
-                // Written as the font maps it, exactly as before this change.
+                // A no-break space is written as the font maps it.
                 Assert.Equal([GlyphHex(font, "x" + c + "y")], shows);
             }
             else
@@ -544,13 +568,13 @@ public sealed class TableCellBreakTests : IDisposable
 
     // ── Rows that cannot be cut ──────────────────────────────────────────────
 
-    /// <summary>The diagnostic a cell that reads its breaks as spaces is reported with, or null.</summary>
+    /// <summary>The diagnostic a cell that is laid out unbroken is reported with, or null.</summary>
     private static LayoutDiagnostic? CellReport(Document doc) =>
-        doc.Diagnostics.SingleOrDefault(d => d.Code == LayoutDiagnosticCode.CellBreakDrawnAsSpace);
+        doc.Diagnostics.SingleOrDefault(d => d.Code == LayoutDiagnosticCode.CellWhiteSpaceDropped);
 
     /// <summary>
     /// A header row whose breaks, honoured, leave no room under it for the row below: 2.3.3 drew
-    /// the cell on one line. The cell is drawn as one line of spaces and reported as a warning.
+    /// the cell on one line. The cell is drawn as one line, without its breaks, and reported as a warning.
     /// A header of 46 lines is 560pt and leaves 20pt, which holds the 20pt row below, so its
     /// breaks are kept.
     /// </summary>
@@ -559,7 +583,7 @@ public sealed class TableCellBreakTests : IDisposable
     [InlineData(47, true)]
     [InlineData(48, true)]
     [InlineData(100, true)]
-    public void AHeaderThatWouldLeaveNoRoomForTheRowBelowReadsItsBreaksAsSpaces(int n, bool asSpaces)
+    public void AHeaderThatWouldLeaveNoRoomForTheRowBelowIsLaidOutUnbroken(int n, bool asSpaces)
     {
         using var doc = WidePage();
         var t = Wide10(1900);
@@ -574,7 +598,7 @@ public sealed class TableCellBreakTests : IDisposable
         Assert.Equal(1, PageCount(bytes));
         if (asSpaces)
         {
-            Assert.Equal([Words(n, " "), "x"], texts);
+            Assert.Equal([Words(n, ""), "x"], texts);
             Assert.NotNull(report);
             Assert.Equal(LayoutDiagnosticSeverity.Warning, report.Severity);
             Assert.Equal(1, report.Count);
@@ -593,7 +617,7 @@ public sealed class TableCellBreakTests : IDisposable
     /// table that 2.3.3 saved still saves with nothing refused.
     /// </summary>
     [Fact]
-    public void AHeaderTallerThanAPageReadsItsBreaksAsSpaces()
+    public void AHeaderTallerThanAPageIsLaidOutUnbroken()
     {
         using var doc = WidePage();
         var t = Wide10(1900);
@@ -603,20 +627,20 @@ public sealed class TableCellBreakTests : IDisposable
 
         var texts = Texts(Content(Save(doc)));
 
-        Assert.Equal([Words(100, " "), "x"], texts);
+        Assert.Equal([Words(100, ""), "x"], texts);
         Assert.Equal(LayoutDiagnosticSeverity.Warning, CellReport(doc)!.Severity);
     }
 
     /// <summary>
     /// Rows joined by a RowSpan are never cut, so when their breaks, honoured, make the group taller
-    /// than a page, the cells that hold them read the breaks as spaces. A group of 46 lines plus a
+    /// than a page, the cells that hold them are laid out unbroken. A group of 46 lines plus a
     /// 20pt row is 580pt, which fits; 47 lines does not.
     /// </summary>
     [Theory]
     [InlineData(46, false)]
     [InlineData(47, true)]
     [InlineData(100, true)]
-    public void ARowSpanGroupThatWouldBeTallerThanAPageReadsItsBreaksAsSpaces(int n, bool asSpaces)
+    public void ARowSpanGroupThatWouldBeTallerThanAPageIsLaidOutUnbroken(int n, bool asSpaces)
     {
         using var doc = WidePage();
         var t = Wide10(1500, 400);
@@ -630,7 +654,7 @@ public sealed class TableCellBreakTests : IDisposable
         Assert.Equal(1, PageCount(bytes));
         if (asSpaces)
         {
-            Assert.Contains(Words(n, " "), texts);
+            Assert.Contains(Words(n, ""), texts);
             Assert.NotNull(CellReport(doc));
         }
         else
@@ -642,13 +666,13 @@ public sealed class TableCellBreakTests : IDisposable
 
     /// <summary>
     /// Two rows that are each short enough, joined by a RowSpan, are too tall together: both
-    /// cells that hold breaks read them as spaces, and each is reported. 23 lines in each row is
+    /// cells that hold breaks are laid out unbroken, and each is reported. 23 lines in each row is
     /// 2 x 284 = 568pt, which fits; 24 lines is 592pt.
     /// </summary>
     [Theory]
     [InlineData(23, 0)]
     [InlineData(24, 2)]
-    public void ARowSpanGroupOfTwoRowsReadsEachBreakingCellAsOneLine(int n, int reported)
+    public void ARowSpanGroupOfTwoRowsLaysEachBreakingCellOutUnbroken(int n, int reported)
     {
         using var doc = WidePage();
         var t = Wide10(1000, 900);
@@ -659,9 +683,9 @@ public sealed class TableCellBreakTests : IDisposable
         var bytes = Save(doc);
 
         Assert.Equal(1, PageCount(bytes));
-        Assert.Equal(reported, doc.Diagnostics.Count(d => d.Code == LayoutDiagnosticCode.CellBreakDrawnAsSpace));
+        Assert.Equal(reported, doc.Diagnostics.Count(d => d.Code == LayoutDiagnosticCode.CellWhiteSpaceDropped));
         if (reported > 0)
-            Assert.Equal(2, Texts(Content(bytes)).Count(x => x == Words(n, " ")));
+            Assert.Equal(2, Texts(Content(bytes)).Count(x => x == Words(n, "")));
     }
 
     /// <summary>
@@ -684,12 +708,12 @@ public sealed class TableCellBreakTests : IDisposable
     }
 
     /// <summary>
-    /// A header that reads its breaks as spaces is drawn the same way on every page, including the
+    /// A header laid out unbroken is drawn the same way on every page, including the
     /// pages a cut row continues on: the long header string is shown once per page, each page
     /// reports it, and the report's count is the number of pages.
     /// </summary>
     [Fact]
-    public void AHeaderThatReadsItsBreaksAsSpacesDoesSoOnEveryPage()
+    public void AHeaderLaidOutUnbrokenIsDrawnSoOnEveryPage()
     {
         using var doc = WidePage();
         var t = Wide10(1900);
@@ -702,13 +726,13 @@ public sealed class TableCellBreakTests : IDisposable
         var pages = PageCount(bytes);
 
         Assert.True(pages >= 2, "the row was not cut");
-        Assert.Equal(pages, texts.Count(x => x == Words(60, " ")));
+        Assert.Equal(pages, texts.Count(x => x == Words(60, "")));
         Assert.Equal(100, texts.Count(x => x == "ab"));
         Assert.Equal(pages, CellReport(doc)!.Count);
     }
 
     /// <summary>
-    /// A cell that reads its breaks as spaces is measured and wrapped as a cell with no break is, so
+    /// A cell laid out unbroken is measured and wrapped as a cell with no break is, so
     /// the table's rectangles are exactly those the same table had when a line feed was one more
     /// character of the line: the four borders below are what 2.3.3 drew for it, though 2.3.3 wrote
     /// the line feeds into the string.
@@ -728,17 +752,17 @@ public sealed class TableCellBreakTests : IDisposable
         Assert.Equal(
             ["10 570 1930.09932 20", "1940.09932 570 49.90068 20", "10 550 1930.09932 20", "1940.09932 550 49.90068 20"],
             Borders(content));
-        Assert.Equal([Words(60, " "), "h", "x", "y"], Texts(content));
+        Assert.Equal([Words(60, ""), "h", "x", "y"], Texts(content));
     }
 
     /// <summary>
     /// A header whose breaks, honoured, take the room a RowSpan group needs under it: the group has
-    /// no break of its own to give up, so the header's cell reads its breaks as spaces. The header
+    /// no break of its own to give up, so the header cell is laid out unbroken. The header
     /// of 30 lines is 368pt and the group 268pt, which do not fit 580pt together; with the header
     /// on one line they do.
     /// </summary>
     [Fact]
-    public void AHeaderThatTakesTheRoomOfARowSpanGroupReadsItsBreaksAsSpaces()
+    public void AHeaderThatTakesTheRoomOfARowSpanGroupIsLaidOutUnbroken()
     {
         using var doc = WidePage();
         var t = Wide10(30, 1870);
@@ -752,7 +776,7 @@ public sealed class TableCellBreakTests : IDisposable
         var report = CellReport(doc);
 
         Assert.Equal(1, PageCount(bytes));
-        Assert.Contains(Words(30, " "), texts);
+        Assert.Contains(Words(30, ""), texts);
         Assert.Equal(20, texts.Count(x => x == "ab"));
         Assert.NotNull(report);
         Assert.Contains("row 0, cell 1", report.Message, StringComparison.Ordinal);
@@ -761,10 +785,10 @@ public sealed class TableCellBreakTests : IDisposable
     /// <summary>
     /// A tab is one space wide where the raw character was measured at its own width, which can
     /// wrap a cell one line taller and push a RowSpan group over the page. "ab" and a tab and "ab"
-    /// fits a 24pt column on one line as one word, and as two words does not; the group of 46 plain
+    /// fits a 36pt column on one line as one word, and as two words does not; the group of 46 plain
     /// lines under it is exactly 580pt with the one line and 592pt with two. The cell is laid out
-    /// as it was measured before, with the tab drawn as a space, and nothing is reported because it
-    /// holds no line break. The borders are 2.3.3's.
+    /// as it was measured before, with the tab left out of the drawing and the report naming the
+    /// cell. The borders are 2.3.3's.
     /// </summary>
     [Fact]
     public void ATabThatWouldTipARowSpanGroupOverThePageIsLaidOutUnbroken()
@@ -780,14 +804,14 @@ public sealed class TableCellBreakTests : IDisposable
 
         Assert.Equal(1, PageCount(bytes));
         Assert.Equal(["10 10 36 580", "46 570 36 20", "46 10 36 560"], Borders(content));
-        Assert.Contains("ab ab", Texts(content));
-        Assert.Empty(doc.Diagnostics);
+        Assert.Contains("abab", Texts(content));
+        Assert.Contains("row 0, cell 1", CellReport(doc)!.Message, StringComparison.Ordinal);
     }
 
     /// <summary>
     /// A renderer laid out without the document, through a context built with the public
     /// constructor, knows no page: it keeps every break, and a header that is then too tall is
-    /// the same refusal as before. The document supplies the page and reads them as spaces.
+    /// the same refusal as before. The document supplies the page and lays the cell out unbroken.
     /// </summary>
     [Fact]
     public void WithoutThePageTheBreaksAreKept()
@@ -802,8 +826,8 @@ public sealed class TableCellBreakTests : IDisposable
     }
 
     /// <summary>
-    /// Strict diagnostics saves a table whose cell reads its breaks as spaces: the report is a
-    /// warning, because nothing is lost.
+    /// Strict diagnostics saves a table whose cell is laid out unbroken: the report is a warning,
+    /// because the text stays and only the separation of its words is lost.
     /// </summary>
     [Fact]
     public void StrictDiagnosticsSavesTheWarning()
@@ -822,11 +846,11 @@ public sealed class TableCellBreakTests : IDisposable
     }
 
     /// <summary>
-    /// A tab in a header or span-group cell is not a break, so it changes no height and is never
-    /// reported: only a carriage return or a line feed can make a row taller.
+    /// A tab in a header cell that fits a page does not send the table to the fallback: the tab is
+    /// one space and nothing is reported.
     /// </summary>
     [Fact]
-    public void ATabAloneIsNeverReported()
+    public void ATabInAHeaderThatFitsIsOneSpaceAndIsNotReported()
     {
         using var doc = WidePage();
         var t = Wide10(1900);
@@ -838,6 +862,163 @@ public sealed class TableCellBreakTests : IDisposable
 
         Assert.Equal([Words(60, " "), "x"], texts);
         Assert.Empty(doc.Diagnostics);
+    }
+
+    // ── The fallback draws no wider than it measured ─────────────────────────
+
+    private static double WidthOf(string text, double size) =>
+        new FontReference(Standard14.Helvetica).MeasureString(text, size);
+
+    /// <summary>
+    /// A cell laid out unbroken is wrapped by its width with each control character at its own
+    /// width, which is zero in Helvetica. Drawn with each one as a space it would be wider than it
+    /// was measured and cross its border or the page edge: 60 two-letter lines joined by a line
+    /// feed drew 102.86pt in an 88pt box. With the characters left out, no line of the cell is
+    /// wider than the box it was wrapped to, and every letter is still drawn, in order.
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void AFallbackCellIsDrawnNoWiderThanItWasMeasured(bool fixedColumns)
+    {
+        using var doc = fixedColumns
+            ? WidePage()
+            : new Document { PageSize = new PdfRectangle(0, 0, 400, 600), Margins = new EdgeInsets(10) };
+        var t = fixedColumns
+            ? Wide10(100, 100)
+            : new TableElement { DefaultCellStyle = Helvetica(10) };
+        t.AddRow(isHeader: true).AddCell(Words(60)).AddCell("h");
+        t.AddRow().AddCell("x").AddCell("y");
+        doc.Add(t);
+
+        var content = Content(Save(doc));
+        var placements = Placements(content);
+        var header = placements.Where(p => p.Text.All(c => c is 'a' or 'b')).ToList();
+        var right = fixedColumns ? 10 + 100 - 4 : 400 - 10;
+
+        Assert.NotNull(CellReport(doc));
+        Assert.Equal(Words(60, ""), string.Concat(header.Select(p => p.Text)));
+        Assert.True(header.Count > 1, "the cell was not wrapped");
+        foreach (var p in header)
+            Assert.True(p.X + WidthOf(p.Text, 10) <= right + 0.001, $"\"{p.Text}\" at x={p.X} ends past {right}.");
+    }
+
+    /// <summary>
+    /// A header that is too tall because of its line breaks gives up those breaks and nothing else:
+    /// a RowSpan group below it that does not fit with the tall header, and fits with the short
+    /// one, is not read as a reason to lay out the cells of every other row unbroken. The ordinary
+    /// row "x" and "y" keeps its two lines, and only the header cell is reported.
+    /// </summary>
+    [Fact]
+    public void AFallbackHeaderLeavesAnUnrelatedRowItsBreaks()
+    {
+        using var doc = WidePage();
+        var t = Wide10(1000, 900);
+        t.AddRow(isHeader: true).AddCell(Words(60)).AddCell("h");
+        t.AddRow().AddCell(new Cell("a") { RowSpan = 2 }).AddCell("b");
+        t.AddRow().AddCell("c");
+        t.AddRow().AddCell("x\ny");
+        doc.Add(t);
+
+        var bytes = Save(doc);
+        var texts = Texts(Content(bytes));
+        var reports = doc.Diagnostics.Where(d => d.Code == LayoutDiagnosticCode.CellWhiteSpaceDropped).ToList();
+
+        Assert.Equal(1, PageCount(bytes));
+        Assert.Contains(Words(60, ""), texts);
+        Assert.Contains("x", texts);
+        Assert.Contains("y", texts);
+        var report = Assert.Single(reports);
+        Assert.Contains("row 0, cell 0", report.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A row that can be cut between its lines keeps them when a tab tips a group over the page
+    /// elsewhere. The columns are fixed, so the row's cell cannot change the group's height: the
+    /// tab cell of the group is laid out unbroken and is the only cell reported, and "x" and "y"
+    /// are two lines.
+    /// </summary>
+    [Fact]
+    public void ARowThatCanBeCutKeepsItsBreaksWhenATabTipsAGroup()
+    {
+        using var doc = WidePage();
+        var t = Wide10(36, 36);
+        t.AddRow().AddCell(new Cell("a") { RowSpan = 2 }).AddCell("ab\tab");
+        t.AddRow().AddCell(Words(46, " "));
+        t.AddRow().AddCell("x\ny");
+        doc.Add(t);
+
+        var texts = Texts(Content(Save(doc)));
+        var report = Assert.Single(doc.Diagnostics, d => d.Code == LayoutDiagnosticCode.CellWhiteSpaceDropped);
+
+        Assert.Contains("abab", texts);
+        Assert.Contains("x", texts);
+        Assert.Contains("y", texts);
+        Assert.Contains("row 0, cell 1", report.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// When a header's line breaks take the room a group needs, the header gives up its breaks
+    /// and no more: a tab in another header cell stays one space and is not reported.
+    /// </summary>
+    [Fact]
+    public void AHeaderThatTakesTheRoomOfAGroupGivesUpOnlyItsBreaks()
+    {
+        using var doc = WidePage();
+        var t = Wide10(30, 1800, 70);
+        t.AddRow(isHeader: true).AddCell("h").AddCell(Words(30)).AddCell("x\ty");
+        t.AddRow().AddCell(new Cell(Words(20, " ")) { RowSpan = 2 }).AddCell("b");
+        t.AddRow().AddCell("c");
+        doc.Add(t);
+
+        var texts = Texts(Content(Save(doc)));
+        var report = Assert.Single(doc.Diagnostics, d => d.Code == LayoutDiagnosticCode.CellWhiteSpaceDropped);
+
+        Assert.Contains(Words(30, ""), texts);
+        Assert.Contains("x y", texts);
+        Assert.Contains("row 0, cell 1", report.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Three rows chained by RowSpans, each one's span reaching into the next, are one group: 3 x
+    /// 200pt is 600pt, which is more than a page, though each pair is 400pt. All three cells that
+    /// hold breaks are laid out unbroken and reported, and the table saves.
+    /// </summary>
+    [Fact]
+    public void ARowSpanChainIsOneGroup()
+    {
+        using var doc = WidePage();
+        var t = Wide10(1000, 900);
+        t.AddRow().AddCell(new Cell(Words(16)) { RowSpan = 2 }).AddCell("b");
+        t.AddRow().AddCell(new Cell(Words(16)) { RowSpan = 2 });
+        t.AddRow().AddCell(Words(16));
+        doc.Add(t);
+
+        var bytes = Save(doc);
+
+        Assert.Equal(1, PageCount(bytes));
+        Assert.Equal(3, doc.Diagnostics.Count(d => d.Code == LayoutDiagnosticCode.CellWhiteSpaceDropped));
+    }
+
+    /// <summary>
+    /// The report is kept per table: two tables whose first header cell is laid out unbroken give
+    /// two reports, though both name row 0, cell 0.
+    /// </summary>
+    [Fact]
+    public void TwoTablesReportTheirOwnFallbackCells()
+    {
+        using var doc = WidePage();
+        for (var i = 0; i < 2; i++)
+        {
+            var t = Wide10(1900);
+            t.AddRow(isHeader: true).AddCell(Words(60));
+            t.AddRow().AddCell("x");
+            doc.Add(t);
+        }
+
+        Save(doc);
+
+        Assert.Equal(2, doc.Diagnostics.Count(d => d.Code == LayoutDiagnosticCode.CellWhiteSpaceDropped));
     }
 
     private static void AssertNoControlCharacter(IEnumerable<ContentStreamReadback.TextPlacement> placements)

@@ -600,7 +600,7 @@ public sealed class PageBreakTests : IDisposable
     // ── Text that is not a break ─────────────────────────────────────────────
 
     [Fact]
-    public void AFormFeedInText_neverStartsAPage_andEveryElementDrawsItAsASpace()
+    public void AFormFeedInText_neverStartsAPage_andAParagraphHeadingListItemCellAndBandDrawItAsASpace()
     {
         var table = new TableElement();
         table.AddRow().AddCell("cell\fx");
@@ -618,7 +618,7 @@ public sealed class PageBreakTests : IDisposable
 
         Assert.Single(pages);
         // A paragraph, a heading, a list item, a table cell and a running band all draw the
-        // character as a space.
+        // character as a space. Preformatted is not among them: its constructor refuses U+000C.
         Assert.Contains("para z", pages[0].Texts);
         Assert.Contains("head w", pages[0].Texts);
         Assert.Contains("item y", pages[0].Texts);

@@ -22,26 +22,37 @@ public sealed class Cell
     /// Spaces are the only break points between words, and a word wider than the cell is broken
     /// between characters.
     /// <para><b>A carriage return and line feed pair, a lone carriage return and a lone line feed
-    /// each end a line</b>, as they do in a <see cref="Elements.Paragraph"/>. An empty line between
-    /// two of them, or after the last, is a blank line one leading tall. A column sized
-    /// automatically is as wide as the widest line, and no narrower than the widest word on any
-    /// line. Every other white-space control character, which is a tab, a form feed, a line
-    /// tabulation, a next-line character, U+2028 and U+2029, is drawn as one space, so it
-    /// reaches no font as a control character. The no-break spaces and the other space
-    /// separators, such as U+2003, are written as they are.</para>
+    /// each end a line.</b> An empty line between two of them is a blank line one leading tall, and
+    /// so is the one after a trailing break: the text <c>a</c> followed by a line feed is two lines here, where a
+    /// <see cref="Elements.Paragraph"/> draws one. Runs of spaces are kept as written, where a
+    /// paragraph collapses them. Every other white-space control character, which is a tab, a form
+    /// feed, a line tabulation, a next-line character, U+2028 and U+2029, is one space, and so is
+    /// every Unicode space separator other than the no-break spaces, such as U+2003, so none of
+    /// them reaches a font. The no-break spaces U+00A0, U+202F and U+2007 are written as they are.
+    /// A column sized automatically takes its minimum from the widest word and its maximum from the
+    /// widest line, each line of the cell measured on its own, where 2.3.3 measured the whole
+    /// text as one line. The width the column is then given is shared out among the columns as it
+    /// was, and can be more than the maximum or less than the minimum.</para>
     /// <para>A control character that is not white space, such as U+0001, is written as it is: in a
     /// standard-14 font as its WinAnsi code, and in an embedded font as whatever glyph the font's
     /// character map gives it, which is .notdef (glyph 0) when the map has no entry. The save lists
     /// each such character as <see cref="VellumPdf.Layout.LayoutDiagnosticCode.NotdefGlyph"/>, and
     /// <see cref="Document.StrictDiagnostics"/> refuses it; see <see cref="TextStyle.FontRef"/>.</para>
-    /// <para>A cell has no tab stops, so a tab is one space. <b>A line break in a cell of a header
-    /// row, or of rows joined by a <see cref="RowSpan"/>, is drawn as a space when honouring it
-    /// would make those rows taller than a page,</b> because such rows are never cut between their
-    /// lines. The cell is then wrapped at spaces alone and sized from its whole text, and each
-    /// break in it is a space, and the save lists it as
-    /// <see cref="VellumPdf.Layout.LayoutDiagnosticCode.CellBreakDrawnAsSpace"/>, a warning that
-    /// <see cref="Document.StrictDiagnostics"/> saves. Every other cell keeps its breaks, and a
-    /// row of them that is taller than a page is cut between its lines. <b>Do not pass</b> a line
+    /// <para>A cell has no tab stops, so a tab is one space. <b>A cell of a header row, or of rows
+    /// joined by a <see cref="RowSpan"/>, is laid out unbroken when honouring the line breaks of
+    /// those rows would make them taller than a page,</b> because such rows are never cut between
+    /// their lines. It is then wrapped at spaces alone and sized from its whole text, each tab and
+    /// line break in it measured at the width its font gives it and left out of what is drawn,
+    /// so the words they separated run together in the drawing and in extracted text, and
+    /// no line is wider than it was measured. The save lists the cell as
+    /// <see cref="VellumPdf.Layout.LayoutDiagnosticCode.CellWhiteSpaceDropped"/>, a warning that
+    /// <see cref="Document.StrictDiagnostics"/> saves. Which cells are read this way is decided in
+    /// three steps, each taken only while the rows still do not fit: the cells of the group that
+    /// hold a carriage return or a line feed, then those of the header rows, then every cell that
+    /// holds any control white space and sits in the group, in the header rows, or in an
+    /// automatically sized column one of those cells is in. A cell that holds only a line feed can
+    /// be read this way by any step. A cell in a row that can be cut between its lines, and in a
+    /// fixed-width column apart from the rows named, keeps its breaks. <b>Do not pass</b> a line
     /// break in a header row or a span group that is that tall and expect the lines to be drawn:
     /// move the text to a row that can be cut, or shorten it. A renderer you lay out without the
     /// document, through a <see cref="LayoutContext"/> built with the public constructor, knows no
