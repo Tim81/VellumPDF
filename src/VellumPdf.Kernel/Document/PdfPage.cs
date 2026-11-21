@@ -30,6 +30,14 @@ public sealed class PdfPage
     /// </summary>
     internal int StructParentsKey { get; set; } = -1;
 
+    /// <summary>
+    /// The document whose <see cref="PdfDocument.AddPage()"/> created this page, or
+    /// <see langword="null"/> for a page built with the constructor. A document's page list changes
+    /// only in <c>AddPage</c>, so a page that is not owned by a document when a member asks never
+    /// becomes one of its pages later.
+    /// </summary>
+    internal PdfDocument? Owner { get; set; }
+
     /// <summary>The page's media box (its physical dimensions in PDF user space).</summary>
     public PdfRectangle MediaBox { get; }
 

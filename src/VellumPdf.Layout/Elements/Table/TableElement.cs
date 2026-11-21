@@ -15,9 +15,9 @@ namespace VellumPdf.Layout.Elements.Table;
 /// </summary>
 /// <remarks>
 /// A table that resolves to no columns is refused at save; see <see cref="Rows"/>. A table whose
-/// rows are all headers cannot be drawn; see <see cref="AddRow"/>. The table is one element for the
-/// page limit described on <see cref="IRenderer.Layout"/>: a table that needs more than
-/// <b>50,000</b> page continuations makes the save throw.
+/// rows are all headers has no repeatable header and draws each row once; see <see cref="AddRow"/>.
+/// The table is one element for the page limit described on <see cref="IRenderer.Layout"/>: a
+/// table that needs more than <b>50,000</b> page continuations makes the save throw.
 /// </remarks>
 public sealed class TableElement
 {
@@ -99,6 +99,33 @@ public sealed class TableElement
     /// <inheritdoc cref="Paragraph.Margins" path="/exception"/>
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 
+    /// <summary>Whether the table starts a new page, or the next right-hand page.</summary>
+    /// <remarks>
+    /// <b>An undefined value is refused.</b> A number <see cref="PageBreakMode"/> does not name
+    /// makes this <c>init</c> accessor throw <see cref="ArgumentOutOfRangeException"/>. The
+    /// default, <see cref="PageBreakMode.None"/>, starts the element where the previous one ended.
+    /// <para>It is honoured when the table is added with <see cref="Document.Add(TableElement)"/>,
+    /// or when its <see cref="Rendering.Table.TableRenderer"/> is added with
+    /// <see cref="Document.Add(IRenderer)"/> or
+    /// <see cref="Rendering.DocumentRenderer.Add(IRenderer)"/>. It applies to the top of the table:
+    /// the overflow of a split table never breaks again, and a renderer built to continue the table
+    /// from a later row breaks like the first piece when it is added directly. See
+    /// <see cref="PageBreakMode"/> for what else is ignored and how parity is counted, and
+    /// <see cref="PageBreak"/> for how breaks combine.</para>
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Raised from this <c>init</c> accessor when the value is not one of
+    /// <see cref="PageBreakMode.None"/>, <see cref="PageBreakMode.Page"/> and
+    /// <see cref="PageBreakMode.Recto"/>.
+    /// </exception>
+    public PageBreakMode BreakBefore
+    {
+        get => _breakBefore;
+        init => _breakBefore = PageBreakModes.Validate(value);
+    }
+
+    private PageBreakMode _breakBefore;
+
     /// <summary>The rows in the table, in render order.</summary>
     /// <remarks>
     /// A table that resolves to no columns is refused at save: no rows, or every row empty.
@@ -158,18 +185,13 @@ public sealed class TableElement
     /// <summary>
     /// Appends a new row, optionally flagged as a header, and returns it. A header row repeats at
     /// the top of each continuation page only while it belongs to the table's leading contiguous
-    /// run of header rows; a header row added after a data row draws once, where it occurs.
+    /// run of header rows and a row that is not a header follows that run; a header row added after
+    /// a data row draws once, where it occurs.
     /// </summary>
     /// <remarks>
-    /// A table whose rows are all headers cannot be drawn: it lays out as nothing, so the save
-    /// throws <see cref="InvalidOperationException"/> even when the table would fit (#488).
+    /// A table whose rows are all headers has no repeatable header: each row draws once, in order,
+    /// and the table splits between rows like any other.
     /// </remarks>
-    /// <exception cref="InvalidOperationException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when every row of the table is a header row. The message says the element is
-    /// too tall to fit on a page (#488), or, when no header row has a cell, that the table resolved
-    /// to no columns.
-    /// </exception>
     public Row AddRow(bool isHeader = false)
     {
         var row = new Row { IsHeader = isHeader };
@@ -182,15 +204,9 @@ public sealed class TableElement
     /// repeats across continuation pages.
     /// </summary>
     /// <remarks>
-    /// A table whose rows are all headers cannot be drawn: it lays out as nothing, so the save
-    /// throws <see cref="InvalidOperationException"/> even when the table would fit (#488).
+    /// A table whose rows are all headers has no repeatable header: each row draws once, in order,
+    /// and the table splits between rows like any other.
     /// </remarks>
-    /// <exception cref="InvalidOperationException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this call, when every row of the table is a header row. The message says the element is
-    /// too tall to fit on a page (#488), or, when no header row has a cell, that the table resolved
-    /// to no columns.
-    /// </exception>
     public Row AddHeaderRow()
     {
         var row = new Row { IsHeader = true };

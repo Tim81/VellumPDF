@@ -129,6 +129,31 @@ public sealed class LayoutImage
     /// <inheritdoc cref="Paragraph.Margins" path="/exception[@cref='T:System.ArgumentException']"/>
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 
+    /// <summary>Whether the image starts a new page, or the next right-hand page.</summary>
+    /// <remarks>
+    /// <b>An undefined value is refused.</b> A number <see cref="PageBreakMode"/> does not name
+    /// makes this <c>init</c> accessor throw <see cref="ArgumentOutOfRangeException"/>. The
+    /// default, <see cref="PageBreakMode.None"/>, starts the element where the previous one ended.
+    /// <para>It is honoured when the image is added with <see cref="Document.Add(LayoutImage)"/>,
+    /// or when its <see cref="Rendering.LayoutImageRenderer"/> is added with
+    /// <see cref="Document.Add(IRenderer)"/> or
+    /// <see cref="Rendering.DocumentRenderer.Add(IRenderer)"/>. An image does not split. See
+    /// <see cref="PageBreakMode"/> for what else is ignored and how parity is counted, and
+    /// <see cref="PageBreak"/> for how breaks combine.</para>
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Raised from this <c>init</c> accessor when the value is not one of
+    /// <see cref="PageBreakMode.None"/>, <see cref="PageBreakMode.Page"/> and
+    /// <see cref="PageBreakMode.Recto"/>.
+    /// </exception>
+    public PageBreakMode BreakBefore
+    {
+        get => _breakBefore;
+        init => _breakBefore = PageBreakModes.Validate(value);
+    }
+
+    private PageBreakMode _breakBefore;
+
     /// <summary>
     /// Optional alternate text for the PDF /Figure structure element (tagged PDF).
     /// Used as the <c>/Alt</c> entry on the Figure struct elem when tagging is enabled.
