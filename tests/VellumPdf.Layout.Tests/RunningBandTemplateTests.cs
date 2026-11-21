@@ -164,8 +164,9 @@ public sealed class RunningBandTemplateTests
 
     // The issue's shape: a document deep enough that page count multiplies the per-page cost.
     // Measured with the template resolved in full on every page, the 100,000-character template
-    // allocated 276,551,992 bytes against 37,413,456 for the 200-character one on 600 pages, a
-    // ratio of 7.39. Allocation on the calling thread is deterministic where a clock is not.
+    // allocated about 277 MB against about 37 MB for the 200-character one on 600 pages. The count
+    // does not depend on machine speed or load, but repeated saves of one document in one process
+    // land on two levels about 0.53 MB apart, and the bounds below leave room for that.
     [Fact]
     public void LongTemplate_costsAboutWhatAShortOneDoes_onADeepDocument()
     {
@@ -181,7 +182,10 @@ public sealed class RunningBandTemplateTests
         var large = SaveAllocation(longTemplate, Words);
 
         Assert.True((double)large / small <= 1.05, $"ratio {(double)large / small}: {large} against {small}");
-        Assert.True(large - small < 1_000_000, $"{large - small} more bytes for 99,800 more template characters");
+        // 2 MB is about four times the 0.53 MB step between the two levels; main differs by about 240 MB.
+        Assert.True(
+            large - small < 2_000_000,
+            $"{large - small} more bytes for 99,800 more template characters");
     }
 
     private static (long Produced, int Pages) ProducedOverADocument(RunningBand? header, RunningBand? footer)
@@ -260,19 +264,23 @@ public sealed class RunningBandTemplateTests
 
     // The public Resolve scans a template with its own pass per token, apart from the save's table.
     // A token added to BandTokens and BandText.Reset but not to Resolve shows here as a token left
-    // in the text, and a token that is a prefix of another shows as a differing scan.
+    // in the text. A token that is a prefix of another fails the StartsWith check first.
     [Fact]
     public void Resolve_substitutesEveryEntryOfBandTokens_asTheSaveDoes()
     {
         var entries = BandTokens.Entries.ToArray();
         Assert.NotEmpty(entries);
 
-        foreach (var (text, _) in entries)
+        for (var i = 0; i < entries.Length; i++)
         {
-            foreach (var (other, _) in entries)
+            for (var j = 0; j < entries.Length; j++)
             {
-                if (!ReferenceEquals(text, other))
-                    Assert.False(other.StartsWith(text, StringComparison.Ordinal), $"{text} is a prefix of {other}");
+                if (i != j)
+                {
+                    Assert.False(
+                        entries[j].Text.StartsWith(entries[i].Text, StringComparison.Ordinal),
+                        $"{entries[i].Text} is a prefix of {entries[j].Text}");
+                }
             }
         }
 
@@ -286,10 +294,12 @@ public sealed class RunningBandTemplateTests
     }
 
     // Header and footer each keep their own BandText for the whole save. A footer that reused the
-    // header's cache would allocate two BandText per page, about 313 KB over 632 pages on a 38 MB
-    // save in a reviewer's measurement, which is too thin a margin to bound across runtimes. The
-    // fields are checked instead: after a save each holds the text for its own band, never the
-    // other's. With the footer passed `ref _headerText`, both asserts on null fail.
+    // header's cache would allocate two BandText per page, a margin too thin to bound across
+    // runtimes given the 0.5 MB variation between saves. The fields are checked instead: after a
+    // save each holds the text for its own band, never the other's. With the footer passed
+    // `ref _headerText` only the NotNull assert on the footer's text fails; that literal change
+    // does not compile under warnings-as-errors (CS0169, _footerText is never used), so the test
+    // guards variants that keep the field referenced.
     [Fact]
     public void HeaderAndFooter_keepTheirOwnBandText_acrossTheSave()
     {
@@ -317,8 +327,8 @@ public sealed class RunningBandTemplateTests
 
     // Token-dense: 16,666 tokens of 6 characters. The scan is built once per band, which costs the
     // long template 1.2 MB more than the short one on net11.0; with the cache removed it was 886 MB
-    // more. The bound sits between the two. Allocation on the calling thread is deterministic where
-    // a clock is not.
+    // more. The bound sits between the two. The count does not depend on machine speed or load, but
+    // repeated saves vary by about 0.5 MB, and the bound leaves room for that.
     [Fact]
     public void LongTokenDenseTemplate_costsAboutWhatAShortOneDoes_onADeepDocument()
     {

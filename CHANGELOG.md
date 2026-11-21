@@ -479,11 +479,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   is drawn, so a page can produce more than it draws: `{page}/{pages} ` followed by 200 `x`, on
   a 40-page document in Helvetica 10 on a 200 pt page with 20 pt margins, produces 33 characters
   on every page and draws 4 on page 1. On a 60,000-word paragraph that saves as 600 pages of
-  200 x 300 pt with a footer in Helvetica 10, `Save`, after a warm-up save, allocated
-  277,323,184 to 277,416,352 bytes with a 100,000-character template against 37,721,600 to
-  37,755,096 with a 200-character one, over three repeats on main. It now allocates 36,671,688 to
-  36,686,752 against 36,686,096 to 36,686,112, so all six figures lie within 15,064 bytes of
-  each other. Those are allocation counts on one machine and one fixture, not timings.
+  200 x 300 pt with a footer in Helvetica 10, `Save` allocated about 277 MB with a
+  100,000-character template against about 37 MB with a 200-character one; it now allocates about
+  37 MB with either. Repeated saves of one document in one process vary by about 0.5 MB, on main
+  as here. Those are allocation counts on one machine and one fixture, not timings.
   - Output is byte-identical for every band measured: `{page}`, `{pages}`, both and neither;
     truncated bands with the same `BandTruncations` (page, characters drawn, characters resolved);
     Symbol and ZapfDingbats bands; tagged and untagged documents; blank recto pages. A null

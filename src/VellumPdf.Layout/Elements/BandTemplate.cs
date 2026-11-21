@@ -16,9 +16,9 @@ internal enum BandToken
 }
 
 /// <summary>
-/// The one table of tokens a band template substitutes. A new token is a new
-/// <see cref="BandToken"/> member, a row here and a value in <see cref="BandText.Reset"/>; nothing
-/// else scans a template.
+/// The one table of tokens the save substitutes. A new token is a new <see cref="BandToken"/>
+/// member, a row here, a value in <see cref="BandText.Reset"/> and a pass in
+/// <c>RunningBand.Resolve</c>, which scans the template on its own.
 /// </summary>
 internal static class BandTokens
 {
@@ -226,4 +226,3 @@ internal sealed class BandText
         }
     }
 }
-
