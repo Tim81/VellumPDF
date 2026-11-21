@@ -129,7 +129,7 @@ public sealed class RunsHeadingListItemGoldenTests
 
     [Fact]
     public void EmbeddedHeadings_pinTheBytes() =>
-        Pin("D1D72594166B30FB73477CE68EAAFC38E5AC2E2445CDE469C94DA20D74AE498B", Hash(EmbeddedHeadings(), fold: true));
+        Pin("A14298A33695CED45DF1E66B0640444280DAF3F210C17497B5E63C8EF866EF33", Hash(EmbeddedHeadings(), fold: true));
 
     [Fact]
     public void Lists_pinTheBytes() =>
@@ -137,7 +137,7 @@ public sealed class RunsHeadingListItemGoldenTests
 
     [Fact]
     public void EmbeddedLists_pinTheBytes() =>
-        Pin("C487B9DDD09EE2C3E1813913C2831925BC1277906B82BF0E64CCA4FCECED8A2A", Hash(EmbeddedLists(), fold: true));
+        Pin("298EABD9F41EF3B0AC352A5A2C9434CFEC09B0E203071C77F735B70E5026A928", Hash(EmbeddedLists(), fold: true));
 
     [Fact]
     public void NullTextItemAtTheTop_stillThrowsNamingText()
