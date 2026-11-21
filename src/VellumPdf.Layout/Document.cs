@@ -476,14 +476,15 @@ public sealed class Document : IDisposable
     /// <para>A running band's <see cref="HorizontalAlignment.Left"/> and
     /// <see cref="HorizontalAlignment.Right"/> alignments swap on a left-hand page, so a page
     /// number aligned right stays on the outside edge; <see cref="HorizontalAlignment.Center"/>
-    /// centres in that page's content box. A value the enumeration does not name is drawn as
-    /// <see cref="HorizontalAlignment.Left"/> on a right-hand page, so it swaps with it.</para>
+    /// centres in that page's content box. A band is drawn as left unless it asks for center or
+    /// right (see <see cref="RunningBand.Alignment"/>), so <see cref="HorizontalAlignment.Justify"/>
+    /// and a value the enumeration does not name are drawn on the right of a left-hand page too.</para>
     /// <para>The side follows the page's position in the file, not its page label, and a blank page
     /// that a <see cref="PageBreak.Recto"/> inserts counts as a page. The first page is always a
     /// right-hand page: nothing configures the other side.</para>
     /// <para>A custom <see cref="IRenderer"/> is offered the content area of the page it is laid
-    /// out on, so its <see cref="LayoutContext.Area"/> has a different X from one page to the
-    /// next. A renderer that keeps an X from an earlier <see cref="IRenderer.Layout"/> call must
+    /// out on, so when <see cref="EdgeInsets.Left"/> and <see cref="EdgeInsets.Right"/> differ its
+    /// <see cref="LayoutContext.Area"/> has a different X from one page to the next. A renderer that keeps an X from an earlier <see cref="IRenderer.Layout"/> call must
     /// not reuse it on the next page.</para>
     /// <para>The value is read when a save lays the document out. A value set after the document
     /// has saved is stored and never used, because a document saves once. A refused save that

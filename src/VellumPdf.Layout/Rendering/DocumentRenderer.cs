@@ -672,8 +672,11 @@ public sealed class DocumentRenderer
 
     // Parity is the physical position in the kernel document and page 1 is recto; a page label
     // never enters it, because labels may restart. One rule for the recto break, the content
-    // area's x and the bands.
-    private bool IsRecto(int pageIndex) => (_pagesBefore + pageIndex + 1) % 2 == 1;
+    // area's x and the bands: the recto break and the content area ask IsRecto, which numbers the
+    // page from its index, and the bands ask IsRectoNumber with the number they already hold.
+    private static bool IsRectoNumber(int physicalPageNumber) => physicalPageNumber % 2 == 1;
+
+    private bool IsRecto(int pageIndex) => IsRectoNumber(_pagesBefore + pageIndex + 1);
 
     // The content area as the page with this 0-based index offers it. The width and the vertical
     // extent are the same on every page, so a wrap measured on one page holds on the next; only
@@ -1142,7 +1145,9 @@ public sealed class DocumentRenderer
         //
         // Under mirrored margins a verso page has its outside margin on the left, so the page's
         // edges swap and so do Left and Right alignment: a band on the outside stays outside.
-        var mirrored = MirrorMargins && pageNumber % 2 == 0;
+        // Anything that is not Center or Right is drawn as Left (Justify and a value the
+        // enumeration does not name included), so on a verso page it lands on the right.
+        var mirrored = MirrorMargins && !IsRectoNumber(pageNumber);
         var leftEdge = mirrored ? _margins.Right : _margins.Left;
         var rightEdge = mirrored ? _margins.Left : _margins.Right;
         var alignment = band.Alignment;

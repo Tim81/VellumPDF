@@ -17,12 +17,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     right-hand and a left-hand page and only its left edge moves. Nothing new is refused: the
     margins a save refuses are the ones it refuses without the property, with the same exceptions.
   - A header or footer aligned `Left` or `Right` swaps sides on a left-hand page, so a page number
-    aligned right stays on the outside edge. `Center` centres in that page's content box. Body
-    alignment never swaps.
+    aligned right stays on the outside edge. `Center` centres in that page's content box. A band is
+    drawn as left unless it asks for center or right, so `Justify` and a value the enumeration does
+    not name swap too. Body alignment never swaps.
   - The side follows the page's position in the file, not its page label, and the blank page a
     recto break inserts counts. The first page is always right-hand.
-  - A custom `IRenderer` is offered the content area of the page it lands on, so its `Area.X`
-    differs between pages. One that keeps an X from an earlier `Layout` call must not reuse it.
+  - A custom `IRenderer` is offered the content area of the page it lands on, so when `Left` and
+    `Right` differ its `Area.X` differs between pages. One that keeps an X from an earlier `Layout`
+    call must not reuse it.
 
 - **`Preformatted`, a block that keeps every space and tab (#591).** `Document.Add(Preformatted)`
   draws text whose spacing is its meaning: command blocks, configuration, ASCII tables. The default

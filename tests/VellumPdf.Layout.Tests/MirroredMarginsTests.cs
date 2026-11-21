@@ -271,6 +271,70 @@ public sealed class MirroredMarginsTests : IDisposable
         Assert.Equal(PageWidth - Outside, FooterEnd(3), 1e-4);
     }
 
+    // A band asks for left unless it asks for center or right, so Justify and a value the
+    // enumeration does not name are drawn as left on a right-hand page and as right on a left-hand
+    // one. Read back at the value: 80 on page 1, and ending at 220 (300 less the inside margin)
+    // on page 2.
+    [Theory]
+    [InlineData(HorizontalAlignment.Justify)]
+    [InlineData((HorizontalAlignment)99)]
+    public void ABandThatIsNeitherCentreNorRight_isDrawnAsLeft_soItSwapsOnVerso(HorizontalAlignment alignment)
+    {
+        var style = Body;
+        using var doc = NewDocument();
+        doc.Footer = new RunningBand("F{page}", style, alignment);
+        doc.Add(Tall("P1"));
+        doc.Add(Tall("P2"));
+
+        var pages = PageStreams(Save(doc));
+        Assert.Equal(2, pages.Count);
+
+        Assert.Equal(Inside, Only(pages[0], "F1").X, 1e-4);
+        Assert.Equal(PageWidth - Inside, Only(pages[1], "F2").X + style.MeasureString("F2"), 1e-4);
+    }
+
+    // The /Rect of the link annotations on each page, in page-tree order.
+    private static List<double[]> LinkRects(byte[] pdf)
+    {
+        var text = Encoding.Latin1.GetString(pdf);
+        var kids = Regex.Match(text, @"/Kids \[([^\]]*)\]").Groups[1].Value;
+        var rects = new List<double[]>();
+        foreach (Match kid in Regex.Matches(kids, @"(\d+) 0 R"))
+        {
+            var page = Regex.Match(text, $@"(?m)^{kid.Groups[1].Value} 0 obj
+<<(?<d>.*?)>>
+endobj", RegexOptions.Singleline);
+            var annots = Regex.Match(page.Groups["d"].Value, @"/Annots \[(\d+) 0 R\]");
+            Assert.True(annots.Success, "page has one annotation");
+            var annot = Regex.Match(text, $@"(?m)^{annots.Groups[1].Value} 0 obj
+<<(?<d>.*?)>>
+endobj", RegexOptions.Singleline);
+            var rect = Regex.Match(annot.Groups["d"].Value, @"/Rect \[([^\]]*)\]").Groups[1].Value;
+            rects.Add(rect.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                .Select(v => double.Parse(v, CultureInfo.InvariantCulture)).ToArray());
+        }
+
+        return rects;
+    }
+
+    [Fact]
+    public void ALinkOnVerso_hasARectAtTheOutsideMargin()
+    {
+        var link = new TextStyle { Font = Body.Font, FontSize = 12, LinkUri = "https://example.org" };
+        using var doc = NewDocument();
+        doc.Add(new Paragraph("LINK", link) { Margins = new EdgeInsets(200, 0, 0, 0) });
+        doc.Add(new Paragraph("LINK", link) { Margins = new EdgeInsets(200, 0, 0, 0) });
+
+        var rects = LinkRects(Save(doc));
+        Assert.Equal(2, rects.Count);
+
+        var width = link.MeasureString("LINK");
+        Assert.Equal(Inside, rects[0][0], 1e-3);
+        Assert.Equal(Inside + width, rects[0][2], 1e-3);
+        Assert.Equal(Outside, rects[1][0], 1e-3);
+        Assert.Equal(Outside + width, rects[1][2], 1e-3);
+    }
+
     [Fact]
     public void ACentredBand_centresInTheContentBoxOfItsOwnPage()
     {
