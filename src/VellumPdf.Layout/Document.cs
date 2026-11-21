@@ -86,6 +86,9 @@ public sealed class Document : IDisposable
     /// it is until 3.0. <see cref="Diagnostics"/> holds the same substitutions grouped by
     /// character; see <see cref="LayoutDiagnosticCode.UnencodableCharacter"/> for what it leaves
     /// out.</para>
+    /// <para>A character an embedded font has no glyph for is written as glyph 0, not as '?', and
+    /// is not listed here. <see cref="LayoutDiagnosticCode.NotdefGlyph"/> reports it in
+    /// <see cref="Diagnostics"/>.</para>
     /// </remarks>
     public IReadOnlyList<TextEncodingWarning> TextEncodingWarnings => _textEncodingWarnings;
 
@@ -106,8 +109,13 @@ public sealed class Document : IDisposable
     /// <see cref="LayoutDiagnosticCode.NullTextRunStyle"/> (a run with a null style that yields no
     /// word), <see cref="LayoutDiagnosticCode.UnencodableCharacter"/> (a character written as
     /// <c>?</c>, mirroring <see cref="TextEncodingWarnings"/>),
+    /// <see cref="LayoutDiagnosticCode.TabStopBeyondWidth"/> (a tab stop treated as absent because
+    /// it lies beyond the width a custom renderer laid the paragraph out at),
     /// <see cref="LayoutDiagnosticCode.NullGrandchildText"/> and
     /// <see cref="LayoutDiagnosticCode.NullGrandchild"/> (a null below the second level of a list),
+    /// <see cref="LayoutDiagnosticCode.NotdefGlyph"/> (a character an embedded font has no glyph
+    /// for, written as glyph 0), <see cref="LayoutDiagnosticCode.UnembeddedFont"/> (an element that
+    /// selects a Standard 14 font under a conformance claim),
     /// <see cref="LayoutDiagnosticCode.BandTruncated"/> (mirroring <see cref="BandTruncations"/>)
     /// and <see cref="LayoutDiagnosticCode.DiagnosticsDropped"/>. Every one saves by default; only
     /// <see cref="StrictDiagnostics"/> refuses it, and a later major version refuses them
@@ -122,8 +130,16 @@ public sealed class Document : IDisposable
     /// written as <c>?</c> on the document's canvas is still listed, because it is read from the
     /// canvas after each element is drawn, whichever renderer wrote it. The one exception is text
     /// the library wrote itself: the marker of a built-in list is not listed when the document
-    /// draws the list, and through a context you built it can be. Callers of the Kernel alone have
-    /// no channel, and
+    /// draws the list, and through a context you built it can be. Glyph 0 that a custom renderer
+    /// writes with <see cref="PdfCanvas.ShowGlyphs(System.ReadOnlySpan{ushort})"/> on the
+    /// document's canvas is listed as <see cref="LayoutDiagnosticCode.NotdefGlyph"/>, with the
+    /// character unknown, whichever renderer wrote it. A context you construct reports no
+    /// <see cref="LayoutDiagnosticCode.UnembeddedFont"/>, a Standard 14 font that a renderer
+    /// fetches with <see cref="DrawContext.GetFont(VellumPdf.Fonts.Standard14)"/> and never selects
+    /// is not reported, and neither is one that a renderer selects with its own
+    /// <see cref="PdfCanvas.SetFont(VellumPdf.Fonts.PdfFontResource, double)"/> call. Callers of
+    /// the Kernel alone have no channel except
+    /// <see cref="VellumPdf.Document.PdfDocument.NotdefGlyphs"/> for glyph 0, and
     /// <see cref="VellumPdf.Layout.Rendering.DocumentRenderer.Render(System.IO.Stream)"/> exposes
     /// none.
     /// Input that is refused is thrown, not listed. <b>Do not</b> read an empty list as proof that
@@ -247,11 +263,26 @@ public sealed class Document : IDisposable
     /// forbids the <c>Encrypt</c> key in a PDF/A file. For PDF/UA-1 it throws only when the
     /// encryption settings leave out <see cref="PdfPermissions.Extract"/>, because ISO 14289-1,
     /// 7.16, requires the permission that allows extraction for accessibility.</para>
+    /// <para>With a level set, the save reports an element that selects a Standard 14 font, such as
+    /// the Helvetica a list, table, heading, paragraph or running band without its own style falls
+    /// back to, as <see cref="LayoutDiagnosticCode.UnembeddedFont"/>, and a character an embedded
+    /// font has no glyph for as <see cref="LayoutDiagnosticCode.NotdefGlyph"/>. Both save unless
+    /// <see cref="StrictDiagnostics"/> is set; see <see cref="Diagnostics"/>.
+    /// <see cref="SetDefaultFont"/> does not reach those elements. <b>Do not pass</b> a style with
+    /// a Standard 14 font, or text the font cannot draw, to a PDF/A or PDF/UA document. A later
+    /// major version refuses text the font cannot draw, and a Standard 14 font, under either
+    /// claim.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when
     /// <see cref="Encrypt"/> has been called and this is a PDF/A level or a value the enumeration
     /// does not name, or PDF/UA-1 without <see cref="PdfPermissions.Extract"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from the same calls, not from this setter, when <see cref="StrictDiagnostics"/> is
+    /// set and the document has a level and writes a Standard 14 font or a glyph 0; the save
+    /// reports them as <see cref="LayoutDiagnosticCode.UnembeddedFont"/> and
+    /// <see cref="LayoutDiagnosticCode.NotdefGlyph"/>.
     /// </exception>
     public PdfConformance Conformance
     {
@@ -472,6 +503,15 @@ public sealed class Document : IDisposable
     /// style in force when it is called, so text added before this call keeps the earlier
     /// style, and a <see cref="Paragraph"/>, <see cref="Heading"/>, list, table or running band
     /// never uses it. Give those their own style.
+    /// <para>A list, table, paragraph, heading or running band without a style of its own does not
+    /// take this one. The font is then Helvetica, which is not embedded. While
+    /// <see cref="Document.Conformance"/> is not
+    /// <see cref="VellumPdf.Document.PdfConformance.None"/> the save reports the element as
+    /// <see cref="LayoutDiagnosticCode.UnembeddedFont"/> in <see cref="Document.Diagnostics"/> and
+    /// still saves; only <see cref="Document.StrictDiagnostics"/> refuses it. <b>Do not leave the
+    /// style out</b> of an element in a PDF/A or PDF/UA document; give it a style with an embedded
+    /// font. A later major version refuses an element that falls back to Helvetica under either
+    /// claim.</para>
     /// <para>A null style is stored. A later <see cref="Add(string, TextStyle)"/> then uses
     /// <see cref="TextStyle.Default"/>.</para>
     /// <para>The style is not checked here. Its refusals are raised from the save, for the text
@@ -494,6 +534,14 @@ public sealed class Document : IDisposable
     /// call, when text a later <see cref="Add(string, TextStyle)"/> adds in this style holds an
     /// unpaired surrogate and is measured in an embedded font; see <see cref="TextStyle.FontRef"/>.
     /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from here, when <see cref="Document.StrictDiagnostics"/> is set and text of the element is
+    /// written as glyph 0, or the document has a conformance claim and the element writes Helvetica
+    /// or another Standard 14 font; the save reports them as
+    /// <see cref="LayoutDiagnosticCode.NotdefGlyph"/> and
+    /// <see cref="LayoutDiagnosticCode.UnembeddedFont"/>.
+    /// </exception>
     public Document SetDefaultFont(TextStyle style) { _defaultStyle = style; return this; }
 
     /// <summary>Sets a header band with optional style and alignment. Returns this document for chaining.</summary>
@@ -507,11 +555,28 @@ public sealed class Document : IDisposable
     /// <see cref="TextStyle.Leading"/> and <see cref="TextStyle.FontRef"/>.
     /// <see cref="HorizontalAlignment.Justify"/> and values the enumeration does not name are drawn
     /// left-aligned; see <see cref="RunningBand.Alignment"/>.</para>
+    /// <para>A null <paramref name="style"/> is <see cref="TextStyle.Default"/>, not the style set
+    /// with <see cref="SetDefaultFont"/>. The font is then Helvetica, which is not embedded. While
+    /// <see cref="Document.Conformance"/> is not
+    /// <see cref="VellumPdf.Document.PdfConformance.None"/> the save reports the element as
+    /// <see cref="LayoutDiagnosticCode.UnembeddedFont"/> in <see cref="Document.Diagnostics"/> and
+    /// still saves; only <see cref="Document.StrictDiagnostics"/> refuses it. <b>Do not leave the
+    /// style out</b> of an element in a PDF/A or PDF/UA document; give it a style with an embedded
+    /// font. A later major version refuses an element that falls back to Helvetica under either
+    /// claim.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="template"/> is <see langword="null"/>.
     /// </exception>
     /// <inheritdoc cref="Header" path="/exception[@cref='T:System.ArgumentException' or @cref='T:System.InvalidOperationException' or @cref='T:System.IndexOutOfRangeException']"/>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from here, when <see cref="Document.StrictDiagnostics"/> is set and text of the element is
+    /// written as glyph 0, or the document has a conformance claim and the element writes Helvetica
+    /// or another Standard 14 font; the save reports them as
+    /// <see cref="LayoutDiagnosticCode.NotdefGlyph"/> and
+    /// <see cref="LayoutDiagnosticCode.UnembeddedFont"/>.
+    /// </exception>
     public Document SetHeader(string template, TextStyle? style = null, HorizontalAlignment alignment = HorizontalAlignment.Center)
     {
         Header = new RunningBand(template, style, alignment);
@@ -529,11 +594,28 @@ public sealed class Document : IDisposable
     /// <see cref="TextStyle.Leading"/> and <see cref="TextStyle.FontRef"/>.
     /// <see cref="HorizontalAlignment.Justify"/> and values the enumeration does not name are drawn
     /// left-aligned; see <see cref="RunningBand.Alignment"/>.</para>
+    /// <para>A null <paramref name="style"/> is <see cref="TextStyle.Default"/>, not the style set
+    /// with <see cref="SetDefaultFont"/>. The font is then Helvetica, which is not embedded. While
+    /// <see cref="Document.Conformance"/> is not
+    /// <see cref="VellumPdf.Document.PdfConformance.None"/> the save reports the element as
+    /// <see cref="LayoutDiagnosticCode.UnembeddedFont"/> in <see cref="Document.Diagnostics"/> and
+    /// still saves; only <see cref="Document.StrictDiagnostics"/> refuses it. <b>Do not leave the
+    /// style out</b> of an element in a PDF/A or PDF/UA document; give it a style with an embedded
+    /// font. A later major version refuses an element that falls back to Helvetica under either
+    /// claim.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="template"/> is <see langword="null"/>.
     /// </exception>
     /// <inheritdoc cref="Header" path="/exception[@cref='T:System.ArgumentException' or @cref='T:System.InvalidOperationException' or @cref='T:System.IndexOutOfRangeException']"/>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from here, when <see cref="Document.StrictDiagnostics"/> is set and text of the element is
+    /// written as glyph 0, or the document has a conformance claim and the element writes Helvetica
+    /// or another Standard 14 font; the save reports them as
+    /// <see cref="LayoutDiagnosticCode.NotdefGlyph"/> and
+    /// <see cref="LayoutDiagnosticCode.UnembeddedFont"/>.
+    /// </exception>
     public Document SetFooter(string template, TextStyle? style = null, HorizontalAlignment alignment = HorizontalAlignment.Center)
     {
         Footer = new RunningBand(template, style, alignment);
@@ -921,6 +1003,15 @@ public sealed class Document : IDisposable
     /// With <paramref name="style"/> null, the paragraph takes the style from the most recent
     /// <see cref="SetDefaultFont"/> call made before this one.
     /// A null <paramref name="text"/> is refused here.
+    /// <para>When no style was set with <see cref="SetDefaultFont"/> and <paramref name="style"/>
+    /// is null, the paragraph takes <see cref="TextStyle.Default"/>. The font is then Helvetica,
+    /// which is not embedded. While <see cref="Document.Conformance"/> is not
+    /// <see cref="VellumPdf.Document.PdfConformance.None"/> the save reports the element as
+    /// <see cref="LayoutDiagnosticCode.UnembeddedFont"/> in <see cref="Document.Diagnostics"/> and
+    /// still saves; only <see cref="Document.StrictDiagnostics"/> refuses it. <b>Do not leave the
+    /// style out</b> of an element in a PDF/A or PDF/UA document; give it a style with an embedded
+    /// font. A later major version refuses text the font cannot draw, and a Standard 14 font, under
+    /// either claim.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="text"/> is <see langword="null"/>.
@@ -936,6 +1027,14 @@ public sealed class Document : IDisposable
     /// call, when the style used holds a <see cref="VellumPdf.Fonts.Standard14"/> value the
     /// enumeration does not name and the font is selected on a page; see
     /// <see cref="TextStyle.FontRef"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from here, when <see cref="Document.StrictDiagnostics"/> is set and text of the paragraph
+    /// is written as glyph 0, or the document has a conformance claim and the paragraph writes
+    /// Helvetica or another Standard 14 font; the save reports them as
+    /// <see cref="LayoutDiagnosticCode.NotdefGlyph"/> and
+    /// <see cref="LayoutDiagnosticCode.UnembeddedFont"/>.
     /// </exception>
     public Document Add(string text, TextStyle? style = null)
         => Add(new Paragraph(text, style ?? _defaultStyle));

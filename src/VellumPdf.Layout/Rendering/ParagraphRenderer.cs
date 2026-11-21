@@ -20,7 +20,7 @@ namespace VellumPdf.Layout.Rendering;
 /// <see cref="Layout"/> during a save, so the exceptions on that method reach you from the save. A
 /// negative start line makes <see cref="Draw"/> throw.
 /// </remarks>
-public sealed class ParagraphRenderer : IRenderer, IPageBreakSource
+public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource
 {
     private readonly Paragraph _para;
 
@@ -37,6 +37,10 @@ public sealed class ParagraphRenderer : IRenderer, IPageBreakSource
     // it. A split paragraph shares its wrap between its pieces, so only the piece that starts at
     // line 0 reports them; see Draw.
     private int _nullStyleRuns;
+
+    // How many of the paragraph's tab stops lie beyond the width the wrap was made at, counted
+    // only when its text holds a tab; reported once from Draw, like _nullStyleRuns.
+    private int _tabStopsBeyond;
 
     // Pagination window: only lines[_startLine.._endLine) are in this renderer.
     private readonly int _startLine;
@@ -85,7 +89,9 @@ public sealed class ParagraphRenderer : IRenderer, IPageBreakSource
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// A run that yields text has a <see cref="TextStyle.FontSize"/> or <see cref="TextStyle.Color"/>
-    /// that is refused; see those members.
+    /// that is refused; see those members. It is also raised when the paragraph has a tab stop with
+    /// a leader and a run has a font size the leader cannot be drawn at; see
+    /// <see cref="Paragraph.TabStops"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Text this method measures in an embedded font holds an unpaired surrogate; see
@@ -105,7 +111,11 @@ public sealed class ParagraphRenderer : IRenderer, IPageBreakSource
 
         if (_lines is null)
         {
-            (_lines, _lineEnds) = WordWrap(_para.Runs, area.Width, out var nullStyleRuns);
+            // The document checks this before any layout for its own paragraphs; a renderer of
+            // yours that lays one out meets it here.
+            LayoutValidation.ValidateLeaderSizes(_para);
+            var stops = StopsWithin(_para, area.Width, out _tabStopsBeyond);
+            (_lines, _lineEnds) = WordWrap(_para.Runs, area.Width, out var nullStyleRuns, stops);
             _nullStyleRuns = nullStyleRuns;
             WrapCalls++;
         }
@@ -148,6 +158,7 @@ public sealed class ParagraphRenderer : IRenderer, IPageBreakSource
             _lines = _lines,
             _lineEnds = _lineEnds,
             _nullStyleRuns = _nullStyleRuns,
+            _tabStopsBeyond = _tabStopsBeyond,
             StructType = StructType,
             ParentStructElem = ParentStructElem,
             ElementLanguage = ElementLanguage,
@@ -161,6 +172,7 @@ public sealed class ParagraphRenderer : IRenderer, IPageBreakSource
             _lineHeight = _lineHeight,
             _occupied = _occupied,
             _nullStyleRuns = _nullStyleRuns,
+            _tabStopsBeyond = _tabStopsBeyond,
             StructType = StructType,
             ParentStructElem = ParentStructElem,
             ElementLanguage = ElementLanguage,
@@ -229,9 +241,20 @@ public sealed class ParagraphRenderer : IRenderer, IPageBreakSource
                 perElement: true);
         }
 
+        if (_startLine == 0 && _tabStopsBeyond > 0)
+        {
+            ctx.Diagnostics?.Report(
+                LayoutDiagnosticCode.TabStopBeyondWidth,
+                0,
+                "A tab stop lies beyond the width the paragraph was laid out at, so it was treated as absent.",
+                _tabStopsBeyond,
+                perElement: true);
+        }
+
         var area = _occupied;
         var canvas = ctx.Canvas;
         var leading = _lineHeight;
+        List<(LineLeader Leader, double BaselineY)>? leaders = null;
         var isLastLine = false;
 
         // Tagged PDF: BDC must open BEFORE BeginText so the BDC…EMC actually encloses BT…ET.
@@ -257,7 +280,10 @@ public sealed class ParagraphRenderer : IRenderer, IPageBreakSource
             var maxFontSize = fragments.Max(f => f.Style.FontSize);
 
             // Justify only non-last lines
-            var isJustified = _para.Alignment == HorizontalAlignment.Justify && !isLastLine;
+            // A line with a tab placed at a stop is positioned from the left edge and is not
+            // stretched: its pieces already sit where the stops put them.
+            var tabbed = HoldsPlacedFragment(fragments);
+            var isJustified = _para.Alignment == HorizontalAlignment.Justify && !isLastLine && !tabbed;
             var slack = area.Width - lineWidth;
 
             // Count inter-word gaps in this line (gaps between fragments that end/start with space-adjacent text)
@@ -345,7 +371,7 @@ public sealed class ParagraphRenderer : IRenderer, IPageBreakSource
             // public renderer -- could bring an ordinary wrapped line to this arm over-wide, and
             // the floor would move it to the left edge. That is the same trade this fix makes
             // deliberately, reached by a different route.
-            double xOffset = _para.Alignment switch
+            double xOffset = tabbed ? 0 : _para.Alignment switch
             {
                 HorizontalAlignment.Center => Math.Max(0, (area.Width - lineWidth) / 2),
                 HorizontalAlignment.Right => Math.Max(0, area.Width - lineWidth),
@@ -377,11 +403,20 @@ public sealed class ParagraphRenderer : IRenderer, IPageBreakSource
                 var linkStartX = curX;
                 foreach (var frag in fragments)
                 {
-                    SwitchFont(canvas, ctx, frag.Style, ref currentFont);
-                    SwitchColor(canvas, frag.Style, ref currentColor);
+                    if (frag.StartX is { } placedX)
+                        curX = area.X + placedX;
+                    if (frag.Leader is { } leader)
+                        (leaders ??= []).Add((leader, linePdfY));
 
-                    canvas.SetTextMatrix(1, 0, 0, 1, curX, linePdfY);
-                    ShowText(canvas, frag.Style, frag.Text);
+                    // A fragment with no text exists only to carry a leader.
+                    if (frag.Text.Length > 0)
+                    {
+                        TextEmitter.SelectFont(ctx, canvas, frag.Style, ref currentFont);
+                        SwitchColor(canvas, frag.Style, ref currentColor);
+
+                        canvas.SetTextMatrix(1, 0, 0, 1, curX, linePdfY);
+                        TextEmitter.Show(canvas, frag.Style, frag.Text);
+                    }
 
                     // Tw widens every space the fragment holds, so the fragment is drawn that much
                     // wider than the width it was measured at. The next fragment starts after the
@@ -391,7 +426,7 @@ public sealed class ParagraphRenderer : IRenderer, IPageBreakSource
                     var drawnWidth = frag.Width + (CountSpaces(frag.Text) * wordSpacing);
 
                     // Register link annotation for this fragment if it has a URI.
-                    if (frag.Style.LinkUri is not null)
+                    if (frag.Text.Length > 0 && frag.Style.LinkUri is not null)
                     {
                         var fragBox = new LayoutBox(curX, lineLayoutTop, drawnWidth, leading);
                         ctx.AddUriLinkAnnotation(fragBox, frag.Style.LinkUri);
@@ -426,6 +461,11 @@ public sealed class ParagraphRenderer : IRenderer, IPageBreakSource
                 ctx.RegisterStructElem(elem);
             }
         }
+
+        // Leaders follow the paragraph's own marked content, so they stay out of its structure
+        // element.
+        if (leaders is not null)
+            DrawLeaders(canvas, ctx.Tagged, area.X, leaders);
     }
 
     // ── Link annotation registration ──────────────────────────────────────────
@@ -475,10 +515,10 @@ public sealed class ParagraphRenderer : IRenderer, IPageBreakSource
         for (var t = 0; t < tokens.Count; t++)
         {
             var (text, style, width) = tokens[t];
-            SwitchFont(canvas, ctx, style, ref currentFont);
+            TextEmitter.SelectFont(ctx, canvas, style, ref currentFont);
             SwitchColor(canvas, style, ref currentColor);
             canvas.SetTextMatrix(1, 0, 0, 1, curX, linePdfY);
-            ShowText(canvas, style, text);
+            TextEmitter.Show(canvas, style, text);
             curX += width;
 
             // Add extra spacing after this token if there's a gap before the next
@@ -489,55 +529,12 @@ public sealed class ParagraphRenderer : IRenderer, IPageBreakSource
 
     // ── Font / colour switching helpers ──────────────────────────────────────
 
-    private static void SwitchFont(PdfCanvas canvas, DrawContext ctx, TextStyle style, ref FontReference? current)
-    {
-        if (current.HasValue && FontRefEqual(current.Value, style.FontRef))
-            return;
-
-        if (style.FontRef.IsEmbedded)
-        {
-            var resourceName = ctx.UseEmbeddedFont(style.FontRef.Embedded);
-            canvas.SetFontByName(resourceName, style.FontSize);
-        }
-        else
-        {
-            var fontResource = ctx.GetFont(style.Font);
-            canvas.SetFont(fontResource, style.FontSize);
-        }
-        current = style.FontRef;
-    }
-
     private static void SwitchColor(PdfCanvas canvas, TextStyle style, ref ColorRgb? current)
     {
         if (current.HasValue && current.Value == style.Color)
             return;
         canvas.SetFillColorRgb(style.Color.R, style.Color.G, style.Color.B);
         current = style.Color;
-    }
-
-    private static bool FontRefEqual(FontReference a, FontReference b)
-    {
-        if (a.IsEmbedded != b.IsEmbedded) return false;
-        return a.IsEmbedded
-            ? ReferenceEquals(a.Embedded, b.Embedded)
-            : a.Standard14 == b.Standard14;
-    }
-
-    // ── Text emission ─────────────────────────────────────────────────────────
-
-    private static void ShowText(PdfCanvas canvas, TextStyle style, string text)
-    {
-        if (style.FontRef.IsEmbedded)
-            ShowEmbeddedText(canvas, style.FontRef.Embedded, text);
-        else
-            canvas.ShowText(text);
-    }
-
-    private static void ShowEmbeddedText(PdfCanvas canvas, EmbeddedFontHandle handle, string text)
-    {
-        var gids = new ushort[text.Length];
-        var count = handle.GetGlyphIds(text, gids);
-        canvas.ShowGlyphs(gids.AsSpan(0, count));
     }
 
     // ── Word-gap / word-token helpers (shared by measure and draw) ───────────
@@ -689,6 +686,12 @@ public sealed class ParagraphRenderer : IRenderer, IPageBreakSource
 
         /// <summary>A line break; it carries no text.</summary>
         HardBreak,
+
+        /// <summary>
+        /// A tab character that a tab stop places the next text at; it carries no text and the
+        /// style of the run that held it. Produced only when the paragraph has tab stops.
+        /// </summary>
+        Tab,
     }
 
     /// <summary>
@@ -715,9 +718,11 @@ public sealed class ParagraphRenderer : IRenderer, IPageBreakSource
     /// forced cut ends where the word ends, so what follows decides its kind.
     /// </returns>
     internal static (List<LineFragment[]> Lines, List<LineEnd> Ends) WordWrap(
-        IReadOnlyList<TextRun> runs, double maxWidth, out int nullStyleRuns)
+        IReadOnlyList<TextRun> runs, double maxWidth, out int nullStyleRuns,
+        IReadOnlyList<TabStop>? stops = null)
     {
         nullStyleRuns = 0;
+        var tabbed = stops is not null;
         var lines = new List<LineFragment[]>();
         var ends = new List<LineEnd>();
 
@@ -744,30 +749,43 @@ public sealed class ParagraphRenderer : IRenderer, IPageBreakSource
                     tokens.Add((string.Empty, null, TokenKind.HardBreak));
                 }
 
-                // Normalise all Unicode whitespace (except \n and the three no-break spaces) to
-                // plain spaces, then split on space so tabs, en/em spaces, etc. all act as word
-                // separators. A space ends the word before it; a run that starts or ends without
-                // one continues or leaves the word open for the next run.
-                var segments = NormaliseWhitespace(hardLines[hl]).Split(' ');
-                for (var si = 0; si < segments.Length; si++)
+                // With tab stops, a tab ends the word and the text before it, and is a token of
+                // its own; the text between two tabs is read as below. A run with no style cannot
+                // hold a placed tab, so its tabs stay the separators they are without stops.
+                var tabParts = tabbed && run.Style is not null ? hardLines[hl].Split('\t') : null;
+                for (var tp = 0; tp < (tabParts?.Length ?? 1); tp++)
                 {
-                    if (si > 0)
+                    if (tp > 0)
+                    {
                         openWord = false;
+                        tokens.Add((string.Empty, run.Style, TokenKind.Tab));
+                    }
 
-                    var segment = segments[si];
-                    if (segment.Length == 0)
-                        continue;
+                    // Normalise all Unicode whitespace (except \n and the three no-break spaces)
+                    // to plain spaces, then split on space so tabs, en/em spaces, etc. all act as
+                    // word separators. A space ends the word before it; a run that starts or ends
+                    // without one continues or leaves the word open for the next run.
+                    var segments = NormaliseWhitespace(tabParts is null ? hardLines[hl] : tabParts[tp]).Split(' ');
+                    for (var si = 0; si < segments.Length; si++)
+                    {
+                        if (si > 0)
+                            openWord = false;
 
-                    // Only a run that yields a word is refused; empty text, or text of word
-                    // separators alone, saves with a null style.
-                    if (run.Style is null)
-                        throw new ArgumentNullException("Style", "A paragraph run with text has a null style.");
+                        var segment = segments[si];
+                        if (segment.Length == 0)
+                            continue;
 
-                    if (openWord && ReferenceEquals(tokens[^1].Style, run.Style))
-                        tokens[^1] = (tokens[^1].Text + segment, run.Style, tokens[^1].Kind);
-                    else
-                        tokens.Add((segment, run.Style, openWord ? TokenKind.WordContinue : TokenKind.WordStart));
-                    openWord = true;
+                        // Only a run that yields a word is refused; empty text, or text of word
+                        // separators alone, saves with a null style.
+                        if (run.Style is null)
+                            throw new ArgumentNullException("Style", "A paragraph run with text has a null style.");
+
+                        if (openWord && ReferenceEquals(tokens[^1].Style, run.Style))
+                            tokens[^1] = (tokens[^1].Text + segment, run.Style, tokens[^1].Kind);
+                        else
+                            tokens.Add((segment, run.Style, openWord ? TokenKind.WordContinue : TokenKind.WordStart));
+                        openWord = true;
+                    }
                 }
             }
 
@@ -781,6 +799,9 @@ public sealed class ParagraphRenderer : IRenderer, IPageBreakSource
             ends.Add(LineEnd.Last);
             return (lines, ends);
         }
+
+        if (tabbed)
+            return WrapWithTabs(tokens, maxWidth, stops!, lines, ends);
 
         // Greedy wrap
         var lineFrags = new List<(string Word, TextStyle Style, double Width)>();

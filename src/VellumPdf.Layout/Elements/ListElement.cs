@@ -163,12 +163,31 @@ public sealed class ListElement
     /// Used by a top-level item with no style of its own, and through that item by its children.
     /// Null means <see cref="TextStyle.Default"/>. Refusals on size, leading, font and text colour
     /// are on <see cref="TextStyle"/> and are raised from the save.
+    /// <para>A list with no default style does not take <see cref="Document.SetDefaultFont"/>; its
+    /// items, and the marker of each, take <see cref="TextStyle.Default"/>, so each item adds two
+    /// font selections, one for its marker and one for its text, to the list's single report. The
+    /// font is then Helvetica, which is not embedded. While
+    /// <see cref="Document.Conformance"/> is not
+    /// <see cref="VellumPdf.Document.PdfConformance.None"/> the save reports the element as
+    /// <see cref="LayoutDiagnosticCode.UnembeddedFont"/> in <see cref="Document.Diagnostics"/> and
+    /// still saves; only <see cref="Document.StrictDiagnostics"/> refuses it. <b>Do not leave the
+    /// style out</b> of an element in a PDF/A or PDF/UA document; give it a style with an embedded
+    /// font. A later major version refuses an element that falls back to Helvetica under either
+    /// claim.</para>
     /// </remarks>
     /// <inheritdoc cref="Heading.Style" path="/exception[@cref='T:System.InvalidOperationException' or @cref='T:System.IndexOutOfRangeException']"/>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when text in this style holds an unpaired surrogate and is measured in
     /// an embedded font; see <see cref="TextStyle.FontRef"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from here, when <see cref="Document.StrictDiagnostics"/> is set and text of the element is
+    /// written as glyph 0, or the document has a conformance claim and the element writes Helvetica
+    /// or another Standard 14 font; the save reports them as
+    /// <see cref="LayoutDiagnosticCode.NotdefGlyph"/> and
+    /// <see cref="LayoutDiagnosticCode.UnembeddedFont"/>.
     /// </exception>
     public TextStyle? DefaultStyle { get; init; }
 

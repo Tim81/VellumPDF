@@ -81,6 +81,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - The marker the library draws on a list item, such as the nested bullet in a Standard 14 font,
     is not listed as an unencodable character when the document draws the list. A list that your
     own renderer draws through a `DrawContext` you built can still list it.
+- **`PdfCanvas.NotdefGlyphs`, `PdfDocument.NotdefGlyphs` and `NotdefGlyphWarning` (#592).** A
+  character an embedded font has no glyph for is written as glyph 0, and until now nothing said
+  so. `PdfCanvas.NotdefGlyphs` lists each glyph 0 the canvas writes, one entry per character and
+  font resource in order of first occurrence, with a `Count`; `PdfDocument.NotdefGlyphs` gathers
+  the lists of the pages whose canvas was finished. `Character` is null for glyph ids passed to
+  `PdfCanvas.ShowGlyphs`, because the canvas sees ids and not text. Each list holds at most 1,000
+  entries, and `NotdefGlyphsDropped` counts the rest. `TextEncodingWarnings` is unchanged and does
+  not list glyph 0.
+- **`LayoutDiagnosticCode.NotdefGlyph` (#592).** The layout reports each character and font
+  that was written as glyph 0, with the count, in `Document.Diagnostics`: built-in elements, list
+  markers and running bands name the character, and a custom renderer that passes glyph ids is
+  reported with the character unknown. The clause is ISO 19005-2:2011, 6.2.11.8 under a PDF/A
+  claim and ISO 14289-1:2014, 7.21.8 under PDF/UA-1; it is null with no claim. The save still
+  succeeds. `StrictDiagnostics` refuses it.
+- **`LayoutDiagnosticCode.UnembeddedFont` (#593).** While `Document.Conformance` is not `None`,
+  each paragraph, heading, list, table cell or running band that selects a named Standard 14 font
+  is reported once per element and font, with the number of font operators it wrote. A list,
+  table, heading, paragraph or running band without a style of its own reaches this, because
+  `SetDefaultFont` still applies only to `Document.Add(string)`. The clause is ISO
+  19005-2:2011, 6.2.11.4.1 or ISO 14289-1:2014, 7.21.4.1. The save still succeeds, and
+  `StrictDiagnostics` refuses it.
+
+  **Attention:** the report follows the font operator, so an empty table cell in Helvetica is
+  reported. That matches veraPDF, which fails 6.2.11.4.1 on it, while ISO 14289-1, 7.21.4.1,
+  counts a font as used only when a glyph is referenced. The human-readable text of a
+  one-dimensional barcode, set in `Barcode1D.TextFont` (Helvetica by default), selects its font
+  without the diagnostics channel and is not reported.
 - **Internal name tree and number tree writers (#241).** `NameTreeWriter` and `NumberTreeWriter`
   in `VellumPdf.Kernel` build the structures ISO 32000-2, 7.9.6 and 7.9.7 define, which the
   catalog's `/Names` and `/PageLabels` entries, and later named destinations and embedded files,
@@ -228,6 +255,44 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     not start a page: a paragraph, a heading and a list item draw it as a space, and a table cell
     and a running band write it to the font as it is, as before. A custom renderer that returns a
     zero-height `Partial` still forces a page.
+
+- **Tab stops with leaders (#298).** `Paragraph.TabStops` takes a list of `TabStop` values, and a
+  tab character in the text then places the text after it at the first stop to the right of the end
+  of the text before it. A `TabStop` has a position in points from the paragraph's left content
+  edge, a `TabAlignment` (`Left`, `Right`, `Center` or `Decimal`) and a `TabLeader` (`None`,
+  `Dots`, `Dashes` or `Rule`). A decimal stop lines up on `DecimalCharacter`, a full stop unless
+  you set it, so a Dutch figure column sets a comma.
+  - A leader is a stroked line, not text, so a text extractor does not print it. It fills the space
+    between the two texts, a quarter of the font size clear of each, and is left out when shorter
+    than half the font size. Dots are zero-length dashes with round caps, on a grid anchored at the
+    content edge so the dots of consecutive lines line up. In a tagged document the leader is an
+    artifact outside the paragraph's structure element.
+  - The text before a tab is followed by one space, so extracted text keeps `Inleiding 12` apart.
+  - Text that would start left of the end of the text before it starts there instead. A tab with no
+    stop to its right is one space, whether or not text comes straight before it. Text at a right,
+    centre or decimal stop that does not fit after the text before the tab is placed at the same
+    stop on the next line when it fits there, its leader running from the left edge; when it fits
+    at its stop nowhere, the line does not end and the text is ordinary text from the pen, so a
+    centred `1` at the right edge draws as `Inleiding 1`. Text at a left stop wraps word by word
+    from the stop. A line with a tab at a stop starts at the left edge and is not justified,
+    whatever the paragraph's alignment.
+  - `TabStop` refuses a position that is not a finite number of zero or more, and an undefined
+    alignment or leader, with `ArgumentOutOfRangeException`. `DecimalCharacter` refuses white space,
+    a control character and a surrogate with `ArgumentException`. `TabStops` refuses a null stop and
+    positions that do not strictly increase.
+  - The save refuses, with `InvalidOperationException` before any layout, a stop beyond the
+    paragraph's content width, and a leader in a paragraph with a run whose font size is zero or
+    less, or so small that the leader's line width or dash lengths would be written as `0`. The
+    document can be saved again once the page or the margins change, which cures a stop beyond the
+    width. A leader-size refusal is cured by building the paragraph again with a larger size or
+    stops without a leader, because a run's size cannot change after it is built. A
+    `ParagraphRenderer` that a renderer of your own lays out raises the leader-size refusal from
+    `Layout`.
+  - A `ParagraphRenderer` that a renderer of your own lays out in an area narrower than a stop
+    treats that stop as absent and, when a styled run of the paragraph holds a tab, reports the new
+    `LayoutDiagnosticCode.TabStopBeyondWidth` (106, severity `Error`), which `StrictDiagnostics`
+    refuses.
+  - A paragraph with no stops, or an empty list, is drawn exactly as before: a tab is a space.
 
 ### Changed
 
@@ -392,6 +457,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   change:** every `/FontFile2` stream the Kernel writes gains `/Length1 <n>`, so the stream
   dictionary, the offsets and the cross-reference move; the program bytes do not change. An
   OpenType CFF program is a `/FontFile3` stream and carries no `/Length1`, as before.
+- **The ToUnicode map no longer lists a code point against glyph 0 (#592).** A font whose
+  subset used glyph 0 wrote one `<0000> <...>` line per missing character. On a test file with
+  U+26B9 and U+1F31F, pdftotext (poppler 26.08) extracted U+1F31F for both. The map now has one
+  entry for glyph 0, `<0000> <FFFD>`, and no other. The entry exists because glyph 0 is itself
+  what ISO 19005-2, 6.2.11.8, and ISO 14289-1, 7.21.8, refuse, and U+FFFD satisfies the value
+  rule of 7.21.7. A document in which no character was mapped to glyph 0, drawn or only
+  measured, is unchanged. One in which a character was mapped to it changes only in that
+  stream, and the content stream still shows glyph 0. Glyph ids passed straight to
+  `PdfCanvas.ShowGlyphs` add no entry.
+
+  **Attention:** the file still references `.notdef`, so veraPDF still fails ISO 19005-2,
+  6.2.11.8 and ISO 14289-1, 7.21.8. The reports above are how to find it.
+
 - **On .NET 10 an empty stream was written as `/FlateDecode` with no data (#640).** `PdfStream`
   compressed through `ZLibStream`, which on .NET 10.0.15 writes nothing for empty input, so an empty
   page's `/Contents` came out as `/Filter /FlateDecode /Length 0` with an empty body, which is not
