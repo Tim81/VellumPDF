@@ -186,10 +186,10 @@ public sealed class Paragraph
     /// extracts the text sees the words apart; the space counts in the position of the end of
     /// that text. When no stop lies to the right of the pen with the space counted, the stop the
     /// text itself stayed short of is still the stop for that tab; when one does, the tab goes to
-    /// that one. A stop the text has already reached or passed is skipped. Text placed at a stop that would start left of the end of the text before it
-    /// starts there instead, so the two never overlap. The leader fills the gap between the two
-    /// texts, a quarter of the font size clear of each, and is left out when it would be shorter
-    /// than half the font size.</para>
+    /// that one. A stop the text has already reached or passed is skipped. Text placed at a stop
+    /// that would start left of the end of the text before it starts there instead, so the two
+    /// never overlap. The leader fills the gap between the two texts, a quarter of the font size
+    /// clear of each, and is left out when it would be shorter than half the font size.</para>
     /// <para>A tab with no stop to its right advances the pen by one space: the space written
     /// after the text before the tab is that advance, and a tab that no text comes straight
     /// before, such as one at the start of a line or after another tab, is drawn as a space of its
