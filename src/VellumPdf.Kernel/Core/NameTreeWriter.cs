@@ -5,7 +5,8 @@ namespace VellumPdf.Core;
 
 /// <summary>
 /// Builds a name tree (ISO 32000-2:2020, 7.9.6): keys are byte strings, ordered byte by byte.
-/// Internal, so there is no public surface to lock. Nothing calls it yet.
+/// Internal, so there is no public surface to lock. <c>NamedDestinationTable</c> calls it for the
+/// <c>/Dests</c> tree.
 /// </summary>
 /// <remarks>
 /// The layout rules and the node shape are documented on <see cref="PdfTreeNodes"/>.

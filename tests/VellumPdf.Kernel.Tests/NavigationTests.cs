@@ -19,11 +19,12 @@ using static VellumPdf.Kernel.Tests.TreeTestSupport;
 namespace VellumPdf.Kernel.Tests;
 
 /// <summary>
-/// #262, part 2: <see cref="PdfDocument.AddNamedDestination"/>, <see cref="PdfLinkAnnotation.DestName"/>
-/// and <see cref="PdfDocument.AddPageLabelRange"/>, written through the shared catalog builder on
-/// <see cref="PdfDocument.Save(Stream)"/> and <see cref="PdfDocument.PrepareForSigning"/> (ISO 32000-2,
-/// 12.3.2.4, 12.4.2, Table 161 and Table 176). Exact bytes are asserted as written, structure is read
-/// back through <c>VellumPdf.Reader</c>, and qpdf and pdfinfo resolve the destinations on their own.
+/// #262, part 2: <see cref="PdfDocument.AddNamedDestination"/>,
+/// <see cref="PdfLinkAnnotation.DestName"/> and <see cref="PdfDocument.AddPageLabelRange"/>,
+/// written through the shared catalog builder on <see cref="PdfDocument.Save(Stream)"/> and
+/// <see cref="PdfDocument.PrepareForSigning"/> (ISO 32000-2, 12.3.2.4, 12.4.2, Table 161 and Table
+/// 176). Exact bytes are asserted as written, structure is read back through
+/// <c>VellumPdf.Reader</c>, and qpdf and pdfinfo resolve the destinations on their own.
 /// </summary>
 public sealed class NavigationTests
 {
@@ -48,6 +49,15 @@ public sealed class NavigationTests
         document.PrepareForSigning(new SignaturePlaceholderOptions { SigningTime = Pinned });
 
     private static string Text(byte[] pdf) => Encoding.Latin1.GetString(pdf);
+
+    // A label prefix as written: UTF-16BE behind the byte order mark FE FF (ISO 32000-2,
+    // 7.9.2.2.2).
+    private static string PrefixText(PdfObject? value)
+    {
+        var bytes = Assert.IsType<PdfLiteralString>(value).Bytes.ToArray();
+        Assert.Equal([(byte)0xFE, (byte)0xFF], bytes[..2]);
+        return Encoding.BigEndianUnicode.GetString(bytes, 2, bytes.Length - 2);
+    }
 
     private static string CatalogObject(byte[] pdf)
     {
@@ -118,8 +128,8 @@ public sealed class NavigationTests
         return stdout;
     }
 
-    // The document the brief's table pins: 4 pages, roman then decimal labels, two destinations and one
-    // link on page 1 that names the first.
+    // A document of 4 pages with roman then decimal labels, two destinations and one link on page 1
+    // that names the first.
     private static PdfDocument Navigation(Action<PdfDocument>? extra = null)
     {
         var document = NewDocument(4, out var pages);
@@ -216,7 +226,11 @@ public sealed class NavigationTests
         var first = Assert.IsType<PdfDictionary>(walked.Entries[0].Value);
         Assert.Equal("R", Assert.IsType<PdfName>(first.Get(new PdfName("S"))).Value);
         Assert.Equal(3, Assert.IsType<PdfInteger>(first.Get(new PdfName("St"))).Value);
-        Assert.Equal("A", Assert.IsType<PdfName>(((PdfDictionary)walked.Entries[1].Value).Get(new PdfName("S"))).Value);
+        Assert.Equal("Front ", PrefixText(first.Get(new PdfName("P"))));
+        var second = (PdfDictionary)walked.Entries[1].Value;
+        Assert.Equal("A", Assert.IsType<PdfName>(second.Get(new PdfName("S"))).Value);
+        Assert.Null(second.Get(new PdfName("St")));
+        Assert.Null(second.Get(new PdfName("P")));
         var third = (PdfDictionary)walked.Entries[2].Value;
         Assert.Equal("a", Assert.IsType<PdfName>(third.Get(new PdfName("S"))).Value);
         Assert.Equal(4, Assert.IsType<PdfInteger>(third.Get(new PdfName("St"))).Value);
@@ -262,7 +276,8 @@ public sealed class NavigationTests
         });
     }
 
-    // Resolves every /Link's /Dest through the name tree as qpdf parsed it, to the page object qpdf lists.
+    // Resolves every /Link's /Dest through the name tree as qpdf parsed it, to the page object qpdf
+    // lists.
     private static void AssertQpdfResolvesEveryLink(byte[] pdf, string? password, Dictionary<string, int> expectedPageIndexByName)
     {
         List<string> baseArgs = password is null ? [] : ["--password=" + password];
@@ -322,9 +337,7 @@ public sealed class NavigationTests
             d.RegisterLinkAnnotation(d.Pages[1], new PdfLinkAnnotation { Rect = new PdfRectangle(1, 1, 5, 5), DestName = "end" })));
         AssertQpdfCheckClean(pdf);
         // Two links: one on page 1 naming chap-1 (page 3) and one on page 2 naming end (page 4).
-        var qpdfJson = WithTemp(pdf, path => Qpdf(["--json=2", "--json-key=qpdf", path]));
-        Assert.Contains("\"/Dest\": \"u:chap-1\"", qpdfJson, StringComparison.Ordinal);
-        Assert.Contains("\"/Dest\": \"u:end\"", qpdfJson, StringComparison.Ordinal);
+        AssertQpdfResolvesEveryLink(pdf, null, new Dictionary<string, int> { ["chap-1"] = 2, ["end"] = 3 });
     }
 
     [Fact]
@@ -345,13 +358,23 @@ public sealed class NavigationTests
     [Fact]
     public void Destination_roundTripsThroughTheReader()
     {
-        var (reader, root) = OpenRoot(Save(Navigation()), nameTree: true);
+        var pdf = Save(Navigation());
+        var pageObjects = PageObjectNumbers(pdf);
+        var (reader, root) = OpenRoot(pdf, nameTree: true);
         var walked = Walk(reader, root, nameTree: true);
         Assert.Equal(["chap-1", "end"], walked.Entries.Select(e => Encoding.ASCII.GetString((byte[])e.Key)).ToArray());
         var first = (PdfArray)reader.ResolveValue(walked.Entries[0].Value)!;
+        Assert.Equal(pageObjects[2], Assert.IsType<PdfIndirectReference>(first[0]).ObjectNumber);
         Assert.Equal("XYZ", Assert.IsType<PdfName>(first[1]).Value);
+        Assert.Equal(0, Assert.IsType<PdfInteger>(first[2]).Value);
         Assert.Equal(700, Assert.IsType<PdfInteger>(first[3]).Value);
         Assert.IsType<PdfNull>(first[4]);
+        var end = (PdfArray)reader.ResolveValue(walked.Entries[1].Value)!;
+        Assert.Equal(pageObjects[3], Assert.IsType<PdfIndirectReference>(end[0]).ObjectNumber);
+        Assert.Equal("XYZ", Assert.IsType<PdfName>(end[1]).Value);
+        Assert.Equal(10, Assert.IsType<PdfInteger>(end[2]).Value);
+        Assert.Equal(20, Assert.IsType<PdfInteger>(end[3]).Value);
+        Assert.IsType<PdfNull>(end[4]);
     }
 
     // ---- refusals -----------------------------------------------------------------------------
@@ -396,6 +419,18 @@ public sealed class NavigationTests
         var ex = Assert.Throws<ArgumentException>(() => document.RegisterLinkAnnotation(pages[0], link));
         Assert.Equal("annotation", ex.ParamName);
         Assert.DoesNotContain("/Subtype /Link", Text(Save(document)), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Link_withDestName_ignoresDestLeftAndDestTop()
+    {
+        var document = NewDocument(2, out var pages);
+        document.AddNamedDestination("chap-1", pages[1], 0, 0);
+        document.RegisterLinkAnnotation(pages[0], new PdfLinkAnnotation { Rect = new PdfRectangle(0, 0, 1, 1), DestName = "chap-1", DestLeft = 5, DestTop = 6 });
+        var link = Text(Save(document)).Split("endobj").Single(o => o.Contains("/Subtype /Link", StringComparison.Ordinal));
+        Assert.Contains("\n/Dest (chap-1)\n", link, StringComparison.Ordinal);
+        Assert.DoesNotContain("/XYZ", link, StringComparison.Ordinal);
+        Assert.DoesNotContain("/A ", link, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -479,6 +514,16 @@ public sealed class NavigationTests
     }
 
     [Fact]
+    public void Labels_addedOutOfOrder_areJudgedByTheirLargestStart()
+    {
+        var document = NewDocument(4, out _);
+        document.AddPageLabelRange(5, PdfPageLabelStyle.Decimal);
+        document.AddPageLabelRange(0, PdfPageLabelStyle.LowerRoman);
+        Assert.Contains("page index 5", Assert.Throws<InvalidOperationException>(() => Save(document)).Message, StringComparison.Ordinal);
+        Assert.Contains("page index 5", Assert.Throws<InvalidOperationException>(() => Sign(document)).Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Labels_startingAtTheLastPage_areAccepted_andOnePastIsRefused()
     {
         var ok = NewDocument(4, out _);
@@ -526,6 +571,15 @@ public sealed class NavigationTests
     }
 
     [Fact]
+    public void AddNamedDestination_refusesTheNextRealPastTheBound_onEitherSide()
+    {
+        var past = Math.BitIncrement(3.403e38);
+        var document = NewDocument(1, out var pages);
+        foreach (var (left, top, paramName) in new[] { (past, 0.0, "left"), (-past, 0.0, "left"), (0.0, past, "top"), (0.0, -past, "top") })
+            Assert.Equal(paramName, Assert.Throws<ArgumentOutOfRangeException>(() => document.AddNamedDestination("a", pages[0], left, top)).ParamName);
+    }
+
+    [Fact]
     public void AddNamedDestination_acceptsTheBound_andTheFileIsValid()
     {
         var document = NewDocument(1, out var pages);
@@ -544,7 +598,7 @@ public sealed class NavigationTests
         Assert.Equal("page", Assert.Throws<ArgumentException>(() => document.AddNamedDestination("a", byConstructor, 0, 0)).ParamName);
         Assert.Equal("page", Assert.Throws<ArgumentException>(() => document.AddNamedDestination("a", otherPages[0], 0, 0)).ParamName);
         Assert.NotNull(other);
-        // Nothing was added, so the name is still free and no tree is written.
+        // Nothing was added, so the name is still free.
         document.AddNamedDestination("a", document.Pages[0], 0, 0);
     }
 
@@ -577,6 +631,10 @@ public sealed class NavigationTests
         document.Dispose();
         Assert.Throws<ObjectDisposedException>(() => document.AddNamedDestination("a", pages[0], 0, 0));
         Assert.Throws<ObjectDisposedException>(() => document.AddPageLabelRange(0, PdfPageLabelStyle.Decimal));
+        // The disposed check comes before the argument checks, so a null name or page is not
+        // reported first.
+        Assert.Throws<ObjectDisposedException>(() => document.AddNamedDestination(null!, pages[0], 0, 0));
+        Assert.Throws<ObjectDisposedException>(() => document.AddNamedDestination("a", null!, 0, 0));
     }
 
     [Fact]
@@ -651,32 +709,56 @@ public sealed class NavigationTests
         using var cert = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(1));
         var pinned = new DateTimeOffset(2026, 1, 15, 10, 30, 0, TimeSpan.Zero);
 
-        var document = Navigation();
+        // Two ranges with a prefix and a first number, so /P and /St are compared as well as /S.
+        var document = NewDocument(4, out var pages);
+        document.AddPageLabelRange(0, PdfPageLabelStyle.LowerRoman, "Front ", 3);
+        document.AddPageLabelRange(2, PdfPageLabelStyle.Decimal);
+        document.AddNamedDestination("chap-1", pages[2], 0, 700);
+        document.AddNamedDestination("end", pages[3], 10, 20);
+        document.RegisterLinkAnnotation(pages[0], new PdfLinkAnnotation { Rect = new PdfRectangle(10, 10, 60, 30), DestName = "chap-1" });
         using var signed = new MemoryStream();
         document.Sign(signed, new PdfSignatureSettings { Certificate = cert, TimestampClient = new TestTimestampClient(pinned) });
         var first = signed.ToArray();
         var withDss = DssBuilder.AddLongTermValidation(first, new CannedRevocation());
         var archived = ArchiveTimestampBuilder.AddArchiveTimestamp(withDss, new TestTimestampClient(pinned));
 
-        (string[] Names, long[] Starts, string[] Styles) Trees(byte[] pdf)
+        static string Describe(PdfObject? value) => value switch
+        {
+            null => "absent",
+            PdfName n => "/" + n.Value,
+            PdfInteger i => i.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            PdfReal r => r.Value.ToString("R", System.Globalization.CultureInfo.InvariantCulture),
+            PdfNull => "null",
+            PdfIndirectReference r => r.ObjectNumber + " R",
+            PdfLiteralString s => Convert.ToHexString(s.Bytes.Span),
+            PdfArray a => "[" + string.Join(' ', Enumerable.Range(0, a.Count).Select(i => Describe(a[i]))) + "]",
+            _ => value.GetType().Name,
+        };
+
+        (string[] Names, string[] Dests, long[] Starts, string[] Ranges) Trees(byte[] pdf)
         {
             var (r, dests) = OpenRoot(pdf, nameTree: true);
-            var names = Walk(r, dests, nameTree: true).Entries.Select(e => Encoding.ASCII.GetString((byte[])e.Key)).ToArray();
+            var walkedDests = Walk(r, dests, nameTree: true).Entries;
+            var names = walkedDests.Select(e => Encoding.ASCII.GetString((byte[])e.Key)).ToArray();
+            var resolved = walkedDests.Select(e => Describe(r.ResolveValue(e.Value))).ToArray();
             var (r2, labels) = OpenRoot(pdf, nameTree: false);
             var ranges = Walk(r2, labels, nameTree: false).Entries;
-            return (names, [.. ranges.Select(e => (long)e.Key)],
-                [.. ranges.Select(e => ((PdfName)((PdfDictionary)e.Value).Get(new PdfName("S"))!).Value)]);
+            return (names, resolved, [.. ranges.Select(e => (long)e.Key)],
+                [.. ranges.Select(e => string.Join(' ', new[] { "S", "P", "St" }.Select(k => k + "=" + Describe(((PdfDictionary)e.Value).Get(new PdfName(k))))))]);
         }
 
+        var pageObjects = PageObjectNumbers(first);
         var expected = Trees(first);
         Assert.Equal(["chap-1", "end"], expected.Names);
+        Assert.Equal([$"[{pageObjects[2]} R /XYZ 0 700 null]", $"[{pageObjects[3]} R /XYZ 10 20 null]"], expected.Dests);
         Assert.Equal([0L, 2L], expected.Starts);
-        Assert.Equal(["r", "D"], expected.Styles);
+        Assert.Equal(["S=/r P=FEFF00460072006F006E00740020 St=3", "S=/D P=absent St=absent"], expected.Ranges);
         foreach (var later in new[] { Trees(withDss), Trees(archived) })
         {
             Assert.Equal(expected.Names, later.Names);
+            Assert.Equal(expected.Dests, later.Dests);
             Assert.Equal(expected.Starts, later.Starts);
-            Assert.Equal(expected.Styles, later.Styles);
+            Assert.Equal(expected.Ranges, later.Ranges);
         }
     }
 

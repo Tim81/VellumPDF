@@ -448,8 +448,8 @@ doc.RegisterLinkAnnotation(page1, new PdfLinkAnnotation
 ```
 
 A name has 1 to 127 characters from `A-Z a-z 0-9 . _ - :`. Set `DestName` instead of `Uri` and
-`DestPage`, not beside them. `Save` refuses a link whose name no destination carries, so add the
-destination and save again.
+`DestPage`, not beside them. `Save` refuses a link on one of the document's pages whose name no
+destination carries, so add the destination and save again.
 
 ### Page labels
 
@@ -461,7 +461,9 @@ doc.AddPageLabelRange(20, PdfPageLabelStyle.Decimal, "A-", firstNumber: 1); // A
 
 A range runs from its start page to the page before the next range. A start at or past the page
 count makes `Save` throw before anything is written. Without a range at page 0 the first pages are
-numbered 1, 2, 3 as in a document with no labels.
+numbered 1, 2, 3 as in a document with no labels. A prefix has at most 16,382 characters (32,766
+bytes as UTF-16BE, inside the 32,767 bytes of ISO 19005-2, 6.1.13) and may not hold an unpaired
+surrogate.
 
 ### Document outline (bookmarks)
 

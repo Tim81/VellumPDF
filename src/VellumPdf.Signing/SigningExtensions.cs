@@ -58,11 +58,12 @@ public static class SigningExtensions
     /// A registered form field's <see cref="FormFieldOptions.FontSize"/> is not finite. That
     /// property's boundary documentation names the value and the field. It is also thrown for a
     /// document with no pages, one already written, and one that holds a cycle; see
-    /// <see cref="PdfDocument.PrepareForSigning"/>. It is also thrown, before anything is written, for
-    /// a link whose <see cref="VellumPdf.Annotations.PdfLinkAnnotation.DestName"/> no
+    /// <see cref="PdfDocument.PrepareForSigning"/>. It is also thrown, before anything is written,
+    /// for a link on one of the document's pages whose
+    /// <see cref="VellumPdf.Annotations.PdfLinkAnnotation.DestName"/> no
     /// <see cref="PdfDocument.AddNamedDestination"/> call added and for a
-    /// <see cref="PdfDocument.AddPageLabelRange"/> range that starts at or after the page count; the
-    /// document stays usable.
+    /// <see cref="PdfDocument.AddPageLabelRange"/> range that starts at or after the page count;
+    /// the document stays usable.
     /// </exception>
     public static void Sign(this PdfDocument doc, Stream output, PdfSignatureSettings settings)
     {

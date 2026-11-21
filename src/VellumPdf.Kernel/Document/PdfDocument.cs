@@ -281,15 +281,16 @@ public sealed class PdfDocument : IDisposable
             : null;
 
     /// <summary>
-    /// Refuses, before anything is written, what the destinations and page labels need that only the
-    /// finished page list can say: a link that names a destination nobody added, and a label range
-    /// that starts past the last page. It runs at save, after every <c>AddNamedDestination</c>,
-    /// <c>AddPageLabelRange</c>, <c>AddPage</c> and <c>RegisterLinkAnnotation</c> call has been made,
-    /// so the order of those calls does not matter. After it passes, the two tables' <c>Build</c>
-    /// methods cannot throw, so no refusal about them lands after the document is marked written.
-    /// It is not part of <see cref="ValidateSaveOptions"/> or <see cref="EnsureCanSave"/>, because
-    /// the layout engine runs those before it appends the pages, when every label range would look
-    /// as if it started past the end.
+    /// Refuses, before anything is written, what the destinations and page labels need that only
+    /// the finished page list can say: a link that names a destination nobody added, and a label
+    /// range that starts past the last page. It runs at save, after every
+    /// <c>AddNamedDestination</c>, <c>AddPageLabelRange</c>, <c>AddPage</c> and
+    /// <c>RegisterLinkAnnotation</c> call has been made, so the order of those calls does not
+    /// matter. After it passes, the two tables' <c>Build</c> methods cannot throw, so no refusal
+    /// about them lands after the document is marked written. It is not part of
+    /// <see cref="ValidateSaveOptions"/> or <see cref="EnsureCanSave"/>, because the layout engine
+    /// runs those before it appends the pages, when every label range would look as if it started
+    /// past the end.
     /// </summary>
     private void RefuseUnresolvedNavigation()
     {
@@ -410,27 +411,31 @@ public sealed class PdfDocument : IDisposable
     /// <b>A link that sets <see cref="PdfLinkAnnotation.DestName"/> together with
     /// <see cref="PdfLinkAnnotation.Uri"/> (an empty string counts) or
     /// <see cref="PdfLinkAnnotation.DestPage"/> is refused at this call,</b> before the annotation
-    /// is stored. ISO 32000-2, Table 176 does not permit <c>Dest</c> beside an <c>A</c> entry, and a
-    /// page and a name would both fill <c>Dest</c>. A link without a <c>DestName</c> is not checked
-    /// here.
-    /// <para><b>Silently ignored:</b> a link registered on a page that is not one of this document's
-    /// pages is never written, <c>DestName</c> included. A
-    /// <see cref="PdfLinkAnnotation.DestPage"/> that is not one of the document's pages gives a link
-    /// with neither <c>/A</c> nor <c>/Dest</c>.</para>
+    /// is stored. ISO 32000-2, Table 176 does not permit <c>Dest</c> beside an <c>A</c> entry, and
+    /// a page and a name would both fill <c>Dest</c>. A link without a <c>DestName</c> is not
+    /// checked here.
+    /// <para><b>Silently ignored:</b> a link registered on a page that is not one of this
+    /// document's pages is never written, <c>DestName</c> included. A
+    /// <see cref="PdfLinkAnnotation.DestPage"/> that is not one of the document's pages gives a
+    /// link with no <c>/A</c>, no <c>/Dest</c> and no <c>Uri</c>. A link registered after the
+    /// document was written is accepted and never written.</para>
     /// <para><b>Do not pass</b> an annotation with both <see cref="PdfLinkAnnotation.Uri"/> and
     /// <see cref="PdfLinkAnnotation.DestPage"/>. The save writes the <c>/A</c> action and drops the
     /// page without a message. It is accepted today, and 3.0 will refuse it.</para>
-    /// <para>A name that no destination carries is refused later, by <see cref="Save(Stream)"/>,
-    /// <see cref="SaveAsync"/> and <see cref="PrepareForSigning"/>, not here, because the
-    /// destination may still be added.</para>
+    /// <para>A link on one of this document's pages whose name no destination carries is refused
+    /// later, by <see cref="Save(Stream)"/>, <see cref="SaveAsync"/> and
+    /// <see cref="PrepareForSigning"/>, not here, because the destination may still be
+    /// added.</para>
     /// </remarks>
     /// <param name="page">The page that holds the link.</param>
     /// <param name="annotation">The link.</param>
     /// <exception cref="ArgumentNullException"><paramref name="page"/> is
-    /// <see langword="null"/>.</exception>
+    /// <see langword="null"/>; its <c>ParamName</c> is <c>key</c>, from the lookup that stores the
+    /// link, not <c>page</c>.</exception>
     /// <exception cref="ArgumentException"><paramref name="annotation"/> sets
-    /// <see cref="PdfLinkAnnotation.DestName"/> together with <see cref="PdfLinkAnnotation.Uri"/> or
-    /// <see cref="PdfLinkAnnotation.DestPage"/> (<c>ParamName</c> <c>annotation</c>).</exception>
+    /// <see cref="PdfLinkAnnotation.DestName"/> together with <see cref="PdfLinkAnnotation.Uri"/>
+    /// or <see cref="PdfLinkAnnotation.DestPage"/> (<c>ParamName</c>
+    /// <c>annotation</c>).</exception>
     public void RegisterLinkAnnotation(PdfPage page, PdfLinkAnnotation annotation)
     {
         // A null annotation is not refused: on a page this document does not own it never reaches a
@@ -453,35 +458,38 @@ public sealed class PdfDocument : IDisposable
 
     /// <summary>
     /// Adds a named destination: <paramref name="name"/> stands for the point
-    /// (<paramref name="left"/>, <paramref name="top"/>) of <paramref name="page"/>, in default user
-    /// space at the viewer's current zoom (<c>/XYZ left top null</c>, ISO 32000-2, Table 149). A save
-    /// writes the destinations into the catalog's <c>/Names</c> tree under <c>/Dests</c> (12.3.2.4),
-    /// where a link finds one through <see cref="PdfLinkAnnotation.DestName"/> and an outside
-    /// reference finds one by name (<c>#nameddest=</c>). Nothing is written until a save.
+    /// (<paramref name="left"/>, <paramref name="top"/>) of <paramref name="page"/>, in default
+    /// user space at the viewer's current zoom (<c>/XYZ left top null</c>, ISO 32000-2, Table 149).
+    /// A save writes the destinations into the catalog's <c>/Names</c> tree under <c>/Dests</c>
+    /// (12.3.2.4), where a link finds one through <see cref="PdfLinkAnnotation.DestName"/> and an
+    /// outside reference finds one by name (<c>#nameddest=</c>). Nothing is written until a save.
     /// </summary>
     /// <remarks>
     /// <b>A name outside the rule, a repeated name, a foreign page and a bad coordinate are
     /// refused at this call.</b> A name has 1 to 127 characters, each one of
-    /// <c>A-Z a-z 0-9 . _ - :</c>; the rule is this library's and narrower than 7.9.6 needs, so that
-    /// a name is the same bytes in every encoding and within the limits of ISO 19005-2, 6.1.13 for a
-    /// name object and a string. <c>left</c> and <c>top</c> must be finite and
+    /// <c>A-Z a-z 0-9 . _ - :</c>; the rule is this library's and narrower than 7.9.6 needs, so
+    /// that a name is the same bytes in every encoding and within the limits of ISO 19005-2, 6.1.13
+    /// for a name object and a string. <c>left</c> and <c>top</c> must be finite and
     /// within ±3.403 × 10^38, the real range of ISO 32000-1, Table C.1, which this library applies
     /// by its own choice. A document that has been written, or disposed, refuses a further
-    /// destination, because it could not reach the file.
+    /// destination, because it could not reach the file; that check comes before the arguments are
+    /// checked, so a null argument on such a document throws <see cref="ObjectDisposedException"/>
+    /// or <see cref="InvalidOperationException"/>, not <see cref="ArgumentNullException"/>.
     /// <para><b>Silently ignored:</b> that no link names the destination, which is still written
     /// because an outside reference can use it; and coordinates that lie outside the page's media
     /// box, which are written as given because ISO 32000-2 sets no rule for them. Names are written
     /// in ordinal order, whatever order they were added in.</para>
-    /// <para>A link that names a destination which was never added is refused by
-    /// <see cref="Save(Stream)"/>, not here, so the destination can still be added and the save
-    /// repeated.</para>
+    /// <para>A link on one of this document's pages that names a destination which was never added
+    /// is refused by <see cref="Save(Stream)"/>, not here, so the destination can still be added
+    /// and the save repeated.</para>
     /// </remarks>
     /// <param name="name">The destination's name.</param>
     /// <param name="page">A page returned by this document's <see cref="AddPage()"/>.</param>
     /// <param name="left">Horizontal position of the point, in default user space.</param>
     /// <param name="top">Vertical position of the point, in default user space.</param>
     /// <exception cref="ObjectDisposedException">The document has been disposed.</exception>
-    /// <exception cref="InvalidOperationException">The document has already been written.</exception>
+    /// <exception cref="InvalidOperationException">The document has already been
+    /// written.</exception>
     /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="page"/>
     /// is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="name"/> is empty, longer than 127
@@ -502,8 +510,8 @@ public sealed class PdfDocument : IDisposable
     }
 
     /// <summary>
-    /// Starts a page-label range at <paramref name="startPageIndex"/>: that page and the pages after
-    /// it, up to the next range, are labelled in <paramref name="style"/> with
+    /// Starts a page-label range at <paramref name="startPageIndex"/>: that page and the pages
+    /// after it, up to the next range, are labelled in <paramref name="style"/> with
     /// <paramref name="prefix"/> in front, counting from <paramref name="firstNumber"/> (ISO
     /// 32000-2, 12.4.2 and Table 161). A save writes the ranges as the catalog's <c>/PageLabels</c>
     /// number tree. Nothing is written until a save.
@@ -512,21 +520,21 @@ public sealed class PdfDocument : IDisposable
     /// <b>A negative index, a first number below 1, an undefined style, a second range at the same
     /// start and a bad prefix are refused at this call.</b> A prefix may have at most 16,382
     /// characters and may not hold an unpaired surrogate. It is written as UTF-16BE, and 16,382
-    /// characters are the most that fit the 32,767-byte string limit of ISO 19005-2, 6.1.13 (derived
-    /// from ISO 32000-1, Table C.1), which this library applies to the prefix whatever the
-    /// conformance level. A document that has been
-    /// written, or disposed, refuses a further range.
+    /// characters are the most that fit the 32,767-byte string limit of ISO 19005-2, 6.1.13
+    /// (derived from ISO 32000-1, Table C.1), which this library applies to the prefix whatever the
+    /// conformance level. A document that has been written, or disposed, refuses a further range.
     /// <para><b>A range that starts at or after the page count is refused by the save.</b>
-    /// <see cref="Save(Stream)"/>, <see cref="SaveAsync"/> and <see cref="PrepareForSigning"/> throw
-    /// <see cref="InvalidOperationException"/> before anything is written, because no page can show
-    /// the range. The index is not compared with the page count here, so a range may be added before
-    /// its pages exist. A range cannot be removed, so the way to retry is to add pages.</para>
+    /// <see cref="Save(Stream)"/>, <see cref="SaveAsync"/> and <see cref="PrepareForSigning"/>
+    /// throw <see cref="InvalidOperationException"/> before anything is written, because no page
+    /// can show the range. The index is not compared with the page count here, so a range may be
+    /// added before its pages exist. A range cannot be removed, so the way to retry is to add
+    /// pages.</para>
     /// <para><b>Silently ignored:</b> the order of the calls, since ranges are sorted by start; an
     /// empty <paramref name="prefix"/>, which is the same as none; and a
     /// <see cref="PdfPageLabelStyle.None"/> range with no prefix, which labels its pages with the
-    /// empty string. When no range starts at page 0, the save adds one there that numbers in decimal
-    /// from 1, because 12.4.2 requires a value for page index 0; those pages read as they do without
-    /// labels.</para>
+    /// empty string. When no range starts at page 0, the save adds one there that numbers in
+    /// decimal from 1, because 12.4.2 requires a value for page index 0; those pages read as they
+    /// do without labels.</para>
     /// </remarks>
     /// <param name="startPageIndex">Zero-based index of the range's first page.</param>
     /// <param name="style">How the numeric part is written.</param>
@@ -534,7 +542,8 @@ public sealed class PdfDocument : IDisposable
     /// none.</param>
     /// <param name="firstNumber">The number of the range's first page; 1 or more.</param>
     /// <exception cref="ObjectDisposedException">The document has been disposed.</exception>
-    /// <exception cref="InvalidOperationException">The document has already been written.</exception>
+    /// <exception cref="InvalidOperationException">The document has already been
+    /// written.</exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="startPageIndex"/> is negative,
     /// <paramref name="firstNumber"/> is below 1, or <paramref name="style"/> is not a member of
     /// <see cref="PdfPageLabelStyle"/>.</exception>
@@ -1384,11 +1393,12 @@ public sealed class PdfDocument : IDisposable
     /// property's boundary documentation names the value and the field. It is also thrown when the
     /// document has no pages ("The document has no pages."), and when an array, dictionary, stream or
     /// structure element in the document holds itself. It is also thrown, before anything is
-    /// written, for a link whose <see cref="PdfLinkAnnotation.DestName"/> no
-    /// <see cref="AddNamedDestination"/> call added and for a <see cref="AddPageLabelRange"/> range
-    /// that starts at or after the page count, as <see cref="Save(System.IO.Stream)"/> describes; the
-    /// document stays usable. Serialisation runs on a thread-pool
-    /// thread, so the exception is rethrown here when the wrapping task is awaited.
+    /// written, for a link on one of the document's pages whose
+    /// <see cref="PdfLinkAnnotation.DestName"/> no <see cref="AddNamedDestination"/> call added and
+    /// for a <see cref="AddPageLabelRange"/> range that starts at or after the page count, as
+    /// <see cref="Save(System.IO.Stream)"/> describes; the document stays usable. Serialisation
+    /// runs on a thread-pool thread, so the exception is rethrown here when the wrapping task is
+    /// awaited.
     /// </exception>
     /// <exception cref="OperationCanceledException">
     /// <paramref name="cancellationToken"/> is cancelled before the serialisation starts or before the
@@ -1507,9 +1517,10 @@ public sealed class PdfDocument : IDisposable
     /// structure element in it holds itself, or a registered form field's
     /// <see cref="FormFieldOptions.FontSize"/> is not finite. That property's boundary documentation
     /// names the value and the field. It is also thrown, before anything is written, for a link
-    /// whose <see cref="PdfLinkAnnotation.DestName"/> no <see cref="AddNamedDestination"/> call
-    /// added and for a <see cref="AddPageLabelRange"/> range that starts at or after the page count,
-    /// as <see cref="Save(System.IO.Stream)"/> describes; the document stays usable.
+    /// on one of the document's pages whose <see cref="PdfLinkAnnotation.DestName"/> no
+    /// <see cref="AddNamedDestination"/> call added and for a <see cref="AddPageLabelRange"/> range
+    /// that starts at or after the page count, as <see cref="Save(System.IO.Stream)"/> describes;
+    /// the document stays usable.
     /// </exception>
     public byte[] PrepareForSigning(SignaturePlaceholderOptions options)
     {
@@ -1933,9 +1944,9 @@ public sealed class PdfDocument : IDisposable
         }
 
         // Named destinations and page labels (#262), only when the document has some, so a
-        // document without them keeps its catalog. Both roots stay direct in the catalog: Tables 29
-        // and 28 do not ask for an indirect reference, and the example in 12.4.2 writes PageLabels
-        // inline.
+        // document without them keeps its catalog. Both roots stay direct in the catalog: ISO
+        // 32000-2 Table 29 and ISO 32000-1 Table 28 do not ask for an indirect reference, and the
+        // example in 12.4.2 writes PageLabels inline.
         if (parts.Dests is not null)
             catalog.Set(new PdfName("Names"), new PdfDictionary().Set(new PdfName("Dests"), parts.Dests));
         if (parts.PageLabels is not null)

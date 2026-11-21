@@ -88,9 +88,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   a choice of this library because 12.4.2 sets no rule there. An empty table builds nothing and leaves
   the object numbers alone. A bad name, a duplicate, a coordinate that is not finite or lies beyond
   ±3.403 × 10^38 (the real range of ISO 32000-1, Table C.1), a first number below 1, an unpaired
-  surrogate in a prefix and a label over 32,767 characters are refused. A whole coordinate inside
-  the 32-bit integer range is written as an integer, and a whole one outside it as a real, as
-  `PdfReal` does since #646.
+  surrogate in a prefix and a prefix over 16,382 characters (written as UTF-16BE with a byte order
+  mark, 2 + 2n bytes, so 16,382 characters are 32,766 bytes within the 32,767 bytes of ISO 19005-2,
+  6.1.13) are refused. A whole coordinate inside the 32-bit integer range is written as an
+  integer, and a whole one outside it as a real, as `PdfReal` does since #646.
 - **Named destinations, links by name and page labels on `PdfDocument` (#262, part 2).**
   `AddNamedDestination(name, page, left, top)` names a point on a page; a save writes the names
   into the catalog's `/Names` tree under `/Dests` (ISO 32000-2, 12.3.2.4), so an outside reference
@@ -102,19 +103,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `Save` and `PrepareForSigning`, write the same trees, so a signed document and its extensions
   keep them. A name has 1 to 127 characters from `A-Z a-z 0-9 . _ - :`. These are refused at
   the call: a repeated name or a second range at the same start (`ArgumentException`); a page
-  that this document's `AddPage` did not return, or a coordinate that is NaN, infinite or beyond
+  that this document's `AddPage` did not return (`ArgumentException`); a prefix with an unpaired
+  surrogate or over 16,382 characters (`ArgumentException`, `ParamName` `prefix`); a null name or
+  page (`ArgumentNullException`); a coordinate that is NaN, infinite or beyond
   ±3.403 × 10^38 (the real range of ISO 32000-1, Table C.1), a negative start index, a first number
-  below 1 or an undefined style (`ArgumentOutOfRangeException` for the last four); a call after the
+  below 1 or an undefined style (`ArgumentOutOfRangeException` for these four); a call after the
   document was written (`InvalidOperationException`) or disposed (`ObjectDisposedException`); a
   `DestName` outside the rule (`ArgumentException`, from the initializer); and a link that sets
-  `DestName` together with `Uri` or `DestPage` (`ArgumentException` from
-  `RegisterLinkAnnotation`, because ISO 32000-2, Table 176 does not permit `Dest` beside `A`).
-  `Save`, `SaveAsync`, `PrepareForSigning`, `Sign`, `SignAsync` and `DocumentRenderer.Render`
-  refuse, with `InvalidOperationException` and before anything is written, a link whose `DestName`
-  no destination carries and a label range that starts at or after the page count; the document
-  stays usable, so adding the destination or the page and saving again writes the file once. A
-  `Uri` together with `DestPage` still writes only the `/A` action; the docs now say so, and
-  3.0 will refuse the pair. A document that uses none of the new members writes the same bytes as
+  `DestName` together with `Uri` (`ArgumentException` from `RegisterLinkAnnotation`, because
+  ISO 32000-2, Table 176 does not permit `Dest` beside `A`) or with `DestPage` (the same
+  exception, because both fill `Dest`).
+  `Save`, `SaveAsync`, `PrepareForSigning`, `Sign` and `SignAsync` refuse, with
+  `InvalidOperationException` and before anything is written, a link on one of the document's
+  pages whose `DestName` no destination carries, and a label range that starts at or after the page
+  count; the document stays usable, so adding the destination or the page and saving again
+  succeeds. `DocumentRenderer.Render` raises the same refusal after its layout, and the layout's
+  pages stay in the kernel document: fix it and call `PdfDocument.Save`, because a second `Render`
+  lays them out again. A `Uri` together with `DestPage` still writes only the `/A` action; the
+  docs now say so, and 3.0 will refuse the pair. A document that uses none of the new members writes the same bytes as
   before. With no range at page 0 the save adds a decimal one there, as 12.4.2 requires.
 - **`GifLoadOptions` and `GifImageLoader.Load(byte[], GifLoadOptions)` (#498).** One property,
   `PlaceOnLogicalScreen`, default `false`. With it set the loader refuses what section 20.a rules

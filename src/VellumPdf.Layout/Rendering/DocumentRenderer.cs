@@ -314,13 +314,13 @@ public sealed class DocumentRenderer
     /// the kernel document has no pages, or this document has already been written, or the kernel
     /// document's conformance level refuses its encryption settings, or an element's input cannot
     /// be laid out, or a registered font lacks a table the write needs. It is also thrown, by the
-    /// final write and so after the layout, when the kernel document holds a link whose
-    /// <see cref="VellumPdf.Annotations.PdfLinkAnnotation.DestName"/> no <see cref="PdfDocument.AddNamedDestination"/> call
-    /// added, or a <see cref="PdfDocument.AddPageLabelRange"/> range that starts at or after the
-    /// number of pages the layout produced. The layout's pages are then already in the kernel
-    /// document, which is not marked written: calling this method again lays them out a second
-    /// time, so fix the kernel document and save it with
-    /// <see cref="PdfDocument.Save(System.IO.Stream)"/> instead.
+    /// final write and so after the layout, when the kernel document holds a link on one of
+    /// its pages whose <see cref="VellumPdf.Annotations.PdfLinkAnnotation.DestName"/> no
+    /// <see cref="PdfDocument.AddNamedDestination"/> call added, or a
+    /// <see cref="PdfDocument.AddPageLabelRange"/> range that starts at or after the number of
+    /// pages the layout produced. The layout's pages are then already in the kernel document, which
+    /// is not marked written: calling this method again lays them out a second time, so fix the
+    /// kernel document and save it with <see cref="PdfDocument.Save(System.IO.Stream)"/> instead.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// The margins, header and footer together leave the content area no positive size, or an
@@ -380,7 +380,9 @@ public sealed class DocumentRenderer
         // them there with the document not marked as written, so a retry laid out again on top of
         // them and wrote every page twice (#530). The kernel document marks itself written once
         // these checks have passed, and a failure after that burns it; so after this point a failure
-        // either added no pages or leaves the document unable to be written again.
+        // either added no pages, or leaves the document unable to be written again, or is the
+        // navigation refusal (a link to a missing name, a label range past the last page), which
+        // adds the pages and leaves the kernel document writable.
         // With nothing added the layout only checks the page geometry and the bands and adds no page,
         // so it runs first and "no pages" follows, as it always did.
         if (_renderers.Count == 0) RunLayout();

@@ -25,7 +25,7 @@ namespace VellumPdf.Document;
 internal sealed class NamedDestinationTable
 {
     // ISO 32000-1 Table C.1 (physical p. 657) gives 3.403e38 as the largest real; PdfReal documents
-    // that figure for every other coordinate in the library.
+    // the figure.
     // A whole value outside the 32-bit integer range is written as a real token (PdfNumberFormat),
     // so every value up to this bound is writable. The bound is symmetric. The library applies it
     // by its own choice: PdfReal itself accepts any finite value.

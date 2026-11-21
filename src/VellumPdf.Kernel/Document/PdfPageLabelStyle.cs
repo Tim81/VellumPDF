@@ -9,8 +9,8 @@ namespace VellumPdf.Document;
 /// </summary>
 /// <remarks>
 /// <b>A value that is not one of the members below is refused.</b>
-/// <see cref="PdfDocument.AddPageLabelRange"/> throws <see cref="ArgumentOutOfRangeException"/> from
-/// the call, naming <c>style</c>, because there is no <c>/S</c> value to write for it.
+/// <see cref="PdfDocument.AddPageLabelRange"/> throws <see cref="ArgumentOutOfRangeException"/>
+/// from the call, naming <c>style</c>, because there is no <c>/S</c> value to write for it.
 /// </remarks>
 public enum PdfPageLabelStyle
 {
@@ -27,11 +27,11 @@ public enum PdfPageLabelStyle
     /// <summary>Lower-case Roman numerals: i, ii, iii. Written as <c>/S /r</c>.</summary>
     LowerRoman = 3,
 
-    /// <summary>Upper-case letters: A to Z for the first 26 pages of the range, then AA to ZZ for the
-    /// next 26, then AAA. The letter repeats; it is not base 26. Written as <c>/S /A</c>.</summary>
+    /// <summary>Upper-case letters: the numbers 1 to 26 are A to Z, 27 to 52 are AA to ZZ and 53
+    /// starts AAA. The letter repeats; it is not base 26. Written as <c>/S /A</c>.</summary>
     UpperLetters = 4,
 
-    /// <summary>Lower-case letters: a to z for the first 26 pages of the range, then aa to zz for the
-    /// next 26, then aaa. The letter repeats; it is not base 26. Written as <c>/S /a</c>.</summary>
+    /// <summary>Lower-case letters: the numbers 1 to 26 are a to z, 27 to 52 are aa to zz and 53
+    /// starts aaa. The letter repeats; it is not base 26. Written as <c>/S /a</c>.</summary>
     LowerLetters = 5,
 }

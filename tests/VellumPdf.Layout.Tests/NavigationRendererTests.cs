@@ -11,8 +11,8 @@ namespace VellumPdf.Layout.Tests;
 
 /// <summary>
 /// #262: a <see cref="PdfDocument"/> that already holds page-label ranges, handed to
-/// <see cref="DocumentRenderer"/>. The renderer runs the page-independent save checks before it lays
-/// out, when the document has no pages, so the range check must not be among them.
+/// <see cref="DocumentRenderer"/>. The renderer runs the page-independent save checks before it
+/// lays out, when the document has no pages, so the range check must not be among them.
 /// </summary>
 public sealed class NavigationRendererTests
 {

@@ -209,8 +209,8 @@ public sealed class CatalogGoldenTests
                 break;
             case "navigation":
             case "navigation-pdfa2u":
-                // Named destinations, a link by name and two label ranges (#262): four pages, so the
-                // ranges and the destinations land on different ones.
+                // Named destinations, a link by name and two label ranges (#262): four pages, so
+                // the ranges and the destinations land on different ones.
                 var more = Enumerable.Range(0, 3).Select(_ => document.AddPage()).ToArray();
                 document.AddPageLabelRange(0, PdfPageLabelStyle.LowerRoman);
                 document.AddPageLabelRange(2, PdfPageLabelStyle.Decimal);
