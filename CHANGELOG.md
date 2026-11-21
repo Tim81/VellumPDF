@@ -536,8 +536,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   its right, because the space is dropped at the start of a line. This is a deliberate output
   change for one class of input: a justified line, other than the last of its paragraph, that holds
   an embedded-font run and a `LinkUri` run. A standard-14 link on such a mixed line moves the same
-  way, and so does the link in a justified `Heading` built from runs. Left, centred and right lines, the last line of a justified paragraph,
-  a line with no link and a line in standard-14 fonts only save the same bytes as before.
+  way, and so does the link in a justified `Heading` built from runs. Left, centred and right
+  lines, the last line of a justified paragraph, a line with no link and a line in standard-14
+  fonts only save the same bytes as before.
   `TextStyle.LinkUri` now states the rule once for both kinds of face.
 - **A long running-band template costs what fits the content width, not the template's length, on
   every page (#518).** `RunningBand.Resolve` built the whole substituted text for each band on each
