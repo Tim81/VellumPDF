@@ -484,8 +484,9 @@ public sealed class Document : IDisposable
     /// right-hand page: nothing configures the other side.</para>
     /// <para>A custom <see cref="IRenderer"/> is offered the content area of the page it is laid
     /// out on, so when <see cref="EdgeInsets.Left"/> and <see cref="EdgeInsets.Right"/> differ its
-    /// <see cref="LayoutContext.Area"/> has a different X from one page to the next. A renderer that keeps an X from an earlier <see cref="IRenderer.Layout"/> call must
-    /// not reuse it on the next page.</para>
+    /// <see cref="LayoutContext.Area"/> has a different X from one page to the next. A renderer
+    /// that keeps an X from an earlier <see cref="IRenderer.Layout"/> call must not reuse it on
+    /// the next page.</para>
     /// <para>The value is read when a save lays the document out. A value set after the document
     /// has saved is stored and never used, because a document saves once. A refused save that
     /// failed before layout started leaves the document usable, and a value set before the retry
