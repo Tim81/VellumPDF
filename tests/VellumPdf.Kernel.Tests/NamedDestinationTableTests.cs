@@ -207,11 +207,11 @@ public sealed class NamedDestinationTableTests
         var page = NewPage();
         var pageRef = ReservePage(registry);
         var table = new NamedDestinationTable();
-        table.Add("a", page, 2147483648.0, -2147483648.0);
+        table.Add("a", page, 2147483648.0, -2147483649.0);
 
         table.Build(registry, new Dictionary<PdfPage, PdfIndirectReference> { [page] = pageRef });
 
-        Assert.Equal("[1 0 R /XYZ 2147483648.0 -2147483648.0 null]", ObjectText(registry, 2));
+        Assert.Equal("[1 0 R /XYZ 2147483648.0 -2147483649.0 null]", ObjectText(registry, 2));
     }
 
     // ---- exact bytes --------------------------------------------------------------------------
