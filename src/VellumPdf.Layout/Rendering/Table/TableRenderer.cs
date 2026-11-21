@@ -946,8 +946,9 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
 
     /// <summary>
     /// The TH or TD for a cell, with its attributes and the paragraph it holds. A cell that holds
-    /// nothing is always a TD, never a TH, because the Tagged PDF Best Practice Guide (3.5) reserves
-    /// TH for cells that head something; only a slice with no line left passes no paragraph.
+    /// nothing is always a TD, never a TH: the table checklist in the Tagged PDF Best Practice
+    /// Guide (4.2.6.2) says "empty cells are always TD cells, never TH cells". Only a slice with
+    /// no line left passes no paragraph.
     /// </summary>
     private static PdfStructElem NewCellElement(Cell cell, Row row, int rowSpan, int colSpan, PdfStructElem? paragraph)
     {
