@@ -106,6 +106,8 @@ public sealed class Document : IDisposable
     /// <see cref="LayoutDiagnosticCode.NullTextRunStyle"/> (a run with a null style that yields no
     /// word), <see cref="LayoutDiagnosticCode.UnencodableCharacter"/> (a character written as
     /// <c>?</c>, mirroring <see cref="TextEncodingWarnings"/>),
+    /// <see cref="LayoutDiagnosticCode.TabStopBeyondWidth"/> (a tab stop treated as absent because
+    /// it lies beyond the width a custom renderer laid the paragraph out at),
     /// <see cref="LayoutDiagnosticCode.NullGrandchildText"/> and
     /// <see cref="LayoutDiagnosticCode.NullGrandchild"/> (a null below the second level of a list),
     /// <see cref="LayoutDiagnosticCode.BandTruncated"/> (mirroring <see cref="BandTruncations"/>)

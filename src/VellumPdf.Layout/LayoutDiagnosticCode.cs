@@ -59,6 +59,22 @@ public enum LayoutDiagnosticCode
     UnencodableCharacter = 103,
 
     /// <summary>
+    /// A <see cref="Elements.Paragraph"/> holds a tab stop beyond the width its renderer was laid
+    /// out at, and its text holds a tab, so the stop was treated as absent.
+    /// <see cref="LayoutDiagnostic.Count"/> is the number of stops beyond that width.
+    /// </summary>
+    /// <remarks>
+    /// The text is not where the stop said, so strict mode refuses it. A paragraph the document
+    /// lays out itself never reaches this: the save refuses a stop beyond the content width before
+    /// the layout starts, with <see cref="InvalidOperationException"/>. It arises from a
+    /// <see cref="Rendering.ParagraphRenderer"/> that a renderer of yours lays out in a narrower
+    /// area than the page's. A tab then advances as it does when no stop lies to its right: as one
+    /// space. It is reported when the paragraph is drawn from its first line, so a renderer you
+    /// build to start at a later line reports nothing.
+    /// </remarks>
+    TabStopBeyondWidth = 106,
+
+    /// <summary>
     /// A list item that is a child of a child, or deeper, holds a null text, and the save drew
     /// nothing of it. <see cref="LayoutDiagnostic.Count"/> is the number of such items the list's
     /// element reached first. An item is counted once in the whole save, under the first list the

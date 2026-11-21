@@ -41,6 +41,70 @@ internal static class LayoutValidation
     private const double SmallestWrittenExtent = 5e-6;
 
     /// <summary>
+    /// Rejects a paragraph whose tab stops cannot be honoured at the width it is laid out in, before
+    /// any layout runs: a stop beyond the content width, and a leader whose measures would be
+    /// written as zero.
+    ///
+    /// A stop beyond the width could only be reached by text that overflows the line, so it is a
+    /// stop the caller cannot have meant. A leader is stroked with a line width and a dash pattern
+    /// that are fractions of the font size: a size of zero or less, or one so small that a number
+    /// the leader writes formats as <c>0</c>, gives a dash array of zeros, which ISO 32000-2,
+    /// 8.4.3.6 forbids ("not all zero"), or a line of no width. The number checked is the one
+    /// written, as for <see cref="ValidateImageExtent"/>.
+    /// </summary>
+    /// <param name="paragraph">The paragraph to check.</param>
+    /// <param name="contentWidth">
+    /// The width the paragraph's content is laid out in, with its margins taken off. A width that is
+    /// not finite or not positive skips the stop check, because the margin refusals deal with it.
+    /// </param>
+    internal static void ValidateTabStops(Paragraph paragraph, double contentWidth)
+    {
+        var stops = paragraph.TabStops;
+        if (stops is not { Count: > 0 })
+            return;
+
+        if (double.IsFinite(contentWidth) && contentWidth > 0)
+        {
+            foreach (var stop in stops)
+            {
+                if (stop.Position > contentWidth)
+                {
+                    throw new InvalidOperationException(
+                        $"A paragraph has a tab stop at {Format(stop.Position)} points, beyond its content " +
+                        $"width of {Format(contentWidth)} points (the page width less the margins). " +
+                        "A tab stop must lie within the content width.");
+                }
+            }
+        }
+
+        if (!stops.Any(s => s.Leader != TabLeader.None))
+            return;
+
+        // The line width is the smallest number a leader writes for any kind, and the dash
+        // lengths, the period and the gap are larger multiples of the size, so a size that writes
+        // the width as non-zero writes every one of them so. The period is checked on its own as
+        // well, since it is what ISO 32000-2, 8.4.3.6 needs to be positive for dots.
+        var smallest = SmallestWrittenExtent / Math.Min(Rendering.ParagraphRenderer.LeaderWidthFactor,
+            Rendering.ParagraphRenderer.LeaderPeriodFactor);
+        for (var i = 0; i < paragraph.Runs.Count; i++)
+        {
+            var run = paragraph.Runs[i];
+            if (run.Style is null || run.Text.Length == 0)
+                continue;
+
+            var size = run.Style.FontSize;
+            if (!(size >= smallest))
+            {
+                throw new InvalidOperationException(
+                    $"Run {i} of a paragraph with a leader tab stop has a font size of {Format(size)}, " +
+                    "which a leader cannot be drawn at: its line width and dash lengths are fractions of " +
+                    "the size and would be written as zero. A leader needs a font size of at least " +
+                    $"{Format(smallest)} points.");
+            }
+        }
+    }
+
+    /// <summary>
     /// Rejects a text style whose font size is not a finite number.
     ///
     /// The three non-finite values take different routes: a NaN size makes every height comparison

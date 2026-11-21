@@ -33,6 +33,8 @@ namespace VellumPdf.Layout.Elements;
 /// single run. That includes a surrogate pair split between two such runs. Pieces whose styles are
 /// equal in value but are different instances stay separate fragments, each with its own text
 /// position, though they land at the same positions.</para>
+/// <para>A tab is drawn as one space unless <see cref="TabStops"/> holds a stop to place the text
+/// after it at; see <see cref="TabStops"/>.</para>
 /// <para>A line cannot wrap at a no-break space, so
 /// <c>Pourquoi ?</c> written with U+202F before the question mark does not wrap between the two.
 /// The no-break spaces are the three white-space characters that UAX #14 puts in its GL class, and
@@ -114,6 +116,97 @@ public sealed class Paragraph
     /// edge, including one holding runs with different <see cref="TextStyle"/> instances; see <see cref="HorizontalAlignment.Justify"/> for Symbol and ZapfDingbats.
     /// </remarks>
     public HorizontalAlignment Alignment { get; init; } = HorizontalAlignment.Left;
+
+    /// <summary>
+    /// Where the text after a tab character (U+0009) is placed. Null or empty leaves a tab drawn
+    /// as a space, as it is for every paragraph without stops.
+    /// </summary>
+    /// <remarks>
+    /// <b>The list must be in strictly increasing order of position, and hold no null.</b> The
+    /// setter throws <see cref="ArgumentNullException"/> for a null stop and
+    /// <see cref="ArgumentException"/> for a position that is not greater than the one before, so
+    /// that a tab always finds the nearest stop to its right by position. The setter copies the
+    /// list, so changing the one you passed afterwards has no effect.
+    /// <para><b>A stop beyond the content width is refused, before layout.</b> The save throws
+    /// <see cref="InvalidOperationException"/> when a top-level paragraph holds a stop whose
+    /// position is greater than the page width less the document margins and
+    /// <see cref="Margins"/>, because the text could not be placed where the stop says. A stop at
+    /// exactly that width is accepted, and is how a right-aligned page number reaches the right
+    /// edge. The check runs before any element is laid out, so the document can be saved again
+    /// once the page size or margins are changed. A
+    /// <see cref="VellumPdf.Layout.Rendering.ParagraphRenderer"/> that a renderer of your own lays
+    /// out in a narrower area is not checked in advance: it treats such a stop as absent and
+    /// reports <see cref="LayoutDiagnosticCode.TabStopBeyondWidth"/>.</para>
+    /// <para><b>A leader needs a size it can be drawn at.</b> When a stop has a leader, the save
+    /// throws <see cref="InvalidOperationException"/> if any run of the paragraph has a
+    /// <see cref="TextStyle.FontSize"/> of zero or less, or one so small that the leader's line
+    /// width or dash lengths, which are fractions of the size, would be written as zero.</para>
+    /// <para>The rule. A tab ends the text before it. The text after it, up to the next tab or
+    /// line break, is placed at the first stop to the right of the end of the text before the
+    /// tab: <see cref="TabAlignment.Left"/> starts there, <see cref="TabAlignment.Right"/> ends
+    /// there, <see cref="TabAlignment.Center"/> centres there and
+    /// <see cref="TabAlignment.Decimal"/> puts its first <see cref="TabStop.DecimalCharacter"/>
+    /// there. The text before a tab is followed by one space (U+0020), so a reader that
+    /// extracts the text sees the words apart; the space counts in the position of the end of
+    /// that text. A stop the text has already reached or passed is skipped. Text placed at a stop
+    /// that would start left of the end of the text before it starts there instead, so
+    /// the two never overlap. The leader fills the gap between the two texts, a quarter of the
+    /// font size clear of each, and is left out when it would be shorter than half the font size.
+    /// A tab with no stop to its right is drawn as one space. Text placed at a
+    /// <see cref="TabAlignment.Right"/>, <see cref="TabAlignment.Center"/> or
+    /// <see cref="TabAlignment.Decimal"/> stop that does not fit on the line moves to the next
+    /// line and wraps there as ordinary text; text at a <see cref="TabAlignment.Left"/> stop wraps
+    /// word by word from the stop.</para>
+    /// <para>Positions are measured from the left edge of the paragraph's content, which is the
+    /// content area with <see cref="Margins"/> taken off. A line that holds a tab placed at a stop
+    /// starts at that edge whatever the <see cref="Alignment"/> is, and is not justified. The
+    /// white-space characters other than the tab are drawn as the type remarks describe.
+    /// <b>Accepted and placed differently from what the stops suggest:</b> a stop that the text has
+    /// passed, a tab with no stop to its right, and text that would overlap the text before it are
+    /// not reported; they are the rules above.</para>
+    /// <para>A run whose style is null yields no text, so a tab in it is read as the space the
+    /// type remarks describe.</para>
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// The list holds a null stop. Raised by the setter.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// A position is not greater than the one before it. Raised by the setter.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from the setter, when a stop is beyond the content width, or a leader's run has a font
+    /// size that cannot be drawn as described above.
+    /// </exception>
+    public IReadOnlyList<TabStop>? TabStops
+    {
+        get;
+        init
+        {
+            if (value is null)
+            {
+                field = null;
+                return;
+            }
+
+            var copy = new TabStop[value.Count];
+            for (var i = 0; i < copy.Length; i++)
+            {
+                var stop = value[i] ?? throw new ArgumentNullException(
+                    nameof(value), $"The tab stop at index {i} is null.");
+                if (i > 0 && !(stop.Position > copy[i - 1].Position))
+                {
+                    var at = stop.Position.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    throw new ArgumentException(
+                        $"The tab stop at index {i} is at {at}, which is not greater than the one " +
+                        "before it. Stops must be in strictly increasing order.",
+                        nameof(value));
+                }
+                copy[i] = stop;
+            }
+            field = Array.AsReadOnly(copy);
+        }
+    }
 
     /// <summary>
     /// Optional per-element language override (BCP 47 / RFC 5646, e.g. <c>"en-US"</c>).

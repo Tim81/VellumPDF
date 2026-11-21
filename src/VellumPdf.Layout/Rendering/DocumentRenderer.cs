@@ -420,6 +420,17 @@ public sealed class DocumentRenderer
         // started cannot be retried, one refused before it can. The walk below, over the added
         // elements, finds the plan-dependent ones.
 
+        // Tab stops are checked here, with the content width every top-level paragraph is laid out
+        // in, so the refusal leaves the document saveable once the page or margins are changed.
+        foreach (var renderer in _renderers)
+        {
+            if (renderer is ParagraphRenderer { Paragraph.TabStops: { Count: > 0 } } paragraphRenderer)
+            {
+                LayoutValidation.ValidateTabStops(
+                    paragraphRenderer.Paragraph, contentArea.Deflate(paragraphRenderer.Paragraph.Margins).Width);
+            }
+        }
+
         // From here the renderers measure and cache; see Document.MarkFailedIfLaidOut.
         HasStartedLayout = true;
 

@@ -140,6 +140,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   output-intent object differently when a document has an outline and a PDF/A claim. A catalog
   holding every optional key and one holding only `/Lang` cover the key order and the `/Lang`
   condition. Every file also goes through `qpdf --check`. Tests only.
+- **Tab stops with leaders (#298).** `Paragraph.TabStops` takes a list of `TabStop` values, and a
+  tab character in the text then places the text after it at the first stop to the right of the end
+  of the text before it. A `TabStop` has a position in points from the paragraph's left content
+  edge, a `TabAlignment` (`Left`, `Right`, `Center` or `Decimal`) and a `TabLeader` (`None`,
+  `Dots`, `Dashes` or `Rule`). A decimal stop lines up on `DecimalCharacter`, a full stop unless
+  you set it, so a Dutch figure column sets a comma.
+  - A leader is a stroked line, not text, so a text extractor does not print it. It fills the space
+    between the two texts, a quarter of the font size clear of each, and is left out when shorter
+    than half the font size. Dots are zero-length dashes with round caps, on a grid anchored at the
+    content edge so the dots of consecutive lines line up. In a tagged document the leader is an
+    artifact outside the paragraph's structure element.
+  - The text before a tab is followed by one space, so extracted text keeps `Inleiding 12` apart.
+  - Text that would start left of the end of the text before it starts there instead. A tab with no
+    stop to its right is one space. Text at a right, centre or decimal stop that does not fit moves
+    to the next line; text at a left stop wraps word by word from the stop. A line with a tab at a
+    stop starts at the left edge and is not justified, whatever the paragraph's alignment.
+  - `TabStop` refuses a position that is not a finite number of zero or more, and an undefined
+    alignment or leader, with `ArgumentOutOfRangeException`. `DecimalCharacter` refuses white space,
+    a control character and a surrogate with `ArgumentException`. `TabStops` refuses a null stop and
+    positions that do not strictly increase.
+  - The save refuses, with `InvalidOperationException` before any layout, a stop beyond the
+    paragraph's content width, and a leader in a paragraph with a run whose font size is zero or
+    less, or so small that the leader's line width or dash lengths would be written as `0`. The
+    document can be saved again once the page or the margins change.
+  - A `ParagraphRenderer` that a renderer of your own lays out in an area narrower than a stop
+    treats that stop as absent and reports the new `LayoutDiagnosticCode.TabStopBeyondWidth` (106,
+    severity `Error`), which `StrictDiagnostics` refuses.
+  - A paragraph with no stops, or an empty list, is drawn exactly as before: a tab is a space.
 
 ### Changed
 
