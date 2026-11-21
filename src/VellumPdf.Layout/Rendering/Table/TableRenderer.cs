@@ -1140,7 +1140,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
         var canvas = ctx.Canvas.BeginText();
 
         // A fresh reference, so the font operator is written for every cell.
-        FontReference? cellFont = null;
+        TextEmitter.SelectedFont? cellFont = null;
         TextEmitter.SelectFont(ctx, canvas, cs, ref cellFont);
 
         // Where the text colour is written, so a cell that is never drawn is not refused for it.

@@ -1146,7 +1146,7 @@ public sealed class DocumentRenderer
         // untagged real content.
         if (ctx.Tagged) canvas.BeginArtifactMarkedContent();
         canvas.BeginText();
-        FontReference? bandFont = null;
+        TextEmitter.SelectedFont? bandFont = null;
         TextEmitter.SelectFont(ctx, canvas, style, ref bandFont);
         canvas.SetFillColorRgb(style.Color.R, style.Color.G, style.Color.B);
         canvas.SetTextMatrix(1, 0, 0, 1, x, pdfY);

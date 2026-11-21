@@ -265,7 +265,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource
         canvas.BeginText();
 
         // Track current font/colour to suppress redundant operators.
-        FontReference? currentFont = null;
+        TextEmitter.SelectedFont? currentFont = null;
         ColorRgb? currentColor = null;
 
         for (var lineIdx = _startLine; lineIdx < _endLine; lineIdx++)
@@ -391,7 +391,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource
             {
                 // Embedded fonts: Tw does not work with 2-byte CID encoding.
                 // Position each word-token explicitly with Tm.
-                var spans = DrawJustifiedEmbeddedLine(canvas, ctx, fragments, curX, linePdfY, area.Width, slack, wordGapCount, ref currentFont, ref currentColor);
+                var spans = DrawJustifiedEmbeddedLine(canvas, ctx, fragments, curX, linePdfY, area.Width, slack, ref currentFont, ref currentColor);
                 RegisterLineLinks(ctx, fragments, spans, lineLayoutTop, leading);
             }
             else
@@ -478,8 +478,9 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource
     /// the last fragment of the line, to where its last glyph ends. That is the rectangle the
     /// <c>Tw</c> path gives a standard-14 fragment, so a space that closes the fragment is covered
     /// together with the stretch added after it. A fragment that drew no glyph run on the line gets
-    /// no rectangle, because there is no drawn text to cover. A tab with no stop to its right at
-    /// the start of a line leaves such a fragment, of one space or none.
+    /// no rectangle, because there is no drawn text to cover. A fragment that opens the line draws
+    /// its spaces and gets a rectangle. A fragment of only spaces that does not open the line gets
+    /// none, because the wrap gave those spaces the style of the fragment before it.
     /// </summary>
     private static void RegisterLineLinks(
         DrawContext ctx,
@@ -515,16 +516,27 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource
         double linePdfY,
         double lineAreaWidth,
         double slack,
-        int wordGapCount,
-        ref FontReference? currentFont,
+        ref TextEmitter.SelectedFont? currentFont,
         ref ColorRgb? currentColor)
     {
         // Tokenise fragments into word-tokens; inter-token gaps get extra spacing.
         // A "word gap" is any transition between tokens where the left token ends without
         // trailing space and the right starts without leading space — we add slack/gaps there.
         var owners = new List<int>();
-        var tokens = SplitToWordTokens(fragments, owners);
-        var extraPerGap = wordGapCount > 0 ? slack / wordGapCount : 0.0;
+        var tokens = SplitToWordTokens(fragments, owners, drawEverySpace: true);
+
+        // Every pair of neighbours that holds a space takes one share of the slack per space in it,
+        // so a space with a neighbour on each side stretches by two shares, as Tw stretches it by
+        // one. A space that closes the line has no neighbour on its right and takes one share, where
+        // Tw gives it a whole one; that was so before. A space that opens the line has no
+        // neighbour on its left to carry its first share, so it takes that share after itself.
+        var shares = 0;
+        for (var t = 0; t < tokens.Count - 1; t++)
+            shares += GapShares(tokens[t], tokens[t + 1]);
+        var leadingSpace = tokens.Count > 1 && tokens[0].Text == " ";
+        if (leadingSpace)
+            shares++;
+        var extraPerGap = shares > 0 ? slack / shares : 0.0;
         var curX = startX;
 
         // Where each fragment is drawn: its first token's x, and the x at which the next
@@ -554,8 +566,8 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource
             spans[owner] = spans[owner] with { End = curX };
 
             // Add extra spacing after this token if there's a gap before the next
-            if (t < tokens.Count - 1 && IsWordGap(tokens[t], tokens[t + 1]))
-                curX += extraPerGap;
+            if (t < tokens.Count - 1)
+                curX += extraPerGap * (GapShares(tokens[t], tokens[t + 1]) + (t == 0 && leadingSpace ? 1 : 0));
         }
 
         return spans;
@@ -580,7 +592,8 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource
     /// </summary>
     private static List<(string Text, TextStyle Style, double Width)> SplitToWordTokens(
         LineFragment[] fragments,
-        List<int>? owners = null)
+        List<int>? owners = null,
+        bool drawEverySpace = false)
     {
         var tokens = new List<(string, TextStyle, double)>();
         for (var f = 0; f < fragments.Length; f++)
@@ -590,17 +603,24 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource
             for (var i = 0; i < parts.Length; i++)
             {
                 var part = parts[i];
-                if (part.Length == 0)
+                if (part.Length > 0)
                 {
-                    // Empty between two spaces — counts as a gap but no visible token.
+                    var w = frag.Style.FontRef.MeasureString(part, frag.Style.FontSize);
+                    tokens.Add((part, frag.Style, w));
+                    owners?.Add(f);
+                }
+                else if (!drawEverySpace)
+                {
+                    // Empty between two spaces: no visible token, and the space after it is
+                    // not counted. The gap count behind the Tw divisor for a zero-measured font
+                    // keeps this reading.
                     continue;
                 }
-                var w = frag.Style.FontRef.MeasureString(part, frag.Style.FontSize);
-                tokens.Add((part, frag.Style, w));
-                owners?.Add(f);
 
                 // If there is a space after this part (not the last split segment),
-                // insert a space token so the gap is explicit and countable.
+                // insert a space token so the gap is explicit and countable. With
+                // drawEverySpace an empty part still yields its space, so a leading space and
+                // each space of a run of spaces is a token, drawn and advanced like any other.
                 if (i < parts.Length - 1)
                 {
                     var sw = frag.Style.FontRef.MeasureString(" ", frag.Style.FontSize);
@@ -646,6 +666,15 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource
             if (c == ' ') count++;
         return count;
     }
+
+    /// <summary>
+    /// The shares of a justified line's slack that fall between two neighbouring tokens: one per
+    /// space token among the two. A space between two words holds two such shares, one on each side.
+    /// </summary>
+    private static int GapShares(
+        (string Text, TextStyle Style, double Width) left,
+        (string Text, TextStyle Style, double Width) right) =>
+        (left.Text == " " ? 1 : 0) + (right.Text == " " ? 1 : 0);
 
     private static bool IsWordGap(
         (string Text, TextStyle Style, double Width) left,
