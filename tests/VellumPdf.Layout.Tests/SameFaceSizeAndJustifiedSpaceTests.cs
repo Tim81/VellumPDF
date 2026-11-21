@@ -108,6 +108,27 @@ public sealed class SameFaceSizeAndJustifiedSpaceTests
     public void ASizeDifferenceAtTheWrittenPrecision_writesTwoFontOperators() =>
         Assert.Equal(["12", "12.00001"], TfSizes(Sizes(false, 12, 12.00001)));
 
+    // The comparison is on the written token, not on a distance: 12.000004 and 12.000006 are
+    // 2e-6 apart and write 12 and 12.00001.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void TwoSizesEitherSideOfARoundingBoundary_writeTwoFontOperators(bool embedded) =>
+        Assert.Equal(["12", "12.00001"], TfSizes(Sizes(embedded, 12.000004, 12.000006)));
+
+    [Fact]
+    public void AListItemBuiltFromRunsInOneFaceAtTwoSizes_selectsEachRunsSize()
+    {
+        using var doc = Page();
+        var list = new ListElement();
+        list.Add(new ListItem([new TextRun("c ", Std(10)), new TextRun("d", Std(20))]));
+        doc.Add(list);
+        var sizes = TfSizes(Save(doc));
+        // The marker is drawn in the first run's style, then each run selects its own size.
+        Assert.Equal("10", sizes[^2]);
+        Assert.Equal("20", sizes[^1]);
+    }
+
     [Fact]
     public void ARunInAnotherFaceAtTheSameSize_stillWritesAFontOperator()
     {
@@ -166,6 +187,19 @@ public sealed class SameFaceSizeAndJustifiedSpaceTests
         var (line, font) = FirstLine(texts);
         var last = line[^1];
         Assert.Equal(Right, last.X + WidthOf(font, last.Key), 0.001);
+    }
+
+    // One face at one size: the justified embedded path selects the font once for the paragraph,
+    // not once per token. A fresh font state per token would write a Tf before every glyph run.
+    [Fact]
+    public void AJustifiedEmbeddedParagraph_writesOneFontOperatorForAllItsTokens()
+    {
+        using var doc = Page();
+        var font = doc.LoadTrueTypeFont(Liberation);
+        doc.Add(Justified(Emb(font), Words + " " + Words + " " + Words));
+        var pdf = Save(doc);
+        Assert.True(Runs(pdf).Count > 30, "the paragraph must hold many tokens over several lines");
+        Assert.Equal(["12"], TfSizes(pdf));
     }
 
     [Fact]

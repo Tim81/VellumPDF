@@ -478,8 +478,9 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource
     /// the last fragment of the line, to where its last glyph ends. That is the rectangle the
     /// <c>Tw</c> path gives a standard-14 fragment, so a space that closes the fragment is covered
     /// together with the stretch added after it. A fragment that drew no glyph run on the line gets
-    /// no rectangle, because there is no drawn text to cover. A fragment of spaces draws them, and
-    /// gets a rectangle.
+    /// no rectangle, because there is no drawn text to cover. A fragment that opens the line draws
+    /// its spaces and gets a rectangle. A fragment of only spaces that does not open the line gets
+    /// none, because the wrap gave those spaces the style of the fragment before it.
     /// </summary>
     private static void RegisterLineLinks(
         DrawContext ctx,
@@ -525,9 +526,10 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource
         var tokens = SplitToWordTokens(fragments, owners, drawEverySpace: true);
 
         // Every pair of neighbours that holds a space takes one share of the slack per space in it,
-        // so a space stretches by two shares however its neighbours fall, as Tw stretches every
-        // space by one. A space that opens the line has no neighbour on its left to carry its
-        // first share, so it takes that share after itself.
+        // so a space with a neighbour on each side stretches by two shares, as Tw stretches it by
+        // one. A space that closes the line has no neighbour on its right and takes one share, where
+        // Tw gives it a whole one; that was so before. A space that opens the line has no
+        // neighbour on its left to carry its first share, so it takes that share after itself.
         var shares = 0;
         for (var t = 0; t < tokens.Count - 1; t++)
             shares += GapShares(tokens[t], tokens[t + 1]);

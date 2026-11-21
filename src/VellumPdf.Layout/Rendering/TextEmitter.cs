@@ -20,9 +20,9 @@ internal static class TextEmitter
     /// <summary>
     /// Writes the <c>Tf</c> operator for <paramref name="style"/>, unless
     /// <paramref name="current"/> already holds the same font reference at the same size. The size
-    /// is compared as the token the canvas writes, so a difference below its five decimals writes
-    /// no second <c>Tf</c>, and a run in the same font at another size writes one. A caller that
-    /// passes a fresh null writes a <c>Tf</c> every time.
+    /// is compared as the token the canvas writes, so two sizes that write the same number write
+    /// one <c>Tf</c>, and a run in the same font at a size that writes another number writes a
+    /// second. A caller that passes a fresh null writes a <c>Tf</c> every time.
     /// </summary>
     /// <remarks>
     /// Under a conformance claim, a named Standard 14 font that is selected is reported as
