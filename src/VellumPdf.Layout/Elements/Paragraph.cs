@@ -93,6 +93,32 @@ public sealed class Paragraph
     /// </exception>
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 
+    /// <summary>Whether the paragraph starts a new page, or the next right-hand page.</summary>
+    /// <remarks>
+    /// <b>An undefined value is refused.</b> A number <see cref="PageBreakMode"/> does not name
+    /// makes this <c>init</c> accessor throw <see cref="ArgumentOutOfRangeException"/>. The default,
+    /// <see cref="PageBreakMode.None"/>, starts the element where the previous one ended, as before.
+    /// <para>The mode is read from the element the document holds. It is honoured when the element is
+    /// added with <see cref="Document.Add(Paragraph)"/>, or when its built-in renderer is added with
+    /// <see cref="Document.Add(IRenderer)"/>; it is not honoured when the element sits inside a list
+    /// item or a table cell. It applies to the top of the element, so on a split element only the
+    /// first piece is affected. A break at the start of the document, or straight after another
+    /// break, adds no page; see <see cref="Elements.PageBreak"/> for how breaks combine and
+    /// <see cref="PageBreakMode.Recto"/> for the blank page.</para>
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Raised from this <c>init</c> accessor when the value is not one of
+    /// <see cref="PageBreakMode.None"/>, <see cref="PageBreakMode.Page"/> and
+    /// <see cref="PageBreakMode.Recto"/>.
+    /// </exception>
+    public PageBreakMode BreakBefore
+    {
+        get => _breakBefore;
+        init => _breakBefore = PageBreakModes.Validate(value);
+    }
+
+    private PageBreakMode _breakBefore;
+
     /// <summary>Horizontal alignment of the paragraph text.</summary>
     /// <remarks>
     /// <see cref="HorizontalAlignment.Justify"/> stretches every line except the paragraph's last,

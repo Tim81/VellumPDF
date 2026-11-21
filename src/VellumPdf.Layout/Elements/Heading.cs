@@ -101,6 +101,17 @@ public sealed class Heading
     /// <inheritdoc cref="Paragraph.Margins" path="/exception"/>
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 
+    /// <summary>Whether the heading starts a new page, or the next right-hand page.</summary>
+    /// <inheritdoc cref="Paragraph.BreakBefore" path="/remarks"/>
+    /// <inheritdoc cref="Paragraph.BreakBefore" path="/exception"/>
+    public PageBreakMode BreakBefore
+    {
+        get => _breakBefore;
+        init => _breakBefore = PageBreakModes.Validate(value);
+    }
+
+    private PageBreakMode _breakBefore;
+
     /// <summary>Horizontal alignment of the heading text.</summary>
     /// <remarks>
     /// Same as <see cref="Paragraph.Alignment"/>.

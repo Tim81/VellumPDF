@@ -8,6 +8,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`PageBreak`, `BreakBefore` and a blank page before a recto chapter (#311).** A document can now
+  start an element on a new page without a custom renderer. `Document.Add(PageBreak)` ends the
+  current page, and `new PageBreak { Recto = true }` starts the next element on a right-hand
+  (odd-numbered) page, adding one blank page first when the next page would be an even one.
+  `Paragraph`, `Heading`, `TableElement`, `ListElement` and `LayoutImage` also take
+  `BreakBefore` (`PageBreakMode.None`, `Page` or `Recto`). Page 1 is a right-hand page and parity
+  is the physical position in the document, never a page label.
+  - A break adds no page when it is the first element, follows another break, or ends an empty
+    page; where two breaks meet, the stronger one applies. A break with nothing after it is
+    dropped, so there is no trailing blank page, and a document of breaks alone throws
+    `InvalidOperationException` saying it has no pages and can still be saved once an element is
+    added.
+  - The blank page has no header or footer and no content, and it counts in `{page}`, `{pages}`
+    and the page tree. In a tagged document no structure element refers to it.
+  - A built-in renderer added through `Document.Add(IRenderer)` honours its element's
+    `BreakBefore`; a renderer you wrote yourself cannot ask for a break, and neither can anything
+    nested in a list or a table.
+  - An undefined `PageBreakMode` throws `ArgumentOutOfRangeException` from the `init` accessor, and
+    a null `PageBreak` throws `ArgumentNullException` from `Document.Add`.
+  - A document that uses no break saves byte for byte as before. A form feed (U+000C) in text is
+    still drawn as a space, and a custom renderer that returns a zero-height `Partial` still forces
+    a page.
+
 - **`Document.Timestamp` and `Document.DocumentId` (#597).** The Layout `Document` now forwards the
   two pins that `PdfDocument` already had. `Timestamp` sets the instant written as the XMP creation
   and modification date and mixed into the derived file identifier; with it pinned, two documents

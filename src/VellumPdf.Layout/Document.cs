@@ -879,6 +879,27 @@ public sealed class Document : IDisposable
         return this;
     }
 
+    /// <summary>
+    /// Adds a page break: the next element starts on a new page, or on the next right-hand page when
+    /// <see cref="PageBreak.Recto"/> is set. Returns this document for chaining.
+    /// </summary>
+    /// <remarks>
+    /// <b>A null break is refused.</b> It throws <see cref="ArgumentNullException"/> from this call.
+    /// A break itself is never refused later. A break adds no page when it is first, follows
+    /// another break, or ends an empty page, and a break with nothing after it is dropped; a document
+    /// of breaks alone has no content, so a save throws <see cref="InvalidOperationException"/>
+    /// saying it has no pages and leaves the document usable. See <see cref="PageBreak"/>.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="pageBreak"/> is <see langword="null"/>.
+    /// </exception>
+    public Document Add(PageBreak pageBreak)
+    {
+        ArgumentNullException.ThrowIfNull(pageBreak);
+        _content.Add(new PageBreakRenderer(pageBreak));
+        return this;
+    }
+
     /// <summary>Adds a paragraph built from the given text, using the supplied style or the default style. Returns this document for chaining.</summary>
     /// <remarks>
     /// With <paramref name="style"/> null, the paragraph takes the style from the most recent
@@ -914,6 +935,10 @@ public sealed class Document : IDisposable
     /// never gets smaller reaches that limit; <see cref="IRenderer.Layout"/> has the rule. The save
     /// then throws <see cref="InvalidOperationException"/> naming the limit. Split a long element
     /// yourself.
+    /// <para>A renderer you wrote yourself cannot ask for a page break. The library's own
+    /// <see cref="ParagraphRenderer"/>, <see cref="TableRenderer"/>, <see cref="ListRenderer"/> and
+    /// <see cref="LayoutImageRenderer"/> honour their element's <c>BreakBefore</c> when added here.
+    /// Add a <see cref="PageBreak"/> before a custom renderer instead.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="renderer"/> is <see langword="null"/>.
@@ -1090,8 +1115,9 @@ public sealed class Document : IDisposable
         // An empty document lays out no pages, so its page count is already known. The page
         // geometry and the bands are still checked, then "no pages", before the destination and
         // the options.
-        if (_content.Count == 0) CreateRenderer().RunLayout();
-        _pdf.EnsureCanSave(destination, pagesKnown: _content.Count == 0, asynchronous: asynchronous);
+        var empty = HasNoContent;
+        if (empty) CreateRenderer().RunLayout();
+        _pdf.EnsureCanSave(destination, pagesKnown: empty, asynchronous: asynchronous);
         ThrowIfLayoutFailed();
         _pdf.ValidateSaveOptions();
     }
@@ -1227,6 +1253,19 @@ public sealed class Document : IDisposable
         }
         catch (UnauthorizedAccessException)
         {
+        }
+    }
+
+    // A page break is not content: a document of breaks alone lays out no page, so it takes the
+    // empty-document path, which reports "no pages" before the layout and leaves the document usable.
+    private bool HasNoContent
+    {
+        get
+        {
+            foreach (var renderer in _content)
+                if (renderer is not PageBreakRenderer)
+                    return false;
+            return true;
         }
     }
 
@@ -1823,7 +1862,7 @@ public sealed class Document : IDisposable
         // A document with nothing in it lays out no pages, so its pages are already known: none. It
         // gets the document's own order, which reports "no pages" before looking at the options, as
         // it did before the pre-check existed, and nothing is laid out or marked as failed.
-        _pdf.EnsureCanPrepareForSigning(options, pagesKnown: _content.Count == 0);
+        _pdf.EnsureCanPrepareForSigning(options, pagesKnown: HasNoContent);
         ThrowIfLayoutFailed();
 
         var renderer = CreateRenderer();

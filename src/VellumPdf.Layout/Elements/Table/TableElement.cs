@@ -85,6 +85,17 @@ public sealed class TableElement
     /// <inheritdoc cref="Paragraph.Margins" path="/exception"/>
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 
+    /// <summary>Whether the table starts a new page, or the next right-hand page.</summary>
+    /// <inheritdoc cref="Paragraph.BreakBefore" path="/remarks"/>
+    /// <inheritdoc cref="Paragraph.BreakBefore" path="/exception"/>
+    public PageBreakMode BreakBefore
+    {
+        get => _breakBefore;
+        init => _breakBefore = PageBreakModes.Validate(value);
+    }
+
+    private PageBreakMode _breakBefore;
+
     /// <summary>The rows in the table, in render order.</summary>
     /// <remarks>
     /// A table that resolves to no columns is refused at save: no rows, or every row empty.

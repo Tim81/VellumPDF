@@ -129,6 +129,17 @@ public sealed class LayoutImage
     /// <inheritdoc cref="Paragraph.Margins" path="/exception[@cref='T:System.ArgumentException']"/>
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 
+    /// <summary>Whether the image starts a new page, or the next right-hand page.</summary>
+    /// <inheritdoc cref="Paragraph.BreakBefore" path="/remarks"/>
+    /// <inheritdoc cref="Paragraph.BreakBefore" path="/exception"/>
+    public PageBreakMode BreakBefore
+    {
+        get => _breakBefore;
+        init => _breakBefore = PageBreakModes.Validate(value);
+    }
+
+    private PageBreakMode _breakBefore;
+
     /// <summary>
     /// Optional alternate text for the PDF /Figure structure element (tagged PDF).
     /// Used as the <c>/Alt</c> entry on the Figure struct elem when tagging is enabled.
