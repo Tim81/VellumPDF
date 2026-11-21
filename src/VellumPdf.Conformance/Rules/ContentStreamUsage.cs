@@ -989,9 +989,11 @@ internal static class ContentStreamUsage
     /// are present or all fail to decode.
     /// </para>
     /// <para>
-    /// Clean-room: derived from ISO 32000-1:2008 §8.8 (Form XObjects), §9.6.4 (Type 3 fonts),
-    /// §12.5.5 (annotation appearances), and empirical veraPDF-oracle probing — not from any
-    /// third-party validation profile.
+    /// Cites ISO 32000-1:2008 §8.8 (Form XObjects), §9.6.4 (Type 3 fonts) and §12.5.5 (annotation
+    /// appearances). Which streams count as reachable was set by probing veraPDF, not derived from
+    /// a clause. The 2026-11-21 audit (#418) found that ISO 19005-2 6.2.2 also counts Type 1 tiling
+    /// patterns as content streams and that this collector never visits them, so every rule that
+    /// relies on it inherits that gap.
     /// </para>
     /// </summary>
     public static IReadOnlyList<ReachableContentStream> GetReachableContentStreams(

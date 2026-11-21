@@ -25,7 +25,7 @@ Two populations are compared against it:
           one could.
 
 Clauses scoped `reader` are excluded. Those bind a conforming reader rather than a conforming
-file, so a file validator correctly has no rule for them: 6.5.3, 6.3.4, 6.1.5 and 6.2.8.2.
+file, so a file validator correctly has no rule for them: 6.5.3, 6.3.4, 6.1.5, 6.2.7 and 6.2.8.2.
 Clauses scoped `applies` and `unread` are excluded too, and the report names them at the end. A
 clause dropped from the population without being named is the failure this tool exists to prevent.
 
@@ -72,7 +72,10 @@ def clauses_cited_by_rules(known: set[str]) -> set[str]:
         text = path.read_text(encoding="utf-8-sig")
         if ": IConformanceRule" not in text or "ISO 19005-2:2011" not in text:
             continue
-        found |= {m for m in re.findall(r"\b(6(?:\.\d+)+)\b", text) if m in known}
+        # (?<![\d.]) keeps a match from starting inside a longer number: the ISO 32000-1 citation
+        # "§8.6.6.5" in DeviceNColorantRule contains "6.6.5", an ISO 19005-2 clause, and that
+        # citation used to credit 6.6.5 to this library.
+        found |= {m for m in re.findall(r"(?<![\d.])(6(?:\.\d+)+)\b", text) if m in known}
     return found
 
 

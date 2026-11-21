@@ -13,11 +13,14 @@ namespace VellumPdf.Conformance.Rules.Graphics;
 /// compatibility-section delimiters.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.2.2 and ISO 32000-1:2008, Annex A (Table A.1). The allowed
-/// operator set is the complete list from Table A.1; <c>BX</c>/<c>EX</c> are themselves valid
-/// operators and are in the allowed set, but they do not exempt operators that appear between them.
-/// Clean-room: derived from the specification text and empirical veraPDF-oracle probing, not from
-/// any third-party validation profile.
+/// Cites ISO 19005-2:2011, 6.2.2 and ISO 32000-1:2008, Annex A (Table A.1). The allowed operator
+/// set is the complete list from Table A.1; <c>BX</c>/<c>EX</c> are themselves valid operators and
+/// are in the allowed set, but they do not exempt operators that appear between them. The
+/// reachability scope below was set by probing veraPDF 1.30.2, not derived from the clause. Its
+/// behaviour was checked against veraPDF's PDF/A-2 profile, and ISO 19005-2 was not held when it
+/// was written. The 2026-11-21 audit against the clause text (#418) found the operator set complete
+/// against Table A.1 and the rule narrower than 6.2.2: the content streams of Type 1 tiling
+/// patterns are not scanned.
 /// <para>
 /// <strong>Scope:</strong> page content streams (via <see cref="ContentStreamUsage.GetPageContent"/>)
 /// plus all non-page content streams reachable from each page (via

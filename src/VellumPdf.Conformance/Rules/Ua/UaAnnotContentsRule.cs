@@ -40,8 +40,11 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// behaviour observed during probe testing.
 /// </para>
 /// <para>
-/// Clean-room: derived from ISO 14289-1:2014 §7.18.1 and the veraPDF 1.30.2 profile predicates,
-/// empirically validated. Not derived from any third-party implementation.
+/// Cites ISO 14289-1:2014 §7.18.1 and takes its test from the veraPDF 1.30.2 profile predicate
+/// quoted above, empirically validated. It was written from veraPDF's PDF/UA-1 profile and checked
+/// against veraPDF, before ISO 14289-1 was held. The 2026-11-21 audit against the clause text
+/// (#428) found it broader: 7.18.1 also exempts Popup annotations, which this rule does not, and an
+/// empty <c>/Contents</c> fails here although the key is present.
 /// </para>
 /// </remarks>
 internal sealed class UaAnnotContentsRule : IConformanceRule

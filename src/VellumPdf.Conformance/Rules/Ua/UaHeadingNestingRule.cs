@@ -14,8 +14,10 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// </summary>
 /// <remarks>
 /// <para><strong>Predicate — hasCorrectNestingLevel.</strong>
-/// The check applies only to the strongly-structured heading types H1–H6. The weakly-structured
-/// type H is handled by §7.4.4-2/-3 (UaHeadingRule) and is exempt from nesting-level requirements.
+/// The check applies only to the numbered heading types H1–H6, which ISO 32000-1 14.8.4.3.5 assigns
+/// to the weakly structured paradigm. The type H, which that clause assigns to the strongly
+/// structured paradigm, is handled by §7.4.4-2/-3 (UaHeadingRule) and is exempt from nesting-level
+/// requirements.
 /// </para>
 /// <para><strong>Algorithm (empirically derived from veraPDF 1.30.2 probes).</strong>
 /// veraPDF evaluates headings in document order (depth-first pre-order). It maintains a running

@@ -14,12 +14,16 @@ namespace VellumPdf.Conformance.Rules.Metadata;
 /// be serialised as UTF-8.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.6.2.1 and ISO 16684-1 (XMP). Clean-room: derived from the
-/// specification text, not from any third-party validation profile. Each packet is parsed by
-/// <see cref="XmpPacket"/>. The well-formedness requirement of §6.6.2.1 is enforced by
-/// <see cref="XmpConformanceRule"/> (which must parse the packet to read the PDF/A identification),
-/// so it is not duplicated here. The extension-schema requirements (§6.6.2.3) need RDF structure
-/// parsing and live in <see cref="ExtensionSchemaRule"/>.
+/// Cites ISO 19005-2:2011, 6.6.2.1 and ISO 16684-1 (XMP). Its behaviour was checked against
+/// veraPDF's PDF/A-2 profile, and ISO 19005-2 was not held when it was written. The 2026-11-21
+/// audit against the clause text (#418) found it narrower: 6.6.2.1 binds every metadata stream, and
+/// this rule examines the catalog, page, form-field and embedded-file packets only, so an image
+/// XObject's <c>/Metadata</c> with a <c>bytes</c> attribute passes. The UTF-8 requirement is not
+/// stated in ISO 19005-2. Each packet is parsed by <see cref="XmpPacket"/>. The well-formedness
+/// requirement of §6.6.2.1 is enforced by <see cref="XmpConformanceRule"/> (which must parse the
+/// packet to read the PDF/A identification), so it is not duplicated here. The extension-schema
+/// requirements (§6.6.2.3) need RDF structure parsing and live in <see
+/// cref="ExtensionSchemaRule"/>.
 /// <para>
 /// §6.6.2.1-4 requires the checks to cover every metadata stream, not just the document
 /// <c>/Metadata</c>. Metadata streams are located via the catalog, the page tree, the AcroForm field

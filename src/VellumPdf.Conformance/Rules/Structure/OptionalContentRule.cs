@@ -15,11 +15,13 @@ namespace VellumPdf.Conformance.Rules.Structure;
 /// (§6.9-4).
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.9. Clean-room: derived from the specification text, not from any
-/// third-party validation profile. These are object-graph checks on the configuration dictionaries
-/// reached from the catalog's <c>/OCProperties</c>: the <c>/Order</c> array is walked recursively
-/// (its nested grouping arrays and leading label strings are handled) and the optional content groups
-/// it references are compared against the <c>/OCGs</c> array.
+/// Cites ISO 19005-2:2011, 6.9. Its behaviour was checked against veraPDF's PDF/A-2 profile, and
+/// ISO 19005-2 was not held when it was written. The 2026-11-21 audit against the clause text
+/// (#418) found agreement, with one edge case: refusing an empty <c>/Name</c> string goes slightly
+/// beyond "shall contain the Name key". These are object-graph checks on the configuration
+/// dictionaries reached from the catalog's <c>/OCProperties</c>: the <c>/Order</c> array is walked
+/// recursively (its nested grouping arrays and leading label strings are handled) and the optional
+/// content groups it references are compared against the <c>/OCGs</c> array.
 /// </remarks>
 internal sealed class OptionalContentRule : IConformanceRule
 {

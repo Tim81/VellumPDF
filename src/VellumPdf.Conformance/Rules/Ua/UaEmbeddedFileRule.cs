@@ -11,11 +11,12 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// file-name entries.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 14289-1:2014, 7.11 (CosFileSpecification predicate:
-/// <c>containsEF == false || (F != null &amp;&amp; F != '' &amp;&amp; UF != null &amp;&amp; UF != '')</c>)
-/// and empirically validated against veraPDF 1.30.2 (clause 7.11, testNumber 1). Clean-room:
-/// derived from the specification text and the veraPDF profile, not from any third-party
-/// implementation.
+/// Cites ISO 14289-1:2014, 7.11, and takes its test from veraPDF's CosFileSpecification predicate:
+/// <c>containsEF == false || (F != null &amp;&amp; F != '' &amp;&amp; UF != null &amp;&amp; UF !=
+/// '')</c> (clause 7.11, testNumber 1). It was written from veraPDF's PDF/UA-1 profile and checked
+/// against veraPDF, before ISO 14289-1 was held. The 2026-11-21 audit against the clause text
+/// (#428) found it slightly broader: an empty-string <c>/F</c> or <c>/UF</c> fails although the key
+/// is present, and the <c>/Desc</c> key ("should") is not checked.
 /// <para>
 /// The rule identifies file specifications the same way as
 /// <c>EmbeddedFileRule</c> (ISO 19005-2 §6.8-2): a dictionary is a file specification

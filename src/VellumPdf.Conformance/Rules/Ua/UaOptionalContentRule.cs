@@ -16,11 +16,13 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// </list>
 /// </summary>
 /// <remarks>
-/// Authored from ISO 14289-1:2014, 7.10 (PDOCConfig predicates:
-/// testNumber 1 <c>Name != null &amp;&amp; Name.length() &gt; 0</c>;
-/// testNumber 2 <c>AS == null</c>) and empirically validated against veraPDF 1.30.2. Clean-room:
-/// derived from the specification text and the veraPDF profile, not from any third-party
-/// implementation.
+/// Cites ISO 14289-1:2014, 7.10, and takes its tests from veraPDF's PDOCConfig predicates:
+/// testNumber 1 <c>Name != null &amp;&amp; Name.length() &gt; 0</c>; testNumber 2 <c>AS ==
+/// null</c>. It was written from veraPDF's PDF/UA-1 profile and checked against veraPDF, before ISO
+/// 14289-1 was held. The 2026-11-21 audit against the clause text (#428) found it broader: 7.10
+/// requires <c>/Name</c> only when <c>/Configs</c> is present with at least one dictionary, and
+/// this rule also requires it on <c>/D</c> unconditionally. The <c>/AS</c> half agrees with the
+/// clause.
 /// <para>
 /// The traversal of <c>/OCProperties /D</c> and <c>/OCProperties /Configs</c> matches the
 /// existing PDF/A-2 <c>OptionalContentRule</c> (ISO 19005-2 §6.9), which enforces the

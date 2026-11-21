@@ -13,17 +13,19 @@ namespace VellumPdf.Conformance.Rules.Metadata;
 /// predefined nor declared is not permitted.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.6.2.3.1, the XMP Specification (2005) predefined schema set,
-/// and the PDF/A identification and extension-schema schemas. Clean-room: the predefined-namespace
-/// set is derived from the specifications, not copied from any third-party validation profile, and
-/// was cross-checked against veraPDF (every namespace below is accepted without an extension schema;
-/// <c>pdfuaid</c> is deliberately excluded — veraPDF requires it to be declared in PDF/A-2).
+/// Cites ISO 19005-2:2011, 6.6.2.3.1, the XMP Specification (2005) predefined schema set, and the
+/// PDF/A identification and extension-schema schemas. The predefined-namespace set was
+/// cross-checked against veraPDF (every namespace below is accepted without an extension schema;
+/// <c>pdfuaid</c> is deliberately excluded because veraPDF requires it to be declared in PDF/A-2).
+/// ISO 19005-2 was not held when the rule was written.
 /// <para>
 /// The check is at the <em>namespace</em> level: a property whose namespace is predefined or declared
 /// is accepted regardless of its local name. This is intentionally conservative — it cannot reject a
 /// conforming property (no false positive against the predefined set), at the cost of not catching a
-/// non-predefined <em>property name</em> within a predefined namespace, nor a value-type mismatch
-/// (§6.6.2.3.1 t2). Both are deferred and need the per-property predefined catalogue.
+/// non-predefined <em>property name</em> within a predefined namespace. The 2026-11-21 audit (#418)
+/// found that <c>dc:fooBar</c> passes here and fails veraPDF under 6.6.2.3.1-1 and -2, so the rule
+/// is narrower than the clause. A value-type mismatch is checked by <see
+/// cref="PropertyValueTypeRule"/>.
 /// </para>
 /// </remarks>
 internal sealed class PropertyUsageRule : IConformanceRule

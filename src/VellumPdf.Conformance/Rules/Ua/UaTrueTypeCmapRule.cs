@@ -23,8 +23,13 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// </list>
 /// </summary>
 /// <remarks>
-/// Authored from ISO 14289-1:2014, 7.21.6 and cross-validated against veraPDF 1.30.2.
-/// veraPDF predicates (verbatim from PDFUA-1.xml):
+/// Cites ISO 14289-1:2014, 7.21.6, and takes its predicates from veraPDF 1.30.2. It was written
+/// from veraPDF's PDF/UA-1 profile and checked against veraPDF, before ISO 14289-1 was held. The
+/// 2026-11-21 audit against the clause text (#428) found it narrower: it counts cmap subtables as a
+/// stand-in for the clause's "all necessary glyph lookups", skips fonts with neither the symbolic
+/// nor the non-symbolic flag set, and does not check the mapping that the last paragraph of 7.21.6
+/// requires. The predicates 7.21.6-2 and 7.21.6-4 match the clause. veraPDF predicates (verbatim
+/// from PDFUA-1.xml):
 /// <list type="bullet">
 ///   <item>7.21.6-1 (TrueTypeFontProgram): <c>isSymbolic == true || (cmap30Present == true ? nrCmaps &gt; 1 : nrCmaps &gt; 0)</c></item>
 ///   <item>7.21.6-2 (PDTrueTypeFont): <c>isSymbolic == true || ((Encoding == "MacRomanEncoding" || Encoding == "WinAnsiEncoding") &amp;&amp; (containsDifferences == false || differencesAreUnicodeCompliant == true))</c></item>

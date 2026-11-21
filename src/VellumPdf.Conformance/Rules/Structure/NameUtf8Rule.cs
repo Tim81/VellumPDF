@@ -13,8 +13,12 @@ namespace VellumPdf.Conformance.Rules.Structure;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Authored from ISO 19005-2:2011, §6.1.8 and ISO 32000-1:2008, §7.3.5. Clean-room: derived from
-/// the specification text, not from any third-party validation profile.
+/// Cites ISO 19005-2:2011, §6.1.8 and ISO 32000-1:2008, §7.3.5. Its behaviour was checked against
+/// veraPDF's PDF/A-2 profile, and ISO 19005-2 was not held when it was written. The 2026-11-21
+/// audit against the clause text (#418) found it narrower: 6.1.8 binds font, colourant and
+/// structure type names file-wide, and this rule reaches fonts and colour spaces only through a
+/// page's own <c>/Resources</c> (not through form, pattern or annotation resources, nested colour
+/// spaces or image colour spaces).
 /// </para>
 /// <para>
 /// The parser (<see cref="VellumPdf.Reader.PdfDocumentReader"/>) decodes each PDF name's
@@ -26,10 +30,11 @@ namespace VellumPdf.Conformance.Rules.Structure;
 /// (U+0000–U+007F) are always valid UTF-8 and are fast-pathed before the encoding round-trip.
 /// </para>
 /// <para>
-/// <b>Scoping (empirically verified against veraPDF 1.30.2):</b> the rule is <em>presence-based</em>
-/// — all fonts and colour spaces found in each page's resource dictionary are checked, whether or
-/// not the page content actually selects them. Structure elements are checked by walking the
-/// <c>/StructTreeRoot /K</c> tree. The check is NOT gated on content-stream usage.
+/// <b>Scoping (set by probing veraPDF 1.30.2, not by the clause):</b> the rule is
+/// <em>presence-based</em> — all fonts and colour spaces found in each page's resource dictionary
+/// are checked, whether or not the page content actually selects them. Structure elements are
+/// checked by walking the <c>/StructTreeRoot /K</c> tree. The check is NOT gated on content-stream
+/// usage.
 /// </para>
 /// <para>
 /// <b>Font names:</b> only <c>/BaseFont</c> is checked; the <c>/FontName</c> entry of a

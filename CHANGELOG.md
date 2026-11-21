@@ -1228,6 +1228,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Documentation
 
+- **The Conformance package says which rules were checked against veraPDF's profiles, and no
+  longer says they were derived from the standards' text (#675).** Two audits on 2026-11-21 (#418
+  for ISO 19005-2, #428 for ISO 14289-1) found that the PDF/A-2 and PDF/UA-1 rules were written from
+  veraPDF's profiles before the text of either standard was available to the project, that many of
+  them differ from the clause text, and that several cite the wrong clause. The package README, the
+  repository README, `docs/architecture.md`, the generated `docs/pdf20-conformance.md`, the
+  `ConformanceCatalog` remarks and the XML remarks of 87 rule classes said otherwise or said nothing
+  about it. They now state which clause a rule cites, what it was checked against, and where the
+  audit found it narrower or broader than the clause or citing another clause. A rule whose reported
+  id or clause is wrong says so and points to #418 or #428; the ids and clauses themselves are not
+  changed.
+  - **Catalog status.** 18 PDF/A-2 clause tests that the audit probed (veraPDF fails a file the
+    rule passes) and six PDF/UA-1 tests that cover one font form only are now `Partial`, each with a
+    note naming the construct. `6.2.11.7.3-1`, which no rule implements, is now `Deferred`.
+    `ConformanceCatalog.Coverage` therefore reports 93.7%, 93.5% and 92.8% for PDF/A-2b, 2u and 2a
+    (99.3% at each level before) and 96.7% for PDF/UA-1 (99.5% before). The READMEs' "veraPDF parity
+    is about 99%" is replaced by those figures, rounded, with a statement of what they measure:
+    which veraPDF checks a rule covers, not agreement with the standards' text.
+  - **`docs/conformance-divergences.md`.** 6.6.5 is no longer listed as checked here and by no
+    veraPDF rule: `eng/clause-coverage.py` matched it inside the ISO 32000-1 citation `§8.6.6.5`,
+    and the pattern now ignores a number that follows a digit or a dot. 6.2.7 is scoped `reader`
+    in `eng/data/iso19005-2-clauses.yml` and no longer counts as a gap. The page reports 18 of 72
+    clauses checked by neither.
+  - **Smaller corrections.** The `PreflightAssertion.RuleId` example now names a real id,
+    `ISO19005-2:6.2.3-output-intent`. The section numbers in the `RuleRegistry` comments are the
+    ones ISO 19005-2 uses. Remarks that called `H` "weakly structured" and `H1` to `H6` "strongly
+    structured" now say the reverse, as ISO 32000-1 14.8.4.3.5 does. Remarks that said ISO 14289-1 7.2
+    requires a catalog `/Lang`, that `Table 333` lists every standard structure type, or that a
+    requirement sits in a clause it does not sit in are corrected.
+  - **Attention.** No rule changes what it reports on any file, with one exception: the messages
+    of `ISO14289-1:7.4.4-2` and `ISO14289-1:7.4.4-3` now call `H` "strongly structured" and `H1` to
+    `H6` "weakly structured" (they said the opposite). The rule ids and clauses are unchanged, so a
+    caller that suppresses by id is unaffected. `ConformanceCatalog.All` and `Coverage` return the
+    corrected statuses and the new notes. Messages that cite a wrong clause (for example the
+    `Table 333` wording in the role-map messages) are left as they are and are corrected with their
+    rules, tracked in #418 and #428.
+
 - **Every file in `docs/` is now either in the site navigation or kept off the site on purpose
   (#220).** `docs/toc.yml` already lists nine of the eleven Markdown files. The other two,
   `vellumpdf-inline-fontdict-quirk.md` and `vellumpdf-showtext-winansi-quirk.md`, are Dutch

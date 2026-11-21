@@ -12,9 +12,10 @@ namespace VellumPdf.Conformance.Rules.Structure;
 /// compliant with either ISO 19005-1 or ISO 19005-2.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.8 and the veraPDF 1.30.2 behaviour (test id <c>6.8-5</c>,
-/// test expression <c>isValidPDFA12 == true</c>). Clean-room: derived from the specification text
-/// and oracle observation, not from any third-party validation profile.
+/// Cites ISO 19005-2:2011, 6.8 and follows veraPDF 1.30.2 behaviour (test id <c>6.8-5</c>, test
+/// expression <c>isValidPDFA12 == true</c>); ISO 19005-2 was not held when it was written. The
+/// 2026-11-21 audit against the clause text (#418) found it narrower: an embedded file that claims
+/// PDF/A-1 is accepted without being validated.
 /// <para>
 /// The rule applies to every embedded-file stream, not only to those whose content happens to begin
 /// with the <c>%PDF-</c> header. veraPDF flags a plain text or image attachment with the same
@@ -31,11 +32,12 @@ namespace VellumPdf.Conformance.Rules.Structure;
 /// treated as a non-PDF/A finding rather than propagating to the outer validator.
 /// </para>
 /// <para>
-/// <strong>Parity caveat:</strong> this validator implements approximately 83 % of the veraPDF rule
-/// set. A marginally-conformant embedded PDF/A-2 document could therefore produce divergent verdicts
-/// (the in-process pass, veraPDF fail). For the oracle fixtures the embedded files are chosen to be
-/// clear-cut (a fully-conformant writer-produced PDF/A-2b, or a plain non-PDF/A PDF) so both
-/// validators agree. Do not introduce fixtures for marginal embedded files.
+/// <strong>Parity caveat:</strong> this validator does not reproduce every veraPDF rule, and the
+/// 2026-11-21 audits found rules narrower than the clause text (#418). A marginally conformant
+/// embedded PDF/A-2 document could therefore produce divergent verdicts (the in-process pass,
+/// veraPDF fail). For the oracle fixtures the embedded files are chosen to be clear-cut (a
+/// fully-conformant writer-produced PDF/A-2b, or a plain non-PDF/A PDF) so both validators agree.
+/// Do not introduce fixtures for marginal embedded files.
 /// </para>
 /// <para>
 /// <strong>Embedded PDF/A-1 deferral:</strong> when the embedded PDF declares

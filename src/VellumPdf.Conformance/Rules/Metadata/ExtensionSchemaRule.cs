@@ -13,10 +13,15 @@ namespace VellumPdf.Conformance.Rules.Metadata;
 /// no container element shall carry child fields outside its defined allowed set.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.6.2.3.2 and 6.6.2.3.3 and the PDF/A extension-schema container
-/// schema. Clean-room: derived from the specification text, not from any third-party validation
-/// profile. Consumes the parsed packet from <see cref="XmpPacket"/>; both the element-content and
-/// attribute serialisations of each field are accepted.
+/// Cites ISO 19005-2:2011, 6.6.2.3.2 and 6.6.2.3.3 and the PDF/A extension-schema container schema.
+/// Its behaviour was checked against veraPDF's PDF/A-2 profile, and ISO 19005-2 was not held when
+/// it was written. Several remarks below quote veraPDF test expressions. The 2026-11-21 audit
+/// against the clause text (#418) found it narrower: the clause requires all fields of its tables,
+/// and this rule requires only <c>schema</c>, <c>namespaceURI</c> and <c>prefix</c> on a schema,
+/// treating <c>pdfaSchema:property</c> and <c>pdfaSchema:valueType</c> as optional. The
+/// default-namespace leniency on containers follows veraPDF. Consumes the parsed packet from <see
+/// cref="XmpPacket"/>; both the element-content and attribute serialisations of each field are
+/// accepted.
 /// <para>
 /// §6.6.2.3.2-1 fires when any container element (pdfaSchema, pdfaProperty, pdfaType, pdfaField)
 /// carries a direct child element whose expanded name is not in that container's allowed set.

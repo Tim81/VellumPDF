@@ -6,7 +6,8 @@ using VellumPdf.Conformance.Rules.Structure;
 namespace VellumPdf.Conformance.Rules.Ua;
 
 /// <summary>
-/// ISO 14289-1 §7.2 list-structure containment and caption-position rules:
+/// List-structure containment and caption-position rules, reported under ISO 14289-1 §7.2. The
+/// source is ISO 14289-1 7.6, which tags lists according to ISO 32000-1 Table 336 (#428):
 /// <list type="bullet">
 ///   <item>7.2-17 (SELI)      — LI parent == L</item>
 ///   <item>7.2-18 (SELBody)   — LBody parent == LI</item>

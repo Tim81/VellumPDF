@@ -12,13 +12,14 @@ namespace VellumPdf.Conformance.Rules.Structure;
 /// (ISO 32000-1:2008, 12.8.4, Table 258).
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.1.12. Clean-room: derived from the specification text, not from
-/// any third-party validation profile. A pure object-graph presence check on the catalog's
-/// <c>/Perms</c> dictionary.
+/// Cites ISO 19005-2:2011, 6.1.12. Its behaviour was checked against veraPDF's PDF/A-2 profile, and
+/// ISO 19005-2 was not held when it was written. The 2026-11-21 audit against the clause text
+/// (#418) found agreement. A pure object-graph presence check on the catalog's <c>/Perms</c>
+/// dictionary.
 /// <para>
-/// Deferred: the §6.1.12-2 constraint (a signature reference dictionary reached through a
-/// <c>/DocMDP</c> transform shall not carry <c>/DigestLocation</c>, <c>/DigestMethod</c>, or
-/// <c>/DigestValue</c>) needs signature-reference traversal and is a separate, later vector.
+/// The §6.1.12-2 constraint (a signature reference dictionary reached through a <c>/DocMDP</c>
+/// transform shall not carry <c>/DigestLocation</c>, <c>/DigestMethod</c>, or <c>/DigestValue</c>)
+/// is checked by <see cref="Signature.DocMdpReferenceRule"/>.
 /// </para>
 /// </remarks>
 internal sealed class PermissionsRule : IConformanceRule

@@ -20,11 +20,11 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// </summary>
 /// <remarks>
 /// <para><strong>gContainsCatalogLang short-circuit (the dominant path).</strong>
-/// ISO 14289-1 §7.2 already requires a non-empty catalog <c>/Lang</c>. Every conformant PDF/UA-1
-/// file therefore has a catalog <c>/Lang</c>, which satisfies BOTH rules unconditionally
-/// (<c>gContainsCatalogLang == true</c>). These rules can only fire in a document that already
-/// fails 7.2-lang. When the catalog carries a non-empty <c>/Lang</c>, this rule emits nothing
-/// and returns immediately.</para>
+/// UaLangRule requires a non-empty catalog <c>/Lang</c>, which ISO 14289-1 §7.2 does not require
+/// when the language is declared another way. A file that passes UaLangRule therefore has a catalog
+/// <c>/Lang</c>, which satisfies BOTH rules unconditionally (<c>gContainsCatalogLang == true</c>).
+/// These rules can only fire in a document that already fails 7.2-lang. When the catalog carries a
+/// non-empty <c>/Lang</c>, this rule emits nothing and returns immediately.</para>
 ///
 /// <para><strong>Clause semantics confirmed by veraPDF 1.30.2 probing:</strong></para>
 /// <list type="bullet">
@@ -39,8 +39,11 @@ namespace VellumPdf.Conformance.Rules.Ua;
 ///     trigger the rule. No XMP at all does NOT trigger the rule.</item>
 /// </list>
 ///
-/// <para>Clean-room: derived from ISO 14289-1:2014 §7.2 and empirically validated against
-/// veraPDF 1.30.2. Not derived from any third-party implementation.</para>
+/// <para>Cites ISO 14289-1:2014 §7.2 and was empirically validated against veraPDF 1.30.2. It was
+/// written from veraPDF's PDF/UA-1 profile and checked against veraPDF, before ISO 14289-1 was
+/// held. The 2026-11-21 audit against the clause text (#428) found it slightly broader: only the
+/// catalog <c>/Lang</c> is accepted, and a language escape inside the text string (ISO 32000-1
+/// 7.9.2.2) is not.</para>
 /// </remarks>
 internal sealed class UaOutlineLangRule : IConformanceRule
 {

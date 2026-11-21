@@ -13,12 +13,15 @@ namespace VellumPdf.Conformance.Rules.Transparency;
 /// PDF/A-2 permits transparency, but a non-standard blend mode is not allowed.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.2.10 and ISO 32000-1:2008, 11.3.5 (Table 136). Clean-room:
-/// derived from the specification text, not from any third-party validation profile.
+/// Cites ISO 19005-2:2011, 6.2.10 and ISO 32000-1:2008, 11.3.5 (Table 136). Its behaviour was
+/// checked against veraPDF's PDF/A-2 profile, and ISO 19005-2 was not held when it was written. The
+/// 2026-11-21 audit against the clause text (#418) found it narrower: 6.2.10 covers a blend mode in
+/// any <c>/ExtGState</c> and also requires a page group colour space when transparency is used
+/// without a PDF/A output intent, which no rule checks.
 /// <para>
-/// This slice inspects the <c>/ExtGState</c> resources reachable through the page tree (including
+/// This rule inspects the <c>/ExtGState</c> resources reachable through the page tree (including
 /// inherited <c>/Resources</c>). Graphics states nested inside form XObjects, patterns, and
-/// annotation appearance streams are validated in a later slice of #50c.
+/// annotation appearance streams are not inspected.
 /// </para>
 /// <para>
 /// §6.2.10 constrains the <em>current</em> blend mode — the one set by a <c>gs</c> operator in a
@@ -55,9 +58,10 @@ internal sealed class BlendModeRule : IConformanceRule
             if (context.Resolve(resources.Get(_extGState)) is not PdfDictionary extGStates)
                 continue;
 
-            // §6.4 governs the CURRENT blend mode — the graphics states actually applied by a `gs`
-            // operator in this page's content. A non-standard /BM in an /ExtGState resource that is
-            // never applied is not a violation (and veraPDF does not flag it), so scope to used ones.
+            // §6.2.10 governs the CURRENT blend mode — the graphics states actually applied by a
+            // `gs` operator in this page's content. A non-standard /BM in an /ExtGState resource
+            // that is never applied is not a violation (and veraPDF does not flag it), so scope to
+            // used ones.
             var applied = ContentStreamUsage.Analyze(context, page).AppliedExtGStates;
 
             foreach (var entry in extGStates.Entries)

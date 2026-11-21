@@ -13,10 +13,11 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// <c>"required"</c>, the form is dynamic and the document is non-conformant.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 14289-1:2014, 7.15 (PDAcroForm predicate:
-/// <c>dynamicRender != 'required'</c>) and empirically validated against veraPDF 1.30.2
-/// (clause 7.15, testNumber 1). Clean-room: derived from the specification text and the veraPDF
-/// profile, not from any third-party implementation.
+/// Cites ISO 14289-1:2014, 7.15, and takes its test from veraPDF's PDAcroForm predicate
+/// <c>dynamicRender != 'required'</c> (clause 7.15, testNumber 1). It was written from veraPDF's
+/// PDF/UA-1 profile and checked against veraPDF, before ISO 14289-1 was held. The 2026-11-21 audit
+/// against the clause text (#428) found it broader: 7.15 compares the value to <c>required</c>, and
+/// this rule ignores case, so <c>Required</c> is refused here and accepted by veraPDF.
 /// <para>
 /// In the XFA packet, the <c>dynamicRender</c> setting lives inside the XCI (XML Configuration
 /// Interface) <c>config</c> element under the <c>acrobat</c> or <c>acrobat7</c> sub-element.

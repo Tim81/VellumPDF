@@ -10,9 +10,11 @@ namespace VellumPdf.Conformance.Rules.Structure;
 /// values are 128 or greater (the binary marker).
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.1.2 and ISO 32000-1:2008, 7.5.2. Clean-room: derived from
-/// the specification text, not from any third-party validation profile. PDF/A-2 is defined
-/// against PDF 1.7, so a <c>%PDF-2.0</c> header is not valid PDF/A-2.
+/// Cites ISO 19005-2:2011, 6.1.2 and ISO 32000-1:2008, 7.5.2. Its behaviour was checked against
+/// veraPDF's PDF/A-2 profile, and ISO 19005-2 was not held when it was written. The 2026-11-21
+/// audit against the clause text (#418) found it narrower: 6.1.2 requires an end-of-line marker
+/// after the version digit, and this rule does not look at that byte, so <c>%PDF-1.7x</c> passes.
+/// PDF/A-2 is defined against PDF 1.7, so a <c>%PDF-2.0</c> header is not valid PDF/A-2.
 /// </remarks>
 internal sealed class FileHeaderRule : IConformanceRule
 {

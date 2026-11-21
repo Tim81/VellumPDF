@@ -13,14 +13,14 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// <remarks>
 /// <strong>7.1-6</strong> — the veraPDF predicate <c>circularMappingExist != true</c>:
 /// the /RoleMap shall not contain a circular chain of role mappings (e.g. /Foo → /Bar, /Bar → /Foo).
-/// This is logically identical to the check already performed by the PDF/A-2a §6.8 rule
-/// (<see cref="LogicalStructureRule"/>), re-issued here under the ISO 14289-1 rule ID.
+/// This is logically identical to the check already performed by the PDF/A-2a rule that reports
+/// under §6.8 (<see cref="LogicalStructureRule"/>), re-issued here under the ISO 14289-1 rule ID.
 ///
 /// <strong>7.1-7</strong> — the veraPDF predicate <c>remappedStandardType == null</c>:
-/// no entry in the /RoleMap shall have a KEY that is one of the ISO 32000-1 Table 333
-/// standard structure types. Remapping a standard type (e.g. <c>/Table /Div</c>) is forbidden.
-/// Under-detection is safe: a missing entry in the standard-type set → we simply don't flag
-/// its remap, which is preferable to over-rejecting.
+/// no entry in the /RoleMap shall have a KEY that is one of the ISO 32000-1 standard structure
+/// types (14.8.4; Table 333 lists only the grouping elements among them). Remapping a standard type
+/// (e.g. <c>/Table /Div</c>) is forbidden. Under-detection is safe: a missing entry in the
+/// standard-type set → we simply don't flag its remap, which is preferable to over-rejecting.
 ///
 /// <para>FP-safety — both rules are scoped to the structure types ACTUALLY USED on walked
 /// elements, NOT to the /RoleMap dictionary alone. veraPDF evaluates these predicates on a
@@ -32,7 +32,7 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// (1) Both rules return early when there is no /RoleMap or no structure elements.
 /// </para>
 /// <para>
-/// (2) 7.1-7 fires only when a walked element's raw /S is a standard Table 333 type that is also a
+/// (2) 7.1-7 fires only when a walked element's raw /S is a standard structure type that is also a
 ///     /RoleMap key (the element uses a remapped standard type).
 /// </para>
 /// <para>
