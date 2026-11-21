@@ -49,6 +49,11 @@ public sealed class PdfDocument : IDisposable
     // Document outline (bookmark) entries, in insertion order
     private readonly List<PdfOutlineEntry> _outlineEntries = [];
 
+    // Named destinations and page-label ranges (#262). Allocated on first use, so a document that
+    // uses neither allocates nothing for them and its catalog gains no key.
+    private NamedDestinationTable? _destinations;
+    private PageLabelTable? _pageLabels;
+
     // Structure tree — populated by RegisterStructElem during layout/draw
     private readonly PdfStructureTree _structureTree = new();
     private bool _tagged;
@@ -211,7 +216,7 @@ public sealed class PdfDocument : IDisposable
     /// <summary>Adds a new page of the given <paramref name="size"/> and returns it.</summary>
     public PdfPage AddPage(PdfRectangle size)
     {
-        var page = new PdfPage(size);
+        var page = new PdfPage(size) { Owner = this };
         _pages.Add(page);
         return page;
     }
@@ -274,6 +279,39 @@ public sealed class PdfDocument : IDisposable
         _embeddedFontByHash.TryGetValue(foreign.FontHash, out var own) && own.ResourceName == foreign.ResourceName
             ? own
             : null;
+
+    /// <summary>
+    /// Refuses, before anything is written, what the destinations and page labels need that only the
+    /// finished page list can say: a link that names a destination nobody added, and a label range
+    /// that starts past the last page. It runs at save, after every <c>AddNamedDestination</c>,
+    /// <c>AddPageLabelRange</c>, <c>AddPage</c> and <c>RegisterLinkAnnotation</c> call has been made,
+    /// so the order of those calls does not matter. After it passes, the two tables' <c>Build</c>
+    /// methods cannot throw, so no refusal about them lands after the document is marked written.
+    /// It is not part of <see cref="ValidateSaveOptions"/> or <see cref="EnsureCanSave"/>, because
+    /// the layout engine runs those before it appends the pages, when every label range would look
+    /// as if it started past the end.
+    /// </summary>
+    private void RefuseUnresolvedNavigation()
+    {
+        // The same walk as the save loops: written pages only, so a link on a page this document
+        // does not own, which is never written, is not judged.
+        for (var i = 0; i < _pages.Count; i++)
+        {
+            if (!_pageAnnotations.TryGetValue(_pages[i], out var annots))
+                continue;
+            foreach (var annot in annots)
+            {
+                if (annot?.DestName is { } linkName && !(_destinations?.Contains(linkName) ?? false))
+                {
+                    throw new InvalidOperationException(
+                        $"A link on page {i + 1} names the destination '{linkName}', but no destination with that name was added. " +
+                        "Call AddNamedDestination for it; the document can still be saved.");
+                }
+            }
+        }
+
+        _pageLabels?.RefuseRangePast(_pages.Count);
+    }
 
     /// <summary>
     /// Refuses, before anything is written, a handle from another document whose resource name this
@@ -368,14 +406,156 @@ public sealed class PdfDocument : IDisposable
     /// Registers a /Link annotation on the given page.
     /// The annotation is written as an indirect object during <see cref="Save"/>.
     /// </summary>
+    /// <remarks>
+    /// <b>A link that sets <see cref="PdfLinkAnnotation.DestName"/> together with
+    /// <see cref="PdfLinkAnnotation.Uri"/> (an empty string counts) or
+    /// <see cref="PdfLinkAnnotation.DestPage"/> is refused at this call,</b> before the annotation
+    /// is stored. ISO 32000-2, Table 176 does not permit <c>Dest</c> beside an <c>A</c> entry, and a
+    /// page and a name would both fill <c>Dest</c>. A link without a <c>DestName</c> is not checked
+    /// here.
+    /// <para><b>Silently ignored:</b> a link registered on a page that is not one of this document's
+    /// pages is never written, <c>DestName</c> included. A
+    /// <see cref="PdfLinkAnnotation.DestPage"/> that is not one of the document's pages gives a link
+    /// with neither <c>/A</c> nor <c>/Dest</c>.</para>
+    /// <para><b>Do not pass</b> an annotation with both <see cref="PdfLinkAnnotation.Uri"/> and
+    /// <see cref="PdfLinkAnnotation.DestPage"/>. The save writes the <c>/A</c> action and drops the
+    /// page without a message. It is accepted today, and 3.0 will refuse it.</para>
+    /// <para>A name that no destination carries is refused later, by <see cref="Save(Stream)"/>,
+    /// <see cref="SaveAsync"/> and <see cref="PrepareForSigning"/>, not here, because the
+    /// destination may still be added.</para>
+    /// </remarks>
+    /// <param name="page">The page that holds the link.</param>
+    /// <param name="annotation">The link.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="page"/> is
+    /// <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="annotation"/> sets
+    /// <see cref="PdfLinkAnnotation.DestName"/> together with <see cref="PdfLinkAnnotation.Uri"/> or
+    /// <see cref="PdfLinkAnnotation.DestPage"/> (<c>ParamName</c> <c>annotation</c>).</exception>
     public void RegisterLinkAnnotation(PdfPage page, PdfLinkAnnotation annotation)
     {
+        // A null annotation is not refused: on a page this document does not own it never reaches a
+        // save loop, so a document that holds one still saves.
+        if (annotation is { DestName: not null } named)
+        {
+            if (named.Uri is not null)
+                throw new ArgumentException("A link cannot set both DestName and Uri: ISO 32000-2, Table 176 does not permit Dest beside an A entry.", nameof(annotation));
+            if (named.DestPage is not null)
+                throw new ArgumentException("A link cannot set both DestName and DestPage: both would fill the Dest entry.", nameof(annotation));
+        }
+
         if (!_pageAnnotations.TryGetValue(page, out var list))
         {
             list = [];
             _pageAnnotations[page] = list;
         }
         list.Add(annotation);
+    }
+
+    /// <summary>
+    /// Adds a named destination: <paramref name="name"/> stands for the point
+    /// (<paramref name="left"/>, <paramref name="top"/>) of <paramref name="page"/>, in default user
+    /// space at the viewer's current zoom (<c>/XYZ left top null</c>, ISO 32000-2, Table 149). A save
+    /// writes the destinations into the catalog's <c>/Names</c> tree under <c>/Dests</c> (12.3.2.4),
+    /// where a link finds one through <see cref="PdfLinkAnnotation.DestName"/> and an outside
+    /// reference finds one by name (<c>#nameddest=</c>). Nothing is written until a save.
+    /// </summary>
+    /// <remarks>
+    /// <b>A name outside the rule, a repeated name, a foreign page and a bad coordinate are
+    /// refused at this call.</b> A name has 1 to 127 characters, each one of
+    /// <c>A-Z a-z 0-9 . _ - :</c>; the rule is this library's and narrower than 7.9.6 needs, so that
+    /// a name is the same bytes in every encoding and within the limits of ISO 19005-2, 6.1.13 for a
+    /// name object and a string. <c>left</c> and <c>top</c> must be finite and
+    /// within ±3.403 × 10^38, the real range of ISO 32000-1, Table C.1, which this library applies
+    /// by its own choice. A document that has been written, or disposed, refuses a further
+    /// destination, because it could not reach the file.
+    /// <para><b>Silently ignored:</b> that no link names the destination, which is still written
+    /// because an outside reference can use it; and coordinates that lie outside the page's media
+    /// box, which are written as given because ISO 32000-2 sets no rule for them. Names are written
+    /// in ordinal order, whatever order they were added in.</para>
+    /// <para>A link that names a destination which was never added is refused by
+    /// <see cref="Save(Stream)"/>, not here, so the destination can still be added and the save
+    /// repeated.</para>
+    /// </remarks>
+    /// <param name="name">The destination's name.</param>
+    /// <param name="page">A page returned by this document's <see cref="AddPage()"/>.</param>
+    /// <param name="left">Horizontal position of the point, in default user space.</param>
+    /// <param name="top">Vertical position of the point, in default user space.</param>
+    /// <exception cref="ObjectDisposedException">The document has been disposed.</exception>
+    /// <exception cref="InvalidOperationException">The document has already been written.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="page"/>
+    /// is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="name"/> is empty, longer than 127
+    /// characters, holds a character outside <c>A-Z a-z 0-9 . _ - :</c>, or was added before
+    /// (<c>ParamName</c> <c>name</c>); or <paramref name="page"/> is not one of this document's
+    /// pages (<c>ParamName</c> <c>page</c>).</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="left"/> or
+    /// <paramref name="top"/> is NaN, infinite, or has a magnitude above 3.403 × 10^38.</exception>
+    public void AddNamedDestination(string name, PdfPage page, double left, double top)
+    {
+        EnsureCanAddNavigation();
+        DestinationName.Validate(name, nameof(name));
+        ArgumentNullException.ThrowIfNull(page);
+        // _pages changes only in AddPage, so a page that is not this document's now never will be.
+        if (!ReferenceEquals(page.Owner, this))
+            throw new ArgumentException("The page was not returned by this document's AddPage.", nameof(page));
+        (_destinations ??= new NamedDestinationTable()).Add(name, page, left, top);
+    }
+
+    /// <summary>
+    /// Starts a page-label range at <paramref name="startPageIndex"/>: that page and the pages after
+    /// it, up to the next range, are labelled in <paramref name="style"/> with
+    /// <paramref name="prefix"/> in front, counting from <paramref name="firstNumber"/> (ISO
+    /// 32000-2, 12.4.2 and Table 161). A save writes the ranges as the catalog's <c>/PageLabels</c>
+    /// number tree. Nothing is written until a save.
+    /// </summary>
+    /// <remarks>
+    /// <b>A negative index, a first number below 1, an undefined style, a second range at the same
+    /// start and a bad prefix are refused at this call.</b> A prefix may have at most 16,382
+    /// characters and may not hold an unpaired surrogate. It is written as UTF-16BE, and 16,382
+    /// characters are the most that fit the 32,767-byte string limit of ISO 19005-2, 6.1.13 (derived
+    /// from ISO 32000-1, Table C.1), which this library applies to the prefix whatever the
+    /// conformance level. A document that has been
+    /// written, or disposed, refuses a further range.
+    /// <para><b>A range that starts at or after the page count is refused by the save.</b>
+    /// <see cref="Save(Stream)"/>, <see cref="SaveAsync"/> and <see cref="PrepareForSigning"/> throw
+    /// <see cref="InvalidOperationException"/> before anything is written, because no page can show
+    /// the range. The index is not compared with the page count here, so a range may be added before
+    /// its pages exist. A range cannot be removed, so the way to retry is to add pages.</para>
+    /// <para><b>Silently ignored:</b> the order of the calls, since ranges are sorted by start; an
+    /// empty <paramref name="prefix"/>, which is the same as none; and a
+    /// <see cref="PdfPageLabelStyle.None"/> range with no prefix, which labels its pages with the
+    /// empty string. When no range starts at page 0, the save adds one there that numbers in decimal
+    /// from 1, because 12.4.2 requires a value for page index 0; those pages read as they do without
+    /// labels.</para>
+    /// </remarks>
+    /// <param name="startPageIndex">Zero-based index of the range's first page.</param>
+    /// <param name="style">How the numeric part is written.</param>
+    /// <param name="prefix">Text put before the numeric part; <see langword="null"/> or empty for
+    /// none.</param>
+    /// <param name="firstNumber">The number of the range's first page; 1 or more.</param>
+    /// <exception cref="ObjectDisposedException">The document has been disposed.</exception>
+    /// <exception cref="InvalidOperationException">The document has already been written.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="startPageIndex"/> is negative,
+    /// <paramref name="firstNumber"/> is below 1, or <paramref name="style"/> is not a member of
+    /// <see cref="PdfPageLabelStyle"/>.</exception>
+    /// <exception cref="ArgumentException">A range already starts at
+    /// <paramref name="startPageIndex"/> (<c>ParamName</c> <c>startPageIndex</c>), or
+    /// <paramref name="prefix"/> holds an unpaired surrogate or is longer than 16,382 characters
+    /// (<c>ParamName</c> <c>prefix</c>).</exception>
+    public void AddPageLabelRange(int startPageIndex, PdfPageLabelStyle style, string? prefix = null, int firstNumber = 1)
+    {
+        EnsureCanAddNavigation();
+        (_pageLabels ??= new PageLabelTable()).Set(startPageIndex, style, prefix, firstNumber);
+    }
+
+    // What a member that adds to the document shares: a disposed document and one that is already
+    // written both refuse, because the addition could not reach the file.
+    private void EnsureCanAddNavigation()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_written)
+            throw new InvalidOperationException(
+                "This document has already been written; create a new PdfDocument to write again.");
     }
 
     /// <summary>
@@ -837,7 +1017,12 @@ public sealed class PdfDocument : IDisposable
     /// property's boundary documentation names the value and the field. It is also thrown when the
     /// document has no pages ("The document has no pages."), and when an array, dictionary, stream or
     /// structure element in the document holds itself, directly or through others, so it cannot be
-    /// written.
+    /// written. It is also thrown, before anything is written, when a link on one of the document's
+    /// pages sets <see cref="PdfLinkAnnotation.DestName"/> and no <see cref="AddNamedDestination"/>
+    /// call added that name, and when a range added by <see cref="AddPageLabelRange"/> starts at or
+    /// after the page count. The message names the destination and the 1-based page, or the index
+    /// and the page count. The document stays usable: add the destination or the page and save
+    /// again.
     /// </exception>
     public void Save(Stream destination)
     {
@@ -848,6 +1033,7 @@ public sealed class PdfDocument : IDisposable
 
         ValidateSaveOptions();
         RefuseUndefinedForeignFonts();
+        RefuseUnresolvedNavigation();
 
         // All preconditions passed — mark written only now, so a recoverable precondition
         // failure (no pages, incompatible options) leaves the document usable for a retry.
@@ -1097,10 +1283,16 @@ public sealed class PdfDocument : IDisposable
         if (_outlineEntries.Count > 0)
             outlinesRef = BuildOutlineTree(registry, pageRefMap);
 
+        // ── Navigation trees (named destinations, page labels) ────────────────
+        // After the last reservation above, so a document that uses neither keeps its object
+        // numbers. RefuseUnresolvedNavigation has run, so these cannot throw.
+        var destsRoot = _destinations?.Build(registry, pageRefMap);
+        var pageLabelsRoot = _pageLabels?.Build(registry, _pages.Count);
+
         // ── Fill catalog value ─────────────────────────────────────────────
         var catalog = BuildCatalog(new CatalogParts(
             pageTreeRef, metadataRef, outlinesRef, structTreeRootRef, acroFormDict,
-            AcroFormFollowsMetadata: false, outputIntentsRef));
+            AcroFormFollowsMetadata: false, outputIntentsRef, destsRoot, pageLabelsRoot));
 
         registry.SetValue(catalogRef, catalog);
 
@@ -1191,7 +1383,11 @@ public sealed class PdfDocument : IDisposable
     /// registered form field's <see cref="FormFieldOptions.FontSize"/> is not finite. That
     /// property's boundary documentation names the value and the field. It is also thrown when the
     /// document has no pages ("The document has no pages."), and when an array, dictionary, stream or
-    /// structure element in the document holds itself. Serialisation runs on a thread-pool
+    /// structure element in the document holds itself. It is also thrown, before anything is
+    /// written, for a link whose <see cref="PdfLinkAnnotation.DestName"/> no
+    /// <see cref="AddNamedDestination"/> call added and for a <see cref="AddPageLabelRange"/> range
+    /// that starts at or after the page count, as <see cref="Save(System.IO.Stream)"/> describes; the
+    /// document stays usable. Serialisation runs on a thread-pool
     /// thread, so the exception is rethrown here when the wrapping task is awaited.
     /// </exception>
     /// <exception cref="OperationCanceledException">
@@ -1310,7 +1506,10 @@ public sealed class PdfDocument : IDisposable
     /// The document has no pages, or has already been written, or an array, dictionary, stream or
     /// structure element in it holds itself, or a registered form field's
     /// <see cref="FormFieldOptions.FontSize"/> is not finite. That property's boundary documentation
-    /// names the value and the field.
+    /// names the value and the field. It is also thrown, before anything is written, for a link
+    /// whose <see cref="PdfLinkAnnotation.DestName"/> no <see cref="AddNamedDestination"/> call
+    /// added and for a <see cref="AddPageLabelRange"/> range that starts at or after the page count,
+    /// as <see cref="Save(System.IO.Stream)"/> describes; the document stays usable.
     /// </exception>
     public byte[] PrepareForSigning(SignaturePlaceholderOptions options)
     {
@@ -1335,6 +1534,7 @@ public sealed class PdfDocument : IDisposable
             throw new InvalidOperationException("The document has no pages.");
 
         RefuseUndefinedForeignFonts();
+        RefuseUnresolvedNavigation();
 
         // All preconditions passed — mark written only now, so a recoverable precondition
         // failure leaves the document usable for a retry.
@@ -1623,9 +1823,13 @@ public sealed class PdfDocument : IDisposable
         if (Conformance != PdfConformance.None)
             outputIntentsRef = BuildOutputIntents(registry);
 
+        // Same trees, same order as Save, after the output-intent objects.
+        var destsRoot = _destinations?.Build(registry, pageRefMap);
+        var pageLabelsRoot = _pageLabels?.Build(registry, _pages.Count);
+
         var catalog = BuildCatalog(new CatalogParts(
             pageTreeRef, metadataRef, outlinesRef, structTreeRootRef, acroFormDict,
-            AcroFormFollowsMetadata: true, outputIntentsRef));
+            AcroFormFollowsMetadata: true, outputIntentsRef, destsRoot, pageLabelsRoot));
 
         registry.SetValue(catalogRef, catalog);
 
@@ -1656,6 +1860,14 @@ public sealed class PdfDocument : IDisposable
     /// major may drop it.
     /// </param>
     /// <param name="OutputIntents">The output-intent dictionary, or <see langword="null"/>.</param>
+    /// <param name="Dests">
+    /// The root of the <c>/Dests</c> name tree, not registered, or <see langword="null"/> without
+    /// destinations. It is written direct, as <c>/Names &lt;&lt; /Dests root &gt;&gt;</c>.
+    /// </param>
+    /// <param name="PageLabels">
+    /// The root of the <c>/PageLabels</c> number tree, not registered, or <see langword="null"/>
+    /// without label ranges. It is written direct.
+    /// </param>
     private readonly record struct CatalogParts(
         PdfIndirectReference Pages,
         PdfIndirectReference Metadata,
@@ -1663,7 +1875,9 @@ public sealed class PdfDocument : IDisposable
         PdfIndirectReference? StructTreeRoot,
         PdfDictionary? AcroForm,
         bool AcroFormFollowsMetadata,
-        PdfIndirectReference? OutputIntents);
+        PdfIndirectReference? OutputIntents,
+        PdfDictionary? Dests,
+        PdfDictionary? PageLabels);
 
     /// <summary>
     /// Builds the document catalog for both <see cref="Save(Stream)"/> and the signing path. It
@@ -1717,6 +1931,15 @@ public sealed class PdfDocument : IDisposable
                 .Set(new PdfName("DisplayDocTitle"), PdfBoolean.True);
             catalog.Set(new PdfName("ViewerPreferences"), viewerPrefs);
         }
+
+        // Named destinations and page labels (#262), only when the document has some, so a
+        // document without them keeps its catalog. Both roots stay direct in the catalog: Tables 29
+        // and 28 do not ask for an indirect reference, and the example in 12.4.2 writes PageLabels
+        // inline.
+        if (parts.Dests is not null)
+            catalog.Set(new PdfName("Names"), new PdfDictionary().Set(new PdfName("Dests"), parts.Dests));
+        if (parts.PageLabels is not null)
+            catalog.Set(new PdfName("PageLabels"), parts.PageLabels);
 
         // Entries added through the test seam go last and only when set, so a default document's
         // catalog is unchanged.

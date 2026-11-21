@@ -65,9 +65,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Internal name tree and number tree writers (#241).** `NameTreeWriter` and `NumberTreeWriter`
   in `VellumPdf.Kernel` build the structures ISO 32000-2, 7.9.6 and 7.9.7 define, which the
   catalog's `/Names` and `/PageLabels` entries, and later named destinations and embedded files,
-  will hang from. They are `internal`, so there is no public API change and no output change: no
-  document member calls them yet, and wiring them into the catalog is left to the work that
-  consumes them. Up to 64 entries make a root that holds `/Names` (`/Nums`) itself; more are cut
+  will hang from. They are `internal`, so they add no public API. `PdfDocument` calls them through
+  the named-destination and page-label members below, and a document that uses neither writes
+  no tree. Up to 64 entries make a root that holds `/Names` (`/Nums`) itself; more are cut
   into evenly sized leaves of at most 64 entries under groups of at most 64 kids, so 100,000
   entries are three levels deep. Keys sort by unsigned byte value, and `/Limits` sit on every
   node except the root, which both editions of the standard require. A duplicate key, a null key or
@@ -79,17 +79,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Internal tables for named destinations and page labels (#262, part 1).** `NamedDestinationTable`
   and `PageLabelTable` in `VellumPdf.Kernel` turn names and label ranges into the `/Dests` name tree
   and the `/PageLabels` number tree (ISO 32000-2, 12.3.2.4 and 12.4.2), using the tree writers above,
-  and `PageLabelFormatter` computes the label a page shows. They are `internal`, so there is no public
-  API change and no output change: no document member calls them yet. A destination name is 1 to
+  and `PageLabelFormatter` computes the label a page shows. They are `internal`; the next entry
+  makes them reachable through `PdfDocument`. A destination name is 1 to
   127 characters from `A-Z a-z 0-9 . _ - :`; each value is an
   indirect `[page /XYZ left top null]` array. A table with no range at page 0 gets a decimal one there,
   because 12.4.2 requires a value for page index 0. Letters repeat (27 is `AA`, 53 is `AAA`) rather than
   counting in base 26, as Table 161 describes, and Roman numerals above 3999 add one `M` per thousand,
   a choice of this library because 12.4.2 sets no rule there. An empty table builds nothing and leaves
   the object numbers alone. A bad name, a duplicate, a coordinate that is not finite or lies beyond
-  ±2,147,483,647 (the largest integer of ISO 32000-1, Table C.1; a whole coordinate is written as
-  an integer), a first number below 1, an unpaired surrogate in a prefix and a label over 32,767
-  characters are refused.
+  ±3.403 × 10^38 (the real range of ISO 32000-1, Table C.1), a first number below 1, an unpaired
+  surrogate in a prefix and a label over 32,767 characters are refused. A whole coordinate inside
+  the 32-bit integer range is written as an integer, and a whole one outside it as a real, as
+  `PdfReal` does since #646.
+- **Named destinations, links by name and page labels on `PdfDocument` (#262, part 2).**
+  `AddNamedDestination(name, page, left, top)` names a point on a page; a save writes the names
+  into the catalog's `/Names` tree under `/Dests` (ISO 32000-2, 12.3.2.4), so an outside reference
+  such as `#nameddest=chap-1` finds the point and a link to it keeps working when the pages are
+  reordered. `PdfLinkAnnotation.DestName` makes a link write `/Dest (name)` instead of a page
+  reference. `AddPageLabelRange(startPageIndex, style, prefix, firstNumber)` starts a range of
+  page labels with the new `PdfPageLabelStyle` (`None`, `Decimal`, `UpperRoman`, `LowerRoman`,
+  `UpperLetters`, `LowerLetters`); a save writes them as `/PageLabels` (12.4.2). Both save paths,
+  `Save` and `PrepareForSigning`, write the same trees, so a signed document and its extensions
+  keep them. A name has 1 to 127 characters from `A-Z a-z 0-9 . _ - :`. These are refused at
+  the call: a repeated name or a second range at the same start (`ArgumentException`); a page
+  that this document's `AddPage` did not return, or a coordinate that is NaN, infinite or beyond
+  ±3.403 × 10^38 (the real range of ISO 32000-1, Table C.1), a negative start index, a first number
+  below 1 or an undefined style (`ArgumentOutOfRangeException` for the last four); a call after the
+  document was written (`InvalidOperationException`) or disposed (`ObjectDisposedException`); a
+  `DestName` outside the rule (`ArgumentException`, from the initializer); and a link that sets
+  `DestName` together with `Uri` or `DestPage` (`ArgumentException` from
+  `RegisterLinkAnnotation`, because ISO 32000-2, Table 176 does not permit `Dest` beside `A`).
+  `Save`, `SaveAsync`, `PrepareForSigning`, `Sign`, `SignAsync` and `DocumentRenderer.Render`
+  refuse, with `InvalidOperationException` and before anything is written, a link whose `DestName`
+  no destination carries and a label range that starts at or after the page count; the document
+  stays usable, so adding the destination or the page and saving again writes the file once. A
+  `Uri` together with `DestPage` still writes only the `/A` action; the docs now say so, and
+  3.0 will refuse the pair. A document that uses none of the new members writes the same bytes as
+  before. With no range at page 0 the save adds a decimal one there, as 12.4.2 requires.
 - **`GifLoadOptions` and `GifImageLoader.Load(byte[], GifLoadOptions)` (#498).** One property,
   `PlaceOnLogicalScreen`, default `false`. With it set the loader refuses what section 20.a rules
   out ("Each image must fit within the boundaries of the Logical Screen"): a screen with a width

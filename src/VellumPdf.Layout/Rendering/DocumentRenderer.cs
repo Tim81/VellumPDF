@@ -316,7 +316,14 @@ public sealed class DocumentRenderer
     /// An element needs more than <b>50,000</b> page continuations or is too tall for one page, or
     /// the kernel document has no pages, or this document has already been written, or the kernel
     /// document's conformance level refuses its encryption settings, or an element's input cannot
-    /// be laid out, or a registered font lacks a table the write needs.
+    /// be laid out, or a registered font lacks a table the write needs. It is also thrown, by the
+    /// final write and so after the layout, when the kernel document holds a link whose
+    /// <see cref="VellumPdf.Annotations.PdfLinkAnnotation.DestName"/> no <see cref="PdfDocument.AddNamedDestination"/> call
+    /// added, or a <see cref="PdfDocument.AddPageLabelRange"/> range that starts at or after the
+    /// number of pages the layout produced. The layout's pages are then already in the kernel
+    /// document, which is not marked written: calling this method again lays them out a second
+    /// time, so fix the kernel document and save it with
+    /// <see cref="PdfDocument.Save(System.IO.Stream)"/> instead.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// The margins, header and footer together leave the content area no positive size, or an
