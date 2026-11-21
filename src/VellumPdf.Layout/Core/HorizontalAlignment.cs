@@ -55,6 +55,12 @@ public enum HorizontalAlignment
     /// a justified line in either is stretched as though it held no text, and runs past the right
     /// edge by the width of the text it does hold. The space divisor of a line that holds text in
     /// either counts every space twice.</para>
+    /// <para>In an embedded font the same rule holds by a different means, because <c>Tw</c> does
+    /// not apply to two-byte codes: every space the line holds, a leading space, each space of a run
+    /// of spaces and a tab drawn as a space included, is shown as a glyph of its own and advanced
+    /// by its width plus its share of the slack, so the line ends at the right edge of its box. A
+    /// run of spaces is reachable only through tab stops, since white space is otherwise reduced
+    /// to one space; see <see cref="VellumPdf.Layout.Elements.Paragraph"/>.</para>
     /// </remarks>
     Justify,
 }

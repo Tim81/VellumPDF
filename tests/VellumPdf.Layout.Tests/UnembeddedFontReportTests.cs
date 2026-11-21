@@ -170,7 +170,7 @@ public sealed class UnembeddedFontReportTests
     }
 
     [Fact]
-    public void TwoRunsInOneFontAtTwoSizes_countOneFontOperator()
+    public void TwoRunsInOneFontAtTwoSizes_countTwoFontOperators()
     {
         using var doc = NewDocument(PdfConformance.PdfA2u);
         var paragraph = new Paragraph("ten ", new TextStyle { Font = Standard14.Helvetica, FontSize = 10 });
@@ -180,8 +180,8 @@ public sealed class UnembeddedFontReportTests
         var pdf = Save(doc);
 
         var item = Assert.Single(doc.Diagnostics);
-        AssertItem(item, "Helvetica", Clause2u, LayoutElementKind.Paragraph, 0, 1);
-        Assert.Equal(["/F1 10 Tf"], TfLines(pdf));
+        AssertItem(item, "Helvetica", Clause2u, LayoutElementKind.Paragraph, 0, 2);
+        Assert.Equal(["/F1 10 Tf", "/F1 12 Tf"], TfLines(pdf));
     }
 
     [Theory]
