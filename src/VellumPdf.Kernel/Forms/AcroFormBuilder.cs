@@ -431,9 +431,9 @@ internal static class AcroFormBuilder
         var sb = new StringBuilder();
         sb.Append("q\n");
         sb.Append("BT\n");
-        sb.AppendFormat(CultureInfo.InvariantCulture, "/ZaDb {0:0.###} Tf\n", sz);
+        sb.Append($"/ZaDb {Num(sz)} Tf\n");
         sb.Append("0 g\n");
-        sb.AppendFormat(CultureInfo.InvariantCulture, "{0:0.###} {1:0.###} Td\n", x, baselineY);
+        sb.Append($"{Num(x)} {Num(baselineY)} Td\n");
         sb.Append("(l) Tj\n");
         sb.Append("ET\n");
         sb.Append("Q\n");
@@ -453,16 +453,16 @@ internal static class AcroFormBuilder
         // Grey background
         sb.Append("q\n");
         sb.Append("0.8 0.8 0.8 rg\n");
-        sb.AppendFormat(CultureInfo.InvariantCulture, "{0:0.###} {1:0.###} {2:0.###} {3:0.###} re f\n", 0, 0, w, h);
+        sb.Append($"{Num(0)} {Num(0)} {Num(w)} {Num(h)} re f\n");
         // Black border
         sb.Append("0 0 0 RG\n");
         sb.Append("1 w\n");
-        sb.AppendFormat(CultureInfo.InvariantCulture, "{0:0.###} {1:0.###} {2:0.###} {3:0.###} re S\n", 0.5, 0.5, w - 1, h - 1);
+        sb.Append($"{Num(0.5)} {Num(0.5)} {Num(w - 1)} {Num(h - 1)} re S\n");
         // Caption text
         sb.Append("BT\n");
-        sb.AppendFormat(CultureInfo.InvariantCulture, "/Helv {0:0.###} Tf\n", fontSize);
+        sb.Append($"/Helv {Num(fontSize)} Tf\n");
         sb.Append("0 g\n");
-        sb.AppendFormat(CultureInfo.InvariantCulture, "{0:0.###} {1:0.###} Td\n", 4.0, baselineY);
+        sb.Append($"{Num(4.0)} {Num(baselineY)} Td\n");
         sb.Append('(');
         sb.Append(EscapePdfString(caption));
         sb.Append(") Tj\n");
@@ -485,17 +485,17 @@ internal static class AcroFormBuilder
         // Background + border
         sb.Append("q\n");
         sb.Append("1 1 1 rg\n");                          // white fill
-        sb.AppendFormat(CultureInfo.InvariantCulture, "{0:0.###} {1:0.###} {2:0.###} {3:0.###} re f\n", 0, 0, w, h);
+        sb.Append($"{Num(0)} {Num(0)} {Num(w)} {Num(h)} re f\n");
         sb.Append("0 0 0 RG\n");                           // black stroke
         sb.Append("0.5 w\n");
-        sb.AppendFormat(CultureInfo.InvariantCulture, "{0:0.###} {1:0.###} {2:0.###} {3:0.###} re S\n", 0, 0, w, h);
+        sb.Append($"{Num(0)} {Num(0)} {Num(w)} {Num(h)} re S\n");
         // Text
         sb.Append("/Tx BMC\n");
         sb.Append("q\n");
         sb.Append("BT\n");
-        sb.AppendFormat(CultureInfo.InvariantCulture, "/Helv {0:0.###} Tf\n", fontSize);
+        sb.Append($"/Helv {Num(fontSize)} Tf\n");
         sb.Append("0 g\n");
-        sb.AppendFormat(CultureInfo.InvariantCulture, "{0:0.###} {1:0.###} Td\n", 2.0, baselineY);
+        sb.Append($"{Num(2.0)} {Num(baselineY)} Td\n");
         sb.Append('(');
         sb.Append(EscapePdfString(value));
         sb.Append(") Tj\n");
@@ -519,9 +519,9 @@ internal static class AcroFormBuilder
         var sb = new StringBuilder();
         sb.Append("q\n");
         sb.Append("BT\n");
-        sb.AppendFormat(CultureInfo.InvariantCulture, "/ZaDb {0:0.###} Tf\n", fontSize);
+        sb.Append($"/ZaDb {Num(fontSize)} Tf\n");
         sb.Append("0 g\n");
-        sb.AppendFormat(CultureInfo.InvariantCulture, "{0:0.###} {1:0.###} Td\n", x, baselineY);
+        sb.Append($"{Num(x)} {Num(baselineY)} Td\n");
         sb.Append("(4) Tj\n");
         sb.Append("ET\n");
         sb.Append("Q\n");
@@ -611,6 +611,10 @@ internal static class AcroFormBuilder
         : double.IsPositiveInfinity(value) ? "positive infinity"
         : "negative infinity";
 
+    // Appearance-stream and /DA numbers use the shared formatter, so a whole value outside the
+    // 32-bit range is a real token here exactly as it is in /Rect and /BBox (#639).
+    private static string Num(double value) => PdfNumberFormat.FormatAppearance(value);
+
     private static PdfArray BBoxArray(double w, double h) =>
         new([new PdfReal(0), new PdfReal(0), new PdfReal(w), new PdfReal(h)]);
 
@@ -624,27 +628,17 @@ internal static class AcroFormBuilder
 
     private static PdfLiteralString BuildDa(double fontSize) =>
         new(Encoding.Latin1.GetBytes(
-            string.Create(CultureInfo.InvariantCulture, $"/Helv {fontSize:0.###} Tf 0 g")));
+            $"/Helv {Num(fontSize)} Tf 0 g"));
 
     /// <summary>
-    /// Encodes a PDF <em>text string</em> (ISO 32000-2 §7.9.2) for use in field dictionary
-    /// entries such as <c>/T</c>, <c>/V</c>, <c>/TU</c>, and <c>/Opt</c> display strings.
-    /// Emits a compact Latin-1 literal when every character is representable in Latin-1
-    /// (preserving byte-identical output for ASCII/Latin-1 input); otherwise emits UTF-16BE
-    /// with a leading U+FEFF BOM so viewers that support only text-string encoding
-    /// (not arbitrary Latin-1) can still decode the value correctly.
+    /// Encodes a PDF text string (ISO 32000-2 7.9.2) for the field dictionary entries <c>/T</c>,
+    /// <c>/V</c>, <c>/Opt</c> and <c>/MK /CA</c> through <see cref="PdfLiteralString.FromTextString"/>,
+    /// the encoder the signature dictionary and output intent strings use, so a reader decodes each
+    /// character as it was passed. The document information, outline titles and page-label prefixes
+    /// use <see cref="PdfLiteralString.FromUnicode"/>.
     /// </summary>
-    private static PdfLiteralString TextString(string value)
-    {
-        foreach (var c in value)
-        {
-            if (c > 0xFF)
-                return PdfLiteralString.FromUnicode(value);
-        }
-        // All characters fit in Latin-1: emit the compact form (byte-identical to the
-        // previous LiteralFromLatin1 path for ASCII/Latin-1 input).
-        return new PdfLiteralString(Encoding.Latin1.GetBytes(value));
-    }
+    private static PdfLiteralString TextString(string value) =>
+        PdfLiteralString.FromTextString(value);
 
     /// <summary>
     /// Escapes a string value for inclusion between ( ) in a PDF content stream

@@ -32,6 +32,11 @@ namespace VellumPdf.Canvas;
 /// is refused.</para>
 /// <para><b>Attention</b>: a non-finite operand is never written as the token <c>NaN</c> or
 /// <c>Infinity</c>; the call throws instead.</para>
+/// <para>An operand is written rounded to at most five decimal places. When the rounded text has no
+/// decimal point and lies outside the 32-bit range it is written with <c>.0</c>, as a real, the way
+/// <see cref="PdfReal"/> writes it. <b>Do not pass</b> a magnitude above 3.403 × 10^38: it is
+/// written, but it lies outside the real range of ISO 19005-2 6.1.13, so a PDF/A file that holds it
+/// fails validation.</para>
 /// </remarks>
 public sealed class PdfCanvas
 {
@@ -777,8 +782,9 @@ public sealed class PdfCanvas
 
     // ── Private helpers ─────────────────────────────────────────────────────
 
-    // Formats an operand for the content stream. It matches PdfReal on both counts: the "0.#####"
-    // format string (#80) and the refusal of NaN and Infinity, which are not PDF numbers
+    // Formats an operand for the content stream. It matches PdfReal on both counts: the shared
+    // PdfNumberFormat rule (up to five decimals, #80; a whole value outside the 32-bit range gets
+    // ".0", #639) and the refusal of NaN and Infinity, which are not PDF numbers
     // (ISO 32000-2 7.3.3). Every number the canvas writes goes through here, so an invalid token
     // cannot be written whichever caller reaches the canvas (#519). The exception type and the
     // message text are PdfReal's, so the object model and the content stream read alike; the
@@ -788,7 +794,7 @@ public sealed class PdfCanvas
         if (double.IsNaN(v) || double.IsInfinity(v))
             throw new ArgumentException(
                 $"PDF does not support NaN or Infinity as a real number value. Got: {v.ToString(CultureInfo.InvariantCulture)}");
-        return v.ToString("0.#####", CultureInfo.InvariantCulture);
+        return PdfNumberFormat.FormatReal(v);
     }
 
     // PDF delimiters that must be #XX-escaped in a name token (ISO 32000-2 §7.3.5).

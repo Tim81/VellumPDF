@@ -628,10 +628,8 @@ doc.Save(stream);
 With the same `Timestamp` and `DocumentId`, two documents built by the same
 calls save to the same bytes on one library build, one runtime and one operating
 system.  Encryption draws random salts and IVs on every save, so an encrypted
-document is never reproducible; a signature takes its time from the signing
-options, not from `Timestamp`; and a document with an embedded font can differ
-between Windows and Linux, because the ToUnicode map's line ends follow the
-platform (#630).
+document is never reproducible, and a signature takes its time from the signing
+options, not from `Timestamp`.
 
 `DocumentId` must be exactly 16 bytes; any other length throws
 `ArgumentException`.  The writer emits no `/ID` for a length it cannot use, and
