@@ -660,7 +660,28 @@ public sealed class DocumentRenderer
 
     // The measuring pass reads the content area once, as it always has; the drawing pass reads it
     // as it goes.
-    private LayoutBox PlaceArea => _measuring ? _measureArea : ContentArea;
+    private LayoutBox PlaceArea => AreaOnPage(_measuring ? _measureArea : ContentArea, _pageIndex);
+
+    /// <summary>
+    /// Whether margins are mirrored for double-sided print: <see cref="EdgeInsets.Left"/> is then the
+    /// inside margin and <see cref="EdgeInsets.Right"/> the outside one. Set by
+    /// <see cref="Document"/> from <see cref="Document.MirrorMargins"/>; a renderer built directly
+    /// keeps the same margins on every page.
+    /// </summary>
+    internal bool MirrorMargins { get; set; }
+
+    // Parity is the physical position in the kernel document and page 1 is recto; a page label
+    // never enters it, because labels may restart. One rule for the recto break, the content
+    // area's x and the bands.
+    private bool IsRecto(int pageIndex) => (_pagesBefore + pageIndex + 1) % 2 == 1;
+
+    // The content area as the page with this 0-based index offers it. The width and the vertical
+    // extent are the same on every page, so a wrap measured on one page holds on the next; only
+    // the left edge moves, to the outside margin on a verso page.
+    private LayoutBox AreaOnPage(LayoutBox area, int pageIndex) =>
+        MirrorMargins && !IsRecto(pageIndex)
+            ? new LayoutBox(_margins.Right, area.Y, area.Width, area.Height)
+            : area;
 
     // Only the renderers added to this document are searched, not ones a renderer holds inside
     // itself.
@@ -813,10 +834,13 @@ public sealed class DocumentRenderer
             "The renderers have already measured, so lay the content out again in a new renderer " +
             "or document.");
 
-    private LayoutResult CallLayout(IRenderer renderer, LayoutBox area)
+    // FreshPageArea is the area of the page a Nothing answer is retried on: the next page, or, for
+    // the retry itself, the page it is already on. Under mirrored margins the two differ in x.
+    private LayoutResult CallLayout(IRenderer renderer, LayoutBox area, bool retry = false)
     {
         LayoutCalls++;
-        return renderer.Layout(new LayoutContext(area) { FreshPageArea = PlaceArea });
+        var fresh = AreaOnPage(_measuring ? _measureArea : ContentArea, retry ? _pageIndex : _pageIndex + 1);
+        return renderer.Layout(new LayoutContext(area) { FreshPageArea = fresh });
     }
 
     // Tells the renderer whose result was just accepted to report where it landed. Called before
@@ -851,7 +875,7 @@ public sealed class DocumentRenderer
 
         // Parity is the physical position in the kernel document and page 1 is recto; a page label
         // never enters it, because labels may restart.
-        if (mode == PageBreakMode.Recto && (_pagesBefore + _pageIndex + 1) % 2 == 0)
+        if (mode == PageBreakMode.Recto && !IsRecto(_pageIndex))
             AddBlankPage(totalPages);
 
         if (!_collect) return;
@@ -932,7 +956,7 @@ public sealed class DocumentRenderer
                 case LayoutResult.Outcome.Nothing:
                     AdvancePage(totalPages);
                     if (!_measuring) EnsurePage();
-                    var retry = CallLayout(renderer, PlaceArea);
+                    var retry = CallLayout(renderer, PlaceArea, retry: true);
                     if (retry.Status == LayoutResult.Outcome.Nothing)
                     {
                         if (!_measuring) FinishCurrentPage(totalPages);
@@ -1099,11 +1123,25 @@ public sealed class DocumentRenderer
         // at x = 290.56 against a content edge of 250. That predates this change, since the old
         // code computed the same width and the same x, and validating the size belongs with the
         // rest of the geometry validation rather than here.
-        double x = band.Alignment switch
+        //
+        // Under mirrored margins a verso page has its outside margin on the left, so the page's
+        // edges swap and so do Left and Right alignment: a band on the outside stays outside.
+        var mirrored = MirrorMargins && pageNumber % 2 == 0;
+        var leftEdge = mirrored ? _margins.Right : _margins.Left;
+        var rightEdge = mirrored ? _margins.Left : _margins.Right;
+        var alignment = band.Alignment;
+        if (mirrored)
+            alignment = alignment switch
+            {
+                HorizontalAlignment.Right => HorizontalAlignment.Left,
+                HorizontalAlignment.Center => HorizontalAlignment.Center,
+                _ => HorizontalAlignment.Right,
+            };
+        double x = alignment switch
         {
-            HorizontalAlignment.Center => _margins.Left + (contentWidth - textWidth) / 2,
-            HorizontalAlignment.Right => _pageSize.Width - _margins.Right - textWidth,
-            _ => _margins.Left,
+            HorizontalAlignment.Center => leftEdge + (contentWidth - textWidth) / 2,
+            HorizontalAlignment.Right => _pageSize.Width - rightEdge - textWidth,
+            _ => leftEdge,
         };
 
         // PDF Y: baseline of text within the band (centred vertically in the band)
