@@ -16,7 +16,8 @@ namespace VellumPdf.Layout.Core;
 /// paragraph run, table cell text or line separator names the element first. A colour that is not
 /// written is not refused; see <c>Document</c>.
 /// <para>A finite channel outside 0 to 1 is <b>not</b> refused, except in a row background passed
-/// to <see cref="Elements.Table.TableElement.Add(Elements.Table.Row)"/>. Elsewhere it is written
+/// to <see cref="Elements.Table.TableElement.Add(Elements.Table.Row)"/> and in the text colour of a
+/// <see cref="Elements.Preformatted"/>, whose constructor refuses it. Elsewhere it is written
 /// as given after rounding to five decimals, so (5, 0, -1) is written as <c>5 0 -1 rg</c>.
 /// ISO 32000-2, 8.6.4.3, says each DeviceRGB component "shall" be a number from 0.0 to 1.0, so
 /// that output is not conforming even though it parses and renders.</para>

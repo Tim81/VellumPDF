@@ -237,6 +237,17 @@ public sealed class TrueTypeFontEmbedder
         return gid;
     }
 
+    /// <summary>
+    /// The glyph id <see cref="GetGlyphId"/> returns for <paramref name="codePoint"/>, found
+    /// without registering it: the subset and the ToUnicode map are left as they were. A caller
+    /// that checks text before drawing it uses this, so a check that refuses leaves nothing behind
+    /// for a retry to inherit.
+    /// </summary>
+    internal ushort PeekGlyphId(int codePoint) =>
+        _unicodeToGid.TryGetValue(codePoint, out var cachedGid)
+            ? cachedGid
+            : NoBreakSpaces.ResolveGlyph(codePoint, _cmap.GetGlyphId);
+
     /// <summary>Advance width in PDF units (1/1000 pt) at 1-pt font size.</summary>
     public int GetAdvanceWidth(ushort gid)
     {

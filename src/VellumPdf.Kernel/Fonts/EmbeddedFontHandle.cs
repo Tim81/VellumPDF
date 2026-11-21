@@ -76,6 +76,11 @@ public sealed class EmbeddedFontHandle
     public ushort GetGlyphId(int codePoint) => Embedder.GetGlyphId(codePoint);
 
     /// <summary>
+    /// The glyph id <see cref="GetGlyphId"/> would return, without registering it for the subset.
+    /// </summary>
+    internal ushort PeekGlyphId(int codePoint) => Embedder.PeekGlyphId(codePoint);
+
+    /// <summary>
     /// Converts every Unicode scalar in <paramref name="text"/> to glyph ids and writes
     /// them into <paramref name="buffer"/>. Returns the number of glyph ids written.
     /// The buffer must be at least as long as the number of Unicode scalars in the string.

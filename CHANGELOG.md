@@ -8,6 +8,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`Preformatted`, a block that keeps every space and tab (#591).** `Document.Add(Preformatted)`
+  draws text whose spacing is its meaning: command blocks, configuration, ASCII tables. The default
+  style is Courier at 10 pt. `Document.SetDefaultFont` does not apply.
+  - A line ends at CR LF, a lone CR or a lone LF. Every space is kept, leading, repeated and
+    trailing. A tab becomes the spaces that reach the next stop, `TabWidth` columns apart (1 to 32,
+    default 8), counting extended grapheme clusters, so the content stream holds no tab byte. In a
+    monospace font, for text of one character per column, the columns line up and
+    `pdftotext -fixed` returns them. A zero-width character that forms a cluster of its own, such as
+    a combining mark at the start of a line or after a tab, shifts the columns after it. `-layout`
+    collapses runs of spaces, so it is not an exact oracle.
+  - A line wider than the content box is split into segments, each but the last followed by a hook
+    drawn as an artifact, so it enters neither the structure tree nor extracted text. No character
+    is dropped. The save lists the wrapped lines as the new `LayoutDiagnosticCode.PreformattedLineWrapped`
+    (104, a warning, so `StrictDiagnostics` still saves). New `LayoutElementKind.Preformatted` (11).
+  - The constructor throws `ArgumentException` for control characters other than tab, CR and LF,
+    for U+2028 and U+2029, and for an unpaired surrogate. It also refuses a style with a font size
+    below 0.000005 or above 1e30 (the ceiling keeps every number the block writes far inside the
+    ±3.403 × 10^38 range of ISO 32000-1, Annex C, Table C.1, which ISO 19005-2, 6.1.13 applies) or
+    not finite, a non-finite leading, a colour channel outside 0 to 1, a Standard-14 value the
+    enumeration does not name, Symbol, ZapfDingbats, or a `LinkUri`.
+  - Before any layout, the save throws `InvalidOperationException` when the content box cannot
+    hold one line. Under a PDF/A or PDF/UA-1 claim it also throws when the font is not embedded or
+    has no glyph for a character, and, under PDF/A-2a, PDF/A-2u and PDF/UA-1, for U+FEFF and
+    U+FFFE. These refusals leave the document saveable once the named setting is changed.
+  - With no claim, a character the embedded font lacks is drawn as glyph 0 and listed as
+    `NotdefGlyph` (102), as for a paragraph, so `StrictDiagnostics` refuses that save.
+  - In a tagged document each drawn piece is one `P` structure element. Nothing in the character
+    stream separates two lines. Documents without the element save to the same bytes as before.
+
 - **`Heading` and `ListItem` take runs (#367).** `new Heading(IEnumerable<TextRun>)` and
   `new ListItem(IEnumerable<TextRun>)` build the element from runs in their own styles, as a
   `Paragraph` does, so one word of a heading can be bold and one run of a list item can be a link.
