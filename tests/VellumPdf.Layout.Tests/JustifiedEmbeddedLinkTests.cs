@@ -393,9 +393,10 @@ public sealed class JustifiedEmbeddedLinkTests
 
     /// <summary>
     /// A tab with no stop to its right (a stop at 0 is not right of the pen) at the start of a line
-    /// leaves a fragment of one space, which trims to nothing and draws no glyph run. A link on it
-    /// has no drawn text to cover, so it gets no annotation, and the link on a run that is drawn
-    /// keeps its rectangle.
+    /// leaves a fragment of one space. In the second case a hard break closes the line there, so
+    /// the space trims to nothing; in the first it stays, and the embedded path still draws no
+    /// glyph run for it. A link on it has no drawn text to cover, so it gets no annotation, and the
+    /// link on a run that is drawn keeps its rectangle.
     /// </summary>
     [Theory]
     [InlineData("aa bb cc dd ee ff gg hh ii jj kk ll mm nn oo pp qq rr")]
@@ -414,8 +415,13 @@ public sealed class JustifiedEmbeddedLinkTests
         { Alignment = HorizontalAlignment.Justify, TabStops = [new TabStop(0)] });
         var pdf = Save(doc);
 
-        // The fixture holds the change: the text is drawn, and the line is stretched.
-        Assert.Contains(Runs(pdf), r => r.Key == Hex(font, "aa"));
+        // The fixture holds the change: the text is drawn, and the line is stretched, so a later
+        // word sits right of where an unstretched line puts it.
+        var runs = Runs(pdf);
+        Assert.Contains(runs, r => r.Key == Hex(font, "aa"));
+        var bb = First(runs, Hex(font, "bb"));
+        var unstretched = Left + Embedded(font).MeasureString("aa ");
+        Assert.True(bb.X > unstretched + 0.5, $"bb at {bb.X}, unstretched {unstretched}");
 
         var text = Encoding.Latin1.GetString(pdf);
         Assert.DoesNotContain("https://a.example", text, StringComparison.Ordinal);
