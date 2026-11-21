@@ -610,15 +610,31 @@ public sealed class PageLabelAnchorTests
         // A 300 x 600 pt page with 10 pt margins has a 580 pt content box, top edge at y = 590.
         // The first row has 100 lines of 12 pt in a 40 pt column, so it is cut between its lines
         // over three pages, and its continuations are overflow renderers that start at row 0.
-        using var doc = new Document { PageSize = new PdfRectangle(0, 0, 300, 600), Margins = new EdgeInsets(10) };
-        var style = new TextStyle { Font = VellumPdf.Fonts.Standard14.Helvetica, FontSize = 10 };
-        var table = new TableElement { DefaultCellStyle = style, Anchor = "tall" }.SetColumnWidths(40, 100);
-        var row = new Row();
-        row.AddCell(string.Join(' ', Enumerable.Repeat("aaaa", 100))).AddCell("short");
-        table.Add(row);
-        doc.Add(table);
-        var pdf = Save(doc);
+        static Document Build()
+        {
+            var doc = new Document { PageSize = new PdfRectangle(0, 0, 300, 600), Margins = new EdgeInsets(10) };
+            var style = new TextStyle { Font = VellumPdf.Fonts.Standard14.Helvetica, FontSize = 10 };
+            var table = new TableElement { DefaultCellStyle = style, Anchor = "tall" }.SetColumnWidths(40, 100);
+            var row = new Row();
+            row.AddCell(string.Join(' ', Enumerable.Repeat("aaaa", 100))).AddCell("short");
+            table.Add(row);
+            doc.Add(table);
+            return doc;
+        }
 
+        // The save registers a name once whatever is reported, so the reports are counted too: a
+        // continuation that reported the anchor again would put it in the plan on a later page.
+        using (var measured = Build())
+        {
+            var renderer = measured.CreateRenderer();
+            renderer.RunLayout();
+            var reported = renderer.DrawPlan!.Placements.Where(p => p.Anchor == "tall").ToList();
+            Assert.Equal(0, Assert.Single(reported).PageIndex);
+            Assert.Equal(10, reported[0].Y);
+        }
+
+        using var doc = Build();
+        var pdf = Save(doc);
         using var reader = PdfReader.Open(pdf);
         Assert.True(reader.PageCount >= 3);
         var dests = Dests(pdf);
