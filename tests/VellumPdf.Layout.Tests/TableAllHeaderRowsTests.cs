@@ -60,7 +60,10 @@ public sealed class TableAllHeaderRowsTests : IDisposable
         Margins = new EdgeInsets(10),
     };
 
-    /// <summary>A one-column table with one row per character of <paramref name="shape"/>: H for a header row, D for a data row. Row i holds <c>r{i}</c>.</summary>
+    /// <summary>
+    /// A one-column table with one row per character of <paramref name="shape"/>: H for a header
+    /// row, D for a data row. Row i holds <c>r{i}</c>.
+    /// </summary>
     private static TableElement Shape(string shape, TextStyle? style = null)
     {
         var t = new TableElement { DefaultCellStyle = style ?? Style() };
@@ -84,7 +87,10 @@ public sealed class TableAllHeaderRowsTests : IDisposable
         return ms.ToArray();
     }
 
-    /// <summary>The page content of a document holding only <paramref name="table"/>, all pages concatenated.</summary>
+    /// <summary>
+    /// The page content of a document holding only <paramref name="table"/>, all pages
+    /// concatenated.
+    /// </summary>
     private static string Content(TableElement table)
     {
         using var doc = Page();
@@ -92,8 +98,11 @@ public sealed class TableAllHeaderRowsTests : IDisposable
         return PdfTestUtil.DecompressAllFlatStreams(Save(doc));
     }
 
-    /// <summary>The shown text and position of every page, in page order, with an optional footer.</summary>
-    private static List<List<ContentStreamReadback.TextPlacement>> PerPage(TableElement table, RunningBand? footer = null)
+    /// <summary>
+    /// The shown text and position of every page, in page order, with an optional footer.
+    /// </summary>
+    private static List<List<ContentStreamReadback.TextPlacement>> PerPage(
+        TableElement table, RunningBand? footer = null)
     {
         var pdf = new PdfDocument();
         var renderer = new DocumentRenderer(pdf, new PdfRectangle(0, 0, 300, 600), new EdgeInsets(10));
@@ -131,11 +140,7 @@ public sealed class TableAllHeaderRowsTests : IDisposable
     [InlineData("HHH")]
     public void AllHeaderRows_fitOnePage_drawEachRowOnceInOrder(string shape)
     {
-        using var doc = Page();
-        doc.Add(Shape(shape));
-
-        var content = PdfTestUtil.DecompressAllFlatStreams(Save(doc));
-        var placements = ContentStreamReadback.TextPlacements(content);
+        var placements = Assert.Single(PerPage(Shape(shape)));
 
         Assert.Equal(Range(0, shape.Length - 1), Texts(placements));
         for (var i = 0; i < shape.Length; i++)
@@ -178,7 +183,9 @@ public sealed class TableAllHeaderRowsTests : IDisposable
         Assert.Equal(pages[0][0].X, pages[1][0].X, 0.001);
     }
 
-    /// <summary>The same rows as data rows split identically, so the split is the ordinary one.</summary>
+    /// <summary>
+    /// The same rows as data rows split identically, so the split is the ordinary one.
+    /// </summary>
     [Fact]
     public void AllHeaderRows_taller_thanAPage_splitWhereTheSameDataRowsDo()
     {
@@ -262,9 +269,9 @@ public sealed class TableAllHeaderRowsTests : IDisposable
     // ── What does not change ─────────────────────────────────────────────────
 
     /// <summary>
-    /// A header run followed by data rows repeats on each page, as before: three rows (H D D) on one
-    /// page draw as three data rows would, and 30 rows (H then 29 D) put the header at the top of
-    /// page 2 above the one row that did not fit.
+    /// A header run followed by data rows repeats on each page, as before: three rows (H D D) on
+    /// one page draw as three data rows would, and 30 rows (H then 29 D) put the header at the top
+    /// of page 2 above the one row that did not fit.
     /// </summary>
     [Fact]
     public void HeaderRunFollowedByDataRows_stillRepeats_andDrawsOnePageAsDataRowsDo()
@@ -278,7 +285,27 @@ public sealed class TableAllHeaderRowsTests : IDisposable
         Assert.Equal(["r0", "r29"], Texts(pages[1]));
     }
 
-    /// <summary>A header row after a data row draws once, where it is, and is not repeated.</summary>
+    /// <summary>
+    /// A header run followed by data rows and then a header row: the run still repeats, and the
+    /// trailing header row is a body row that draws once. 32 rows put r0 to r28 on page 1 and the
+    /// repeated r0 above r29 to r31 on page 2. A repeatable header found by "the last row is not a
+    /// header" would find none here and draw r29 at the top of page 2 with no r0 above it.
+    /// </summary>
+    [Fact]
+    public void HeaderRunWithATrailingHeaderRow_stillRepeats_acrossPages()
+    {
+        var pages = PerPage(Shape("H" + new string('D', 30) + "H"));
+
+        Assert.Equal(2, pages.Count);
+        Assert.Equal(Range(0, 28), Texts(pages[0]));
+        Assert.Equal(["r0", "r29", "r30", "r31"], Texts(pages[1]));
+        Assert.Equal(pages[0][0].Y, pages[1][0].Y, 0.001);
+        Assert.Equal(pages[0][0].Y - 20.0, pages[1][1].Y, 0.001);
+    }
+
+    /// <summary>
+    /// A header row after a data row draws once, where it is, and is not repeated.
+    /// </summary>
     [Fact]
     public void HeaderRowAfterADataRow_drawsOnce()
     {
@@ -288,38 +315,62 @@ public sealed class TableAllHeaderRowsTests : IDisposable
         Assert.Equal(Content(Rows(3, header: false)), Content(Shape("HDH")));
     }
 
-    /// <summary>A table with no rows is still refused for having no columns, not for being too tall.</summary>
-    [Fact]
-    public void NoRows_isStillRefusedForHavingNoColumns()
+    private const string NoColumns =
+        "A table resolved to no columns, so it has nothing to draw. " +
+        "Add a row holding at least one cell.";
+
+    /// <summary>
+    /// A table with no rows, or with header rows that hold no cell, is still refused for having no
+    /// columns, not for being too tall.
+    /// </summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("H")]
+    [InlineData("HHH")]
+    public void NoCells_isStillRefusedForHavingNoColumns(string shape)
     {
+        var t = new TableElement { DefaultCellStyle = Style() };
+        foreach (var c in shape)
+            t.AddRow(isHeader: c == 'H');
         using var doc = Page();
-        doc.Add(new TableElement());
+        doc.Add(t);
 
         var ex = Assert.Throws<InvalidOperationException>(() => Save(doc));
-        Assert.DoesNotContain("too tall", ex.Message, StringComparison.Ordinal);
+        Assert.Equal(NoColumns, ex.Message);
     }
 
-    /// <summary>A start row past the last row of an all-header table still lays out as nothing.</summary>
+    /// <summary>
+    /// A start row past the last row of an all-header table still lays out as nothing, so a
+    /// document saving it throws the "too tall" error.
+    /// </summary>
     [Fact]
-    public void StartRowPastTheLastRow_stillLaysOutAsNothing()
+    public void StartRowPastTheLastRow_stillLaysOutAsNothing_andTheSaveThrows()
     {
         var t = Rows(3, header: true);
         var result = new TableRenderer(t, startRow: 3).Layout(
             new LayoutContext(new LayoutBox(10, 10, 280, 580)));
 
         Assert.Equal(LayoutResult.Outcome.Nothing, result.Status);
+
+        using var doc = Page();
+        doc.Add(new TableRenderer(Rows(3, header: true), startRow: 3));
+        var ex = Assert.Throws<InvalidOperationException>(() => Save(doc));
+        Assert.Equal(TooTall, ex.Message);
     }
 
     /// <summary>
-    /// <c>Draw</c> before <c>Layout</c> reads the row heights <c>Layout</c> computes. A table with a
-    /// repeatable header indexes them for the header rows and throws
+    /// <c>Draw</c> before <c>Layout</c> reads the row heights <c>Layout</c> computes. A table with
+    /// a repeatable header indexes them for the header rows and throws
     /// <see cref="IndexOutOfRangeException"/>, as <c>Draw</c> documents; an all-header table has no
-    /// header rows to index, and draws nothing because no area was laid out.
+    /// header rows to index, and draws nothing because no area was laid out. The same holds for a
+    /// table with no header row at all.
     /// </summary>
     [Theory]
     [InlineData("HDD", true)]
     [InlineData("HHH", false)]
-    public void Draw_beforeLayout_throwsOnlyWhenTheTableHasARepeatableHeader(string shape, bool throws)
+    [InlineData("DDD", false)]
+    public void Draw_beforeLayout_throwsOnlyWhenTheTableHasARepeatableHeader(
+        string shape, bool throws)
     {
         using var pdf = new PdfDocument();
         var page = pdf.AddPage();
@@ -330,7 +381,11 @@ public sealed class TableAllHeaderRowsTests : IDisposable
         if (throws)
             Assert.Throws<IndexOutOfRangeException>(() => renderer.Draw(ctx));
         else
+        {
             renderer.Draw(ctx);
+            ctx.Canvas.Finish();
+            Assert.Empty(page.ContentBytes!);
+        }
     }
 
     // ── Tagging ──────────────────────────────────────────────────────────────
@@ -359,21 +414,53 @@ public sealed class TableAllHeaderRowsTests : IDisposable
     // ── A canvas refusal inside a table that is now drawn ────────────────────
 
     /// <summary>
-    /// A cell background with a NaN channel reaches the canvas once the table is drawn, and the
-    /// canvas refuses it with <see cref="ArgumentException"/>. Before the table was drawable the
-    /// save threw the "too tall" <see cref="InvalidOperationException"/> first, so the table's two
-    /// defects reported the first one only.
+    /// A non-finite cell background or border colour reaches the canvas once the table is drawn,
+    /// and the canvas refuses it with <see cref="ArgumentException"/>, as it does for a table with
+    /// data rows. Before the all-header table was drawable the save threw the "too tall"
+    /// <see cref="InvalidOperationException"/> first.
     /// </summary>
-    [Fact]
-    public void AllHeaderRows_nanBackground_isRefusedByTheCanvas()
+    [Theory]
+    [InlineData("backgroundNaN")]
+    [InlineData("backgroundInfinity")]
+    [InlineData("borderNaN")]
+    public void AllHeaderRows_nonFiniteColour_isRefusedByTheCanvas(string input)
     {
-        var t = new TableElement { DefaultCellStyle = Style() };
-        t.AddHeaderRow().AddCell(new Cell("r0") { Background = new ColorRgb(double.NaN, 0.5, 0.5) });
+        var t = new TableElement
+        {
+            DefaultCellStyle = Style(),
+            BorderColor = input == "borderNaN" ? new ColorRgb(double.NaN, 0, 0) : ColorRgb.Black,
+        };
+        var cell = new Cell("r0");
+        if (input == "backgroundNaN")
+            cell = new Cell("r0") { Background = new ColorRgb(double.NaN, 0.5, 0.5) };
+        else if (input == "backgroundInfinity")
+            cell = new Cell("r0") { Background = new ColorRgb(0.5, double.PositiveInfinity, 0.5) };
+        t.AddHeaderRow().AddCell(cell);
         using var doc = Page();
         doc.Add(t);
 
         var ex = Assert.Throws<ArgumentException>(() => Save(doc));
-        Assert.IsNotType<ArgumentNullException>(ex);
+        Assert.Null(ex.ParamName);
+    }
+
+    /// <summary>
+    /// A NaN table margin reaches the canvas as a NaN coordinate once the table is drawn, so the
+    /// canvas refuses it with <see cref="ArgumentException"/>, as it does for a table with data
+    /// rows; an all-header table used to throw the "too tall" error instead.
+    /// </summary>
+    [Fact]
+    public void AllHeaderRows_nanMargin_isRefusedByTheCanvas()
+    {
+        var t = new TableElement
+        {
+            DefaultCellStyle = Style(),
+            Margins = new EdgeInsets(double.NaN),
+        };
+        t.AddHeaderRow().AddCell("r0");
+        using var doc = Page();
+        doc.Add(t);
+
+        var ex = Assert.Throws<ArgumentException>(() => Save(doc));
         Assert.Null(ex.ParamName);
     }
 

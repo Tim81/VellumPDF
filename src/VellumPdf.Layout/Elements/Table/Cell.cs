@@ -67,15 +67,15 @@ public sealed class Cell
     /// A spanning cell is drawn at its own row, across the combined height of the rows it covers,
     /// and those rows skip the columns it occupies. A page break is not placed inside a spanning
     /// group that starts in a data row. A header row placed after the first data row counts as a
-    /// data row here, and so does every row of a table whose rows are all headers. Such groups that
-    /// share a row are held together as one block, and the save throws when a group or block is
-    /// taller than the space the page leaves below the repeated header rows. Two kinds of group can
-    /// still be split across pages. One starts in the table's leading header rows, when a row that
-    /// is not a header follows them: on each continuation page its cell is drawn again, only as tall
-    /// as the header rows it covers there, and the data rows it covers stop skipping its columns,
-    /// so their cells move into those columns. The other is a span whose last row, the zero-based row index
-    /// plus RowSpan minus one, overflows <see cref="int"/>, as <see cref="int.MaxValue"/> does from
-    /// the third row on.
+    /// data row here, and so does every row of a table whose rows are all headers. Such groups
+    /// that share a row are held together as one block, and the save throws when a group or block
+    /// is taller than the space the page leaves below the repeated header rows. Two kinds of group
+    /// can still be split across pages. One starts in the table's leading header rows, when a row
+    /// that is not a header follows them: on each continuation page its cell is drawn again, only
+    /// as tall as the header rows it covers there, and the data rows it covers stop skipping its
+    /// columns, so their cells move into those columns. The other is a span whose last row, the
+    /// zero-based row index plus RowSpan minus one, overflows <see cref="int"/>, as
+    /// <see cref="int.MaxValue"/> does from the third row on.
     /// <para><b>Attention</b>: zero and negative are <b>not</b> refused, and both behave as 1. That
     /// is an accident of how the draw loop tests the span, not a guarantee, so do not write code
     /// that depends on it. A later major version will reject both.</para>
