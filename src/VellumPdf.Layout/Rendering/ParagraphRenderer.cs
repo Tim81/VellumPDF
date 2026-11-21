@@ -84,7 +84,9 @@ public sealed partial class ParagraphRenderer : IRenderer
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// A run that yields text has a <see cref="TextStyle.FontSize"/> or <see cref="TextStyle.Color"/>
-    /// that is refused; see those members.
+    /// that is refused; see those members. It is also raised when the paragraph has a tab stop with
+    /// a leader and a run has a font size the leader cannot be drawn at; see
+    /// <see cref="Paragraph.TabStops"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Text this method measures in an embedded font holds an unpaired surrogate; see
@@ -104,6 +106,9 @@ public sealed partial class ParagraphRenderer : IRenderer
 
         if (_lines is null)
         {
+            // The document checks this before any layout for its own paragraphs; a renderer of
+            // yours that lays one out meets it here.
+            LayoutValidation.ValidateLeaderSizes(_para);
             var stops = StopsWithin(_para, area.Width, out _tabStopsBeyond);
             (_lines, _lineEnds) = WordWrap(_para.Runs, area.Width, out var nullStyleRuns, stops);
             _nullStyleRuns = nullStyleRuns;

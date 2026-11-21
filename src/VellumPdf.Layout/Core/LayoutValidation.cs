@@ -41,21 +41,18 @@ internal static class LayoutValidation
     private const double SmallestWrittenExtent = 5e-6;
 
     /// <summary>
-    /// Rejects a paragraph whose tab stops cannot be honoured at the width it is laid out in, before
-    /// any layout runs: a stop beyond the content width, and a leader whose measures would be
-    /// written as zero.
+    /// Rejects a paragraph with a tab stop beyond the content width, before any layout runs.
     ///
     /// A stop beyond the width could only be reached by text that overflows the line, so it is a
-    /// stop the caller cannot have meant. A leader is stroked with a line width and a dash pattern
-    /// that are fractions of the font size: a size of zero or less, or one so small that a number
-    /// the leader writes formats as <c>0</c>, gives a dash array of zeros, which ISO 32000-2,
-    /// 8.4.3.6 forbids ("not all zero"), or a line of no width. The number checked is the one
-    /// written, as for <see cref="ValidateImageExtent"/>.
+    /// stop the caller cannot have meant. A stop counts as beyond only when it is past the width by
+    /// the scale <c>PdfCanvas</c> writes (5e-6 points): two ways of computing one width, such as
+    /// <c>Width - Left - Right</c> and <c>Width - (Left + Right)</c>, differ by a rounding step, and
+    /// a stop placed at the right edge must not depend on which one the caller used.
     /// </summary>
     /// <param name="paragraph">The paragraph to check.</param>
     /// <param name="contentWidth">
     /// The width the paragraph's content is laid out in, with its margins taken off. A width that is
-    /// not finite or not positive skips the stop check, because the margin refusals deal with it.
+    /// not finite or not positive skips the check, because the margin refusals deal with it.
     /// </param>
     internal static void ValidateTabStops(Paragraph paragraph, double contentWidth)
     {
@@ -67,25 +64,53 @@ internal static class LayoutValidation
         {
             foreach (var stop in stops)
             {
-                if (stop.Position > contentWidth)
+                if (stop.Position - contentWidth >= SmallestWrittenExtent)
                 {
+                    var at = Format(stop.Position);
+                    var width = Format(contentWidth);
+
+                    // Two numbers that print alike would read as a stop inside the width.
+                    if (at == width)
+                    {
+                        at = stop.Position.ToString("R", CultureInfo.InvariantCulture);
+                        width = contentWidth.ToString("R", CultureInfo.InvariantCulture);
+                    }
+
                     throw new InvalidOperationException(
-                        $"A paragraph has a tab stop at {Format(stop.Position)} points, beyond its content " +
-                        $"width of {Format(contentWidth)} points (the page width less the margins). " +
+                        $"A paragraph has a tab stop at {at} points, beyond its content " +
+                        $"width of {width} points (the page width less the margins). " +
                         "A tab stop must lie within the content width.");
                 }
             }
         }
+    }
 
-        if (!stops.Any(s => s.Leader != TabLeader.None))
+    /// <summary>
+    /// Rejects a paragraph with a leader tab stop and a run whose font size the leader cannot be
+    /// drawn at.
+    ///
+    /// A leader is stroked with a line width and a dash pattern that are fractions of the font
+    /// size. A size of zero or less, or one so small that a number the leader writes formats as
+    /// <c>0</c>, gives a negative or zero line width (ISO 32000-2, 8.4.3.2 needs a non-negative
+    /// one) or a dash array that is negative or all zeros (8.4.3.6 needs non-negative numbers, not
+    /// all zero). The number checked is the one written, as for <see cref="ValidateImageExtent"/>.
+    /// The line width is the smallest number a leader writes for any kind, and the dash lengths and
+    /// the period are larger multiples of the size, so one check on the width covers every number.
+    /// Every run of the paragraph is checked, because the leader takes its size from the text after
+    /// the tab.
+    ///
+    /// It runs before layout for a paragraph the document lays out itself, and again when a
+    /// <c>ParagraphRenderer</c> builds its wrap, which is the only place a renderer of the
+    /// caller's meets it.
+    /// </summary>
+    /// <param name="paragraph">The paragraph to check.</param>
+    internal static void ValidateLeaderSizes(Paragraph paragraph)
+    {
+        var stops = paragraph.TabStops;
+        if (stops is not { Count: > 0 } || !stops.Any(s => s.Leader != TabLeader.None))
             return;
 
-        // The line width is the smallest number a leader writes for any kind, and the dash
-        // lengths, the period and the gap are larger multiples of the size, so a size that writes
-        // the width as non-zero writes every one of them so. The period is checked on its own as
-        // well, since it is what ISO 32000-2, 8.4.3.6 needs to be positive for dots.
-        var smallest = SmallestWrittenExtent / Math.Min(Rendering.ParagraphRenderer.LeaderWidthFactor,
-            Rendering.ParagraphRenderer.LeaderPeriodFactor);
+        var smallest = SmallestWrittenExtent / Rendering.ParagraphRenderer.LeaderWidthFactor;
         for (var i = 0; i < paragraph.Runs.Count; i++)
         {
             var run = paragraph.Runs[i];
@@ -98,8 +123,8 @@ internal static class LayoutValidation
                 throw new InvalidOperationException(
                     $"Run {i} of a paragraph with a leader tab stop has a font size of {Format(size)}, " +
                     "which a leader cannot be drawn at: its line width and dash lengths are fractions of " +
-                    "the size and would be written as zero. A leader needs a font size of at least " +
-                    $"{Format(smallest)} points.");
+                    "the size and would be written as zero or less. A leader needs a font size of at " +
+                    $"least {Format(smallest)} points; use a larger size, or a stop with no leader.");
             }
         }
     }

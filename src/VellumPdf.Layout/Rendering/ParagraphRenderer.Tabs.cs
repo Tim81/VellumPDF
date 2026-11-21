@@ -18,8 +18,8 @@ public sealed partial class ParagraphRenderer
     internal const double LeaderWidthFactor = 0.08;
 
     /// <summary>
-    /// The leader period: the distance between dots, and the shortest span worth drawing. Half the
-    /// size puts a dot every sixth of an em at 12 pt, a conventional dot leader pitch.
+    /// The leader period: the distance between dots, and the shortest span worth drawing. It is
+    /// half the font size, so a dot every half em at any size.
     /// </summary>
     internal const double LeaderPeriodFactor = 0.5;
 
@@ -37,6 +37,13 @@ public sealed partial class ParagraphRenderer
 
     /// <summary>Gap between dashes, in line widths.</summary>
     internal const double DashGapInWidths = 2;
+
+    /// <summary>
+    /// How far past the width a placed segment may end and still fit, in points: the scale below
+    /// which <see cref="PdfCanvas"/> writes the same number. Two ways of computing one width differ
+    /// by a rounding step.
+    /// </summary>
+    internal const double FitSlack = 5e-6;
 
     /// <summary>
     /// How many stop positions the lookup compared on this thread, for a test to pin that it
@@ -62,16 +69,17 @@ public sealed partial class ParagraphRenderer
         if (stops is not { Count: > 0 })
             return null;
 
-        if (double.IsNaN(width) || stops[^1].Position <= width)
+        if (double.IsNaN(width) || stops[^1].Position - width < FitSlack)
             return stops;
 
         var within = 0;
-        while (within < stops.Count && stops[within].Position <= width)
+        while (within < stops.Count && stops[within].Position - width < FitSlack)
             within++;
 
+        // A tab in a run with no style is a space, so it uses no stop.
         foreach (var run in para.Runs)
         {
-            if (run.Text.Contains('\t'))
+            if (run.Style is not null && run.Text.Contains('\t'))
             {
                 beyond = stops.Count - within;
                 break;
@@ -118,6 +126,11 @@ public sealed partial class ParagraphRenderer
         public double Width = width;
         public double? StartX;
         public LineLeader? Leader;
+
+        // The fragment ends in a space written for a tab, and PlainWidth is the width without it.
+        // A line that ends there drops the space, so it does not shorten the visible line.
+        public bool TabSpace;
+        public double PlainWidth;
     }
 
     private static LineFragment[] BuildFragments(List<Frag> frags)
@@ -164,6 +177,14 @@ public sealed partial class ParagraphRenderer
 
         void Commit(LineEnd end)
         {
+            if (cur.Count > 0 && cur[^1].TabSpace)
+            {
+                var last = cur[^1];
+                last.Text = last.Text[..^1];
+                last.Width = last.PlainWidth;
+                last.TabSpace = false;
+            }
+
             lines.Add(BuildFragments(cur));
             ends.Add(end);
             cur.Clear();
@@ -206,6 +227,7 @@ public sealed partial class ParagraphRenderer
                 }
                 last.Text += piece.Text;
                 last.Width += tokenWidth[first];
+                last.TabSpace = false;
             }
             else
             {
@@ -222,9 +244,9 @@ public sealed partial class ParagraphRenderer
                 cur.Add(new Frag(tokens[k].Text, tokens[k].Style!, tokenWidth[k]));
         }
 
-        // A word at the start of a line, at the left edge or at startX. A word wider than the
-        // line is cut at a character, as the plain wrap does.
-        void StartLine(int first, int end, double wordW, double? startX)
+        // A word at the start of a line. A word wider than the line is cut at a character, as the
+        // plain wrap does.
+        void StartLine(int first, int end, double wordW)
         {
             if (wordW > maxWidth)
             {
@@ -233,50 +255,72 @@ public sealed partial class ParagraphRenderer
                 return;
             }
 
-            if (startX is { } x && x + wordW > maxWidth)
-                startX = null;
-            PushWord(first, end, false, startX, null);
-            pen = (startX ?? 0.0) + wordW;
+            PushWord(first, end, false, null, null);
+            pen = wordW;
         }
 
         // An ordinary word: after the text before it, a space away, or on the next line when it
-        // does not fit. startX positions it when a tab with no stop left the pen where a space
-        // that was not drawn would end.
-        void FlowWord(int first, int end, double? startX = null)
+        // does not fit.
+        void FlowWord(int first, int end)
         {
             ResolveCutWord(LineEnd.Soft);
             var wordW = WordWidth(first, end);
             if (cur.Count == 0)
             {
-                StartLine(first, end, wordW, startX);
+                StartLine(first, end, wordW);
                 return;
             }
 
-            var addSpace = startX is null && NeedsSeparator();
+            var addSpace = NeedsSeparator();
             var spaceW = addSpace ? SpaceWidth(cur[^1].Style) : 0.0;
             if (pen + spaceW + wordW <= maxWidth)
             {
-                PushWord(first, end, addSpace, startX, null);
+                PushWord(first, end, addSpace, null, null);
                 pen += spaceW + wordW;
             }
             else
             {
                 Commit(LineEnd.Soft);
-                StartLine(first, end, wordW, null);
+                StartLine(first, end, wordW);
             }
         }
 
-        LineLeader? MakeLeader(TabStop stop, double from, double to, TextStyle style)
+        // One space of advance for a tab: appended to the text before it when there is some, a
+        // fragment of its own otherwise.
+        void AppendTabSpace(TextStyle style)
+        {
+            if (cur.Count > 0 && cur[^1].Text.Length > 0)
+            {
+                var last = cur[^1];
+                var spaceW = SpaceWidth(last.Style);
+                last.PlainWidth = last.Width;
+                last.Text += " ";
+                last.Width += spaceW;
+                last.TabSpace = true;
+                pen += spaceW;
+            }
+            else
+            {
+                var spaceW = SpaceWidth(style);
+                cur.Add(new Frag(" ", style, spaceW) { TabSpace = true });
+                pen += spaceW;
+            }
+        }
+
+        // The leader between the text before a tab and the text after it. Text before it clears a
+        // quarter of the size; the left edge of a line needs no clearance.
+        LineLeader? MakeLeader(TabStop stop, double from, double to, TextStyle style, bool atLineStart)
         {
             if (stop.Leader == TabLeader.None)
                 return null;
 
             var gap = LeaderGapFactor * style.FontSize;
-            var span = to - gap - (from + gap);
+            var begin = atLineStart ? from : from + gap;
+            var span = to - gap - begin;
 
             // A span shorter than one period would draw less than a dot or a dash, or nothing.
             return span >= LeaderPeriodFactor * style.FontSize
-                ? new LineLeader(stop.Leader, from + gap, to - gap, style)
+                ? new LineLeader(stop.Leader, begin, to - gap, style)
                 : null;
         }
 
@@ -287,48 +331,45 @@ public sealed partial class ParagraphRenderer
 
             // The text before the tab ends in one space, so a reader that extracts the text sees
             // the words apart (ISO 32000-2, 14.8.2.6.2). The space is part of the pen.
+            var separatorWritten = false;
             if (NeedsSeparator())
             {
-                var last = cur[^1];
-                var spaceW = SpaceWidth(last.Style);
-                last.Text += " ";
-                last.Width += spaceW;
-                pen += spaceW;
+                AppendTabSpace(tabStyle);
+                separatorWritten = true;
             }
 
             var stop = FindStop(stops, pen);
             if (stop is null)
             {
-                // No stop to the right: the tab advances as a space does. The space drawn above
-                // is that advance; where none was drawn (a tab that opens the line, or follows
-                // another tab) the pen moves on without it, and the next word is placed there.
-                double? startX = null;
-                if (cur.Count == 0 || cur[^1].Text.Length == 0 || cur[^1].Text[^1] != ' ')
-                {
-                    pen += SpaceWidth(tabStyle);
-                    startX = pen;
-                }
+                // No stop to the right: the tab advances the pen by one space. The space written
+                // above is that advance when text came straight before the tab; after a tab, or at
+                // the start of a line, there is no such text and the advance is written here.
+                if (!separatorWritten)
+                    AppendTabSpace(tabStyle);
 
                 for (var a = first; a < end;)
                 {
                     var b = a + 1;
                     while (b < end && tokens[b].Kind == TokenKind.WordContinue)
                         b++;
-                    FlowWord(a, b, a == first ? startX : null);
+                    FlowWord(a, b);
                     a = b;
                 }
                 return;
             }
 
+            // A stop within the written-token scale of the width is the right edge, and is placed
+            // there; a stop the pen has not passed is never placed left of the pen.
+            var stopX = Math.Max(pen, Math.Min(stop.Position, maxWidth));
             var penBefore = pen;
             if (first == end)
             {
                 // Nothing follows the tab before the next one or the end of the line: the pen
-                // moves to the stop, and a leader still fills the gap.
-                var leader = MakeLeader(stop, penBefore, stop.Position, tabStyle);
-                if (leader is not null)
-                    cur.Add(new Frag(string.Empty, tabStyle, 0.0) { StartX = stop.Position, Leader = leader });
-                pen = stop.Position;
+                // moves to the stop, and a leader still fills the gap. The fragment is written
+                // without text even when there is no leader, so the pen and the line agree.
+                var leader = MakeLeader(stop, penBefore, stopX, tabStyle, cur.Count == 0);
+                cur.Add(new Frag(string.Empty, tabStyle, 0.0) { StartX = stopX, Leader = leader });
+                pen = stopX;
                 return;
             }
 
@@ -374,16 +415,26 @@ public sealed partial class ParagraphRenderer
                 _ => 0.0,
             };
 
-            // A segment that would start left of the pen starts at the pen.
-            var start = Math.Max(pen, stop.Position - offset);
+            // A segment that would start left of the pen starts at the pen. A left stop needs room
+            // for the first word only, since the rest wraps; the others need the whole segment.
             var needs = stop.Alignment == TabAlignment.Left ? firstWordW : segmentW;
-            if (start + needs > maxWidth)
+            var start = Math.Max(pen, stopX - offset);
+            var atLineStart = cur.Count == 0;
+            if (start + needs > maxWidth + FitSlack && cur.Count > 0)
             {
-                // It does not fit: the line ends here, and the text goes on from the left edge as
-                // ordinary text, with no tab pending.
-                if (cur.Count > 0)
-                    Commit(LineEnd.Soft);
-                pen = 0.0;
+                // It does not fit after the text before it: that line ends, and the segment is
+                // placed again at the same stop on the next line, its leader running from the left
+                // edge.
+                Commit(LineEnd.Soft);
+                penBefore = 0.0;
+                start = Math.Max(0.0, stopX - offset);
+                atLineStart = true;
+            }
+
+            if (start + needs > maxWidth + FitSlack)
+            {
+                // It does not fit even from the left edge: ordinary text from there, with no tab
+                // pending.
                 for (var a = first; a < end;)
                 {
                     var b = a + 1;
@@ -395,7 +446,7 @@ public sealed partial class ParagraphRenderer
                 return;
             }
 
-            var placed = MakeLeader(stop, penBefore, start, tokens[first].Style!);
+            var placed = MakeLeader(stop, penBefore, start, tokens[first].Style!, atLineStart);
             var firstEnd = first + 1;
             while (firstEnd < end && tokens[firstEnd].Kind == TokenKind.WordContinue)
                 firstEnd++;

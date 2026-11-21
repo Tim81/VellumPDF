@@ -60,7 +60,7 @@ public enum LayoutDiagnosticCode
 
     /// <summary>
     /// A <see cref="Elements.Paragraph"/> holds a tab stop beyond the width its renderer was laid
-    /// out at, and its text holds a tab, so the stop was treated as absent.
+    /// out at, and a run of it that has a style holds a tab, so the stop was treated as absent.
     /// <see cref="LayoutDiagnostic.Count"/> is the number of stops beyond that width.
     /// </summary>
     /// <remarks>
@@ -68,8 +68,8 @@ public enum LayoutDiagnosticCode
     /// lays out itself never reaches this: the save refuses a stop beyond the content width before
     /// the layout starts, with <see cref="InvalidOperationException"/>. It arises from a
     /// <see cref="Rendering.ParagraphRenderer"/> that a renderer of yours lays out in a narrower
-    /// area than the page's. A tab then advances as it does when no stop lies to its right: as one
-    /// space. It is reported when the paragraph is drawn from its first line, so a renderer you
+    /// area than the page's. A tab then uses the next stop within the width, and advances as one
+    /// space only when no such stop lies to its right. It is reported when the paragraph is drawn from its first line, so a renderer you
     /// build to start at a later line reports nothing.
     /// </remarks>
     TabStopBeyondWidth = 106,

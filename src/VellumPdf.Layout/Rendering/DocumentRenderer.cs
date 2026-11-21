@@ -428,6 +428,7 @@ public sealed class DocumentRenderer
             {
                 LayoutValidation.ValidateTabStops(
                     paragraphRenderer.Paragraph, contentArea.Deflate(paragraphRenderer.Paragraph.Margins).Width);
+                LayoutValidation.ValidateLeaderSizes(paragraphRenderer.Paragraph);
             }
         }
 

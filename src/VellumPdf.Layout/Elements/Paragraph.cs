@@ -132,15 +132,23 @@ public sealed class Paragraph
     /// position is greater than the page width less the document margins and
     /// <see cref="Margins"/>, because the text could not be placed where the stop says. A stop at
     /// exactly that width is accepted, and is how a right-aligned page number reaches the right
-    /// edge. The check runs before any element is laid out, so the document can be saved again
-    /// once the page size or margins are changed. A
+    /// edge; so is one that differs from it by less than 5e-6 points, the scale the file is
+    /// written at, because two ways of computing one width can differ by a rounding step. The
+    /// check runs before any element is laid out, so the document can be saved again once the page
+    /// size or margins are changed. A
     /// <see cref="VellumPdf.Layout.Rendering.ParagraphRenderer"/> that a renderer of your own lays
-    /// out in a narrower area is not checked in advance: it treats such a stop as absent and
-    /// reports <see cref="LayoutDiagnosticCode.TabStopBeyondWidth"/>.</para>
-    /// <para><b>A leader needs a size it can be drawn at.</b> When a stop has a leader, the save
-    /// throws <see cref="InvalidOperationException"/> if any run of the paragraph has a
-    /// <see cref="TextStyle.FontSize"/> of zero or less, or one so small that the leader's line
-    /// width or dash lengths, which are fractions of the size, would be written as zero.</para>
+    /// out in a narrower area is not checked in advance: it treats a stop beyond that width as
+    /// absent, and when the paragraph's text holds a tab in a run with a style it reports
+    /// <see cref="LayoutDiagnosticCode.TabStopBeyondWidth"/>. A tab then advances as one space only
+    /// when no stop within the width remains to its right.</para>
+    /// <para><b>A leader needs a size it can be drawn at.</b> When a stop has a leader, any run of
+    /// the paragraph with a <see cref="TextStyle.FontSize"/> of zero or less, or one so small that
+    /// the leader's line width or dash lengths, which are fractions of the size, would be written
+    /// as zero, makes <see cref="InvalidOperationException"/> reach you. The save throws it before
+    /// any layout for a paragraph the document lays out itself, and
+    /// <see cref="VellumPdf.Layout.Rendering.ParagraphRenderer.Layout(LayoutContext)"/> throws it
+    /// for a renderer of yours. The size of a run cannot be changed after the run is built, so
+    /// build the paragraph again with a larger size, or with stops that have no leader.</para>
     /// <para>The rule. A tab ends the text before it. The text after it, up to the next tab or
     /// line break, is placed at the first stop to the right of the end of the text before the
     /// tab: <see cref="TabAlignment.Left"/> starts there, <see cref="TabAlignment.Right"/> ends
@@ -152,18 +160,26 @@ public sealed class Paragraph
     /// that would start left of the end of the text before it starts there instead, so
     /// the two never overlap. The leader fills the gap between the two texts, a quarter of the
     /// font size clear of each, and is left out when it would be shorter than half the font size.
-    /// A tab with no stop to its right is drawn as one space. Text placed at a
+    /// A tab with no stop to its right advances the pen by one space: the space written after
+    /// the text before the tab is that advance, and a tab that no text comes straight before, such
+    /// as one at the start of a line or after another tab, is drawn as a space of its own. The
+    /// same holds for a stop at position zero, which no tab can use, because a tab looks for a
+    /// stop greater than the pen and the pen starts at zero. Text placed at a
     /// <see cref="TabAlignment.Right"/>, <see cref="TabAlignment.Center"/> or
-    /// <see cref="TabAlignment.Decimal"/> stop that does not fit on the line moves to the next
-    /// line and wraps there as ordinary text; text at a <see cref="TabAlignment.Left"/> stop wraps
-    /// word by word from the stop.</para>
+    /// <see cref="TabAlignment.Decimal"/> stop that does not fit after the text before the tab
+    /// moves to the next line and is placed again at the same stop, with its leader running from
+    /// the left edge; only text that does not fit even from the left edge is set there as ordinary
+    /// text, with no leader. Text at a <see cref="TabAlignment.Left"/> stop wraps word by word from
+    /// the stop. The space written for a tab that ends a line is dropped from that line.</para>
     /// <para>Positions are measured from the left edge of the paragraph's content, which is the
     /// content area with <see cref="Margins"/> taken off. A line that holds a tab placed at a stop
-    /// starts at that edge whatever the <see cref="Alignment"/> is, and is not justified. The
+    /// starts at that edge whatever the <see cref="Alignment"/> is, and is not justified; a line
+    /// with only tabs that use no stop follows the alignment like any other. The
     /// white-space characters other than the tab are drawn as the type remarks describe.
     /// <b>Accepted and placed differently from what the stops suggest:</b> a stop that the text has
-    /// passed, a tab with no stop to its right, and text that would overlap the text before it are
-    /// not reported; they are the rules above.</para>
+    /// passed, a stop at position zero, a tab with no stop to its right, and text that would
+    /// overlap the text before it are not reported; they are the rules above. <b>Do not pass</b> a
+    /// stop at position zero: it is accepted and never used, and 3.0 will refuse it.</para>
     /// <para>A run whose style is null yields no text, so a tab in it is read as the space the
     /// type remarks describe.</para>
     /// </remarks>

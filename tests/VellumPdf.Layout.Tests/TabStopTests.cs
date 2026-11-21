@@ -423,23 +423,6 @@ public sealed partial class TabStopTests
     }
 
     [Fact]
-    public void ATextThatDoesNotFit_goesToTheNextLineAtTheLeftEdge_withNoLeader()
-    {
-        var content = Content(
-            new Paragraph("Hello\tabcdefghijklmnopqrstuvwxyz", Helvetica())
-            {
-                TabStops = [new TabStop(100, TabAlignment.Right, TabLeader.Dots)],
-            },
-            width: 170);
-
-        var shows = Shows(content);
-        Assert.Equal(["(Hello )", "(abcdefghijklmnopqrstuvwxyz)"], shows.Select(s => s.Text));
-        AssertNear(0, shows[1].X, "left edge");
-        Assert.True(shows[0].Y > shows[1].Y, "second line is lower");
-        Assert.Empty(QBlocks(content));
-    }
-
-    [Fact]
     public void LeftStopText_wrapsWordByWordFromTheStop()
     {
         var shows = Shows(Content(
@@ -725,6 +708,249 @@ public sealed partial class TabStopTests
         quiet.Add(new Narrow(new ParagraphRenderer(new Paragraph("a b", Helvetica()) { TabStops = [new TabStop(250)] }), 100));
         Save(quiet);
         Assert.Empty(quiet.Diagnostics);
+    }
+
+    // ── Review round: placement again at the same stop, one rule for stopless tabs ──────────────
+
+    [Fact]
+    public void ATextThatFitsOnlyFromTheLeftEdge_isPlacedThereAtItsStop_withNoLeaderBeforeIt()
+    {
+        var content = Content(
+            new Paragraph("Hello\tabcdefghijklmnopqrstuvwxyz", Helvetica())
+            {
+                TabStops = [new TabStop(100, TabAlignment.Right, TabLeader.Dots)],
+            },
+            width: 170);
+
+        var shows = Shows(content);
+        Assert.Equal(["(Hello)", "(abcdefghijklmnopqrstuvwxyz)"], shows.Select(s => s.Text));
+        AssertNear(0, shows[1].X, "starts at the left edge: the stop is left of where it would end");
+        Assert.True(shows[0].Y > shows[1].Y, "second line is lower");
+        Assert.Empty(QBlocks(content));
+    }
+
+    [Fact]
+    public void ATextThatFitsNowhere_isSetAsOrdinaryTextFromTheLeftEdge()
+    {
+        var shows = Shows(Content(
+            new Paragraph("Hello\tabcdefghijklmnopqrstuvwxyz", Helvetica())
+            {
+                TabStops = [new TabStop(100, TabAlignment.Right, TabLeader.Dots)],
+            },
+            width: 120));
+
+        Assert.Equal("(Hello)", shows[0].Text);
+        Assert.All(shows.Skip(1), s => AssertNear(0, s.X, "ordinary text from the left edge"));
+        Assert.True(shows.Count >= 3, "the over-wide word is cut");
+    }
+
+    [Fact]
+    public void ATocNumberThatDoesNotFitAfterTheTitle_goesToTheNextLineAtTheStop_withALeaderFromTheLeftEdge()
+    {
+        // 49 letters x are 294 pt; the pen after the space is 297.336, and "12" needs 13.344, so the
+        // number would end at 310.68 on a 300 pt line.
+        var title = new string('x', 49);
+        var content = Content(
+            new Paragraph(title + "\t12", Helvetica())
+            {
+                TabStops = [new TabStop(300, TabAlignment.Right, TabLeader.Dots)],
+            },
+            width: 300);
+
+        var shows = Shows(content);
+        Assert.Equal(["(" + title + ")", "(12)"], shows.Select(s => s.Text));
+        AssertNear(0, shows[0].X, "title");
+        AssertNear(300 - Width("12"), shows[1].X, "the number ends at the stop");
+        Assert.True(shows[0].Y > shows[1].Y, "the number is on the next line");
+
+        var block = Assert.Single(QBlocks(content));
+        var m = Numbers(block[5]).ToArray();
+        var l = Numbers(block[6]).ToArray();
+        AssertNear(0, m[0], "the leader starts at the left edge");
+        AssertNear(300 - Width("12") - 3, l[0], "and ends a gap before the number");
+        AssertNear(shows[1].Y + 0.48, m[1], "on the number's baseline");
+    }
+
+    [Fact]
+    public void ATocNumberThatFitsAfterTheTitle_staysOnTheLine_withALeaderFromTheText()
+    {
+        var title = new string('x', 40);
+        var content = Content(
+            new Paragraph(title + "\t12", Helvetica())
+            {
+                TabStops = [new TabStop(300, TabAlignment.Right, TabLeader.Dots)],
+            },
+            width: 300);
+
+        var shows = Shows(content);
+        Assert.Equal(["(" + title + " )", "(12)"], shows.Select(s => s.Text));
+        AssertNear(shows[0].Y, shows[1].Y, "one line");
+        var block = Assert.Single(QBlocks(content));
+        AssertNear(Math.Ceiling((Width(title + " ") + 3) / 6) * 6, Numbers(block[5]).First(), "leader starts after the title");
+    }
+
+    [Fact]
+    public void ALineThatEndsInATabWhoseTextMovedOn_dropsTheSeparatorSpace()
+    {
+        var words = "aaaa bbbb cccc dddd eeee ffff";
+        var paragraph = new Paragraph(words + "\t1234567", Helvetica())
+        {
+            Alignment = HorizontalAlignment.Justify,
+            TabStops = [new TabStop(200, TabAlignment.Right)],
+        };
+        var content = Content(paragraph, width: 200);
+
+        var shows = Shows(content);
+        Assert.Equal("(" + words + ")", shows[0].Text);
+        var tw = double.Parse(
+            Regex.Match(content, @"(?m)^(-?\d+(?:\.\d+)?) Tw").Groups[1].Value, CultureInfo.InvariantCulture);
+        AssertNear(200, Width(words) + (5 * tw), "the justified line reaches the right edge", 0.01);
+
+        var right = Shows(Content(
+            new Paragraph(words + "\t1234567", Helvetica())
+            {
+                Alignment = HorizontalAlignment.Right,
+                TabStops = [new TabStop(200, TabAlignment.Right)],
+            },
+            width: 200));
+        AssertNear(200 - Width(words), right[0].X, "a right-aligned line ends at the edge without the space");
+    }
+
+    [Fact]
+    public void ATabOnAStopWithNoLeader_followedByAStoplessTab_keepsTheFirstTab()
+    {
+        var shows = Shows(Content(new Paragraph("abc\t\tdef ghi", Helvetica()) { TabStops = [new TabStop(50)] }));
+
+        Assert.Equal(["(abc )", "( def ghi)"], shows.Select(s => s.Text));
+        AssertNear(50, shows[1].X, "the first tab reached the stop, the second advances one space");
+        var dots = Shows(Content(new Paragraph("abc\t\tdef ghi", Helvetica())
+        {
+            TabStops = [new TabStop(50, TabAlignment.Left, TabLeader.Dots)],
+        }));
+        Assert.Equal(shows.Select(s => (s.X, s.Text)), dots.Select(s => (s.X, s.Text)));
+    }
+
+    [Fact]
+    public void ATabLandingOnAStop_thenAStoplessTab_leavesRoomForTheTextThatFollows()
+    {
+        var text = "abc\t\t" + string.Concat(Enumerable.Repeat("word ", 20));
+        var shows = Shows(Content(new Paragraph(text, Helvetica()) { TabStops = [new TabStop(250)] }, width: 300));
+
+        Assert.Equal("(abc )", shows[0].Text);
+        AssertNear(250, shows[1].X, "after the first tab");
+        Assert.Equal("( word)", shows[1].Text);
+        AssertNear(shows[0].Y, shows[1].Y, "on the first line");
+        AssertNear(0, shows[2].X, "the next word wraps");
+    }
+
+    [Fact]
+    public void EveryTabWithNoStopToItsRight_isOneSpace()
+    {
+        Assert.Equal(
+            ["(abc  def)"],
+            Shows(Content(new Paragraph("abc\t\tdef", Helvetica()) { TabStops = [new TabStop(10)] })).Select(s => s.Text));
+        var second = Shows(Content(new Paragraph("\t\tb", Helvetica()) { TabStops = [new TabStop(10)] }));
+        Assert.Equal("( b)", Assert.Single(second).Text);
+        AssertNear(10, second[0].X, "the first tab reaches the stop, the second is one space");
+    }
+
+    [Fact]
+    public void AStopAtZero_isNeverUsed_soItBehavesAsNoStop()
+    {
+        Assert.Equal(
+            ["(a b)"],
+            Shows(Content(new Paragraph("a\tb", Helvetica()) { TabStops = [new TabStop(0)] })).Select(s => s.Text));
+        Assert.Equal(
+            ["(  b)"],
+            Shows(Content(new Paragraph("\t\tb", Helvetica()) { TabStops = [new TabStop(0)] })).Select(s => s.Text));
+    }
+
+    [Fact]
+    public void ATabThatUsesNoStop_leavesTheLineToTheAlignment()
+    {
+        var plain = Shows(Content(
+            new Paragraph("a\tb", Helvetica()) { Alignment = HorizontalAlignment.Right, TabStops = [new TabStop(0)] }));
+        var leading = Shows(Content(
+            new Paragraph("\tb", Helvetica()) { Alignment = HorizontalAlignment.Right, TabStops = [new TabStop(0)] }));
+
+        AssertNear(400 - Width("a b"), plain[0].X, "a right-aligned line");
+        AssertNear(400 - Width(" b"), leading[0].X, "a leading tab with no stop is still right-aligned");
+    }
+
+    [Fact]
+    public void ATabInARunWithNoStyle_isASpace_andReportsNothing()
+    {
+        using var doc = new Document { PageSize = new PdfRectangle(0, 0, 400, 600), Margins = EdgeInsets.Zero };
+        var paragraph = new Paragraph([new TextRun("a b", Helvetica()), new TextRun("\t", null!)])
+        {
+            TabStops = [new TabStop(250)],
+        };
+        doc.Add(new Narrow(new ParagraphRenderer(paragraph), 100));
+
+        Save(doc);
+
+        Assert.DoesNotContain(doc.Diagnostics, d => d.Code == LayoutDiagnosticCode.TabStopBeyondWidth);
+    }
+
+    // ── A stop at the width, computed two ways ───────────────────────────────
+
+    [Fact]
+    public void AStopAtTheContentWidth_isAcceptedWhicheverWayTheCallerComputesTheWidth()
+    {
+        const double margin = 42.52;
+        var libraryWidth = PageSize.A4.Width - (margin + margin);
+        var callerWidth = PageSize.A4.Width - margin - margin;
+        Assert.NotEqual(libraryWidth, callerWidth);
+
+        foreach (var position in new[] { libraryWidth, callerWidth })
+        {
+            using var doc = new Document { PageSize = PageSize.A4, Margins = new EdgeInsets(margin) };
+            doc.Add(new Paragraph("Inleiding\t12", Helvetica())
+            {
+                TabStops = [new TabStop(position, TabAlignment.Right, TabLeader.Dots)],
+            });
+
+            var content = Content(doc);
+            var shows = Shows(content);
+            AssertNear(margin + libraryWidth, shows[1].X + Width("12"), "the number ends at the right edge", 1e-4);
+            Assert.Single(QBlocks(content));
+        }
+    }
+
+    [Fact]
+    public void AStopPastTheWidthByTheWrittenScale_isStillRefused_andTheMessagePrintsBothNumbers()
+    {
+        using var doc = Page(300);
+        doc.Add(new Paragraph("a\tb", Helvetica()) { TabStops = [new TabStop(300.00001, TabAlignment.Right)] });
+
+        Assert.Throws<InvalidOperationException>(() => Save(doc));
+
+        using var close = Page(300.1234567);
+        close.Add(new Paragraph("a\tb", Helvetica()) { TabStops = [new TabStop(300.1234567 + 4e-6)] });
+        Save(close);
+    }
+
+    // ── A leader's size, checked where the renderer builds its wrap ──────────
+
+    [Theory]
+    [InlineData(-12d)]
+    [InlineData(1e-6)]
+    [InlineData(0d)]
+    public void ARendererOfYours_refusesALeaderSizeItCannotDraw_fromLayout(double size)
+    {
+        var paragraph = new Paragraph("a\tb", Helvetica(size))
+        {
+            TabStops = [new TabStop(50, TabAlignment.Right, TabLeader.Dots)],
+        };
+        var renderer = new ParagraphRenderer(paragraph);
+
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => renderer.Layout(new LayoutContext(new LayoutBox(0, 0, 100, 100))));
+        Assert.Contains("Run 0", ex.Message, StringComparison.Ordinal);
+
+        using var doc = new Document { PageSize = new PdfRectangle(0, 0, 400, 600), Margins = EdgeInsets.Zero };
+        doc.Add(new Narrow(new ParagraphRenderer(paragraph), 100));
+        Assert.Throws<InvalidOperationException>(() => Save(doc));
     }
 
     // ── Cost ─────────────────────────────────────────────────────────────────

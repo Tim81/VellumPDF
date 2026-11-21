@@ -10,9 +10,11 @@ namespace VellumPdf.Layout.Core;
 /// </summary>
 /// <remarks>
 /// A stop applies through <see cref="Elements.Paragraph.TabStops"/>; the rule for placing text at
-/// it is described there. A stop is immutable once built. A position greater than the width of the
-/// content area is refused when the document is saved, not by this type; see
-/// <see cref="Elements.Paragraph.TabStops"/>.
+/// it is described there. A stop is immutable once built. This type does not know the width of
+/// the content area. A position greater than that width is refused when the document is saved
+/// for a paragraph it lays out itself, and is treated as absent, with a diagnostic, for a
+/// renderer of yours that lays the paragraph out narrower; see
+/// <see cref="Elements.Paragraph.TabStops"/>. A position of zero is accepted and never used.
 /// </remarks>
 public sealed class TabStop
 {
@@ -26,8 +28,10 @@ public sealed class TabStop
     /// paragraph's start. <b>An <paramref name="alignment"/> or <paramref name="leader"/> that
     /// the enumeration does not name is refused</b> the same way. A position of zero is accepted.
     /// <para>The constructor does not know the paragraph's width, so a position past the right
-    /// edge is refused later, when the document is saved; see
-    /// <see cref="Elements.Paragraph.TabStops"/>.</para>
+    /// edge is dealt with later: the save refuses it for a paragraph the document lays out, and a
+    /// renderer of yours that lays the paragraph out narrower treats it as absent; see
+    /// <see cref="Elements.Paragraph.TabStops"/>. <b>Do not pass</b> zero: it is accepted, but a
+    /// tab looks for a stop greater than the pen, so no tab uses it, and 3.0 will refuse it.</para>
     /// </remarks>
     /// <param name="position">
     /// Distance in points from the left edge of the paragraph's content, which is the content area

@@ -163,7 +163,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - The save refuses, with `InvalidOperationException` before any layout, a stop beyond the
     paragraph's content width, and a leader in a paragraph with a run whose font size is zero or
     less, or so small that the leader's line width or dash lengths would be written as `0`. The
-    document can be saved again once the page or the margins change.
+    document can be saved again once the page or the margins change, which cures a stop beyond the
+    width. A leader-size refusal is cured by building the paragraph again with a larger size or
+    stops without a leader, because a run's size cannot change after it is built. A
+    `ParagraphRenderer` that a renderer of your own lays out raises the leader-size refusal from
+    `Layout`.
   - A `ParagraphRenderer` that a renderer of your own lays out in an area narrower than a stop
     treats that stop as absent and reports the new `LayoutDiagnosticCode.TabStopBeyondWidth` (106,
     severity `Error`), which `StrictDiagnostics` refuses.
