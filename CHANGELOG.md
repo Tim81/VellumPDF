@@ -396,6 +396,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **A run in the font of the run before it, at another size, is drawn at its own size (#664).**
+  The font operator was skipped whenever the face matched the one in force, so a 20 pt run after a
+  10 pt run in the same font was drawn at 10 pt while the line was measured with the 20 pt width.
+  The operator is now written when the size differs as well, and a size is compared as the number
+  the file holds, so two sizes that differ below five decimals still write one operator. A cell
+  and a running band hold one style each, so only paragraph, heading and list text can change.
+  **Deliberate output change:** a paragraph, heading or list item with a run in the same font as
+  the run before it and a different size gains a `Tf` for that run, and the run is drawn at its
+  own size. Every other document keeps its bytes. Under a PDF/A or PDF/UA claim the report of a
+  non-embedded font counts one entry per `Tf` written, so the extra `Tf` is counted.
+- **A justified line in an embedded font draws every space it measures (#665).** The line width
+  counted a leading space and each space of a run of spaces, but the drawing skipped both, so a
+  line that opened with a tab at a stop, or held two tabs in a row, ended one space short of the
+  right edge and drew its words closer together than the same text without the tab. Each space is
+  now shown as a glyph of its own and advanced by its width, and takes the same share of the slack
+  as the other spaces, as `Tw` gives every space on a Standard 14 line. The line ends at the right
+  edge. A link on a run of spaces gets the rectangle of the glyphs drawn. **Deliberate output
+  change:** a justified embedded-font line that holds a leading space, or two spaces in a row
+  (reachable through tab stops), is drawn with those spaces and a different spread. Every other
+  document keeps its bytes.
 - **`/FontBBox` of an embedded font is the font's own bounding box (#596).** The descriptor of every
   embedded TrueType and OpenType font held `[0, hhea descender, 1000 * 1000 / unitsPerEm, hhea
   ascender]`: a zero for xMin and a constant for xMax, so DejaVu Sans, Liberation Sans and Liberation
