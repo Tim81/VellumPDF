@@ -14,15 +14,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - A line ends at CR LF, a lone CR or a lone LF. Every space is kept, leading, repeated and
     trailing. A tab becomes the spaces that reach the next stop, `TabWidth` columns apart (1 to 32,
     default 8), counting extended grapheme clusters, so the content stream holds no tab byte. In a
-    monospace font the columns line up, and `pdftotext -fixed` returns them. `-layout` collapses
-    runs of spaces, so it is not an exact oracle.
+    monospace font, for text of one character per column, the columns line up and
+    `pdftotext -fixed` returns them. A combining mark or other zero-width character shifts the
+    columns after it. `-layout` collapses runs of spaces, so it is not an exact oracle.
   - A line wider than the content box is split into segments, each but the last followed by a hook
     drawn as an artifact, so it enters neither the structure tree nor extracted text. No character
     is dropped. The save lists the wrapped lines as the new `LayoutDiagnosticCode.PreformattedLineWrapped`
     (104, a warning, so `StrictDiagnostics` still saves). New `LayoutElementKind.Preformatted` (11).
   - The constructor throws `ArgumentException` for control characters other than tab, CR and LF,
     for U+2028 and U+2029, and for an unpaired surrogate. It also refuses a style with a font size
-    below 0.000005 or not finite, a non-finite leading, a colour channel outside 0 to 1, a
+    below 0.000005 or above 1e30 (a larger number fails the 3.403 × 10^38 limit of ISO 32000-1,
+    Annex C, Table C.1) or not finite, a non-finite leading, a colour channel outside 0 to 1, a
     Standard-14 value the enumeration does not name, Symbol, ZapfDingbats, or a `LinkUri`.
   - Before any layout, the save throws `InvalidOperationException` when the content box cannot
     hold one line. Under a PDF/A or PDF/UA-1 claim it also throws when the font is not embedded or

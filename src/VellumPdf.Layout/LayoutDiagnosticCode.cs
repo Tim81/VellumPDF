@@ -96,9 +96,7 @@ public enum LayoutDiagnosticCode
     /// <remarks>
     /// No character is lost, so this is a warning and strict mode saves. It is reported once per
     /// element, from the page its first line is drawn on, and its page number is that page. It is
-    /// reported when the block is drawn from its first line, and a
-    /// <see cref="Core.DrawContext"/> you build carries no channel, so a block drawn through one
-    /// reports nothing.
+    /// reported when the block is drawn from its first line.
     /// </remarks>
     PreformattedLineWrapped = 104,
 

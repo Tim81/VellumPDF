@@ -140,8 +140,8 @@ public sealed class TextStyle
     /// than white space. The no-break spaces U+00A0, U+202F and U+2007 count as such characters; a
     /// tab and other white space do not. A table cell or list item is checked whatever its text holds.</para>
     /// <para>A <see cref="VellumPdf.Layout.Elements.Preformatted"/> refuses a size that is not
-    /// finite or is below 0.000005 from its constructor, with <see cref="ArgumentException"/>, not
-    /// from the save.</para>
+    /// finite, is below 0.000005 or is above 1e30 from its constructor, with
+    /// <see cref="ArgumentException"/>, not from the save.</para>
     /// <para><b>Attention</b>: a size of zero or less is <b>not</b> refused. It reaches the content
     /// stream as a font operator that readers accept, so you still get a document. At zero the
     /// text is invisible. Below zero the glyphs are inverted. If you do not want either, check the

@@ -188,4 +188,23 @@ public sealed class PreformattedOracleTests : IDisposable
         AssertVeraPdfPasses(path, "ua1");
         AssertQpdfClean(path);
     }
+
+    // The ceiling is 1e30 (Preformatted, LargestFontSize). The marker's x is about 1.08 times the
+    // size for a segment of one cluster, so this puts a number near 1e30 into the Tf operand, the
+    // baseline and the marker path, and veraPDF checks each against 6.1.13-2.
+    [Fact]
+    public void PdfA2u_atTheLargestFontSize_passesVeraPdf()
+    {
+        using var doc = Claimed(PdfConformance.PdfA2u, tagged: false);
+        var style = new TextStyle { FontRef = doc.LoadTrueTypeFont(MonoPath), FontSize = 1e30, Leading = 12 };
+        doc.Add(new Preformatted("ab", style));
+        var path = Write(doc, "a2u-max.pdf");
+
+        var content = Assert.Single(PageContents(File.ReadAllBytes(path)));
+        Assert.Matches(@"/\w+ 1(0{30})(\.0+)? Tf", content);
+        Assert.Contains(" w\n", content, StringComparison.Ordinal);
+        Assert.Contains(" l\n", content, StringComparison.Ordinal);
+
+        AssertVeraPdfPasses(path, "2u");
+    }
 }

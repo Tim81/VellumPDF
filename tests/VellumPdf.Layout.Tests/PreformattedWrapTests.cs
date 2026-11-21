@@ -230,12 +230,43 @@ public sealed class PreformattedWrapTests
     {
         var marks = new string('\u0301', 9000);
         using var doc = new Document();
-        doc.Add(new Preformatted("x" + marks + "	y", MonoStyle(doc)));
+        doc.Add(new Preformatted("x" + marks + "\ty", MonoStyle(doc)));
 
         var content = Assert.Single(PageContents(Save(doc)));
 
         Assert.Equal(
             HexOf(MonoPath, "x" + marks + Spaces(7) + "y")[1..^1],
             string.Concat(HexStrings(content).Select(r => r[1..^1])));
+    }
+
+    // A show is cut by scalars, not UTF-16 units. At 0.01 pt the 4,097 glyphs are 25 pt wide, so
+    // the line does not wrap and only the run limit cuts it. The high surrogate of the pair is
+    // unit 4,095 and the low one unit 4,096, so a cut after 4,096 units would separate them.
+    [Fact]
+    public void ASurrogatePairAtTheRunBoundary_staysInOneRun()
+    {
+        var text = new string('a', 4095) + "\U0001F600" + new string('b', 10);
+        Assert.Equal(0, Gid(MonoPath, 0x1F600));
+        using var doc = new Document();
+        doc.Add(new Preformatted(text, new TextStyle { FontRef = doc.LoadTrueTypeFont(MonoPath), FontSize = 0.01 }));
+
+        var content = Assert.Single(PageContents(Save(doc)));
+
+        var runs = HexStrings(content);
+        Assert.Equal([4096, 10], runs.Select(r => (r.Length - 2) / 4));
+        Assert.EndsWith("0000>", runs[0], StringComparison.Ordinal);
+        Assert.Equal(HexOf(MonoPath, text), "<" + string.Concat(runs.Select(r => r[1..^1])) + ">");
+    }
+
+    // 80 Courier columns at 10 pt are 80 * 600 / 1000 * 10 = 480 pt, exactly the box.
+    [Fact]
+    public void ALineExactlyTheBoxWidth_doesNotWrap()
+    {
+        var lines = PreformattedText.Layout(new Preformatted(new string('x', 80), Courier()), 480, out var wrapped);
+
+        var line = Assert.Single(lines);
+        Assert.Equal(80, line.Text.Length);
+        Assert.False(line.Continued);
+        Assert.Equal(0, wrapped);
     }
 }

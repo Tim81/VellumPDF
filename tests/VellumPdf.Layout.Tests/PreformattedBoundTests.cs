@@ -37,9 +37,14 @@ public sealed class PreformattedBoundTests
         var text = new string('x', 1_000_000);
         _ = new Preformatted("warm up");
 
-        var bytes = Allocated(() => _ = new Preformatted(text));
+        // The minimum of five calls keeps a one-off allocation on this thread from failing the
+        // test; a bound of 1,024 bytes on a single call failed in 2 of 41 runs under load. A copy
+        // of the text would be about 2 MB (two bytes a character), so 64 KB still tells a copy from
+        // a read.
+        var samples = Enumerable.Range(0, 5).Select(n => Allocated(() => _ = new Preformatted(text))).ToArray();
 
-        Assert.True(bytes <= 1024, $"allocated {bytes} bytes");
+        var bytes = samples.Min();
+        Assert.True(bytes <= 65_536, $"allocated {bytes} bytes at the least, in samples of {string.Join(", ", samples)}");
     }
 
     [Fact]

@@ -77,6 +77,16 @@ public sealed class Preformatted
     /// </summary>
     private const double SmallestWrittenSize = 5e-6;
 
+    /// <summary>
+    /// The largest font size accepted, in points. The block writes the size as a <c>Tf</c> operand
+    /// and as part of each baseline, and writes the continuation marker's x as the width of the
+    /// segment plus 0.48 times the size. Each number must stay within the ±3.403 × 10^38 of
+    /// ISO 32000-1, Annex C, Table C.1, which ISO 19005-2, 6.1.13 applies. 1e30 leaves a factor of
+    /// about 3.4 × 10^8 below the limit, so a single cluster would have to be that many ems wide to
+    /// pass it.
+    /// </summary>
+    private const double LargestFontSize = 1e30;
+
     private int _tabWidth = 8;
     private EdgeInsets _margins = EdgeInsets.Zero;
     private PageBreakMode _breakBefore;
@@ -170,14 +180,23 @@ public sealed class Preformatted
     /// <c>text</c> and the message names the UTF-16 index and the code point, an unpaired surrogate
     /// by its code unit. It throws <see cref="ArgumentException"/> with <c>ParamName</c>
     /// <c>style</c> for each of these: a
-    /// <see cref="TextStyle.FontSize"/> that is not finite or is below 0.000005, which
-    /// <c>PdfCanvas</c> would write as zero; a <see cref="TextStyle.Leading"/> that is not finite
+    /// <see cref="TextStyle.FontSize"/> that is not finite, is below 0.000005, which
+    /// <c>PdfCanvas</c> would write as zero, or is above 1e30;
+    /// a <see cref="TextStyle.Leading"/> that is not finite
     /// (zero and negative still mean automatic leading); a <see cref="TextStyle.Color"/> channel
     /// that is not a number from 0 to 1, the range ISO 32000-2:2020, 8.6.8 gives each <c>rg</c> and
     /// <c>RG</c> operand; a <see cref="TextStyle.FontRef"/> that is a <see cref="Standard14"/>
     /// value the enumeration does not name, or Symbol or ZapfDingbats, which have no
     /// WinAnsiEncoding glyphs and measure as zero wide; and a <see cref="TextStyle.LinkUri"/>,
     /// because a link on a block that is not drawn as text runs would be dropped without a word.
+    /// <para><b>The 1e30 ceiling on the font size is there for ISO 32000-1, Annex C, Table C.1.</b>
+    /// It gives a real number a magnitude of at most 3.403 × 10^38, and PDF/A-2, 6.1.13 applies the
+    /// limit. The block writes the size in <c>Tf</c> and in each baseline, and writes the marker's
+    /// x as the width of the segment plus 0.48 times the size, so a size of 1e39 would be written
+    /// and would fail veraPDF's rule 6.1.13-2 under PDF/A-2u. The ceiling holds under every
+    /// <see cref="Document.Conformance"/>, including
+    /// <see cref="VellumPdf.Document.PdfConformance.None"/>. The leading needs no ceiling: the save
+    /// refuses a leading taller than the content box, which the page bounds.</para>
     /// <para>Everything else a style can carry is accepted. A proportional font draws, and its tabs
     /// still expand to spaces. A <see cref="TextStyle.FontRef"/> built from a null handle draws
     /// Helvetica. A handle from another document is refused by the save with
@@ -254,6 +273,11 @@ public sealed class Preformatted
             throw Refused(
                 $"The style's FontSize is {Format(size)}. It must be a finite number of at least " +
                 "0.000005 points; a smaller size is written as zero.");
+
+        if (size > LargestFontSize)
+            throw Refused(
+                $"The style's FontSize is {Format(size)}. It must be at most 1E+30 points, so that no " +
+                "number the block writes passes the 3.403 × 10^38 limit of ISO 32000-1, Annex C, Table C.1.");
 
         if (!double.IsFinite(style.Leading))
             throw Refused(
