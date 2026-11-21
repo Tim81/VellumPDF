@@ -391,8 +391,8 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource
             {
                 // Embedded fonts: Tw does not work with 2-byte CID encoding.
                 // Position each word-token explicitly with Tm.
-                DrawJustifiedEmbeddedLine(canvas, ctx, fragments, curX, linePdfY, area.Width, slack, wordGapCount, ref currentFont, ref currentColor);
-                RegisterLineLinks(ctx, fragments, curX, lineLayoutTop, leading);
+                var spans = DrawJustifiedEmbeddedLine(canvas, ctx, fragments, curX, linePdfY, area.Width, slack, wordGapCount, ref currentFont, ref currentColor);
+                RegisterLineLinks(ctx, fragments, spans, lineLayoutTop, leading);
             }
             else
             {
@@ -471,29 +471,43 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource
     // ── Link annotation registration ──────────────────────────────────────────
 
     /// <summary>
-    /// For each fragment in an embedded-font justified line that carries a
-    /// <see cref="TextStyle.LinkUri"/>, registers a link annotation at its
-    /// approximate position. Because exact token positions are computed inside
-    /// <see cref="DrawJustifiedEmbeddedLine"/>, we use the fragment's full width
-    /// as a reasonable approximation.
+    /// For each fragment of an embedded-font justified line that carries a
+    /// <see cref="TextStyle.LinkUri"/>, registers a link annotation over the span
+    /// <see cref="DrawJustifiedEmbeddedLine"/> measured while drawing it: from the x of the
+    /// fragment's first glyph to the x at which the next fragment's first glyph is drawn, or, for
+    /// the last fragment of the line, to where its last glyph ends. That is the rectangle the
+    /// <c>Tw</c> path gives a standard-14 fragment, so a space that closes the fragment is covered
+    /// together with the stretch added after it. A fragment that drew no glyph run on the line gets
+    /// no rectangle, because there is no drawn text to cover. A tab with no stop to its right at
+    /// the start of a line leaves such a fragment, of one space or none.
     /// </summary>
-    private static void RegisterLineLinks(DrawContext ctx, LineFragment[] fragments, double startX, double lineTop, double lineHeight)
+    private static void RegisterLineLinks(
+        DrawContext ctx,
+        LineFragment[] fragments,
+        FragmentSpan[] spans,
+        double lineTop,
+        double lineHeight)
     {
-        var curX = startX;
-        foreach (var frag in fragments)
+        for (var i = 0; i < fragments.Length; i++)
         {
-            if (frag.Style.LinkUri is not null)
-            {
-                var box = new LayoutBox(curX, lineTop, frag.Width, lineHeight);
-                ctx.AddUriLinkAnnotation(box, frag.Style.LinkUri);
-            }
-            curX += frag.Width;
+            if (fragments[i].Style.LinkUri is null || !spans[i].Drawn)
+                continue;
+
+            var box = new LayoutBox(spans[i].Start, lineTop, spans[i].End - spans[i].Start, lineHeight);
+            ctx.AddUriLinkAnnotation(box, fragments[i].Style.LinkUri!);
         }
     }
 
+    /// <summary>
+    /// The horizontal extent one fragment occupies on a justified embedded-font line, as drawn.
+    /// <paramref name="Drawn"/> is set when a glyph run of the fragment was shown; a fragment with
+    /// no word token never sets it, and its extent stays zero.
+    /// </summary>
+    private readonly record struct FragmentSpan(double Start, double End, bool Drawn = false);
+
     // ── Justified embedded draw ───────────────────────────────────────────────
 
-    private static void DrawJustifiedEmbeddedLine(
+    private static FragmentSpan[] DrawJustifiedEmbeddedLine(
         PdfCanvas canvas,
         DrawContext ctx,
         LineFragment[] fragments,
@@ -508,23 +522,43 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource
         // Tokenise fragments into word-tokens; inter-token gaps get extra spacing.
         // A "word gap" is any transition between tokens where the left token ends without
         // trailing space and the right starts without leading space — we add slack/gaps there.
-        var tokens = SplitToWordTokens(fragments);
+        var owners = new List<int>();
+        var tokens = SplitToWordTokens(fragments, owners);
         var extraPerGap = wordGapCount > 0 ? slack / wordGapCount : 0.0;
         var curX = startX;
+
+        // Where each fragment is drawn: its first token's x, and the x at which the next
+        // fragment with a token starts (or, for the last one, where its own last token ends).
+        var spans = new FragmentSpan[fragments.Length];
+        var open = -1;
 
         for (var t = 0; t < tokens.Count; t++)
         {
             var (text, style, width) = tokens[t];
+            var owner = owners[t];
+            if (owner != open)
+            {
+                if (open >= 0)
+                    spans[open] = spans[open] with { End = curX };
+                spans[owner] = new FragmentSpan(curX, curX, true);
+                open = owner;
+            }
+
             TextEmitter.SelectFont(ctx, canvas, style, ref currentFont);
             SwitchColor(canvas, style, ref currentColor);
             canvas.SetTextMatrix(1, 0, 0, 1, curX, linePdfY);
             TextEmitter.Show(canvas, style, text);
             curX += width;
 
+            // A fragment ends where its last glyph ends, until a later fragment starts.
+            spans[owner] = spans[owner] with { End = curX };
+
             // Add extra spacing after this token if there's a gap before the next
             if (t < tokens.Count - 1 && IsWordGap(tokens[t], tokens[t + 1]))
                 curX += extraPerGap;
         }
+
+        return spans;
     }
 
     // ── Font / colour switching helpers ──────────────────────────────────────
@@ -544,11 +578,14 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource
     /// space-tokens (" "), using the same split logic for both the gap-count path and
     /// the draw path so the two always agree on the number of inter-word gaps.
     /// </summary>
-    private static List<(string Text, TextStyle Style, double Width)> SplitToWordTokens(LineFragment[] fragments)
+    private static List<(string Text, TextStyle Style, double Width)> SplitToWordTokens(
+        LineFragment[] fragments,
+        List<int>? owners = null)
     {
         var tokens = new List<(string, TextStyle, double)>();
-        foreach (var frag in fragments)
+        for (var f = 0; f < fragments.Length; f++)
         {
+            var frag = fragments[f];
             var parts = frag.Text.Split(' ');
             for (var i = 0; i < parts.Length; i++)
             {
@@ -560,6 +597,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource
                 }
                 var w = frag.Style.FontRef.MeasureString(part, frag.Style.FontSize);
                 tokens.Add((part, frag.Style, w));
+                owners?.Add(f);
 
                 // If there is a space after this part (not the last split segment),
                 // insert a space token so the gap is explicit and countable.
@@ -567,6 +605,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource
                 {
                     var sw = frag.Style.FontRef.MeasureString(" ", frag.Style.FontSize);
                     tokens.Add((" ", frag.Style, sw));
+                    owners?.Add(f);
                 }
             }
         }

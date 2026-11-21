@@ -470,6 +470,47 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   **Attention:** the file still references `.notdef`, so veraPDF still fails ISO 19005-2,
   6.2.11.8 and ISO 14289-1, 7.21.8. The reports above are how to find it.
 
+- **A link on a justified line in an embedded font sat away from its text (#551).** The line is
+  drawn word by word, with the stretch added after each gap, but the link rectangle was placed and
+  sized from the unstretched widths, so it started left of the linked words (by the stretch of every
+  gap before them) and could lie over other text. The rectangle now starts at the x where the linked
+  run's first glyph is drawn and ends at the x where the text that follows it on the line starts, or
+  where its own last glyph ends when it closes the line. A space that closes the run is inside the
+  rectangle, with the stretch after it, as on a standard-14 line. On a line that holds an
+  embedded-font run, a link run that draws no glyph, such as a tab with no stop to its right at a
+  line start, gets no annotation; on a line in standard-14 faces only that tab is drawn as a space
+  and its link covers it. This is a deliberate output change for one class of input: a justified
+  line, other than the last of its paragraph, that holds an embedded-font run and a `LinkUri` run. A
+  standard-14 link on such a mixed line moves the same way, and so does the link in a justified
+  `Heading` built from runs. Left, centred and right lines, the last line of a justified paragraph,
+  a line with no link and a line in standard-14 fonts only save the same bytes as before.
+  `TextStyle.LinkUri` now states the rule once for both kinds of face.
+- **A long running-band template costs what fits the content width, not the template's length, on
+  every page (#518).** `RunningBand.Resolve` built the whole substituted text for each band on each
+  page, and the fitting walk then used the first few dozen characters of it. A save now scans each
+  template once and produces the text as the walk reads it, so a page costs the characters that
+  fit the content width plus one character of look-ahead, two when that character is a high
+  surrogate and more text follows. The cut at a word boundary then drops some of those from what
+  is drawn, so a page can produce more than it draws: `{page}/{pages} ` followed by 200 `x`, on
+  a 40-page document in Helvetica 10 on a 200 pt page with 20 pt margins, produces 33 characters
+  on every page and draws 4 on page 1. On a 60,000-word paragraph that saves as 600 pages of
+  200 x 300 pt with a footer in Helvetica 10, `Save` allocated about 277 MB with a
+  100,000-character template against about 37 MB with a 200-character one; it now allocates about
+  37 MB with either. Repeated saves of one document in one process vary by about 0.5 MB, on main
+  as here. Those are allocation counts on one machine and one fixture, not timings.
+  - Output is byte-identical for every band measured: `{page}`, `{pages}`, both and neither;
+    truncated bands with the same `BandTruncations` (page, characters drawn, characters resolved);
+    Symbol and ZapfDingbats bands; tagged and untagged documents; blank recto pages. A null
+    template still throws `ArgumentNullException` named `template` from the save, where the band is
+    first drawn.
+  - The public `RunningBand.Resolve` is unchanged. It still builds the whole text, so calling it
+    costs the template's length; the save no longer calls it.
+  - A template whose characters measure zero is drawn in full and costs its whole length on every
+    page, as before. The documentation of `RunningBand.Template` now says so.
+  - The save's resolver reads the tokens it substitutes from one internal table. A later token
+    is a new enum member, a row in that table and a value in `BandText.Reset`, plus a pass in the
+    public `RunningBand.Resolve`, which still scans the template on its own; a test fails when
+    `Resolve` leaves a token the table lists.
 - **On .NET 10 an empty stream was written as `/FlateDecode` with no data (#640).** `PdfStream`
   compressed through `ZLibStream`, which on .NET 10.0.15 writes nothing for empty input, so an empty
   page's `/Contents` came out as `/Filter /FlateDecode /Length 0` with an empty body, which is not
