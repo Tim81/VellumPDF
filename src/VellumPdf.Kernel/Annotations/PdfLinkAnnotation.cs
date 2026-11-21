@@ -7,29 +7,93 @@ namespace VellumPdf.Annotations;
 
 /// <summary>
 /// Describes a /Link annotation to be attached to a page.
-/// Use <see cref="Uri"/> for external hyperlinks or <see cref="DestPage"/> for
-/// internal cross-document links.
+/// Use <see cref="Uri"/> for external hyperlinks, <see cref="DestPage"/> for an internal link to a
+/// position on a page, or <see cref="DestName"/> for an internal link to a destination added with
+/// <see cref="PdfDocument.AddNamedDestination"/>.
 /// </summary>
 public sealed class PdfLinkAnnotation
 {
     /// <summary>Annotation bounding rectangle in PDF user-space (points, Y-up).</summary>
     public required PdfRectangle Rect { get; init; }
 
-    /// <summary>External URI action target (mutually exclusive with <see cref="DestPage"/>).</summary>
+    /// <summary>
+    /// External URI action target, written as <c>/A &lt;&lt; /S /URI &gt;&gt;</c>.
+    /// </summary>
+    /// <remarks>
+    /// <b>A <see cref="Uri"/> together with <see cref="DestName"/> is refused.</b>
+    /// <see cref="PdfDocument.RegisterLinkAnnotation"/> throws <see cref="ArgumentException"/> for
+    /// it (<c>ParamName</c> <c>annotation</c>), because ISO 32000-2, Table 176 does not permit
+    /// <c>Dest</c> beside an <c>A</c> entry. An empty string counts as set.
+    /// <para>When <see cref="Uri"/> and <see cref="DestPage"/> are both set, the save writes the
+    /// <c>/A</c> action and leaves <see cref="DestPage"/>, <see cref="DestLeft"/> and
+    /// <see cref="DestTop"/> out, without a message. <b>Do not pass</b> both: 3.0 will refuse the
+    /// pair.</para>
+    /// </remarks>
     public string? Uri { get; init; }
 
     /// <summary>
-    /// Target page for an internal /XYZ destination (mutually exclusive with <see cref="Uri"/>).
-    /// Resolved to a page indirect-reference during <see cref="PdfDocument.Save"/>.
+    /// Target page for an internal /XYZ destination, written as
+    /// <c>/Dest [page /XYZ left top null]</c>. Resolved to a page indirect-reference during
+    /// <see cref="PdfDocument.Save"/>.
     /// </summary>
+    /// <remarks>
+    /// <b>A <see cref="DestPage"/> together with <see cref="DestName"/> is refused.</b>
+    /// <see cref="PdfDocument.RegisterLinkAnnotation"/> throws <see cref="ArgumentException"/> for
+    /// it (<c>ParamName</c> <c>annotation</c>), because both would fill the one <c>Dest</c> entry.
+    /// <para><b>Silently ignored:</b> a page that is not one of the saving document's pages. The
+    /// link is then written with neither <c>/A</c> nor <c>/Dest</c>. When <see cref="Uri"/> is also
+    /// set, this property is ignored; see <see cref="Uri"/>.</para>
+    /// </remarks>
     public PdfPage? DestPage { get; init; }
 
+    private string? _destName;
+
+    /// <summary>
+    /// The name of a destination added with <see cref="PdfDocument.AddNamedDestination"/>. When
+    /// set, the link is written as <c>/Dest (name)</c>, a byte string of the name's ASCII
+    /// characters (ISO 32000-2, 12.3.2.4 and Table 176), and a reader looks the name up in the
+    /// document's <c>/Dests</c> name tree.
+    /// </summary>
+    /// <remarks>
+    /// <b>A name outside the rule is refused.</b> The <see langword="init"/> accessor throws
+    /// <see cref="ArgumentException"/> (<c>ParamName</c> <c>value</c>) for a name that is empty,
+    /// has more than 127 characters, or holds a character other than <c>A-Z a-z 0-9 . _ - :</c>.
+    /// <see langword="null"/> means no name and is accepted. The message gives the index and code
+    /// point of a bad character and never quotes the name.
+    /// <para><b>Combinations are refused by <see cref="PdfDocument.RegisterLinkAnnotation"/>,</b>
+    /// not here, because an initializer sees one property at a time: <see cref="Uri"/> or
+    /// <see cref="DestPage"/> set beside this name throws <see cref="ArgumentException"/> there
+    /// (<c>ParamName</c> <c>annotation</c>). A link on one of the document's pages whose name no
+    /// destination carries is refused from <see cref="PdfDocument.Save(System.IO.Stream)"/>,
+    /// <see cref="PdfDocument.SaveAsync"/> and <see cref="PdfDocument.PrepareForSigning"/> with
+    /// <see cref="InvalidOperationException"/> naming the destination, before anything is written;
+    /// the document stays usable. A link on a page the document does not own is never written and
+    /// is not judged.</para>
+    /// <para><b>Silently ignored:</b> <see cref="DestLeft"/> and <see cref="DestTop"/>. The
+    /// destination's own coordinates apply, and zero cannot be told from "not set", so no value of
+    /// them is refused.</para>
+    /// </remarks>
+    /// <exception cref="ArgumentException">The value is empty, longer than 127 characters or holds
+    /// a character outside <c>A-Z a-z 0-9 . _ - :</c>.</exception>
+    public string? DestName
+    {
+        get => _destName;
+        init
+        {
+            if (value is not null)
+                DestinationName.Validate(value, nameof(value));
+            _destName = value;
+        }
+    }
+
     /// <summary>X coordinate of the destination viewport origin (PDF user-space).</summary>
-    /// <remarks>A magnitude above 3.403 × 10^38 is written but fails PDF/A validation; see <see cref="PdfReal"/>.</remarks>
+    /// <remarks>A magnitude above 3.403 × 10^38 is written but fails PDF/A validation; see
+    /// <see cref="PdfReal"/>. Not used when <see cref="DestName"/> is set.</remarks>
     public double DestLeft { get; init; }
 
     /// <summary>Y coordinate of the destination viewport origin (PDF user-space).</summary>
-    /// <remarks>A magnitude above 3.403 × 10^38 is written but fails PDF/A validation; see <see cref="PdfReal"/>.</remarks>
+    /// <remarks>A magnitude above 3.403 × 10^38 is written but fails PDF/A validation; see
+    /// <see cref="PdfReal"/>. Not used when <see cref="DestName"/> is set.</remarks>
     public double DestTop { get; init; }
 
     /// <summary>
@@ -65,6 +129,12 @@ public sealed class PdfLinkAnnotation
                 .Set(new PdfName("URI"), new PdfLiteralString(
                     System.Text.Encoding.Latin1.GetBytes(PercentEncodeNonAscii(Uri))));
             dict.Set(new PdfName("A"), action);
+        }
+        else if (DestName is not null)
+        {
+            // /Dest (name): a byte string looked up in the /Dests name tree (Table 176), not an
+            // /A GoTo action, because ISO 32000-1, 12.6.4.2 (NOTE) prefers a direct destination.
+            dict.Set(new PdfName("Dest"), new PdfLiteralString(DestinationName.Encode(DestName)));
         }
         else if (destPageRef is not null)
         {
