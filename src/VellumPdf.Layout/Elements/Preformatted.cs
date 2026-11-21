@@ -49,6 +49,9 @@ namespace VellumPdf.Layout.Elements;
 /// well, even when the font has a glyph for it, because a ToUnicode value may not be either. The
 /// default style is Courier, which is not embedded, so a document that claims a standard must pass
 /// an embedded font.</para>
+/// <para><b>With no claim</b>, a character the embedded font has no glyph for is drawn as glyph 0,
+/// and the save lists it as <see cref="LayoutDiagnosticCode.NotdefGlyph"/>, as for a paragraph;
+/// <see cref="Document.StrictDiagnostics"/> refuses that save.</para>
 /// <para><b>What is ignored.</b> <see cref="Document.SetDefaultFont"/> does not apply, as for lists
 /// and tables. Alignment, justification and hyphenation do not exist on this element. A paragraph
 /// tab stop does not apply: a tab is a number of spaces. No language is written for the block. The

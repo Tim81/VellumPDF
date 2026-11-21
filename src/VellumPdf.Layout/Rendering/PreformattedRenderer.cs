@@ -160,7 +160,8 @@ internal sealed class PreformattedRenderer : IRenderer, IPageBreakSource
 
             if (!fontSelected)
             {
-                SelectFont(ctx, canvas, style);
+                FontReference? current = null;
+                TextEmitter.SelectFont(ctx, canvas, style, ref current);
                 canvas.SetFillColorRgb(style.Color.R, style.Color.G, style.Color.B);
                 fontSelected = true;
             }
@@ -187,24 +188,10 @@ internal sealed class PreformattedRenderer : IRenderer, IPageBreakSource
     private double Baseline(DrawContext ctx, LayoutBox area, double size, int line) =>
         ctx.ToPdfY(area.Y) - size - (line - _startLine) * _lineHeight;
 
-    private static void SelectFont(DrawContext ctx, PdfCanvas canvas, TextStyle style)
-    {
-        if (style.FontRef.IsEmbedded)
-        {
-            canvas.SetFontByName(ctx.UseEmbeddedFont(style.FontRef.Embedded), style.FontSize);
-        }
-        else
-        {
-            canvas.SetFont(ctx.GetFont(style.Font), style.FontSize);
-        }
-    }
-
     // The runs follow one another on the text line by the advance of the glyphs shown, so no Tm
     // sits between them.
     private static void Show(PdfCanvas canvas, TextStyle style, string text)
     {
-        var handle = style.FontRef.IsEmbedded ? style.FontRef.Embedded : null;
-        var glyphs = handle is null ? null : new ushort[Math.Min(text.Length, MaxScalarsPerShow)];
         var from = 0;
         while (from < text.Length)
         {
@@ -216,16 +203,8 @@ internal sealed class PreformattedRenderer : IRenderer, IPageBreakSource
                 scalars++;
             }
 
-            if (handle is null)
-            {
-                canvas.ShowText(from == 0 && to == text.Length ? text : text[from..to]);
-            }
-            else
-            {
-                var count = handle.GetGlyphIds(text[from..to], glyphs!);
-                canvas.ShowGlyphs(glyphs.AsSpan(0, count));
-            }
-
+            // Through TextEmitter so a glyph 0 is listed with its character, as a paragraph's is.
+            TextEmitter.Show(canvas, style, from == 0 && to == text.Length ? text : text[from..to]);
             from = to;
         }
     }

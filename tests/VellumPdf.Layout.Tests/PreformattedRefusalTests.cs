@@ -379,15 +379,38 @@ public sealed class PreformattedRefusalTests
     }
 
     [Fact]
-    public void ACharacterTheFontLacks_withNoClaim_isDrawnAsGlyphZero_andNothingIsReported()
+    public void ACharacterTheFontLacks_withNoClaim_isDrawnAsGlyphZero_andReportedAsNotdefGlyph()
     {
         using var doc = NewDocument();
-        doc.Add(new Preformatted("a\u26B9b", MonoStyle(doc)));
+        doc.Add(new Preformatted("a⚹b⚹", MonoStyle(doc)));
 
         var hex = Assert.Single(HexStrings(Assert.Single(PageContents(Save(doc)))));
 
-        Assert.Equal($"<{Gid(MonoPath, 'a'):X4}0000{Gid(MonoPath, 'b'):X4}>", hex);
-        Assert.Empty(doc.Diagnostics);
+        Assert.Equal($"<{Gid(MonoPath, 'a'):X4}0000{Gid(MonoPath, 'b'):X4}0000>", hex);
+        var item = Assert.Single(doc.Diagnostics);
+        Assert.Equal(LayoutDiagnosticCode.NotdefGlyph, item.Code);
+        Assert.Equal(102, (int)item.Code);
+        Assert.Equal(LayoutDiagnosticSeverity.Error, item.Severity);
+        Assert.Null(item.Clause);
+        Assert.Equal(LayoutElementKind.Preformatted, item.ElementKind);
+        Assert.Equal(0, item.ElementIndex);
+        Assert.Equal(1, item.PageNumber);
+        Assert.Equal(2, item.Count);
+        Assert.StartsWith("U+26B9 has no glyph in ", item.Message);
+    }
+
+    [Fact]
+    public void ACharacterTheFontLacks_withNoClaim_isRefusedByStrictDiagnostics()
+    {
+        using var doc = NewDocument();
+        doc.StrictDiagnostics = true;
+        doc.Add(new Preformatted("a⚹", MonoStyle(doc)));
+        using var ms = new MemoryStream();
+
+        var ex = Assert.Throws<InvalidOperationException>(() => doc.Save(ms));
+
+        Assert.StartsWith("StrictDiagnostics refused the save: NotdefGlyph in Preformatted 0, page 1: U+26B9 has no glyph in ", ex.Message);
+        Assert.Equal(0, ms.Length);
     }
 
     [Fact]

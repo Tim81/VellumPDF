@@ -28,6 +28,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     hold one line. Under a PDF/A or PDF/UA-1 claim it also throws when the font is not embedded or
     has no glyph for a character, and, under PDF/A-2a, PDF/A-2u and PDF/UA-1, for U+FEFF and
     U+FFFE. These refusals leave the document saveable once the named setting is changed.
+  - With no claim, a character the embedded font lacks is drawn as glyph 0 and listed as
+    `NotdefGlyph` (102), as for a paragraph, so `StrictDiagnostics` refuses that save.
   - In a tagged document each drawn piece is one `P` structure element. Nothing in the character
     stream separates two lines. Documents without the element save to the same bytes as before.
 
