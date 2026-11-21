@@ -434,28 +434,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   short box again until it reached the 50,000-continuation limit. A `LayoutImage` with
   `Height = H` did the same. The first call at the top of a page is now offered the larger of
   `H` and `(Y + H) - Y`; the retry and every mid-page offer are unchanged.
-  - **Deliberate output changes**, only where `(Y + H) - Y` is below `H`. The rule: an element
-    whose whole height, or whose last line, needs exactly `H` now saves where it threw the
-    continuation-limit `InvalidOperationException`, or keeps that last line on the page where it
-    was split. Measured at a top margin of 440.16 pt as examples, not as the class: a custom
-    renderer, a `LayoutImage` with `Height = H`, and a one-line paragraph, heading, line
-    separator, one-item list and preformatted block each of height `H` threw and now save on one
-    page, and a paragraph of ten lines with leading `H / 10` was split across two pages and now
-    stays on one. Some exact fills still split, as they did before: seven lines with leading
-    `H / 7` at a top margin of 472.71 pt, where `H / leading` comes out just under 7. Where the
-    two heights are equal, or `(Y + H) - Y` is the larger, the first offer is the one it was and
-    the bytes do not change.
-  - With a `NaN` or `-Infinity` left or right margin and a footer, an element exactly `H` tall
-    used to throw the continuation-limit `InvalidOperationException`. It now throws
-    `ArgumentException` ("PDF does not support NaN or Infinity as a real number value") from the
-    band draw. Without a footer it now saves.
+  - **Deliberate output changes**, only where `(Y + H) - Y` is below `H`. The rule: an element whose
+    whole height, or whose last line, needs exactly `H` now saves where it threw the
+    continuation-limit `InvalidOperationException`, or keeps that last line on the page where it was
+    split. Measured at a top margin of 440.16 pt as examples, not as the class: a custom renderer, a
+    `LayoutImage` with `Height = H`, and a one-line paragraph, heading, line separator, one-item
+    list and preformatted block each of height `H` threw and now save on one page, and a paragraph
+    of ten lines with leading `H / 10` was split across two pages and now stays on one. Some exact
+    fills still split, as they did before: the paragraph fits `floor(area height / leading)` lines,
+    so seven lines with leading `H / 7` at a top margin of 472.71 pt, where `H / leading` comes out
+    just under 7, fit six. Where the two heights are equal, or `(Y + H) - Y` is the larger, the
+    first offer is the one it was and the bytes do not change.
+  - With a `NaN` or `-Infinity` left or right margin and a footer, a custom renderer exactly `H`
+    tall used to throw the continuation-limit `InvalidOperationException`. It now throws
+    `ArgumentException` from the band draw, and without a footer it saves. The save does not refuse
+    such a margin, before or after this change, so the outcome depends on the side and the element
+    (a separate issue).
   - **Attention:** a custom `IRenderer` that returns `Nothing` for exactly `H` but fits the
-    one-step-shorter `(Y + H) - Y` is not supported. On a geometry where `(Y + H) - Y` is below
-    `H`, such a renderer was placed at the top of a page and now is refused at the save with
-    `InvalidOperationException`, "An element is too tall to fit on a single page". A renderer
-    whose limit is lower, measured at one step, 1e-9, 1 and 100 pt below `H`, behaves as it did,
-    both alone on a page and after a paragraph. The documentation of `IRenderer.Layout` and
-    `LayoutContext.Area` states the boundary.
+    one-step-shorter `(Y + H) - Y` is not supported. On a geometry where `(Y + H) - Y` is below `H`,
+    such a renderer was placed at the top of a page and now is refused at the save with
+    `InvalidOperationException`, "An element is too tall to fit on a single page". A renderer that
+    returns `Nothing` from a height lower than `H`, measured at one step, 1e-9, 1 and 100 pt below
+    `H`, behaves as it did, both alone on a page and after a paragraph. The documentation of
+    `IRenderer.Layout` and `LayoutContext.Area` states the boundary.
   - An element that needs the larger `(Y + H) - Y` is still placed at the top of a page and still
     refused after other content, as before: the retry offers `H`.
 - **`/FontBBox` of an embedded font is the font's own bounding box (#596).** The descriptor of every
