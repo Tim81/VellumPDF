@@ -23,8 +23,8 @@ public sealed class Cell
     /// between characters.
     /// <para><b>A carriage return and line feed pair, a lone carriage return and a lone line feed
     /// each end a line.</b> An empty line between two of them is a blank line one leading tall, and
-    /// so is the one after a trailing break: the text <c>a</c> followed by a line feed is two lines here, where a
-    /// <see cref="Elements.Paragraph"/> draws one. Runs of spaces are kept as written, where a
+    /// so is the one after a trailing break: the text <c>a</c> followed by a line feed is two lines
+    /// here, where a <see cref="Elements.Paragraph"/> draws one. Runs of spaces are kept as written, where a
     /// paragraph collapses them. Every other white-space control character, which is a tab, a form
     /// feed, a line tabulation, a next-line character, U+2028 and U+2029, is one space, and so is
     /// every Unicode space separator other than the no-break spaces, such as U+2003, so none of

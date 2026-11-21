@@ -1001,6 +1001,32 @@ public sealed class TableCellBreakTests : IDisposable
     }
 
     /// <summary>
+    /// A cell that is laid out unbroken is reported where it is first drawn, so a cut row whose
+    /// cell is one of them is reported once, not once per page it spans. Row 2 is cut across
+    /// pages, and its two cells, which are not in the RowSpan group in the last row, are laid out
+    /// unbroken because their columns are automatic and the group's cell is in them.
+    /// </summary>
+    [Fact]
+    public void ACutRowWithAFallbackCellIsReportedOnce()
+    {
+        using var doc = new Document { PageSize = new PdfRectangle(0, 0, 300, 200), Margins = new EdgeInsets(10) };
+        var seventy = string.Join(" ", Enumerable.Repeat("wd", 70)) + "\tx";
+        var t = new TableElement { DefaultCellStyle = Helvetica(12) };
+        t.AddRow().AddCell(new Cell("q") { ColSpan = 2 }).AddCell("wd wd wd wd wd");
+        t.AddRow().AddCell(Words(40).Replace("ab", "wd")).AddCell("q");
+        t.AddRow().AddCell("t\t").AddCell(seventy);
+        t.AddRow().AddCell(seventy).AddCell(new Cell("aaaa") { RowSpan = 2, ColSpan = 2 });
+        doc.Add(t);
+
+        var bytes = Save(doc);
+        var cut = doc.Diagnostics.Single(d => d.Code == LayoutDiagnosticCode.CellWhiteSpaceDropped
+            && d.Message.Contains("row 2, cell 1", StringComparison.Ordinal));
+
+        Assert.True(PageCount(bytes) > 2, "the row was not cut");
+        Assert.Equal(1, cut.Count);
+    }
+
+    /// <summary>
     /// The report is kept per table: two tables whose first header cell is laid out unbroken give
     /// two reports, though both name row 0, cell 0.
     /// </summary>
