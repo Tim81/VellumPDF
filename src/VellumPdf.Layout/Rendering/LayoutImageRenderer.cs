@@ -8,7 +8,7 @@ namespace VellumPdf.Layout.Rendering;
 
 /// <summary>Renders a <see cref="LayoutImage"/> as a placed XObject, honouring sizing, margins and alignment.</summary>
 /// <remarks>Does not split. Too-tall images throw from save. Justify is treated as left.</remarks>
-public sealed class LayoutImageRenderer : IRenderer
+public sealed class LayoutImageRenderer : IRenderer, IPageBreakSource
 {
     private readonly LayoutImage _img;
 
@@ -28,6 +28,11 @@ public sealed class LayoutImageRenderer : IRenderer
         ArgumentNullException.ThrowIfNull(img);
         _img = img;
     }
+
+    // Explicit, because the renderer is a public class and an implicit member would be public API.
+    // The mode belongs to the element, so a renderer added through Document.Add(IRenderer) honours
+    // it as well.
+    PageBreakMode IPageBreakSource.BreakBefore => _img.BreakBefore;
 
     /// <summary>Resolves the image size within the available area and reports the occupied region.</summary>
     /// <remarks>

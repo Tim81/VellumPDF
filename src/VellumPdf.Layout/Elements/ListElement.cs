@@ -131,6 +131,33 @@ public sealed class ListElement
     /// <inheritdoc cref="Paragraph.Margins" path="/exception"/>
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 
+    /// <summary>Whether the list starts a new page, or the next right-hand page.</summary>
+    /// <remarks>
+    /// <b>An undefined value is refused.</b> A number <see cref="PageBreakMode"/> does not name
+    /// makes this <c>init</c> accessor throw <see cref="ArgumentOutOfRangeException"/>. The
+    /// default, <see cref="PageBreakMode.None"/>, starts the element where the previous one ended.
+    /// <para>It is honoured when the list is added with <see cref="Document.Add(ListElement)"/>, or
+    /// when its <see cref="Rendering.ListRenderer"/> is added with
+    /// <see cref="Document.Add(IRenderer)"/> or
+    /// <see cref="Rendering.DocumentRenderer.Add(IRenderer)"/>. It applies to the top of the list:
+    /// the overflow of a split list never breaks again, and a renderer built to continue the list
+    /// from a later item breaks like the first piece when it is added directly. See
+    /// <see cref="PageBreakMode"/> for what else is ignored and how parity is counted, and
+    /// <see cref="PageBreak"/> for how breaks combine.</para>
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Raised from this <c>init</c> accessor when the value is not one of
+    /// <see cref="PageBreakMode.None"/>, <see cref="PageBreakMode.Page"/> and
+    /// <see cref="PageBreakMode.Recto"/>.
+    /// </exception>
+    public PageBreakMode BreakBefore
+    {
+        get => _breakBefore;
+        init => _breakBefore = PageBreakModes.Validate(value);
+    }
+
+    private PageBreakMode _breakBefore;
+
     /// <summary>Text style applied to items that have no explicit style.</summary>
     /// <remarks>
     /// Used by a top-level item with no style of its own, and through that item by its children.
