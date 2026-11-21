@@ -898,6 +898,25 @@ public sealed class DocumentRenderer
         if (_measuring) _measureY = _measureArea.Y;
     }
 
+    // The box offered to a Layout call. Mid-page it runs from the cursor to the bottom of the
+    // content area. At the top of a page that height, Bottom - Y, is a difference of two sums and
+    // can sit one rounding step below the content area's Height, which the retry after a Nothing
+    // offers.
+    // A renderer that needs exactly Height then returned Nothing here, succeeded on the retry, had
+    // that result discarded and was offered the short box again, until the continuation limit
+    // (#549). Offering the larger of the two at a page top makes the two agree when the first is
+    // the shorter and leaves a page top whose difference is the longer exactly as it was. The
+    // cursor equals the area's Y exactly there: EnsurePage, AdvancePage and the measuring pass set
+    // it from the expression ContentArea evaluates for Y.
+    private LayoutBox OfferedArea(LayoutBox contentArea)
+    {
+        var cursor = Cursor;
+        var height = contentArea.Bottom - cursor;
+        if (cursor == contentArea.Y && contentArea.Height > height)
+            height = contentArea.Height;
+        return new LayoutBox(contentArea.X, cursor, contentArea.Width, height);
+    }
+
     private void PlaceRenderer(IRenderer renderer, int totalPages)
     {
         var continuations = 0;
@@ -905,10 +924,7 @@ public sealed class DocumentRenderer
         {
             if (!_measuring) EnsurePage();
 
-            var contentArea = PlaceArea;
-            var availableArea = new LayoutBox(
-                contentArea.X, Cursor,
-                contentArea.Width, contentArea.Bottom - Cursor);
+            var availableArea = OfferedArea(PlaceArea);
 
             var result = CallLayout(renderer, availableArea);
 

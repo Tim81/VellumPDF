@@ -517,8 +517,9 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
 
     /// <summary>
     /// The two boxes a fresh page can offer this table, or null when the caller did not say. The
-    /// document offers the content area to the retry, and the area from the top of the content area
-    /// to its bottom after a page break, which can differ from it by a rounding step.
+    /// document offers the content area to the retry. At a page top it offers the taller of the
+    /// content area and the area from the top of the content area to its bottom, which can differ
+    /// from it by a rounding step. This method builds both heights, so either one is covered.
     /// </summary>
     private LayoutBox[]? FreshBoxes(LayoutContext context)
     {
