@@ -47,8 +47,38 @@ public sealed class PdfPage
     /// <summary>Creates a page with the given media box.</summary>
     public PdfPage(PdfRectangle mediaBox) => MediaBox = mediaBox;
 
+    private byte[]? _contentBytes;
+
     /// <summary>Raw PDF content stream bytes. Set by <see cref="Canvas.PdfCanvas.Finish"/>.</summary>
-    public byte[]? ContentBytes { get; set; }
+    /// <remarks>
+    /// Any value is accepted and nothing is scanned. Setting it discards the glyph-0 entries the
+    /// page took from <see cref="Canvas.PdfCanvas.Finish"/>, because the bytes they described are
+    /// gone, so <see cref="PdfDocument.NotdefGlyphs"/> does not list a glyph 0 that bytes set here
+    /// hold. <b>Do not</b> read an empty <see cref="PdfDocument.NotdefGlyphs"/> as proof that bytes
+    /// set here reference no glyph 0.
+    /// </remarks>
+    public byte[]? ContentBytes
+    {
+        get => _contentBytes;
+        set
+        {
+            _contentBytes = value;
+            NotdefTally = null;
+        }
+    }
+
+    /// <summary>
+    /// What the canvas that last finished this page wrote as glyph 0, as it stood at that
+    /// <c>Finish</c>. Cleared when <see cref="ContentBytes"/> is set directly.
+    /// </summary>
+    internal Canvas.NotdefGlyphTally? NotdefTally { get; private set; }
+
+    // Called by PdfCanvas.Finish(): the bytes and the glyph-0 snapshot belong together.
+    internal void SetContent(byte[] bytes, Canvas.NotdefGlyphTally? notdef)
+    {
+        _contentBytes = bytes;
+        NotdefTally = notdef;
+    }
 
     // Called by PdfCanvas.Finish() — the font dict itself is materialised as a shared
     // indirect object (once per face, document-wide) by PdfDocument.Save() before the

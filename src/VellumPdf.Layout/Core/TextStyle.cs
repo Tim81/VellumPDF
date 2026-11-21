@@ -23,6 +23,11 @@ public sealed class TextStyle
     /// <summary>A style with default values (Helvetica, 12 pt, auto leading, black).</summary>
     /// <remarks>
     /// One shared instance. Every property of this type is init-only, so it cannot change.
+    /// <para>Its font is Helvetica, which is not embedded. Elements without a style of their own
+    /// fall back to it, and under a PDF/A or PDF/UA
+    /// <see cref="VellumPdf.Layout.Document.Conformance"/> the save reports each as
+    /// <see cref="VellumPdf.Layout.LayoutDiagnosticCode.UnembeddedFont"/>; see
+    /// <see cref="FontRef"/>.</para>
     /// </remarks>
     public static readonly TextStyle Default = new();
 
@@ -51,6 +56,23 @@ public sealed class TextStyle
     /// it throws <see cref="InvalidOperationException"/> instead of saving. <b>Do not pass</b> text
     /// the font cannot encode; use an embedded font. A later major version refuses it
     /// always.</para>
+    /// <para>An embedded font writes a character it has no glyph for as glyph 0, the <c>.notdef</c>
+    /// glyph. The save lists each such character and font in
+    /// <see cref="VellumPdf.Layout.Document.Diagnostics"/> as
+    /// <see cref="VellumPdf.Layout.LayoutDiagnosticCode.NotdefGlyph"/>, with the clause that
+    /// forbids it under a PDF/A or PDF/UA claim, and still saves. The font's ToUnicode map gives
+    /// glyph 0 the one entry U+FFFD. <b>Do not pass</b> text the font cannot draw to such a
+    /// document. A later major version refuses text the font cannot draw, and a Standard 14 font,
+    /// under either claim.</para>
+    /// <para>A Standard 14 font is not embedded. While
+    /// <see cref="VellumPdf.Layout.Document.Conformance"/> is not
+    /// <see cref="VellumPdf.Document.PdfConformance.None"/>, each element whose style selects one
+    /// is listed in <see cref="VellumPdf.Layout.Document.Diagnostics"/> as
+    /// <see cref="VellumPdf.Layout.LayoutDiagnosticCode.UnembeddedFont"/>, once per element and
+    /// font, and the save still succeeds. With
+    /// <see cref="VellumPdf.Layout.Document.StrictDiagnostics"/> set, either report refuses the
+    /// save. <b>Do not pass</b> a Standard 14 font under either claim. A later major version
+    /// refuses text the font cannot draw, and a Standard 14 font, under either claim.</para>
     /// </remarks>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
@@ -66,6 +88,13 @@ public sealed class TextStyle
     /// by U+FFFD instead. <c>ParamName</c> is <c>s</c>. A pair split between two runs of a
     /// paragraph that share one style instance is joined and measured as a pair, so it saves; split
     /// between runs of different instances, each half is unpaired and the save throws.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from the save, not from this property, when
+    /// <see cref="VellumPdf.Layout.Document.StrictDiagnostics"/> is set and text in this style is
+    /// written as glyph 0, or the style selects a Standard 14 font under a conformance claim; see
+    /// <see cref="VellumPdf.Layout.LayoutDiagnosticCode.NotdefGlyph"/> and
+    /// <see cref="VellumPdf.Layout.LayoutDiagnosticCode.UnembeddedFont"/>.
     /// </exception>
     public FontReference FontRef { get; init; } = Standard14.Helvetica;
 

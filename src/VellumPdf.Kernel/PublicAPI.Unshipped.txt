@@ -23,3 +23,12 @@ VellumPdf.Document.PdfPageLabelStyle.LowerRoman = 3 -> VellumPdf.Document.PdfPag
 VellumPdf.Document.PdfPageLabelStyle.None = 0 -> VellumPdf.Document.PdfPageLabelStyle
 VellumPdf.Document.PdfPageLabelStyle.UpperLetters = 4 -> VellumPdf.Document.PdfPageLabelStyle
 VellumPdf.Document.PdfPageLabelStyle.UpperRoman = 2 -> VellumPdf.Document.PdfPageLabelStyle
+VellumPdf.Canvas.NotdefGlyphWarning
+VellumPdf.Canvas.NotdefGlyphWarning.Character.get -> System.Text.Rune?
+VellumPdf.Canvas.NotdefGlyphWarning.Count.get -> int
+VellumPdf.Canvas.NotdefGlyphWarning.FontName.get -> string?
+VellumPdf.Canvas.NotdefGlyphWarning.FontResourceName.get -> string?
+VellumPdf.Canvas.PdfCanvas.NotdefGlyphs.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Canvas.NotdefGlyphWarning!>!
+VellumPdf.Canvas.PdfCanvas.NotdefGlyphsDropped.get -> int
+VellumPdf.Document.PdfDocument.NotdefGlyphs.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Canvas.NotdefGlyphWarning!>!
+VellumPdf.Document.PdfDocument.NotdefGlyphsDropped.get -> int
