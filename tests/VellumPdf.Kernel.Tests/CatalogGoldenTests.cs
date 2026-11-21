@@ -97,6 +97,12 @@ public sealed class CatalogGoldenTests
         ["form-pdfa2u"] = new(
             "EBB1F8EBB1338AC2857034A6D15C31E4D51C437DDA117DE81FFC6CAEA4C36B67",
             "5 0 obj\n<<\n/Type /Catalog\n/Pages 3 0 R\n/Metadata 10 0 R\n/MarkInfo <<\n/Marked true\n>>\n/AcroForm <<\n/Fields [9 0 R]\n/NeedAppearances false\n/DR <<\n/Font <<\n/Helv 6 0 R\n/ZaDb 7 0 R\n>>\n>>\n/DA (/Helv 0 Tf 0 g)\n>>\n/OutputIntents [12 0 R]\n>>\nendobj"),
+        ["navigation"] = new(
+            "920F37CCE491EDAE25532D0AB355B1BB0E0F63A4624A2C3ED9313F2A82BF01F8",
+            "11 0 obj\n<<\n/Type /Catalog\n/Pages 9 0 R\n/Metadata 13 0 R\n/Names <<\n/Dests <<\n/Names [(chap-1) 14 0 R (end) 15 0 R]\n>>\n>>\n/PageLabels <<\n/Nums [0 <<\n/S /r\n>> 2 <<\n/S /D\n>>]\n>>\n>>\nendobj"),
+        ["navigation-pdfa2u"] = new(
+            "7B86932C9C9685B4E2795915D2E65286D071495B34D7F35BA9CAFF937D306035",
+            "11 0 obj\n<<\n/Type /Catalog\n/Pages 9 0 R\n/Metadata 13 0 R\n/MarkInfo <<\n/Marked true\n>>\n/OutputIntents [15 0 R]\n/Names <<\n/Dests <<\n/Names [(chap-1) 16 0 R (end) 17 0 R]\n>>\n>>\n/PageLabels <<\n/Nums [0 <<\n/S /r\n>> 2 <<\n/S /D\n>>]\n>>\n>>\nendobj"),
         ["linearized"] = new(
             "67BE09CA85A64320B725122DC9492CD17D6D55312526ACAEA9A9FF1E98F75C36",
             "2 0 obj\n<<\n/Type /Catalog\n/Pages 3 0 R\n/Metadata 5 0 R\n>>\nendobj"),
@@ -134,6 +140,12 @@ public sealed class CatalogGoldenTests
         ["form-pdfa2u"] = new(
             "82FE5D64796D0ADC2F9500A7308D416FA6E68B6F2057AA22176FCC4780443AA3",
             "5 0 obj\n<<\n/Type /Catalog\n/Pages 3 0 R\n/Metadata 12 0 R\n/AcroForm <<\n/Fields [11 0 R 7 0 R]\n/NeedAppearances false\n/DR <<\n/Font <<\n/Helv 8 0 R\n/ZaDb 9 0 R\n>>\n>>\n/DA (/Helv 0 Tf 0 g)\n/SigFlags 3\n>>\n/MarkInfo <<\n/Marked true\n>>\n/OutputIntents [14 0 R]\n>>\nendobj"),
+        ["navigation"] = new(
+            "6BD93B9AFBAF85270E80DFE4959A36FFC9ABB4ACA663C29A7D3485707EB31845",
+            "11 0 obj\n<<\n/Type /Catalog\n/Pages 9 0 R\n/Metadata 15 0 R\n/AcroForm <<\n/Fields [13 0 R]\n/SigFlags 3\n>>\n/Names <<\n/Dests <<\n/Names [(chap-1) 16 0 R (end) 17 0 R]\n>>\n>>\n/PageLabels <<\n/Nums [0 <<\n/S /r\n>> 2 <<\n/S /D\n>>]\n>>\n>>\nendobj"),
+        ["navigation-pdfa2u"] = new(
+            "CFA59BF8E4F11AC3A63B9A4FC21CCA3B9F90074753B1AA1804B40FB783A5CEF3",
+            "11 0 obj\n<<\n/Type /Catalog\n/Pages 9 0 R\n/Metadata 15 0 R\n/AcroForm <<\n/Fields [13 0 R]\n/SigFlags 3\n>>\n/MarkInfo <<\n/Marked true\n>>\n/OutputIntents [17 0 R]\n/Names <<\n/Dests <<\n/Names [(chap-1) 18 0 R (end) 19 0 R]\n>>\n>>\n/PageLabels <<\n/Nums [0 <<\n/S /r\n>> 2 <<\n/S /D\n>>]\n>>\n>>\nendobj"),
         ["outline-pdfa2u"] = new(
             "D78353650BDC53DBE97D5721B0363C0AC63638F29D34069AF9EB91D18C03BB86",
             "5 0 obj\n<<\n/Type /Catalog\n/Pages 3 0 R\n/Metadata 8 0 R\n/AcroForm <<\n/Fields [7 0 R]\n/SigFlags 3\n>>\n/Outlines 10 0 R\n/PageMode /UseOutlines\n/MarkInfo <<\n/Marked true\n>>\n/OutputIntents [12 0 R]\n>>\nendobj"),
@@ -194,6 +206,19 @@ public sealed class CatalogGoldenTests
                 // form's objects, and /AcroForm sits at a different place on each path.
                 document.AddTextField(page, "f1", new PdfRectangle(10, 10, 100, 30));
                 document.Conformance = PdfConformance.PdfA2u;
+                break;
+            case "navigation":
+            case "navigation-pdfa2u":
+                // Named destinations, a link by name and two label ranges (#262): four pages, so
+                // the ranges and the destinations land on different ones.
+                var more = Enumerable.Range(0, 3).Select(_ => document.AddPage()).ToArray();
+                document.AddPageLabelRange(0, PdfPageLabelStyle.LowerRoman);
+                document.AddPageLabelRange(2, PdfPageLabelStyle.Decimal);
+                document.AddNamedDestination("chap-1", more[1], 0, 700);
+                document.AddNamedDestination("end", more[2], 10, 20);
+                document.RegisterLinkAnnotation(page, new PdfLinkAnnotation { Rect = new PdfRectangle(10, 10, 60, 30), DestName = "chap-1" });
+                if (configuration == "navigation-pdfa2u")
+                    document.Conformance = PdfConformance.PdfA2u;
                 break;
             case "linearized":
                 document.Linearize = true;

@@ -115,6 +115,30 @@ public sealed class Heading
     /// <inheritdoc cref="Paragraph.Margins" path="/exception"/>
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 
+    /// <summary>Whether the heading starts a new page, or the next right-hand page.</summary>
+    /// <remarks>
+    /// <b>An undefined value is refused.</b> A number <see cref="PageBreakMode"/> does not name
+    /// makes this <c>init</c> accessor throw <see cref="ArgumentOutOfRangeException"/>. The
+    /// default, <see cref="PageBreakMode.None"/>, starts the element where the previous one ended.
+    /// <para>It is honoured when the heading is added with <see cref="Document.Add(Heading)"/>; its
+    /// renderer is internal, so there is no other route. The overflow of a split heading and the
+    /// paragraph the heading draws its text with never break. See <see cref="PageBreakMode"/> for
+    /// what else is ignored and how parity is counted, and <see cref="PageBreak"/> for how breaks
+    /// combine.</para>
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Raised from this <c>init</c> accessor when the value is not one of
+    /// <see cref="PageBreakMode.None"/>, <see cref="PageBreakMode.Page"/> and
+    /// <see cref="PageBreakMode.Recto"/>.
+    /// </exception>
+    public PageBreakMode BreakBefore
+    {
+        get => _breakBefore;
+        init => _breakBefore = PageBreakModes.Validate(value);
+    }
+
+    private PageBreakMode _breakBefore;
+
     /// <summary>Horizontal alignment of the heading text.</summary>
     /// <remarks>
     /// Same as <see cref="Paragraph.Alignment"/>.

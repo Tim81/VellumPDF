@@ -16,7 +16,7 @@ namespace VellumPdf.Layout.Rendering;
 /// <remarks>
 /// Grandchildren are ignored; see <see cref="ListItem.Children"/>.
 /// </remarks>
-public sealed class ListRenderer : IRenderer
+public sealed class ListRenderer : IRenderer, IPageBreakSource
 {
     private readonly ListElement _list;
 
@@ -68,6 +68,11 @@ public sealed class ListRenderer : IRenderer
         _list = list;
         _startItem = startItem;
     }
+
+    // Explicit, because the renderer is a public class and an implicit member would be public API.
+    // The mode belongs to the element, so a renderer added through Document.Add(IRenderer) honours
+    // it as well.
+    PageBreakMode IPageBreakSource.BreakBefore => _list.BreakBefore;
 
     private ListRenderer(ListElement list, int startItem, ParagraphRenderer? partialContentOverride)
     {

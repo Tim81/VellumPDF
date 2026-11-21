@@ -20,7 +20,7 @@ namespace VellumPdf.Layout.Rendering;
 /// <see cref="Layout"/> during a save, so the exceptions on that method reach you from the save. A
 /// negative start line makes <see cref="Draw"/> throw.
 /// </remarks>
-public sealed class ParagraphRenderer : IRenderer
+public sealed class ParagraphRenderer : IRenderer, IPageBreakSource
 {
     private readonly Paragraph _para;
 
@@ -66,6 +66,11 @@ public sealed class ParagraphRenderer : IRenderer
         _para = para;
         _startLine = startLine;
     }
+
+    // Explicit, because the renderer is a public class and an implicit member would be public API.
+    // The mode belongs to the element, so a renderer added through Document.Add(IRenderer) honours
+    // it as well.
+    PageBreakMode IPageBreakSource.BreakBefore => _para.BreakBefore;
 
     // ── Phase 1: Layout ───────────────────────────────────────────────────────
 
