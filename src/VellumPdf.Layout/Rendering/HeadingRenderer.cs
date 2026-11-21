@@ -83,7 +83,14 @@ internal sealed class HeadingRenderer : IRenderer, IPlacementSource, IPageBreakS
     // Explicit, and for the same y the outline entry below uses, so the plan and the /Dest it
     // writes are two routes to one fact. A split heading reports from the piece that holds its
     // first line; the overflow is a plain paragraph and reports nothing.
-    void IPlacementSource.ReportPlacements(PlacementSink sink) => sink.Report(_heading, _occupied);
+    void IPlacementSource.ReportPlacements(PlacementSink sink)
+    {
+        sink.Report(_heading, _occupied);
+        if (_heading.Anchor is { } anchor)
+            sink.ReportAnchor(_heading, anchor, _occupied);
+    }
+
+    internal Heading Element => _heading;
 
     public void Draw(DrawContext ctx)
     {
