@@ -448,8 +448,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - With a `NaN` or `-Infinity` left or right margin and a footer, a custom renderer exactly `H`
     tall used to throw the continuation-limit `InvalidOperationException`. It now throws
     `ArgumentException` from the band draw, and without a footer it saves. The save does not refuse
-    such a margin, before or after this change, so the outcome depends on the side and the element
-    (a separate issue).
+    such a margin, before or after this change, so the outcome depends on the side and the element,
+    as the `Document.Margins` remarks describe.
   - **Attention:** a custom `IRenderer` that returns `Nothing` for exactly `H` but fits the
     one-step-shorter `(Y + H) - Y` is not supported. On a geometry where `(Y + H) - Y` is below `H`,
     such a renderer was placed at the top of a page and now is refused at the save with
