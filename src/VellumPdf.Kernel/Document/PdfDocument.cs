@@ -3,6 +3,7 @@
 
 using System.Text;
 using VellumPdf.Annotations;
+using VellumPdf.Canvas;
 using VellumPdf.Core;
 using VellumPdf.Encryption;
 using VellumPdf.Fonts;
@@ -223,6 +224,66 @@ public sealed class PdfDocument : IDisposable
 
     /// <summary>The pages in this document, in order.</summary>
     public IReadOnlyList<PdfPage> Pages => _pages;
+
+    private static readonly IReadOnlyList<NotdefGlyphWarning> NoNotdefGlyphs = [];
+
+    /// <summary>
+    /// The characters the document's finished pages wrote as glyph 0 (<c>.notdef</c>), one entry
+    /// per character and font resource, in page order, with the counts of all pages added together.
+    /// </summary>
+    /// <remarks>
+    /// <b>Nothing here is refused and nothing throws.</b> The property takes no input, and a save
+    /// is not refused for glyph 0. ISO 19005-2, 6.2.11.8, and ISO 14289-1, 7.21.8, forbid a
+    /// reference to <c>.notdef</c> in a PDF/A-2 or PDF/UA-1 file, so this list is how a caller of
+    /// the Kernel finds out before a validator does.
+    /// <para>The list is built on each read from what each page's last
+    /// <see cref="PdfCanvas.Finish"/> stored, so it holds what the content streams hold. A page
+    /// whose canvas was never finished contributes nothing, drawing after <c>Finish</c> counts only
+    /// once <c>Finish</c> runs again, and a page whose <see cref="PdfPage.ContentBytes"/> was set
+    /// directly contributes nothing. At most 1,000 entries are held;
+    /// <see cref="NotdefGlyphsDropped"/> counts the occurrences past that.
+    /// <see cref="Save(System.IO.Stream)"/>,
+    /// <see cref="SaveAsync(System.IO.Stream, System.Threading.CancellationToken)"/> and
+    /// <see cref="PrepareForSigning"/> draw nothing and leave the list as it was, whether they
+    /// succeed or throw.</para>
+    /// <para>The character is null for glyph ids written through
+    /// <see cref="PdfCanvas.ShowGlyphs(System.ReadOnlySpan{ushort})"/>; see
+    /// <see cref="NotdefGlyphWarning.Character"/>. <b>Do not</b> read an empty list as proof that
+    /// the file holds no glyph 0: it does not see content bytes set directly, and it does not see
+    /// an unfinished page.</para>
+    /// <para>Reading the list while another thread calls <see cref="PdfCanvas.Finish"/> on one of
+    /// the document's pages is not supported.</para>
+    /// </remarks>
+    public IReadOnlyList<NotdefGlyphWarning> NotdefGlyphs => GatherNotdefGlyphs().Entries;
+
+    /// <summary>
+    /// The number of glyph-0 writes not listed in <see cref="NotdefGlyphs"/> because a page's list
+    /// or the document's list already held 1,000 entries, saturating at <see cref="int.MaxValue"/>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Nothing here is refused and nothing throws.</b> The value is computed on each read, like
+    /// <see cref="NotdefGlyphs"/>, and has the same boundary. <b>Do not</b> read zero as proof that
+    /// the file holds no glyph 0 the list does not see. Reading it while another thread calls
+    /// <see cref="PdfCanvas.Finish"/> on one of the document's pages is not supported.
+    /// </remarks>
+    public int NotdefGlyphsDropped => GatherNotdefGlyphs().Dropped;
+
+    private (IReadOnlyList<NotdefGlyphWarning> Entries, int Dropped) GatherNotdefGlyphs()
+    {
+        NotdefGlyphTally? merged = null;
+        var dropped = 0;
+        foreach (var page in _pages)
+        {
+            if (page.NotdefTally is not { } tally) continue;
+            dropped = NotdefGlyphTally.Saturate(dropped, tally.Dropped);
+            merged ??= new NotdefGlyphTally();
+            foreach (var e in tally.Entries)
+                merged.Add(e.Character, e.FontResourceName, e.FontName, e.Count);
+        }
+
+        if (merged is null) return (NoNotdefGlyphs, dropped);
+        return (merged.Entries, NotdefGlyphTally.Saturate(dropped, merged.Dropped));
+    }
 
     /// <summary>
     /// Returns a <see cref="PdfFontResource"/> for a Standard-14 font, creating

@@ -67,15 +67,16 @@ public sealed class ToUnicodeStandInTests
     }
 
     /// <summary>
-    /// Code points that are not stand-ins are never dropped, whatever they share, glyph 0 included:
-    /// two missing characters both keep their .notdef entry.
+    /// Code points that are not stand-ins keep their entries, whatever glyph they share, except
+    /// glyph 0: the missing characters get one entry for it, U+FFFD, and no code point is listed
+    /// against it.
     /// </summary>
     [Fact]
-    public void CodePointsThatAreNotStandIns_keepTheirEntries_glyphZeroIncluded()
+    public void CodePointsThatAreNotStandIns_keepTheirEntries_glyphZeroGetsOneReplacementEntry()
     {
         var entries = Entries(
             new Dictionary<int, ushort> { [0x4E00] = 0, [0x4E01] = 0, [0x41] = 36, [0x61] = 36 });
 
-        Assert.Equal([(0, 0x4E00), (0, 0x4E01), (36, 0x41), (36, 0x61)], entries);
+        Assert.Equal([(0, 0xFFFD), (36, 0x41), (36, 0x61)], entries);
     }
 }

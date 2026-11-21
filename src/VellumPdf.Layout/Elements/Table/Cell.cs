@@ -23,7 +23,9 @@ public sealed class Cell
     /// between characters. A line feed, carriage return or tab is not a break. In a standard-14
     /// font each is written into the cell as it is; in an embedded font each is drawn as whatever
     /// glyph the font's character map gives it, which is .notdef (glyph 0) when the map has no
-    /// entry.
+    /// entry. The save lists each such character as
+    /// <see cref="VellumPdf.Layout.LayoutDiagnosticCode.NotdefGlyph"/>, and
+    /// <see cref="Document.StrictDiagnostics"/> refuses it; see <see cref="TextStyle.FontRef"/>.
     /// </remarks>
     /// <inheritdoc cref="Heading.Text" path="/exception[@cref='T:System.ArgumentException']"/>
     public string Content { get; }
@@ -99,9 +101,27 @@ public sealed class Cell
     /// <see cref="TextStyle.Default"/>. Refusals on size, leading, font and text colour are on
     /// <see cref="TextStyle"/> and are raised from the save. A <see cref="TextStyle.LinkUri"/> in
     /// it is ignored (#475).
+    /// <para>A cell with no style, in a table with no <see cref="TableElement.DefaultCellStyle"/>,
+    /// does not take <see cref="Document.SetDefaultFont"/>; it takes
+    /// <see cref="TextStyle.Default"/>. An empty cell reaches this too. The font is then Helvetica,
+    /// which is not embedded. While <see cref="Document.Conformance"/> is not
+    /// <see cref="VellumPdf.Document.PdfConformance.None"/> the save reports the element as
+    /// <see cref="LayoutDiagnosticCode.UnembeddedFont"/> in <see cref="Document.Diagnostics"/> and
+    /// still saves; only <see cref="Document.StrictDiagnostics"/> refuses it. <b>Do not leave the
+    /// style out</b> of an element in a PDF/A or PDF/UA document; give it a style with an embedded
+    /// font. A later major version refuses text the font cannot draw, and a Standard 14 font, under
+    /// either claim.</para>
     /// </remarks>
     /// <inheritdoc cref="Heading.Style" path="/exception[@cref='T:System.InvalidOperationException' or @cref='T:System.IndexOutOfRangeException']"/>
     /// <inheritdoc cref="ListElement.DefaultStyle" path="/exception[@cref='T:System.ArgumentException']"/>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from here, when <see cref="Document.StrictDiagnostics"/> is set and text of the element is
+    /// written as glyph 0, or the document has a conformance claim and the element writes Helvetica
+    /// or another Standard 14 font; the save reports them as
+    /// <see cref="LayoutDiagnosticCode.NotdefGlyph"/> and
+    /// <see cref="LayoutDiagnosticCode.UnembeddedFont"/>.
+    /// </exception>
     public TextStyle? Style { get; init; }
 
     /// <summary>Inner padding between the cell border and its content.</summary>

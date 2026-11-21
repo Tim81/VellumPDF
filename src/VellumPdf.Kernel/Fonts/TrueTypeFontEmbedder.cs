@@ -217,6 +217,12 @@ public sealed class TrueTypeFontEmbedder
     }
 
     /// <summary>Returns the glyph ID for a Unicode code point, registering it for subsetting.</summary>
+    /// <remarks>
+    /// A code point the font has no glyph for gives glyph 0 (<c>.notdef</c>), except the stand-ins
+    /// described on <see cref="EmbeddedFontHandle.GetGlyphId(int)"/>. Glyph 0 is registered like
+    /// any other glyph, and the font's ToUnicode CMap maps it to U+FFFD, not to the code point.
+    /// Nothing is refused and nothing throws.
+    /// </remarks>
     public ushort GetGlyphId(int codePoint)
     {
         if (_unicodeToGid.TryGetValue(codePoint, out var cachedGid)) return cachedGid;
@@ -261,7 +267,8 @@ public sealed class TrueTypeFontEmbedder
         return total / 1000.0 * pointSize;
     }
 
-    private string PostScriptName =>
+    // The name without the subset tag, as a glyph-0 report names the font.
+    internal string PostScriptName =>
         _name.PostScriptName ?? _name.FamilyName ?? "Unknown";
 
     // A subsetted font's name must carry a six-uppercase-letter tag + '+' prefix
@@ -454,6 +461,14 @@ public sealed class TrueTypeFontEmbedder
     /// project, so this member does not claim that a carriage return and line feed pair is
     /// invalid; the single form keeps the output reproducible. The compressed bytes can still
     /// differ between .NET runtimes. This member refuses no input and throws nothing.
+    /// <para>Glyph 0 gets one entry, <c>&lt;0000&gt; &lt;FFFD&gt;</c>, when any character was
+    /// mapped to it, whether the character was drawn or only measured, and no character is listed
+    /// against it; every other glyph gets the character or characters mapped to it. The entry is
+    /// there because glyph 0 is itself what ISO 14289-1, 7.21.8, and ISO 19005-2, 6.2.11.8,
+    /// refuse, so there is no character to name, and U+FFFD satisfies the value rule of ISO
+    /// 14289-1, 7.21.7. Glyph ids passed straight to
+    /// <see cref="VellumPdf.Canvas.PdfCanvas.ShowGlyphs(System.ReadOnlySpan{ushort})"/> add no
+    /// entry.</para>
     /// </remarks>
     public Core.PdfStream BuildToUnicodeCMap()
     {
@@ -820,7 +835,14 @@ public sealed class TrueTypeFontEmbedder
         // must not take over a glyph that ordinary spaces use, or copying a space out of the PDF
         // gives a narrow no-break space (#562). So a stand-in is listed only when no code point that
         // owns the glyph is in use, and when several stand-ins share it the lowest code point is
-        // listed. Glyph 0 and duplicates between code points the font really maps are left alone.
+        // listed. Duplicates between code points the font really maps are left alone.
+        //
+        // Glyph 0 stands for no character, and a CMap maps a code to one string, so the code points
+        // that were measured or drawn as glyph 0 are not listed one by one. When there was at least
+        // one, glyph 0 gets the single entry U+FFFD, the replacement character, which satisfies the
+        // value rule of ISO 14289-1 7.21.7 (greater than zero, and neither U+FEFF nor U+FFFE).
+        // A glyph 0 can be measured without being drawn, as a running band's cut tail is, so the
+        // entry can appear without a .notdef in the content.
         var owned = new HashSet<ushort>();
         foreach (var (cp, gid) in unicodeToGid)
             if (!fallbackCodePoints.Contains(cp)) owned.Add(gid);
@@ -834,11 +856,13 @@ public sealed class TrueTypeFontEmbedder
         }
 
         var pairs = unicodeToGid
-            .Where(kv => !fallbackCodePoints.Contains(kv.Key)
-                || (listedStandIn.TryGetValue(kv.Value, out var listed) && listed == kv.Key))
+            .Where(kv => kv.Value != 0
+                && (!fallbackCodePoints.Contains(kv.Key)
+                    || (listedStandIn.TryGetValue(kv.Value, out var listed) && listed == kv.Key)))
             .Select(kv => (gid: kv.Value, cp: kv.Key))
             .OrderBy(p => p.gid)
             .ToList();
+        if (unicodeToGid.Values.Contains((ushort)0)) pairs.Insert(0, (gid: (ushort)0, cp: 0xFFFD));
 
         // Write in chunks of 100: Adobe TN5014 §7.4 caps beginbfchar/endbfchar at "a maximum of
         // 100 lines in each ~bfchar set" — a limit ISO 32000-2 §9.10.3 carries over unchanged by

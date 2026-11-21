@@ -49,6 +49,7 @@ public sealed class ExternalToolResolutionTests
         ["pdftotext"],
         ["pdftoppm"],
         ["pdfsig"],
+        ["pdffonts"],
         ["verapdf"],
     ];
 

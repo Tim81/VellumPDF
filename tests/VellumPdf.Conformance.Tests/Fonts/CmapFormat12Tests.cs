@@ -635,7 +635,7 @@ public sealed class CmapFormat12Tests
     /// The PDF with every FlateDecode stream inflated in place, as one Latin-1-safe byte array, so
     /// a test can search the ToUnicode map and the content stream for text.
     /// </summary>
-    private static byte[] Inflated(byte[] pdf)
+    internal static byte[] Inflated(byte[] pdf)
     {
         var text = Encoding.Latin1.GetString(pdf);
         var output = new MemoryStream();
