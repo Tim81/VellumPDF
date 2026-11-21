@@ -907,13 +907,17 @@ public sealed class TableCellBreakTests : IDisposable
     /// A header that is too tall because of its line breaks gives up those breaks and nothing else:
     /// a RowSpan group below it that does not fit with the tall header, and fits with the short
     /// one, is not read as a reason to lay out the cells of every other row unbroken. The ordinary
-    /// row "x" and "y" keeps its two lines, and only the header cell is reported.
+    /// row "x" and "y" keeps its two lines, and only the header cell is reported. With automatic
+    /// columns the row shares a column with the group, so a pass that went on to judge the group
+    /// by the header's old height would reach it.
     /// </summary>
-    [Fact]
-    public void AFallbackHeaderLeavesAnUnrelatedRowItsBreaks()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AFallbackHeaderLeavesAnUnrelatedRowItsBreaks(bool autoColumns)
     {
         using var doc = WidePage();
-        var t = Wide10(1000, 900);
+        var t = autoColumns ? new TableElement { DefaultCellStyle = Helvetica(10) } : Wide10(1000, 900);
         t.AddRow(isHeader: true).AddCell(Words(60)).AddCell("h");
         t.AddRow().AddCell(new Cell("a") { RowSpan = 2 }).AddCell("b");
         t.AddRow().AddCell("c");
