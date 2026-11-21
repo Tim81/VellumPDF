@@ -18,9 +18,9 @@ public sealed class RunningBand
 {
     /// <summary>Text template — may contain {page} and/or {pages}.</summary>
     /// <remarks>
-    /// Not checked when it is set: the constructor stores a null template and
-    /// <see cref="Resolve"/> throws during the save. A template that does not fit the content box
-    /// is truncated, and refused only in strict mode;
+    /// Not checked when it is set: the constructor stores a null template, and the save throws
+    /// <see cref="ArgumentNullException"/> where the band is first drawn. A template that does not
+    /// fit the content box is truncated, and refused only in strict mode;
     /// <see cref="VellumPdf.Layout.Rendering.DocumentRenderer.BandTruncations"/> says when it
     /// counts as not fitting. The cut is reported through <c>Document.BandTruncations</c>,
     /// <c>DocumentRenderer.BandTruncations</c> and, with error severity, as
@@ -43,10 +43,13 @@ public sealed class RunningBand
     /// than the first page cut. A <c>{page}</c> or <c>{pages}</c> token lengthens the resolved
     /// text as the number gains digits, so the worst page is the one that tells you how much
     /// shorter the template has to be.</para>
-    /// <para>The cost of drawing a band on a page follows the characters it draws, not the length
-    /// of the template. A template of 100,000 characters that draws forty costs a page about what
-    /// one of 200 does. Text that measures zero is drawn in full, as the attention above says, and
-    /// so costs its whole length on every page.</para>
+    /// <para>The cost of drawing a band on a page follows the characters that fit the content
+    /// width, not the length of the template. The save produces those characters plus one of
+    /// look-ahead, two when that character is a high surrogate and more text follows, and the
+    /// word-boundary cut then drops some of them from what is drawn. A template of 100,000
+    /// characters of which thirty-two fit costs a page about what one of 200 does. Text that
+    /// measures zero is drawn in full, as the attention above says, and so costs its whole length
+    /// on every page.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -143,10 +146,10 @@ public sealed class RunningBand
     /// <remarks>
     /// A null <paramref name="style"/> becomes <see cref="TextStyle.Default"/>, not the style set
     /// with <see cref="Document.SetDefaultFont"/>. A null
-    /// <paramref name="template"/> is stored, and <see cref="Resolve"/> refuses it where the band is
+    /// <paramref name="template"/> is stored, and the save refuses it where the band is first
     /// drawn, with <see cref="ArgumentNullException"/>. It is not refused earlier, because a band
-    /// that is replaced before the save never reaches <see cref="Resolve"/>. <b>Do not pass</b> a
-    /// null template: 3.0 refuses it here. An empty template is not null and is accepted.
+    /// that is replaced before the save is never drawn. <b>Do not pass</b> a null template: 3.0
+    /// refuses it here. An empty template is not null and is accepted.
     /// <para>The font of a band with no style is Helvetica, which is not embedded. While
     /// <see cref="Document.Conformance"/> is not
     /// <see cref="VellumPdf.Document.PdfConformance.None"/> the save reports the element as
@@ -207,11 +210,12 @@ public sealed class RunningBand
     /// <remarks>
     /// Only the exact lower-case text <c>{page}</c> or <c>{pages}</c> is substituted. Any other
     /// brace text, <c>{Page}</c>, <c>{ page }</c> and a lone <c>{page</c> included, is left as
-    /// given, and a substituted number is never scanned again. A null template is refused here,
-    /// where the band is drawn, with <see cref="ArgumentNullException"/>.
+    /// given, and a substituted number is never scanned again. A null template is refused here with
+    /// <see cref="ArgumentNullException"/>; the save refuses it the same way where the band is
+    /// first drawn.
     /// <para>This builds the whole text, so its cost is the template's length. A save does not call
     /// it: the save resolves a template as it draws, and its cost per page follows the characters
-    /// drawn, as <see cref="Template"/> describes.</para>
+    /// that fit the content width, as <see cref="Template"/> describes.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <see cref="Template"/> is <see langword="null"/>. <c>ParamName</c> is <c>template</c>.

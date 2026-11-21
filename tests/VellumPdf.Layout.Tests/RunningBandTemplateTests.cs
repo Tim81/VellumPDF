@@ -211,6 +211,71 @@ public sealed class RunningBandTemplateTests
         Assert.Equal(2L * 33 * bothPages, both);
     }
 
+    // The cost is what fits, not what is drawn: the walk reads one character past the cut, and
+    // the word-boundary cut then drops back to the last space. A template that fits "1/600" before
+    // a long word draws 5 characters and produces 33.
+    [Fact]
+    public void Band_producesWhatFits_notWhatIsDrawn_whenTheCutFallsBackToAWordBoundary()
+    {
+        var template = "{page}/{pages} " + new string('x', 200);
+        var renderer = new DocumentRenderer(NewPdf(), new PdfRectangle(0, 0, 200, 300), new EdgeInsets(20))
+        {
+            Footer = new RunningBand(template, Ten),
+        };
+        renderer.Add(new ParagraphRenderer(LongBody(4000)));
+        var bytes = Render(renderer);
+        var pages = PageCount(bytes);
+
+        Assert.True(pages > 30, $"{pages} pages");
+        Assert.Equal(33L * pages, renderer.BandCharactersProduced);
+
+        var report = Assert.Single(renderer.BandTruncations);
+        Assert.True(report.DrawnCharacters < 33, $"{report.DrawnCharacters} drawn");
+    }
+
+    // A high surrogate at the cut costs two characters of look-ahead, because the walk reads the
+    // next unit to decide whether the pair is whole. Thirty-one 'x' take 155 pt of the 160 pt
+    // content width, and the pair is measured as one question-mark glyph of 5.56 pt, which does
+    // not fit; 31 that fit plus the pair is 33, where one character of look-ahead would give 32.
+    [Fact]
+    public void Band_atASurrogatePairAtTheCut_producesTwoCharactersOfLookAhead()
+    {
+        var template = new string('x', 31) + "😀" + new string('x', 1000);
+        var (produced, pages) = ProducedOverADocument(null, new RunningBand(template, Ten));
+
+        Assert.True(pages > 30, $"{pages} pages");
+        Assert.Equal(33L * pages, produced);
+    }
+
+    // Compiled is built once and kept, so every page of a save and every save of the band share
+    // the one scan.
+    [Fact]
+    public void Compiled_isBuiltOnce_andKept()
+    {
+        var band = new RunningBand("{page}/{pages} footer", Ten);
+        Assert.Same(band.Compiled, band.Compiled);
+    }
+
+    // Token-dense: 16,666 tokens of 6 characters. The scan is built once per band, which costs the
+    // long template about 1.2 MB more than the short one on net11.0; a band that rebuilt it on each
+    // of 600 pages would cost about 600 times that. The bound sits between the two. Allocation on
+    // the calling thread is deterministic where a clock is not.
+    [Fact]
+    public void LongTokenDenseTemplate_costsAboutWhatAShortOneDoes_onADeepDocument()
+    {
+        const int Words = 60_000;
+        var shortTemplate = string.Concat(Enumerable.Repeat("{page}", 33));
+        var longTemplate = string.Concat(Enumerable.Repeat("{page}", 16_666));
+
+        SaveAllocation(shortTemplate, 2000);
+        SaveAllocation(longTemplate, 2000);
+
+        var small = SaveAllocation(shortTemplate, Words);
+        var large = SaveAllocation(longTemplate, Words);
+
+        Assert.True(large - small < 10_000_000, $"{large - small} more bytes for 16,633 more tokens ({large} against {small})");
+    }
+
     [Fact]
     public void Band_withTokens_producesAFewDozenCharactersPerPage_notTheTemplate()
     {

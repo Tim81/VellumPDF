@@ -1015,8 +1015,8 @@ public sealed class DocumentRenderer
     }
 
     // A null template is refused here, where the band is first drawn, as RunningBand.Resolve
-    // refuses it. The cached BandText is replaced when the band was, since Header and Footer are
-    // settable between renders.
+    // refuses it. The cached BandText is replaced when the band was: Header and Footer are
+    // settable, and a renderer's Draw can replace one between two pages of the same render.
     private static BandText ResolveBand(RunningBand band, ref BandText? cache, int pageNumber, int totalPages)
     {
         if (cache is null || !ReferenceEquals(cache.Template, band.Compiled))
@@ -1147,11 +1147,11 @@ public sealed class DocumentRenderer
     /// It walks forward and stops, rather than measuring the whole string first, so the work is
     /// proportional to what fits rather than to what was passed. The text is produced as the walk
     /// asks for it, so the characters of the template that are never reached are never copied
-    /// either. That bound has one hole, and it is
-    /// worth stating its consequence and not only its mechanism. A glyph may advance zero: the 38
-    /// code points U+0000 to U+001F, U+007F and WinAnsi's five undefined codes measure zero in
-    /// every face, and every character measures zero in Symbol and ZapfDingbats, the two of the
-    /// fourteen Standard 14 faces whose width tables are absent from the metrics lookup.
+    /// either. That bound has one hole, and it is worth stating its consequence and not only its
+    /// mechanism. A glyph may advance zero: the 38 code points U+0000 to U+001F, U+007F and
+    /// WinAnsi's five undefined codes measure zero in every face, and every character measures
+    /// zero in Symbol and ZapfDingbats, the two of the fourteen Standard 14 faces whose width
+    /// tables are absent from the metrics lookup.
     ///
     /// So a band in one of those two faces measures zero however long it is, fits by definition, is
     /// never cut, and is positioned by an alignment formula fed a width of zero. That is the defect

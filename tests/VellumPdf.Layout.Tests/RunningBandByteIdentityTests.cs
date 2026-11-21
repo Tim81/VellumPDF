@@ -12,10 +12,10 @@ using static VellumPdf.Layout.Tests.PlacementLoopSupport;
 namespace VellumPdf.Layout.Tests;
 
 /// <summary>
-/// #518 pins for running bands: the bytes after normalisation and the truncation report. Each
-/// value was recorded on the commit before the band template was compiled once per band, with the
-/// same document bodies, so a difference means a banded document came out differently. A pin is
-/// a document class (tokens, truncation, zero-width glyphs, tagging, blank pages), not a count.
+/// #518 pins for running bands: the bytes after normalisation and the truncation report of fixed
+/// documents. Each pin is a document class (tokens, truncation, zero-width glyphs, tagging, blank
+/// pages) with its recorded normalised SHA-256, page count and report, so a banded document whose
+/// output changes fails here whichever way a band's text is resolved.
 /// </summary>
 public sealed class RunningBandByteIdentityTests
 {
