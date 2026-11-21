@@ -39,11 +39,11 @@ public sealed partial class ParagraphRenderer
     internal const double DashGapInWidths = 2;
 
     /// <summary>
-    /// How far past the width a placed segment may end and still fit, in points: the scale below
-    /// which <see cref="PdfCanvas"/> writes the same number. Two ways of computing one width differ
-    /// by a rounding step.
+    /// How far past the width a stop may lie and still count as at the width, in points: the scale
+    /// below which <see cref="PdfCanvas"/> writes the same number. Two ways of computing one width
+    /// differ by a rounding step. A stop within it is placed at the width, not past it.
     /// </summary>
-    internal const double FitSlack = 5e-6;
+    internal const double WidthTolerance = 5e-6;
 
     /// <summary>
     /// How many stop positions the lookup compared on this thread, for a test to pin that it
@@ -69,12 +69,17 @@ public sealed partial class ParagraphRenderer
         if (stops is not { Count: > 0 })
             return null;
 
-        if (double.IsNaN(width) || stops[^1].Position - width < FitSlack)
+        if (double.IsNaN(width))
             return stops;
 
+        // A stop past the width by less than the scale the file is written at is the right edge:
+        // two ways of computing one width differ by a rounding step.
         var within = 0;
-        while (within < stops.Count && stops[within].Position - width < FitSlack)
+        while (within < stops.Count && stops[within].Position - width < WidthTolerance)
             within++;
+
+        if (within == stops.Count)
+            return stops;
 
         // A tab in a run with no style is a space, so it uses no stop.
         foreach (var run in para.Runs)
@@ -420,7 +425,7 @@ public sealed partial class ParagraphRenderer
             var needs = stop.Alignment == TabAlignment.Left ? firstWordW : segmentW;
             var start = Math.Max(pen, stopX - offset);
             var atLineStart = cur.Count == 0;
-            if (start + needs > maxWidth + FitSlack && cur.Count > 0)
+            if (start + needs > maxWidth && cur.Count > 0)
             {
                 // It does not fit after the text before it: that line ends, and the segment is
                 // placed again at the same stop on the next line, its leader running from the left
@@ -431,7 +436,7 @@ public sealed partial class ParagraphRenderer
                 atLineStart = true;
             }
 
-            if (start + needs > maxWidth + FitSlack)
+            if (start + needs > maxWidth)
             {
                 // It does not fit even from the left edge: ordinary text from there, with no tab
                 // pending.
