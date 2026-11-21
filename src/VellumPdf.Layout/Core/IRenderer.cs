@@ -30,9 +30,17 @@ public interface IRenderer
     /// <para>One element may take at most <b>50,000</b> page continuations. Each
     /// <see cref="LayoutResult.Outcome.Partial"/>, and each retry after
     /// <see cref="LayoutResult.Outcome.Nothing"/>, counts as one. An overflow that never gets
-    /// smaller reaches the limit, and so can a renderer that needs the whole content area exactly
-    /// (#549); the save then throws. Make each overflow hold less than the renderer that returned
-    /// it.</para>
+    /// smaller reaches the limit; the save then throws. Make each overflow hold less than the
+    /// renderer that returned it.</para>
+    /// <para><b>A renderer that fits a smaller area but not a larger one is not supported.</b> At
+    /// the top of a page the document offers the larger of the content area's height and the
+    /// height from the top of the content area to its bottom, which can differ by one rounding
+    /// step, so such a renderer's result can depend on which of the two it is offered.
+    /// <b>Do not pass</b> a renderer whose result gets worse as the area grows, such as one that
+    /// returns <see cref="LayoutResult.Outcome.Nothing"/> for an area and fits a shorter one. One
+    /// that returns <c>Nothing</c> for exactly the content area's height and fits the one step
+    /// shorter was saved by an earlier build on a geometry where the shorter height was offered
+    /// first; the save now throws <see cref="InvalidOperationException"/> for it.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
