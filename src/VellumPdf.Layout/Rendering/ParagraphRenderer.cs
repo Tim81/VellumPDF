@@ -26,6 +26,9 @@ public sealed class ParagraphRenderer : IRenderer
 
     // Computed during Layout:
     private List<LineFragment[]>? _lines;
+
+    /// <summary>How many times this instance wrapped its text; the cache keeps it at one.</summary>
+    internal int WrapCalls { get; private set; }
     private double _lineHeight;      // max EffectiveLeading across the paragraph
     private LayoutBox _occupied;
 
@@ -98,6 +101,7 @@ public sealed class ParagraphRenderer : IRenderer
         {
             _lines = WordWrap(_para.Runs, area.Width, out var nullStyleRuns);
             _nullStyleRuns = nullStyleRuns;
+            WrapCalls++;
         }
 
         // Line height = max EffectiveLeading across every fragment in every line.

@@ -83,14 +83,16 @@ internal static class LayoutGen
     /// shape this field exists to reach). Deliberately excludes both — a table with no data rows at
     /// all reports <see cref="LayoutResult.Outcome.Nothing"/> unconditionally from
     /// <c>TableRenderer.Layout</c> regardless of how much page is actually free, which
-    /// <c>DocumentRenderer.CountPlaceRenderer</c> then reads as "this element can never render" and
-    /// throws <c>ElementTooTall</c> even on an empty page with room to spare. Measured directly:
+    /// the measuring pass of <c>DocumentRenderer</c> then reads as "this element can never
+    /// render" and throws <c>ElementTooTall</c> even on an empty page with room to spare.
+    /// Measured directly:
     /// widening this generator to include it broke both
     /// <c>PropertyTests.ValidDocument_rendersWithoutThrowing</c> and
     /// <c>ValidDocument_placesNothingOutsideThePage</c> on the very first run, on documents whose
     /// content area had hundreds of points to spare. That is a real defect, filed as #488, and
-    /// outside this pull request's scope; excluding the shape that reaches it keeps the property sweep testing what
-    /// #480 fixed rather than failing on something else it happens to have found.
+    /// outside this pull request's scope; excluding the shape that reaches it keeps the property
+    /// sweep testing what #480 fixed rather than failing on something else it happens to have
+    /// found.
     /// </summary>
     private static Gen<(bool Row0IsHeader, bool Row1IsHeader)> RowHeaderShape => Gen.OneOf(
         (false, false),
