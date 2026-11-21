@@ -277,8 +277,10 @@ public sealed class TextStyle
     /// first glyph is drawn and ends where the text that follows it on the line starts, spaces
     /// stretched included, or, when the linked text closes the line, where its last glyph ends
     /// (the right edge of the box on a stretched line). A space that closes the linked run is
-    /// inside the rectangle, and so is the stretch after it; a line that is not justified, and
-    /// the last line of a justified paragraph, use the unstretched widths they are drawn with.
+    /// inside the rectangle, and so is the stretch after it. A run that draws no glyph on the line,
+    /// such as a tab with no stop to its right at the start of a line, gets no annotation. A line
+    /// that is not justified, and the last line of a justified paragraph, use the unstretched
+    /// widths they are drawn with.
     /// <para>Do not pass a value that is not an absolute URI. A later major version will refuse
     /// one.</para>
     /// </remarks>

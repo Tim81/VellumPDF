@@ -16,8 +16,8 @@ namespace VellumPdf.Layout.Tests;
 /// The rectangle of a <see cref="TextStyle.LinkUri"/> link on a line in an embedded font. The drawn
 /// positions are read back from the content stream (the <c>Tm</c> in front of every shown glyph
 /// run), so the expected rectangle never comes from the code that computes it: it starts at the x
-/// of the linked run's first glyph and ends at the x of the next run's first glyph, or, when the
-/// linked text closes the line, where its last glyph ends.
+/// of the linked run's first glyph and ends at the x of the text that follows it on the line, or,
+/// when the linked text closes the line, where its last glyph ends.
 /// </summary>
 public sealed class JustifiedEmbeddedLinkTests
 {
@@ -387,6 +387,39 @@ public sealed class JustifiedEmbeddedLinkTests
 
         Assert.Equal(after.X, own[2], 0.001);
         Assert.Equal(link.Y - 2.4, own[1], 0.001);
+    }
+
+    // ── A link run that draws nothing ─────────────────────────────────────────
+
+    /// <summary>
+    /// A tab with no stop to its right (a stop at 0 is not right of the pen) at the start of a line
+    /// leaves a fragment of one space, which trims to nothing and draws no glyph run. A link on it
+    /// has no drawn text to cover, so it gets no annotation, and the link on a run that is drawn
+    /// keeps its rectangle.
+    /// </summary>
+    [Theory]
+    [InlineData("aa bb cc dd ee ff gg hh ii jj kk ll mm nn oo pp qq rr")]
+    [InlineData("\naa bb cc dd ee ff gg hh ii jj kk ll mm nn oo pp qq rr")]
+    public void TabWithNoStopAtLineStart_linkOnItGetsNoRectangle(string after)
+    {
+        using var doc = Page();
+        var font = doc.LoadTrueTypeFont(Liberation);
+        var plain = Embedded(font);
+        doc.Add(new Paragraph(
+        [
+            new TextRun("\t", Embedded(font, Uri)),
+            new TextRun(after, plain),
+            new TextRun(" ss", Embedded(font, "https://b.example")),
+        ])
+        { Alignment = HorizontalAlignment.Justify, TabStops = [new TabStop(0)] });
+        var pdf = Save(doc);
+
+        // The fixture holds the change: the text is drawn, and the line is stretched.
+        Assert.Contains(Runs(pdf), r => r.Key == Hex(font, "aa"));
+
+        var text = Encoding.Latin1.GetString(pdf);
+        Assert.DoesNotContain("https://a.example", text, StringComparison.Ordinal);
+        Assert.All(Rects(pdf), r => Assert.True(r[2] > r[0], string.Join(' ', r)));
     }
 
     // ── Oracles ───────────────────────────────────────────────────────────────

@@ -477,8 +477,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   linked run's first glyph is drawn and ends at the x where the text that follows it on the line
   starts, or where its own last glyph ends when it closes the line, which is the right edge of the
   box on a stretched line. A space that closes the run is inside the rectangle, with the stretch
-  after it, as on a standard-14 line. This is a deliberate output change for one class of input: a
-  justified line, other than the last of its paragraph, that holds an embedded-font run and a
+  after it, as on a standard-14 line. A link run that draws no glyph on the line, such as a tab
+  with no stop to its right at a line start, gets no annotation. This is a deliberate output change for one class of input:
+  a justified line, other than the last of its paragraph, that holds an embedded-font run and a
   `LinkUri` run. A standard-14 link on such a mixed line moves the same way, and so does the link
   in a justified `Heading` built from runs. Left, centred and right lines, the last line of a
   justified paragraph, a line with no link and a line in standard-14 fonts only save the same

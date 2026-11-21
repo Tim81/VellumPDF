@@ -477,8 +477,9 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource
     /// fragment's first glyph to the x at which the next fragment's first glyph is drawn, or, for
     /// the last fragment of the line, to where its last glyph ends. That is the rectangle the
     /// <c>Tw</c> path gives a standard-14 fragment, so a space that closes the fragment is covered
-    /// together with the stretch added after it. Every fragment the wrap builds holds a word, so
-    /// each one has a span.
+    /// together with the stretch added after it. A fragment that drew no glyph run on the line gets
+    /// no rectangle, because there is no drawn text to cover. A tab with no stop to its right at
+    /// the start of a line leaves such a fragment, of one space or none.
     /// </summary>
     private static void RegisterLineLinks(
         DrawContext ctx,
@@ -489,7 +490,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource
     {
         for (var i = 0; i < fragments.Length; i++)
         {
-            if (fragments[i].Style.LinkUri is null)
+            if (fragments[i].Style.LinkUri is null || !spans[i].Drawn)
                 continue;
 
             var box = new LayoutBox(spans[i].Start, lineTop, spans[i].End - spans[i].Start, lineHeight);
@@ -499,8 +500,10 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource
 
     /// <summary>
     /// The horizontal extent one fragment occupies on a justified embedded-font line, as drawn.
+    /// <paramref name="Drawn"/> is set when a glyph run of the fragment was shown; a fragment with
+    /// no word token never sets it, and its extent stays zero.
     /// </summary>
-    private readonly record struct FragmentSpan(double Start, double End);
+    private readonly record struct FragmentSpan(double Start, double End, bool Drawn = false);
 
     // ── Justified embedded draw ───────────────────────────────────────────────
 
@@ -537,7 +540,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource
             {
                 if (open >= 0)
                     spans[open] = spans[open] with { End = curX };
-                spans[owner] = new FragmentSpan(curX, curX);
+                spans[owner] = new FragmentSpan(curX, curX, true);
                 open = owner;
             }
 
