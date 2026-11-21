@@ -17,10 +17,15 @@ public sealed class LayoutContext
     /// <remarks>
     /// When the document lays out an element, the area runs from the current position to the bottom
     /// of the page's content area. The content area already excludes the page margins and any
-    /// header or footer band. On a fresh page this area can differ from the content area by one
-    /// rounding step. When it is the shorter of the two, a renderer that needs the whole content
-    /// area exactly can reach the page-continuation limit; see <see cref="IRenderer.Layout"/>
-    /// (#549).
+    /// header or footer band.
+    /// <para>At the top of a page, which is a new page or the page after a
+    /// <see cref="LayoutResult.Outcome.Partial"/>, the height is the larger of the content area's
+    /// height and the height from the top of the content area to its bottom. The two can differ by
+    /// one rounding step. The larger one is offered so that an element exactly as tall as the
+    /// content area is placed there, as it is on the retry after a
+    /// <see cref="LayoutResult.Outcome.Nothing"/>. Elsewhere on a page the area ends at the bottom
+    /// of the content area. A renderer that fits a smaller area but not a larger one is not
+    /// supported; see <see cref="IRenderer.Layout"/>.</para>
     /// </remarks>
     public LayoutBox Area { get; }
 
@@ -31,10 +36,12 @@ public sealed class LayoutContext
     /// </summary>
     /// <remarks>
     /// The document sets it on every layout call, in both passes, so a renderer can tell whether
-    /// an element that does not fit the area it was offered could fit a page of its own. A fresh
-    /// page can offer one rounding step less than this box; see <see cref="Area"/> (#549). A
-    /// renderer that splits an element only when it fits neither box therefore leaves alone
-    /// every element that either box places whole.
+    /// an element that does not fit the area it was offered could fit a page of its own. The area
+    /// the document offers at the top of a page is at least this tall, so an element that fits
+    /// this box fits there and on the retry; see <see cref="Area"/>. Where the height left below
+    /// the top of the content area is the larger of the two, the area offered at the top of a page
+    /// is taller than this box, and an element that fits only that taller area is placed on a
+    /// page of its own only when it starts one.
     /// </remarks>
     internal LayoutBox? FreshPageArea { get; init; }
 

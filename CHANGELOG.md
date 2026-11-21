@@ -396,6 +396,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **An element exactly as tall as the content area is placed at the top of a page (#549).** At the
+  top of a page the document offered the height from the cursor to the bottom of the content area,
+  `(Y + H) - Y`, while the retry after a `Nothing` offered the content area's own height `H`. The
+  two can differ by one rounding step. On A4 with a 72 pt bottom, left and right margin, a top
+  margin of 440.16 pt gives a first offer 5.7e-14 pt below `H`, so a renderer that needs exactly
+  `H` returned `Nothing`, succeeded on the retry, had that result discarded, and was offered the
+  short box again until it reached the 50,000-continuation limit. A `LayoutImage` with
+  `Height = H` did the same. The first call at the top of a page is now offered the larger of
+  `H` and `(Y + H) - Y`; the retry and every mid-page offer are unchanged.
+  - **Deliberate output changes**, only where `(Y + H) - Y` is below `H`: a custom renderer or
+    a `LayoutImage` that needs exactly `H` saves on one page instead of throwing the
+    continuation-limit `InvalidOperationException`, and a paragraph whose lines exactly fill `H`
+    stays on one page where it was split across two (ten lines of leading `H / 10`, measured).
+    Any other element whose fit turns on that last step moves the same way. Where the two heights are
+    equal, or `(Y + H) - Y` is the larger, the first offer is the one it was and the bytes do not
+    change.
+  - **Attention:** a custom `IRenderer` that returns `Nothing` for the content area's full height
+    but fits a shorter area is not supported. On a geometry where `(Y + H) - Y` is below `H`, such
+    a renderer was placed at the top of a page and now is refused at the save with
+    `InvalidOperationException`, "An element is too tall to fit on a single page". The
+    documentation of `IRenderer.Layout` and `LayoutContext.Area` states the boundary.
+  - An element that needs the larger `(Y + H) - Y` is still placed at the top of a page and still
+    refused after other content, as before: the retry offers `H`.
 - **`/FontBBox` of an embedded font is the font's own bounding box (#596).** The descriptor of every
   embedded TrueType and OpenType font held `[0, hhea descender, 1000 * 1000 / unitsPerEm, hhea
   ascender]`: a zero for xMin and a constant for xMax, so DejaVu Sans, Liberation Sans and Liberation
