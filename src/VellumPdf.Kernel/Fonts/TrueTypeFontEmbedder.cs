@@ -329,6 +329,21 @@ public sealed class TrueTypeFontEmbedder
     }
 
     /// <summary>Builds the /FontDescriptor dictionary (flags, metrics, bounding box) pointing at the embedded font file.</summary>
+    /// <remarks>
+    /// <b>A font whose <c>head.unitsPerEm</c> is 0 is refused.</b> The call throws
+    /// <see cref="ArgumentException"/> when it writes /Ascent, because every metric divides by the
+    /// unit size and PDF has no token for the NaN or infinity that gives.
+    /// <para>/FontBBox is the <c>head</c> table's xMin, yMin, xMax and yMax scaled to 1000 units
+    /// per em, each rounded away from the glyphs to a whole number (down for xMin and yMin, up for
+    /// xMax and yMax), so the rectangle still encloses what the font draws. The box is the font's
+    /// own, for a glyf and a CFF program alike, and a subset keeps the whole font's box. A variable
+    /// font's box is the default instance's, as the font states it; other instances may exceed
+    /// it.</para>
+    /// <para>A box that <c>head</c> states with xMin above xMax, or yMin above yMax, is written as
+    /// read: ISO 32000-2 7.9.5 defines a rectangle by two diagonally opposite corners, so the file
+    /// is valid. <b>Do not rely on</b> a reader treating such a box as the glyph extent.</para>
+    /// </remarks>
+    /// <exception cref="ArgumentException">The font's <c>head.unitsPerEm</c> is 0.</exception>
     public Core.PdfDictionary BuildFontDescriptor(Core.PdfIndirectReference fontFileRef)
     {
         var unitsPerEm = _head.UnitsPerEm;
@@ -406,15 +421,23 @@ public sealed class TrueTypeFontEmbedder
         .Set(new Core.PdfName("Ordering"), new Core.PdfLiteralString(Encoding.ASCII.GetBytes("Identity")))
         .Set(new Core.PdfName("Supplement"), new Core.PdfInteger(0));
 
+    // The head table's own box (OpenType head: xMin, yMin, xMax, yMax in font units, which that
+    // chapter says contains every glyph), scaled to 1000 units per em and rounded outward. ISO
+    // 32000-2 Table 120 asks for the smallest rectangle enclosing the glyphs, so each edge moves
+    // away from the glyphs, never into them: rounding to nearest would pull DejaVu's xMax (1793.46)
+    // inside the outline. The scaling is v * 1000.0 / unitsPerEm, not v * (1000.0 / unitsPerEm), so
+    // a value that scales to a whole number does so exactly. Nothing here casts a double to an
+    // integer: a unitsPerEm of 0 gives NaN or infinity, which PdfReal refuses, and
+    // BuildFontDescriptor has already refused that font at /Ascent, before this runs.
     private Core.PdfArray BuildFontBBox()
     {
-        // Use hhea ascender/descender scaled to 1000 units
-        var scale = 1000.0 / _head.UnitsPerEm;
+        double Edge(double v) => v * 1000.0 / _head.UnitsPerEm;
+        // + 0.0 turns the negative zero that Ceiling gives for a value in (-1, 0) into 0.
         return new Core.PdfArray([
-            new Core.PdfInteger(0),
-            new Core.PdfReal(Math.Round(_hhea.Descender * scale)),
-            new Core.PdfReal(Math.Round(1000 * scale)),
-            new Core.PdfReal(Math.Round(_hhea.Ascender  * scale))
+            new Core.PdfReal(Math.Floor(Edge(_head.XMin)) + 0.0),
+            new Core.PdfReal(Math.Floor(Edge(_head.YMin)) + 0.0),
+            new Core.PdfReal(Math.Ceiling(Edge(_head.XMax)) + 0.0),
+            new Core.PdfReal(Math.Ceiling(Edge(_head.YMax)) + 0.0)
         ]);
     }
 

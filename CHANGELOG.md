@@ -243,6 +243,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`/FontBBox` of an embedded font is the font's own bounding box (#596).** The descriptor of every
+  embedded TrueType and OpenType font held `[0, hhea descender, 1000 * 1000 / unitsPerEm, hhea
+  ascender]`: a zero for xMin and a constant for xMax, so DejaVu Sans, Liberation Sans and Liberation
+  Mono all carried a box 488 units wide although their glyphs reach well past it. It is now the
+  `head` table's xMin, yMin, xMax and yMax, scaled to 1000 units per em and rounded away from the
+  glyphs (down for the two minima, up for the two maxima), because ISO 32000-2, 9.8.1, Table 120
+  asks for the smallest rectangle that encloses every glyph. Rounding to nearest would put DejaVu's
+  xMax, 1793.46, inside the outline. A subset keeps the whole font's box, and so does a CFF
+  program. **Deliberate output change:** DejaVu Sans `[0 -236 488 928]` becomes `[-1021 -463 1794
+  1233]`, Liberation Sans Regular `[0 -212 488 905]` becomes `[-544 -304 1302 980]`, Liberation Mono
+  Regular `[0 -300 488 833]` becomes `[-482 -301 743 981]`, and Source Sans 3 ExtraLight
+  `[0 -326 1000 1000]` becomes `[-590 -288 2160 934]`. Only that array changes in a document with
+  an embedded font; the content streams, `/W`, the ToUnicode map and the font program keep their
+  bytes, and so does every document without an embedded font. A font whose `head.unitsPerEm` is 0
+  is still refused when the descriptor is built, with the same `ArgumentException`, and a box the
+  font states with its minima above its maxima is written as read.
 - **On .NET 10 an empty stream was written as `/FlateDecode` with no data (#640).** `PdfStream`
   compressed through `ZLibStream`, which on .NET 10.0.15 writes nothing for empty input, so an empty
   page's `/Contents` came out as `/Filter /FlateDecode /Length 0` with an empty body, which is not
