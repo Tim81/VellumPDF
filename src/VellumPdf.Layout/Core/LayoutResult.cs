@@ -45,10 +45,9 @@ public sealed class LayoutResult
         /// therefore leaves that page empty apart from any header or footer.
         /// <para>The retry only decides whether to throw: a second <c>Nothing</c> makes the save
         /// throw, and any other result is discarded, after which the document lays the renderer out
-        /// again from the top of the new page. That area can be one rounding step shorter than the
-        /// retry's, so a renderer that needs the whole content area exactly can return
-        /// <c>Nothing</c> again and repeat the cycle until it reaches the page-continuation limit
-        /// (#549).</para>
+        /// again from the top of the new page. That area is at least as tall as the retry's, so a
+        /// renderer that needs the whole content area exactly is placed there; see
+        /// <see cref="LayoutContext.Area"/>.</para>
         /// </remarks>
         Nothing,
     }
@@ -149,9 +148,7 @@ public sealed class LayoutResult
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
     /// save overloads, not from this call, when the retry on a new page also returns
-    /// <c>Nothing</c>. The message says the element is too tall to fit on a single page. Through
-    /// the cycle described on <see cref="Outcome.Nothing"/>, a renderer can instead reach the
-    /// page-continuation limit, which raises the same type with a different message (#549).
+    /// <c>Nothing</c>. The message says the element is too tall to fit on a single page.
     /// </exception>
     public static LayoutResult Nothing() =>
         new(Outcome.Nothing, null, null, null);
