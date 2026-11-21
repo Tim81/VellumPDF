@@ -7,16 +7,17 @@ namespace VellumPdf.Layout.Elements.Table;
 
 /// <summary>A table row containing one or more cells.</summary>
 /// <remarks>
-/// A table creates its rows through <see cref="TableElement.AddRow"/> and
-/// <see cref="TableElement.AddHeaderRow"/>. No member of <see cref="TableElement"/> accepts a row
-/// built with the constructor.
+/// <see cref="TableElement.AddRow(bool)"/> and <see cref="TableElement.AddHeaderRow"/> create a row
+/// and add it. A row built with the constructor, to set <see cref="Background"/>, is added with
+/// <see cref="TableElement.Add(Row)"/>.
 /// </remarks>
 public sealed class Row
 {
     /// <summary>Creates an empty row.</summary>
     /// <remarks>
-    /// No member of <see cref="TableElement"/> accepts a row built here. Use
-    /// <see cref="TableElement.AddRow"/>.
+    /// The row is part of no table until it is passed to <see cref="TableElement.Add(Row)"/>, and a
+    /// table does not draw a row it does not hold. Set <see cref="IsHeader"/> and
+    /// <see cref="Background"/> in the object initialiser: both are <see langword="init"/>-only.
     /// </remarks>
     public Row() { }
 
@@ -42,22 +43,34 @@ public sealed class Row
 
     /// <summary>Optional background fill color for the row.</summary>
     /// <remarks>
-    /// <b>Attention</b>: a row added through <see cref="TableElement.AddRow"/> or
-    /// <see cref="TableElement.AddHeaderRow"/>, the only members that add a row, has no background,
-    /// and this property can only be set when a row is constructed. Set
-    /// <see cref="Cell.Background"/> on each cell instead (#543).
+    /// Null means no fill. The colour takes effect only when the row is added with
+    /// <see cref="TableElement.Add(Row)"/>: <see cref="TableElement.AddRow(bool)"/> and
+    /// <see cref="TableElement.AddHeaderRow"/> create rows with no background, and the property
+    /// cannot be set afterwards. <see cref="TableElement.Add(Row)"/> refuses a channel that is not
+    /// finite or lies outside 0 to 1, because ISO 32000-2:2020, 8.6.4.3 says each DeviceRGB
+    /// component is a number in that range. Setting the property refuses nothing, and a row that is
+    /// never added is never checked.
+    /// <para>The fill is drawn cell by cell, in the rectangle of each cell the row draws, ahead of
+    /// the cell's border and text. A cell that a <see cref="Cell.RowSpan"/> from an earlier row
+    /// pushes past the last column is not drawn, so it is not filled either; see
+    /// <see cref="AddCell(Cell)"/>. A cell's own <see cref="Cell.Background"/> replaces the row's
+    /// for that cell. A column the row has no cell for, because the row is shorter than the table
+    /// or a <see cref="Cell.RowSpan"/> from an earlier row covers it, gets no fill from this row. A
+    /// cell that spans rows is filled over its whole height with the background of the row it
+    /// starts in, and a cell that spans columns over its whole width. The row's fill is drawn again
+    /// with the row when a leading run of header rows repeats on a continuation page.</para>
+    /// <para>The check in <see cref="TableElement.Add(Row)"/> is the only one. A row that reaches a
+    /// table another way, such as through a downcast of <see cref="TableElement.Rows"/> to
+    /// <c>List&lt;Row&gt;</c>, is not checked: a channel that is not finite is refused from the
+    /// save, and a finite channel outside 0 to 1 is written as given. <b>Do not</b> add rows that
+    /// way.</para>
     /// </remarks>
-    /// <exception cref="ArgumentException">
-    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not from
-    /// this property, when a channel is <c>NaN</c> or infinite and the row's cell has no
-    /// <see cref="Cell.Background"/> of its own. <see cref="VellumPdf.Canvas.PdfCanvas"/> refuses it
-    /// and <c>ParamName</c> is null.
-    /// </exception>
     public ColorRgb? Background { get; init; }
 
     /// <summary>Adds a cell to the row. Returns this row.</summary>
     /// <remarks>
-    /// A null <paramref name="cell"/> is refused here. In a row that a cell
+    /// A null <paramref name="cell"/> is refused here. A cell added after the row is in a table is
+    /// drawn by that table's next save. In a row that a cell
     /// above covers through <see cref="Cell.RowSpan"/>, the row's cells fill the columns left over,
     /// in order, and a cell past the last column is not drawn, though its text is still measured.
     /// </remarks>

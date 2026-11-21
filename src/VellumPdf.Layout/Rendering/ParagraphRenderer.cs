@@ -377,11 +377,11 @@ public sealed class ParagraphRenderer : IRenderer, IPageBreakSource
                 var linkStartX = curX;
                 foreach (var frag in fragments)
                 {
-                    SwitchFont(canvas, ctx, frag.Style, ref currentFont);
+                    TextEmitter.SelectFont(ctx, canvas, frag.Style, ref currentFont);
                     SwitchColor(canvas, frag.Style, ref currentColor);
 
                     canvas.SetTextMatrix(1, 0, 0, 1, curX, linePdfY);
-                    ShowText(canvas, frag.Style, frag.Text);
+                    TextEmitter.Show(canvas, frag.Style, frag.Text);
 
                     // Tw widens every space the fragment holds, so the fragment is drawn that much
                     // wider than the width it was measured at. The next fragment starts after the
@@ -475,10 +475,10 @@ public sealed class ParagraphRenderer : IRenderer, IPageBreakSource
         for (var t = 0; t < tokens.Count; t++)
         {
             var (text, style, width) = tokens[t];
-            SwitchFont(canvas, ctx, style, ref currentFont);
+            TextEmitter.SelectFont(ctx, canvas, style, ref currentFont);
             SwitchColor(canvas, style, ref currentColor);
             canvas.SetTextMatrix(1, 0, 0, 1, curX, linePdfY);
-            ShowText(canvas, style, text);
+            TextEmitter.Show(canvas, style, text);
             curX += width;
 
             // Add extra spacing after this token if there's a gap before the next
@@ -489,55 +489,12 @@ public sealed class ParagraphRenderer : IRenderer, IPageBreakSource
 
     // ── Font / colour switching helpers ──────────────────────────────────────
 
-    private static void SwitchFont(PdfCanvas canvas, DrawContext ctx, TextStyle style, ref FontReference? current)
-    {
-        if (current.HasValue && FontRefEqual(current.Value, style.FontRef))
-            return;
-
-        if (style.FontRef.IsEmbedded)
-        {
-            var resourceName = ctx.UseEmbeddedFont(style.FontRef.Embedded);
-            canvas.SetFontByName(resourceName, style.FontSize);
-        }
-        else
-        {
-            var fontResource = ctx.GetFont(style.Font);
-            canvas.SetFont(fontResource, style.FontSize);
-        }
-        current = style.FontRef;
-    }
-
     private static void SwitchColor(PdfCanvas canvas, TextStyle style, ref ColorRgb? current)
     {
         if (current.HasValue && current.Value == style.Color)
             return;
         canvas.SetFillColorRgb(style.Color.R, style.Color.G, style.Color.B);
         current = style.Color;
-    }
-
-    private static bool FontRefEqual(FontReference a, FontReference b)
-    {
-        if (a.IsEmbedded != b.IsEmbedded) return false;
-        return a.IsEmbedded
-            ? ReferenceEquals(a.Embedded, b.Embedded)
-            : a.Standard14 == b.Standard14;
-    }
-
-    // ── Text emission ─────────────────────────────────────────────────────────
-
-    private static void ShowText(PdfCanvas canvas, TextStyle style, string text)
-    {
-        if (style.FontRef.IsEmbedded)
-            ShowEmbeddedText(canvas, style.FontRef.Embedded, text);
-        else
-            canvas.ShowText(text);
-    }
-
-    private static void ShowEmbeddedText(PdfCanvas canvas, EmbeddedFontHandle handle, string text)
-    {
-        var gids = new ushort[text.Length];
-        var count = handle.GetGlyphIds(text, gids);
-        canvas.ShowGlyphs(gids.AsSpan(0, count));
     }
 
     // ── Word-gap / word-token helpers (shared by measure and draw) ───────────
