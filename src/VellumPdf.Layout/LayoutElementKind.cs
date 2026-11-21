@@ -47,4 +47,8 @@ public enum LayoutElementKind
     /// <see cref="VellumPdf.Layout.Document.Add(VellumPdf.Layout.Core.IRenderer)"/>.
     /// </summary>
     Custom = 10,
+
+    /// <summary>A preformatted block, added with
+    /// <see cref="VellumPdf.Layout.Document.Add(VellumPdf.Layout.Elements.Preformatted)"/>.</summary>
+    Preformatted = 11,
 }

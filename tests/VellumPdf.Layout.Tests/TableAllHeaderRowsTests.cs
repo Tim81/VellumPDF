@@ -247,8 +247,8 @@ public sealed class TableAllHeaderRowsTests : IDisposable
     }
 
     /// <summary>
-    /// A group taller than the page stays refused, with the same message a data-row group gets:
-    /// there is no page it could be drawn on whole.
+    /// A group taller than the page stays refused, with the same message a data-row group gets,
+    /// naming its rows: there is no page it could be drawn on whole.
     /// </summary>
     [Fact]
     public void AllHeaderRows_aRowSpanGroupTallerThanThePage_isStillRefused()
@@ -263,7 +263,10 @@ public sealed class TableAllHeaderRowsTests : IDisposable
         doc.Add(t);
 
         var ex = Assert.Throws<InvalidOperationException>(() => Save(doc));
-        Assert.Equal(TooTall, ex.Message);
+        Assert.Equal(
+            TooTall + " Table rows 0 to 39 are joined by a RowSpan, so they are never split between pages. " +
+            "Together they are 800.0pt tall, but a page leaves 580.0pt.",
+            ex.Message);
     }
 
     // ── What does not change ─────────────────────────────────────────────────

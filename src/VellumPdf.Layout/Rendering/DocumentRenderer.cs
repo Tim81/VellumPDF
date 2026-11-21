@@ -438,8 +438,10 @@ public sealed class DocumentRenderer
 
         // The check above refuses before any renderer has measured, so the document is still
         // saveable once the caller has fixed what it names: a save that fails after the layout
-        // started cannot be retried, one refused before it can. The walk below, over the added
-        // elements, finds the plan-dependent ones.
+        // started cannot be retried, one refused before it can. The preformatted elements are
+        // checked here for the same reason; the walk below, over the added elements, finds the
+        // plan-dependent ones.
+        PreformattedChecks.Run(_renderers, _pdf.Conformance, contentArea);
 
         // Tab stops are checked here, with the content width every top-level paragraph is laid out
         // in, so the refusal leaves the document saveable once the page or margins are changed.
@@ -513,6 +515,7 @@ public sealed class DocumentRenderer
         LayoutImageRenderer => LayoutElementKind.Image,
         LineSeparatorRenderer => LayoutElementKind.LineSeparator,
         PieChartRenderer => LayoutElementKind.PieChart,
+        PreformattedRenderer => LayoutElementKind.Preformatted,
         _ => LayoutElementKind.Custom,
     };
 
@@ -850,7 +853,7 @@ public sealed class DocumentRenderer
     private LayoutResult CallLayout(IRenderer renderer, LayoutBox area)
     {
         LayoutCalls++;
-        return renderer.Layout(new LayoutContext(area));
+        return renderer.Layout(new LayoutContext(area) { FreshPageArea = PlaceArea });
     }
 
     // Tells the renderer whose result was just accepted to report where it landed. Called before
@@ -987,7 +990,13 @@ public sealed class DocumentRenderer
                     if (retry.Status == LayoutResult.Outcome.Nothing)
                     {
                         if (!_measuring) FinishCurrentPage(totalPages);
-                        throw ElementTooTall();
+
+                        // The renderer's own reason follows the standard sentence, so every
+                        // message starts as it always has and a caller matching on that start
+                        // still matches.
+                        throw retry.Reason is { } reason
+                            ? new InvalidOperationException(ElementTooTall().Message + " " + reason)
+                            : ElementTooTall();
                     }
                     break;
 

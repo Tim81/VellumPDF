@@ -84,6 +84,7 @@ public sealed class LayoutDiagnostic
     internal static LayoutDiagnosticSeverity SeverityOf(LayoutDiagnosticCode code) => code switch
     {
         LayoutDiagnosticCode.DiagnosticsDropped => LayoutDiagnosticSeverity.Warning,
+        LayoutDiagnosticCode.PreformattedLineWrapped => LayoutDiagnosticSeverity.Warning,
         _ => LayoutDiagnosticSeverity.Error,
     };
 

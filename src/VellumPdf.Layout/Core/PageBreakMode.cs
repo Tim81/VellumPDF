@@ -13,9 +13,10 @@ namespace VellumPdf.Layout.Core;
 /// property's <c>init</c> accessor, so the error names the line that wrote the bad value.
 /// <para>The mode is read when the document places a top-level element: a
 /// <see cref="Elements.Paragraph"/>, <see cref="Elements.Heading"/>,
-/// <see cref="Elements.Table.TableElement"/>, <see cref="Elements.ListElement"/> or
-/// <see cref="Elements.LayoutImage"/> added with its own <c>Document.Add</c> overload, or the
-/// public renderer of a paragraph, table, list or image added with
+/// <see cref="Elements.Table.TableElement"/>, <see cref="Elements.ListElement"/>,
+/// <see cref="Elements.Preformatted"/> or <see cref="Elements.LayoutImage"/> added with its own
+/// <c>Document.Add</c> overload, or the public renderer of a paragraph, table, list or image added
+/// with
 /// <see cref="Document.Add(IRenderer)"/> or
 /// <see cref="Rendering.DocumentRenderer.Add(IRenderer)"/>. A heading's renderer is internal, so a
 /// heading has no other route.</para>
@@ -30,7 +31,8 @@ namespace VellumPdf.Layout.Core;
 /// i, ii, iii still starts a <see cref="Recto"/> chapter on an odd physical page.</para>
 /// <para>Do not rely on a form feed (U+000C) in text to break the page. It does not start a page in
 /// any built-in element, and 2.x does not change that. A paragraph, a heading and a list item draw
-/// it as a space, like most white-space characters other than a line feed. A table cell and a
+/// it as a space, like most white-space characters other than a line feed. A preformatted element
+/// refuses it. A table cell and a
 /// running band pass it to the font unchanged, so the content stream holds the raw 0x0C character.
 /// Use <see cref="Page"/> or a <see cref="Elements.PageBreak"/>.</para>
 /// </remarks>

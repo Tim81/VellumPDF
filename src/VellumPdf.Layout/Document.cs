@@ -116,10 +116,12 @@ public sealed class Document : IDisposable
     /// <see cref="LayoutDiagnosticCode.NotdefGlyph"/> (a character an embedded font has no glyph
     /// for, written as glyph 0), <see cref="LayoutDiagnosticCode.UnembeddedFont"/> (an element that
     /// selects a Standard 14 font under a conformance claim),
-    /// <see cref="LayoutDiagnosticCode.BandTruncated"/> (mirroring <see cref="BandTruncations"/>)
-    /// and <see cref="LayoutDiagnosticCode.DiagnosticsDropped"/>. Every one saves by default; only
-    /// <see cref="StrictDiagnostics"/> refuses it, and a later major version refuses them
-    /// all.</para>
+    /// <see cref="LayoutDiagnosticCode.BandTruncated"/> (mirroring <see cref="BandTruncations"/>),
+    /// <see cref="LayoutDiagnosticCode.PreformattedLineWrapped"/> (a preformatted line split with
+    /// a marker; a warning, which <see cref="StrictDiagnostics"/> saves)
+    /// and <see cref="LayoutDiagnosticCode.DiagnosticsDropped"/>. Every other one saves by
+    /// default; only <see cref="StrictDiagnostics"/> refuses it, and a later major version refuses
+    /// them all.</para>
     /// <para>The channel stores at most 1,000 distinct items, and adds
     /// <see cref="LayoutDiagnosticCode.DiagnosticsDropped"/> after them when it dropped any, so the
     /// list can hold 1,001. That item's <see cref="LayoutDiagnostic.Count"/> is the number of
@@ -849,7 +851,10 @@ public sealed class Document : IDisposable
     /// <remarks>
     /// A null table is refused here. A table's own
     /// refusals are on <see cref="TableElement"/>, among them a table that needs more than 50,000
-    /// page continuations.
+    /// page continuations. A row taller than a page is cut between its lines and continues on the
+    /// next page. Repeated header rows that do not fit a page, a row held in a
+    /// <see cref="Cell.RowSpan"/> group, and a row with a cell that cannot hold one line are
+    /// refused instead, and <see cref="TableElement"/> says which.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="table"/> is <see langword="null"/>.
@@ -862,7 +867,9 @@ public sealed class Document : IDisposable
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
     /// call, when a style the table uses has a size or leading that is refused; see
-    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>.
+    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Leading"/>. Also raised from the
+    /// save, with a message that ends in the rows or the cell it names, when a row cannot be placed
+    /// on a page and cannot be cut; see <see cref="TableElement"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
@@ -987,6 +994,43 @@ public sealed class Document : IDisposable
     {
         ArgumentNullException.ThrowIfNull(heading);
         _content.Add(new HeadingRenderer(heading));
+        return this;
+    }
+
+    /// <summary>
+    /// Adds a block of text whose spaces, tabs and line ends are kept. Returns this document for
+    /// chaining.
+    /// </summary>
+    /// <remarks>
+    /// <b>A null block is refused.</b> It throws <see cref="ArgumentNullException"/> from this
+    /// call. What the block holds was checked when it was built, by <see cref="Preformatted"/>; the
+    /// save refuses what depends on the document: the content box, and the font and the characters
+    /// under a <see cref="Conformance"/> claim. A refusal of that kind is raised before any layout,
+    /// so the document stays saveable once you have changed what the message names. The block is
+    /// listed in <see cref="Diagnostics"/> as <see cref="LayoutElementKind.Preformatted"/> when a
+    /// line is wrapped.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="preformatted"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
+    /// call, before any layout, when the content box the margins leave is not wider than zero or is
+    /// shorter than one line, and, under a <see cref="Conformance"/> other than
+    /// <see cref="PdfConformance.None"/>, when the style's font is not embedded or the embedded
+    /// font has no glyph for a character of the text. Under PDF/A-2a, PDF/A-2u and PDF/UA-1 a
+    /// U+FEFF or U+FFFE is refused as well. It is also raised when the block needs more than
+    /// 50,000 page continuations; see <see cref="Add(IRenderer)"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from the save, not from this call, when the style's embedded font came from another
+    /// document that the saving document does not define a font under the handle's resource name
+    /// for; see <see cref="FontReference(EmbeddedFontHandle)"/>.
+    /// </exception>
+    public Document Add(Preformatted preformatted)
+    {
+        ArgumentNullException.ThrowIfNull(preformatted);
+        _content.Add(new PreformattedRenderer(preformatted));
         return this;
     }
 
