@@ -19,9 +19,20 @@ namespace VellumPdf.Layout.Elements;
 /// line. A break right after a word too wide for its line adds an empty line too, whether or not
 /// the break is the last. Any other sequence of white space, except the no-break spaces U+00A0,
 /// U+202F NARROW NO-BREAK SPACE and U+2007 FIGURE SPACE, is drawn as one space, and is dropped at
-/// the start and end of each line. The boundary between two runs is
-/// drawn as a space too, unless a line break falls on it, so a word cannot change style part-way:
-/// the run <c>Bold</c> followed by the run <c>er</c> is drawn as <c>Bold er</c>.</para>
+/// the start and end of each line.</para>
+/// <para>A run boundary draws a space only where the text has one: a space, tab, line break or
+/// other white-space character, except the no-break spaces, at the end of one run or the start of
+/// the next. With none, the two runs hold one word and nothing is drawn between them, so the run
+/// <c>Bold</c> followed by the run <c>er</c> is drawn as <c>Bolder</c>, and a word can change style
+/// part-way. Such a word wraps as one unit, and when it is wider than its line it is cut at a
+/// character, in whichever style that character has. An empty run adds nothing to a word, so it
+/// does not separate its neighbours. A run ending in a carriage return and the next starting with
+/// a line feed are two line breaks, because each run's line breaks are read on their own.</para>
+/// <para>The pieces of one word that share one <see cref="TextStyle"/> instance are measured and
+/// drawn as one piece, so a word split between runs of one instance is drawn as the same word in a
+/// single run. That includes a surrogate pair split between two such runs. Pieces whose styles are
+/// equal in value but are different instances stay separate fragments, each with its own text
+/// position, though they land at the same positions.</para>
 /// <para>A line cannot wrap at a no-break space, so
 /// <c>Pourquoi ?</c> written with U+202F before the question mark does not wrap between the two.
 /// The no-break spaces are the three white-space characters that UAX #14 puts in its GL class, and
@@ -191,7 +202,9 @@ public sealed class Paragraph
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this constructor, when a run's text holds an unpaired surrogate and is measured in an
-    /// embedded font; see <see cref="TextStyle.FontRef"/>.
+    /// embedded font; see <see cref="TextStyle.FontRef"/>. A pair split between two runs that
+    /// share one style instance is joined and does not throw; split between runs of different
+    /// instances, each half is unpaired and it throws.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -223,6 +236,11 @@ public sealed class Paragraph
     /// <remarks>
     /// A null <paramref name="style"/> uses the first run's style, <see cref="Style"/>. A null
     /// <paramref name="text"/> is refused here.
+    /// <para>A run whose text starts with a character that does not separate words continues the
+    /// word the text before it ends with, if it ends with one, so
+    /// <c>new Paragraph("astro").Add("logie")</c> draws <c>astrologie</c>. The no-break spaces
+    /// U+00A0, U+202F and U+2007 do not separate words; every other white-space character does.
+    /// Start the text with a space to begin a new word.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="text"/> is <see langword="null"/>.
@@ -230,7 +248,8 @@ public sealed class Paragraph
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this call, when the text holds an unpaired surrogate and is measured in an embedded
-    /// font; see <see cref="TextStyle.FontRef"/>.
+    /// font; see <see cref="TextStyle.FontRef"/>. A pair split between this run and the one
+    /// before it is joined, and does not throw, when both share one style instance.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not

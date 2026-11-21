@@ -862,6 +862,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   The XML documentation now describes this once per loader, with a "Do not pass" paragraph naming
   3.0 as the release that refuses all three. Three tests pin the shapes with exact dimensions.
   No behaviour changes.
+- **Two runs with no separating character between them are one word, not two (#590).** A `Paragraph`
+  built from several runs drew a space at every run boundary, so the runs `astro` and `logie` came
+  out as `astro logie`, and `Instellingen` followed by `.` as `Instellingen .`. A boundary now draws
+  a space only where the text has one: a space, tab, line break or other white-space character,
+  except the three no-break spaces U+00A0, U+202F and U+2007, at the end of one run or the start of
+  the next. Without one, the runs hold one word, drawn with nothing between the pieces, wrapped as
+  a unit, and cut at a character when it is wider than the line. The no-break spaces are characters
+  of the word, so a run ending in U+00A0 followed by a run starting with `b` is one word. An empty
+  run adds nothing, so it no longer separates its neighbours. Line breaks are still read per run: a
+  carriage return ending one run and a line feed starting the next are two breaks, as before. The
+  pieces of one word that share one `TextStyle` instance are measured and drawn as one piece, so a
+  word split between runs of one instance is drawn as the same word in a single run. Pieces whose
+  styles are equal copies stay separate fragments, so their bytes differ though the glyph positions
+  match. A link run inside a word covers its own text, without the space it used to take. A
+  surrogate pair split between two runs that share one style instance is joined and saves, where
+  2.3.3 threw `ArgumentException` for an embedded font; a pair split between runs of different
+  instances still throws. Deliberate output change: a document changes only if it holds a paragraph
+  with at least one such boundary, which only a caller building a paragraph from two or more runs can
+  produce. In a changed document the paragraph can take another number of lines, so what follows it
+  can move, including to another page. Headings, list items, table cells and single-run paragraphs
+  keep their bytes. For the issue's example, `pdftotext -raw` and the library's own reader now
+  extract `Open Instellingen. Daarna astrologie en (vet).`, where `pdftotext -raw` gave
+  `Open Instellingen . Daarna astro logie en ( vet ).`. **Attention:** a caller that split one word
+  across runs and relied on the inserted space now gets the words joined. To keep a space, put it in
+  the text of one of the runs.
 
 ### Documentation
 
