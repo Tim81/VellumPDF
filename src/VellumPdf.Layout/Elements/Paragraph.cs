@@ -184,9 +184,9 @@ public sealed class Paragraph
     /// <see cref="TabAlignment.Decimal"/> puts its first <see cref="TabStop.DecimalCharacter"/>
     /// there. The text before a tab is followed by one space (U+0020), so a reader that
     /// extracts the text sees the words apart; the space counts in the position of the end of
-    /// that text, except that a stop the text itself stayed short of is still the stop for that
-    /// tab when the space carries the pen past it. A stop the text has already reached or passed
-    /// is skipped. Text placed at a stop that would start left of the end of the text before it
+    /// that text. When no stop lies to the right of the pen with the space counted, the stop the
+    /// text itself stayed short of is still the stop for that tab; when one does, the tab goes to
+    /// that one. A stop the text has already reached or passed is skipped. Text placed at a stop that would start left of the end of the text before it
     /// starts there instead, so the two never overlap. The leader fills the gap between the two
     /// texts, a quarter of the font size clear of each, and is left out when it would be shorter
     /// than half the font size.</para>
@@ -207,9 +207,12 @@ public sealed class Paragraph
     /// <c>1</c> at a centred stop on the right edge draw as <c>Inleiding 1</c>, with no leader.
     /// Text at a <see cref="TabAlignment.Left"/> stop needs room for its first word only. It
     /// starts at the stop and wraps word by word, and each continuation line starts at the left
-    /// edge. When the first word does not fit at the stop, the text is set as ordinary text from
-    /// the end of the text before the tab, with no leader; a fresh line cannot help, because the
-    /// stop is at the same place on it. A line that ends straight after the space written for a
+    /// edge. When the first word does not fit after the text before the tab, the same check as
+    /// above applies: if it fits at the stop on a fresh line, which happens when the text before
+    /// the tab ran past the stop or close to it, the word is placed there with its leader from
+    /// the left edge; if it fits at the stop nowhere, the text is set as ordinary text from the
+    /// end of the text before the tab, with no leader. A line that ends straight after the space
+    /// written for a
     /// tab drops that space. A line whose tab reached a stop and has nothing after it keeps it:
     /// <c>Name:</c> and a tab at a stop with a leader draw <c>Name: </c>.</para>
     /// <para>Positions are measured from the left edge of the paragraph's content, which is the

@@ -60,8 +60,9 @@ public sealed partial class ParagraphRenderer
     internal Paragraph Paragraph => _para;
 
     /// <summary>
-    /// The stops that lie within <paramref name="width"/>, or null when there are none. The stops
-    /// are in increasing order, so those beyond the width are a suffix. <paramref name="beyond"/>
+    /// The stops that lie within <paramref name="width"/>: null when the paragraph has no stops,
+    /// and an empty list when every stop lies beyond the width. The stops are in increasing
+    /// order, so those beyond the width are a suffix. <paramref name="beyond"/>
     /// is how many were left out, counted only when the text holds a tab, because a stop nothing
     /// uses misplaces nothing. A width that is not a number keeps every stop: the existing margin
     /// refusals deal with it.

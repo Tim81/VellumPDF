@@ -13,7 +13,8 @@ namespace VellumPdf.Layout.Core;
 /// it is described there. A stop is immutable once built. This type does not know the width of
 /// the content area. A position that exceeds that width by 5e-6 points or more is refused when
 /// the document is saved for a paragraph it lays out itself, and is treated as absent, with a
-/// diagnostic, for a renderer of yours that lays the paragraph out narrower; see
+/// diagnostic when a styled run holds a tab, for a renderer of yours that lays the paragraph out
+/// narrower; see
 /// <see cref="Elements.Paragraph.TabStops"/>. A position of zero is accepted and never used.
 /// </remarks>
 public sealed class TabStop

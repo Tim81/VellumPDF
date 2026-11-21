@@ -973,6 +973,81 @@ public sealed partial class TabStopTests
             width: 300));
 
         Assert.Equal(["(Inleiding 1)"], shows.Select(s => s.Text));
+
+        // The same for a decimal stop at the right edge: 12.5 would end 10 pt past the line.
+        var decimalShows = Shows(Content(
+            new Paragraph("Total\t12.5", Helvetica())
+            {
+                TabStops = [new TabStop(300, TabAlignment.Decimal, TabLeader.Dots)],
+            },
+            width: 300));
+        Assert.Equal(["(Total 12.5)"], decimalShows.Select(s => s.Text));
+    }
+
+    [Fact]
+    public void AStopTheTextStayedShortOf_isUsedOnlyWhenNoStopLiesToTheRightOfThePen()
+    {
+        var title = new string('x', 16);
+        var pen = Width(title + " ");
+
+        // 96 pt of text and a 3.3 pt space: the pen is past the stop at 98, which is still the one.
+        var via = Shows(Content(new Paragraph(title + "\t12", Helvetica())
+        {
+            TabStops = [new TabStop(98, TabAlignment.Right)],
+        }));
+        Assert.Equal(["(" + title + " )", "(12)"], via.Select(s => s.Text));
+        AssertNear(pen, via[1].X, "placed through the stop at 98, starting at the pen");
+
+        // With another stop to the right of the pen, that one is the stop.
+        var content = Content(new Paragraph(title + "\t12", Helvetica())
+        {
+            TabStops = [new TabStop(98, TabAlignment.Right), new TabStop(200, TabAlignment.Right, TabLeader.Dots)],
+        });
+        var shows = Shows(content);
+        AssertNear(200 - Width("12"), shows[1].X, "right-aligned at the stop to the right of the pen");
+        Assert.Single(QBlocks(content));
+    }
+
+    [Fact]
+    public void ARightStopAtTheWidth_movesANumberThatFitsOnlyOnAFreshLine_withTheToleranceOnThatCheckToo()
+    {
+        var margin = Mm(30);
+        var width = PageSize.A5.Width - (margin + margin);
+        foreach (var number in new[] { "100", "101", "102" })
+        {
+            using var doc = new Document { PageSize = PageSize.A5, Margins = new EdgeInsets(36, margin, 36, margin) };
+            doc.Add(new Paragraph(new string('x', 42) + "\t" + number, Helvetica(11))
+            {
+                TabStops = [new TabStop(width, TabAlignment.Right, TabLeader.Dots)],
+            });
+
+            var content = Content(doc);
+            var shows = Shows(content);
+            Assert.Equal(2, shows.Count);
+            Assert.True(shows[0].Y > shows[1].Y, $"{number}: the number is on the next line");
+            AssertNear(margin + width - Width(number, 11), shows[1].X, $"{number}: ends at the right edge", 1e-4);
+            AssertNear(margin, Numbers(Assert.Single(QBlocks(content))[5]).First(), $"{number}: leader from the left edge", 1e-4);
+        }
+    }
+
+    [Fact]
+    public void ALeftStopWhoseFirstWordFitsAtTheStopOnlyOnAFreshLine_isPlacedThereWithALeader()
+    {
+        var title = new string('x', 46);
+        var content = Content(
+            new Paragraph(title + "\tWW", Helvetica())
+            {
+                TabStops = [new TabStop(277, TabAlignment.Left, TabLeader.Dots)],
+            },
+            width: 300);
+
+        var shows = Shows(content);
+        Assert.Equal(["(" + title + ")", "(WW)"], shows.Select(s => s.Text));
+        Assert.True(shows[0].Y > shows[1].Y, "the word is on the next line");
+        AssertNear(277, shows[1].X, "at its stop");
+        var block = Assert.Single(QBlocks(content));
+        AssertNear(0, Numbers(block[5]).First(), "the leader starts at the left edge");
+        AssertNear(277 - 3, Numbers(block[6]).First(), "and ends a gap before the word");
     }
 
     [Fact]
