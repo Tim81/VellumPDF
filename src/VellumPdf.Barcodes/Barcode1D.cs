@@ -20,6 +20,13 @@ public abstract class Barcode1D : Barcode
     public bool ShowText { get; init; } = true;
 
     /// <summary>The Standard-14 font used for the HRI text. Defaults to <see cref="Standard14.Helvetica"/>.</summary>
+    /// <remarks>
+    /// The font is not embedded. A document with a PDF/A or PDF/UA conformance claim that draws
+    /// this text is not told so by <c>VellumPdf.Layout</c>: the barcode selects the font without
+    /// its diagnostics channel, so no <c>UnembeddedFont</c> item is reported for it. <b>Do not
+    /// rely</b> on an empty <c>Document.Diagnostics</c> to show that every font in such a document
+    /// is embedded; set <see cref="ShowText"/> to <c>false</c> or draw the text yourself.
+    /// </remarks>
     public Standard14 TextFont { get; init; } = Standard14.Helvetica;
 
     /// <summary>The HRI text size, in points. Zero (the default) sizes it automatically from <see cref="BarHeight"/>.</summary>

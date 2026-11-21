@@ -289,6 +289,16 @@ public sealed class Paragraph
     /// A null <paramref name="style"/> becomes <see cref="TextStyle.Default"/>. A null
     /// <paramref name="text"/> is refused here. An empty string is not
     /// null and is accepted.
+    /// <para>A null <paramref name="style"/> is not the style set with
+    /// <see cref="Document.SetDefaultFont"/>; only <see cref="Document.Add(string, TextStyle)"/>
+    /// reads that. The font is then Helvetica, which is not embedded. While
+    /// <see cref="Document.Conformance"/> is not
+    /// <see cref="VellumPdf.Document.PdfConformance.None"/> the save reports the element as
+    /// <see cref="LayoutDiagnosticCode.UnembeddedFont"/> in <see cref="Document.Diagnostics"/> and
+    /// still saves; only <see cref="Document.StrictDiagnostics"/> refuses it. <b>Do not leave the
+    /// style out</b> of an element in a PDF/A or PDF/UA document; give it a style with an embedded
+    /// font. A later major version refuses an element that falls back to Helvetica under either
+    /// claim.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="text"/> is <see langword="null"/>.
@@ -309,6 +319,14 @@ public sealed class Paragraph
     /// from this constructor, when the style holds a <see cref="VellumPdf.Fonts.Standard14"/> value
     /// the enumeration does not name and the font is selected on a page; see
     /// <see cref="TextStyle.FontRef"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from here, when <see cref="Document.StrictDiagnostics"/> is set and text of the element is
+    /// written as glyph 0, or the document has a conformance claim and the element writes Helvetica
+    /// or another Standard 14 font; the save reports them as
+    /// <see cref="LayoutDiagnosticCode.NotdefGlyph"/> and
+    /// <see cref="LayoutDiagnosticCode.UnembeddedFont"/>.
     /// </exception>
     public Paragraph(string text, TextStyle? style = null)
     {

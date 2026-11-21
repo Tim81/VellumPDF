@@ -967,6 +967,7 @@ public sealed class DocumentRenderer
         // Reports come from this pass only. The page counting pass lays out without drawing, and a
         // wrap is cached per renderer, so a report raised from Layout could run twice.
         _sink.CurrentPage = _pdf.Pages.Count;
+        _sink.Conformance = _pdf.Conformance;
         try
         {
             renderer.Draw(ctx);
@@ -991,6 +992,7 @@ public sealed class DocumentRenderer
         var pageBounds = new LayoutBox(0, 0, _pageSize.Width, _pageSize.Height);
         var ctx = new DrawContext(canvas, pageBounds, rendererCtx, _pdf, page) { Diagnostics = _sink };
         _sink.CurrentPage = pageNumber;
+        _sink.Conformance = _pdf.Conformance;
         _sink.CurrentIndex = null;
 
         if (Header is not null)
@@ -1096,25 +1098,11 @@ public sealed class DocumentRenderer
         // untagged real content.
         if (ctx.Tagged) canvas.BeginArtifactMarkedContent();
         canvas.BeginText();
-        if (style.FontRef.IsEmbedded)
-        {
-            var resourceName = ctx.UseEmbeddedFont(style.FontRef.Embedded);
-            canvas.SetFontByName(resourceName, style.FontSize);
-            canvas.SetFillColorRgb(style.Color.R, style.Color.G, style.Color.B);
-            // Show using glyph IDs
-            var gids = new ushort[drawn.Length];
-            var count = style.FontRef.Embedded.GetGlyphIds(drawn, gids);
-            canvas.SetTextMatrix(1, 0, 0, 1, x, pdfY);
-            canvas.ShowGlyphs(gids.AsSpan(0, count));
-        }
-        else
-        {
-            var fontResource = ctx.GetFont(style.Font);
-            canvas.SetFont(fontResource, style.FontSize);
-            canvas.SetFillColorRgb(style.Color.R, style.Color.G, style.Color.B);
-            canvas.SetTextMatrix(1, 0, 0, 1, x, pdfY);
-            canvas.ShowText(drawn);
-        }
+        FontReference? bandFont = null;
+        TextEmitter.SelectFont(ctx, canvas, style, ref bandFont);
+        canvas.SetFillColorRgb(style.Color.R, style.Color.G, style.Color.B);
+        canvas.SetTextMatrix(1, 0, 0, 1, x, pdfY);
+        TextEmitter.Show(canvas, style, drawn);
         canvas.EndText();
         if (ctx.Tagged) canvas.EndMarkedContent();
     }
