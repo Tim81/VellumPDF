@@ -7,6 +7,7 @@ using VellumPdf.Fonts;
 using VellumPdf.Layout.Core;
 using VellumPdf.Layout.Elements;
 using VellumPdf.Layout.Rendering;
+using VellumPdf.TestSupport;
 using static VellumPdf.Layout.Tests.PlacementLoopSupport;
 
 namespace VellumPdf.Layout.Tests;
@@ -219,5 +220,31 @@ public sealed class RunningBandTemplateTests
         // No character is narrower than 2.78 pt here, so at most 57 fit in 160 pt, plus one.
         Assert.True(produced <= 58L * pages, $"{produced} over {pages} pages");
         Assert.True(produced >= 20L * pages, $"{produced} over {pages} pages");
+    }
+
+    // A renderer's Draw can replace the band between two pages, because Header is settable. The
+    // cached resolution must follow the band it was built for, not the first one drawn.
+    private sealed class SwapHeader(DocumentRenderer owner, RunningBand replacement) : IRenderer
+    {
+        public LayoutResult Layout(LayoutContext context) => LayoutResult.Full(context.Area.WithHeight(0));
+
+        public void Draw(DrawContext context) => owner.Header = replacement;
+    }
+
+    [Fact]
+    public void ReplacingTheHeaderBetweenPages_drawsTheNewTemplate()
+    {
+        var renderer = new DocumentRenderer(NewPdf(), new PdfRectangle(0, 0, 200, 300), new EdgeInsets(20))
+        {
+            Header = new RunningBand("A {page}/{pages}", Ten),
+        };
+        renderer.Add(new ParagraphRenderer(new Paragraph("one", Ten)));
+        renderer.Add(new PageBreakRenderer(new PageBreak()));
+        renderer.Add(new SwapHeader(renderer, new RunningBand("B {page}/{pages}", Ten)));
+        renderer.Add(new ParagraphRenderer(new Paragraph("two", Ten)));
+
+        var stream = PdfTestUtil.DecompressAllFlatStreams(Render(renderer));
+        Assert.Contains("(A 1/2) Tj", stream);
+        Assert.Contains("(B 2/2) Tj", stream);
     }
 }
