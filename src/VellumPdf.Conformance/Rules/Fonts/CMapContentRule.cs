@@ -39,8 +39,10 @@ namespace VellumPdf.Conformance.Rules.Fonts;
 /// and produces no finding; a malformed CMap program never causes a spurious finding.
 /// </para>
 /// <para>
-/// Clean-room: derived from ISO 19005-2:2011 §6.2.11.3.3 and cross-validated against
-/// veraPDF 1.30.2 via oracle probes (STEP-0):
+/// Cites ISO 19005-2:2011 §6.2.11.3.3. Its behaviour was checked against veraPDF's PDF/A-2 profile,
+/// and ISO 19005-2 was not held when it was written. It was cross-validated against veraPDF 1.30.2
+/// via oracle probes. The 2026-11-21 audit against the clause text (#418) found agreement. The
+/// probes were:
 /// <list type="bullet">
 ///   <item>WMode dict=1/prog=0 and dict=0/prog=1 → FAIL on <c>CMapFile</c> object (confirmed).</item>
 ///   <item>WMode both=1, both absent (=0), dict=0/prog=absent (=0) → PASS (confirmed).</item>

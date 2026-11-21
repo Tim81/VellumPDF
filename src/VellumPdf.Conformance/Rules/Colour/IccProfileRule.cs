@@ -8,9 +8,10 @@ namespace VellumPdf.Conformance.Rules.Colour;
 /// <summary>
 /// ISO 19005-2 §6.2.4.2-1 (ICCBased colour space profile validity). The ICC profile embedded as
 /// the stream of an <c>ICCBased</c> colour space shall conform to a permitted version of the ICC
-/// specification: the profile's device class shall be one of <c>prtr</c>, <c>mntr</c>, <c>scnr</c>,
-/// or <c>spac</c>; the data colour space shall be one of <c>RGB </c>, <c>CMYK</c>,
-/// <c>GRAY</c>, or <c>Lab </c>; and the ICC major version shall be less than 5.
+/// specification. The rule also requires, from ISO 32000-1 Table 68 and not from 6.2.4.2, that the
+/// profile's device class be one of <c>prtr</c>, <c>mntr</c>, <c>scnr</c>, or <c>spac</c> and its
+/// data colour space one of <c>RGB </c>, <c>CMYK</c>, <c>GRAY</c>, or <c>Lab </c>; the ICC major
+/// version shall be less than 5.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -25,12 +26,12 @@ namespace VellumPdf.Conformance.Rules.Colour;
 /// </list>
 /// </para>
 /// <para>
-/// <b>Scoping (derived empirically from veraPDF 1.30.2):</b> veraPDF checks only ICCBased colour
-/// spaces that are <em>selected</em> by page content via a <c>cs</c> or <c>CS</c> operator and
-/// resolved through the page's <c>/Resources /ColorSpace</c> dictionary — it does not flag a
-/// colour space that is merely present in resources but never used. This rule matches that behaviour
-/// to avoid false positives: only colour spaces whose resource key appears in
-/// <see cref="ContentStreamUsage.Analyze"/>'s <c>SelectedColorSpaces</c> set are validated.
+/// <b>Scoping (set by probing veraPDF 1.30.2, not by the clause):</b> veraPDF checks only ICCBased
+/// colour spaces that are <em>selected</em> by page content via a <c>cs</c> or <c>CS</c> operator
+/// and resolved through the page's <c>/Resources /ColorSpace</c> dictionary — it does not flag a
+/// colour space that is merely present in resources but never used. This rule matches that
+/// behaviour to avoid false positives: only colour spaces whose resource key appears in <see
+/// cref="ContentStreamUsage.Analyze"/>'s <c>SelectedColorSpaces</c> set are validated.
 /// </para>
 /// <para>
 /// <b>Stream decoding:</b> ICCBased streams are typically <c>FlateDecode</c>-compressed; the ICC
@@ -44,9 +45,12 @@ namespace VellumPdf.Conformance.Rules.Colour;
 /// that stream is not an ICCBased colour space and is not in scope here.
 /// </para>
 /// <para>
-/// Authored from ISO 19005-2:2011, §6.2.4.2 and ISO 15076-1 (ICC.1). Clean-room: derived from
-/// the specification text and empirical veraPDF oracle probing, not from any third-party validation
-/// profile.
+/// Cites ISO 19005-2:2011, §6.2.4.2 and ISO 15076-1 (ICC.1). The device-class and data colour-space
+/// lists are ISO 32000-1:2008 Table 68 (§8.6.5.5); 6.2.4.2 itself restricts neither. The scope
+/// above was set by probing veraPDF 1.30.2. Its behaviour was checked against veraPDF's PDF/A-2
+/// profile, and ISO 19005-2 was not held when it was written. The 2026-11-21 audit against the
+/// clause text (#418) found it narrower: ICCBased spaces used by images, forms and patterns, and as
+/// alternates or Indexed bases, are not visited.
 /// </para>
 /// </remarks>
 internal sealed class IccProfileRule : IConformanceRule

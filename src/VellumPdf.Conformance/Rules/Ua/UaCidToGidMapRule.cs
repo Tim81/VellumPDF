@@ -11,11 +11,13 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// <c>/Identity</c> or a stream that maps CIDs to glyph indices.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 14289-1:2014, 7.21.3.2 and cross-validated against veraPDF 1.30.2 (clause
-/// 7.21.3.2, testNumber 1). Clean-room: derived from the specification text and the veraPDF
-/// validation profile (<c>PDCIDFont</c> predicate:
-/// <c>Subtype != "CIDFontType2" || CIDToGIDMap != null || containsFontFile == false</c>), not from
-/// any third-party implementation.
+/// Cites ISO 14289-1:2014, 7.21.3.2, and takes its test from veraPDF's PDCIDFont predicate
+/// <c>Subtype != "CIDFontType2" || CIDToGIDMap != null || containsFontFile == false</c> (clause
+/// 7.21.3.2, testNumber 1). It was written from veraPDF's PDF/UA-1 profile and checked against
+/// veraPDF, before ISO 14289-1 was held. The 2026-11-21 audit against the clause text (#428) found
+/// it narrower: 7.21.3.2 requires a stream or the name <c>Identity</c>, and this rule checks only
+/// that the key is present, so <c>/CIDToGIDMap /Foo</c> passes. Only fonts that page content
+/// selects with <c>Tf</c> are examined.
 /// <para>
 /// The rule fires only when: (a) the font's <c>/Subtype</c> is <c>CIDFontType2</c>, AND (b) the
 /// descendant CIDFont has an embedded font program (i.e. <c>containsFontFile == true</c>), AND

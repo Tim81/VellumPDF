@@ -39,26 +39,39 @@ public sealed class ConformanceCatalogTests
         {
             var s = ConformanceCatalog.Coverage(p);
             Assert.Equal(s.Total, s.Implemented + s.Partial + s.Deferred + s.OutOfScope);
-
-            // Nothing is left "not yet done": every check is Implemented, or one of the explicitly
-            // documented Partial/OutOfScope checks below (each with an infeasible residual + a tracker).
-            Assert.Equal(0, s.Deferred);
         }
 
-        // The ONLY non-Implemented checks are these four, each tracked in a follow-up issue:
-        //   - Partial (common path implemented + veraPDF-verified, residual infeasible clean-room):
-        //     6.1.13-10, 6.2.11.3.1-1, 7.21.3.1-1 — predefined-CJK-CMap sub-conditions (#139).
-        //   - OutOfScope (not implemented at all): 6.8-5 (needs a PDF/A-1 profile, #140).
+        // Every check that is not Implemented is named here, so a status change shows up as a
+        // test change. The status records whether a rule covers the veraPDF check; it does not
+        // record agreement with the standards' text.
+        //   - Partial, with an infeasible residual (#139): 6.1.13-10, 6.2.11.3.1-1, 7.21.3.1-1,
+        //     the predefined-CJK-CMap sub-conditions.
+        //   - Partial, found by the 2026-11-21 audits: PDF/A-2 clause tests that veraPDF fails
+        //     on a probe file the rule passes (#418), and PDF/UA-1 tests whose rule covers one
+        //     font form only (#428).
+        //   - Deferred: 6.2.11.7.3-1, which no rule implements (#418).
+        //   - OutOfScope: 6.8-5 (needs a PDF/A-1 profile, #140).
         // 7.16-1 moved to Implemented in #138: UaEncryptionPermissionsRule checks /Encrypt /P bit
         // 10, and PdfPreflight/the CLI gained a password parameter so a password-protected document
         // can reach rule evaluation at all.
         var expectedPartial = new HashSet<string>(StringComparer.Ordinal)
-            { "6.1.13-10", "6.2.11.3.1-1", "7.21.3.1-1" };
+        {
+            "6.1.13-10", "6.2.11.3.1-1", "7.21.3.1-1",
+            "6.1.2-1", "6.1.13-2", "6.1.13-5", "6.2.3-1", "6.2.4.3-2", "6.2.5-1", "6.2.6-1",
+            "6.2.8-3", "6.2.10-2", "6.2.11.7.2-1", "6.2.11.8-1", "6.3.1-1", "6.3.3-1", "6.5.1-1",
+            "6.6.2.1-2", "6.6.2.3.1-1", "6.6.2.3.1-2", "6.7.4-1",
+            "7.21.4.1-1", "7.21.7-1", "7.21.7-2", "7.21.8-1", "7.21.4.1-2", "7.21.5-1",
+        };
+        var expectedDeferred = new HashSet<string>(StringComparer.Ordinal)
+            { "6.2.11.7.3-1" };
         var expectedOutOfScope = new HashSet<string>(StringComparer.Ordinal)
             { "6.8-5" };
         Assert.Equal(
             expectedPartial,
             all.Where(c => c.Status == CoverageStatus.Partial).Select(c => c.TestId).ToHashSet(StringComparer.Ordinal));
+        Assert.Equal(
+            expectedDeferred,
+            all.Where(c => c.Status == CoverageStatus.Deferred).Select(c => c.TestId).ToHashSet(StringComparer.Ordinal));
         Assert.Equal(
             expectedOutOfScope,
             all.Where(c => c.Status == CoverageStatus.OutOfScope).Select(c => c.TestId).ToHashSet(StringComparer.Ordinal));

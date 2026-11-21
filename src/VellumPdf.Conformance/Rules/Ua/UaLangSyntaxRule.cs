@@ -10,8 +10,9 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// <summary>
 /// ISO 14289-1 §7.2 (Text — natural language, language tag syntax). Every <c>/Lang</c> value
 /// reachable from the document catalog — the catalog's own <c>/Lang</c> and the page-dictionary
-/// <c>/Lang</c> on each page — shall conform to the RFC 1766 / BCP 47 syntax for language tags:
-/// one or more subtags of 1–8 ASCII letters or digits separated by hyphens.
+/// <c>/Lang</c> on each page — shall conform to the RFC 1766 / BCP 47 syntax for language tags
+/// (this rule checks only the catalog's <c>/Lang</c>, not the page dictionaries'): one or more
+/// subtags of 1–8 ASCII letters or digits separated by hyphens.
 /// </summary>
 /// <remarks>
 /// Authored from ISO 14289-1:2014, 7.2 (CosLang predicate:
@@ -22,8 +23,11 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// from the specification text and not from any third-party validation profile. That cannot be
 /// true of a rule whose own citation above is <c>CosLang</c>, which is veraPDF's model object and
 /// not anything ISO 14289-1 names. The pattern came from that predicate. NOTICE records the same
-/// correction for the rule set as a whole, and the sweep of the other rule files carrying this
-/// sentence is #418.
+/// correction for the rule set as a whole, and the other rule files carrying this sentence were
+/// corrected under #675. The 2026-11-21 audit against the clause text (#428) found it broader,
+/// because ISO 32000-1 14.9.2.2 makes the empty string a valid language identifier and this rule
+/// refuses it, and narrower, because it reads only the catalog and not structure-element or
+/// marked-content <c>/Lang</c> values.
 ///
 /// <b>A tag ending in a line feed is reported.</b> The pattern ends in <c>\z</c> rather than
 /// <c>$</c>: .NET's <c>$</c> also matches before a single trailing newline, where the predicate's

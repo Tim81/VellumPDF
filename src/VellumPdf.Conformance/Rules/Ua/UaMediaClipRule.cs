@@ -11,8 +11,12 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// and an <c>/Alt</c> (alternate text) key (§7.18.6.2-2).
 /// </summary>
 /// <remarks>
-/// Authored from ISO 14289-1:2014, 7.18.6.2 and ISO 32000-1:2008, 13.2.4 (media clip data
-/// dictionaries). Clean-room: derived from the specification text only.
+/// Cites ISO 14289-1:2014, 7.18.6.2 and ISO 32000-1:2008, 13.2.4 (media clip data dictionaries).
+/// The ids <c>-1</c> and <c>-2</c> and the messages cite veraPDF testNumbers 1 and 2. It was
+/// written from veraPDF's PDF/UA-1 profile and checked against veraPDF, before ISO 14289-1 was
+/// held. The 2026-11-21 audit against the clause text (#428) found it narrower: it reaches a media
+/// clip data dictionary only through a Screen annotation's <c>/A</c> and <c>/AA</c>, and checks
+/// <c>/Alt</c> for presence only, not for the array structure ISO 32000-1 Table 274 gives it.
 ///
 /// <para><strong>Traversal:</strong> for every Screen annotation on every page, the rule walks:
 /// <c>/A</c> (and <c>/AA</c> entries) → rendition dictionary (<c>/S /R</c> or <c>/S /MR</c>) →

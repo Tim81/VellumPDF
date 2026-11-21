@@ -11,8 +11,9 @@ namespace VellumPdf.Conformance.Rules.Forms;
 /// not permitted in PDF/A-2.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.4.2. Clean-room: derived from the specification text, not from
-/// any third-party validation profile.
+/// Cites ISO 19005-2:2011, 6.4.2. Its behaviour was checked against veraPDF's PDF/A-2 profile, and
+/// ISO 19005-2 was not held when it was written. The 2026-11-21 audit against the clause text
+/// (#418) found agreement.
 /// </remarks>
 internal sealed class XfaRule : IConformanceRule
 {

@@ -12,8 +12,11 @@ namespace VellumPdf.Conformance.Rules.Colour;
 /// objects; the number of colourants is <c>names.Count</c>.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.1.13 (item t9) and ISO 32000-1:2008, §8.6.6.5 (DeviceN).
-/// Clean-room: derived from the specification text, not from any third-party validation profile.
+/// Cites ISO 19005-2:2011, 6.1.13 (item t9) and ISO 32000-1:2008, §8.6.6.5 (DeviceN). Its behaviour
+/// was checked against veraPDF's PDF/A-2 profile, and ISO 19005-2 was not held when it was written.
+/// The 2026-11-21 audit against the clause text (#418) found it narrower: 6.1.13 limits every
+/// DeviceN space in the file, and this rule checks only those selected by <c>cs</c>/<c>CS</c> in
+/// page content.
 /// <para>
 /// Scoped to colour spaces the page actually selects with the <c>cs</c>/<c>CS</c> operators: veraPDF
 /// only flags an oversized DeviceN that is painted, not one merely present in the resource dictionary

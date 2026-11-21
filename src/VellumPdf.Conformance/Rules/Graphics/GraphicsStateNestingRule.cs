@@ -12,9 +12,11 @@ namespace VellumPdf.Conformance.Rules.Graphics;
 /// <c>q</c>/<c>Q</c> pairs by more than 28 levels in a content stream.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.1.13 and the veraPDF rule Op_q_gsave (test number 8).
-/// The rule states <c>nestingLevel &lt;= 28</c>; a depth that reaches 29 is non-conformant.
-/// Clean-room: derived from the specification text, not from any third-party validation profile.
+/// Cites ISO 19005-2:2011, 6.1.13 and follows the veraPDF rule Op_q_gsave (test number 8). The rule
+/// states <c>nestingLevel &lt;= 28</c>; a depth that reaches 29 is non-conformant. Its behaviour
+/// was checked against veraPDF's PDF/A-2 profile, and ISO 19005-2 was not held when it was written.
+/// The 2026-11-21 audit against the clause text (#418) found it narrower: 6.1.13 limits nesting in
+/// every content stream, and only page-level content streams are counted here.
 /// <para>
 /// Only keyword tokens with text exactly <c>"q"</c> or <c>"Q"</c> are counted — bytes that happen
 /// to spell those letters inside literal strings, hex strings, names, or comments are classified as

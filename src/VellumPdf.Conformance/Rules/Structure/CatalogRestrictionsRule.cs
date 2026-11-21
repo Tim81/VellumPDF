@@ -12,9 +12,10 @@ namespace VellumPdf.Conformance.Rules.Structure;
 /// <c>/Requirements</c> entry in the document catalog (§6.11).
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.10 and 6.11. Clean-room: derived from the specification text,
-/// not from any third-party validation profile. These are pure object-graph presence checks: the
-/// forbidden entries are reached directly from the catalog (the name dictionary's
+/// Cites ISO 19005-2:2011, 6.10 and 6.11. Its behaviour was checked against veraPDF's PDF/A-2
+/// profile, and ISO 19005-2 was not held when it was written. The 2026-11-21 audit against the
+/// clause text (#418) found agreement. These are pure object-graph presence checks: the forbidden
+/// entries are reached directly from the catalog (the name dictionary's
 /// <c>/AlternatePresentations</c> and the catalog's <c>/Requirements</c>) and from each page
 /// dictionary (<c>/PresSteps</c>), so no content or byte-level parsing is involved.
 /// </remarks>

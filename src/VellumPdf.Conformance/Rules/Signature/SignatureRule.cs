@@ -18,8 +18,13 @@ namespace VellumPdf.Conformance.Rules.Signature;
 /// <see cref="Asn1Reader"/> — no external dependencies.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.4.3. Clean-room: derived from the specification text
-/// and RFC 5652, not from any third-party validation profile.
+/// Cites ISO 19005-2:2011, 6.4.3 and RFC 5652, and reports the ids 6.4.3-1 to 6.4.3-3, which are
+/// veraPDF's. Its behaviour was checked against veraPDF's PDF/A-2 profile, and ISO 19005-2 was not
+/// held when it was written. The 2026-11-21 audit against the clause text (#418) found the citation
+/// wrong and the rule narrower: 6.4.3 requires signatures to go through signature fields, and the
+/// ByteRange, certificate and single-signer requirements are in Annex B.1, which names RFC 2315
+/// rather than RFC 5652. Not checked: the signature-field requirement, conformance to RFC 2315, and
+/// revocation information as a signed attribute.
 ///
 /// Signatures are enumerated from two sources: the AcroForm field tree (/AcroForm /Fields),
 /// and the catalog /Perms /DocMDP entry (ISO 32000-1 §12.8.2.2). The same signature dictionary

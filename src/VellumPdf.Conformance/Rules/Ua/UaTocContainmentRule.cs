@@ -6,7 +6,9 @@ using VellumPdf.Conformance.Rules.Structure;
 namespace VellumPdf.Conformance.Rules.Ua;
 
 /// <summary>
-/// ISO 14289-1 §7.2 table-of-contents containment and caption-position rules:
+/// Table-of-contents containment and caption-position rules, reported under ISO 14289-1 §7.2, which
+/// has no TOC clause. The source is ISO 32000-1 Table 333, which names TOCI and nested TOC as the
+/// children of TOC and no Caption; the permitted children of TOCI are not checked (#428):
 /// <list type="bullet">
 ///   <item>7.2-26 (SETOCI) — TOCI parent == TOC</item>
 ///   <item>7.2-27 (SETOC)  — TOC kids ∈ {TOC, TOCI, Caption}</item>

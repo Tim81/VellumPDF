@@ -52,8 +52,12 @@ namespace VellumPdf.Conformance.Rules.Metadata;
 /// </list>
 /// </para>
 /// <para>
-/// Authored from ISO 19005-2:2011 §6.6.2.3.1, XMP Specification Part 1 (2005) §8.2, and
-/// the PDF/A-1 Extension Schema specification. Clean-room: no veraPDF profile text reproduced.
+/// Cites ISO 19005-2:2011 §6.6.2.3.1, XMP Specification Part 1 (2005) §8.2, and the PDF/A-1
+/// Extension Schema specification. The rule reports the id <c>6.6.2.3.1-2</c>, which is veraPDF's;
+/// §6.6.2.3 has no value-type sentence, so the requirement belongs to XMP conformance (§6.6.2.1)
+/// and the <c>valueType</c> definitions of §6.6.2.3.3, and the reported clause is wrong (#418). Its
+/// behaviour was checked against veraPDF's PDF/A-2 profile, and ISO 19005-2 was not held when it
+/// was written.
 /// </para>
 /// <para>
 /// ALL per-document state (declared property map, reported set) is local to

@@ -13,12 +13,15 @@ namespace VellumPdf.Conformance.Rules.Graphics;
 /// ISO 32000-1:2008 Table 6, or an array containing any such value.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.1.10 and ISO 32000-1:2008, Table 6. The permitted set for
-/// inline images is the subset of stream filters listed in Table 6 that are allowed in inline
-/// images: ASCIIHexDecode (abbrev. AHx), ASCII85Decode (A85), FlateDecode (Fl), RunLengthDecode
-/// (RL), CCITTFaxDecode (CCF), and DCTDecode (DCT). JPXDecode, LZWDecode, Crypt, and any other
-/// filter name fail the rule. Clean-room: derived from the specification text and empirical
-/// veraPDF-oracle probing, not from any third-party validation profile.
+/// Cites ISO 19005-2:2011, 6.1.10 and ISO 32000-1:2008, Table 6. The permitted set for inline
+/// images is the subset of stream filters listed in Table 6 that are allowed in inline images:
+/// ASCIIHexDecode (abbrev. AHx), ASCII85Decode (A85), FlateDecode (Fl), RunLengthDecode (RL),
+/// CCITTFaxDecode (CCF), and DCTDecode (DCT). JPXDecode, LZWDecode, Crypt, and any other filter
+/// name fail the rule. Refusing <c>JPXDecode</c> and the other filters outside that set rests on
+/// ISO 32000-1:2008 §8.9.7, not on the 6.1.10 text. The scope below was set by probing veraPDF
+/// 1.30.2. Its behaviour was checked against veraPDF's PDF/A-2 profile, and ISO 19005-2 was not
+/// held when it was written. The 2026-11-21 audit against the clause text (#418) found the rule
+/// narrower only in that tiling-pattern content streams are not scanned.
 /// <para>
 /// Both the abbreviated key name (<c>/F</c>) and the full key name (<c>/Filter</c>) are legal in
 /// inline-image dictionaries per ISO 32000-1:2008 §8.9.7. veraPDF honours both — confirmed

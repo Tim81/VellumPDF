@@ -53,8 +53,11 @@ namespace VellumPdf.Conformance.Rules.Graphics;
 /// do not apply (no <c>colr</c> boxes exist); -1 and -5 are fully checked via the SIZ marker.
 /// </para>
 /// <para>
-/// Clean-room: authored from ISO 19005-2:2011 §6.2.8.3 and ISO 15444-1 §A.5.1 / §I.5.3.
-/// Cross-validated against veraPDF 1.30.2: a conformant JP2 (NC=3, METH=1, EnumCS=16,
+/// Cites ISO 19005-2:2011 §6.2.8.3 and ISO 15444-1 §A.5.1 / §I.5.3. Its behaviour was checked
+/// against veraPDF's PDF/A-2 profile, and ISO 19005-2 was not held when it was written. The
+/// 2026-11-21 audit against the clause text (#418) found the five checks agree with the clause and
+/// the scope narrower: only <c>JPXDecode</c> images that page content draws with <c>Do</c> are
+/// examined. Cross-validated against veraPDF 1.30.2: a conformant JP2 (NC=3, METH=1, EnumCS=16,
 /// uniform BPC=8, single colr with APPROX=0) passes all five rules with zero findings.
 /// </para>
 /// </remarks>

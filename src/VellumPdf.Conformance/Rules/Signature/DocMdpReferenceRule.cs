@@ -12,8 +12,11 @@ namespace VellumPdf.Conformance.Rules.Signature;
 /// <c>/DigestLocation</c>, <c>/DigestMethod</c>, or <c>/DigestValue</c>.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.1.12. Clean-room: derived from the specification text,
-/// not from any third-party validation profile.
+/// Cites ISO 19005-2:2011, 6.1.12. Its behaviour was checked against veraPDF's PDF/A-2 profile, and
+/// ISO 19005-2 was not held when it was written. The 2026-11-21 audit against the clause text
+/// (#418) found it narrower on the reading that, once <c>/DocMDP</c> is present, the reference
+/// dictionary of every signature is constrained: the rule reads only the <c>/Reference</c> of the
+/// <c>/DocMDP</c> signature.
 ///
 /// Traversal: catalog → /Perms /DocMDP → resolve → /Reference array → each signature reference
 /// dictionary. If any dictionary in the /Reference array carries one of the forbidden keys,

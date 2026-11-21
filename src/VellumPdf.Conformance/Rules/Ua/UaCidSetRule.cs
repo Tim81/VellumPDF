@@ -12,12 +12,15 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// identify exactly the CIDs present in the font program.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 14289-1:2014, 7.21.4.2 and cross-validated against veraPDF 1.30.2 (clause
-/// 7.21.4.2, testNumber 2). The PDF/UA-1 predicate is identical to the PDF/A-2 §6.2.11.4.2-2
-/// predicate (<c>containsFontFile == false || fontName.search(/[A-Z]{6}\+/) != 0 ||
-/// containsCIDSet == false || cidSetListsAllGlyphs == true</c>), so this rule reuses the same
-/// subset-tag detection, <see cref="SfntMetrics"/> glyph-count reader, and CIDSet bitmap
-/// verification as <c>FontStructureRule</c>.
+/// Cites ISO 14289-1:2014, 7.21.4.2, and takes its predicate from veraPDF 1.30.2 (clause 7.21.4.2,
+/// testNumber 2). It was written from veraPDF's PDF/UA-1 profile and checked against veraPDF,
+/// before ISO 14289-1 was held. The 2026-11-21 audit against the clause text (#428) found it
+/// narrower: it examines only <c>CIDFontType2</c> fonts, only subset fonts, and skips a stream
+/// <c>/CIDToGIDMap</c>, where 7.21.4.2 covers every embedded CID font. The PDF/UA-1 predicate is
+/// identical to the PDF/A-2 §6.2.11.4.2-2 predicate (<c>containsFontFile == false ||
+/// fontName.search(/[A-Z]{6}\+/) != 0 || containsCIDSet == false || cidSetListsAllGlyphs ==
+/// true</c>), so this rule reuses the same subset-tag detection, <see cref="SfntMetrics"/>
+/// glyph-count reader, and CIDSet bitmap verification as <c>FontStructureRule</c>.
 /// <para>
 /// Only subset-tagged CIDFontType2 fonts with an Identity <c>/CIDToGIDMap</c> (or none) are
 /// checked. A non-Identity stream CIDToGIDMap makes the present-CID set depend on that map, so

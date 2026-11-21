@@ -28,7 +28,9 @@ internal static class RuleRegistry
         new DocumentCatalogRule(),
     ];
 
-    // ISO 19005-2 §6.1 file-structure rules (header, trailer). Shared by every PDF/A-2 level.
+    // ISO 19005-2 §6.1 file-structure rules (header, trailer, cross-reference table, objects,
+    // streams, limits), plus the §6.8 embedded-file, §6.9 optional-content and §6.10/§6.11 catalog
+    // rules. Shared by every PDF/A-2 level.
     private static readonly IConformanceRule[] PdfA2FileStructure =
     [
         new FileHeaderRule(),
@@ -46,7 +48,8 @@ internal static class RuleRegistry
         new NameUtf8Rule(),
     ];
 
-    // ISO 19005-2 §6.2 colour / §6.4 transparency rules. Shared by every PDF/A-2 level.
+    // ISO 19005-2 §6.2.3-§6.2.4 colour / §6.2.10 transparency rules, plus the §6.1.13 DeviceN
+    // limit. Shared by every PDF/A-2 level.
     private static readonly IConformanceRule[] PdfA2ColourAndTransparency =
     [
         new OutputIntentRule(),
@@ -71,7 +74,7 @@ internal static class RuleRegistry
         new Jpeg2000Rule(),
     ];
 
-    // ISO 19005-2 §6.3 font rules. Shared by every PDF/A-2 level.
+    // ISO 19005-2 §6.2.11 font rules. Shared by every PDF/A-2 level.
     private static readonly IConformanceRule[] PdfA2Fonts =
     [
         new FontEmbeddingRule(),
@@ -81,8 +84,9 @@ internal static class RuleRegistry
         new CMapContentRule(),
     ];
 
-    // ISO 19005-2 §6.5–§6.7 metadata, annotation, and action rules. Shared by every PDF/A-2 level.
-    // The XMP rule keys off the level being validated, so it asserts B / U / A as appropriate.
+    // ISO 19005-2 §6.6 metadata, §6.3 annotation, §6.5 action, and §6.4 interactive-form rules.
+    // Shared by every PDF/A-2 level. The XMP rule keys off the level being validated, so it asserts
+    // B / U / A as appropriate.
     private static readonly IConformanceRule[] PdfA2Document =
     [
         new XmpConformanceRule(),
@@ -121,8 +125,8 @@ internal static class RuleRegistry
         new ToUnicodeRule(),
     ];
 
-    // PDF/A-2a = PDF/A-2u plus tagged logical structure (ISO 19005-2 §6.8) and
-    // §6.7 structure-type and language-tag rules.
+    // PDF/A-2a = PDF/A-2u plus tagged logical structure (ISO 19005-2 §6.7; the rule reports under
+    // §6.8, see its remarks) and §6.7 structure-type and language-tag rules.
     private static readonly IConformanceRule[] PdfA2ARules =
     [
         .. PdfA2URules,

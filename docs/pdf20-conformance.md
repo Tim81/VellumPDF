@@ -12,21 +12,20 @@ clause 0.3. Regenerate with `python eng/generate-pdf20-inventory.py`.
 > **This is a coverage inventory, not a conformance test.** Whether output actually conforms is
 > settled by the test suite, not by this page.
 
-> **The PDF/A-2 clause citations are unverified.** ISO 19005-2 is not among the specifications
-> held locally. 50 of the 101 rule classes in `VellumPdf.Conformance` cite
-> it, and they are validated against veraPDF's bundled profiles, which encode the standard as
-> test cases rather than reproducing its text, so those clause numbers have no locally
-> checkable source. For PDF/A-2, and only there, veraPDF is what CI fails the build on rather
-> than a cross-check, since no held text is there to decide a disagreement. Of those
-> 50, 48 carry a dated `ISO 19005-2:2011` citation and are the
-> re-derivation work; the other two are PDF/UA-1 rules mentioning a PDF/A clause in prose.
-> ISO 14289-1
-> was in the same position until it was acquired on 2026-09-07; the
-> 53 rule classes citing it are now checkable against the text but have not yet
-> been re-derived. The word "clean-room" appears somewhere in 70 of the
-> 101 rule classes, and 48 of those also name veraPDF somewhere in
-> the file. Neither is the same as having checked the rule against a clause, which is what
-> #418 tracks for ISO 19005-2 and #428 for ISO 14289-1.
+> **The PDF/A-2 clause citations were not derived from the text.** ISO 19005-2 is not among the
+> specifications held locally. 50 of the 101 rule classes in `VellumPdf.Conformance` cite
+> it, and they were written against veraPDF's bundled profiles, which encode the standard as
+> test cases rather than reproducing its text. For PDF/A-2, and only there, veraPDF is what CI
+> fails the build on rather than a cross-check. Of those
+> 50, 48 carry a dated `ISO 19005-2:2011` citation; the other two are PDF/UA-1
+> rules mentioning a PDF/A clause in prose. An audit on 2026-11-21 read clause 6 and Annexes A and
+> B on a licensed online copy and compared those 48 rule classes with it. By primary verdict, 13
+> match the clause, 26 are narrower, 3 are broader and 6 cite the wrong clause (#418).
+> ISO 14289-1 was acquired on 2026-09-07, after its rules were written; the
+> 53 rule classes citing it are checkable against the text. A second audit on 2026-11-21
+> compared 52 of them with clause 7: 8 match, 23 are narrower, 12 are broader, 6 cite the wrong
+> clause and 3 are unsure (#428). The audits compared the rules with the text and did not
+> re-derive them; the corrections are tracked in those issues.
 
 ## Normative references
 

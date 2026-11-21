@@ -12,7 +12,7 @@ public sealed class PreflightAssertion
 {
     /// <summary>
     /// Stable identifier of the rule that produced this assertion (e.g.
-    /// <c>"ISO19005-2:6.1.2-output-intent"</c>). Stable across releases so callers can
+    /// <c>"ISO19005-2:6.2.3-output-intent"</c>). Stable across releases so callers can
     /// suppress or map specific findings.
     /// </summary>
     public string RuleId { get; }

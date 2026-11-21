@@ -12,10 +12,11 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// (<c>isOutsideCropBox == true</c>) or the Hidden flag is set (<c>(F &amp; 2) == 2</c>).
 /// </summary>
 /// <remarks>
-/// Authored from ISO 14289-1:2014, 7.18.2 (PDTrapNetAnnot predicate:
-/// <c>isOutsideCropBox == true || (F &amp; 2) == 2</c>) and empirically validated against
-/// veraPDF 1.30.2 (clause 7.18.2, testNumber 1). Clean-room: derived from the specification
-/// text and the veraPDF profile, not from any third-party implementation.
+/// Cites ISO 14289-1:2014, 7.18.2, and takes its test from veraPDF's PDTrapNetAnnot predicate
+/// <c>isOutsideCropBox == true || (F &amp; 2) == 2</c> (clause 7.18.2, testNumber 1). It was
+/// written from veraPDF's PDF/UA-1 profile and checked against veraPDF, before ISO 14289-1 was
+/// held. The 2026-11-21 audit against the clause text (#428) found agreement. The two exemptions
+/// come from 7.18.1.
 /// <para>
 /// A visible TrapNet annotation inside the crop box always fails regardless of whether it has
 /// an appearance stream or other entries — the annotation type itself is the violation.

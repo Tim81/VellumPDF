@@ -15,16 +15,19 @@ namespace VellumPdf.Conformance.Rules.Colour;
 /// a <c>/Colorants</c> sub-dictionary mapping each colourant name to a Separation colour-space
 /// array. The clause requires that for each non-exempt colourant an entry exists in <c>/Colorants</c>.
 /// <para>
-/// <b>Exemptions (determined empirically via veraPDF 1.30.2 probing):</b>
-/// The process colourant names <c>Cyan</c>, <c>Magenta</c>, <c>Yellow</c>, <c>Black</c> and the
-/// special name <c>None</c> are exempt — veraPDF does not flag a missing entry for these. All other
-/// names, including the special name <c>All</c>, require a <c>/Colorants</c> entry. A missing
-/// attributes dictionary (4-element DeviceN) when spot colourants are present also triggers the rule.
+/// <b>Exemptions (set by probing veraPDF 1.30.2, not by the clause):</b> The process colourant
+/// names <c>Cyan</c>, <c>Magenta</c>, <c>Yellow</c>, <c>Black</c> and the special name <c>None</c>
+/// are exempt — veraPDF does not flag a missing entry for these. All other names, including the
+/// special name <c>All</c>, require a <c>/Colorants</c> entry. A missing attributes dictionary
+/// (4-element DeviceN) when spot colourants are present also triggers the rule.
 /// </para>
 /// <para>
-/// Authored from ISO 19005-2:2011, §6.2.4.4 and ISO 32000-1:2008, §8.6.6.5 (DeviceN). Clean-room:
-/// derived from the specification text and empirical oracle probing, not from any third-party
-/// validation profile.
+/// Cites ISO 19005-2:2011, §6.2.4.4 and ISO 32000-1:2008, §8.6.6.5 (DeviceN). Its behaviour was
+/// checked against veraPDF's PDF/A-2 profile, and ISO 19005-2 was not held when it was written. The
+/// 2026-11-21 audit against the clause text (#418) found it narrower: 6.2.4.4 covers any spot
+/// colour used in DeviceN or NChannel, and this rule checks only spaces selected in page content.
+/// The exemption of the name <c>None</c> is a veraPDF observation; 6.2.4.4 does not define "spot
+/// colour".
 /// </para>
 /// <para>
 /// Scoped to colour spaces the page actually selects with the <c>cs</c>/<c>CS</c> operators:

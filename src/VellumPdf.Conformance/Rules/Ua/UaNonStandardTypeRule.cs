@@ -7,14 +7,14 @@ namespace VellumPdf.Conformance.Rules.Ua;
 
 /// <summary>
 /// ISO 14289-1 §7.1 testNumber 5 (PDF/UA-1: PDStructElem — non-standard structure type
-/// that is not role-mapped to a Table 333 standard type).
+/// that is not role-mapped to a standard type of ISO 32000-1 14.8.4).
 /// </summary>
 /// <remarks>
 /// The veraPDF predicate (object PDStructElem, clause 7.1, testNumber 5) is:
 /// <c>isNotMappedToStandardType == false</c>. Translated: every structure element whose
 /// <c>/S</c> is a NON-standard type must be role-mapped (via the StructTreeRoot
-/// <c>/RoleMap</c>, possibly multi-hop) to one of the ISO 32000-1 Table 333 standard
-/// structure types. We fire when a walked StructElem has a non-null <see cref="StructureTreeNode.RawType"/>
+/// <c>/RoleMap</c>, possibly multi-hop) to one of the ISO 32000-1 standard (14.8.4) structure
+/// types. We fire when a walked StructElem has a non-null <see cref="StructureTreeNode.RawType"/>
 /// that does not resolve to a standard type (<see cref="StructureTreeNode.StandardType"/> is null).
 ///
 /// <para>FP-safety — standard-type-set completeness:</para>
