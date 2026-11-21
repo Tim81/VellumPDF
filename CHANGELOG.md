@@ -1147,11 +1147,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     - A NaN text colour and a negative `BorderWidth` keep `InvalidOperationException`, but the
       message is replaced, not extended: "Table row 0, cell 0 has a text colour whose red channel is
       NaN, ..." and "A table has a line width of -1, which cannot be drawn. ...".
-  - A `TableRenderer` laid out with a `LayoutContext` built through the public constructor first
-    cuts no row: a row that does not fit its area is not cut, and when it is the first row in the
-    area the call returns `Nothing`. A row the document began to cut keeps cutting when its
-    overflow renderer is laid out under such a context. The XML documentation of `TableElement`,
-    `Cell.RowSpan`, `Cell.Padding`, `Document.Add(TableElement)` and `TableRenderer` says so.
+  - A `TableRenderer` laid out with a `LayoutContext` built through the public constructor does
+    not begin to cut a row: a row that does not fit its area is not cut, and when it is the first
+    row in the area the call returns `Nothing`. A row the document began to cut keeps cutting in
+    its overflow renderer under such a context at the width it was cut at (the same width gives
+    `Partial`). At another width the saved lines are dropped and the row is laid out again from
+    its first line, which without the box is not cut.
+  - The XML documentation of `TableElement`, `Cell.RowSpan`, `Cell.Padding`,
+    `Document.Add(TableElement)` and `TableRenderer` states the rule for cutting a row.
 
 ### Documentation
 

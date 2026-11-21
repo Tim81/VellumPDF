@@ -126,11 +126,12 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource
     /// <para><b>A row is first cut only under a context the document built.</b> The document
     /// tells the renderer what a fresh page offers through the context; a context built with the
     /// public constructor of <see cref="LayoutContext"/> carries no such box, so a row that does
-    /// not fit is not cut. When it is the first row in the area the call returns
-    /// <see cref="LayoutResult.Outcome.Nothing"/>; when rows before it fit, the call returns the
-    /// rows that fit and the overflow renderer starts with the row. A row that was already cut
-    /// keeps cutting when its overflow renderer is laid out under such a context. A cut row
-    /// resumed with a context of another width is laid out again from its first line.</para>
+    /// not fit is not cut. The table splits before that row as it does for any row that does not
+    /// fit, keeping a <see cref="Cell.RowSpan"/> group whole; when it is the first row in the
+    /// area the call returns <see cref="LayoutResult.Outcome.Nothing"/>. A row that was already
+    /// cut keeps cutting under such a context only at the width it was cut at. At another width
+    /// the saved lines are dropped and the row is laid out again from its first line, which
+    /// under a context without the box is not cut.</para>
     /// <para>These are refused with the too-tall exception, extended with a sentence naming the
     /// rows or the cell, and are never cut: the repeated header rows when they do not fit a page;
     /// a row that declares a <see cref="Cell.RowSpan"/> above one, or lies under one; a row with a

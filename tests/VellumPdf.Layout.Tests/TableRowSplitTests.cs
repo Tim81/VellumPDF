@@ -190,6 +190,27 @@ public sealed class TableRowSplitTests : IDisposable
     }
 
     /// <summary>
+    /// The room a fresh page offers is deflated by the table margins once. After a 20pt row a
+    /// 46-line row (560pt) does not fit the 540pt left, but it fits the 560pt a fresh page offers
+    /// inside a margin of 10, so it moves whole to page 2 and is not cut. A second deflation of the
+    /// fresh box would make it 540pt and cut the row.
+    /// </summary>
+    [Fact]
+    public void ARowThatFitsAFreshPageInsideTheTableMargins_movesWholeAfterAShortRow()
+    {
+        var t = MarginTable();
+        t.AddRow().AddCell("x").AddCell("y");
+        Tall(t, 46);
+
+        var pages = Pages(t);
+
+        Assert.Equal(2, pages.Count);
+        Assert.Equal(["20 560 40 20", "60 560 100 20"], Borders(pages[0]));
+        Assert.Equal(["20 20 40 560", "60 20 100 560"], Borders(pages[1]));
+        Assert.Equal(Concat(Run("aaaa", 46), ["short"]), Texts(pages[1]));
+    }
+
+    /// <summary>
     /// A 47-line row (572pt) fits the 580pt page, so a table without margins places it whole, but
     /// not the 560pt left inside a table margin of 10: it is cut, with 46 lines on page 1 and the
     /// 47th on page 2. 2.3.3 refused this table as too tall. The fresh page the row has to fit is
@@ -863,8 +884,7 @@ public sealed class TableRowSplitTests : IDisposable
 
     /// <summary>
     /// A resumed row in an area that holds no line of it is <c>Nothing</c>, not a slice with no
-    /// line: a zero-line slice would be <c>Partial</c> with an overflow renderer for the same row,
-    /// and the save would turn pages until the continuation limit.
+    /// line. The guard means the renderer never returns a <c>Partial</c> that made no progress.
     /// </summary>
     [Fact]
     public void ACutRow_resumedInAnAreaThatHoldsNoLine_isNothing()

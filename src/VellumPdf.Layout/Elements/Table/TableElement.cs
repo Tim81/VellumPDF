@@ -42,8 +42,9 @@ namespace VellumPdf.Layout.Elements.Table;
 /// <see cref="Rendering.Table.TableRenderer"/> given a context built through the public
 /// constructor of <see cref="LayoutContext"/> cuts no row, so it returns
 /// <see cref="LayoutResult.Nothing()"/> when the first row in its area does not fit it. A cut
-/// row that began under the document's context keeps cutting in the overflow renderer, whatever
-/// context that is laid out under.</para>
+/// row that began under the document's context keeps cutting in the overflow renderer when that
+/// is laid out under a plain context at the width the row was cut at. At another width the row is
+/// laid out again from its first line, and without the box it is not cut.</para>
 /// </remarks>
 public sealed class TableElement
 {
