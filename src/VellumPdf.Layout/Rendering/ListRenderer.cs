@@ -367,11 +367,17 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource
     // ── Item building ─────────────────────────────────────────────────────────
 
     /// <summary>
-    /// The widest whitespace-delimited word in <paramref name="text"/>. This is the width below
+    /// The widest whitespace-delimited word across <paramref name="runs"/>. This is the width below
     /// which <see cref="ParagraphRenderer"/> stops wrapping and starts hard-breaking words at
     /// glyph granularity, which is the behaviour the gutter must not introduce.
     /// </summary>
-    private static double WidestWord(TextStyle style, string text)
+    /// <remarks>
+    /// A word that continues over a run boundary is one word, as the paragraph's own wrap reads it,
+    /// so its width is the sum of its pieces. Consecutive pieces in one style instance are measured
+    /// as one string, because the paragraph draws them as one piece and a surrogate pair split
+    /// between them is whole there.
+    /// </remarks>
+    private static double WidestWord(IReadOnlyList<TextRun> runs)
     {
         // A no-break space is not a separator here, because it is not one to the wrap this bound
         // exists to predict: ParagraphRenderer.NormaliseWhitespace excludes U+00A0, U+202F and
@@ -382,25 +388,49 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource
         // The set lives in code points written as escapes, in NoBreakSpaces: an invisible literal
         // U+00A0 inverts the predicate if any tool normalises it.
         var widest = 0.0;
-        var start = -1;
-        for (var i = 0; i <= text.Length; i++)
+        var wordWidth = 0.0;
+        var inWord = false;
+        TextStyle? pieceStyle = null;
+        var piece = new System.Text.StringBuilder();
+
+        void FlushPiece()
         {
-            var atBreak = i == text.Length
-                || (!NoBreakSpaces.IsNoBreakSpace(text[i]) && char.IsWhiteSpace(text[i]));
-
-            if (!atBreak)
-            {
-                if (start < 0) start = i;
-                continue;
-            }
-
-            if (start < 0) continue;
-
-            var w = style.MeasureString(text[start..i]);
-            if (w > widest) widest = w;
-            start = -1;
+            if (piece.Length == 0) return;
+            wordWidth += pieceStyle!.MeasureString(piece.ToString());
+            piece.Clear();
         }
 
+        void EndWord()
+        {
+            FlushPiece();
+            if (inWord && wordWidth > widest) widest = wordWidth;
+            wordWidth = 0;
+            inWord = false;
+        }
+
+        foreach (var run in runs)
+        {
+            var text = run.Text;
+            for (var i = 0; i < text.Length; i++)
+            {
+                if (!NoBreakSpaces.IsNoBreakSpace(text[i]) && char.IsWhiteSpace(text[i]))
+                {
+                    EndWord();
+                    continue;
+                }
+
+                if (!ReferenceEquals(pieceStyle, run.Style))
+                {
+                    FlushPiece();
+                    pieceStyle = run.Style;
+                }
+
+                piece.Append(text[i]);
+                inWord = true;
+            }
+        }
+
+        EndWord();
         return widest;
     }
 
@@ -416,6 +446,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource
             if (item.HasNullText)
                 throw new ArgumentNullException("text", "A list item has a null text.");
             var itemStyle = item.Style ?? defaultStyle;
+            var contentRuns = item.ContentRuns(itemStyle);
             var markerText = _list.FormatMarker(i + 1);
             var markerWidth = itemStyle.MeasureString(markerText);
 
@@ -439,7 +470,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource
             // widest word still fits keeps the fix from introducing a hard break that today's
             // indent does not have, and where it cannot, today's indent and the overprint it
             // carries are the lesser harm.
-            if (areaWidth - gutter < WidestWord(itemStyle, item.Text))
+            if (areaWidth - gutter < WidestWord(contentRuns))
             {
                 gutter = indent;
             }
@@ -453,7 +484,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource
             var markerRenderer = new ParagraphRenderer(markerPara) { RunOwner = "A list item" };
 
             // Content paragraph: indented by the (possibly widened) gutter from the left edge.
-            var contentPara = new Paragraph(item.Text, itemStyle)
+            var contentPara = new Paragraph(contentRuns)
             {
                 Margins = new EdgeInsets(0, 0, 0, gutter),
                 Alignment = HorizontalAlignment.Left,
@@ -477,6 +508,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource
                     if (child.HasNullText)
                         throw new ArgumentNullException("text", "A list item has a null text.");
                     var childStyle = child.Style ?? itemStyle;
+                    var childRuns = child.ContentRuns(childStyle);
                     // Nested unordered items use an open-bullet "◦"; nested ordered items
                     // route through ListElement.FormatMarker so OrderedAlpha/OrderedRoman
                     // are honoured (the default was decimal regardless of the scheme).
@@ -496,14 +528,14 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource
                     // parent rather than continuing the top-level sequence.
                     var childMarkerWidth = childStyle.MeasureString(childMarker);
                     var childGutter = Math.Max(indent * 2, indent + childMarkerWidth);
-                    if (areaWidth - childGutter < WidestWord(childStyle, child.Text))
+                    if (areaWidth - childGutter < WidestWord(childRuns))
                         childGutter = indent * 2;
 
                     var childMarkerPara = new Paragraph(childMarker, childStyle)
                     {
                         Margins = new EdgeInsets(0, 0, 0, indent),
                     };
-                    var childContentPara = new Paragraph(child.Text, childStyle)
+                    var childContentPara = new Paragraph(childRuns)
                     {
                         Margins = new EdgeInsets(0, 0, 0, childGutter),
                     };
