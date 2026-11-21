@@ -75,6 +75,37 @@ public sealed class CidFontProgramCmapTests
         Assert.DoesNotContain("/Subtype /TrueType", pdf);
     }
 
+    /// <summary>
+    /// ISO 32000-2, Table 125 requires /Length1 on a TrueType program: the length of the whole
+    /// program after decoding. The value is the decoded length of the program in the same file,
+    /// read back.
+    /// </summary>
+    [Theory]
+    [InlineData("DejaVuSans.ttf", 195_736)]
+    [InlineData("LiberationMono-Regular.ttf", 67_092)]
+    public void GlyfProgram_hasLength1EqualToItsDecodedLength(string font, int expectedLength)
+    {
+        var pdf = EmbeddedFontFixtures.SaveKernel(EmbeddedFontFixtures.Load(font), "Hello");
+
+        var (_, program) = Assert.Single(EmbeddedFontFixtures.Descriptors(pdf));
+        var dictionary = Assert.Single(EmbeddedFontFixtures.FontFileDictionaries(pdf));
+
+        Assert.Equal(expectedLength, program.Length);
+        Assert.Equal((long)expectedLength, ((PdfInteger)dictionary.Get(new PdfName("Length1"))!).Value);
+    }
+
+    /// <summary>An OpenType CFF program is a /FontFile3 stream and carries no /Length1.</summary>
+    [Fact]
+    public void CffProgram_hasNoLength1()
+    {
+        var pdf = EmbeddedFontFixtures.SaveKernel(EmbeddedFontFixtures.Load("SourceSans3-ExtraLight.otf"), "Hello");
+
+        var dictionary = Assert.Single(EmbeddedFontFixtures.FontFileDictionaries(pdf));
+
+        Assert.Null(dictionary.Get(new PdfName("Length1")));
+        Assert.Equal(new PdfName("OpenType"), dictionary.Get(new PdfName("Subtype")));
+    }
+
     /// <summary>The CFF program keeps its cmap, byte for byte.</summary>
     [Fact]
     public void CffProgram_keepsItsCmapTable()

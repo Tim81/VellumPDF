@@ -113,6 +113,26 @@ public sealed class FontBBoxTests
     }
 
     /// <summary>
+    /// The edge is scaled as <c>v * 1000.0 / unitsPerEm</c>, so a value that scales to a whole
+    /// number does so exactly. With 19 units per em, 19 units is 1000 exactly; <c>v * (1000.0 /
+    /// unitsPerEm)</c> gives 999.9999999999999, which the floor would take to 999.
+    /// </summary>
+    [Fact]
+    public void WholeScaledEdge_isExact_soFloorDoesNotLoseAUnit()
+    {
+        var font = EmbeddedFontFixtures.WithHead(EmbeddedFontFixtures.Load("DejaVuSans.ttf"), head =>
+        {
+            EmbeddedFontFixtures.PutI16(head, 18, 19);   // unitsPerEm
+            EmbeddedFontFixtures.PutI16(head, 36, 19);   // xMin
+        });
+        Assert.NotEqual(1000.0, 19 * (1000.0 / 19));      // the property the order protects
+
+        var box = EmbeddedFontFixtures.FontBBox(new TrueTypeFontEmbedder(font, "F1").BuildFontDescriptor(FileRef));
+
+        Assert.Equal(1000, box[0]);
+    }
+
+    /// <summary>
     /// A font whose unitsPerEm is 0 (format 4 present, so the format 12 check at load does not
     /// apply) loads and refuses at the descriptor, and so at save. The refusal comes from /Ascent,
     /// before the box, so no value of the box can have been cast to an integer on the way.

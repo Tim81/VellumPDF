@@ -130,6 +130,22 @@ internal static class EmbeddedFontFixtures
         return found;
     }
 
+    /// <summary>The stream dictionary of every embedded font file in the saved document.</summary>
+    internal static List<PdfDictionary> FontFileDictionaries(byte[] pdf)
+    {
+        using var reader = PdfReader.Open(pdf);
+        var found = new List<PdfDictionary>();
+        for (var n = 1; n < reader.Size; n++)
+        {
+            if (reader.Resolve(n) is not PdfDictionary d
+                || d.Get(PdfName.Type) is not PdfName type || type.Value != "FontDescriptor")
+                continue;
+            var fileRef = d.Get(new PdfName("FontFile2")) ?? d.Get(new PdfName("FontFile3"));
+            found.Add(reader.ResolveStream((PdfIndirectReference)fileRef!)!.Dictionary);
+        }
+        return found;
+    }
+
     internal static double Number(PdfDictionary descriptor, string key) => descriptor.Get(new PdfName(key)) switch
     {
         PdfInteger n => n.Value,

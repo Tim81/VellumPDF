@@ -313,27 +313,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   program. **Deliberate output change:** DejaVu Sans `[0 -236 488 928]` becomes `[-1021 -463 1794
   1233]`, Liberation Sans Regular `[0 -212 488 905]` becomes `[-544 -304 1302 980]`, Liberation Mono
   Regular `[0 -300 488 833]` becomes `[-482 -301 743 981]`, and Source Sans 3 ExtraLight
-  `[0 -326 1000 1000]` becomes `[-590 -288 2160 934]`. Only that array changes in a document with
-  an embedded font; the content streams, `/W`, the ToUnicode map and the font program keep their
-  bytes, and so does every document without an embedded font. A font whose `head.unitsPerEm` is 0
+  `[0 -326 1000 1000]` becomes `[-590 -288 2160 934]`. This fix changes only that array in a
+  document with an embedded font: it leaves the content streams, `/W` and the ToUnicode map as they
+  were, and the font program too (the entries for #612, #632 and `/Length1` below describe what
+  changes there). A document without an embedded font keeps its bytes. A font whose `head.unitsPerEm` is 0
   is still refused when the descriptor is built, with the same `ArgumentException`, and a box the
   font states with its minima above its maxima is written as read.
 - **A variable font embeds as its default instance, without its variation tables (#612).** The
   embedded program kept every table of the source font except `glyf` and `loca`, so a font with an
-  `fvar` table carried `avar`, `cvar`, `fvar`, `gvar`, `HVAR`, `MVAR`, `VVAR` and `STAT` beside an
-  outline table whose unused glyphs the subsetter had emptied, so the `gvar` no longer matched the
-  glyph data beside it. When the source font has `fvar`, the program now omits those eight tables, on both the
+  `fvar` table carried `avar`, `cvar`, `fvar`, `gvar`, `HVAR`, `MVAR`, `VVAR` and `STAT` next to a
+  `glyf` table whose unused glyphs the subsetter had emptied, and the `gvar` no longer matched the
+  outlines. When the source font has `fvar`, the program now omits those eight tables, on both the
   glyf path (`/FontFile2`) and the CFF path (`/FontFile3`); the `glyf`, `hmtx`, `OS/2` and `hhea`
   tables it keeps are the default instance's, so outlines, `/W` and the descriptor are unchanged.
   The rule keys on `fvar`: a font without it keeps every table it has, a stray `gvar` or `STAT`
   included. **Deliberate output change:** the font program stream of a document that embeds a
   variable font gets shorter, and its `head.checkSumAdjustment` and every later offset follow;
-  nothing else in that document changes. Every document whose fonts have no `fvar`, which is every
-  font in the repository, keeps its bytes. **Attention:** only the default instance can be drawn,
-  as before, and the documentation of `UseTrueTypeFont` and `BuildFontFileStream` now says so. An
-  OpenType CFF font that cannot be subset here (CID-keyed, or one whose `CFF ` table does not parse)
-  is embedded whole and keeps its variation tables, and `GSUB`, `GPOS` and `GDEF` stay in every
-  program; PDF processors do not read them to draw.
+  nothing else in that document changes. This fix changes no document whose fonts have no `fvar`,
+  which is every font in the repository; the #632 entry below changes their programs for another
+  reason. **Attention:** only the default instance can be drawn, as before, and the documentation of
+  `UseTrueTypeFont` and `BuildFontFileStream` now says so. An OpenType CFF font that cannot be
+  subset here (CID-keyed, or one whose `CFF ` table does not parse) is embedded whole and keeps its
+  variation tables. A variable font whose outlines are in a `CFF2` table has no `CFF ` table: it
+  loads, and the save throws `InvalidOperationException` ("Font is missing required table 'CFF '."),
+  as it did before. `GSUB`, `GPOS` and `GDEF` stay in every program; PDF processors do not read them
+  to draw.
 - **An embedded TrueType program no longer carries a `cmap` table (#632).** Every glyf font is
   written as a Type 0 font whose CIDFontType2 descendant maps codes to glyphs through
   `/CIDToGIDMap`, and ISO 32000-2, 9.9.1 says that for a CIDFont dictionary the `cmap` table "is
@@ -347,12 +351,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   through `UseTrueTypeFont`, `LoadTrueTypeFont`, `EmbedStandard14Font` (the Liberation substitutes)
   or `PrepareForSigning` is smaller, and its offsets and the cross-reference follow. Against the
   2.3.3 bytes, DejaVu Sans and Liberation Sans programs for the same text differ in the `cmap`
-  table and in the four bytes of `head.checkSumAdjustment`, and in no other table. A document
-  whose only embedded fonts are CFF, and a document without an embedded font, keep their bytes. A
-  font with no `cmap` table was and stays refused when it is loaded. The output of veraPDF 1.30.4
-  (PDF/A-2u and PDF/UA-1), `qpdf --check` and `pdftotext` accepted the new programs, and a 150 dpi
-  `pdftoppm` (poppler 26.08.0) render of the same text was pixel-equal to the 2.3.3 render for DejaVu
-  Sans, Liberation Sans, Liberation Mono and Source Sans 3.
+  table and in the four bytes of `head.checkSumAdjustment`, and in no other table. This fix leaves
+  a CFF program's bytes alone, and a document without an embedded font keeps its bytes. A font with
+  no `cmap` table was and stays refused when it is loaded. veraPDF 1.30.4 reported no failed rule
+  (PDF/A-2u and PDF/UA-1) for the new programs, `qpdf --check` found no error, `pdftotext` returned
+  the text, and a 150 dpi `pdftoppm` (poppler 26.08.0) render of the same text was pixel-equal to
+  the 2.3.3 render for DejaVu Sans, Liberation Sans, Liberation Mono and Source Sans 3.
+- **A TrueType font program stream carries `/Length1` (#656).** ISO 32000-2, Table 125 (physical page 368)
+  lists `/Length1` as required for a TrueType font program, and the `/FontFile2` stream had none.
+  It now holds the length in bytes of the whole program after decoding. **Deliberate output
+  change:** every `/FontFile2` stream the Kernel writes gains `/Length1 <n>`, so the stream
+  dictionary, the offsets and the cross-reference move; the program bytes do not change. An
+  OpenType CFF program is a `/FontFile3` stream and carries no `/Length1`, as before.
 - **On .NET 10 an empty stream was written as `/FlateDecode` with no data (#640).** `PdfStream`
   compressed through `ZLibStream`, which on .NET 10.0.15 writes nothing for empty input, so an empty
   page's `/Contents` came out as `/Filter /FlateDecode /Length 0` with an empty body, which is not

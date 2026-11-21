@@ -574,9 +574,15 @@ public sealed class Document : IDisposable
     /// missing outline table, <see cref="InvalidDataException"/> for malformed outline data, and
     /// <see cref="ArgumentException"/> for a value that makes a font metric non-finite, such as a
     /// <c>unitsPerEm</c> of 0. An OpenType font with CFF outlines is accepted.</para>
-    /// <para>A variable font (one with an <c>fvar</c> table) is accepted and drawn as its default
-    /// instance: the embedded program leaves out its variation tables, so no other instance can be
-    /// drawn, and this call does not refuse a font for being variable.</para>
+    /// <para>A variable font (one with an <c>fvar</c> table) is accepted. When its outlines are
+    /// glyf, or CFF that this library can subset, it is drawn as its default instance: the embedded
+    /// program leaves out its variation tables, so no other instance can be drawn. A CFF font that
+    /// cannot be subset (CID-keyed, or with a <c>CFF </c> table that does not parse) is embedded
+    /// whole and keeps its variation tables. A variable font whose outlines are in a <c>CFF2</c>
+    /// table has no <c>CFF </c> table: this call accepts it, and
+    /// <see cref="Save(System.IO.Stream)"/> and the other save overloads throw
+    /// <see cref="InvalidOperationException"/> with the message "Font is missing required table
+    /// 'CFF '.". <b>Do not pass</b> a CFF2 font and expect it to embed.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="fontData"/> is <see langword="null"/>. <c>ParamName</c> is <c>source</c>.

@@ -334,14 +334,16 @@ public sealed class TrueTypeFontEmbedder
     /// <see cref="ArgumentException"/> when it writes /Ascent, because every metric divides by the
     /// unit size and PDF has no token for the NaN or infinity that gives.
     /// <para>/FontBBox is the <c>head</c> table's xMin, yMin, xMax and yMax scaled to 1000 units
-    /// per em, each rounded away from the glyphs to a whole number (down for xMin and yMin, up for
-    /// xMax and yMax), so the rectangle still encloses what the font draws. The box is the font's
-    /// own, for a glyf and a CFF program alike, and a subset keeps the whole font's box. A variable
-    /// font's box is the default instance's, as the font states it; other instances may exceed
-    /// it.</para>
+    /// per em, each rounded to a whole number: down for xMin and yMin, up for xMax and yMax, so the
+    /// rectangle of a well-formed font still encloses what it draws. The box is the font's own, for
+    /// a glyf and a CFF program alike, and a subset keeps the whole font's box. A variable font's
+    /// box is the default instance's, as the font states it; other instances may exceed it.</para>
     /// <para>A box that <c>head</c> states with xMin above xMax, or yMin above yMax, is written as
     /// read: ISO 32000-2 7.9.5 defines a rectangle by two diagonally opposite corners, so the file
-    /// is valid. <b>Do not rely on</b> a reader treating such a box as the glyph extent.</para>
+    /// is valid. The rounding direction follows the position in the array, not which value is
+    /// larger, so the corners of such a box are not rounded away from each other.
+    /// <b>Do not rely on</b> a reader treating such a box as the glyph extent, or on this library
+    /// accepting an inverted <c>head</c> box: 3.0 will refuse it.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">The font's <c>head.unitsPerEm</c> is 0.</exception>
     public Core.PdfDictionary BuildFontDescriptor(Core.PdfIndirectReference fontFileRef)
@@ -375,23 +377,40 @@ public sealed class TrueTypeFontEmbedder
 
     /// <summary>Builds the embedded font program stream: a subsetted glyf font, or a subsetted CFF/OTTO program as /FontFile3.</summary>
     /// <remarks>
-    /// <b>A variable font is embedded as its default instance.</b> When the source font has an
-    /// <c>fvar</c> table, the program omits the eight tables avar, cvar, fvar, gvar, HVAR, MVAR,
-    /// VVAR and STAT, so the program holds the default instance alone; every other table is kept.
-    /// A font without <c>fvar</c> keeps all its tables, a stray <c>gvar</c> or STAT included. The
-    /// outlines, advance widths and descriptor metrics are the default instance's in either case,
-    /// and no other instance of the font can be drawn.
-    /// <para>A glyf program is written without its <c>cmap</c> table. Every glyf font is used with
-    /// a CIDFontType2 descendant, which maps codes to glyphs itself, and ISO 32000-2, 9.9.1 says
-    /// that with a CIDFont dictionary the table is not needed and shall not be present. An OpenType
-    /// CFF program keeps its <c>cmap</c>, because Table 124 requires it there. A source font with
-    /// no <c>cmap</c> table is refused when the embedder is created, not here.</para>
-    /// <para>A CID-keyed or unparseable OpenType CFF font cannot be subset here, so it is embedded
-    /// whole, and a variable one of those keeps its variation tables.</para>
+    /// <b>A font with no outline table is refused.</b> The call throws
+    /// <see cref="InvalidOperationException"/> naming the missing table when a glyf font has no
+    /// <c>glyf</c> or <c>loca</c> table, and when an OpenType font has no <c>CFF </c> table, which
+    /// includes a variable font whose outlines are in a <c>CFF2</c> table. Malformed glyf data,
+    /// such as a <c>loca</c> range past the end of <c>glyf</c>, throws <see
+    /// cref="InvalidDataException"/>. A CID-keyed or unparseable <c>CFF </c> table does not throw:
+    /// the font is embedded whole.
+    /// <para><b>Do not pair</b> this program with a simple <c>/TrueType</c> font dictionary. It is
+    /// written for the CIDFontType2 descendant that <see cref="BuildCidFontDictionary"/> returns:
+    /// a glyf program has no <c>cmap</c> table, which a simple font needs (ISO 32000-2,
+    /// 9.9.1).</para>
+    /// <para>A glyf program is written without its <c>cmap</c> table, because a CIDFont maps codes
+    /// to glyphs itself and 9.9.1 says that with a CIDFont dictionary the table is not needed and
+    /// shall not be present. An OpenType CFF program keeps its <c>cmap</c>, because Table 124
+    /// requires it there. The glyf stream carries <c>/Length1</c>, the length of the whole decoded
+    /// program, as Table 125 requires for a TrueType program; the CFF stream carries none. A source
+    /// font with no <c>cmap</c> table is refused when the embedder is created, not here.</para>
+    /// <para><b>A variable font is embedded as its default instance when its outlines are glyf, or
+    /// CFF that this library can subset.</b> When the source font has an <c>fvar</c> table, the
+    /// program omits the eight tables avar, cvar, fvar, gvar, HVAR, MVAR, VVAR and STAT, so it
+    /// holds the default instance alone; every other table is kept. A font without <c>fvar</c>
+    /// keeps all its tables, a stray <c>gvar</c> or STAT included. The outlines, advance widths and
+    /// descriptor metrics are the default instance's in either case, and no other instance can be
+    /// drawn. A CID-keyed or unparseable <c>CFF </c> font is embedded whole instead, and a variable
+    /// one of those keeps its variation tables.</para>
     /// <para><b>Do not rely on</b> GSUB, GPOS or GDEF being free of variation data: they are kept
     /// as they are, and a variable font's own variation data inside them still names axes that
     /// the program no longer has. A PDF processor does not use those tables to draw.</para>
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// A required outline table is missing (<c>glyf</c>, <c>loca</c> or <c>CFF </c>); the message
+    /// names it.
+    /// </exception>
+    /// <exception cref="InvalidDataException">The glyf data is malformed.</exception>
     public Core.PdfStream BuildFontFileStream()
     {
         if (_sfnt.IsCff)
@@ -406,7 +425,11 @@ public sealed class TrueTypeFontEmbedder
         }
 
         var glyf = BuildSubsetFont();
-        return new Core.PdfStream(glyf);
+        var glyfStream = new Core.PdfStream(glyf);
+        // ISO 32000-2, Table 125: /Length1 is required for a TrueType program and is "the entire
+        // TrueType font program" after decoding, which is the byte count before the stream filter.
+        glyfStream.Dictionary.Set(new Core.PdfName("Length1"), new Core.PdfInteger(glyf.Length));
+        return glyfStream;
     }
 
     /// <summary>Builds the /ToUnicode CMap stream mapping glyph IDs back to Unicode so text stays searchable and copyable.</summary>
