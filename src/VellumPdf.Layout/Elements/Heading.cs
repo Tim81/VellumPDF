@@ -125,11 +125,25 @@ public sealed class Heading
     /// A null <paramref name="style"/> becomes 14pt Helvetica. A null <paramref name="text"/> is
     /// refused here. An empty string is not
     /// null and is accepted.
+    /// <para>A null <paramref name="style"/> is not the style set with
+    /// <see cref="Document.SetDefaultFont"/>. The font is then Helvetica, which is not embedded.
+    /// While <see cref="Document.Conformance"/> is not
+    /// <see cref="VellumPdf.Document.PdfConformance.None"/> the save reports the element as
+    /// <see cref="LayoutDiagnosticCode.UnembeddedFont"/> in <see cref="Document.Diagnostics"/> and
+    /// still saves; only <see cref="Document.StrictDiagnostics"/> refuses it. <b>Do not leave the
+    /// style out</b> of an element in a PDF/A or PDF/UA document; give it a style with an embedded
+    /// font. A later major version refuses it always.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="text"/> is <see langword="null"/>.
     /// </exception>
     /// <inheritdoc cref="Paragraph.Paragraph(string, TextStyle)" path="/exception[@cref='T:System.ArgumentException' or @cref='T:System.IndexOutOfRangeException' or @cref='T:System.InvalidOperationException']"/>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from here, when <see cref="Document.StrictDiagnostics"/> is set, the document has a
+    /// conformance claim and the element writes Helvetica or another Standard 14 font; the save
+    /// reports it as <see cref="LayoutDiagnosticCode.UnembeddedFont"/>.
+    /// </exception>
     public Heading(string text, TextStyle? style = null)
     {
         ArgumentNullException.ThrowIfNull(text);

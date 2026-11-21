@@ -461,17 +461,9 @@ public sealed class TableRenderer : IRenderer
 
         var canvas = ctx.Canvas.BeginText();
 
-        if (cs.FontRef.IsEmbedded)
-        {
-            var handle = cs.FontRef.Embedded;
-            var resourceName = ctx.UseEmbeddedFont(handle);
-            canvas.SetFontByName(resourceName, cs.FontSize);
-        }
-        else
-        {
-            var cf = ctx.GetFont(cs.Font);
-            canvas.SetFont(cf, cs.FontSize);
-        }
+        // A fresh reference, so the font operator is written for every cell.
+        FontReference? cellFont = null;
+        TextEmitter.SelectFont(ctx, canvas, cs, ref cellFont);
 
         // Where the text colour is written, so a cell that is never drawn is not refused for it.
         // The font size is checked in Layout.
@@ -506,10 +498,7 @@ public sealed class TableRenderer : IRenderer
             var pdfTextY = ctx.ToPdfY(innerBox.Y + cs.FontSize + lineIdx * lineHeight);
             canvas.SetTextMatrix(1, 0, 0, 1, innerBox.X + txOffset, pdfTextY);
 
-            if (cs.FontRef.IsEmbedded)
-                ShowEmbeddedText(canvas, cs.FontRef.Embedded, line);
-            else
-                canvas.ShowText(line);
+            TextEmitter.Show(canvas, cs, line);
         }
 
         canvas.EndText();
@@ -534,15 +523,6 @@ public sealed class TableRenderer : IRenderer
             cellElem.AddChild(pElem);
             trElem?.AddChild(cellElem);
         }
-    }
-
-    /// <summary>Maps every code point to a glyph id and emits a single hex glyph run.</summary>
-    private static void ShowEmbeddedText(PdfCanvas canvas, EmbeddedFontHandle handle, string text)
-    {
-        // Allocate conservatively: one glyph per char (surrogate pairs → 1 glyph each).
-        var gids = new ushort[text.Length];
-        var count = handle.GetGlyphIds(text, gids);
-        canvas.ShowGlyphs(gids.AsSpan(0, count));
     }
 
     /// <summary>

@@ -36,9 +36,23 @@ public sealed class TableElement
     /// Null means <see cref="TextStyle.Default"/> for cells that have no style of their own.
     /// Refusals on size, leading, font and text colour are on <see cref="TextStyle"/> and are
     /// raised from the save. A <see cref="TextStyle.LinkUri"/> in it is ignored.
+    /// <para>A table with no default cell style does not take
+    /// <see cref="Document.SetDefaultFont"/>; its cells take <see cref="TextStyle.Default"/>. The
+    /// font is then Helvetica, which is not embedded. While <see cref="Document.Conformance"/> is
+    /// not <see cref="VellumPdf.Document.PdfConformance.None"/> the save reports the element as
+    /// <see cref="LayoutDiagnosticCode.UnembeddedFont"/> in <see cref="Document.Diagnostics"/> and
+    /// still saves; only <see cref="Document.StrictDiagnostics"/> refuses it. <b>Do not leave the
+    /// style out</b> of an element in a PDF/A or PDF/UA document; give it a style with an embedded
+    /// font. A later major version refuses it always.</para>
     /// </remarks>
     /// <inheritdoc cref="Heading.Style" path="/exception[@cref='T:System.InvalidOperationException' or @cref='T:System.IndexOutOfRangeException']"/>
     /// <inheritdoc cref="ListElement.DefaultStyle" path="/exception[@cref='T:System.ArgumentException']"/>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from here, when <see cref="Document.StrictDiagnostics"/> is set, the document has a
+    /// conformance claim and the element writes Helvetica or another Standard 14 font; the save
+    /// reports it as <see cref="LayoutDiagnosticCode.UnembeddedFont"/>.
+    /// </exception>
     public TextStyle? DefaultCellStyle { get; init; }
 
     /// <summary>Width of the table border lines, in points.</summary>

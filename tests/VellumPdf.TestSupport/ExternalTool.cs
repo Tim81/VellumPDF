@@ -726,7 +726,8 @@ public static class ExternalTool
     private readonly record struct Launcher(string File, string[] Prefix, bool ViaCmd, string? UnresolvedHomeDetail);
 
     /// <summary>
-    /// Resolves the launcher for a known oracle tool. qpdf, pdftotext, pdftoppm and pdfsig are
+    /// Resolves the launcher for a known oracle tool. qpdf, pdftotext, pdftoppm, pdfsig and
+    /// pdffonts are
     /// always resolved through an explicit <c>*_HOME</c> environment variable first — never a bare
     /// name as the primary answer, because PATH order alone already picks the wrong
     /// <c>pdftotext</c> depending on which shell launched the test host (see the type doc).
@@ -750,7 +751,7 @@ public static class ExternalTool
     {
         "verapdf" => ResolveBatViaHome("VERAPDF_HOME", "verapdf.bat", fallback: "verapdf"),
         "qpdf" => ResolveExeViaHome("QPDF_HOME", "qpdf"),
-        "pdftotext" or "pdftoppm" or "pdfsig" => ResolveExeViaHome("POPPLER_HOME", tool),
+        "pdftotext" or "pdftoppm" or "pdfsig" or "pdffonts" => ResolveExeViaHome("POPPLER_HOME", tool),
 
         // Deliberately just a bare name for anything else, with no identity probe over it in
         // ProbeIdentity. The barcode decode oracle's "python" is the one caller that reaches this

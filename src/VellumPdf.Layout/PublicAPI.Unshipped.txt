@@ -41,3 +41,5 @@ override VellumPdf.Layout.LayoutDiagnostic.ToString() -> string!
 VellumPdf.Layout.Core.DrawContext.AddOutlineEntry(string! title, int level, double layoutY, bool expanded) -> void
 VellumPdf.Layout.Elements.Heading.BookmarkExpanded.get -> bool
 VellumPdf.Layout.Elements.Heading.BookmarkExpanded.init -> void
+VellumPdf.Layout.LayoutDiagnosticCode.NotdefGlyph = 102 -> VellumPdf.Layout.LayoutDiagnosticCode
+VellumPdf.Layout.LayoutDiagnosticCode.UnembeddedFont = 601 -> VellumPdf.Layout.LayoutDiagnosticCode

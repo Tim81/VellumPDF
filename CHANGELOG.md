@@ -62,6 +62,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - The marker the library draws on a list item, such as the nested bullet in a Standard 14 font,
     is not listed as an unencodable character when the document draws the list. A list that your
     own renderer draws through a `DrawContext` you built can still list it.
+- **`PdfCanvas.NotdefGlyphs`, `PdfDocument.NotdefGlyphs` and `NotdefGlyphWarning` (#592).** A
+  character an embedded font has no glyph for is written as glyph 0, and until now nothing said
+  so. `PdfCanvas.NotdefGlyphs` lists each glyph 0 the canvas writes, one entry per character and
+  font resource in order of first occurrence, with a `Count`; `PdfDocument.NotdefGlyphs` gathers
+  the lists of the pages whose canvas was finished. `Character` is null for glyph ids passed to
+  `PdfCanvas.ShowGlyphs`, because the canvas sees ids and not text. Each list holds at most 1,000
+  entries, and `NotdefGlyphsDropped` counts the rest. `TextEncodingWarnings` is unchanged and does
+  not list glyph 0.
+- **`LayoutDiagnosticCode.NotdefGlyph` (#592).** The layout reports each character and font
+  that was written as glyph 0, with the count, in `Document.Diagnostics`: built-in elements, list
+  markers and running bands name the character, and a custom renderer that passes glyph ids is
+  reported with the character unknown. The clause is ISO 19005-2:2011, 6.2.11.8 under a PDF/A
+  claim and ISO 14289-1:2014, 7.21.8 under PDF/UA-1; it is null with no claim. The save still
+  succeeds. `StrictDiagnostics` refuses it.
+- **`LayoutDiagnosticCode.UnembeddedFont` (#593).** While `Document.Conformance` is not `None`,
+  each element that selects a named Standard 14 font is reported once per element and font, with
+  the number of font operators it wrote. A list, table, heading, paragraph or running band
+  without a style of its own reaches this, because `SetDefaultFont` still applies only to
+  `Document.Add(string)`. The clause is ISO 19005-2:2011, 6.2.11.4.1 or ISO 14289-1:2014,
+  7.21.4.1. The save still succeeds, and `StrictDiagnostics` refuses it.
 - **Internal name tree and number tree writers (#241).** `NameTreeWriter` and `NumberTreeWriter`
   in `VellumPdf.Kernel` build the structures ISO 32000-2, 7.9.6 and 7.9.7 define, which the
   catalog's `/Names` and `/PageLabels` entries, and later named destinations and embedded files,
@@ -242,6 +262,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and the internal `BookmarkEntry`, which nothing wrote or read.
 
 ### Fixed
+
+- **The ToUnicode map no longer lists a code point against glyph 0 (#592).** A font whose
+  subset used glyph 0 wrote one `<0000> <...>` line per missing character. On a test file with
+  U+26B9 and U+1F31F, pdftotext (poppler 26.08) extracted U+1F31F for both. The map now has one entry for glyph 0,
+  `<0000> <FFFD>`, and no other. A document that draws no glyph 0 is unchanged byte for byte. A
+  document that does changes only in that stream; the content stream still shows glyph 0.
+
+  **Attention:** the file still references `.notdef`, so veraPDF still fails ISO 19005-2,
+  6.2.11.8 and ISO 14289-1, 7.21.8. The reports above are how to find it.
 
 - **On .NET 10 an empty stream was written as `/FlateDecode` with no data (#640).** `PdfStream`
   compressed through `ZLibStream`, which on .NET 10.0.15 writes nothing for empty input, so an empty

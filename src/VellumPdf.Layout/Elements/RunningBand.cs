@@ -137,11 +137,19 @@ public sealed class RunningBand
 
     /// <summary>Creates a running band from a text template, with optional style and alignment (defaults to centered).</summary>
     /// <remarks>
-    /// A null <paramref name="style"/> becomes <see cref="TextStyle.Default"/>. A null
+    /// A null <paramref name="style"/> becomes <see cref="TextStyle.Default"/>, not the style set
+    /// with <see cref="Document.SetDefaultFont"/>. A null
     /// <paramref name="template"/> is stored, and <see cref="Resolve"/> refuses it where the band is
     /// drawn, with <see cref="ArgumentNullException"/>. It is not refused earlier, because a band
     /// that is replaced before the save never reaches <see cref="Resolve"/>. <b>Do not pass</b> a
     /// null template: 3.0 refuses it here. An empty template is not null and is accepted.
+    /// <para>The font of a band with no style is Helvetica, which is not embedded. While
+    /// <see cref="Document.Conformance"/> is not
+    /// <see cref="VellumPdf.Document.PdfConformance.None"/> the save reports the element as
+    /// <see cref="LayoutDiagnosticCode.UnembeddedFont"/> in <see cref="Document.Diagnostics"/> and
+    /// still saves; only <see cref="Document.StrictDiagnostics"/> refuses it. <b>Do not leave the
+    /// style out</b> of an element in a PDF/A or PDF/UA document; give it a style with an embedded
+    /// font. A later major version refuses it always.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not from
@@ -167,6 +175,12 @@ public sealed class RunningBand
     /// from this constructor, when the style holds a <see cref="VellumPdf.Fonts.Standard14"/> value
     /// the enumeration does not name and the font is selected on a page; see
     /// <see cref="TextStyle.FontRef"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from here, when <see cref="Document.StrictDiagnostics"/> is set, the document has a
+    /// conformance claim and the element writes Helvetica or another Standard 14 font; the save
+    /// reports it as <see cref="LayoutDiagnosticCode.UnembeddedFont"/>.
     /// </exception>
     public RunningBand(string template, TextStyle? style = null, HorizontalAlignment alignment = HorizontalAlignment.Center)
     {
