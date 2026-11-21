@@ -15,19 +15,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - A tagged document gets one `Hn` structure element and one marked-content sequence per
     heading, whatever the number of runs. `Heading.Text` is the concatenation of the run texts and
     is the outline title unless `BookmarkTitle` is set; `Heading.Style` is the first run's style.
-  - A run whose `LinkUri` is set gets a link annotation over that run alone. On a list item,
-    `ListItem.Style` styles the marker only.
+  - A run is a link only through its own `LinkUri`. The annotation covers that run and a space
+    that opens the next run, as in a `Paragraph`. On a list item, `ListItem.Style` styles the
+    marker and the children that set no style of their own, not the item's runs.
   - A null sequence and a null run throw `ArgumentNullException`, and a run with a null style
     throws `ArgumentException`, from the constructor. An empty sequence is accepted, as an empty
     string is.
+  - A run that draws no text, because it is empty or holds only white space, has its style
+    unchecked by the save, as in a `Paragraph`.
   - Per-run language is not written: `Heading.Language` and `ListItem.Language` still apply to
     the whole element.
   - The string constructors are unchanged, and a document built with them saves to the same bytes.
-
-  **Attention:** a call that passes the `null` literal as the first argument of `new Heading(null)`
-  or `new ListItem(null)` no longer compiles, because it matches the string and the run
-  constructor equally. Cast it, `(string)null`, to keep the call. Code built against 2.3.x is not
-  affected: an assembly already compiled against it keeps binding to the string constructor.
 
 - **`Document.Timestamp` and `Document.DocumentId` (#597).** The Layout `Document` now forwards the
   two pins that `PdfDocument` already had. `Timestamp` sets the instant written as the XMP creation

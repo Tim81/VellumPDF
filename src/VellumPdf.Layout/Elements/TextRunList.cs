@@ -7,8 +7,8 @@ namespace VellumPdf.Layout.Elements;
 
 /// <summary>
 /// Validates and stores the runs a <see cref="Heading"/> or <see cref="ListItem"/> is built from.
-/// A <see cref="Paragraph"/> keeps its own, laxer rule: it stores a run's null style because
-/// 2.3.3 saved one, and these elements are new input.
+/// A <see cref="Paragraph"/> stores a run's null style and refuses it at layout, only for a run
+/// that draws text; these elements refuse it when they are built, whatever the run's text.
 /// </summary>
 internal static class TextRunList
 {

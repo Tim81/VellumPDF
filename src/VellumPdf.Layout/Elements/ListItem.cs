@@ -1,6 +1,7 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Runtime.CompilerServices;
 using VellumPdf.Layout.Core;
 
 namespace VellumPdf.Layout.Elements;
@@ -44,9 +45,11 @@ public sealed class ListItem
     /// <see cref="TextStyle.Default"/>. On a child, null means the parent item's style after that
     /// same fallback. Refusals on size, leading, font and text colour are on
     /// <see cref="TextStyle"/> and are raised from the save.
-    /// <para>On an item built from runs this styles the marker and nothing else, because each run
-    /// has its own style. The marker of a child item takes its own style, or its parent's. If this
-    /// style holds a <see cref="TextStyle.LinkUri"/>, the marker is a link and no run is.</para>
+    /// <para>On an item built from runs this styles the marker and the children that set no style
+    /// of their own, and none of this item's runs, because each run has its own style. The
+    /// marker of a child item takes its own style, or its parent's. A run is a link only through
+    /// its own <see cref="TextStyle.LinkUri"/>; one in this style links the marker, and the
+    /// marker and text of a child that inherits it.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -128,9 +131,6 @@ public sealed class ListItem
     /// <see cref="ArgumentNullException"/> from this constructor whatever the position.
     /// <see cref="ListElement.Add(string, TextStyle?)"/> has no such leniency: its item is always
     /// top-level, so it throws from the call.</para>
-    /// <para>A call that passes the <see langword="null"/> literal as the first argument does not
-    /// compile, because it matches this constructor and <see cref="ListItem(IEnumerable{TextRun})"/>
-    /// equally. Cast it, <c>(string)null</c>, to reach this constructor.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -169,27 +169,30 @@ public sealed class ListItem
 
     /// <summary>
     /// Creates a list item from a sequence of runs, each with its own style. <see cref="Style"/>
-    /// styles the marker only.
+    /// styles the marker and the children without a style, not the runs.
     /// </summary>
     /// <remarks>
     /// <b>A null sequence, a null run and a run with a null style are refused here.</b> The first
     /// two throw <see cref="ArgumentNullException"/> and the third <see cref="ArgumentException"/>;
     /// <c>ParamName</c> is <c>runs</c> and the message of the last two names the index of the run.
-    /// <see cref="TextRun"/> stores a null style, so a paragraph saves a run with no text of its
-    /// own in one; this constructor refuses it whatever the run's text, so an empty run needs a
-    /// style too. The refusal is made here, whatever place the item later takes in a list. An
-    /// empty sequence is accepted and builds an item with one empty run, as an empty string does. The sequence is copied: changing it afterwards
-    /// changes nothing.
-    /// <para>Each run is drawn in its own style. A run whose <see cref="TextStyle.LinkUri"/> is set
-    /// gets a link annotation over that run alone. The marker is drawn in <see cref="Style"/>, and
-    /// when that is null, in the style <see cref="Style"/> says is inherited, so set it to the
-    /// style of the runs for a marker that matches them: <c>new ListItem(runs) { Style = style }</c>.</para>
+    /// <see cref="TextRun"/> stores a null style, and a paragraph saves one on a run that draws no
+    /// text; this constructor refuses it whatever the run's text, so an empty run needs a style
+    /// too. The refusal is made here, whatever place the item later takes in a list. An empty
+    /// sequence is accepted and builds an item with one empty run, as an empty string does. The
+    /// sequence is copied: changing it afterwards changes nothing. A <see langword="null"/>
+    /// literal binds to the string constructor, not to this one.
+    /// <para>Each run is drawn in its own style. A run is a link only through its own
+    /// <see cref="TextStyle.LinkUri"/>. The annotation covers that run and also a space that opens
+    /// the next run, because the space belongs to the run before it, as in a
+    /// <see cref="Paragraph"/>. The marker is drawn in <see cref="Style"/>, and when that is null,
+    /// in the style <see cref="Style"/> says is inherited, so set it to the style of the runs for
+    /// a marker that matches them: <c>new ListItem(runs) { Style = style }</c>.</para>
+    /// <para>The style of a run that draws no text, one that is empty or holds only white space,
+    /// is not checked by the save: a size or colour it would refuse on a run that draws text does
+    /// not throw here.</para>
     /// <para>A tagged document gets one structure element for the item content, and
     /// <see cref="Language"/> applies to all of it. <b>Per-run language is not written.</b> Do not
     /// build an item from runs in other languages expecting each to be marked as such.</para>
-    /// <para>A call that passes the <see langword="null"/> literal as the first argument does not
-    /// compile, because it matches this constructor and <see cref="ListItem(string, TextStyle?)"/>
-    /// equally.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="runs"/> is <see langword="null"/> or contains <see langword="null"/>.
@@ -204,10 +207,11 @@ public sealed class ListItem
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this constructor, when a run's style has its size or leading refused, or a channel of
-    /// its text colour is not finite; see <see cref="TextStyle.FontSize"/>,
-    /// <see cref="TextStyle.Leading"/> and <see cref="TextStyle.Color"/>. It is not raised for an
-    /// item reached only as a child of a child.
+    /// from this constructor, when the style of a run that draws text has its size or leading
+    /// refused, or a channel of its text colour is not finite; see
+    /// <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/> and
+    /// <see cref="TextStyle.Color"/>. It is not raised for an item reached only as a child of a
+    /// child.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -216,6 +220,7 @@ public sealed class ListItem
     /// <see cref="TextStyle.FontRef"/>. It is not raised for an item reached only as a child of a
     /// child.
     /// </exception>
+    [OverloadResolutionPriority(-1)]
     public ListItem(IEnumerable<TextRun> runs)
     {
         ArgumentNullException.ThrowIfNull(runs);
@@ -229,18 +234,20 @@ public sealed class ListItem
     /// style. An item built from a string returns one run of its text in <see cref="Style"/>, or
     /// in <see cref="TextStyle.Default"/> when that is null; that run does not show the style the
     /// item inherits from the list, which the list applies when it is laid out. The list is a
-    /// copy: changing the sequence the constructor was given does not change it, and it cannot
-    /// be changed through this property.
+    /// read-only view of a copy: changing the sequence the constructor was given does not change
+    /// it, and a cast of this property cannot change it either.
     /// <para><b>Per-run language is not written.</b> Every run is part of the one structure
     /// element of the item, and <see cref="Language"/> is the only language it carries.</para>
     /// </remarks>
-    public IReadOnlyList<TextRun> Runs => _runs ?? [new TextRun(Text, Style ?? TextStyle.Default)];
+    public IReadOnlyList<TextRun> Runs =>
+        _runs?.AsReadOnly() ?? [new TextRun(Text, Style ?? TextStyle.Default)];
 
     private readonly List<TextRun>? _runs;
 
     /// <summary>
-    /// The runs the content is drawn from: the item's own, or its text in <paramref name="inherited"/>,
-    /// the style the string constructor's item takes from the list or its parent.
+    /// The runs the content is drawn from: the item's own, or its text in
+    /// <paramref name="inherited"/>, the style a string-built item takes from the list or its
+    /// parent.
     /// </summary>
     internal IReadOnlyList<TextRun> ContentRuns(TextStyle inherited) =>
         _runs ?? [new TextRun(Text, inherited)];

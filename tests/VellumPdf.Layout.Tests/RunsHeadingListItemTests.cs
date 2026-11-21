@@ -351,6 +351,137 @@ public sealed class RunsHeadingListItemTests
         Assert.Throws<InvalidOperationException>(() => Save(doc));
     }
 
+    // ── Overload binding ──────────────────────────────────────────────────────
+
+#pragma warning disable CS8625 // the null literal is the input under test
+    [Fact]
+    public void Heading_everyNullLiteralForm_bindsToTheStringConstructor()
+    {
+        // The runs constructor would name "runs"; the string constructor names "text".
+        Assert.Equal("text", Assert.Throws<ArgumentNullException>(() => new Heading(null)).ParamName);
+        Assert.Equal("text", Assert.Throws<ArgumentNullException>(() => new Heading(null!)).ParamName);
+        Assert.Equal("text", Assert.Throws<ArgumentNullException>(() => new Heading(default!)).ParamName);
+        Assert.Equal("text", Assert.Throws<ArgumentNullException>(() => new Heading(null!, null)).ParamName);
+        Assert.Equal("text", Assert.Throws<ArgumentNullException>(() => new Heading(null, Plain14)).ParamName);
+    }
+
+    [Fact]
+    public void ListItem_everyNullLiteralForm_bindsToTheStringConstructor()
+    {
+        // The string constructor stores an empty text and remembers the null; the runs
+        // constructor would throw here.
+        ListItem[] items =
+        [
+            new ListItem(null),
+            new ListItem(null!),
+            new ListItem(default!),
+            new ListItem(null!, null),
+            new ListItem(null, Plain12),
+        ];
+        Assert.All(items, item => Assert.Equal(string.Empty, item.Text));
+
+        // As on main: refused naming "text" at the save when laid out, reported when it is not.
+        foreach (var item in items)
+        {
+            var doc = NewDocument();
+            doc.Add(new ListElement().Add(item));
+            Assert.Equal("text", Assert.Throws<ArgumentNullException>(() => Save(doc)).ParamName);
+        }
+
+        var deep = new Document();
+        deep.Add(new ListElement().Add(new ListItem("a").AddChild(new ListItem("b").AddChild(new ListItem(null)))));
+        Save(deep);
+        Assert.Contains(deep.Diagnostics, d => d.Code == LayoutDiagnosticCode.NullGrandchildText);
+    }
+#pragma warning restore CS8625
+
+    [Fact]
+    public void RunCollectionForms_bindToTheRunsConstructor()
+    {
+        var run = new TextRun("x", Plain14);
+        TextRun[] array = [run];
+        List<TextRun> list = [run];
+
+        Heading[] headings =
+        [
+            new Heading(array),
+            new Heading(list),
+            new Heading([run]),
+            new Heading(new[] { run }),
+            new Heading(new TextRun[] { run }.AsEnumerable()),
+        ];
+        Assert.All(headings, h =>
+        {
+            Assert.Equal("x", Assert.Single(h.Runs).Text);
+            Assert.Same(run, h.Runs[0]);
+        });
+
+        ListItem[] items =
+        [
+            new ListItem(array),
+            new ListItem(list),
+            new ListItem([run]),
+            new ListItem(new[] { run }),
+            new ListItem(new TextRun[] { run }.AsEnumerable()),
+        ];
+        Assert.All(items, i => Assert.Same(run, Assert.Single(i.Runs)));
+    }
+
+    // ── Style, the ignore set, the link rectangle, the runs view ──────────────
+
+    [Fact]
+    public void Heading_style_isTheFirstRunsStyle_notTheLast()
+    {
+        var heading = new Heading([new TextRun("a", Plain14), new TextRun("b", Bold14)]);
+
+        Assert.Same(Plain14, heading.Style);
+    }
+
+    [Fact]
+    public void ARunThatDrawsNoText_isNotCheckedForItsStyle()
+    {
+        var refused = new TextStyle { FontSize = double.NaN, Color = new ColorRgb(double.NaN, 0, 0) };
+        var doc = NewDocument();
+        doc.Add(new Heading([new TextRun("a", Plain14), new TextRun("  ", refused), new TextRun(string.Empty, refused)]));
+        doc.Add(new ListElement().Add(new ListItem([new TextRun("b", Plain12), new TextRun(" ", refused)])));
+
+        var content = Content(Save(doc));
+
+        Assert.Contains("(a) Tj", content, StringComparison.Ordinal);
+        Assert.Contains("(b) Tj", content, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LinkRect_coversASpaceThatOpensTheNextRun()
+    {
+        var link = new TextStyle { Font = Standard14.Helvetica, FontSize = 12, LinkUri = "https://example.com/s" };
+        var doc = NewDocument();
+        doc.Add(new Heading([new TextRun("Zie ", Plain12), new TextRun("Instellingen", link), new TextRun(" nu", Plain12)]));
+        var m = Regex.Match(Encoding.Latin1.GetString(Save(doc)), @"/Rect \[([\d.]+) ([\d.]+) ([\d.]+) ([\d.]+)\]");
+
+        Assert.True(m.Success);
+        var x0 = Plain12.MeasureString("Zie ");
+        Assert.Equal(x0, Num(m.Groups[1].Value), 3);
+        Assert.Equal(x0 + link.MeasureString("Instellingen") + link.MeasureString(" "), Num(m.Groups[3].Value), 3);
+    }
+
+    [Fact]
+    public void Runs_cannotBeChangedThroughACast()
+    {
+        var heading = StyledHeading();
+        var item = new ListItem([new TextRun("a", Plain12)]);
+        var stringItem = new ListItem("s");
+
+        Assert.IsNotType<List<TextRun>>(heading.Runs);
+        Assert.IsNotType<List<TextRun>>(item.Runs);
+        Assert.Throws<NotSupportedException>(() => ((IList<TextRun>)heading.Runs).Clear());
+        Assert.Throws<NotSupportedException>(() => ((IList<TextRun>)item.Runs).Add(new TextRun("b", Plain12)));
+        Assert.Equal("De Save-methode", heading.Text);
+        Assert.Equal(3, heading.Runs.Count);
+        Assert.Single(item.Runs);
+        Assert.Single(stringItem.Runs);
+    }
+
     // ── Oracles ───────────────────────────────────────────────────────────────
 
     private static Document EmbeddedDocument()
