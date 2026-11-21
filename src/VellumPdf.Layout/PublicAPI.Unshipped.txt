@@ -60,3 +60,7 @@ VellumPdf.Layout.Elements.Paragraph.BreakBefore.get -> VellumPdf.Layout.Core.Pag
 VellumPdf.Layout.Elements.Paragraph.BreakBefore.init -> void
 VellumPdf.Layout.Elements.Table.TableElement.BreakBefore.get -> VellumPdf.Layout.Core.PageBreakMode
 VellumPdf.Layout.Elements.Table.TableElement.BreakBefore.init -> void
+VellumPdf.Layout.Elements.Heading.Heading(System.Collections.Generic.IEnumerable<VellumPdf.Layout.Elements.TextRun!>! runs) -> void
+VellumPdf.Layout.Elements.Heading.Runs.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Layout.Elements.TextRun!>!
+VellumPdf.Layout.Elements.ListItem.ListItem(System.Collections.Generic.IEnumerable<VellumPdf.Layout.Elements.TextRun!>! runs) -> void
+VellumPdf.Layout.Elements.ListItem.Runs.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Layout.Elements.TextRun!>!
