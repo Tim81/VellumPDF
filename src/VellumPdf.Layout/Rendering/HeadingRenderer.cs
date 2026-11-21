@@ -21,7 +21,7 @@ internal sealed class HeadingRenderer : IRenderer, IPlacementSource, IPageBreakS
     {
         ArgumentNullException.ThrowIfNull(heading);
         _heading = heading;
-        var para = new Paragraph(heading.Text, heading.Style)
+        var para = new Paragraph(heading.Runs)
         {
             Margins = heading.Margins,
             Alignment = heading.Alignment,
