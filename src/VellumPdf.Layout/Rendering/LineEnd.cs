@@ -5,7 +5,7 @@ namespace VellumPdf.Layout.Rendering;
 
 /// <summary>
 /// Internal: how a wrapped line ended. Nothing reads it when a paragraph is drawn; it records where
-/// each line's end falls, which a test pins.
+/// each line's end falls.
 /// </summary>
 internal enum LineEnd : byte
 {
@@ -15,7 +15,9 @@ internal enum LineEnd : byte
     /// <summary>The line ended at a line break in the text.</summary>
     Hard,
 
-    /// <summary>The line ended inside a word that is wider than the line, cut between two characters.</summary>
+    /// <summary>
+    /// The line ended inside a word that is wider than the line, cut between two characters.
+    /// </summary>
     Forced,
 
     /// <summary>The line is the last one, and ends where the text does.</summary>

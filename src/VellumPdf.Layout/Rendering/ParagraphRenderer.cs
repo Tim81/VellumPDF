@@ -172,7 +172,9 @@ public sealed class ParagraphRenderer : IRenderer
     /// </summary>
     internal string StructType { get; set; } = "P";
 
-    /// <summary>How each wrapped line ended, once <see cref="Layout"/> has run; null before.</summary>
+    /// <summary>
+    /// How each wrapped line ended, once <see cref="Layout"/> has run; null before.
+    /// </summary>
     internal IReadOnlyList<LineEnd>? LineEnds => _lineEnds;
 
     /// <summary>
@@ -277,7 +279,7 @@ public sealed class ParagraphRenderer : IRenderer
             // Baseline X for left, center, right — for Justify treat as Left (we use Tw or Tm).
             //
             // Center and Right are floored at zero. The precondition is a single rune wider than
-            // the box, not a word: HardBreakWord flushes whenever fragmentW + charW > maxWidth, so
+            // the box, not a word: HardBreakWord flushes whenever lineW + charW > maxWidth, so
             // every line it emits stays within maxWidth except the one line consisting of a
             // single over-wide rune, and that is the only way (area.Width - lineWidth) goes
             // negative here. Measured: "W" at 160pt in a 150pt box gives x 50, the floor; "WWW" at
@@ -292,10 +294,12 @@ public sealed class ParagraphRenderer : IRenderer
             // asserted false by keeping the origin legal.
             //
             // The floor moves no bytes for a line that already fits, but the reason is the number
-            // format rather than an equality of sums. The acceptance check,
-            // lineWidth + prevSpaceW + wordW, and the fragment width the merge arm records,
-            // last.Width + prevSpaceW + wordW, associate identically, both left to right, so they
-            // cannot diverge from each other on their own. What can diverge is the running total
+            // format rather than an equality of sums. For a word of one piece, the acceptance
+            // check, lineWidth + prevSpaceW + wordW, and the fragment width the merge arm records,
+            // last.Width + prevSpaceW + pieceWidths[0], associate identically, both left to right,
+            // so they cannot diverge from each other on their own. For a word of several pieces
+            // wordW is the sum of the piece widths while each fragment keeps its own width, so the
+            // two can differ in the last bit. What can also diverge is the running total
             // itself: lineWidth += prevSpaceW + wordW groups the space and word together before
             // adding them to the total, and that total becomes the left operand of the next
             // word's own check, so the check and the recorded fragment width can part company
@@ -673,7 +677,9 @@ public sealed class ParagraphRenderer : IRenderer
         /// <summary>The first piece of a word.</summary>
         WordStart,
 
-        /// <summary>A further piece of the word before it, from a run whose text continued it.</summary>
+        /// <summary>
+        /// A further piece of the word before it, from a run whose text continued it.
+        /// </summary>
         WordContinue,
 
         /// <summary>A line break; it carries no text.</summary>
@@ -733,7 +739,7 @@ public sealed class ParagraphRenderer : IRenderer
                     tokens.Add((string.Empty, null, TokenKind.HardBreak));
                 }
 
-                // Normalise all Unicode whitespace (except \n and NBSP) to plain spaces, then
+                // Normalise all Unicode whitespace (except \n and the three no-break spaces) to plain spaces, then
                 // split on space so tabs, en/em spaces, etc. all act as word separators. A space
                 // ends the word before it; a run that starts or ends without one continues or
                 // leaves the word open for the next run.
@@ -810,17 +816,18 @@ public sealed class ParagraphRenderer : IRenderer
             while (tj < tokens.Count && tokens[tj].Kind == TokenKind.WordContinue)
                 tj++;
 
-            // A word's width is its pieces' widths, each measured in its own style. A one-piece word
-            // is measured by the one call the unsplit word always made.
+            // A word's width is its pieces' widths, each measured in its own style. A one-piece
+            // word is measured by the one call the unsplit word always made.
             pieceWidths.Clear();
             var wordW = 0.0;
             for (var k = ti; k < tj; k++)
             {
                 var (pieceText, pieceStyle, _) = tokens[k];
 
-                // The width is not used. Measuring in an embedded font records the glyphs measured,
-                // so this keeps the space in the font's subset (its /W and ToUnicode entries) as the
-                // wrap has always done, and a document with no glued boundary keeps its bytes.
+                // The width is not used. Measuring in an embedded font records the glyphs
+                // measured, so this keeps the space in the font's subset (its /W and ToUnicode
+                // entries) as the wrap has always done, and a document with no glued boundary
+                // keeps its bytes.
                 _ = pieceStyle!.FontRef.MeasureString(" ", pieceStyle.FontSize);
                 var w = pieceStyle.FontRef.MeasureString(pieceText, pieceStyle.FontSize);
                 pieceWidths.Add(w);
@@ -856,7 +863,8 @@ public sealed class ParagraphRenderer : IRenderer
                 {
                     // Fits — append to current line
                     // Merge the first piece into the same fragment if styles match; otherwise new
-                    // fragment. Every further piece is a style change, so it is a fragment of its own.
+                    // fragment. Every further piece is a style change, so it is a fragment of its
+                    // own.
                     var firstStyle = tokens[ti].Style!;
                     if (lineFrags[^1].Style == firstStyle)
                     {

@@ -14,9 +14,10 @@ using VellumPdf.TestSupport;
 namespace VellumPdf.Layout.Tests;
 
 /// <summary>
-/// A run boundary draws a space only where the text has white space there. Two runs with no white
-/// space between them hold one word: it wraps as a unit, is drawn with nothing between the pieces,
-/// and a space is added only between words.
+/// A run boundary draws a space only where the text has a space, tab, line break or other
+/// white-space character, except the no-break spaces, there. Two runs with none between them hold
+/// one word: it wraps as a unit, is drawn with nothing between the pieces, and a space is added
+/// only between words.
 /// </summary>
 public sealed partial class RunBoundaryTests
 {
@@ -49,7 +50,7 @@ public sealed partial class RunBoundaryTests
 
     private static string Content(Document doc) => PdfTestUtil.DecompressAllFlatStreams(Save(doc));
 
-    /// <summary>A page whose content width is exactly <paramref name="width"/> (no margins).</summary>
+    /// <summary>A page whose content width is exactly <paramref name="width"/>, no margins.</summary>
     private static Document Page(double width) => new()
     {
         PageSize = new PdfRectangle(0, 0, width, 400),
@@ -303,7 +304,7 @@ public sealed partial class RunBoundaryTests
         { ["a", " b"], [["(a )", "(b)"]] },
         { ["a", " ", "b"], [["(a b)"]] },
         { ["a", "\tb"], [["(a )", "(b)"]] },
-        { ["a", " b"], [["(a )", "(b)"]] },
+        { ["a", "\u2009b"], [["(a )", "(b)"]] },
         { ["a", "  ", "b"], [["(a b)"]] },
         { ["a\n", "b"], [["(a)"], ["(b)"]] },
         { ["a", "\nb"], [["(a)"], ["(b)"]] },
@@ -320,7 +321,10 @@ public sealed partial class RunBoundaryTests
     public void ABoundaryWithWhiteSpaceOrALineBreak_isDrawnAsBefore(string[] runs, string[][] expected) =>
         AssertDrawnAsBefore(runs, expected, HelveticaBold());
 
-    /// <summary>The same rows with a second instance whose values equal the first's: it is still a fragment of its own.</summary>
+    /// <summary>
+    /// The same rows with a second instance whose values equal the first's: it is still a
+    /// fragment of its own.
+    /// </summary>
     [Theory]
     [MemberData(nameof(WhiteSpaceBoundaries))]
     public void ABoundaryWithWhiteSpaceOrALineBreak_isDrawnAsBefore_whenTheStylesAreEqualCopies(string[] runs, string[][] expected) =>
@@ -360,9 +364,9 @@ public sealed partial class RunBoundaryTests
     }
 
     [Theory]
-    [InlineData("a ", "b")]
-    [InlineData("a", " b")]
-    [InlineData("a ", "b")]
+    [InlineData("a\u00A0", "b")]
+    [InlineData("a", "\u202Fb")]
+    [InlineData("a\u2007", "b")]
     public void ANoBreakSpaceAtTheBoundary_isACharacterOfTheWord(string first, string second)
     {
         var r = Helvetica();
@@ -371,7 +375,8 @@ public sealed partial class RunBoundaryTests
 
         var shows = Shows(Content(doc));
 
-        // One word, one show string, and no U+0020 in it: the space the old tokenising added is gone.
+        // One word, one show string, and no U+0020 in it: the space the old tokenising added
+        // is gone.
         Assert.Single(shows);
         Assert.DoesNotContain(' ', shows[0].Token);
     }
@@ -437,7 +442,8 @@ public sealed partial class RunBoundaryTests
         var lines = Lines(content);
         var shows = Shows(content);
 
-        // The first line ends at "astrologie": the five spaces share the slack, the boundary gets none.
+        // The first line ends at "astrologie": the five spaces share the slack, the boundary
+        // gets none.
         Assert.Equal([Lit("Lorem ipsum dolor sit amet, astro"), Lit("logie")], lines[0]);
         var tw = double.Parse(WordSpacing().Match(content).Groups[1].Value, CultureInfo.InvariantCulture);
         AssertNear(Slack / 5, tw, "Tw");
@@ -476,9 +482,144 @@ public sealed partial class RunBoundaryTests
 
         var content = Content(doc);
 
-        // The wrap measures a space beside every word, which puts the space in the subset's ToUnicode
+        // The wrap measures a space beside every word, which puts the space in the subset's
+        // ToUnicode
         // map even though nothing draws it. A document with no glued boundary keeps those bytes.
         Assert.Contains("<0003> <0020>", content, StringComparison.Ordinal);
+    }
+
+    // ── A word cut or wrapped across several pieces ──────────────────────────
+
+    [Fact]
+    public void AGluedWordCutAcrossTwoFonts_measuresEachCharacterInItsOwnFont()
+    {
+        // Courier 10 pt is 6 pt a glyph; Helvetica 10 pt gives "i" 2.22 pt. A 60 pt line holds the
+        // six Courier glyphs and ten "i" (58.2 pt); an eleventh would reach 60.42 pt.
+        var c = Courier();
+        var h = new TextStyle { Font = Standard14.Helvetica, FontSize = 10 };
+        using var doc = Page(60);
+        doc.Add(new Paragraph([new TextRun("aaaaaa", c), new TextRun(new string('i', 22), h)]));
+
+        var shows = Shows(Content(doc));
+
+        Assert.Equal(["(aaaaaa)", "(iiiiiiiiii)", "(iiiiiiiiiiii)"], shows.Select(s => s.Token));
+        Assert.Equal(shows[0].Y, shows[1].Y);
+        Assert.Equal(shows[0].X + 36, shows[1].X);
+        Assert.True(shows[2].Y < shows[1].Y);
+        Assert.Equal(shows[0].X, shows[2].X);
+    }
+
+    [Fact]
+    public void AGluedWordThatFillsTheLineExactly_putsTheNextPieceOnTheNextLine()
+    {
+        var c = Courier();
+        var c2 = Courier();
+        using var doc = Page(60);
+        doc.Add(new Paragraph([new TextRun("aaaaaaaaaa", c), new TextRun("bb", c2)]));
+
+        var lines = Lines(Content(doc));
+
+        Assert.Equal([["(aaaaaaaaaa)"], ["(bb)"]], lines.ToArray());
+    }
+
+    [Fact]
+    public void AGluedWord_isMeasuredAsAWholeBesideTheWordBeforeIt()
+    {
+        var r = Helvetica();
+        var b = HelveticaBold();
+        const string Lead = "aaaaaaaaaaaaaaaaaaaaaa";
+
+        // Each piece fits beside the lead word on its own; together they do not.
+        var width = r.MeasureString(Lead + " ") + Math.Max(r.MeasureString("astro"), b.MeasureString("logie")) + 0.5;
+        Assert.True(r.MeasureString(Lead + " astro") <= width);
+        Assert.True(r.MeasureString(Lead + " ") + b.MeasureString("logie") <= width);
+        using var doc = Page(width);
+        doc.Add(new Paragraph([new TextRun(Lead + " astro", r), new TextRun("logie", b)]));
+
+        var lines = Lines(Content(doc));
+
+        Assert.Equal([[Lit(Lead)], [Lit("astro"), Lit("logie")]], lines.ToArray());
+    }
+
+    [Fact]
+    public void AGluedWordThatFitsOnALine_countsAllItsPiecesAgainstTheLine()
+    {
+        var r = Helvetica();
+        var b = HelveticaBold();
+        const string Lead = "aaaaaaaaaaaaaaaaaaaaaa";
+
+        // The glued word fits with half a point to spare. The next word is narrow enough to fit
+        // beside it only if the word's second piece were not counted.
+        var width = r.MeasureString(Lead + " astro") + b.MeasureString("logie") + 0.5;
+        Assert.True(r.MeasureString(Lead + " astro") + b.MeasureString("logie") + r.MeasureString(" i") > width);
+        Assert.True(r.MeasureString(Lead + " astro") + r.MeasureString(" i") <= width);
+        using var doc = Page(width);
+        doc.Add(new Paragraph([new TextRun(Lead + " astro", r), new TextRun("logie", b), new TextRun(" i", r)]));
+
+        var lines = Lines(Content(doc));
+
+        Assert.Equal([[Lit(Lead + " astro"), Lit("logie")], [Lit("i")]], lines.ToArray());
+    }
+
+    [Fact]
+    public void AGluedWordOnAFreshLine_countsAllItsPiecesAgainstTheLine()
+    {
+        var r = Helvetica();
+        var b = HelveticaBold();
+
+        // The word wraps to a fresh line and fits there with half a point to spare; the word
+        // after it fits only if the second piece were not counted.
+        var width = r.MeasureString("astro") + b.MeasureString("logie") + 0.5;
+        Assert.True(r.MeasureString("xxxx ") + r.MeasureString("astro") + b.MeasureString("logie") > width);
+        Assert.True(r.MeasureString("astro") + r.MeasureString(" i") <= width);
+        using var doc = Page(width);
+        doc.Add(new Paragraph([new TextRun("xxxx astro", r), new TextRun("logie", b), new TextRun(" i", r)]));
+
+        var lines = Lines(Content(doc));
+
+        Assert.Equal([[Lit("xxxx")], [Lit("astro"), Lit("logie")], [Lit("i")]], lines.ToArray());
+    }
+
+    // ── A surrogate pair split between two runs ──────────────────────────────
+
+    [Fact]
+    public void ASurrogatePairSplitBetweenRunsOfOneInstance_isJoinedAndSaves()
+    {
+        string Joined(Func<TextStyle, Paragraph> build)
+        {
+            using var doc = new Document();
+            var (r, _) = Embedded(doc);
+            doc.Add(build(r));
+            return Content(doc);
+        }
+
+        var split = Joined(r => new Paragraph([new TextRun("x\uD800", r), new TextRun("\uDF00y", r)]));
+        var single = Joined(r => new Paragraph("x\U00010300y", r));
+
+        Assert.Equal(single, split);
+    }
+
+    [Fact]
+    public void ASurrogatePairSplitBetweenRunsOfTwoInstances_isRefused()
+    {
+        using var doc = new Document();
+        var (r, _) = Embedded(doc);
+        var copy = new TextStyle { FontRef = r.FontRef, FontSize = r.FontSize };
+        doc.Add(new Paragraph([new TextRun("x\uD800", r), new TextRun("\uDF00y", copy)]));
+
+        Assert.Throws<ArgumentException>(() => Save(doc));
+    }
+
+    [Fact]
+    public void AParagraphWithSeveralRuns_isWrappedOnce()
+    {
+        var c = Courier();
+        var renderer = new ParagraphRenderer(new Paragraph([new TextRun("aaaa ", c), new TextRun("bbbb ", c), new TextRun("cc", c)]));
+
+        renderer.Layout(new LayoutContext(new LayoutBox(0, 0, 60, 100)));
+        renderer.Layout(new LayoutContext(new LayoutBox(0, 0, 60, 100)));
+
+        Assert.Equal(1, renderer.WrapCalls);
     }
 
     // ── Links ────────────────────────────────────────────────────────────────
@@ -597,7 +738,7 @@ public sealed partial class RunBoundaryTests
 
             // The change is in the file before any oracle is asked about it.
             var shows = Shows(PdfTestUtil.DecompressAllFlatStreams(bytes));
-            Assert.Equal(Hex(r.FontRef.Embedded, "Instellingen"), shows[1].Token);
+            Assert.Equal(Hex(b.FontRef.Embedded, "Instellingen"), shows[1].Token);
             Assert.Equal(Hex(r.FontRef.Embedded, ". Daarna astro"), shows[2].Token);
             File.WriteAllBytes(path, bytes);
         }

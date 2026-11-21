@@ -12,14 +12,18 @@ namespace VellumPdf.Layout.Elements;
 /// <b>A null text is refused.</b> The constructor throws <see cref="ArgumentNullException"/> naming
 /// <c>Text</c>.
 /// <para>A null style is stored, and refused where the paragraph is laid out, with
-/// <see cref="ArgumentNullException"/> naming <c>Style</c>. It is refused only for a run that yields a word, a non-white-space character, U+00A0 included; it saves for empty text, white space, a tab or line breaks alone.
+/// <see cref="ArgumentNullException"/> naming <c>Style</c>. It is refused only for a run that
+/// yields a word, which is a character other than a space, a tab, a line break or another
+/// white-space character; U+00A0, U+202F and U+2007 count as characters of a word. A run whose text
+/// is empty or holds only those separators saves.
 /// <b>Do not pass a null style.</b> 3.0 refuses it from the constructor, whatever the text. The
 /// saved cases are reported as <see cref="LayoutDiagnosticCode.NullTextRunStyle"/> in
 /// <see cref="Document.Diagnostics"/>, and
 /// <see cref="Document.StrictDiagnostics"/> refuses them.</para>
 /// Refusals on size, leading, font and text colour are on <see cref="TextStyle"/> and are raised
-/// from the save. A space is drawn between this run and the next only where the text has white space
-/// at the boundary; without it the two runs hold one word; see <see cref="Paragraph"/>.
+/// from the save. A space is drawn between this run and the next only where the text has a space,
+/// tab, line break or other white-space character, except the no-break spaces, at the boundary.
+/// Without one, the two runs hold one word; see <see cref="Paragraph"/>.
 /// </remarks>
 /// <exception cref="ArgumentNullException">
 /// The text is <see langword="null"/>. <c>ParamName</c> is <c>Text</c>, the name of the
@@ -29,7 +33,8 @@ namespace VellumPdf.Layout.Elements;
 /// <exception cref="ArgumentException">
 /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not from
 /// the constructor, when the text holds an unpaired surrogate and is measured in an embedded font;
-/// see <see cref="TextStyle.FontRef"/>.
+/// see <see cref="TextStyle.FontRef"/>. A pair split between this run and the next is joined, and
+/// does not throw, when both runs share one style instance.
 /// </exception>
 /// <exception cref="InvalidOperationException">
 /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not from
