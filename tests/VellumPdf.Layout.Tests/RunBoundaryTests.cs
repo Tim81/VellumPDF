@@ -616,7 +616,9 @@ public sealed partial class RunBoundaryTests
 
     private sealed class TempDir : IDisposable
     {
-        private readonly string _root = Directory.CreateTempSubdirectory("vellum-runs-").FullName;
+        // Not CreateTempSubdirectory (mode 0700): the Docker veraPDF on CI runs as another user.
+        private readonly string _root = Directory.CreateDirectory(
+            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "vellum-runs-" + Guid.NewGuid().ToString("N"))).FullName;
 
         public string Path(string name) => System.IO.Path.Combine(_root, name);
 
