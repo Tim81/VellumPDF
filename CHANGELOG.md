@@ -8,6 +8,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`Preformatted`, a block that keeps every space and tab (#591).** `Document.Add(Preformatted)`
+  draws text whose spacing is its meaning: command blocks, configuration, ASCII tables. The default
+  style is Courier at 10 pt. `Document.SetDefaultFont` does not apply.
+  - A line ends at CR LF, a lone CR or a lone LF. Every space is kept, leading, repeated and
+    trailing. A tab becomes the spaces that reach the next stop, `TabWidth` columns apart (1 to 32,
+    default 8), counting extended grapheme clusters, so the content stream holds no tab byte. In a
+    monospace font, for text of one character per column, the columns line up and
+    `pdftotext -fixed` returns them. A zero-width character that forms a cluster of its own, such as
+    a combining mark at the start of a line or after a tab, shifts the columns after it. `-layout`
+    collapses runs of spaces, so it is not an exact oracle.
+  - A line wider than the content box is split into segments, each but the last followed by a hook
+    drawn as an artifact, so it enters neither the structure tree nor extracted text. No character
+    is dropped. The save lists the wrapped lines as the new `LayoutDiagnosticCode.PreformattedLineWrapped`
+    (104, a warning, so `StrictDiagnostics` still saves). New `LayoutElementKind.Preformatted` (11).
+  - The constructor throws `ArgumentException` for control characters other than tab, CR and LF,
+    for U+2028 and U+2029, and for an unpaired surrogate. It also refuses a style with a font size
+    below 0.000005 or above 1e30 (the ceiling keeps every number the block writes far inside the
+    ±3.403 × 10^38 range of ISO 32000-1, Annex C, Table C.1, which ISO 19005-2, 6.1.13 applies) or
+    not finite, a non-finite leading, a colour channel outside 0 to 1, a Standard-14 value the
+    enumeration does not name, Symbol, ZapfDingbats, or a `LinkUri`.
+  - Before any layout, the save throws `InvalidOperationException` when the content box cannot
+    hold one line. Under a PDF/A or PDF/UA-1 claim it also throws when the font is not embedded or
+    has no glyph for a character, and, under PDF/A-2a, PDF/A-2u and PDF/UA-1, for U+FEFF and
+    U+FFFE. These refusals leave the document saveable once the named setting is changed.
+  - With no claim, a character the embedded font lacks is drawn as glyph 0 and listed as
+    `NotdefGlyph` (102), as for a paragraph, so `StrictDiagnostics` refuses that save.
+  - In a tagged document each drawn piece is one `P` structure element. Nothing in the character
+    stream separates two lines. Documents without the element save to the same bytes as before.
+
 - **`Heading` and `ListItem` take runs (#367).** `new Heading(IEnumerable<TextRun>)` and
   `new ListItem(IEnumerable<TextRun>)` build the element from runs in their own styles, as a
   `Paragraph` does, so one word of a heading can be bold and one run of a list item can be a link.
@@ -1156,7 +1185,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   splits between rows like any other. On 2.3.3 a table of one, two or three header rows, or of
   thirty, threw `InvalidOperationException` ("An element is too tall to fit on a single page") from
   `Save` on a page of any size, because the header run covered every row and nothing was left to
-  fit. Each row is still tagged as a header row: `TH` with `/Scope /Column`. Output for a table
+  fit. A cell of those rows that holds a line is still tagged `TH` with `/Scope /Column`; only the
+  empty slice cell of a row that #516 cuts is a `TD`. Output for a table
   with a data row after its header rows, or a header row after a data row, is unchanged. This is a
   deliberate change of behaviour for the input that used to throw, and three outputs change with it.
   `TableRenderer.Layout` returns `Full` or `Partial` for such a table where 2.3.3 returned `Nothing`
@@ -1169,6 +1199,54 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   still throws `IndexOutOfRangeException`, as documented. The XML documentation of `TableElement`,
   `TableElement.AddRow`, `TableElement.AddHeaderRow`, `Row.IsHeader`, `Cell.RowSpan` and
   `TableRenderer` says so.
+- **A table row taller than a page continues on the next page (#516).** A row is cut between the
+  lines of its cells when it does not fit the room left and fits neither box a fresh page offers.
+  On 2.3.3 `Save` threw `InvalidOperationException` ("An element is too tall to fit on a single
+  page") for such a row, so a table with one long cell could not be saved. Each cell is cut at its
+  own line, and every slice is drawn as a whole cell: background, border and padding, with the
+  repeated header rows above it. The row starts on the page the rows before it are on when at least
+  one line of it fits there, and otherwise on the next page. A row is cut only when it fits neither
+  box a fresh page offers: the page under the repeated header rows, inside the table's own margins.
+  A row that fits one of them moves to the next page whole, so no row is cut in a table whose rows
+  each fit the area a fresh page leaves under its header rows and inside its margins. A row that
+  fits the page alone is cut when a header row or a table margin takes room from it: with a 20 pt
+  header row, a 47-line row (572 pt) on a 580 pt page is cut, as is the same row in a table with
+  `Margins` of 10.
+  - **Deliberate output change:** every input that threw the too-tall exception because of a row
+    that can be cut now saves. A tagged table gets one `Table` per page and a cell element per cell
+    of each slice, so a cut cell is tagged on each page it spans. A cell that holds a line is a
+    `TD`, or a `TH` in a header row, and a cell with no line on a page is an empty `TD`, also in a
+    header row.
+  - **Still refused,** with the same exception type and a message that starts with the old text and
+    ends with a sentence naming what cannot be cut: repeated header rows that do not fit a page, a
+    row that declares a `RowSpan` or lies under one, and a row with a cell that cannot hold one line
+    and its vertical padding on a page under the header rows.
+  - **Attention:** a table with a row that is now cut changes in these ways. Measured on a
+    300 x 600 pt page with 10 pt margins, for a 48-line and a 100-line row.
+    - A NaN or infinite cell background or border colour channel threw `InvalidOperationException`
+      first. The row is now drawn, so the canvas throws `ArgumentException`, as it does for the same
+      value in any row that fits. This is the same change as for all-header tables above.
+    - A NaN left margin, a NaN right margin and a `-Infinity` left margin, on the table or on the
+      document, change from `InvalidOperationException` to the canvas `ArgumentException`, with
+      `ParamName` null.
+    - A `-Infinity` right margin, on the table or on the document, now saves: two pages for 48
+      lines and three for 100. It threw `InvalidOperationException` before. The same margin with a
+      5-line row already saved on 2.3.3. This is a deliberate change of output.
+    - A `+Infinity` table bottom margin still throws `InvalidOperationException`, whose message now
+      ends with the sentence naming the cell and reads "a page leaves -Infinitypt". It does so for
+      a 5-line row too. A `+Infinity` document bottom margin is refused earlier with
+      `ArgumentException`, and that did not change.
+    - A NaN text colour and a negative `BorderWidth` keep `InvalidOperationException`, but the
+      message is replaced, not extended: "Table row 0, cell 0 has a text colour whose red channel is
+      NaN, ..." and "A table has a line width of -1, which cannot be drawn. ...".
+  - A `TableRenderer` laid out with a `LayoutContext` built through the public constructor does not
+    begin to cut a row: a row that does not fit its area is not cut, and when it is the first row in
+    the area the call returns `Nothing`. A row the document began to cut keeps cutting in its
+    overflow renderer under such a context at the width it was cut at. At another width the saved
+    lines are dropped and the row is laid out again from its first line, which without the box is
+    not cut.
+  - The XML documentation of `TableElement`, `Cell.RowSpan`, `Cell.Padding`,
+    `Document.Add(TableElement)` and `TableRenderer` states the rule for cutting a row.
 
 ### Documentation
 

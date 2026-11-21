@@ -73,6 +73,10 @@ public sealed class TextStyle
     /// <see cref="VellumPdf.Layout.Document.StrictDiagnostics"/> set, either report refuses the
     /// save. <b>Do not pass</b> a Standard 14 font under either claim. A later major version
     /// refuses text the font cannot draw, and a Standard 14 font, under either claim.</para>
+    /// <para>A <see cref="VellumPdf.Layout.Elements.Preformatted"/> refuses a Standard-14 value the
+    /// enumeration does not name, Symbol and ZapfDingbats from its constructor, with
+    /// <see cref="ArgumentException"/>, and under a conformance claim its save refuses a font that
+    /// is not embedded.</para>
     /// </remarks>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
@@ -135,6 +139,9 @@ public sealed class TextStyle
     /// <para>Each paragraph run, and a heading's text, is checked when it holds a character other
     /// than white space. The no-break spaces U+00A0, U+202F and U+2007 count as such characters; a
     /// tab and other white space do not. A table cell or list item is checked whatever its text holds.</para>
+    /// <para>A <see cref="VellumPdf.Layout.Elements.Preformatted"/> refuses a size that is not
+    /// finite, is below 0.000005 or is above 1e30 from its constructor, with
+    /// <see cref="ArgumentException"/>, not from the save.</para>
     /// <para><b>Attention</b>: a size of zero or less is <b>not</b> refused. It reaches the content
     /// stream as a font operator that readers accept, so you still get a document. At zero the
     /// text is invisible. Below zero the glyphs are inverted. If you do not want either, check the
@@ -182,6 +189,9 @@ public sealed class TextStyle
     /// <remarks>
     /// Any value at or below zero selects the automatic leading. There is therefore no way to
     /// ask for lines that overlap exactly.
+    /// <para>A <see cref="VellumPdf.Layout.Elements.Preformatted"/> refuses a non-finite leading
+    /// from its constructor, with <see cref="ArgumentException"/>. Zero and negative still mean
+    /// automatic.</para>
     /// <para>A non-finite value is <b>not</b> refused, and it does not reach the content stream
     /// either. The page is emitted with the text placed as though you had asked for automatic
     /// leading. A later major version will reject it.</para>
@@ -231,7 +241,9 @@ public sealed class TextStyle
     /// list item or a table cell that draws text, the element's own check names it. On a running band,
     /// and on a band that draws nothing, <see cref="VellumPdf.Canvas.PdfCanvas"/> decides: it refuses
     /// the value when the band is drawn, and an empty template writes no colour. <b>Do not pass</b> a
-    /// non-finite channel: 3.0 refuses it.
+    /// non-finite channel: 3.0 refuses it. A <see cref="VellumPdf.Layout.Elements.Preformatted"/>
+    /// refuses a channel that is not a number from 0 to 1 from its constructor, with
+    /// <see cref="ArgumentException"/>.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from a save, when a channel is <c>NaN</c> or infinite on a paragraph run, heading, list
@@ -283,6 +295,8 @@ public sealed class TextStyle
     /// drawn with.
     /// <para>Do not pass a value that is not an absolute URI. A later major version will refuse
     /// one.</para>
+    /// <para>A <see cref="VellumPdf.Layout.Elements.Preformatted"/> refuses any value from its
+    /// constructor, with <see cref="ArgumentException"/>.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not

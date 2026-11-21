@@ -36,8 +36,9 @@ public sealed class Row
     /// Only the leading run of header rows repeats on each continuation page, and only when a row
     /// that is not a header follows it. A header row after a data row is drawn once, where it is.
     /// A table whose rows are all headers has no run to repeat: each row is drawn once, in order,
-    /// and the table splits between rows like any other. A tagged table marks every header row's
-    /// cells as header cells either way.
+    /// and the table splits between rows like any other. A tagged table marks a header row's
+    /// cells that hold a line as header cells either way; a cell of a cut row that has no line on
+    /// a page is tagged as an empty data cell there, see <see cref="TableElement"/>.
     /// </remarks>
     public bool IsHeader { get; init; }
 

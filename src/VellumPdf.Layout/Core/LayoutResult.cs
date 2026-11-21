@@ -87,12 +87,21 @@ public sealed class LayoutResult
     /// </remarks>
     public IRenderer? OverflowRenderer { get; }
 
-    private LayoutResult(Outcome status, LayoutBox? area, IRenderer? split, IRenderer? overflow)
+    /// <summary>
+    /// Why a <see cref="Outcome.Nothing"/> can never succeed on a fresh page, or null. When set,
+    /// the document appends it to the too-tall message it throws if the retry on a new page
+    /// returns <c>Nothing</c> as well.
+    /// </summary>
+    internal string? Reason { get; }
+
+    private LayoutResult(Outcome status, LayoutBox? area, IRenderer? split, IRenderer? overflow,
+        string? reason = null)
     {
         Status = status;
         OccupiedArea = area;
         SplitRenderer = split;
         OverflowRenderer = overflow;
+        Reason = reason;
     }
 
     /// <summary>Creates a result indicating the content fit entirely, occupying the given area.</summary>
@@ -146,4 +155,12 @@ public sealed class LayoutResult
     /// </exception>
     public static LayoutResult Nothing() =>
         new(Outcome.Nothing, null, null, null);
+
+    /// <summary>
+    /// A <see cref="Outcome.Nothing"/> that carries the reason the element cannot be placed on a
+    /// page of its own. The reason reaches the caller only when the retry on a new page also
+    /// returns <c>Nothing</c>.
+    /// </summary>
+    internal static LayoutResult Nothing(string reason) =>
+        new(Outcome.Nothing, null, null, null, reason);
 }

@@ -22,11 +22,10 @@ namespace VellumPdf.Layout;
 public enum LayoutDiagnosticCode
 {
     // Reserved, not defined here, so that later members do not collide:
-    //   104 PreformattedLineWrapped (Warning), 105 SymbolFontMeasuredAsZero
-    //   (Error), 203 ListIndentClamped, 204 ListDepthCapped, 205 ListEntriesCapped, 206
-    //   ListEntrySkipped (all Error), 301 ControlCharacterInCell (Warning), 302 SurplusCell
-    //   (Error), 402 UnknownBandToken, one 7xx member for a link dropped from
-    //   a cell or band under a PDF/UA claim, and the 8xx block for pagination reports.
+    //   105 SymbolFontMeasuredAsZero (Error), 203 ListIndentClamped, 204 ListDepthCapped, 205
+    //   ListEntriesCapped, 206 ListEntrySkipped (all Error), 301 ControlCharacterInCell
+    //   (Warning), 302 SurplusCell (Error), 402 UnknownBandToken, one 7xx member for a link
+    //   dropped from a cell or band under a PDF/UA claim, and the 8xx block for pagination reports.
 
     /// <summary>
     /// A <see cref="Elements.TextRun"/> with a null style that yields no word, so it saved without
@@ -88,6 +87,18 @@ public enum LayoutDiagnosticCode
     /// <see cref="Core.DrawContext"/> you built can list it.
     /// </remarks>
     UnencodableCharacter = 103,
+
+    /// <summary>
+    /// A line of a <see cref="Elements.Preformatted"/> was wider than the content box, so the save
+    /// split it into segments and drew a continuation marker after each but the last.
+    /// <see cref="LayoutDiagnostic.Count"/> is the number of source lines that needed a marker.
+    /// </summary>
+    /// <remarks>
+    /// No character is lost, so this is a warning and strict mode saves. It is reported once per
+    /// element, from the page its first line is drawn on, and its page number is that page. It is
+    /// reported when the block is drawn from its first line.
+    /// </remarks>
+    PreformattedLineWrapped = 104,
 
     /// <summary>
     /// A <see cref="Elements.Paragraph"/> holds a tab stop beyond the width its renderer was laid
