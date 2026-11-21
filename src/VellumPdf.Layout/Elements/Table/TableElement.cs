@@ -158,10 +158,12 @@ public sealed class TableElement
 
     /// <summary>
     /// A name that a link or an outside reference can jump to: the save adds a named destination at
-    /// the first placed row of this table, which is its top edge, or the repeated header row when it has one. <see langword="null"/>, the default, adds none.
+    /// the first placed row of this table, which is its top edge, or the repeated header row when
+    /// it has one. <see langword="null"/>, the default, adds none.
     /// </summary>
     /// <remarks>
-    /// The rule, the refusals and the position are those of <see cref="Paragraph.Anchor"/>. A table that splits across pages is anchored on the page of its first row.
+    /// The rule, the refusals and the position are those of <see cref="Paragraph.Anchor"/>. A table
+    /// that splits across pages is anchored on the page of its first row.
     /// </remarks>
     /// <inheritdoc cref="Paragraph.Anchor" path="/exception"/>
     public string? Anchor

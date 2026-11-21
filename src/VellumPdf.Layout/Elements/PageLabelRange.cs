@@ -15,9 +15,15 @@ namespace VellumPdf.Layout.Elements;
 /// <see cref="ArgumentOutOfRangeException"/>. A prefix with an unpaired surrogate, or one longer
 /// than 16,382 characters, throws <see cref="ArgumentException"/>; 16,382 UTF-16 characters are the
 /// most that fit the 32,767 bytes ISO 19005-2, 6.1.13 allows a string, which the library applies to
-/// the prefix whatever the conformance level. A first number whose own label would be longer than
-/// 32,767 characters (a letter or Roman-numeral label of a number in the millions) throws
-/// <see cref="ArgumentOutOfRangeException"/> too.
+/// the prefix whatever the conformance level. A first number whose own label, prefix included,
+/// would be longer than 32,767 characters throws <see cref="ArgumentOutOfRangeException"/> too,
+/// naming <c>firstNumber</c>. With no prefix, a letter label is refused from 851,943 up (it is
+/// <c>(number - 1) / 26 + 1</c> characters, so 851,942 is accepted at exactly 32,767), and a
+/// Roman-numeral label from 32,767,001 up (one <c>M</c> per thousand, then the numeral for the
+/// last three digits, so 32,767,000 is accepted and 32,766,888 is not). A decimal label has at
+/// most 10 digits, so it stays within the limit. A prefix lowers both limits: each of its
+/// characters takes one from the label, which is 26 numbers for letters and 1,000 for Roman
+/// numerals.
 /// <para>Where a range starts is not set here. <see cref="Document.PageLabel"/> starts one at the
 /// first page and <see cref="PageBreak.PageLabel"/> at the page the next element lands on. One
 /// instance may be used in several places and several documents, because it never changes.</para>

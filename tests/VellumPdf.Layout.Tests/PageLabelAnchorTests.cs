@@ -440,6 +440,50 @@ public sealed class PageLabelAnchorTests
     }
 
     [Fact]
+    public void PageLabelRange_overlongLabelBoundaries_areThoseTheTypeDocumentationStates()
+    {
+        // Letters: (number - 1) / 26 + 1 characters, so 851,942 is exactly 32,767.
+        _ = new PageLabelRange(PdfPageLabelStyle.LowerLetters, null, 851_942);
+        Assert.Equal("firstNumber", Assert.Throws<ArgumentOutOfRangeException>(
+            () => new PageLabelRange(PdfPageLabelStyle.LowerLetters, null, 851_943)).ParamName);
+
+        // Roman: one M per thousand, then the numeral for the last three digits (DCCCLXXXVIII is 12).
+        _ = new PageLabelRange(PdfPageLabelStyle.UpperRoman, null, 32_767_000);
+        _ = new PageLabelRange(PdfPageLabelStyle.UpperRoman, null, 32_755_999);
+        Assert.Throws<ArgumentOutOfRangeException>(() => new PageLabelRange(PdfPageLabelStyle.UpperRoman, null, 32_766_888));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new PageLabelRange(PdfPageLabelStyle.UpperRoman, null, 32_767_001));
+
+        // A prefix takes one character from the label each: 26 numbers of letters, 1,000 of Roman.
+        var prefix = new string('x', 100);
+        _ = new PageLabelRange(PdfPageLabelStyle.LowerLetters, prefix, 849_342);
+        Assert.Throws<ArgumentOutOfRangeException>(() => new PageLabelRange(PdfPageLabelStyle.LowerLetters, prefix, 849_343));
+        _ = new PageLabelRange(PdfPageLabelStyle.LowerRoman, prefix, 32_667_000);
+        Assert.Throws<ArgumentOutOfRangeException>(() => new PageLabelRange(PdfPageLabelStyle.LowerRoman, prefix, 32_667_001));
+    }
+
+    // The constructor checks the first page's label. A later page's label is worked out only for a
+    // band that prints {page}, so the same document saves with a footer that does not.
+    private static Document TwoPagesFromTheLastLetterLabel(string footerTemplate)
+    {
+        var doc = NewDocument();
+        doc.PageLabel = Range(PdfPageLabelStyle.LowerLetters, null, 851_942);
+        doc.Footer = new RunningBand(footerTemplate);
+        doc.Add(Tall("one"));
+        doc.Add(Tall("two"));
+        return doc;
+    }
+
+    [Fact]
+    public void AFooterWithoutThePageToken_doesNotComputeALabelThatTooLongPageWouldNeed()
+    {
+        Assert.NotEmpty(Save(TwoPagesFromTheLastLetterLabel("page")));
+
+        var ex = Assert.Throws<InvalidOperationException>(() => Save(TwoPagesFromTheLastLetterLabel("{page}")));
+        Assert.Contains("page 2", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("32767", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void PageLabelRange_prefixLimit_is16382Characters_andNoUnpairedSurrogate()
     {
         _ = new PageLabelRange(PdfPageLabelStyle.Decimal, new string('x', 16_382));

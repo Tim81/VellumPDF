@@ -160,10 +160,12 @@ public sealed class ListElement
 
     /// <summary>
     /// A name that a link or an outside reference can jump to: the save adds a named destination at
-    /// the first placed line of this list, which is the top of its first item. <see langword="null"/>, the default, adds none.
+    /// the first placed line of this list, which is the top of its first item.
+    /// <see langword="null"/>, the default, adds none.
     /// </summary>
     /// <remarks>
-    /// The rule, the refusals and the position are those of <see cref="Paragraph.Anchor"/>. A list with no items has no line; its destination is at the top of the box the list would fill.
+    /// The rule, the refusals and the position are those of <see cref="Paragraph.Anchor"/>. A list
+    /// with no items has no line; its destination is at the top of the box the list would fill.
     /// </remarks>
     /// <inheritdoc cref="Paragraph.Anchor" path="/exception"/>
     public string? Anchor

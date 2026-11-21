@@ -1114,6 +1114,10 @@ public sealed class Document : IDisposable
     /// <see cref="ParagraphRenderer"/>, <see cref="TableRenderer"/>, <see cref="ListRenderer"/> and
     /// <see cref="LayoutImageRenderer"/> honour their element's <c>BreakBefore</c> when added here.
     /// Add a <see cref="PageBreak"/> before a custom renderer instead.</para>
+    /// <para>Those four renderers also report their element's <c>Anchor</c>, so the save writes its
+    /// named destination as if the element had been added directly. A custom renderer has no
+    /// anchor, and cannot start a page-label range: put a <see cref="PageBreak"/> with a
+    /// <see cref="PageBreak.PageLabel"/> before it.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="renderer"/> is <see langword="null"/>.
@@ -1122,7 +1126,10 @@ public sealed class Document : IDisposable
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
     /// call, when this renderer, or an overflow it returns, needs more than 50,000 page
     /// continuations, or when it returns <see cref="LayoutResult.Outcome.Nothing"/> twice in a row,
-    /// the second time on a new page.
+    /// the second time on a new page. It is also raised when the anchor of one of the four renderers
+    /// above is held by another element too, before any layout, and when a
+    /// <see cref="ParagraphRenderer"/> built to continue its paragraph from a later line holds an
+    /// anchor, because that piece never draws the first line; see <see cref="Paragraph.Anchor"/>.
     /// </exception>
     /// <exception cref="NullReferenceException">
     /// Raised from the save, not from this call, when <paramref name="renderer"/> returns a null
