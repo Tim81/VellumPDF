@@ -33,7 +33,9 @@ internal static class ContinuationSupport
         /// <summary>Reports only at the keep-together probe of the next page.</summary>
         KeepProbe,
 
-        /// <summary>Reports only from the second piece on, which the document must not accept.</summary>
+        /// <summary>
+        /// Reports only from the second piece on, which the document must not accept.
+        /// </summary>
         Late,
     }
 
@@ -75,7 +77,9 @@ internal static class ContinuationSupport
         internal Failure FailNew { get; init; }
         internal Failure FailTwin { get; init; }
 
-        /// <summary>Throw only while a probe measures, so the placement that follows runs clean.</summary>
+        /// <summary>
+        /// Throw only while a probe measures, so the placement that follows runs clean.
+        /// </summary>
         internal bool FailOnlyInProbe { get; init; }
 
         /// <summary>The piece at which a failing layout throws.</summary>
@@ -90,7 +94,9 @@ internal static class ContinuationSupport
         internal List<Call> Calls { get; } = [];
         internal List<string> Draws { get; } = [];
 
-        /// <summary>A probe that went past the bound its renderer reported, which the document trusts.</summary>
+        /// <summary>
+        /// A probe that went past the bound its renderer reported, which the document trusts.
+        /// </summary>
         internal List<string> BoundViolations { get; } = [];
 
         internal IEnumerable<Call> RealCalls => Calls.Where(c => !c.Probing);
@@ -228,8 +234,8 @@ internal static class ContinuationSupport
     }
 
     /// <summary>
-    /// The renderer of a plan-dependent element: each resolve takes the next plan, which changes the
-    /// layout and not where the element starts.
+    /// The renderer of a plan-dependent element: each resolve takes the next plan, which changes
+    /// the layout and not where the element starts.
     /// </summary>
     internal sealed class DependentScripted(Plan[] byResolve, Log log) : Scripted(byResolve[0], log), IPlanDependent
     {
@@ -270,7 +276,9 @@ internal static class ContinuationSupport
         CachedByArea,
     }
 
-    /// <summary>A caller's renderer that forwards to another one in one of the ways a caller can.</summary>
+    /// <summary>
+    /// A caller's renderer that forwards to another one in one of the ways a caller can.
+    /// </summary>
     internal sealed class Wrapper : IRenderer
     {
         private readonly IRenderer _inner;
@@ -323,7 +331,9 @@ internal static class ContinuationSupport
         public void Draw(DrawContext context) => _inner.Draw(context);
     }
 
-    /// <summary>One element that lays its parts out one after another, the way a caller's container would.</summary>
+    /// <summary>
+    /// One element that lays its parts out one after another, the way a caller's container would.
+    /// </summary>
     internal sealed class Sequence : IRenderer
     {
         private readonly IRenderer[] _parts;
@@ -356,8 +366,8 @@ internal static class ContinuationSupport
 
     /// <summary>
     /// A built-in-style parent that lays one child out through <see cref="LayoutContext.Address"/>
-    /// and records the context the child got. It never reports, so a reporting child under it is the
-    /// silent mistake the document counts.
+    /// and records the context the child got. It never reports, so a reporting child under it is
+    /// the silent mistake the document counts.
     /// </summary>
     internal sealed class Parent(IRenderer child, List<LayoutContext> seen) : IRenderer, IContinuationTwin
     {
@@ -425,7 +435,9 @@ internal static class ContinuationSupport
         internal bool Footer { get; init; }
         internal bool Mirror { get; init; }
 
-        /// <summary>Lets a test provoke an unreported child, which fails a Debug build otherwise.</summary>
+        /// <summary>
+        /// Lets a test provoke an unreported child, which fails a Debug build otherwise.
+        /// </summary>
         internal bool AllowUnreportedChild { get; init; }
         internal int Limit { get; init; } = ContinuationSupport.Limit;
     }
@@ -435,7 +447,9 @@ internal static class ContinuationSupport
 
     internal static double ContentHeight(Setup setup) => setup.PageHeight - 20;
 
-    /// <summary>Places the elements, with a pinned timestamp and id, and returns what happened.</summary>
+    /// <summary>
+    /// Places the elements, with a pinned timestamp and id, and returns what happened.
+    /// </summary>
     internal static Outcome Run(Setup setup, Log log, params IRenderer[] elements)
     {
         var pdf = PlacementLoopSupport.NewPdf();

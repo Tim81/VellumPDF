@@ -12,18 +12,19 @@ namespace VellumPdf.Layout.Rendering;
 internal enum ContinuationMode
 {
     /// <summary>
+    /// The layout as 2.3.3 produced it, which is what <see cref="IContinuationTwin.Twin"/> returns.
+    /// It is the zero value, so a field that holds a mode and was never set is the safe one.
+    /// </summary>
+    Twin = 0,
+
+    /// <summary>
     /// Not decided yet. The renderer lays out its new way and reports a bound if its result can
     /// differ from the twin's, and the document then decides before it uses that result.
     /// </summary>
-    Undecided = 0,
+    Undecided,
 
     /// <summary>The new layout.</summary>
     New,
-
-    /// <summary>
-    /// The layout as 2.3.3 produced it, which is what <see cref="IContinuationTwin.Twin"/> returns.
-    /// </summary>
-    Twin,
 }
 
 /// <summary>
@@ -46,9 +47,9 @@ internal interface IContinuationTwin
 
 /// <summary>
 /// The state of one placement loop's decision between a renderer's new layout and its twin
-/// (#686). The document keeps one for its own placements and resets it for each element, so a
-/// document pays nothing per element until a renderer reports. A probe has one of its own, and a
-/// built-in parent that lays a child out gets a view of it from
+/// (#686). The document keeps one for its own placements and resets it for each element, so an
+/// element whose renderer never reports costs only the reference each context carries. A probe has
+/// one of its own, and a built-in parent that lays a child out gets a view of it from
 /// <see cref="LayoutContext.Address"/>. The context of every call reaches it, so a renderer reports
 /// without knowing the document.
 /// </summary>
@@ -67,10 +68,10 @@ internal sealed class ContinuationSession
         : this(mode, probing) => _view = view;
 
     /// <summary>
-    /// A session for a child that a built-in parent lays out in <paramref name="mode"/>, called with
-    /// <paramref name="child"/>. A report made to it is never read: the parent reports for itself,
-    /// and a report from a child while the mode is undecided is counted on the document's session
-    /// as <see cref="Strays"/>, so a parent that forgot to report is found.
+    /// A session for a child that a built-in parent lays out in <paramref name="mode"/>, called
+    /// with <paramref name="child"/>. A report made to it is never read: the parent reports for
+    /// itself, and a report from a child while the mode is undecided is counted on the document's
+    /// session as <see cref="Strays"/>, so a parent that forgot to report is found.
     /// </summary>
     internal static ContinuationSession ViewFor(IRenderer child, ContinuationMode mode, ContinuationSession? from) =>
         new(mode, from?.Probing ?? false, view: true) { Called = child, _root = from?._root ?? from };
@@ -80,6 +81,14 @@ internal sealed class ContinuationSession
     /// then New or Twin for the rest of the placement. Fixed for a probe, which never decides.
     /// </summary>
     internal ContinuationMode Mode { get; set; }
+
+    /// <summary>
+    /// True once a decision committed <see cref="ContinuationMode.Twin"/> for this placement. It
+    /// stays set for every later call of the placement, including the twin's overflow pieces, and
+    /// is not set where <see cref="Mode"/> became Twin because the first piece was placed with no
+    /// report.
+    /// </summary>
+    internal bool TwinChosen { get; set; }
 
     /// <summary>True for a layout-only placement that measures one mode.</summary>
     internal bool Probing { get; }
@@ -91,8 +100,8 @@ internal sealed class ContinuationSession
     internal IRenderer? Called { get; set; }
 
     /// <summary>
-    /// A call left a report or a stray report to settle. The loop reads only this after each call, so a
-    /// renderer that reports nothing costs it one field.
+    /// A call left a report or a stray report to settle. The loop reads only this after each call,
+    /// so a renderer that reports nothing costs it one field.
     /// </summary>
     internal bool Pending { get; private set; }
 
@@ -104,17 +113,19 @@ internal sealed class ContinuationSession
 
     /// <summary>
     /// Reports made in the call in progress by an instance the document did not call, while the
-    /// mode was undecided. A call that ends with some of these and no report of its own is a built-in
-    /// parent that addressed a reporting child and did not report for itself: the child laid out its
-    /// new way and the parent's result is neither layout.
+    /// mode was undecided. A call that ends with some of these and no report of its own is a
+    /// built-in parent that addressed a reporting child and did not report for itself: the child
+    /// laid out its new way and the parent's result is neither layout.
     /// </summary>
     internal int Strays { get; private set; }
 
     /// <summary>Forgets the last placement so the session can serve the next element.</summary>
     internal void Reset()
     {
-        // What a report wrote (Bound, Reporter) is read only after the next report has overwritten it.
+        // What a report wrote (Bound, Reporter) is read only after the next report has overwritten
+        // it.
         Mode = ContinuationMode.Undecided;
+        TwinChosen = false;
         Reported = false;
         Pending = false;
         Strays = 0;

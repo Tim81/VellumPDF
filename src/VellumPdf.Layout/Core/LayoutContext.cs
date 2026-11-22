@@ -72,13 +72,13 @@ public sealed class LayoutContext
     internal bool HonourLineCounts { get; init; }
 
     // Session and everything that reads it exist only to keep the 2.3.3 continuation verdict;
-    // removed in 3.0 (#688). One reference is all a context carries, so a document of very many
-    // tiny elements pays eight bytes a call.
+    // removed in 3.0 (#688). One reference is all a context carries, which is eight bytes for
+    // each layout call.
     /// <summary>
-    /// The session the document made this context for, whose <see cref="ContinuationSession.Called"/>
-    /// is the renderer it called. Null on a context built through the public constructor or made by
-    /// <see cref="WithArea"/>, and on one a built-in parent made for a child it lays out as the
-    /// twin.
+    /// The session the document made this context for, whose
+    /// <see cref="ContinuationSession.Called"/> is the renderer it called. Null on a context built
+    /// through the public constructor or made by <see cref="WithArea"/>, and on one a built-in
+    /// parent made for a child it lays out as the twin.
     /// </summary>
     internal ContinuationSession? Session { get; init; }
 
@@ -96,14 +96,17 @@ public sealed class LayoutContext
 
     // Removed in 3.0 (#688), with the twin itself.
     /// <summary>
-    /// Whether the document called <paramref name="renderer"/> itself, outside a probe, and its mode
-    /// is the twin. A renderer's twin instance is handed to the document only by a decision, so for
-    /// it this means the document chose it, and it can carry that to the pieces it returns. A
-    /// renderer that records a fallback when it is laid out as its twin records it only when this
-    /// is true, because a twin that a caller's renderer holds, and a probe of the twin, are not one.
+    /// Whether the document called <paramref name="renderer"/> itself, outside a probe, in a
+    /// placement where a decision chose the twin. The document hands a twin instance back only
+    /// from a decision, but it also lays a renderer out as the twin when the first piece was placed
+    /// with no report, and a decision has not chosen it then. This is true on every call of a
+    /// placement a decision chose, including the twin's overflow pieces, and false otherwise, so a
+    /// renderer that records a fallback when it is laid out as its twin records it only for a
+    /// placement the document chose. A twin that a caller's renderer holds, and a probe of the
+    /// twin, are not one.
     /// </summary>
     internal bool IsPlacedAsTwin(IRenderer renderer) =>
-        Session is { Probing: false, Mode: ContinuationMode.Twin } session && ReferenceEquals(session.Called, renderer);
+        Session is { Probing: false, TwinChosen: true } session && ReferenceEquals(session.Called, renderer);
 
     // Removed in 3.0 (#688).
     /// <summary>

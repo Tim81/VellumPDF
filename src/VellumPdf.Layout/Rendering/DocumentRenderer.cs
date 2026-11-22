@@ -897,8 +897,9 @@ public sealed class DocumentRenderer
                 history[i].Add(dependents[i].ResolvedText);
             }
 
-            // A resolve that changed a text changed the layout without changing the key a verdict is
-            // kept under, so those verdicts are not valid for this run (#686). Removed in 3.0 (#688).
+            // A resolve that changed a text changed the layout without changing the key a verdict
+            // is kept under, so those verdicts are not valid for this run (#686). Removed in 3.0
+            // (#688).
             if (anyChanged) _continuationVerdicts = null;
 
             var pages = RunPass(measure: true, totalPages: 0);
@@ -1239,10 +1240,11 @@ public sealed class DocumentRenderer
     // The verdict of a decision that ran probes, kept for the start it was made from: the element
     // the document placed, where on the page it starts, and the continuations already counted.
     // Both passes and every simulation of the keep rules start the same element from the same
-    // place, so each asks once. The x position is not part of the key: mirrored margins move only x,
-    // and a layout depends on the width. A measuring run of a plan-dependent document starts it from
-    // the same place too, but with a different text, so the verdicts are dropped whenever a resolve
-    // changes one. Y and Height are both kept: they determine each other only up to rounding.
+    // place, so each asks once. The x position is not part of the key: mirrored margins move only
+    // x, and a layout depends on the width. A measuring run of a plan-dependent document starts it
+    // from the same place too, but with a different text, so the verdicts are dropped whenever a
+    // resolve changes one. Y and Height are both kept: they determine each other only up to
+    // rounding.
     private Dictionary<ContinuationKey, ContinuationMode>? _continuationVerdicts;
 
     // The session of the placement in progress, reused for each element. A placement never starts
@@ -1251,9 +1253,9 @@ public sealed class DocumentRenderer
     private ContinuationSession? _session;
 
     /// <summary>
-    /// Calls that ended with a report from a child a built-in parent addressed and no report from the
-    /// parent, in the last <see cref="RunLayout"/>, read by tests. Each is a parent that lets its
-    /// child lay out the new way while the document still has the twin to decide.
+    /// Calls that ended with a report from a child a built-in parent addressed and no report from
+    /// the parent, in the last <see cref="RunLayout"/>, read by tests. Each is a parent that lets
+    /// its child lay out the new way while the document still has the twin to decide.
     /// </summary>
     internal int UnreportedChildReports { get; private set; }
 
@@ -1287,13 +1289,13 @@ public sealed class DocumentRenderer
     // `continuations` is the count the loop holds where the next call would start.
     //
     // A bound within what is left of the limit needs no probe: the new layout cannot reach the
-    // limit, and the twin never takes more continuations than it. Otherwise the element is laid
-    // out twice without drawing, the twin first and the new layout second. The twin is chosen when
-    // either reaches the limit: the twin reaching it keeps a refusal 2.3.3 made, and the new
-    // layout reaching it keeps a save 2.3.3 made. It is chosen too when the new layout throws
-    // something else, because the twin is 2.3.3's own placement and saves what 2.3.3 saved. A twin
-    // that throws while the new layout does not leaves the new layout, which then saves a document
-    // 2.3.3 refused.
+    // limit, and the twin never takes more continuations than it. Below it the new layout alone
+    // decides what is refused, so it must refuse where its twin refuses and save where its twin
+    // saves; the mechanism decides only the limit. Otherwise the element is laid out twice without
+    // drawing, the twin first and the new layout second, and the new layout is chosen only when
+    // both finish cleanly. The twin is chosen when the twin reaches the limit or throws, which
+    // keeps a refusal 2.3.3 made with the twin's own exception, and when the new layout reaches the
+    // limit or throws, which keeps a save 2.3.3 made.
     //
     // At the retry site the probe starts at the loop call that follows the retry, which is where
     // the real placement goes on: the retry's result is read only to see whether it is Nothing, so
@@ -1310,7 +1312,7 @@ public sealed class DocumentRenderer
 
         var twin = session.Reporter!.Twin();
         var verdict =
-            ProbeContinuations(twin, ContinuationMode.Twin, keepTogether, lineCounts, continuations) != ProbeOutcome.Limit
+            ProbeContinuations(twin, ContinuationMode.Twin, keepTogether, lineCounts, continuations) == ProbeOutcome.Clean
             && ProbeContinuations(renderer, ContinuationMode.New, keepTogether, lineCounts, continuations) == ProbeOutcome.Clean
                 ? ContinuationMode.New
                 : ContinuationMode.Twin;
@@ -1376,6 +1378,8 @@ public sealed class DocumentRenderer
         var mode = DecideContinuation(renderer, session, retry ? continuations + 1 : continuations, keepTogether, lineCounts);
         session.Mode = mode;
         if (mode != ContinuationMode.Twin) return (result, renderer);
+
+        session.TwinChosen = true;
 
         renderer = session.Reporter!.Twin();
         return (recall ? CallLayout(renderer, area, lineCounts, session, retry, atTop, pagesAhead) : result, renderer);
