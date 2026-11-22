@@ -226,4 +226,98 @@ public sealed class TableContinuationLimitTests
         Assert.Same(twin, ((Rendering.IContinuationTwin)renderer).Twin());
         Assert.Same(twin, ((Rendering.IContinuationTwin)twin).Twin());
     }
+
+    /// <summary>
+    /// A first row of ten <c>mmmmmmmm</c> words joined by line feeds, then rows of a letter and
+    /// eight words, on a page 400 wide and 200 tall. Read unbroken the first row is one long word
+    /// that takes the width of the page, so the paragraph is one word to a line and a row fills a
+    /// page; with the breaks read a page holds nine rows. The bound over the grid that keeps the
+    /// breaks is about a sixth of the rows, so it is within the limit where the unbroken layout is
+    /// not.
+    /// </summary>
+    private static TableElement OneRowAPageWhenTheFirstRowIsUnbroken(int rows)
+    {
+        var t = new TableElement { DefaultCellStyle = Helvetica() };
+        t.AddRow().AddCell(string.Join("\n", Enumerable.Repeat("mmmmmmmm", 10))).AddCell("s");
+        var paragraph = string.Join(" ", Enumerable.Repeat("lorem", 8));
+        for (var i = 0; i < rows; i++) t.AddRow().AddCell("a").AddCell(paragraph);
+        return t;
+    }
+
+    private static Setup TwoHundred { get; } = new() { PageWidth = 400, PageHeight = 200 };
+
+    /// <summary>
+    /// A table whose bound with its breaks read is within what is left of the limit, and whose
+    /// unbroken layout reaches it, is refused with the message that layout gives: the bound the
+    /// table reports covers both layouts, so the document places it twice instead of trusting the
+    /// smaller.
+    /// </summary>
+    [Fact]
+    public void ATableWhoseBreaksBoundIsWithinTheLimit_butWhoseUnbrokenLayoutReachesIt_isRefused()
+    {
+        var oneLine = Run(TwoHundred, new TableRenderer(OneRowAPageWhenTheFirstRowIsUnbroken(Limit + 2)), measuredAsOneLine: true);
+        var decided = Run(TwoHundred, new TableRenderer(OneRowAPageWhenTheFirstRowIsUnbroken(Limit + 2)));
+
+        Assert.True(IsLimitRefusal(oneLine.Error), "the measurement must be refused for the test to mean anything");
+        Assert.True(IsLimitRefusal(decided.Error), decided.Error?.Message ?? "saved");
+        Assert.Equal(oneLine.Error!.Message, decided.Error!.Message);
+        Assert.True(decided.Probes > 0, "the document must have asked");
+    }
+
+    /// <summary>
+    /// The same table with its unbroken layout one continuation short of the limit keeps its breaks.
+    /// </summary>
+    [Fact]
+    public void ATableWhoseUnbrokenLayoutTakesTheLimitExactly_keepsItsBreaks()
+    {
+        var oneLine = Run(TwoHundred, new TableRenderer(OneRowAPageWhenTheFirstRowIsUnbroken(Limit)), measuredAsOneLine: true);
+        var decided = Run(TwoHundred, new TableRenderer(OneRowAPageWhenTheFirstRowIsUnbroken(Limit)));
+
+        Assert.Null(oneLine.Error);
+        Assert.Null(decided.Error);
+        Assert.True(decided.Pages * 5 < oneLine.Pages, $"{decided.Pages} pages against {oneLine.Pages}");
+        Assert.Equal(0, Dropped(decided));
+    }
+
+    /// <summary>
+    /// A wrapped table that fits one page is laid out by the twin on the first call and drawn by
+    /// the wrapper's <c>Draw</c>, which has to reach the twin: the document draws the instance it
+    /// called, and only the twin holds the layout. The bytes are those of the unbroken layout.
+    /// </summary>
+    [Fact]
+    public void ATableAWrapperHolds_thatFitsOnePage_isDrawnByItsTwin()
+    {
+        TableElement Small()
+        {
+            var t = new TableElement { DefaultCellStyle = Helvetica() };
+            t.AddRow().AddCell("one\ntwo").AddCell("a\tb");
+            t.AddRow().AddCell("x").AddCell("y");
+            return t;
+        }
+
+        var oneLine = Run(new Setup(), new TableRenderer(Small()), measuredAsOneLine: true);
+        var wrapped = Run(new Setup(), new Wrapper(new TableRenderer(Small()), WrapKind.PassThrough));
+
+        Assert.Null(wrapped.Error);
+        Assert.Equal(1, wrapped.Pages);
+        Assert.Equal(oneLine.Bytes, wrapped.Bytes);
+    }
+
+    /// <summary>
+    /// A table that starts at a row, laid out under a context the caller built, is its twin from
+    /// that row: the rows before it are not drawn.
+    /// </summary>
+    [Fact]
+    public void ATableStartedAtARow_laidOutUnderAContextTheCallerBuilt_startsThere()
+    {
+        var t = new TableElement { DefaultCellStyle = Helvetica() };
+        for (var i = 0; i < 3; i++) t.AddRow().AddCell("row " + i);
+        var area = new LayoutBox(10, 10, 380, 500);
+
+        var all = new TableRenderer(t).Layout(new LayoutContext(area));
+        var fromTheSecond = new TableRenderer(t, 1).Layout(new LayoutContext(area));
+
+        Assert.Equal(LayoutResult.Outcome.Full, fromTheSecond.Status);
+        Assert.Equal(all.OccupiedArea!.Value.Height * 2 / 3, fromTheSecond.OccupiedArea!.Value.Height, 0.001);
+    }
 }
