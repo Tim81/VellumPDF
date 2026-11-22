@@ -1,6 +1,8 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using VellumPdf.Layout.Rendering;
+
 namespace VellumPdf.Layout.Core;
 
 /// <summary>
@@ -68,6 +70,77 @@ public sealed class LayoutContext
     /// fit.
     /// </summary>
     internal bool HonourLineCounts { get; init; }
+
+    // Session and everything that reads it exist only to keep the 2.3.3 continuation verdict;
+    // removed in 3.0 (#688). One reference is all a context carries, which is eight bytes for
+    // each layout call.
+    /// <summary>
+    /// The session the document made this context for, whose
+    /// <see cref="ContinuationSession.Called"/> is the renderer it called. Null on a context built
+    /// through the public constructor or made by <see cref="WithArea"/>, and on one a built-in
+    /// parent made for a child it lays out as the twin.
+    /// </summary>
+    internal ContinuationSession? Session { get; init; }
+
+    // 2.x compatibility device, removed in 3.0 (#688): 3.0 lays a built-in renderer out one way
+    // under every context, so there is no twin to select.
+    /// <summary>
+    /// The layout <paramref name="renderer"/> uses under this context: the mode the document
+    /// decided when this context is addressed to that instance, and the twin under any other
+    /// context. That is what makes a renderer of a caller's, a context from
+    /// <see cref="WithArea"/> and one from the public constructor lay a built-in renderer out as
+    /// 2.3.3 did.
+    /// </summary>
+    internal ContinuationMode ModeFor(IRenderer renderer) =>
+        Session is { } session && ReferenceEquals(session.Called, renderer) ? session.Mode : ContinuationMode.Twin;
+
+    // Removed in 3.0 (#688), with the twin itself.
+    /// <summary>
+    /// Whether the document called <paramref name="renderer"/> itself, outside a probe, in a
+    /// placement where a decision chose the twin. The document hands a twin instance back only
+    /// from a decision, but it also lays a renderer out as the twin when the first piece was placed
+    /// with no report, and a decision has not chosen it then. This is true on every call the
+    /// document makes after the decision chose the twin, the twin's overflow pieces included, and
+    /// false otherwise, so a renderer that records a fallback when it is laid out as its twin
+    /// records it only for a placement the document chose. A twin that a caller's renderer holds,
+    /// and a probe of the twin, are not one.
+    /// </summary>
+    internal bool IsPlacedAsTwin(IRenderer renderer) =>
+        Session is { Probing: false, TwinChosen: true } session && ReferenceEquals(session.Called, renderer);
+
+    // Removed in 3.0 (#688).
+    /// <summary>
+    /// A context for a built-in renderer that <paramref name="parent"/>, itself called under this
+    /// context, lays out as part of its own layout: addressed to <paramref name="child"/> and in
+    /// the parent's own mode, with the fresh-page area carried as <see cref="WithArea"/> carries
+    /// it. A parent that lays a child out under any other context leaves the child on its twin.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="atTop"/> and <paramref name="lineCounts"/> are what the parent says of the
+    /// child's area; they are false, as <see cref="WithArea"/> leaves them, unless the parent
+    /// passes its own. A child that reports under the parent's context is not read: the parent
+    /// reports for itself, and the document counts the child's report as a parent that forgot to.
+    /// </remarks>
+    internal LayoutContext Address(
+        IRenderer parent, IRenderer child, LayoutBox area, bool atTop = false, bool lineCounts = false) =>
+        new(area, ContentTop)
+        {
+            FreshPageArea = FreshPageArea,
+            AtPageTop = atTop,
+            HonourLineCounts = lineCounts,
+            Session = ModeFor(parent) == ContinuationMode.Twin ? null : ContinuationSession.ViewFor(child, ModeFor(parent), Session),
+        };
+
+    // Removed in 3.0 (#688).
+    /// <summary>
+    /// A context for a child that a built-in parent lays out where it has no document context to
+    /// derive one from, such as the re-layout its <c>Draw</c> does. <paramref name="mode"/> is the
+    /// mode the parent was laid out in, which a parent keeps from its own layout: a call that was
+    /// laid out <see cref="ContinuationMode.Undecided"/> and then kept is the new layout, and one
+    /// that the document redid with the twin is the twin.
+    /// </summary>
+    internal static LayoutContext Addressed(LayoutBox area, IRenderer child, ContinuationMode mode) =>
+        new(area) { Session = mode == ContinuationMode.Twin ? null : ContinuationSession.ViewFor(child, mode, null) };
 
     /// <summary>A minimum Y position, carried for callers that set one.</summary>
     /// <remarks>
