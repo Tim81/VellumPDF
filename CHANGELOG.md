@@ -8,6 +8,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`Document.MirrorMargins` for double-sided print (#608).** With it set, `Margins.Left` is the
+  inside margin and `Margins.Right` the outside one. The inside margin is on the left of a
+  right-hand page (an odd physical page number, page 1 first) and on the right of a left-hand
+  page; top and bottom do not change. The default is `false`, where every page keeps `Margins`
+  as before and a document that does not set it saves to the same bytes.
+  - The content box has the same width on every page, so a paragraph wraps the same way on a
+    right-hand and a left-hand page and only its left edge moves. Nothing new is refused: the
+    margins a save refuses are the ones it refuses without the property, with the same exceptions.
+  - A header or footer aligned `Left` or `Right` swaps sides on a left-hand page, so a page number
+    aligned right stays on the outside edge. `Center` centres in that page's content box. A band is
+    drawn as left unless it asks for center or right, so `Justify` and a value the enumeration does
+    not name swap too. Body alignment never swaps.
+  - The side follows the page's position in the file, not its page label, and the blank page a
+    recto break inserts counts. The first page is always right-hand.
+  - A custom `IRenderer` is offered the content area of the page it lands on, so when `Left` and
+    `Right` differ its `Area.X` differs between pages. One that keeps an X from an earlier `Layout`
+    call must not reuse it.
 - **`LayoutDiagnosticCode.CellWhiteSpaceDropped` (301).** A table cell was laid out as one
   unbroken line, and its tabs and line breaks were left out of what is drawn, because honouring the
   line breaks of the cells around it would have made a header row or rows joined by a `RowSpan`
@@ -44,6 +61,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     `NotdefGlyph` (102), as for a paragraph, so `StrictDiagnostics` refuses that save.
   - In a tagged document each drawn piece is one `P` structure element. Nothing in the character
     stream separates two lines. Documents without the element save to the same bytes as before.
+
+- **Page labels and anchors (#262, Layout).** A document can set the page numbers a viewer shows,
+  and name places that other documents and links can open it at.
+  - `PageLabelRange(style, prefix, firstNumber)` describes a run of pages: decimal, upper or lower
+    case Roman numerals, or upper or lower case letters, with an optional prefix and a first
+    number. `Document.PageLabel` starts a range at the first page and `PageBreak.PageLabel` at the
+    page the next element lands on. The save writes them as the catalog's `/PageLabels` number
+    tree. When no range starts at the first page it adds a decimal one there, because ISO 32000-2,
+    12.4.2 requires a value for page index 0. When two ranges land on one page the later one
+    applies, and `Document.PageLabel` counts as the earliest.
+  - `{page}` in a running band prints the page's label once any range exists (`iv`, `A-9`).
+    `{pages}` stays the number of pages, and a document with no range prints the decimal number
+    as before and writes no `/PageLabels`. A label is copied as it is and never scanned for
+    tokens.
+  - `Anchor` on `Paragraph`, `Heading`, `TableElement`, `ListElement`, `ListItem` and `LayoutImage`
+    adds a named destination, `[page /XYZ 0 top null]`, to the `/Names` `/Dests` tree at the
+    element's first placed line, whether or not a link refers to it, so `file.pdf#nameddest=name`
+    opens there. A name is 1 to 127 characters from `A-Z a-z 0-9 . _ - :`; any other name throws
+    `ArgumentException` from the `init` accessor, and so does a bad `PageLabelRange` argument from
+    its constructor.
+  - The save throws `InvalidOperationException` before any layout, leaving the document saveable,
+    for an anchor held by two elements and for a labelled `PageBreak` with no element after it.
+    It throws after the layout, leaving the document unsaveable, for an anchor on content the
+    renderer never draws, such as a list item below the second level.
+  - A custom `IRenderer` reports no anchor and cannot start a range; put a labelled `PageBreak`
+    before it.
+  - Nothing changes for a document that uses none of these members. Nine documents (bands,
+    headings, lists, tables, breaks, PDF/A-2u, tagged) saved to identical bytes before and after.
 
 - **`Heading` and `ListItem` take runs (#367).** `new Heading(IEnumerable<TextRun>)` and
   `new ListItem(IEnumerable<TextRun>)` build the element from runs in their own styles, as a

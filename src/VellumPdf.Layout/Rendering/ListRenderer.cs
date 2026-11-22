@@ -16,12 +16,12 @@ namespace VellumPdf.Layout.Rendering;
 /// <remarks>
 /// Grandchildren are ignored; see <see cref="ListItem.Children"/>.
 /// </remarks>
-public sealed class ListRenderer : IRenderer, IPageBreakSource
+public sealed class ListRenderer : IRenderer, IPageBreakSource, IPlacementSource
 {
     private readonly ListElement _list;
 
     // Flattened (marker, content-renderer) pairs, built once during first Layout.
-    private List<(ParagraphRenderer Marker, ParagraphRenderer Content)>? _items;
+    private List<(ParagraphRenderer Marker, ParagraphRenderer Content, ListItem Item)>? _items;
 
     // Pagination window
     private readonly int _startItem;
@@ -39,6 +39,9 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource
     // short of the height Layout tracked, which drops the item's last line. Null until Layout has
     // run on this renderer or the one it was split from.
     private List<double>? _offered;
+
+    // The y each visited item starts at, indexed like _offered. It is where an item's anchor lands.
+    private List<double>? _tops;
 
     /// <summary>Creates a renderer for the list, optionally starting at <paramref name="startItem"/> for pagination.</summary>
     /// <remarks>
@@ -73,6 +76,28 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource
     // The mode belongs to the element, so a renderer added through Document.Add(IRenderer) honours
     // it as well.
     PageBreakMode IPageBreakSource.BreakBefore => _list.BreakBefore;
+
+    // Explicit, as above. The list's anchor is its first placed line and an item's anchor is the
+    // line it starts on, so a piece reports an item only when that item starts in it: the item a
+    // continuation resumes began on an earlier page and was reported there, and the pieces that
+    // follow report from the item they start at.
+    void IPlacementSource.ReportPlacements(PlacementSink sink)
+    {
+        if (_items is null) return;
+
+        if (_startItem == 0 && _partialContentOverrideAtStart is null && _list.Anchor is { } listAnchor)
+            sink.ReportAnchor(_list, listAnchor, _occupied);
+
+        for (var i = _startItem; i < _endItem; i++)
+        {
+            if (i == _startItem && _partialContentOverrideAtStart is not null) continue;
+            if (_items[i].Item.Anchor is not { } anchor) continue;
+            sink.ReportAnchor(
+                _items[i].Item, anchor, new LayoutBox(_occupied.X, _tops![i - _startItem], _occupied.Width, 0));
+        }
+    }
+
+    internal ListElement Element => _list;
 
     private ListRenderer(ListElement list, int startItem, ParagraphRenderer? partialContentOverride)
     {
@@ -133,10 +158,12 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource
         // One entry per item this call visits, indexed by i - _startItem. Sizing it to the whole list
         // allocated the full item count on every page, which is quadratic over a long list.
         var offered = new List<double>();
+        var tops = new List<double>();
 
         for (var i = _startItem; i < _items.Count; i++)
         {
             offered.Add(remaining);
+            tops.Add(y);
             var itemArea = new LayoutBox(area.X, y, area.Width, remaining);
             var itemCtx = context.WithArea(itemArea);
 
@@ -161,6 +188,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource
                 _endItem = i;
                 _occupied = area.WithHeight(area.Height - remaining);
                 _offered = offered;
+                _tops = tops;
                 var overflow = new ListRenderer(_list, i)
                 {
                     _items = _items,
@@ -171,6 +199,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource
                     _endItem = i,
                     _occupied = _occupied,
                     _offered = offered,
+                    _tops = tops,
                 };
                 return LayoutResult.Partial(_occupied, split, overflow);
             }
@@ -188,6 +217,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource
                 var usedH = area.Height - remaining + itemH;
                 _occupied = area.WithHeight(usedH);
                 _offered = offered;
+                _tops = tops;
 
                 // The overflow for item i carries the content's OverflowRenderer.
                 var contentOverflow = (ParagraphRenderer)contentResult.OverflowRenderer!;
@@ -202,6 +232,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource
                     _endItem = i + 1,
                     _occupied = _occupied,
                     _offered = offered,
+                    _tops = tops,
                 };
                 return LayoutResult.Partial(_occupied, split, overflowList);
             }
@@ -213,6 +244,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource
         _endItem = _items.Count;
         _occupied = area.WithHeight(area.Height - remaining);
         _offered = offered;
+        _tops = tops;
         return LayoutResult.Full(_occupied);
     }
 
@@ -251,7 +283,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource
 
         for (var i = _startItem; i < _endItem; i++)
         {
-            var (marker, baseContent) = _items[i];
+            var (marker, baseContent, _) = _items[i];
 
             // On a continuation page the start item resumes mid-content; its marker
             // was already drawn on the page where the item began, so suppress it here
@@ -434,9 +466,9 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource
         return widest;
     }
 
-    private List<(ParagraphRenderer Marker, ParagraphRenderer Content)> BuildItems(double areaWidth)
+    private List<(ParagraphRenderer Marker, ParagraphRenderer Content, ListItem Item)> BuildItems(double areaWidth)
     {
-        var result = new List<(ParagraphRenderer, ParagraphRenderer)>();
+        var result = new List<(ParagraphRenderer, ParagraphRenderer, ListItem)>();
         var indent = _list.Indent;
         var defaultStyle = _list.DefaultStyle ?? TextStyle.Default;
 
@@ -491,7 +523,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource
             };
             var contentRenderer = new ParagraphRenderer(contentPara) { ElementLanguage = item.Language, RunOwner = "A list item" };
 
-            result.Add((markerRenderer, contentRenderer));
+            result.Add((markerRenderer, contentRenderer, item));
 
             // A null child of a top-level item is refused here, where the position is known. The
             // same null on a grandchild is counted when the list is drawn instead, because
@@ -542,7 +574,8 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource
 
                     result.Add((
                         new ParagraphRenderer(childMarkerPara) { RunOwner = "A list item" },
-                        new ParagraphRenderer(childContentPara) { ElementLanguage = child.Language, RunOwner = "A list item" }));
+                        new ParagraphRenderer(childContentPara) { ElementLanguage = child.Language, RunOwner = "A list item" },
+                        child));
                 }
             }
         }

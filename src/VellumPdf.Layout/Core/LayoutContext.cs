@@ -30,11 +30,15 @@ public sealed class LayoutContext
     public LayoutBox Area { get; }
 
     /// <summary>
-    /// The content area every fresh page offers, which is what the document offers the retry after
-    /// a <see cref="LayoutResult.Outcome.Nothing"/>. Null on a context built through the public
-    /// constructor.
+    /// The content area of the page a <see cref="LayoutResult.Outcome.Nothing"/> answer is retried
+    /// on, which is what the document offers that retry. Null on a context built through the
+    /// public constructor.
     /// </summary>
     /// <remarks>
+    /// On the first call for an element this is the area of the next page, and on the retry it is
+    /// the area of the page the element is already on. The two have the same width and height, and
+    /// under <see cref="Document.MirrorMargins"/> with different left and right margins they have
+    /// a different X.
     /// The document sets it on every layout call, in both passes, so a renderer can tell whether
     /// an element that does not fit the area it was offered could fit a page of its own. The area
     /// the document offers at the top of a page is at least this tall, so an element that fits

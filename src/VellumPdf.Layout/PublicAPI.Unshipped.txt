@@ -102,3 +102,26 @@ VellumPdf.Layout.Elements.Preformatted.Text.get -> string!
 VellumPdf.Layout.LayoutDiagnosticCode.PreformattedLineWrapped = 104 -> VellumPdf.Layout.LayoutDiagnosticCode
 VellumPdf.Layout.LayoutDiagnosticCode.CellWhiteSpaceDropped = 301 -> VellumPdf.Layout.LayoutDiagnosticCode
 VellumPdf.Layout.LayoutElementKind.Preformatted = 11 -> VellumPdf.Layout.LayoutElementKind
+VellumPdf.Layout.Document.MirrorMargins.get -> bool
+VellumPdf.Layout.Document.MirrorMargins.set -> void
+VellumPdf.Layout.Document.PageLabel.get -> VellumPdf.Layout.Elements.PageLabelRange?
+VellumPdf.Layout.Document.PageLabel.set -> void
+VellumPdf.Layout.Elements.PageLabelRange
+VellumPdf.Layout.Elements.PageLabelRange.FirstNumber.get -> int
+VellumPdf.Layout.Elements.PageLabelRange.PageLabelRange(VellumPdf.Document.PdfPageLabelStyle style, string? prefix = null, int firstNumber = 1) -> void
+VellumPdf.Layout.Elements.PageLabelRange.Prefix.get -> string?
+VellumPdf.Layout.Elements.PageLabelRange.Style.get -> VellumPdf.Document.PdfPageLabelStyle
+VellumPdf.Layout.Elements.PageBreak.PageLabel.get -> VellumPdf.Layout.Elements.PageLabelRange?
+VellumPdf.Layout.Elements.PageBreak.PageLabel.init -> void
+VellumPdf.Layout.Elements.Heading.Anchor.get -> string?
+VellumPdf.Layout.Elements.Heading.Anchor.init -> void
+VellumPdf.Layout.Elements.LayoutImage.Anchor.get -> string?
+VellumPdf.Layout.Elements.LayoutImage.Anchor.init -> void
+VellumPdf.Layout.Elements.ListElement.Anchor.get -> string?
+VellumPdf.Layout.Elements.ListElement.Anchor.init -> void
+VellumPdf.Layout.Elements.ListItem.Anchor.get -> string?
+VellumPdf.Layout.Elements.ListItem.Anchor.init -> void
+VellumPdf.Layout.Elements.Paragraph.Anchor.get -> string?
+VellumPdf.Layout.Elements.Paragraph.Anchor.init -> void
+VellumPdf.Layout.Elements.Table.TableElement.Anchor.get -> string?
+VellumPdf.Layout.Elements.Table.TableElement.Anchor.init -> void
