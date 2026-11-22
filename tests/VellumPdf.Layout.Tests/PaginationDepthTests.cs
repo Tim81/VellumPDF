@@ -74,9 +74,11 @@ public sealed class PaginationDepthTests
     /// </summary>
     private static void AssertFlat(IReadOnlyList<int> samples)
     {
-        // The count is of PlaceRenderer frames on the stack at each Layout call. Both passes run
-        // that one method, so it is 1 whichever pass is running; a recursion regression makes it
-        // grow with the continuation count. Bounds rather than Assert.All, because a recursion
+        // The count is of PlaceLoop frames on the stack at each Layout call. PlaceRenderer is a
+        // small method that starts the loop, and the JIT inlines it once it is hot (a table test
+        // that places 50,000 pages before this one runs is enough on net11.0), so counting its
+        // frames read 0. Both passes run PlaceLoop, so the count is 1 whichever pass is running; a
+        // recursion regression makes it grow with the continuation count. Bounds rather than Assert.All, because a recursion
         // regression otherwise prints one near-identical failure block per sample — measured at
         // 200 blocks and 34,670 characters for a single test.
         Assert.Equal(1, samples.Min());
@@ -97,7 +99,7 @@ public sealed class PaginationDepthTests
     }
 
     /// <summary>
-    /// Splits a fixed number of times, recording how many PlaceRenderer frames are on the stack at
+    /// Splits a fixed number of times, recording how many PlaceLoop frames are on the stack at
     /// each Layout call. Each overflow is a fresh instance sharing the
     /// same recording list, as the library's renderers do, so a second pass repeats the walk from
     /// the start instead of resuming a spent counter.
@@ -120,7 +122,7 @@ public sealed class PaginationDepthTests
         public LayoutResult Layout(LayoutContext context)
         {
             var frames = new StackTrace(false).GetFrames() ?? [];
-            _samples.Add(frames.Count(f => f.GetMethod()?.Name == "PlaceRenderer"));
+            _samples.Add(frames.Count(f => f.GetMethod()?.Name == "PlaceLoop"));
 
             var occupied = context.Area.WithHeight(0);
             return _remaining > 0
