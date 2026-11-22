@@ -1116,6 +1116,31 @@ public sealed class TableCellBreakTests : IDisposable
     }
 
     /// <summary>
+    /// A header that gives up its tab changes the room every group under it has, so the groups
+    /// after it are judged on the new header. The tab in the header tips the first group over the
+    /// page, and the header is 20pt once it is given up. The second group, 576pt with that header
+    /// and 588pt with the tab as a space, holds line feeds and keeps them: only the header cell is
+    /// reported.
+    /// </summary>
+    [Fact]
+    public void AGroupAfterARelievedHeaderIsJudgedByTheHeaderThatRemains()
+    {
+        using var doc = WidePage();
+        var t = Wide10(36, 36);
+        t.AddRow(isHeader: true).AddCell("ab	ab");
+        t.AddRow().AddCell(new Cell("a") { RowSpan = 2 }).AddCell("b");
+        t.AddRow().AddCell(Words(44, " "));
+        t.AddRow().AddCell(new Cell("a") { RowSpan = 2 }).AddCell("b");
+        t.AddRow().AddCell(Words(44));
+        doc.Add(t);
+
+        Save(doc);
+        var report = Assert.Single(doc.Diagnostics, d => d.Code == LayoutDiagnosticCode.CellWhiteSpaceDropped);
+
+        Assert.Contains("row 0, cell 0", report.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// A line separator, U+2028, is a space and not a break, so it is not the first step: a group
     /// that its cell does not tip is left as written, and only the cell with the line feeds is laid
     /// out unbroken.
@@ -1240,7 +1265,7 @@ public sealed class TableCellBreakTests : IDisposable
     [Fact]
     public void TheCostOfGivingUpBreaksInFixedColumnsDoesNotGrowWithEachGroup()
     {
-        static long Allocated(int groups, string separator)
+        static (long Bytes, int Reported) Allocated(int groups, string separator)
         {
             using var doc = WidePage();
             var t = Wide10(1500, 400);
@@ -1252,7 +1277,8 @@ public sealed class TableCellBreakTests : IDisposable
             doc.Add(t);
             var before = GC.GetAllocatedBytesForCurrentThread();
             Save(doc);
-            return GC.GetAllocatedBytesForCurrentThread() - before;
+            var bytes = GC.GetAllocatedBytesForCurrentThread() - before;
+            return (bytes, doc.Diagnostics.Where(d => d.Code == LayoutDiagnosticCode.CellWhiteSpaceDropped).Sum(d => d.Count));
         }
 
         Allocated(10, "\n");
@@ -1260,7 +1286,9 @@ public sealed class TableCellBreakTests : IDisposable
         var withBreaks = Allocated(400, "\n");
         var withSpaces = Allocated(400, " ");
 
-        Assert.True(withBreaks < 5 * withSpaces, $"{withBreaks} bytes against {withSpaces} without breaks");
+        Assert.Equal(400, withBreaks.Reported);
+        Assert.Equal(0, withSpaces.Reported);
+        Assert.True(withBreaks.Bytes < 5 * withSpaces.Bytes, $"{withBreaks.Bytes} bytes against {withSpaces.Bytes} without breaks");
     }
 
     /// <summary>
@@ -1271,7 +1299,7 @@ public sealed class TableCellBreakTests : IDisposable
     [Fact]
     public void TheCostOfGivingUpTabsInFixedColumnsDoesNotGrowWithEachGroup()
     {
-        static long Allocated(int groups, string tabCell)
+        static (long Bytes, int Reported) Allocated(int groups, string tabCell)
         {
             using var doc = WidePage();
             var t = Wide10(36, 36);
@@ -1283,7 +1311,8 @@ public sealed class TableCellBreakTests : IDisposable
             doc.Add(t);
             var before = GC.GetAllocatedBytesForCurrentThread();
             Save(doc);
-            return GC.GetAllocatedBytesForCurrentThread() - before;
+            var bytes = GC.GetAllocatedBytesForCurrentThread() - before;
+            return (bytes, doc.Diagnostics.Where(d => d.Code == LayoutDiagnosticCode.CellWhiteSpaceDropped).Sum(d => d.Count));
         }
 
         Allocated(10, "ab	ab");
@@ -1291,7 +1320,9 @@ public sealed class TableCellBreakTests : IDisposable
         var withTabs = Allocated(400, "ab	ab");
         var withoutTabs = Allocated(400, "abab");
 
-        Assert.True(withTabs < 5 * withoutTabs, $"{withTabs} bytes against {withoutTabs} without tabs");
+        Assert.Equal(400, withTabs.Reported);
+        Assert.Equal(0, withoutTabs.Reported);
+        Assert.True(withTabs.Bytes < 5 * withoutTabs.Bytes, $"{withTabs.Bytes} bytes against {withoutTabs.Bytes} without tabs");
     }
 
     /// <summary>
