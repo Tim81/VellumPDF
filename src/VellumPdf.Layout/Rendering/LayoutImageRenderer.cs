@@ -200,9 +200,8 @@ public sealed class LayoutImageRenderer : IRenderer, IPageBreakSource, IKeepSour
         return (text == "-0" ? "0" : text) + "pt";
     }
 
-    // Adding 0.0 turns -0.0 into 0.0 and changes no other value.
     private static string Exact(double points) =>
-        (points + 0.0).ToString("R", System.Globalization.CultureInfo.InvariantCulture) +
+        points.ToString("R", System.Globalization.CultureInfo.InvariantCulture) +
         (double.IsFinite(points) ? "pt" : " pt");
 
     /// <summary>Draws the image XObject, emitting a tagged Figure struct element when tagging is enabled.</summary>
