@@ -71,21 +71,15 @@ public sealed class LayoutContext
     /// </summary>
     internal bool HonourLineCounts { get; init; }
 
-    // Target, Mode and Session exist only to keep the 2.3.3 continuation verdict; removed in 3.0
-    // (#688).
+    // Session and everything that reads it exist only to keep the 2.3.3 continuation verdict;
+    // removed in 3.0 (#688). One reference is all a context carries, so a document of very many
+    // tiny elements pays eight bytes a call.
     /// <summary>
-    /// The renderer the document called with this context. Null on a context built through the
-    /// public constructor or made by <see cref="WithArea"/>.
+    /// The session the document made this context for, whose <see cref="ContinuationSession.Called"/>
+    /// is the renderer it called. Null on a context built through the public constructor or made by
+    /// <see cref="WithArea"/>, and on one a built-in parent made for a child it lays out as the
+    /// twin.
     /// </summary>
-    internal IRenderer? Target { get; init; }
-
-    /// <summary>
-    /// Which layout <see cref="Target"/> uses. Read through <see cref="ModeFor"/>, never
-    /// directly, because it means nothing to any other renderer.
-    /// </summary>
-    internal ContinuationMode Mode { get; init; }
-
-    /// <summary>The session a renderer reports to; null wherever <see cref="Target"/> is.</summary>
     internal ContinuationSession? Session { get; init; }
 
     // 2.x compatibility device, removed in 3.0 (#688): 3.0 lays a built-in renderer out one way
@@ -98,22 +92,52 @@ public sealed class LayoutContext
     /// 2.3.3 did.
     /// </summary>
     internal ContinuationMode ModeFor(IRenderer renderer) =>
-        ReferenceEquals(Target, renderer) ? Mode : ContinuationMode.Twin;
+        Session is { } session && ReferenceEquals(session.Called, renderer) ? session.Mode : ContinuationMode.Twin;
 
+    // Removed in 3.0 (#688), with the twin itself.
+    /// <summary>
+    /// Whether the document called <paramref name="renderer"/> itself, outside a probe, and its mode
+    /// is the twin. A renderer's twin instance is handed to the document only by a decision, so for
+    /// it this means the document chose it, and it can carry that to the pieces it returns. A
+    /// renderer that records a fallback when it is laid out as its twin records it only when this
+    /// is true, because a twin that a caller's renderer holds, and a probe of the twin, are not one.
+    /// </summary>
+    internal bool IsPlacedAsTwin(IRenderer renderer) =>
+        Session is { Probing: false, Mode: ContinuationMode.Twin } session && ReferenceEquals(session.Called, renderer);
+
+    // Removed in 3.0 (#688).
     /// <summary>
     /// A context for a built-in renderer that <paramref name="parent"/>, itself called under this
     /// context, lays out as part of its own layout: addressed to <paramref name="child"/> and in
     /// the parent's own mode, with the fresh-page area carried as <see cref="WithArea"/> carries
     /// it. A parent that lays a child out under any other context leaves the child on its twin.
     /// </summary>
-    internal LayoutContext Address(IRenderer parent, IRenderer child, LayoutBox area) =>
+    /// <remarks>
+    /// <paramref name="atTop"/> and <paramref name="lineCounts"/> are what the parent says of the
+    /// child's area; they are false, as <see cref="WithArea"/> leaves them, unless the parent
+    /// passes its own. A child that reports under the parent's context is not read: the parent
+    /// reports for itself, and the document counts the child's report as a parent that forgot to.
+    /// </remarks>
+    internal LayoutContext Address(
+        IRenderer parent, IRenderer child, LayoutBox area, bool atTop = false, bool lineCounts = false) =>
         new(area, ContentTop)
         {
             FreshPageArea = FreshPageArea,
-            Target = child,
-            Mode = ModeFor(parent),
-            Session = Session,
+            AtPageTop = atTop,
+            HonourLineCounts = lineCounts,
+            Session = ModeFor(parent) == ContinuationMode.Twin ? null : ContinuationSession.ViewFor(child, ModeFor(parent), Session),
         };
+
+    // Removed in 3.0 (#688).
+    /// <summary>
+    /// A context for a child that a built-in parent lays out where it has no document context to
+    /// derive one from, such as the re-layout its <c>Draw</c> does. <paramref name="mode"/> is the
+    /// mode the parent was laid out in, which a parent keeps from its own layout: a call that was
+    /// laid out <see cref="ContinuationMode.Undecided"/> and then kept is the new layout, and one
+    /// that the document redid with the twin is the twin.
+    /// </summary>
+    internal static LayoutContext Addressed(LayoutBox area, IRenderer child, ContinuationMode mode) =>
+        new(area) { Session = mode == ContinuationMode.Twin ? null : ContinuationSession.ViewFor(child, mode, null) };
 
     /// <summary>A minimum Y position, carried for callers that set one.</summary>
     /// <remarks>
@@ -123,14 +147,7 @@ public sealed class LayoutContext
     public double ContentTop { get; }
 
     /// <summary>Creates a context for the given available area and optional content top.</summary>
-    /// <remarks>
-    /// Nothing is refused. Both arguments are stored as passed.
-    /// <para><b>A context you build is not the document's.</b> A built-in renderer that you lay
-    /// out under it uses the layout it had in 2.3.3 wherever a later fix would lay it out
-    /// differently. That keeps the verdict on the 50,000-continuation limit that the same element
-    /// had in 2.3.3. <b>Do not</b> lay a built-in renderer out under a context you built and expect
-    /// a fix that changes its layout to apply to it.</para>
-    /// </remarks>
+    /// <remarks>Nothing is refused. Both arguments are stored as passed.</remarks>
     public LayoutContext(LayoutBox area, double contentTop = 0)
     {
         Area = area;
@@ -145,11 +162,6 @@ public sealed class LayoutContext
     /// is a page top and that a paragraph reads its line counts, are not copied: a smaller area is
     /// not known to be a page top, and a renderer that wraps a paragraph renderer places as many
     /// lines as fit.
-    /// <para><b>The copy is not the document's context.</b> A built-in renderer that you lay out
-    /// under it uses the layout it had in 2.3.3 wherever a later fix would lay it out differently,
-    /// which keeps the continuation limit's verdict for the element as it was in 2.3.3. <b>Do
-    /// not</b> narrow a context for a built-in renderer and expect a fix that changes its layout
-    /// to apply to it.</para>
     /// </remarks>
     public LayoutContext WithArea(LayoutBox area) => new(area, ContentTop) { FreshPageArea = FreshPageArea };
 }

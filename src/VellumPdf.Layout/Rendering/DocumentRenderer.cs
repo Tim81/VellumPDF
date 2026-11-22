@@ -1,6 +1,7 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Diagnostics;
 using VellumPdf.Canvas;
 using VellumPdf.Layout.Core;
 using VellumPdf.Layout.Elements;
@@ -438,6 +439,7 @@ public sealed class DocumentRenderer
         LayoutCalls = 0;
         ContinuationProbes = 0;
         ContinuationProbeFaults = 0;
+        UnreportedChildReports = 0;
         _continuationVerdicts = null;
         _measureSink = null;
         _drawSink = null;
@@ -895,6 +897,10 @@ public sealed class DocumentRenderer
                 history[i].Add(dependents[i].ResolvedText);
             }
 
+            // A resolve that changed a text changed the layout without changing the key a verdict is
+            // kept under, so those verdicts are not valid for this run (#686). Removed in 3.0 (#688).
+            if (anyChanged) _continuationVerdicts = null;
+
             var pages = RunPass(measure: true, totalPages: 0);
             pageCounts.Add(pages);
 
@@ -952,7 +958,8 @@ public sealed class DocumentRenderer
     //
     // Every call addresses its context to the instance it calls, in both passes and in every
     // simulation, so a renderer can tell a context the document built for it from one that a
-    // caller's renderer passed on or made (#686).
+    // caller's renderer passed on or made (#686). Removed in 3.0 (#688), which lays a built-in
+    // renderer out one way under every context.
     private LayoutResult CallLayout(IRenderer renderer, LayoutBox area, bool lineCounts, ContinuationSession session, bool retry = false, bool atTop = false, int pagesAhead = 0)
     {
         LayoutCalls++;
@@ -967,8 +974,6 @@ public sealed class DocumentRenderer
             FreshPageArea = fresh,
             AtPageTop = retry || atTop,
             HonourLineCounts = lineCounts,
-            Target = renderer,
-            Mode = session.Mode,
             Session = session,
         });
     }
@@ -1214,7 +1219,8 @@ public sealed class DocumentRenderer
     }
 
     // The decision, its probes and its memo below exist only to keep the 2.3.3 continuation verdict
-    // for a renderer whose new layout differs from 2.3.3's. They are removed in 3.0 (#688).
+    // for a renderer whose new layout differs from 2.3.3's. They are removed in 3.0 (#688), which
+    // lays a built-in renderer out one way; the limit itself stays as a test seam.
     //
     // The most continuations one element may take; the constant, except in tests that probe the
     // decision below at a size that is cheap to reach.
@@ -1232,10 +1238,30 @@ public sealed class DocumentRenderer
 
     // The verdict of a decision that ran probes, kept for the start it was made from: the element
     // the document placed, where on the page it starts, and the continuations already counted.
-    // Both passes, every measuring run of a plan-dependent document and every simulation of the
-    // keep rules start the same element from the same place, so each asks once. The x position is
-    // not part of the key: mirrored margins move only x, and a layout depends on the width.
+    // Both passes and every simulation of the keep rules start the same element from the same
+    // place, so each asks once. The x position is not part of the key: mirrored margins move only x,
+    // and a layout depends on the width. A measuring run of a plan-dependent document starts it from
+    // the same place too, but with a different text, so the verdicts are dropped whenever a resolve
+    // changes one. Y and Height are both kept: they determine each other only up to rounding.
     private Dictionary<ContinuationKey, ContinuationMode>? _continuationVerdicts;
+
+    // The session of the placement in progress, reused for each element. A placement never starts
+    // another one: a probe runs the loop with a session of its own, and the keep rules reach
+    // PlaceRenderer only from the pass loop, so nothing is lost by resetting it for each element.
+    private ContinuationSession? _session;
+
+    /// <summary>
+    /// Calls that ended with a report from a child a built-in parent addressed and no report from the
+    /// parent, in the last <see cref="RunLayout"/>, read by tests. Each is a parent that lets its
+    /// child lay out the new way while the document still has the twin to decide.
+    /// </summary>
+    internal int UnreportedChildReports { get; private set; }
+
+    /// <summary>
+    /// Whether a call that ends with an unreported child fails a Debug build. Tests that provoke it
+    /// switch it off to read <see cref="UnreportedChildReports"/>.
+    /// </summary>
+    internal bool AssertOnUnreportedChild { get; init; } = true;
 
     private readonly struct ContinuationKey(IRenderer root, double y, double height, int continuations)
         : IEquatable<ContinuationKey>
@@ -1262,9 +1288,17 @@ public sealed class DocumentRenderer
     //
     // A bound within what is left of the limit needs no probe: the new layout cannot reach the
     // limit, and the twin never takes more continuations than it. Otherwise the element is laid
-    // out twice without drawing, the twin first and the new layout second, and the twin is chosen
-    // when either reaches the limit. The twin reaching it keeps a refusal 2.3.3 made, and the new
-    // layout reaching it keeps a save 2.3.3 made.
+    // out twice without drawing, the twin first and the new layout second. The twin is chosen when
+    // either reaches the limit: the twin reaching it keeps a refusal 2.3.3 made, and the new
+    // layout reaching it keeps a save 2.3.3 made. It is chosen too when the new layout throws
+    // something else, because the twin is 2.3.3's own placement and saves what 2.3.3 saved. A twin
+    // that throws while the new layout does not leaves the new layout, which then saves a document
+    // 2.3.3 refused.
+    //
+    // At the retry site the probe starts at the loop call that follows the retry, which is where
+    // the real placement goes on: the retry's result is read only to see whether it is Nothing, so
+    // leaving the twin's retry out of the probe loses nothing but a refusal the real placement
+    // raises on its own.
     private ContinuationMode DecideContinuation(IRenderer renderer, ContinuationSession session, int continuations, bool keepTogether, bool lineCounts)
     {
         if (session.Bound <= (long)ContinuationLimit - continuations) return ContinuationMode.New;
@@ -1276,24 +1310,32 @@ public sealed class DocumentRenderer
 
         var twin = session.Reporter!.Twin();
         var verdict =
-            ReachesContinuationLimit(twin, ContinuationMode.Twin, keepTogether, lineCounts, continuations)
-            || ReachesContinuationLimit(renderer, ContinuationMode.New, keepTogether, lineCounts, continuations)
-                ? ContinuationMode.Twin
-                : ContinuationMode.New;
+            ProbeContinuations(twin, ContinuationMode.Twin, keepTogether, lineCounts, continuations) != ProbeOutcome.Limit
+            && ProbeContinuations(renderer, ContinuationMode.New, keepTogether, lineCounts, continuations) == ProbeOutcome.Clean
+                ? ContinuationMode.New
+                : ContinuationMode.Twin;
         (_continuationVerdicts ??= [])[key] = verdict;
         return verdict;
+    }
+
+    private enum ProbeOutcome
+    {
+        Clean,
+        Limit,
+        Fault,
     }
 
     // Places the renderer in one mode on a copy of the cursor, the way RunHolds places the elements
     // of a keep run, and answers whether the loop would have thrown for the limit. Nothing is
     // drawn, reported or kept. Any other exception is counted and left for the placement that
     // follows. Running out of memory and a cancellation are not ours to absorb.
-    private bool ReachesContinuationLimit(IRenderer renderer, ContinuationMode mode, bool keepTogether, bool lineCounts, int continuations)
+    private ProbeOutcome ProbeContinuations(IRenderer renderer, ContinuationMode mode, bool keepTogether, bool lineCounts, int continuations)
     {
         ContinuationProbes++;
         var probe = new ContinuationSession(mode, probing: true);
         var saved = (_measuring, _measureArea, _measureY, _pageIndex, _placedOnPage, _simulating, _simFirstOnly, _simFirstPage);
         var cursor = Cursor;
+        var fault = false;
         try
         {
             _measuring = true;
@@ -1306,31 +1348,49 @@ public sealed class DocumentRenderer
         catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
         {
             ContinuationProbeFaults++;
+            fault = true;
         }
         finally
         {
             (_measuring, _measureArea, _measureY, _pageIndex, _placedOnPage, _simulating, _simFirstOnly, _simFirstPage) = saved;
         }
 
-        return probe.LimitHit;
+        return probe.LimitHit ? ProbeOutcome.Limit : fault ? ProbeOutcome.Fault : ProbeOutcome.Clean;
     }
 
-    // One layout call. When the call reported and the decision is the twin, the call is made again
-    // with the twin, which the caller then holds, unless the caller asked to redo more than the
-    // call (recall false): the keep-together probe redoes the whole iteration.
-    private LayoutResult CallDeciding(ref IRenderer renderer, LayoutBox area, bool lineCounts, ContinuationSession session, int continuations, bool keepTogether, bool recall, bool retry = false, bool atTop = false, int pagesAhead = 0)
+    // What a call that reported, or that a child reported under, leaves to do, reached only when
+    // the session says so (Pending), so a call that reports nothing costs the loop one field read.
+    // When the decision is the twin, the call is made again with the twin, which the caller then
+    // holds, unless the caller asked to redo more than the call (recall false): the keep-together
+    // probe redoes the whole iteration. Removed in 3.0 (#688), with the decision. It returns the
+    // renderer instead of taking it by reference, because a by-reference variable would keep the
+    // loop's own out of a register for every call.
+    private (LayoutResult Result, IRenderer Renderer) SettleCall(IRenderer renderer, LayoutResult result, LayoutBox area, bool lineCounts, ContinuationSession session, int continuations, bool keepTogether, bool recall, bool retry = false, bool atTop = false, int pagesAhead = 0)
     {
-        var result = CallLayout(renderer, area, lineCounts, session, retry, atTop, pagesAhead);
-        if (!session.TakeReport()) return result;
+        var reported = session.TakeReport();
+        if (session.Strays != 0) NoteStrays(session, reported);
+        if (!reported) return (result, renderer);
 
         // A call that reports starts the placement it reports for, as the loop's next call would.
         // The retry has already moved to the next page, where the count has gone up by the Nothing.
         var mode = DecideContinuation(renderer, session, retry ? continuations + 1 : continuations, keepTogether, lineCounts);
         session.Mode = mode;
-        if (mode != ContinuationMode.Twin) return result;
+        if (mode != ContinuationMode.Twin) return (result, renderer);
 
         renderer = session.Reporter!.Twin();
-        return recall ? CallLayout(renderer, area, lineCounts, session, retry, atTop, pagesAhead) : result;
+        return (recall ? CallLayout(renderer, area, lineCounts, session, retry, atTop, pagesAhead) : result, renderer);
+    }
+
+    // A child that reported under a built-in parent's context while the mode was undecided, in a
+    // call where the parent made no report: the child laid out the new way, the first piece then
+    // fixes the twin, and the output is neither layout. Removed in 3.0 (#688).
+    private void NoteStrays(ContinuationSession session, bool parentReported)
+    {
+        session.ClearStrays();
+        if (parentReported) return;
+
+        UnreportedChildReports++;
+        Debug.Assert(!AssertOnUnreportedChild, "A built-in parent addressed a reporting child and did not report for itself.");
     }
 
     private void PlaceRenderer(IRenderer renderer, int totalPages)
@@ -1339,7 +1399,9 @@ public sealed class DocumentRenderer
         // holds the same element and must not ask again.
         var keepTogether = renderer is IKeepSource { KeepTogether: true };
         var lineCounts = renderer is ParagraphRenderer;
-        PlaceLoop(renderer, totalPages, keepTogether, lineCounts, new ContinuationSession(), 0);
+        var session = _session ??= new ContinuationSession();
+        session.Reset();
+        PlaceLoop(renderer, totalPages, keepTogether, lineCounts, session, 0);
     }
 
     private void PlaceLoop(IRenderer renderer, int totalPages, bool keepTogether, bool lineCounts, ContinuationSession session, int continuations)
@@ -1352,7 +1414,9 @@ public sealed class DocumentRenderer
             var availableArea = OfferedArea(PlaceArea);
             var atTop = AtPageTop;
 
-            var result = CallDeciding(ref renderer, availableArea, lineCounts, session, continuations, keepTogether, recall: true, atTop: atTop);
+            var result = CallLayout(renderer, availableArea, lineCounts, session, atTop: atTop);
+            if (session.Pending)
+                (result, renderer) = SettleCall(renderer, result, availableArea, lineCounts, session, continuations, keepTogether, recall: true, atTop: atTop);
 
             // Checked on every call until the element has split once, not only on the first: a
             // Nothing moves the element to the top of the next page, and a keep-together element
@@ -1371,10 +1435,14 @@ public sealed class DocumentRenderer
                 else
                 {
                     var before = renderer;
-                    whole = CallDeciding(ref renderer, OfferedArea(next, next.Y), lineCounts, session, continuations, keepTogether, recall: false, atTop: true, pagesAhead: 1);
+                    var nextArea = OfferedArea(next, next.Y);
+                    whole = CallLayout(renderer, nextArea, lineCounts, session, atTop: true, pagesAhead: 1);
+                    if (session.Pending)
+                        (whole, renderer) = SettleCall(renderer, whole, nextArea, lineCounts, session, continuations, keepTogether, recall: false, atTop: true, pagesAhead: 1);
 
                     // The probe reported and the twin was chosen, so the iteration is made again
                     // with the twin. The call before it matched the twin's by the report contract.
+                    // Removed in 3.0 (#688), with the decision.
                     if (!ReferenceEquals(before, renderer)) continue;
                 }
 
@@ -1389,6 +1457,7 @@ public sealed class DocumentRenderer
             {
                 case LayoutResult.Outcome.Full:
                     // A piece placed with no report is the twin's, so the rest of the placement is.
+                    // Removed in 3.0 (#688), with the decision.
                     if (session.Mode == ContinuationMode.Undecided) session.Mode = ContinuationMode.Twin;
                     _placedOnPage = true;
                     NoteFirstPiece();
@@ -1399,6 +1468,7 @@ public sealed class DocumentRenderer
                     return;
 
                 case LayoutResult.Outcome.Partial:
+                    // The same first-piece rule; removed in 3.0 (#688).
                     if (session.Mode == ContinuationMode.Undecided) session.Mode = ContinuationMode.Twin;
                     split = true;
                     _placedOnPage = true;
@@ -1417,7 +1487,9 @@ public sealed class DocumentRenderer
                 case LayoutResult.Outcome.Nothing:
                     AdvancePage(totalPages);
                     if (!_measuring) EnsurePage();
-                    var retry = CallDeciding(ref renderer, PlaceArea, lineCounts, session, continuations, keepTogether, recall: true, retry: true);
+                    var retry = CallLayout(renderer, PlaceArea, lineCounts, session, retry: true);
+                    if (session.Pending)
+                        (retry, renderer) = SettleCall(renderer, retry, PlaceArea, lineCounts, session, continuations, keepTogether, recall: true, retry: true);
                     if (retry.Status == LayoutResult.Outcome.Nothing)
                     {
                         if (!_measuring) FinishCurrentPage(totalPages);

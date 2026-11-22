@@ -184,6 +184,45 @@ public sealed class ContinuationLimitTests
     }
 
     [Fact]
+    public void Memo_isKeyedByTheElement_soTwoElementsAtTheSameStartDecideApart()
+    {
+        // Both start at the top of a page with nothing counted. The first would reach the limit with
+        // its new layout and the second would not; the verdict of one is not the other's.
+        var logA = new Log();
+        var logB = new Log();
+        var a = new Scripted(new Plan { NewPages = 301, TwinPages = 100 }, logA);
+        var b = new Scripted(new Plan { NewPages = 100, TwinPages = 100 }, logB);
+        var outcome = Run(new Setup(), new Log(), a, new PageBreakRenderer(new PageBreak()), b);
+
+        Assert.Null(outcome.Error);
+        Assert.Equal(4, outcome.Probes);
+        Assert.DoesNotContain("new", logA.Draws);
+        Assert.Equal("new", logB.Draws[^1]);
+        Assert.Empty(logA.BoundViolations);
+        Assert.Empty(logB.BoundViolations);
+    }
+
+    [Fact]
+    public void Memo_doesNotCarryAVerdictAcrossMeasuringRunsThatResolveToADifferentLayout()
+    {
+        // Resolving changes the layout of the element and not where it starts, which is what a
+        // verdict is kept under. Run one lays out 150 continuations in the new layout and run two
+        // 301. The twin takes 100 in both and is what 2.3.3 saved.
+        var log = new Log();
+        var plans = new[]
+        {
+            new Plan { NewPages = 150, TwinPages = 100 },
+            new Plan { NewPages = 301, TwinPages = 100 },
+        };
+        var outcome = Run(new Setup(), log, new DependentScripted(plans, log));
+
+        Assert.Null(outcome.Error);
+        Assert.Equal(3, outcome.Renderer.MeasureRuns);
+        Assert.DoesNotContain("new", log.Draws);
+        Assert.Equal(101, outcome.Pages);
+    }
+
+    [Fact]
     public void Memo_isKeyedByTheCountAsWellAsTheStart()
     {
         // The same element starts twice at a page top: once after a Nothing, with one continuation
@@ -230,15 +269,114 @@ public sealed class ContinuationLimitTests
         Assert.Equal(clean.Bytes, faulted.Bytes);
     }
 
-    [Fact]
-    public void Probe_exceptionOtherThanTheLimit_isLeftForTheRealPlacement()
+    [Theory]
+    [InlineData(Variant.Plain)]
+    [InlineData(Variant.Lead)]
+    [InlineData(Variant.RetrySite)]
+    public void Probe_newLayoutThrowing_whereTheTwinSaves_choosesTheTwin(Variant v)
     {
-        var plan = PlanFor(Variant.Lead, 50, 50) with { FailNew = Failure.Exception };
+        // The twin is 2.3.3's own placement, so it saves what 2.3.3 saved. The new layout is not
+        // placed, and the exception it would have thrown is never raised.
+        var plan = PlanFor(v, 50, 50) with { FailNew = Failure.Exception };
+        var outcome = Place(v, plan);
+        var silent = Place(v, PlanFor(v, 50, 50) with { Reports = false });
+
+        Assert.Null(outcome.Error);
+        Assert.Equal(1, outcome.Faults);
+        Assert.DoesNotContain("new", outcome.Log.Draws);
+        Assert.Equal(silent.Bytes, outcome.Bytes);
+    }
+
+    [Fact]
+    public void Probe_bothLayoutsThrowing_keepTheTwinsRefusal()
+    {
+        var plan = PlanFor(Variant.Lead, 50, 50) with { FailNew = Failure.Exception, FailTwin = Failure.Exception };
         var outcome = Place(Variant.Lead, plan);
 
-        Assert.Equal(1, outcome.Faults);
+        Assert.Equal(2, outcome.Faults);
         Assert.IsType<InvalidOperationException>(outcome.Error);
-        Assert.Equal("scripted failure", outcome.Error!.Message);
+        Assert.Equal("scripted failure in the twin", outcome.Error!.Message);
+    }
+
+    [Fact]
+    public void Probe_twinThrowing_whereTheNewLayoutSaves_choosesTheNewLayout()
+    {
+        // A document 2.3.3 refused saves with the new layout: the verdict is about the limit, and
+        // a fix that lets a refused document save is the fix's own.
+        var plan = PlanFor(Variant.Lead, 50, 50) with { FailTwin = Failure.Exception };
+        var outcome = Place(Variant.Lead, plan);
+
+        Assert.Null(outcome.Error);
+        Assert.Equal(1, outcome.Faults);
+        Assert.Equal("new", outcome.Log.Draws[^1]);
+    }
+
+    [Theory]
+    [InlineData(Variant.Plain)]
+    [InlineData(Variant.Lead)]
+    [InlineData(Variant.RetrySite)]
+    public void Decision_newLayoutThatRefusesAPageTop_whereTheTwinSaves_choosesTheTwin(Variant v)
+    {
+        // Under the retry site the new layout's own retry answers Nothing, which the loop would
+        // throw as too tall; the twin's retry fits, and the document saves as 2.3.3 saved.
+        var plan = PlanFor(v, 100, 100) with { NewRefusesAtTop = true };
+        var outcome = Place(v, plan);
+
+        Assert.Null(outcome.Error);
+        Assert.DoesNotContain("new", outcome.Log.Draws);
+        Assert.Equal(PagesFor(v, 100), outcome.Pages);
+    }
+
+    [Theory]
+    [InlineData(24_076, true)]
+    [InlineData(24_075, true)]
+    [InlineData(24_076, false)]
+    [InlineData(24_075, false)]
+    public void Decision_probesStartWhereThePlacementStarts_notAtThePageTop(double units, bool theNewLayoutIsTheLongOne)
+    {
+        // 75 points are left on the page after the lead block and 80 on a fresh one. A content of
+        // 24,076 points takes 301 continuations from the first and 300 from the second, so a
+        // probe that began at the top of the page would miss the limit the placement reaches.
+        var plan = new Plan
+        {
+            NewUnits = theNewLayoutIsTheLongOne ? units : 1000,
+            TwinUnits = theNewLayoutIsTheLongOne ? 1000 : units,
+        };
+        var outcome = Place(Variant.Lead, plan);
+        var reaches = units > 24_075;
+
+        if (reaches && !theNewLayoutIsTheLongOne)
+        {
+            Assert.True(IsLimitRefusal(outcome.Error), outcome.Error?.ToString());
+            Assert.Equal(1, outcome.Probes);
+            return;
+        }
+
+        Assert.Null(outcome.Error);
+        Assert.Equal(2, outcome.Probes);
+        if (reaches)
+            Assert.DoesNotContain("new", outcome.Log.Draws);
+        else
+            Assert.Equal("new", outcome.Log.Draws[^1]);
+    }
+
+    [Fact]
+    public void Decision_atTheRetrySite_redoesTheRetryWithTheTwin()
+    {
+        // After a Nothing the retry is the call that reported. Chosen, the twin makes the retry
+        // itself, then the loop call that the document goes on with.
+        var outcome = Place(Variant.RetrySite, PlanFor(Variant.RetrySite, 301, 100));
+        Assert.Null(outcome.Error);
+
+        var calls = outcome.Log.RealCalls.ToList();
+        var reporting = calls.FindIndex(c => c.Flavor == "new" && c.AtPageTop);
+        Assert.True(reporting >= 0);
+        Assert.Equal("twin", calls[reporting + 1].Flavor);
+        Assert.True(calls[reporting + 1].AtPageTop);
+        Assert.Equal(calls[reporting].Height, calls[reporting + 1].Height);
+
+        // The twin's 99 continuations are 99 Partial calls and one Full, after the retry.
+        Assert.Equal(1 + 99 + 1, calls.Count(c => c.Flavor == "twin"));
     }
 
     [Fact]
@@ -361,17 +499,13 @@ public sealed class ContinuationLimitTests
     {
         var area = new LayoutBox(0, 0, 10, 10);
         var made = new LayoutContext(area);
-        Assert.Null(made.Target);
         Assert.Null(made.Session);
-        Assert.Equal(ContinuationMode.Undecided, made.Mode);
 
         var target = new Block(1);
         var other = new Block(1);
-        var addressed = new LayoutContext(area) { Target = target, Mode = ContinuationMode.New, Session = new ContinuationSession() };
+        var addressed = new LayoutContext(area) { Session = new ContinuationSession(ContinuationMode.New) { Called = target } };
         var narrowed = addressed.WithArea(area);
-        Assert.Null(narrowed.Target);
         Assert.Null(narrowed.Session);
-        Assert.Equal(ContinuationMode.Undecided, narrowed.Mode);
 
         Assert.Equal(ContinuationMode.New, addressed.ModeFor(target));
         Assert.Equal(ContinuationMode.Twin, addressed.ModeFor(other));
@@ -387,22 +521,197 @@ public sealed class ContinuationLimitTests
     {
         var mode = (ContinuationMode)modeValue;
         var child = new Block(1);
-        var seen = new List<ContinuationMode>();
+        var seen = new List<LayoutContext>();
         var parent = new Parent(child, seen);
         var context = new LayoutContext(new LayoutBox(0, 0, 10, 10))
         {
-            Target = parent,
-            Mode = mode,
-            Session = new ContinuationSession(mode),
+            Session = new ContinuationSession(mode) { Called = parent },
         };
 
         parent.Layout(context);
-        Assert.Equal([mode], seen);
+        Assert.Equal(mode, seen[0].ModeFor(child));
+        Assert.Equal(ContinuationMode.Twin, seen[0].ModeFor(parent));
 
         // A parent that a caller's renderer lays out is not addressed, so its child is the twin's.
         seen.Clear();
         parent.Layout(context.WithArea(context.Area));
-        Assert.Equal([ContinuationMode.Twin], seen);
+        Assert.Equal(ContinuationMode.Twin, seen[0].ModeFor(child));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Address_carriesWhatTheParentNamesAndWhatTheDocumentSet(bool addressedParent)
+    {
+        var area = new LayoutBox(1, 2, 30, 40);
+        var childArea = new LayoutBox(5, 6, 7, 8);
+        var fresh = new LayoutBox(9, 10, 11, 12);
+        var parent = new Block(1);
+        var child = new Block(1);
+        var context = new LayoutContext(area, 3)
+        {
+            FreshPageArea = fresh,
+            AtPageTop = true,
+            HonourLineCounts = true,
+            Session = addressedParent ? new ContinuationSession(ContinuationMode.New) { Called = parent } : null,
+        };
+
+        // The page top and the line counts are about the parent's area, not the child's, so they
+        // are carried only when the parent says the child's area has them, as WithArea would.
+        var plain = context.Address(parent, child, childArea);
+        Assert.Equal(childArea, plain.Area);
+        Assert.Equal(3, plain.ContentTop);
+        Assert.Equal(fresh, plain.FreshPageArea);
+        Assert.False(plain.AtPageTop);
+        Assert.False(plain.HonourLineCounts);
+
+        var named = context.Address(parent, child, childArea, atTop: true, lineCounts: true);
+        Assert.True(named.AtPageTop);
+        Assert.True(named.HonourLineCounts);
+        Assert.Equal(fresh, named.FreshPageArea);
+
+        var onlyTop = context.Address(parent, child, childArea, atTop: true);
+        Assert.True(onlyTop.AtPageTop);
+        Assert.False(onlyTop.HonourLineCounts);
+
+        var onlyCounts = context.Address(parent, child, childArea, lineCounts: true);
+        Assert.False(onlyCounts.AtPageTop);
+        Assert.True(onlyCounts.HonourLineCounts);
+
+        Assert.Equal(addressedParent ? ContinuationMode.New : ContinuationMode.Twin, plain.ModeFor(child));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void Addressed_givesADrawTimeChildTheModeItsParentWasLaidOutIn(int modeValue)
+    {
+        // A parent's Draw lays its child out again with no context of the document's, so it keeps
+        // the mode its own layout had and names it here.
+        var mode = (ContinuationMode)modeValue;
+        var area = new LayoutBox(1, 2, 3, 4);
+        var child = new Block(1);
+        var context = LayoutContext.Addressed(area, child, mode);
+
+        Assert.Equal(area, context.Area);
+        Assert.Equal(mode, context.ModeFor(child));
+        Assert.Equal(ContinuationMode.Twin, context.ModeFor(new Block(1)));
+        Assert.Equal(ContinuationMode.Twin, context.WithArea(area).ModeFor(child));
+    }
+
+    [Fact]
+    public void IsPlacedAsTwin_isTrueOnlyForTheDocumentsOwnCallOutsideAProbe()
+    {
+        var target = new Block(1);
+        var area = new LayoutBox(0, 0, 10, 10);
+        var placed = new LayoutContext(area) { Session = new ContinuationSession(ContinuationMode.Twin) { Called = target } };
+        var probe = new LayoutContext(area) { Session = new ContinuationSession(ContinuationMode.Twin, probing: true) { Called = target } };
+        var decidedNew = new LayoutContext(area) { Session = new ContinuationSession(ContinuationMode.New) { Called = target } };
+
+        Assert.True(placed.IsPlacedAsTwin(target));
+        Assert.False(placed.IsPlacedAsTwin(new Block(1)));
+        Assert.False(placed.WithArea(area).IsPlacedAsTwin(target));
+        Assert.False(new LayoutContext(area).IsPlacedAsTwin(target));
+        Assert.False(probe.IsPlacedAsTwin(target));
+        Assert.False(decidedNew.IsPlacedAsTwin(target));
+    }
+
+    [Fact]
+    public void IsPlacedAsTwin_tellsATwinTheDocumentChose_andNotOneAProbeOrAWrapperCalled()
+    {
+        var log = new Log();
+        var outcome = Run(new Setup(), log, new Scripted(new Plan { NewPages = 301, TwinPages = 100 }, log));
+        Assert.Null(outcome.Error);
+
+        var twinCalls = log.Calls.Where(c => c.Flavor == "twin").ToList();
+        Assert.All(twinCalls.Where(c => !c.Probing), c => Assert.True(c.PlacedAsTwin));
+        Assert.All(log.Calls.Where(c => c.Probing), c => Assert.False(c.PlacedAsTwin));
+        Assert.Contains(twinCalls, c => !c.Probing);
+
+        var wrappedLog = new Log();
+        var wrapped = Run(new Setup(), wrappedLog, new Wrapper(new Scripted(new Plan { NewPages = 50, TwinPages = 50 }, wrappedLog), WrapKind.PassThrough));
+        Assert.Null(wrapped.Error);
+        Assert.All(wrappedLog.Calls, c => Assert.False(c.PlacedAsTwin));
+    }
+
+    [Fact]
+    public void Parent_thatReportsForItself_andAddressesItsChild_decidesLikeAnyRenderer()
+    {
+        // A reporting child under a reporting parent reports into a context that is not the
+        // document's call, which is dropped; the parent's own report is what decides.
+        foreach (var (newC, twinC) in new[] { (301, 100), (100, 100), (301, 301) })
+        {
+            var log = new Log();
+            var child = new Scripted(new Plan { NewPages = newC, TwinPages = twinC }, log);
+            var outcome = Run(new Setup(), log, new ReportingParent(child, 1000));
+
+            Assert.Equal(0, outcome.Renderer.UnreportedChildReports);
+            if (twinC > Limit)
+            {
+                Assert.True(IsLimitRefusal(outcome.Error), outcome.Error?.ToString());
+                continue;
+            }
+
+            Assert.Null(outcome.Error);
+            Assert.Equal(2, outcome.Probes);
+            if (newC > Limit)
+                Assert.DoesNotContain("new", log.Draws);
+            else
+                Assert.Equal("new", log.Draws[^1]);
+            Assert.Equal((newC > Limit ? twinC : newC) + 1, outcome.Pages);
+        }
+    }
+
+    [Fact]
+    public void Parent_thatReportsForItself_isTheTwinUnderACallersWrapper()
+    {
+        var log = new Log();
+        var child = new Scripted(new Plan { NewPages = 301, TwinPages = 100 }, log);
+        var outcome = Run(new Setup(), log, new Wrapper(new ReportingParent(child, 1000), WrapKind.PassThrough));
+
+        Assert.Null(outcome.Error);
+        Assert.Equal(0, outcome.Probes);
+        Assert.DoesNotContain("new", log.Draws);
+    }
+
+    [Fact]
+    public void Parent_thatAddressesAReportingChildAndDoesNotReport_isCounted()
+    {
+        // The child lays out the new way while the parent has not reported, its report is dropped,
+        // and the first piece fixes the twin for the rest: one new piece and a hundred twin ones.
+        // The count is how a test of a built-in parent finds it; a Debug build fails instead.
+        var log = new Log();
+        var child = new Scripted(new Plan { NewPages = 301, TwinPages = 100 }, log);
+        var seen = new List<LayoutContext>();
+        var outcome = Run(new Setup { AllowUnreportedChild = true }, log, new Parent(child, seen));
+
+        Assert.Equal(1, outcome.Renderer.UnreportedChildReports);
+        Assert.Null(outcome.Error);
+        Assert.Equal(0, outcome.Probes);
+        Assert.Equal("new", log.Draws[0]);
+        Assert.Equal(100, log.Draws.Count(d => d == "twin"));
+    }
+
+    [Fact]
+    public void Scripted_aCallThatDoesNotReport_returnsTheTwinsResult()
+    {
+        // The late site reports from the second piece on, so the first call does not report and must
+        // lay out as the twin does: the twin has five continuations and the new layout none.
+        var log = new Log();
+        var plan = new Plan { NewPages = 0, TwinPages = 5, Site = Site.Late };
+        var scripted = new Scripted(plan, log);
+        var session = new ContinuationSession { Called = scripted };
+        var first = scripted.Layout(new LayoutContext(new LayoutBox(0, 0, 100, 80)) { Session = session });
+
+        Assert.False(session.TakeReport());
+        Assert.Equal(LayoutResult.Outcome.Partial, first.Status);
+
+        var reporting = new Scripted(plan with { Site = Site.Loop }, log);
+        var reportingSession = new ContinuationSession { Called = reporting };
+        var second = reporting.Layout(new LayoutContext(new LayoutBox(0, 0, 100, 80)) { Session = reportingSession });
+        Assert.True(reportingSession.TakeReport());
+        Assert.Equal(LayoutResult.Outcome.Full, second.Status);
     }
 
     [Fact]
@@ -430,6 +739,56 @@ public sealed class ContinuationLimitTests
         var probing = new ContinuationSession(ContinuationMode.Undecided, probing: true) { Called = a };
         probing.Report(a, 5);
         Assert.False(probing.TakeReport());
+        Assert.Equal(0, probing.Strays);
+    }
+
+    [Fact]
+    public void Report_fromAnInstanceTheDocumentDidNotCall_countsAsAStray()
+    {
+        var log = new Log();
+        var called = new Scripted(new Plan(), log);
+        var child = new Scripted(new Plan(), log);
+
+        var root = new ContinuationSession { Called = called };
+        Assert.False(root.Pending);
+        root.Report(child, 5);
+        Assert.False(root.Reported);
+        Assert.Equal(1, root.Strays);
+        Assert.True(root.Pending);
+
+        // A view for a child counts on the document's session, and one made where there is none
+        // has nothing to count on.
+        root.Reset();
+        Assert.False(root.Pending);
+        Assert.Equal(0, root.Strays);
+        var view = ContinuationSession.ViewFor(child, ContinuationMode.Undecided, root);
+        view.Report(child, 5);
+        Assert.Equal(1, root.Strays);
+        Assert.False(root.Reported);
+        ContinuationSession.ViewFor(child, ContinuationMode.Undecided, null).Report(child, 5);
+        ContinuationSession.ViewFor(child, ContinuationMode.New, root).Report(child, 5);
+        Assert.Equal(1, root.Strays);
+
+        // A view of a view reaches the same document session.
+        ContinuationSession.ViewFor(child, ContinuationMode.Undecided, view).Report(child, 5);
+        Assert.Equal(2, root.Strays);
+    }
+
+    [Fact]
+    public void Reset_forgetsThePlacementBeforeIt()
+    {
+        var log = new Log();
+        var a = new Scripted(new Plan(), log);
+        var session = new ContinuationSession { Called = a };
+        session.Report(a, 5);
+        session.Mode = ContinuationMode.Twin;
+        session.Reset();
+
+        Assert.Equal(ContinuationMode.Undecided, session.Mode);
+        Assert.False(session.Pending);
+        Assert.False(session.TakeReport());
+        session.Report(a, 3);
+        Assert.Equal(3, session.Bound);
     }
 
     [Fact]

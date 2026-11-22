@@ -46,16 +46,34 @@ internal interface IContinuationTwin
 
 /// <summary>
 /// The state of one placement loop's decision between a renderer's new layout and its twin
-/// (#686). One lives for each <c>PlaceRenderer</c> activation and is reached from the context of
-/// every call it makes, so a renderer reports without knowing the document.
+/// (#686). The document keeps one for its own placements and resets it for each element, so a
+/// document pays nothing per element until a renderer reports. A probe has one of its own, and a
+/// built-in parent that lays a child out gets a view of it from
+/// <see cref="LayoutContext.Address"/>. The context of every call reaches it, so a renderer reports
+/// without knowing the document.
 /// </summary>
 internal sealed class ContinuationSession
 {
+    private readonly bool _view;
+    private ContinuationSession? _root;
+
     internal ContinuationSession(ContinuationMode mode = ContinuationMode.Undecided, bool probing = false)
     {
         Mode = mode;
         Probing = probing;
     }
+
+    private ContinuationSession(ContinuationMode mode, bool probing, bool view)
+        : this(mode, probing) => _view = view;
+
+    /// <summary>
+    /// A session for a child that a built-in parent lays out in <paramref name="mode"/>, called with
+    /// <paramref name="child"/>. A report made to it is never read: the parent reports for itself,
+    /// and a report from a child while the mode is undecided is counted on the document's session
+    /// as <see cref="Strays"/>, so a parent that forgot to report is found.
+    /// </summary>
+    internal static ContinuationSession ViewFor(IRenderer child, ContinuationMode mode, ContinuationSession? from) =>
+        new(mode, from?.Probing ?? false, view: true) { Called = child, _root = from?._root ?? from };
 
     /// <summary>
     /// Undecided until the first call that reports, or the first piece placed without a report,
@@ -72,6 +90,12 @@ internal sealed class ContinuationSession
     /// <summary>The instance the call in progress is addressed to.</summary>
     internal IRenderer? Called { get; set; }
 
+    /// <summary>
+    /// A call left a report or a stray report to settle. The loop reads only this after each call, so a
+    /// renderer that reports nothing costs it one field.
+    /// </summary>
+    internal bool Pending { get; private set; }
+
     internal bool Reported { get; private set; }
 
     internal long Bound { get; private set; }
@@ -79,25 +103,67 @@ internal sealed class ContinuationSession
     internal IContinuationTwin? Reporter { get; private set; }
 
     /// <summary>
+    /// Reports made in the call in progress by an instance the document did not call, while the
+    /// mode was undecided. A call that ends with some of these and no report of its own is a built-in
+    /// parent that addressed a reporting child and did not report for itself: the child laid out its
+    /// new way and the parent's result is neither layout.
+    /// </summary>
+    internal int Strays { get; private set; }
+
+    /// <summary>Forgets the last placement so the session can serve the next element.</summary>
+    internal void Reset()
+    {
+        // What a report wrote (Bound, Reporter) is read only after the next report has overwritten it.
+        Mode = ContinuationMode.Undecided;
+        Reported = false;
+        Pending = false;
+        Strays = 0;
+    }
+
+    /// <summary>
     /// A renderer reports that its result in this call, or in a later one, can differ from its
-    /// twin's, with an upper bound on the continuations of the rest of its placement in either
-    /// layout, valid when the document places it directly.
+    /// twin's, with an upper bound on the continuations of the rest of its placement.
     /// </summary>
     /// <remarks>
-    /// <b>If a call made no report, its result equals the twin's.</b> The decision relies on it.
-    /// A report from an instance the document did not address, such as a child a built-in parent
+    /// <b>The bound must cover both layouts.</b> The document trusts it completely: a bound within
+    /// what is left of the limit means no probe runs, so a bound that holds for the twin's layout
+    /// and not for the new one lets the new layout reach the limit where 2.3.3 saved. A bound
+    /// that is too large only costs two probes. It holds where the document places the element
+    /// directly, from the start of the call that reports.
+    /// <para><b>If a call made no report, its result equals the twin's.</b> The decision relies on
+    /// it. A report from an instance the document did not call, such as a child a built-in parent
     /// lays out, or one made after the mode is decided or inside a probe, is dropped: the parent
-    /// reports for itself.
+    /// reports for itself.</para>
     /// </remarks>
     internal void Report<T>(T renderer, long bound)
         where T : IRenderer, IContinuationTwin
     {
-        if (Mode != ContinuationMode.Undecided || Probing || !ReferenceEquals(renderer, Called))
+        if (Mode != ContinuationMode.Undecided || Probing) return;
+
+        if (_view)
+        {
+            _root?.NoteStray();
             return;
+        }
+
+        if (!ReferenceEquals(renderer, Called))
+        {
+            NoteStray();
+            return;
+        }
 
         if (!Reported || bound > Bound) Bound = bound;
         Reported = true;
+        Pending = true;
         Reporter = renderer;
+    }
+
+    internal void ClearStrays() => Strays = 0;
+
+    private void NoteStray()
+    {
+        Strays++;
+        Pending = true;
     }
 
     /// <summary>Whether the call just made reported, and forgets it.</summary>
@@ -105,6 +171,7 @@ internal sealed class ContinuationSession
     {
         var reported = Reported;
         Reported = false;
+        Pending = false;
         return reported;
     }
 }
