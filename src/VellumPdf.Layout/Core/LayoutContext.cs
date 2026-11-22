@@ -49,6 +49,16 @@ public sealed class LayoutContext
     /// </remarks>
     internal LayoutBox? FreshPageArea { get; init; }
 
+    /// <summary>
+    /// Whether the area starts at the top of a page's content area, so that answering
+    /// <see cref="LayoutResult.Outcome.Nothing"/> can only move the element to a page that is no
+    /// better. The document sets it on every layout call. A renderer that holds a line count or a
+    /// keep rule drops it there and splits where the page ends, because a page top cannot be left
+    /// for another. False on a context built through the public constructor, and not what
+    /// <see cref="ContentTop"/> says: that stays 0.
+    /// </summary>
+    internal bool AtPageTop { get; init; }
+
     /// <summary>A minimum Y position, carried for callers that set one.</summary>
     /// <remarks>
     /// Nothing in this package acts on it, and the document passes <b>0</b> on every call. Use
@@ -70,5 +80,5 @@ public sealed class LayoutContext
     /// a fresh page offers, which this package reads and which is null on a context built through
     /// the public constructor.
     /// </remarks>
-    public LayoutContext WithArea(LayoutBox area) => new(area, ContentTop) { FreshPageArea = FreshPageArea };
+    public LayoutContext WithArea(LayoutBox area) => new(area, ContentTop) { FreshPageArea = FreshPageArea, AtPageTop = AtPageTop };
 }

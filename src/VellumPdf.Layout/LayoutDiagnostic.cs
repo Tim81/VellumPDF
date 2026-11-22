@@ -85,6 +85,9 @@ public sealed class LayoutDiagnostic
     {
         LayoutDiagnosticCode.DiagnosticsDropped => LayoutDiagnosticSeverity.Warning,
         LayoutDiagnosticCode.PreformattedLineWrapped => LayoutDiagnosticSeverity.Warning,
+        LayoutDiagnosticCode.KeepWithNextRelaxed => LayoutDiagnosticSeverity.Warning,
+        LayoutDiagnosticCode.KeepTogetherRelaxed => LayoutDiagnosticSeverity.Warning,
+        LayoutDiagnosticCode.MinLinesRelaxed => LayoutDiagnosticSeverity.Warning,
         _ => LayoutDiagnosticSeverity.Error,
     };
 

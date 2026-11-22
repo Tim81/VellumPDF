@@ -641,6 +641,15 @@ public sealed class DocumentRenderer
     // a blank page for parity.
     private bool _placedOnPage;
 
+    // The keep rules look ahead by placing a group of elements on a copy of the cursor. While that
+    // runs the loop is in measuring mode with these set: it records where each element's first
+    // piece landed, reports nothing and touches no page. _keepResolvedUntil is the first element
+    // whose keep request has not been decided, so a run is decided once, at its first element.
+    private bool _simulating;
+    private bool _simFirstOnly;
+    private int _simFirstPage;
+    private int _keepResolvedUntil;
+
     private PlacementSink _placements = new();
     private PlacementSink? _measureSink;
     private PlacementSink? _drawSink;
@@ -731,6 +740,7 @@ public sealed class DocumentRenderer
         _measuring = measure;
         _pageIndex = 0;
         _placedOnPage = false;
+        _keepResolvedUntil = 0;
         _pendingBreak = PageBreakMode.None;
         _pendingBreakers = null;
         _placements = new PlacementSink();
@@ -774,6 +784,11 @@ public sealed class DocumentRenderer
             var mode = own > _pendingBreak ? own : _pendingBreak;
             if (mode != PageBreakMode.None)
                 ApplyBreak(mode, renderer, own != PageBreakMode.None, totalPages);
+
+            // After the break, so a run that a break starts is at the top of its page and is not
+            // moved off it.
+            if (i >= _keepResolvedUntil && renderer is IKeepSource { KeepWithNext: true })
+                ResolveKeepRun(i, totalPages);
 
             PlaceRenderer(renderer, totalPages);
         }
@@ -876,18 +891,22 @@ public sealed class DocumentRenderer
 
     // FreshPageArea is the area of the page a Nothing answer is retried on: the next page, or, for
     // the retry itself, the page it is already on. Under mirrored margins the two differ in x.
-    private LayoutResult CallLayout(IRenderer renderer, LayoutBox area, bool retry = false)
+    private LayoutResult CallLayout(IRenderer renderer, LayoutBox area, bool retry = false, bool atTop = false)
     {
         LayoutCalls++;
         var fresh = AreaOnPage(_measuring ? _measureArea : ContentArea, retry ? _pageIndex : _pageIndex + 1);
-        return renderer.Layout(new LayoutContext(area) { FreshPageArea = fresh });
+        return renderer.Layout(new LayoutContext(area) { FreshPageArea = fresh, AtPageTop = retry || atTop });
     }
+
+    // True when the cursor is at the top of the content area, where no later page is better. The
+    // cursor equals the area's Y exactly there; see OfferedArea.
+    private bool AtPageTop => Cursor == (_measuring ? _measureArea : ContentArea).Y;
 
     // Tells the renderer whose result was just accepted to report where it landed. Called before
     // the cursor moves, in both passes, so the two passes record the same positions.
     private void ReportPlacements(IRenderer? accepted)
     {
-        if (!_collect || accepted is not IPlacementSource source) return;
+        if (!_collect || _simulating || accepted is not IPlacementSource source) return;
 
         var first = _placements.Count;
         _placements.Enter(accepted, _pageIndex);
@@ -998,21 +1017,145 @@ public sealed class DocumentRenderer
         return new LayoutBox(contentArea.X, cursor, contentArea.Width, height);
     }
 
+    // ── Keep rules ────────────────────────────────────────────────────────────
+
+    // Reported from the drawing pass only, against the element the loop is placing, once per
+    // element and code. The measuring pass and a simulated placement make the same decisions and
+    // stay silent.
+    private void ReportRelaxed(LayoutDiagnosticCode code, string message)
+    {
+        if (_measuring) return;
+        _sink.CurrentPage = _pdf.Pages.Count;
+        _sink.Report(code, 0, message, perElement: true);
+    }
+
+    // Records the page an element's first piece landed on, for the simulation.
+    private void NoteFirstPiece()
+    {
+        if (_simulating && _simFirstPage < 0) _simFirstPage = _pageIndex;
+    }
+
+    /// <summary>
+    /// Decides, at the first element of a run of keep-with-next elements, whether the run and the
+    /// element after it hold together where the cursor is, and moves the run to the next page when
+    /// they would not but would on an empty page. Each element of the group must start on the page
+    /// the one before it ends on. The decision is made once for the whole run.
+    /// </summary>
+    /// <remarks>
+    /// A page break, or an element that asks for one, ends the group, and the element before it
+    /// keeps nothing. When the run is already at the top of a page, moving it would leave that page
+    /// empty, and when it does not hold together on an empty page there is nothing to gain, so the
+    /// request is dropped and reported. The group is placed by the same loop that places it for
+    /// real, on a copy of the cursor, so the keep-together and line-count rules of its elements
+    /// take part in deciding where each one starts.
+    /// </remarks>
+    private void ResolveKeepRun(int first, int totalPages)
+    {
+        var last = first;
+        var after = -1;
+        while (last + 1 < _renderers.Count)
+        {
+            var next = _renderers[last + 1];
+            if (next is IPageBreakSource { BreakBefore: not PageBreakMode.None }) break;
+            if (next is IKeepSource { KeepWithNext: true })
+            {
+                last++;
+                continue;
+            }
+
+            after = last + 1;
+            break;
+        }
+
+        _keepResolvedUntil = last + 1;
+        var end = after >= 0 ? after : last;
+        if (end == first) return;
+
+        if (!_measuring) EnsurePage();
+        if (RunHolds(first, end, fromFreshPage: false)) return;
+
+        if (!AtPageTop && RunHolds(first, end, fromFreshPage: true))
+        {
+            AdvancePage(totalPages);
+            return;
+        }
+
+        ReportRelaxed(LayoutDiagnosticCode.KeepWithNextRelaxed,
+            "The elements asked to stay with the one after them and do not fit one page together, or already start a page, so they were placed where they fall.");
+    }
+
+    // Places elements first..end on a copy of the cursor, from the current page or from the next
+    // one, and answers whether each starts on the page the one before it ended on. The last one
+    // is placed only as far as its first piece, because nothing depends on where it ends.
+    private bool RunHolds(int first, int end, bool fromFreshPage)
+    {
+        var saved = (_measuring, _measureArea, _measureY, _pageIndex, _placedOnPage, _simulating, _simFirstOnly, _simFirstPage);
+        var cursor = Cursor;
+        try
+        {
+            _measuring = true;
+            _simulating = true;
+            _measureArea = ContentArea;
+            _measureY = cursor;
+            if (fromFreshPage)
+            {
+                _pageIndex++;
+                _measureY = _measureArea.Y;
+            }
+
+            var previousEnd = -1;
+            for (var k = first; k <= end; k++)
+            {
+                _simFirstPage = -1;
+                _simFirstOnly = k == end;
+                PlaceRenderer(_renderers[k], 0);
+                if (k > first && _simFirstPage != previousEnd) return false;
+                previousEnd = _pageIndex;
+            }
+
+            return true;
+        }
+        finally
+        {
+            (_measuring, _measureArea, _measureY, _pageIndex, _placedOnPage, _simulating, _simFirstOnly, _simFirstPage) = saved;
+        }
+    }
+
     private void PlaceRenderer(IRenderer renderer, int totalPages)
     {
         var continuations = 0;
+
+        // Read once, from the element the caller added: the overflow this loop continues with
+        // holds the same element and must not ask again.
+        var keepTogether = renderer is IKeepSource { KeepTogether: true };
         while (true)
         {
             if (!_measuring) EnsurePage();
 
             var availableArea = OfferedArea(PlaceArea);
+            var atTop = AtPageTop;
 
-            var result = CallLayout(renderer, availableArea);
+            var result = CallLayout(renderer, availableArea, atTop: atTop);
+
+            if (keepTogether && continuations == 0 && result.Status == LayoutResult.Outcome.Partial)
+            {
+                // The element would split. It moves whole when an empty page holds it; at the top
+                // of a page there is no better page, so it splits there as well.
+                var whole = atTop
+                    ? result
+                    : CallLayout(renderer, AreaOnPage(_measuring ? _measureArea : ContentArea, _pageIndex + 1), atTop: true);
+                if (whole.Status == LayoutResult.Outcome.Full)
+                    result = LayoutResult.Nothing();
+                else
+                    ReportRelaxed(LayoutDiagnosticCode.KeepTogetherRelaxed,
+                        "The element asked to be kept whole and does not fit on an empty page, so it was split.");
+            }
 
             switch (result.Status)
             {
                 case LayoutResult.Outcome.Full:
                     _placedOnPage = true;
+                    NoteFirstPiece();
                     ReportPlacements(renderer);
                     if (!_measuring) DrawRenderer(renderer);
                     Cursor = result.OccupiedArea!.Value.Bottom;
@@ -1020,8 +1163,13 @@ public sealed class DocumentRenderer
 
                 case LayoutResult.Outcome.Partial:
                     _placedOnPage = true;
+                    NoteFirstPiece();
                     ReportPlacements(result.SplitRenderer);
+                    if (result.SplitRenderer is ParagraphRenderer { MinLinesRelaxed: true })
+                        ReportRelaxed(LayoutDiagnosticCode.MinLinesRelaxed,
+                            "The paragraph's line counts could not be met at the top of a page, so it was split where the page ends.");
                     if (!_measuring) DrawRenderer(result.SplitRenderer!);
+                    if (_simFirstOnly) return;
                     AdvancePage(totalPages);
                     renderer = result.OverflowRenderer!;
                     break;

@@ -8,6 +8,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Keep with next, keep together, and a minimum of lines at a page break (#306).** A heading can
+  stay on the page of the text after it, an element can move whole to the next page instead of
+  splitting, and a paragraph can keep a number of lines on each side of a break. All of it is opt-in:
+  a document that sets none of the new members saves to the same bytes as before.
+  - `KeepWithNext` on `Paragraph`, `Heading`, `TableElement`, `ListElement` and `LayoutImage`.
+    `KeepTogether` on the same types except the image, which does not split.
+    `Paragraph.MinLinesBeforeBreak` and `MinLinesAfterBreak`, 1 by default. A count below 1 throws
+    `ArgumentOutOfRangeException` from the `init` accessor. There is no upper bound: a count above
+    the paragraph's line count moves the whole paragraph to the next page when it would split. The
+    two counts are named for what they do, because the traditions that define "widow" and "orphan"
+    define them the opposite way round.
+  - Consecutive top-level elements with `KeepWithNext`, and the element after them, form a group.
+    When that element's first piece would start on a later page than the page the run ends on, the
+    whole run moves to the next page. A `PageBreak`, or an element with `BreakBefore` set, ends the
+    group. The next element is placed by its own rules, so its line counts and `KeepTogether`
+    decide what counts as a first piece that fits.
+  - A request is dropped, not thrown, when honouring it would leave a page empty or cannot be done
+    on an empty page: a run that starts at the top of a page, a group taller than a page, a
+    `KeepTogether` element taller than a page, a line count no break can meet. When two requests
+    conflict, `KeepWithNext` is dropped first, then `KeepTogether`, then the line counts. The save
+    lists each one as a new warning, `LayoutDiagnosticCode.KeepWithNextRelaxed` (801),
+    `KeepTogetherRelaxed` (802) or `MinLinesRelaxed` (803), with the element kind, its position and
+    the page. They are warnings, so `StrictDiagnostics` still saves.
+  - Anchors, outline entries, page-label ranges and mirrored margins follow the page an element is
+    finally placed on, and an element moved to the next page takes that page's margins.
+  - **Attention:** to decide where a group goes, the document lays out the group and the element
+    after it once or twice more before it places any of them. A custom `IRenderer` that is the
+    element after a group can be laid out ahead of the elements before it, and with areas on pages
+    it does not end up on. A `Full` result is still drawn after the last `Layout` call on that
+    instance; see `IRenderer.Layout`.
+
 - **`Document.MirrorMargins` for double-sided print (#608).** With it set, `Margins.Left` is the
   inside margin and `Margins.Right` the outside one. The inside margin is on the left of a
   right-hand page (an odd physical page number, page 1 first) and on the right of a left-hand

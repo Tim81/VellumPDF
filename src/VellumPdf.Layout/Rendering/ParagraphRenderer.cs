@@ -20,13 +20,19 @@ namespace VellumPdf.Layout.Rendering;
 /// <see cref="Layout"/> during a save, so the exceptions on that method reach you from the save. A
 /// negative start line makes <see cref="Draw"/> throw.
 /// </remarks>
-public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IPlacementSource
+public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKeepSource, IPlacementSource
 {
     private readonly Paragraph _para;
 
     // Computed during Layout:
     private List<LineFragment[]>? _lines;
     private List<LineEnd>? _lineEnds;  // one per entry of _lines
+
+    /// <summary>
+    /// True on the piece a split returns when the paragraph's line counts could not be met at the
+    /// top of a page and the split was made where the page ends. The document reads it to report.
+    /// </summary>
+    internal bool MinLinesRelaxed { get; init; }
 
     /// <summary>How many times this instance wrapped its text; the cache keeps it at one.</summary>
     internal int WrapCalls { get; private set; }
@@ -75,6 +81,12 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IPl
     // The mode belongs to the element, so a renderer added through Document.Add(IRenderer) honours
     // it as well.
     PageBreakMode IPageBreakSource.BreakBefore => _para.BreakBefore;
+
+    // Explicit, as above, and for the same reason: a renderer added through Document.Add(IRenderer)
+    // keeps the element's request.
+    bool IKeepSource.KeepWithNext => _para.KeepWithNext;
+
+    bool IKeepSource.KeepTogether => _para.KeepTogether;
 
     // Explicit, as above. The paragraph's anchor lands where its first line does, so only the piece
     // that starts at line 0 reports it; the overflow of a split paragraph starts later and reports
@@ -158,9 +170,26 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IPl
             return LayoutResult.Full(_occupied);
         }
 
-        // Partial: first maxLines lines fit
-        _endLine = _startLine + maxLines;
-        _occupied = area.WithHeight(maxLines * _lineHeight);
+        // Partial: the lines that fit go here, unless the paragraph asks for more on one side of
+        // the break. The break moves up until enough lines carry over, and what is left on this
+        // page must still reach its own minimum. When it cannot, below the top of a page the
+        // paragraph moves whole, and at the top of one nothing is gained by moving it, so it splits
+        // where the page ends and the document reports that the count was dropped.
+        var fit = maxLines;
+        var relaxed = false;
+        if (_para.MinLinesBeforeBreak > 1 || _para.MinLinesAfterBreak > 1)
+        {
+            var kept = Math.Min(maxLines, remaining - _para.MinLinesAfterBreak);
+            if (kept >= _para.MinLinesBeforeBreak)
+                fit = kept;
+            else if (!context.AtPageTop)
+                return LayoutResult.Nothing();
+            else
+                relaxed = true;
+        }
+
+        _endLine = _startLine + fit;
+        _occupied = area.WithHeight(fit * _lineHeight);
 
         var overflow = new ParagraphRenderer(_para, _endLine)
         {
@@ -182,6 +211,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IPl
             _occupied = _occupied,
             _nullStyleRuns = _nullStyleRuns,
             _tabStopsBeyond = _tabStopsBeyond,
+            MinLinesRelaxed = relaxed,
             StructType = StructType,
             ParentStructElem = ParentStructElem,
             ElementLanguage = ElementLanguage,

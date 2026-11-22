@@ -8,7 +8,7 @@ namespace VellumPdf.Layout.Rendering;
 
 /// <summary>Renders a <see cref="LayoutImage"/> as a placed XObject, honouring sizing, margins and alignment.</summary>
 /// <remarks>Does not split. Too-tall images throw from save. Justify is treated as left.</remarks>
-public sealed class LayoutImageRenderer : IRenderer, IPageBreakSource, IPlacementSource
+public sealed class LayoutImageRenderer : IRenderer, IPageBreakSource, IKeepSource, IPlacementSource
 {
     private readonly LayoutImage _img;
 
@@ -33,6 +33,11 @@ public sealed class LayoutImageRenderer : IRenderer, IPageBreakSource, IPlacemen
     // The mode belongs to the element, so a renderer added through Document.Add(IRenderer) honours
     // it as well.
     PageBreakMode IPageBreakSource.BreakBefore => _img.BreakBefore;
+
+    // An image does not split, so it has no keep-together request.
+    bool IKeepSource.KeepWithNext => _img.KeepWithNext;
+
+    bool IKeepSource.KeepTogether => false;
 
     // Explicit, as above. The image is drawn inside its margins, so its anchor is the top of the
     // area it is drawn in and not the top of the box it reserves.
