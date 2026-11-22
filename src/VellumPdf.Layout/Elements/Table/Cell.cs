@@ -76,9 +76,9 @@ public sealed class Cell
     /// cells of the automatic columns, whichever rows they are in, so a cell in a column that no
     /// cell of the group is in can still have narrowed the group's columns by the width its
     /// breaks leave. With all of those cells unbroken every column is as wide as when the table
-    /// measured each cell as one line, and the header rows and the groups are as tall as that
-    /// measured them, so one of them is refused only if it was too tall measured so. A cell no
-    /// step reaches keeps its breaks.</para>
+    /// measured each cell as one line, and each header or group that still had no room is as tall
+    /// as that measured it, so one of them is refused only if it was too tall measured so. A
+    /// group that fits keeps its breaks, and so does a cell no step reaches.</para>
     /// <para>A header row, or a group in an automatically sized column, that gives up a cell can
     /// change other rows: the column's width is shared with every row that has a cell in it. The
     /// groups after it are judged on the heights that result, so every group is judged on the

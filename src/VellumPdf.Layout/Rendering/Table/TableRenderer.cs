@@ -999,7 +999,8 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         // that is reached can be what made the columns too narrow: the widest line of it is
         // narrower than its whole text, so reading its breaks leaves less to share out than 2.3.3
         // measured. The last step reads every such cell unbroken (see Cell.Content), which gives
-        // the widths, and so the heights, 2.3.3 measured for the header and the groups.
+        // the widths 2.3.3 measured, and the heights it measured for each header or group that
+        // still has no room. A group that fits keeps its breaks, so it can be taller than that.
         return found ?? (exhausted ? CollectAutoColumnControlSpace() : null);
     }
 

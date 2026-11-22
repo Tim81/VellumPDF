@@ -671,7 +671,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     or a group that still has no room once those cells have given up their breaks makes every
     cell in an automatic column that holds control white space give up its breaks as well, because
     the width of every column follows from those cells. With those cells unbroken the columns are
-    as wide as 2.3.3 made them, and the header and the groups as tall. In a table with two 100pt
+    as wide as 2.3.3 made them, and each header or group that still had no room is as tall as
+    2.3.3 made it; a group that fits keeps its breaks. In a table with two 100pt
     columns and an automatic one, a group of two rows is 424pt tall on a page that leaves 280pt
     while a cell of the automatic column in a third row keeps its line break, and 100pt without it.
     A span declared in a header row makes no group of the data rows under it, because a page may
