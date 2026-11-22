@@ -533,11 +533,11 @@ public sealed class ListDocumentFontRuleTests
     }
 
     /// <summary>
-    /// The extra layout leaves nothing behind. A paragraph keeps where its last layout placed it, and
-    /// a list's Draw reads that when its own layout answers Nothing, so a held list whose entry text
-    /// the extra layout placed on a page where it fits, and the drawing layout drops, would show the
-    /// text. The reference has five paragraphs as tall as the entries of the list ahead of it and so
-    /// needs no extra layout; what the held list shows is the same.
+    /// The extra layout leaves nothing behind. A paragraph keeps where its last layout placed it,
+    /// and a list's Draw reads that when its own layout answers Nothing, so a held list whose
+    /// entry text the extra layout placed on a page where it fits, and the drawing layout drops,
+    /// would show the text. The reference has five paragraphs as tall as the entries of the list
+    /// ahead of it and so needs no extra layout; what the held list shows is the same.
     /// </summary>
     [Theory]
     [InlineData(0)]
@@ -571,15 +571,15 @@ public sealed class ListDocumentFontRuleTests
         var withList = Shows(Build(listAhead: true));
         var reference = Shows(Build(listAhead: false));
 
-        // Each entry of the list ahead shows its marker and its text; each paragraph shows its text.
+        // Each entry of the list ahead shows its marker and text; each paragraph shows its text.
         Assert.Equal(reference.Skip(5).ToArray(), withList.Skip(10).ToArray());
         Assert.Contains("1.", withList.Skip(10));
     }
 
     /// <summary>
-    /// A document whose text depends on the plan measures until it settles, and a pass that found the
-    /// font is measured again from the start: three passes where one list holds the font, two where
-    /// none does.
+    /// A document whose text depends on the plan measures until it settles, and a pass that found
+    /// the font is measured again from the start: three passes where one list holds the font, two
+    /// where none does.
     /// </summary>
     [Theory]
     [InlineData(false, 2)]
