@@ -99,11 +99,11 @@ public sealed class LayoutContext
     /// Whether the document called <paramref name="renderer"/> itself, outside a probe, in a
     /// placement where a decision chose the twin. The document hands a twin instance back only
     /// from a decision, but it also lays a renderer out as the twin when the first piece was placed
-    /// with no report, and a decision has not chosen it then. This is true on every call of a
-    /// placement a decision chose, including the twin's overflow pieces, and false otherwise, so a
-    /// renderer that records a fallback when it is laid out as its twin records it only for a
-    /// placement the document chose. A twin that a caller's renderer holds, and a probe of the
-    /// twin, are not one.
+    /// with no report, and a decision has not chosen it then. This is true on every call the
+    /// document makes after the decision chose the twin, the twin's overflow pieces included, and
+    /// false otherwise, so a renderer that records a fallback when it is laid out as its twin
+    /// records it only for a placement the document chose. A twin that a caller's renderer holds,
+    /// and a probe of the twin, are not one.
     /// </summary>
     internal bool IsPlacedAsTwin(IRenderer renderer) =>
         Session is { Probing: false, TwinChosen: true } session && ReferenceEquals(session.Called, renderer);
