@@ -60,6 +60,9 @@ internal static class ContinuationSupport
         internal Failure FailNew { get; init; }
         internal Failure FailTwin { get; init; }
 
+        /// <summary>Throw only while a probe measures, so the placement that follows runs clean.</summary>
+        internal bool FailOnlyInProbe { get; init; }
+
         /// <summary>The piece at which a failing layout throws.</summary>
         internal int FailAtPiece { get; init; } = 3;
     }
@@ -145,7 +148,8 @@ internal static class ContinuationSupport
                 context.Area.X, context.Area.Y, context.Area.Height, context.AtPageTop));
 
             var failure = asNew ? _plan.FailNew : _twin ? _plan.FailTwin : Failure.None;
-            if (failure != Failure.None && _done == _plan.FailAtPiece)
+            if (failure != Failure.None && _done == _plan.FailAtPiece
+                && (!_plan.FailOnlyInProbe || (context.Session?.Probing ?? false)))
             {
                 throw failure switch
                 {

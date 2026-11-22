@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using VellumPdf.Layout.Core;
+using VellumPdf.Layout.Elements;
 using VellumPdf.Layout.Rendering;
 using static VellumPdf.Layout.Tests.ContinuationSupport;
 
@@ -183,17 +184,34 @@ public sealed class ContinuationLimitTests
     }
 
     [Fact]
+    public void Memo_isKeyedByTheCountAsWellAsTheStart()
+    {
+        // The same element starts twice at a page top: once after a Nothing, with one continuation
+        // counted, and once with none. What is left of the limit differs, so the decision does too.
+        var plan = PlanFor(Variant.RetrySite, 100, 100);
+        var log = new Log();
+        var scripted = new Scripted(plan, log);
+        var outcome = Run(new Setup(), log, new Block(5), scripted, new PageBreakRenderer(new PageBreak()), scripted);
+
+        Assert.Null(outcome.Error);
+        Assert.Equal(4, outcome.Probes);
+    }
+
+    [Fact]
     public void Probe_restoresTheCursorAndPageParity()
     {
-        // An odd number of pages in a probe would flip the side of every later page under mirrored
-        // margins if the probe left its page index behind.
-        var outcome = Place(Variant.Mirror, PlanFor(Variant.Mirror, 301, 101));
+        // The probes together take an odd number of pages (100 and 301). Left behind in the page
+        // index, that flips the side of every later page under mirrored margins.
+        var outcome = Place(Variant.Mirror, PlanFor(Variant.Mirror, 301, 100));
         Assert.Null(outcome.Error);
         var real = outcome.Log.RealCalls.ToList();
         Assert.Equal(2, outcome.Probes);
         Assert.Equal(real[0].X, real[1].X);
-        // From a page top, each page alternates between the two sides.
+
+        // Page 1 is the first page top the document reaches, and a verso page's content starts at
+        // the outside margin; from there each page alternates between the two sides.
         var tops = real.Where(c => c.AtPageTop).Select(c => c.X).Take(6).ToList();
+        Assert.NotEqual(real[0].X, tops[0]);
         for (var i = 1; i < tops.Count; i++)
             Assert.NotEqual(tops[i - 1], tops[i]);
     }
@@ -224,16 +242,30 @@ public sealed class ContinuationLimitTests
     }
 
     [Fact]
+    public void Decision_twinChosenAtTheKeepTogetherProbe_redoesTheIterationWithTheTwin()
+    {
+        var outcome = Place(Variant.KeepProbe, PlanFor(Variant.KeepProbe, 301, 100));
+        Assert.Null(outcome.Error);
+        Assert.Equal(2, outcome.Probes);
+
+        // The first call, mid-page, was the new layout's and matched the twin's. The iteration is
+        // made again from its start with the twin, which is a call by the twin at that same start.
+        var first = outcome.Log.RealCalls.First();
+        Assert.False(first.AtPageTop);
+        Assert.Contains(outcome.Log.RealCalls, c => c.Flavor == "twin" && !c.AtPageTop && c.Y == first.Y);
+    }
+
+    [Fact]
     public void Probe_outOfMemory_isNotCaught()
     {
-        var plan = PlanFor(Variant.Lead, 50, 50) with { FailNew = Failure.OutOfMemory };
+        var plan = PlanFor(Variant.Lead, 50, 50) with { FailNew = Failure.OutOfMemory, FailOnlyInProbe = true };
         Assert.Throws<OutOfMemoryException>(() => Place(Variant.Lead, plan));
     }
 
     [Fact]
     public void Probe_cancellation_isNotCaught()
     {
-        var plan = PlanFor(Variant.Lead, 50, 50) with { FailNew = Failure.Cancelled };
+        var plan = PlanFor(Variant.Lead, 50, 50) with { FailNew = Failure.Cancelled, FailOnlyInProbe = true };
         Assert.Throws<OperationCanceledException>(() => Place(Variant.Lead, plan));
     }
 
