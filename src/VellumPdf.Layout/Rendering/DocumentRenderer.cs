@@ -1220,11 +1220,11 @@ public sealed class DocumentRenderer
     // decision below at a size that is cheap to reach.
     internal int ContinuationLimit { get; init; } = MaxContinuationsPerElement;
 
-    /// <summary>Layout-only placements the last <see cref="RunLayout"/> ran to decide, read by tests.</summary>
+    /// <summary>Layout-only placements the last <see cref="RunLayout"/> ran, for tests.</summary>
     internal int ContinuationProbes { get; private set; }
 
     /// <summary>
-    /// Exceptions other than the limit that a probe caught in the last <see cref="RunLayout"/>, read
+    /// Exceptions other than the limit that probes caught in the last <see cref="RunLayout"/>, read
     /// by tests. A probe leaves such an exception for the placement that follows, which raises it
     /// again if it uses the layout that threw.
     /// </summary>

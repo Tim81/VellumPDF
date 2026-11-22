@@ -20,7 +20,9 @@ internal enum ContinuationMode
     /// <summary>The new layout.</summary>
     New,
 
-    /// <summary>The layout as 2.3.3 produced it, which is what <see cref="IContinuationTwin.Twin"/> returns.</summary>
+    /// <summary>
+    /// The layout as 2.3.3 produced it, which is what <see cref="IContinuationTwin.Twin"/> returns.
+    /// </summary>
     Twin,
 }
 
@@ -61,10 +63,10 @@ internal sealed class ContinuationSession
     /// </summary>
     internal ContinuationMode Mode { get; set; }
 
-    /// <summary>True for a layout-only placement that measures one mode and decides nothing.</summary>
+    /// <summary>True for a layout-only placement that measures one mode.</summary>
     internal bool Probing { get; }
 
-    /// <summary>Set by a probe when its loop reached the continuation limit instead of throwing.</summary>
+    /// <summary>Set by a probe whose loop reached the continuation limit.</summary>
     internal bool LimitHit { get; set; }
 
     /// <summary>The instance the call in progress is addressed to.</summary>
