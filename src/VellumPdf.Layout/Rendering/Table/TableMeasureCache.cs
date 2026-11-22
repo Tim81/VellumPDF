@@ -93,6 +93,12 @@ internal sealed class TableMeasureProbe
     /// </summary>
     public bool Verify { get; init; }
 
+    /// <summary>
+    /// When set, a table that holds control white space is measured with every cell as one line
+    /// and no decision, as it was measured before breaks were honoured.
+    /// </summary>
+    public bool ReadEveryCellUnbroken { get; init; }
+
     /// <summary>Cells whose line count a measurement took from the cache.</summary>
     public int WrapHits { get; set; }
 

@@ -66,8 +66,16 @@ public sealed class Cell
     /// those rows is in. The header rows are relieved in the same way: by their own cells that
     /// hold a carriage return or a line feed, and then by every cell that holds any control white
     /// space and sits in them or in an automatically sized column that a cell of them is in. A
-    /// cell that holds only a line feed can be reached by any step. A cell no step reaches keeps
-    /// its breaks.</para>
+    /// cell that holds only a line feed can be reached by any step.</para>
+    /// <para><b>When those steps leave a header or a group with no room, a fourth step lays out
+    /// unbroken every cell that holds control white space and spans a column that is sized
+    /// automatically, wherever its row is.</b> The width of every column follows from the
+    /// cells of the automatic columns, whichever rows they are in, so a cell in a column that no
+    /// cell of the group is in can still have narrowed the group's columns by the width its
+    /// breaks leave. With all of those cells unbroken every column is as wide as when the table
+    /// measured each cell as one line, and the header rows and the groups are as tall as that
+    /// measured them, so one of them is refused only if it was too tall measured so. A cell no
+    /// step reaches keeps its breaks.</para>
     /// <para>A header row, or a group in an automatically sized column, that gives up a cell can
     /// change other rows: the column's width is shared with every row that has a cell in it. The
     /// groups after it are judged on the heights that result, so every group is judged on the

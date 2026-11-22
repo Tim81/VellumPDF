@@ -174,8 +174,8 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     /// the saved lines are dropped and the row is laid out again from its first line, which
     /// under a context without the box is not cut.</para>
     /// <para>A carriage return or line feed in a cell ends a line. A repeated header row, or rows
-    /// joined by a <see cref="Cell.RowSpan"/>, can lose the breaks of some cells, and the save
-    /// reports each as <see cref="LayoutDiagnosticCode.CellWhiteSpaceDropped"/>;
+    /// joined by a <see cref="Cell.RowSpan"/>, can lose the breaks of some cells, those of a cell
+    /// in an automatically sized column among them, and the save reports each as <see cref="LayoutDiagnosticCode.CellWhiteSpaceDropped"/>;
     /// <see cref="Cell.Content"/> says when and which. A context built with the public
     /// constructor of <see cref="LayoutContext"/> keeps every break.</para>
     /// <para>These are refused with the too-tall exception, extended with a sentence naming the
@@ -278,6 +278,18 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
                 // the cache is dropped with the decision. A table that reads no cell unbroken
                 // measures once.
                 var passesNeeded = !decided && fresh is not null && AnyControlSpace(rows);
+
+                // A test measures the table as it was before breaks were honoured: every cell as
+                // one line, with nothing to decide.
+                if (passesNeeded && TableMeasureProbe.Current is { ReadEveryCellUnbroken: true })
+                {
+                    _oneLine = [];
+                    for (var r = 0; r < rows.Count; r++)
+                        for (var c = 0; c < rows[r].Cells.Count; c++)
+                            _oneLine.Add((r, c));
+                    passesNeeded = false;
+                }
+
                 var cache = passesNeeded ? new TableMeasureCache(rows.Count) : null;
 
                 ResolveGrid(area.Width, style, cache);
@@ -620,7 +632,9 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     /// exception is a step whose cells all lie in the group's own rows and leave every column
     /// width as it was, bit for bit: no other row measures differently then, so the group's rows
     /// are measured again and the next group is judged in the same pass. Each of the two header
-    /// steps takes every cell it reaches at once, so the header ends at most two passes.
+    /// steps takes every cell it reaches at once, so the header ends at most two passes. When a
+    /// pass finds nothing to change and a header or a group still has no room, the last step takes
+    /// every cell in an automatically sized column that holds control white space.
     /// </summary>
     private HashSet<(int Row, int Cell)>? CellsToReadAsOneLine(
         LayoutBox[] fresh, TextStyle style, double areaWidth, TableMeasureCache cache)
@@ -737,11 +751,17 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             return added;
         }
 
+        // True when a header or a group has no room and the steps above could take nothing more
+        // from it. It is read only when the pass finds nothing else to change.
+        var exhausted = false;
+
         // The header rows have no room when they do not fit a page, and when they leave a row below
         // them no room for one line of one of its cells.
-        if (header.Count > 0 && (!FitsFresh(fresh, 0, headerHeight) || LeavesNoRoomForALine(fresh, headerHeight, lastHeaderRow, style))
-            && (CollectBreaks(0, header[^1]) || CollectControlSpace(0, header[^1])))
-            return found;
+        if (header.Count > 0 && (!FitsFresh(fresh, 0, headerHeight) || LeavesNoRoomForALine(fresh, headerHeight, lastHeaderRow, style)))
+        {
+            if (CollectBreaks(0, header[^1]) || CollectControlSpace(0, header[^1])) return found;
+            exhausted = true;
+        }
 
         foreach (var (first, last) in SpanGroups(lastHeaderRow))
         {
@@ -791,11 +811,53 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
                         return found;
                     }
                 }
+                exhausted = true;
                 break;
             }
         }
 
+        // The widths of the columns that are not fixed follow from every cell in an automatically
+        // sized column, whichever row it is in, and the columns that are fixed are scaled by what
+        // those leave. When a header or a group still has no room, a cell in a row of no group
+        // that is reached can be what made the columns too narrow: the widest line of it is
+        // narrower than its whole text, so reading its breaks leaves less to share out than 2.3.3
+        // measured. The last step reads every such cell unbroken (see Cell.Content), which gives
+        // the widths, and so the heights, 2.3.3 measured for the header and the groups.
+        return found ?? (exhausted ? CollectAutoColumnControlSpace() : null);
+    }
+
+    /// <summary>
+    /// Every cell that holds control white space and has a column that is sized automatically
+    /// among those it spans, and is not laid out unbroken yet, or null when there is none. The
+    /// widths of the columns come out of the cells of these columns alone, so with these cells
+    /// unbroken, and those of the rows that have no room, every column is as wide as it was when
+    /// every cell was measured as one line.
+    /// </summary>
+    private HashSet<(int Row, int Cell)>? CollectAutoColumnControlSpace()
+    {
+        var rows = _table.Rows;
+        HashSet<(int Row, int Cell)>? found = null;
+        for (var r = 0; r < rows.Count; r++)
+        {
+            var cells = rows[r].Cells;
+            var col = 0;
+            for (var c = 0; c < cells.Count && col < _colWidths.Length; c++)
+            {
+                var span = cells[c].ColSpan;
+                if (HonoursBreaks(r, c) && LayoutText.HasControlSpace(cells[c].Content) && TouchesAutoColumn(col, span))
+                    (found ??= []).Add((r, c));
+                col += span;
+            }
+        }
         return found;
+    }
+
+    /// <summary>True when a column that a cell at <paramref name="col"/> for <paramref name="span"/> columns is in is sized automatically.</summary>
+    private bool TouchesAutoColumn(int col, int span)
+    {
+        for (var k = 0; k < span && col + k < _colWidths.Length; k++)
+            if (IsAutoColumn(col + k)) return true;
+        return false;
     }
 
     /// <summary>

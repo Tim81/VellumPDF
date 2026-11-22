@@ -32,9 +32,9 @@ namespace VellumPdf.Layout.Elements.Table;
 /// empty <c>TD</c>, also in a header row.</para>
 /// <para>A carriage return or line feed in a cell ends a line, so it makes the row taller. A
 /// repeated header row, or rows joined by a <see cref="Cell.RowSpan"/>, can lose the breaks and
-/// tabs of some cells, and the save lists each as
-/// <see cref="LayoutDiagnosticCode.CellWhiteSpaceDropped"/>; <see cref="Cell.Content"/> says when
-/// and which.</para>
+/// tabs of some cells, those of a cell in an automatically sized column among them, and the save
+/// lists each as <see cref="LayoutDiagnosticCode.CellWhiteSpaceDropped"/>;
+/// <see cref="Cell.Content"/> says when and which.</para>
 /// <para><b>Every group is judged on the heights the groups before it leave.</b> A header row, or
 /// a group in an automatically sized column, that gives up a cell can change the width of a
 /// column the next group is judged by, so the next group is judged on the widths that result,

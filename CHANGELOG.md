@@ -661,7 +661,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     tall, keeps its lines on a 580pt page above a 20pt row, where a line fits in the 20pt left;
     one of 47 is 572pt, fits the page alone, but leaves the row 8pt, so it falls back. The XML
     documentation of `Cell.Content` states when a header or a group has no room, which cells
-    fall back and in what order, and what a renderer laid out without the document does.
+    fall back and in what order, and what a renderer laid out without the document does. A header
+    or a group that still has no room once those cells have given up their breaks makes every
+    cell in an automatic column that holds control white space give up its breaks as well, because
+    the width of every column follows from those cells. With those cells unbroken the columns are
+    as wide as 2.3.3 made them, and the header and the groups as tall. In a table with two 100pt
+    columns and an automatic one, a group of two rows is 424pt tall on a page that leaves 280pt
+    while a cell of the automatic column in a third row keeps its line break, and 100pt without it.
   - **Every group is judged in order, and the decision measures each cell once.** A table that
     gives up cells in several groups measures its cells' widths once per mode and its line counts
     once per interval of column widths, keeps the pass going when a group's step leaves every
