@@ -521,7 +521,9 @@ public sealed class Document : IDisposable
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
     /// band's height, or its style's size or leading, is refused; see
     /// <see cref="RunningBand.Height"/>, <see cref="TextStyle.FontSize"/> and
-    /// <see cref="TextStyle.Leading"/>.
+    /// <see cref="TextStyle.Leading"/>. It is also raised when a template that repeats
+    /// <c>{chapter}</c> resolves to more than <see cref="int.MaxValue"/> characters; see
+    /// <see cref="RunningBand.ChapterToken"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the

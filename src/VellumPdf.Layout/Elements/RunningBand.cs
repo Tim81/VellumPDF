@@ -33,17 +33,19 @@ public sealed class RunningBand
     /// <c>{chapter}</c> as given, as a band has always done.
     /// </summary>
     /// <remarks>
-    /// <b>Nothing is refused here.</b> The value is read when a save lays the document out; a save
-    /// of a band with the property set and no <c>{chapter}</c> in the template saves the same bytes
-    /// as with it unset.
+    /// <b>The save refuses two titles; the property itself refuses nothing.</b> A save of a band
+    /// with the property set and no <c>{chapter}</c> in the template saves the same bytes as with
+    /// it unset. The value is read when a save lays the document out.
     /// <para>A chapter is a level-0 <see cref="Heading"/> added to the document. The page shows the
     /// first one whose first line is on the page, and when none starts there, the last one drawn
     /// on an earlier page. A heading that splits over a page break counts on the page it starts
     /// on and is not a new chapter on the next. A page before the first level-0 heading shows no
-    /// text where the token stands, and the rest of the template is drawn as it is written. The
-    /// title is the heading's <see cref="Heading.BookmarkTitle"/> when it has one and its text
-    /// otherwise. A tab, a line break, a form feed or another control white-space character in it
-    /// is drawn as a space, as in the template. Headings of other levels, and anything a custom
+    /// text where the token stands, and the rest of the template is drawn as it is written. A
+    /// page that holds no band, such as the blank page a recto break inserts, shows no title, and
+    /// a page where a chapter starts partway down shows that chapter, although the one before it
+    /// holds the top of the page. The title is the heading's <see cref="Heading.BookmarkTitle"/> when it has
+    /// one and its text otherwise. A tab, a line break, a form feed or another control white-space
+    /// character in it is drawn as a space. Headings of other levels, and anything a custom
     /// <see cref="IRenderer"/> draws, start no chapter.</para>
     /// <para>The token is replaced by the title as it is, so a <c>{page}</c> or <c>{chapter}</c>
     /// in the title prints as that text. The title is measured and cut with the rest of the band, so one
@@ -52,14 +54,12 @@ public sealed class RunningBand
     /// count, because the band's height is fixed.</para>
     /// <para><b>An unpaired surrogate in the title is refused.</b> A save throws
     /// <see cref="ArgumentException"/> where the band is drawn, when the band's font is embedded
-    /// and the title it prints holds one, as for the template; see <see cref="TextStyle.FontRef"/>.
-    /// A template that repeats the token so often that the resolved text passes
-    /// <see cref="int.MaxValue"/> characters makes the save throw
-    /// <see cref="InvalidOperationException"/>. <b>Do not pass</b> a template that does, or a
-    /// title that long.</para>
-    /// <para>Set it before the save. A band that is assigned to the document while the layout runs,
-    /// from a custom renderer's draw, shows no title, because the headings before it were not
-    /// followed.</para>
+    /// and the title it prints holds one, whatever font the heading is set in; see
+    /// <see cref="TextStyle.FontRef"/>.</para>
+    /// <para><b>A resolved text longer than <see cref="int.MaxValue"/> characters is refused.</b> A
+    /// template that repeats <c>{chapter}</c> so often that the titles it prints add up to more
+    /// than that makes the save throw <see cref="InvalidOperationException"/> where the band is
+    /// drawn, because no string could hold the text.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -107,6 +107,10 @@ public sealed class RunningBand
     /// characters costs a page about what one of 200 does when both are cut at the same width.
     /// Text that measures zero is drawn in full, as the attention above says, and so costs its
     /// whole length on every page.</para>
+    /// <para><b>A resolved text longer than <see cref="int.MaxValue"/> characters is refused.</b>
+    /// With <see cref="ChapterToken"/> set, a template that repeats <c>{chapter}</c> so often that
+    /// the titles it prints add up to more than that makes the save throw
+    /// <see cref="InvalidOperationException"/>; see <see cref="ChapterToken"/>.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -117,6 +121,7 @@ public sealed class RunningBand
     /// <exception cref="InvalidOperationException">
     /// Raised from the save, not from this property, when the template does not fit the content box
     /// and <see cref="Document.StrictDiagnostics"/> is <see langword="true"/>.
+    /// It is also raised when the resolved text passes <see cref="int.MaxValue"/> characters.
     /// </exception>
     public string Template { get; }
 

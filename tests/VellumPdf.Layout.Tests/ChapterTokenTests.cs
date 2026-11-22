@@ -537,6 +537,95 @@ public sealed class ChapterTokenTests
         Assert.Throws<ArgumentException>(() => Save(doc));
     }
 
+    [Fact]
+    public void AnUnpairedSurrogateInABookmarkTitle_isRefusedWhateverFontTheHeadingIsSetIn_andSavesWithoutTheToken()
+    {
+        // Helvetica heading, embedded band font: the title is what the band measures.
+        var doc = NewDoc();
+        var band = new TextStyle { FontRef = doc.UseTrueTypeFont(FontReportSupport.DejaVuBytes), FontSize = 12 };
+        doc.Header = ChapterBand("{chapter}", band);
+        doc.Add(Chapter("Een", Plain, bookmark: "Een\uD800"));
+        Assert.Throws<ArgumentException>(() => Save(doc));
+
+        // The same heading under a band that does not ask for the token saves.
+        var plain = NewDoc();
+        var plainBand = new TextStyle { FontRef = plain.UseTrueTypeFont(FontReportSupport.DejaVuBytes), FontSize = 12 };
+        plain.Header = new RunningBand("{chapter}", plainBand);
+        plain.Add(Chapter("Een", Plain, bookmark: "Een\uD800"));
+        Assert.NotEmpty(Save(plain));
+    }
+
+    [Fact]
+    public void ATemplateThatRepeatsTheTokenPastIntMaxValue_isRefusedAtTheSave_andOneBelowItSaves()
+    {
+        var title = new string('x', 10_000);
+
+        // 250,000 x 10,000 = 2.5e9 characters, past int.MaxValue.
+        var over = NewDoc();
+        over.Header = ChapterBand(string.Concat(Enumerable.Repeat("{chapter}", 250_000)));
+        over.Add(Chapter("Een", bookmark: title));
+        var ex = Assert.Throws<InvalidOperationException>(() => Save(over));
+        Assert.Contains("250000", ex.Message, StringComparison.Ordinal);
+
+        // 200,000 x 10,000 = 2.0e9 characters: not past it, and the band cuts it to what fits.
+        var under = NewDoc();
+        under.Header = ChapterBand(string.Concat(Enumerable.Repeat("{chapter}", 200_000)));
+        under.Add(Chapter("Een", bookmark: title));
+        Assert.NotEmpty(Save(under));
+    }
+
+    [Fact]
+    public void AnEmptyBookmarkTitle_isAnEmptyChapter_notTheHeadingText()
+    {
+        var doc = NewDoc();
+        doc.Header = ChapterBand("H: [{chapter}]");
+        doc.Add(Chapter("Een", bookmark: ""));
+
+        var shown = Assert.Single(FontReportSupport.ShowLines(Save(doc)),
+            l => l.Contains("H:", StringComparison.Ordinal));
+        Assert.Equal("(H: []) Tj", shown);
+    }
+
+    [Fact]
+    public void ANoBreakSpaceInATitle_isNotReplacedByAnOrdinarySpace()
+    {
+        var doc = NewDoc();
+        doc.Header = ChapterBand("H: {chapter}");
+        doc.Add(Chapter("A\u00A0B"));
+
+        var shown = Assert.Single(FontReportSupport.ShowLines(Save(doc)),
+            l => l.Contains("H:", StringComparison.Ordinal));
+        Assert.Contains('\u00A0', shown);
+        Assert.DoesNotContain("A B", shown, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AFooterAlone_holdsTheToken_whenTheHeaderDoesNot()
+    {
+        var doc = NewDoc();
+        doc.Header = new RunningBand("H: {page}", Plain);
+        doc.Footer = ChapterBand("F: {chapter}");
+        doc.Add(Chapter("Een"));
+        doc.Add(Tall("a"));
+        doc.Add(Chapter("Twee"));
+
+        Assert.Equal(["F: Een", "F: Twee"], BandLines(Save(doc), "F:"));
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(int.MinValue)]
+    public void ANegativeLevel_startsNoChapter(int level)
+    {
+        var doc = NewDoc();
+        doc.Header = ChapterBand("H: [{chapter}]");
+        doc.Add(Chapter("Min", level: level));
+        doc.Add(Tall("a"));
+        doc.Add(Chapter("Een"));
+
+        Assert.Equal(["H: []", "H: [Een]"], BandLines(Save(doc), "H:"));
+    }
+
     [Theory]
     [InlineData(HorizontalAlignment.Left)]
     [InlineData(HorizontalAlignment.Right)]
