@@ -662,6 +662,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     one of 47 is 572pt, fits the page alone, but leaves the row 8pt, so it falls back. The XML
     documentation of `Cell.Content` states when a header or a group has no room, which cells
     fall back and in what order, and what a renderer laid out without the document does.
+  - **Every group is judged in order, and the decision measures each cell once.** A table that
+    gives up cells in several groups measures its cells' widths once per mode and its line counts
+    once per interval of column widths, keeps the pass going when a group's step leaves every
+    column width as it was, and resolves its grid once for all its pages. No limit on the number
+    of measurements applies, so a group is judged on the heights the groups before it leave
+    whatever their number. Measured in Release on net10.0, one run each: 400 groups that each
+    change the width the next is judged by took 0.95s and 170MB, where main took 4.55s and
+    3,022MB; 1,000 groups that each widen an automatic column took 8.6s and 13,376MB, where main
+    took 29.8s and 48,492MB.
 - **`/FontBBox` of an embedded font is the font's own bounding box (#596).** The descriptor of every
   embedded TrueType and OpenType font held `[0, hhea descender, 1000 * 1000 / unitsPerEm, hhea
   ascender]`: a zero for xMin and a constant for xMax, so DejaVu Sans, Liberation Sans and Liberation

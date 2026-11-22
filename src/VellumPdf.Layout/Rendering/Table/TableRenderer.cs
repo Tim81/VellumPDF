@@ -67,9 +67,9 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
 
     // What _oneLine was decided for: the table width and the vertical extent of the two fresh
     // boxes.
-    // A renderer that carries the decision to the next page reuses it when it lays out at the same
-    // width and heights, and so resolves the grid once, where deciding again would resolve it once
-    // per pass on every page. The boxes' x is left out of the key: the decision never reads it, and
+    // A renderer that carries the decision to the next page reuses it, with the grid and the
+    // heights it was made with, when it lays out at the same width and heights; Layout says what
+    // that leaves out. The boxes' x is left out of the key: the decision never reads it, and
     // mirrored margins move it on every other page.
     private (double Width, double Top0, double Bottom0, double Top1, double Bottom1)? _decidedFor;
 
@@ -616,9 +616,11 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     /// method judges the header rows first and then each <see cref="Cell.RowSpan"/> group in
     /// order, and a group again after its own breaks are given up in fixed-width columns. A step
     /// that adds a cell in a header row, or in an automatically sized column, ends the pass,
-    /// because every height has to be taken again before the next group is judged. Each of the
-    /// two header steps takes every cell it reaches at once, so the header ends at most two
-    /// passes.
+    /// because every height has to be taken again before the next group is judged. The one
+    /// exception is a step whose cells all lie in the group's own rows and leave every column
+    /// width as it was, bit for bit: no other row measures differently then, so the group's rows
+    /// are measured again and the next group is judged in the same pass. Each of the two header
+    /// steps takes every cell it reaches at once, so the header ends at most two passes.
     /// </summary>
     private HashSet<(int Row, int Cell)>? CellsToReadAsOneLine(
         LayoutBox[] fresh, TextStyle style, double areaWidth, TableMeasureCache cache)
@@ -754,7 +756,8 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
 
                 // A step that adds a cell the other groups' heights can depend on ends the pass,
                 // because the next group would be judged by heights that the step changes, a
-                // column's width among them. The header steps below end it too.
+                // column's width among them, unless the widths come out as they were and the step
+                // stays in this group's rows (ColumnWidthsHold). The header steps below end it too.
                 // A step that stays in this group's rows and in fixed-width columns changes no
                 // other group's height, so the next group is judged in the same pass.
                 own = (first, last);

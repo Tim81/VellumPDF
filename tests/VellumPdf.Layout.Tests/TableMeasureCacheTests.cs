@@ -167,6 +167,31 @@ public sealed class TableMeasureCacheTests
     }
 
     /// <summary>
+    /// The interval a count holds over is closed at its low end and open at its high end: the
+    /// width the count was found at and the lowest width of the interval hold it, the width the
+    /// comparisons first flip at does not, and neither does the one just under the low end.
+    /// </summary>
+    [Fact]
+    public void AnIntervalIsClosedBelowAndOpenAbove()
+    {
+        var style = Helvetica();
+        var text = "ab ab ab ab";
+        var lines = TableRenderer.CountLines(text, style, 36, true, out var from, out var below, out var pinned);
+        Assert.False(pinned);
+        Assert.True(double.IsFinite(from) && double.IsFinite(below), $"[{from}, {below})");
+        var entry = new CellMeasure { HasLines = true, Lines = lines, From = from, Below = below };
+
+        Assert.True(entry.Holds(36));
+        Assert.True(entry.Holds(from));
+        Assert.True(entry.Holds(Math.BitDecrement(below)));
+        Assert.False(entry.Holds(below));
+        Assert.False(entry.Holds(Math.BitDecrement(from)));
+        Assert.False(new CellMeasure().Holds(36));
+        Assert.False(new CellMeasure { HasLines = true, Pinned = true, Lines = 3, From = 20 }.Holds(Math.BitIncrement(20)));
+        Assert.True(new CellMeasure { HasLines = true, Pinned = true, Lines = 3, From = 20 }.Holds(20));
+    }
+
+    /// <summary>
     /// The line counts the caches answer are the counts of a fresh wrap: the probe measures again
     /// on every hit and throws on a difference. Widths that shrink as groups give up their breaks
     /// move across the intervals, so both hits and misses are exercised.
@@ -436,10 +461,9 @@ public sealed class TableMeasureCacheTests
     }
 
     /// <summary>
-    /// A chain of groups in which each one's cell is a little wider than the one before it, beside
-    /// a fixed column and an automatic one, and each has a wrapping cell under it sized to the
-    /// width the automatic column takes once the group before gave up its breaks. Every group is
-    /// reported, and the allocations of 60 of them stay under 30MB.
+    /// A chain of 60 groups, each with a cell a little wider than the one before it beside a fixed
+    /// column and an automatic one, and a wrapping cell under it. Every group is reported, and the
+    /// save allocates under 30MB.
     /// </summary>
     [Fact]
     public void TheCostOfAChainOfTippedGroupsStaysUnderAFixedBound()

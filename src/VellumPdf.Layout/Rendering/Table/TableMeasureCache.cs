@@ -6,8 +6,8 @@ namespace VellumPdf.Layout.Rendering.Table;
 /// <summary>
 /// What one table decision has measured of its cells, so that measuring the table again does not
 /// measure every cell again. The decision that reads some cells unbroken measures the whole table
-/// once per step; most steps change no cell's text, mode or width, and a cell's measurements
-/// depend on nothing else.
+/// once per step, while a cell's longest word and widest line depend on its text and mode alone,
+/// and its line count on those and the width it wraps at.
 /// </summary>
 /// <remarks>
 /// <para>The cache holds, per cell and per mode (breaks kept or read unbroken), the cell's longest
