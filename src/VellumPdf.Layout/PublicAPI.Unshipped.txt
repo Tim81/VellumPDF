@@ -124,3 +124,5 @@ VellumPdf.Layout.Elements.Paragraph.Anchor.get -> string?
 VellumPdf.Layout.Elements.Paragraph.Anchor.init -> void
 VellumPdf.Layout.Elements.Table.TableElement.Anchor.get -> string?
 VellumPdf.Layout.Elements.Table.TableElement.Anchor.init -> void
+VellumPdf.Layout.Elements.RunningBand.ChapterToken.get -> bool
+VellumPdf.Layout.Elements.RunningBand.ChapterToken.init -> void
