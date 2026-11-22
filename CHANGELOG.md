@@ -432,7 +432,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     refuses.
   - A paragraph with no stops, or an empty list, is drawn exactly as before: a tab is a space.
 
+- **`LayoutImage.FitToPage` scales an image down to a page's content height (#471).** An image with
+  no `Width` takes the full width of the content box, and its height follows from its proportions,
+  so when the content box is wider than it is tall, a square image was taller than the box and the
+  save threw. With `FitToPage` set, both extents are multiplied by the one factor that makes the
+  height equal the content height of a fresh page, less the image's margins. It is `false` by
+  default, and a document that does not set it saves to the same bytes.
+  - The image is sized first as it is without the member, from `Width`, `Height`, its proportions
+    and the clamp to the content width. An explicit `Height` is scaled along with the width it was
+    stretched to, so the proportions the other members produced are kept. An image is never
+    enlarged: one that fits keeps its size.
+  - The height it is fitted to is that of a fresh page, less the image's `Margins`, and a running
+    header or footer shortens it. An image too tall for the space left on the current page still
+    moves to the next page, at the size it has there. Mirrored margins move the image and do not
+    change its size.
+  - The save throws `InvalidOperationException` when the scale takes the width or the height under
+    0.000005 pt, as it does for any image extent that would be written as zero. Nothing else is
+    refused.
+  - A `LayoutImageRenderer` that you lay out with a `LayoutContext` built through the public
+    constructor fits the image to the area that context offers.
+  - A renderer of yours that wraps a `LayoutImageRenderer` and calls `WithArea` with a smaller area
+    still gets the image fitted to the page, because that method keeps the document's fresh page.
+    An image that fits the page and not that area is refused as too tall, and that message has
+    no closing reason. Pass the context you were given on unchanged to get the document's behaviour.
+  - For an image the document lays out, the exception for one too tall for a page keeps its type
+    and its first sentence, and now ends with the axis and both numbers: `LayoutImage.Height 401pt
+    exceeds the 400pt content height.`, or, for a height derived from the width, the derived
+    height, the content height and, when the member is unset, a pointer to `FitToPage`. When the
+    image has a non-zero top or bottom margin the content height is the one left inside them, and
+    the sentence says so. This applies with or without the member. The files that save are
+    unchanged.
+
 ### Changed
+
+- **The exception for an image too tall for a page now ends with a reason (#471).** For a
+  `LayoutImage` that the document lays out, with or without `FitToPage`, `Save` throws the same
+  `InvalidOperationException` with the same first sentence, and appends the axis and both numbers.
+  Code that matches the whole message must match its start instead. No document that saves changes.
 
 - **`Save` and the signing path build the document catalog in one place (#606).** Both used to
   assemble it in separate blocks of `PdfDocument` that disagreed on key order and on where the

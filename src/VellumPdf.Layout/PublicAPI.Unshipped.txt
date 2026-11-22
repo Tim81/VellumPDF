@@ -151,3 +151,5 @@ VellumPdf.Layout.LayoutDiagnosticCode.KeepTogetherRelaxed = 802 -> VellumPdf.Lay
 VellumPdf.Layout.LayoutDiagnosticCode.MinLinesRelaxed = 803 -> VellumPdf.Layout.LayoutDiagnosticCode
 VellumPdf.Layout.Elements.RunningBand.ChapterToken.get -> bool
 VellumPdf.Layout.Elements.RunningBand.ChapterToken.init -> void
+VellumPdf.Layout.Elements.LayoutImage.FitToPage.get -> bool
+VellumPdf.Layout.Elements.LayoutImage.FitToPage.init -> void
