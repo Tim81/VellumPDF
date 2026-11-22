@@ -11,7 +11,7 @@ namespace VellumPdf.Layout.Rendering;
 /// <see cref="ParagraphRenderer"/> and additionally registers a document
 /// outline entry at the exact position where the heading lands.
 /// </summary>
-internal sealed class HeadingRenderer : IRenderer, IPlacementSource, IPageBreakSource
+internal sealed class HeadingRenderer : IRenderer, IPlacementSource, IPageBreakSource, IKeepSource
 {
     private readonly Heading _heading;
     private readonly ParagraphRenderer _inner;
@@ -35,6 +35,10 @@ internal sealed class HeadingRenderer : IRenderer, IPlacementSource, IPageBreakS
     }
 
     PageBreakMode IPageBreakSource.BreakBefore => _heading.BreakBefore;
+
+    bool IKeepSource.KeepWithNext => _heading.KeepWithNext;
+
+    bool IKeepSource.KeepTogether => _heading.KeepTogether;
 
     /// <summary>Maps a heading level (0-based) to a PDF structure type.</summary>
     private static string HeadingStructType(int level) => level switch

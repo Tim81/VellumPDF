@@ -33,7 +33,7 @@ namespace VellumPdf.Layout.Rendering.Table;
 /// is tagged as a header cell. A table that has a row that is not a header after its leading
 /// header rows repeats those header rows on every page.
 /// </remarks>
-public sealed class TableRenderer : IRenderer, IPageBreakSource, IPlacementSource
+public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IPlacementSource
 {
     private readonly TableElement _table;
     private readonly int _startRow;  // first data row index (0-based)
@@ -117,6 +117,10 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IPlacementSourc
     // The mode belongs to the element, so a renderer added through Document.Add(IRenderer) honours
     // it as well.
     PageBreakMode IPageBreakSource.BreakBefore => _table.BreakBefore;
+
+    bool IKeepSource.KeepWithNext => _table.KeepWithNext;
+
+    bool IKeepSource.KeepTogether => _table.KeepTogether;
 
     // Explicit, as above. The anchor lands on the first line the table draws, which is its top
     // edge, so only the renderer the caller built, or the split piece made from it, reports it.

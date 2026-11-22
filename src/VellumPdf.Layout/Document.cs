@@ -118,7 +118,12 @@ public sealed class Document : IDisposable
     /// selects a Standard 14 font under a conformance claim),
     /// <see cref="LayoutDiagnosticCode.BandTruncated"/> (mirroring <see cref="BandTruncations"/>),
     /// <see cref="LayoutDiagnosticCode.PreformattedLineWrapped"/> (a preformatted line split with
-    /// a marker; a warning, which <see cref="StrictDiagnostics"/> saves)
+    /// a marker; a warning, which <see cref="StrictDiagnostics"/> saves),
+    /// <see cref="LayoutDiagnosticCode.KeepWithNextRelaxed"/>,
+    /// <see cref="LayoutDiagnosticCode.KeepTogetherRelaxed"/> and
+    /// <see cref="LayoutDiagnosticCode.MinLinesRelaxed"/> (a request to keep elements together or
+    /// to keep a number of lines that the pages could not hold; warnings, which
+    /// <see cref="StrictDiagnostics"/> saves)
     /// and <see cref="LayoutDiagnosticCode.DiagnosticsDropped"/>. Every other one saves by
     /// default; only <see cref="StrictDiagnostics"/> refuses it, and a later major version refuses
     /// them all.</para>

@@ -41,6 +41,15 @@ internal static class LayoutValidation
     private const double SmallestWrittenExtent = 5e-6;
 
     /// <summary>
+    /// Returns <paramref name="count"/> when it is at least 1. Called from the line-count accessors
+    /// of <see cref="Paragraph"/> so the refusal is raised at the call that wrote the value.
+    /// </summary>
+    internal static int MinLines(int count, string paramName) =>
+        count >= 1
+            ? count
+            : throw new ArgumentOutOfRangeException(paramName, count, "A line count must be at least 1.");
+
+    /// <summary>
     /// Rejects a paragraph with a tab stop beyond the content width, before any layout runs.
     ///
     /// A stop beyond the width could only be reached by text that overflows the line, so it is a

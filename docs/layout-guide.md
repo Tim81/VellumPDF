@@ -43,6 +43,7 @@ a guard test keeps the two copies byte-identical.
 | Tables: rows, columns, row spanning, borders | ✅ Supported | — |
 | Lists: ordered (decimal/alpha/roman), unordered, nested | ✅ Supported | — |
 | Preformatted text: spaces and tabs kept, wrap marked | ✅ Supported | — |
+| Keep with next, keep together, and a minimum of lines at a page break; a request the pages cannot hold is reported | ✅ Supported | — |
 | Headers and footers with page-number templates | ✅ Supported | — |
 | Images: JPEG, PNG (incl. interlaced and 16-bit), CCITT G4, TIFF-LZW | ✅ Supported | — |
 | Font embedding and subsetting: TrueType (`glyf`) and OpenType/CFF | ✅ Supported | — |
@@ -61,7 +62,6 @@ a guard test keeps the two copies byte-identical.
 | Table header semantics (#296) | ⏳ Planned | v2.5 |
 | Footnotes and endnotes | ⏳ Planned | Layout B |
 | Floats and hyphenation | ⏳ Planned | Layout D |
-| Widow and orphan control (#306) | ⏳ Planned | v2.4 |
 | Multi-column flow | ⏳ Planned | Layout F |
 | Additional chart types beyond pie | ⏳ Planned | Layout F |
 | SVG import | ⏳ Planned | Layout F (epic) |

@@ -159,6 +159,41 @@ public sealed class ListElement
     private PageBreakMode _breakBefore;
 
     /// <summary>
+    /// Whether the list stays on the page the next element starts on. The default,
+    /// <see langword="false"/>, places the list without looking at what follows.
+    /// </summary>
+    /// <remarks>
+    /// <b>Nothing is refused, and a request the pages cannot hold is dropped and reported, not
+    /// thrown.</b> The group, the order in which requests are dropped, the diagnostic and the extra
+    /// layout are those of <see cref="Paragraph.KeepWithNext"/>.
+    /// <para>The flag is read from a list added with <see cref="Document.Add(ListElement)"/>, and
+    /// from a <see cref="Rendering.ListRenderer"/> added with
+    /// <see cref="Document.Add(IRenderer)"/> or
+    /// <see cref="Rendering.DocumentRenderer.Add(IRenderer)"/>. It is ignored on the overflow of a
+    /// split list.</para>
+    /// </remarks>
+    public bool KeepWithNext { get; init; }
+
+    /// <summary>
+    /// Whether the list moves whole to the next page instead of splitting across two, when it fits
+    /// there. The default, <see langword="false"/>, splits it wherever the page ends.
+    /// </summary>
+    /// <remarks>
+    /// <b>Nothing is refused, and a list that cannot be kept whole is split and reported.</b> A
+    /// list that would split below the top of a page moves to the top of the next one when it fits
+    /// on an empty page. When it does not fit on an empty page, or already starts at the top of
+    /// one, it splits as it would without this flag, and the save lists
+    /// <see cref="LayoutDiagnosticCode.KeepTogetherRelaxed"/>, a warning, against it.
+    /// <para>The flag is read from a list added with <see cref="Document.Add(ListElement)"/>, and
+    /// from a <see cref="Rendering.ListRenderer"/> added with
+    /// <see cref="Document.Add(IRenderer)"/> or
+    /// <see cref="Rendering.DocumentRenderer.Add(IRenderer)"/>, and ignored on the overflow of a
+    /// split list. The extra layout it costs is that of
+    /// <see cref="Paragraph.KeepTogether"/>.</para>
+    /// </remarks>
+    public bool KeepTogether { get; init; }
+
+    /// <summary>
     /// A name that a link or an outside reference can jump to: the save adds a named destination at
     /// the first placed line of this list, which is the top of its first item.
     /// <see langword="null"/>, the default, adds none.
