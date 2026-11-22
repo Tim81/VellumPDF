@@ -1253,8 +1253,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     (`7.21.4.1-1`, `7.21.7-1`, `7.21.7-2`, `7.21.8-1`, `7.20-1`, `7.21.3.3-3`, `7.5-1` and
     `7.1-3`); they read `7.21.4.1-2` and `7.21.5-1` from the source without probing them. For
     `7.21.5-1` a later probe found a construct: a shown Type 1 font with `/Widths [278]` for code
-    32 passes here and fails veraPDF 1.30.2 and 1.30.4. The other 44 PDF/A-2 tests and 15 PDF/UA-1 tests come from a
-    sweep of the rules whose resource walk starts at the page's own resources. Each probe put the
+    32 passes here and fails veraPDF 1.30.2 and 1.30.4. The other 44 PDF/A-2 tests and 15
+    PDF/UA-1 tests come from a sweep of the rules whose resource walk starts at the page's own
+    resources. Each probe put the
     violating construct inside a form XObject that page content draws and, as a control, on the
     page itself: veraPDF 1.30.2 and 1.30.4 failed both files and the rule failed only the page.
     Type 3 glyph procedures, tiling patterns and annotation appearance streams were not probed.
