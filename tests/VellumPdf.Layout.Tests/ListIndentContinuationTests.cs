@@ -149,6 +149,47 @@ public sealed class ListIndentContinuationTests
     }
 
     /// <summary>
+    /// The probe places the list on a copy of the cursor and puts the cursor back. With mirrored
+    /// margins the page it starts on decides its left edge, and a probe that moved the page index by
+    /// an odd number would put page 1 on the outside margin.
+    /// </summary>
+    [Fact]
+    public void TheProbe_leavesThePageTheListStartsOn()
+    {
+        var pdf = NewPdf();
+        var renderer = new DocumentRenderer(pdf, OneLinePage, new EdgeInsets(10, 30, 10, 10))
+        {
+            ContinuationLimit = 100,
+            MirrorMargins = true,
+        };
+        renderer.Add(new ListRenderer(FlatList(1, 150)));
+        using var ms = new MemoryStream();
+
+        renderer.Render(ms);
+
+        var content = PdfTestUtil.DecompressAllFlatStreams(ms.ToArray());
+        Assert.Equal(1, renderer.ContinuationProbes);
+        Assert.Single(Regex.Matches(content, @"1 0 0 1 10 \S+ Tm\s+\(1\.\)"));
+    }
+
+    [Fact]
+    public void AnAnswerIsKeptForTheCursorItWasMadeAt_andForNoOther()
+    {
+        var list = new ListRenderer(FlatList(1, 3));
+
+        Assert.False(list.TryGetProbe(10, 20, out _));
+        list.RememberProbe(10, 20, true);
+        Assert.True(list.TryGetProbe(10, 20, out var reaches));
+        Assert.True(reaches);
+        Assert.False(list.TryGetProbe(11, 20, out _));
+        Assert.False(list.TryGetProbe(10, 21, out _));
+        list.RememberProbe(11, 20, false);
+        Assert.True(list.TryGetProbe(11, 20, out reaches));
+        Assert.False(reaches);
+        Assert.False(list.TryGetProbe(10, 20, out _));
+    }
+
+    /// <summary>
     /// The unclamped placement is the placement a list gets with no clamp in the library: a list
     /// that main refuses at the limit is refused here with the same message.
     /// </summary>
