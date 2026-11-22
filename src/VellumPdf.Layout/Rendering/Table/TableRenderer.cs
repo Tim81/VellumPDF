@@ -80,9 +80,10 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     // (#688).
     private TableRenderer? _twin;
 
-    // Set while the last Layout call went to the twin, because Draw and ReportPlacements then
-    // belong to it: the document draws the instance it called, and only the twin holds what the
-    // layout decided. Removed in 3.0 (#688).
+    // Set while the last Layout call went to the twin, because Draw then belongs to it: the
+    // document draws the instance it called, and only the twin holds what the layout decided. The
+    // anchor is not forwarded: a delegating instance is one a caller's renderer holds, and the
+    // document reports an anchor only for a renderer it placed. Removed in 3.0 (#688).
     private TableRenderer? _laidOutBy;
 
     // What the decision reports to the document: an upper bound on the continuations of the
@@ -188,12 +189,6 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     // the top and reports nothing either.
     void IPlacementSource.ReportPlacements(PlacementSink sink)
     {
-        if (_laidOutBy is { } twin)
-        {
-            ((IPlacementSource)twin).ReportPlacements(sink);
-            return;
-        }
-
         if (!_continuation && _startRow == 0 && _table.Anchor is { } anchor)
             sink.ReportAnchor(_table, anchor, _occupied);
     }

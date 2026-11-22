@@ -193,4 +193,37 @@ public sealed class TableContinuationLimitTests
 
         Assert.NotEqual(direct.Pages, wrapped.Pages);
     }
+
+    /// <summary>
+    /// The document asks about the table in every pass: with a footer it lays the table out twice,
+    /// and the second, drawing pass keeps the breaks the first measured, so a table within the
+    /// limit takes the pages its breaks give and not the pages of the unbroken layout.
+    /// </summary>
+    [Fact]
+    public void ATableThatKeepsItsBreaks_keepsThemInEveryPass()
+    {
+        var setup = Sixty with { Footer = true, PageHeight = 80 };
+        var oneLine = Run(setup, new TableRenderer(TwoLineRowsWhenTheFirstRowIsUnbroken(Limit / 2)), measuredAsOneLine: true);
+        var decided = Run(setup, new TableRenderer(TwoLineRowsWhenTheFirstRowIsUnbroken(Limit / 2)));
+
+        Assert.Null(decided.Error);
+        Assert.True(decided.Pages < oneLine.Pages, $"{decided.Pages} pages against {oneLine.Pages}");
+        Assert.Equal(0, Dropped(decided));
+    }
+
+    /// <summary>
+    /// The twin is one object for the life of the renderer, so a caller's renderer that lays the
+    /// table out under a context it built reaches the same one each time, and so is the twin of the
+    /// twin.
+    /// </summary>
+    [Fact]
+    public void TheTwinIsTheSameObjectOnEveryCall()
+    {
+        var renderer = new TableRenderer(OneCellOfLines(2));
+        var twin = ((Rendering.IContinuationTwin)renderer).Twin();
+
+        Assert.NotSame(renderer, twin);
+        Assert.Same(twin, ((Rendering.IContinuationTwin)renderer).Twin());
+        Assert.Same(twin, ((Rendering.IContinuationTwin)twin).Twin());
+    }
 }
