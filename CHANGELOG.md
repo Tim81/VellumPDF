@@ -432,7 +432,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     refuses.
   - A paragraph with no stops, or an empty list, is drawn exactly as before: a tab is a space.
 
-- **`LayoutImage.FitToPage` scales an image down to the height of a page (#471).** An image with
+- **`LayoutImage.FitToPage` scales an image down to a page's content height (#471).** An image with
   no `Width` takes the full width of the content box, and its height follows from its proportions,
   so when the content box is wider than it is tall, a square image is taller than the box and the
   save threw. With `FitToPage` set, both extents are multiplied by the one factor that makes the

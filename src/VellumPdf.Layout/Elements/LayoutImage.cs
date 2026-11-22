@@ -100,8 +100,9 @@ public sealed class LayoutImage
     public double? Height { get; init; }  // null = maintain aspect ratio
 
     /// <summary>
-    /// Whether an image taller than a page is scaled down to the height of a page, keeping its
-    /// width-to-height ratio. The default, <see langword="false"/>, leaves the size as
+    /// Whether an image taller than a page's content height, less its <see cref="Margins"/>, is
+    /// scaled down to that height, keeping its width-to-height ratio. The default,
+    /// <see langword="false"/>, leaves the size as
     /// <see cref="Width"/> and <see cref="Height"/> give it.
     /// </summary>
     /// <remarks>
