@@ -49,12 +49,9 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     IRenderer IContinuationTwin.Twin() => Unclamped();
 
     // One entry of the flattened list: the marker and the text paragraph of an item or a child.
-    // Clamped is set when BuildItems narrowed the gutter. Drawable is false when something the
-    // entry would draw cannot be drawn in this document. A document that holds such an entry lays
-    // every list out as its twin; this flag is what keeps the entry itself on the layout it had
-    // for a list laid out with no document, where ListLayoutRun has nobody to tell.
+    // Clamped is set when BuildItems narrowed the gutter.
     private readonly record struct Entry(
-        ParagraphRenderer Marker, ParagraphRenderer Content, ListItem Item, bool Clamped, bool Drawable);
+        ParagraphRenderer Marker, ParagraphRenderer Content, ListItem Item, bool Clamped);
 
     private List<Entry>? _items;
 
@@ -409,7 +406,6 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             // did not fit: it is discarded, as it always was, and the clamp reports the entries it
             // can give a width. The twin moves no entry.
             var moves = !_unclamped
-                && entry.Drawable
                 && PartUnplaced(markerResult, contentResult, contentRenderer, area.Width)
                 && !(i == _startItem && context.AtPageTop);
 
@@ -1013,10 +1009,8 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             // The twin asks the same question and only counts the answer, which is what it reports
             // when the document chose it. The gutter test comes first because it is the one that
             // fails for almost every entry.
-            var drawable = CanDrawEntry(run, itemStyle, item);
-            if (!drawable) run?.NoteUndrawable();
+            if (!CanDrawEntry(run, itemStyle, item)) run?.NoteUndrawable();
             var wouldClamp = TryClampGutter(areaWidth, gutter, 0, widest, out var clampedGutter)
-                && drawable
                 && LayoutValidation.AreRunStylesAccepted(contentRuns);
             var clamped = !_unclamped && wouldClamp;
             if (clamped)
@@ -1045,7 +1039,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             };
             var contentRenderer = new ParagraphRenderer(contentPara) { ElementLanguage = item.Language, RunOwner = "A list item" };
 
-            result.Add(new Entry(markerRenderer, contentRenderer, item, clamped, drawable));
+            result.Add(new Entry(markerRenderer, contentRenderer, item, clamped));
 
             // A null child of a top-level item is refused here, where the position is known. The
             // same null on a grandchild is counted when the list is drawn instead, because
@@ -1088,11 +1082,9 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
 
                     // The child's marker starts at `indent`, so that is the leftmost the clamped
                     // content may start.
-                    var childDrawable = CanDrawEntry(run, childStyle, child);
-                    if (!childDrawable) run?.NoteUndrawable();
+                    if (!CanDrawEntry(run, childStyle, child)) run?.NoteUndrawable();
                     var childWouldClamp = TryClampGutter(
                             areaWidth, childGutter, indent, childWidest, out var clampedChildGutter)
-                        && childDrawable
                         && LayoutValidation.AreRunStylesAccepted(childRuns);
                     var childClamped = !_unclamped && childWouldClamp;
                     if (childClamped)
@@ -1118,8 +1110,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                         new ParagraphRenderer(childMarkerPara) { RunOwner = "A list item" },
                         new ParagraphRenderer(childContentPara) { ElementLanguage = child.Language, RunOwner = "A list item" },
                         child,
-                        childClamped,
-                        childDrawable));
+                        childClamped));
                 }
             }
         }

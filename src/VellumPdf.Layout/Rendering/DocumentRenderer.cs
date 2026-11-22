@@ -532,7 +532,7 @@ public sealed class DocumentRenderer
             else
             {
                 totalPages = 0; // unknown / irrelevant
-                if (probeLists && !asTwin) ProbeForUndrawableLists();
+                if (probeLists && !asTwin) ProbeForUndrawableLists(listRun);
             }
 
             // A list found in the pass that holds an entry the document cannot draw turned every
@@ -841,9 +841,12 @@ public sealed class DocumentRenderer
     // a caller's lays out say whether the document can draw them. Its result is not kept, so a
     // document that measured nothing before still reports that it did not, and a refusal it raises
     // is left to the drawing pass, which reaches it in the order it always did: the drawing pass
-    // draws each element before it lays the next out.
+    // draws each element before it lays the next out. The lists forget what the pass built: a
+    // paragraph keeps where its last layout placed it, and a list's Draw reads that when the
+    // layout it makes for itself answers Nothing, so an entry whose text this pass placed on a
+    // page where it fits would be drawn there by the pass that follows, where 2.3.3 dropped it.
     // Removed in 3.0 (#688).
-    private void ProbeForUndrawableLists()
+    private void ProbeForUndrawableLists(ListLayoutRun listRun)
     {
         try
         {
@@ -858,6 +861,7 @@ public sealed class DocumentRenderer
             MeasureRuns = 0;
             _measureSink = null;
             _measurePages = 0;
+            listRun.StartOver();
         }
     }
 
