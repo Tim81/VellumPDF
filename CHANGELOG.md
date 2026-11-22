@@ -451,13 +451,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     refused.
   - A `LayoutImageRenderer` that you lay out with a `LayoutContext` built through the public
     constructor fits the image to the area that context offers.
-  - The exception for an image too tall for a page keeps its type and its first sentence, and now
-    ends with the axis and both numbers: `LayoutImage.Height 401pt exceeds the 400pt content
-    height.`, or, for a height derived from the width, the derived height, the content height and
-    a pointer to `FitToPage`. This applies with or without the member. The files that save are
-    unchanged.
+  - A renderer of yours that wraps a `LayoutImageRenderer` and calls `WithArea` with a smaller area
+    still gets the image fitted to the page, because that method keeps the document's fresh page.
+    An image that fits the page and not that area is refused as too tall, and that message has
+    no closing reason. Pass the context you were given on unchanged to get the document's behaviour.
+  - For an image the document lays out, the exception for one too tall for a page keeps its type
+    and its first sentence, and now ends with the axis and both numbers: `LayoutImage.Height 401pt
+    exceeds the 400pt content height.`, or, for a height derived from the width, the derived
+    height, the content height and a pointer to `FitToPage`. When the image has top or bottom
+    margins the content height is the one left inside them, and the sentence says so. This applies
+    with or without the member. The files that save are unchanged.
 
 ### Changed
+
+- **The exception for an image too tall for a page now ends with a reason (#471).** For a
+  `LayoutImage` that the document lays out, with or without `FitToPage`, `Save` throws the same
+  `InvalidOperationException` with the same first sentence, and appends the axis and both numbers.
+  Code that matches the whole message must match its start instead. No document that saves changes.
 
 - **`Save` and the signing path build the document catalog in one place (#606).** Both used to
   assemble it in separate blocks of `PdfDocument` that disagreed on key order and on where the

@@ -56,10 +56,16 @@ public sealed class LayoutImageRenderer : IRenderer, IPageBreakSource, IKeepSour
     /// <see cref="InvalidOperationException"/> saying the element is too tall to fit. This method
     /// raises the image's size refusals itself. When the document calls this method, they reach you
     /// from the save.
-    /// <para>With <see cref="LayoutImage.FitToPage"/> set, the size is scaled to the content height
-    /// of a fresh page, which the document supplies. A context you build with the public
-    /// constructor carries none, so there the image is fitted to <paramref name="ctx"/>'s own
-    /// <see cref="LayoutContext.Area"/>, less the image's margins.</para>
+    /// <para>With <see cref="LayoutImage.FitToPage"/> set, an image taller than the content height
+    /// of a fresh page is scaled down to it, and the document supplies that page. A context you
+    /// build with the public constructor carries none, so there the image is fitted to
+    /// <paramref name="ctx"/>'s own <see cref="LayoutContext.Area"/>, less the image's margins.
+    /// A context made by the context's <c>WithArea</c> method keeps the fresh page of the one it
+    /// came from, so a renderer of yours that wraps this one and passes it a smaller area still
+    /// gets the image fitted to the page. An image that fits the page and not that area then
+    /// answers <see cref="LayoutResult.Outcome.Nothing"/> on the retry as well, and the save
+    /// throws the too-tall exception without a closing reason, because that method does not
+    /// carry the page-top flag the reason is built for.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// <see cref="LayoutImage.Width"/> or <see cref="LayoutImage.Height"/>, or the height derived
@@ -123,9 +129,11 @@ public sealed class LayoutImageRenderer : IRenderer, IPageBreakSource, IKeepSour
             // Fitted to the box every fresh page offers and not to the area left on this one, so
             // that an image too tall for the rest of a page still moves to the next page at the
             // size it would have there. The box is the one the retry is offered, so a fitted
-            // image is placeable on it by construction. Only the height and width of the box are
-            // read: under mirrored margins its X differs from page to page. A caller-built
-            // context carries no such box, and the area offered is the only one known.
+            // image fits the retry's area. A context from WithArea keeps this box but not
+            // AtPageTop, so a wrapper that narrows the area gets the page's fit and a refusal.
+            // Only the height is read: under mirrored margins the box's X differs from page to
+            // page. A caller-built context carries no such box, and the area offered is the only
+            // one known.
             var fit = (ctx.FreshPageArea ?? ctx.Area).Deflate(_img.Margins).Height;
 
             // A box with no positive height cannot hold a scaled image, so the image is left as
@@ -154,20 +162,40 @@ public sealed class LayoutImageRenderer : IRenderer, IPageBreakSource, IKeepSour
     }
 
     // Names the axis that overflowed and both numbers, because the document's own sentence cannot:
-    // it does not know the image. Whole points, trimmed to two decimals.
+    // it does not know the image. The height is the area's less the image's margins, which the
+    // band sentence before it does not take off, so the wording says so when there are margins.
     private string TooTallReason(double contentHeight)
     {
-        var content = Pt(contentHeight);
+        var (height, content) = Points(_h, contentHeight);
+        var label = _img.Margins.Vertical == 0
+            ? "content height"
+            : "content height inside its margins";
         if (_img.Height is not null)
-            return $"LayoutImage.Height {Pt(_h)} exceeds the {content} content height.";
+            return $"LayoutImage.Height {height} exceeds the {content} {label}.";
 
         return "The height derived from the width and the image's proportions, " +
-            $"{Pt(_h)}, exceeds the {content} content height" +
+            $"{height}, exceeds the {content} {label}" +
             (_img.FitToPage ? "." : "; set FitToPage to scale it down.");
     }
 
+    // Whole points, trimmed to two decimals. Two heights that differ by less than that would print
+    // as one figure and the sentence would read "exceeds" over a tie, so those print with the
+    // shortest string that round-trips. So do a magnitude past 1e15, where two decimals would
+    // print hundreds of digits, and a value that is not finite, which has no decimals to trim.
+    private static (string, string) Points(double height, double content)
+    {
+        var (h, c) = (Pt(height), Pt(content));
+        return h != c ? (h, c) : (Exact(height), Exact(content));
+    }
+
     private static string Pt(double points) =>
-        points.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "pt";
+        double.IsFinite(points) && Math.Abs(points) < 1e15
+            ? points.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "pt"
+            : Exact(points);
+
+    private static string Exact(double points) =>
+        points.ToString("R", System.Globalization.CultureInfo.InvariantCulture) +
+        (double.IsFinite(points) ? "pt" : " pt");
 
     /// <summary>Draws the image XObject, emitting a tagged Figure struct element when tagging is enabled.</summary>
     /// <remarks>See <see cref="IRenderer.Draw"/>.</remarks>

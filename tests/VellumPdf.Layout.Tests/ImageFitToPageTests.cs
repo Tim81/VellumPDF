@@ -267,7 +267,8 @@ public sealed class ImageFitToPageTests
     {
         // 300 wide, inside 80 and outside 40: the content box is 180 by 260 on every page and its
         // left edge is 80 on a right-hand page and 40 on a left-hand one. A 1 by 2 source is
-        // 360 tall at the full width, so it is fitted to 260 and its width is 180 * 260 / 360 = 130.
+        // 360 tall at the full width, so it is fitted to 260 and its width is 180 * 260 / 360 =
+        // 130.
         using var doc = NewDocument(300, 300, new EdgeInsets(20, 40, 20, 80), mirror: true);
         doc.Add(Image(1, 2, fit: true));
         doc.Add(new PageBreak());
@@ -369,7 +370,7 @@ public sealed class ImageFitToPageTests
 
         Assert.Equal(
             TooTall + " The height derived from the width and the image's proportions, 900pt, " +
-            "exceeds the 0pt content height.",
+            "exceeds the 0pt content height inside its margins.",
             e.Message);
     }
 
@@ -424,6 +425,146 @@ public sealed class ImageFitToPageTests
             "388pt content height; set FitToPage to scale it down.",
             e.Message,
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ATooTallImage_namesFractionalPointsToTwoDecimals()
+    {
+        // A4 with a 440.16 pt top margin leaves 329.73 pt, and a 451.28 pt square is taller. Whole
+        // points would print 451 and 330, so this fails if the two-decimal format is dropped.
+        using var doc = NewDocument(595.28, 841.89, new EdgeInsets(440.16, 72, 72, 72));
+        doc.Add(Image(2, 2));
+
+        var e = Assert.Throws<InvalidOperationException>(() => Save(doc));
+
+        Assert.Equal(
+            TooTall + " The height derived from the width and the image's proportions, " +
+            "451.28pt, exceeds the 329.73pt content height; set FitToPage to scale it down.",
+            e.Message);
+    }
+
+    [Fact]
+    public void ATooTallImage_whoseHeightRoundsLikeTheContentHeight_printsBothWithAllTheirDigits()
+    {
+        using var doc = NewDocument();
+        doc.Add(Image(2, 2, null, 400.0001));
+
+        var e = Assert.Throws<InvalidOperationException>(() => Save(doc));
+
+        Assert.Equal(TooTall + " LayoutImage.Height 400.0001pt exceeds the 400pt content height.", e.Message);
+    }
+
+    [Theory]
+    [InlineData(329.73)]
+    [InlineData(329.85)]
+    [InlineData(400.0)]
+    public void ATooTallImage_oneStepOverTheContentHeight_printsTwoDifferentNumbers(double content)
+    {
+        // The content height of a page is a difference of doubles, and a height one step above it
+        // prints the same to two decimals. 329.73 and 329.85 are the heights the 440.16 and 440.04
+        // pt top margins leave on A4. The reason must still show two different figures.
+        var tooTall = Math.BitIncrement(content);
+        var renderer = new LayoutImageRenderer(Image(2, 2, null, tooTall));
+
+        var result = renderer.Layout(new LayoutContext(new LayoutBox(0, 0, 900, content)) { AtPageTop = true });
+
+        Assert.Equal(LayoutResult.Outcome.Nothing, result.Status);
+        var m = Regex.Match(result.Reason!, @"^LayoutImage\.Height (\S+)pt exceeds the (\S+)pt content height\.$");
+        Assert.True(m.Success, result.Reason);
+        Assert.NotEqual(m.Groups[1].Value, m.Groups[2].Value);
+        Assert.Equal(tooTall, double.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture));
+        Assert.Equal(content, double.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture));
+    }
+
+    [Fact]
+    public void ATooTallImage_withMargins_saysTheContentHeightIsTheOneInsideThem()
+    {
+        // 400 pt page, 12 pt footer, so the band sentence says 388.0pt and the reason, after the
+        // image's 5 pt top and bottom margins, says 378pt.
+        using var doc = NewDocument(footer: true);
+        doc.Add(Image(2, 2, null, 401, margins: new EdgeInsets(5, 0, 5, 0)));
+
+        var e = Assert.Throws<InvalidOperationException>(() => Save(doc));
+
+        Assert.Contains("leave a content area 388.0pt tall. ", e.Message, StringComparison.Ordinal);
+        Assert.EndsWith(
+            "LayoutImage.Height 401pt exceeds the 378pt content height inside its margins.",
+            e.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ATooTallImage_withHorizontalMarginsOnly_keepsTheShortLabel()
+    {
+        using var doc = NewDocument();
+        doc.Add(Image(2, 2, null, 401, margins: new EdgeInsets(0, 5, 0, 5)));
+
+        var e = Assert.Throws<InvalidOperationException>(() => Save(doc));
+
+        Assert.EndsWith("exceeds the 400pt content height.", e.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ATooTallImage_withAHugeHeight_printsItInExponentForm()
+    {
+        using var doc = NewDocument();
+        doc.Add(Image(2, 2, null, 1e300));
+
+        var e = Assert.Throws<InvalidOperationException>(() => Save(doc));
+
+        Assert.Equal(TooTall + " LayoutImage.Height 1E+300pt exceeds the 400pt content height.", e.Message);
+    }
+
+    [Fact]
+    public void ATooTallImage_withAnInfiniteMargin_namesTheInfinityAndDoesNotGlueTheUnit()
+    {
+        using var doc = NewDocument();
+        doc.Add(Image(2, 2, null, 401, margins: new EdgeInsets(double.PositiveInfinity, 0, 0, 0)));
+
+        var e = Assert.Throws<InvalidOperationException>(() => Save(doc));
+
+        Assert.EndsWith(
+            "LayoutImage.Height 401pt exceeds the -Infinity pt content height inside its margins.",
+            e.Message,
+            StringComparison.Ordinal);
+    }
+
+    // A caller's renderer that narrows the area before laying the image out. WithArea keeps the
+    // fresh page and drops the page-top flag.
+    private sealed class NarrowingWrapper(LayoutImage image) : IRenderer
+    {
+        private readonly LayoutImageRenderer _inner = new(image);
+
+        public LayoutResult Layout(LayoutContext context) =>
+            _inner.Layout(context.WithArea(context.Area.Deflate(new EdgeInsets(10))));
+
+        public void Draw(DrawContext context) => _inner.Draw(context);
+    }
+
+    [Theory]
+    [InlineData(true, null)]
+    [InlineData(false, 401.0)]
+    public void ARendererThatNarrowsTheArea_isRefusedWithoutAReason_asDocumented(bool fit, double? height)
+    {
+        // Fitted, the image is 400 tall, the page's content height, and the wrapper offers 380.
+        // Unfitted, 401 is over both. Either way the retry's context has lost AtPageTop.
+        using var doc = NewDocument();
+        doc.Add(new NarrowingWrapper(Image(2, 2, null, height, fit: fit)));
+
+        var e = Assert.Throws<InvalidOperationException>(() => Save(doc));
+
+        Assert.Equal(TooTall, e.Message);
+    }
+
+    [Fact]
+    public void TheSameImageWithoutTheWrapper_isFittedAndSaves()
+    {
+        using var doc = NewDocument();
+        doc.Add(new LayoutImageRenderer(Image(2, 2, fit: true)));
+
+        var pdf = Save(doc);
+
+        Assert.Equal(["400 0 0 400 0 0"], Cms(Assert.Single(PageStreams(pdf))));
     }
 
     [Fact]

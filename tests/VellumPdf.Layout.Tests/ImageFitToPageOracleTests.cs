@@ -89,7 +89,8 @@ public sealed class ImageFitToPageOracleTests
         var text = Encoding.Latin1.GetString(pdf);
         if (tagged)
         {
-            // A Figure with its alternate text, and no /BBox: this library writes none for any figure.
+            // A Figure with its alternate text and no /BBox, which this library writes for no
+            // figure.
             var figure = FigureObjects(text);
             Assert.Contains("/S /Figure", figure, StringComparison.Ordinal);
             Assert.Contains("/Alt", figure, StringComparison.Ordinal);

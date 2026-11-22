@@ -69,7 +69,7 @@ public sealed class LayoutImage
     /// through the generic too-tall exception, whose message then names the derived height and
     /// the content height. Whether it does is decided by proportion rather than by absolute size,
     /// so a source proportionally taller than the box is refused however narrow it is, unless
-    /// <see cref="FitToPage"/> is set.
+    /// <see cref="FitToPage"/> scales it down.
     /// </exception>
     public double? Width { get; init; }  // null = fit to available width
 
@@ -107,10 +107,10 @@ public sealed class LayoutImage
     /// <remarks>
     /// <b>A fitted extent too small to paint is refused.</b>
     /// <see cref="Document.Save(System.IO.Stream)"/> throws <see cref="InvalidOperationException"/>
-    /// when the scale takes the width or the height under 5e-6 points, because the canvas writes it as <c>0</c> and the transformation matrix
-    /// has no inverse; a 1 by 2147483648 pixel image fitted to a 400 point height is about
-    /// 1.9e-7 points wide. The exception comes from the save, not from this <c>init</c> accessor,
-    /// which has nothing to refuse.
+    /// when the scale takes the width or the height under 5e-6 points, because the canvas writes
+    /// it as <c>0</c> and the transformation matrix has no inverse. A 1 by 2147483647 pixel image
+    /// fitted to a 400 point height is about 1.9e-7 points wide. The exception comes from the
+    /// save, not from this <c>init</c> accessor, which has nothing to refuse.
     /// <para>The image is sized first as it is without this member, from <see cref="Width"/>,
     /// <see cref="Height"/>, the source's proportions and the clamp to the content width. When
     /// that height is more than a page's content height, less <see cref="Margins"/>, both extents
@@ -120,17 +120,25 @@ public sealed class LayoutImage
     /// its size, and the output is the same as with the default.</para>
     /// <para>The content height is that of a fresh page, not what is left on the current one. An
     /// image that fits a page but not the space below the previous element moves to the next page
-    /// at the size it has there, as it does without this member. Only the height and width of that
-    /// page's content area are read, so mirrored margins do not change the size. A running header
-    /// or footer shortens it, as it shortens any element's area. When a renderer is laid out
+    /// at the size it has there, as it does without this member. Only the height of that page's
+    /// content area is read, so mirrored margins do not change the size. A running header or
+    /// footer shortens it, as it shortens any element's area. When a renderer is laid out
     /// through a <see cref="LayoutContext"/> built by calling its public constructor, no fresh
     /// page is known, and the image is fitted to the area that context offers.</para>
+    /// <para>The fresh page travels with the context the document passes, and the context's
+    /// <c>WithArea</c> method keeps it. A renderer of yours that wraps a
+    /// <see cref="Rendering.LayoutImageRenderer"/> and lays it out in a smaller area through
+    /// that method therefore still gets the image fitted to the page, not to the smaller area.
+    /// An image that fits the page and not that area is then refused as too tall, and that
+    /// message has no closing reason. Pass the context you were given to the image's renderer
+    /// unchanged to get the document's behaviour.</para>
     /// <para>When no positive height is left once the margins are taken off, the image is not
     /// scaled and the save throws the too-tall exception, as it does without this member.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
-    /// from this property, when the fitted width or height is under 5e-6 points. The message names
+    /// from this property, when the fitted width or height is under 5e-6 points, or when no
+    /// positive height is left for the scale, as described above. The message names
     /// that extent. A size refused before the scale, such as a <see cref="Width"/> of zero, is
     /// refused with the message it has without this member.
     /// </exception>
@@ -145,6 +153,8 @@ public sealed class LayoutImage
 
     /// <summary>Margins around the image.</summary>
     /// <remarks>
+    /// With <see cref="FitToPage"/> set, the top and bottom edges are taken off the content
+    /// height the image is fitted to, so the fitted image and its margins fill that height.
     /// A non-finite edge is not checked before the layout; see <see cref="Document"/>. The save throws <see cref="ArgumentException"/> from
     /// <see cref="VellumPdf.Canvas.PdfCanvas"/> only where it would write the value.
     /// <b>Do not
@@ -162,10 +172,11 @@ public sealed class LayoutImage
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when the box the edges leave is too small for the element, in
-    /// which case the message says the element is too tall to fit on a page and does not name the
-    /// margins. With <see cref="Width"/> null, the width the edges leave is refused when it is under
-    /// 5e-6 in magnitude, or not finite, and so is a height derived from it that is under 5e-6 or not
-    /// finite. The message then names that width or height instead.
+    /// which case the message says the element is too tall to fit on a page. Its last sentence
+    /// names the image's height and the content height left inside these margins, not the margins
+    /// themselves. With <see cref="Width"/> null, the width the edges leave is refused when it is
+    /// under 5e-6 in magnitude, or not finite, and so is a height derived from it that is under
+    /// 5e-6 or not finite. The message then names that width or height instead.
     /// </exception>
     /// <inheritdoc cref="Paragraph.Margins" path="/exception[@cref='T:System.ArgumentException']"/>
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
