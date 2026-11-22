@@ -1603,6 +1603,8 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         System.Globalization.CultureInfo.InvariantCulture,
         $"Table row {subject >> 32}, cell {subject & 0xFFFFFFFF} holds a tab, a line break or another control white-space character that is left out of what is drawn, because reading its line breaks, or its other control white space as spaces, would leave a row that cannot be cut no room on a page. The words it separated run together.");
 
+    // The message for a cell the document gave up for the continuation limit. Removed in 3.0
+    // (#688), with the twin that reports it.
     private static string DroppedForTheLimit(long subject) => string.Create(
         System.Globalization.CultureInfo.InvariantCulture,
         $"Table row {subject >> 32}, cell {subject & 0xFFFFFFFF} holds a tab, a line break or another control white-space character that is left out of what is drawn, because reading the table's line breaks would take it more page continuations than one element may take. The words it separated run together.");
@@ -1912,8 +1914,9 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         // control character loses anything by it, which is the separation its words had.
         // A twin reports it only where the document chose the twin (#688); one a caller holds is
         // the table as it was before breaks were honoured, which reports nothing.
+        var holdsControlSpace = LayoutText.HasControlSpace(cell.Content);
         if ((!_readsUnbrokenForTheLimit || _placedAsTwin)
-            && !HonoursBreaks(rowIndex, cellIndex) && LayoutText.HasControlSpace(cell.Content)
+            && !HonoursBreaks(rowIndex, cellIndex) && holdsControlSpace
             && (slice is null || slice.First[cellIndex] == 0))
         {
             ctx.Diagnostics?.Report(
@@ -1953,6 +1956,14 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         for (var lineIdx = 0; lineIdx < lineCount; lineIdx++)
         {
             var line = wrappedLines[firstLine + lineIdx];
+
+            // A line that is empty because of control white space writes no text: an empty string
+            // would only be a show operator that draws nothing. That is the line of control
+            // characters a cell laid out unbroken leaves out, and the blank line between two line
+            // breaks. A cell that holds none of them is not touched, so a table without control
+            // white space keeps its bytes, an empty cell and one of spaces alone included.
+            if (line.Length == 0 && holdsControlSpace) continue;
+
             var lineW = cs.FontRef.MeasureString(line, cs.FontSize);
 
             // Floored at the cell's own left edge (#473), the same clamp #472 applied to a

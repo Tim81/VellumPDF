@@ -91,7 +91,8 @@ internal sealed class TableMeasureProbe
 
     /// <summary>
     /// When set, a table that holds control white space is measured with every cell as one line
-    /// and no decision, as it was measured before breaks were honoured.
+    /// and no decision, as it was measured before breaks were honoured. A compatibility device,
+    /// removed in 3.0 (#688), with the twin it stands in for.
     /// </summary>
     public bool ReadEveryCellUnbroken { get; init; }
 

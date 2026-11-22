@@ -1,10 +1,12 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Text.RegularExpressions;
 using VellumPdf.Fonts;
 using VellumPdf.Layout.Core;
 using VellumPdf.Layout.Elements.Table;
 using VellumPdf.Layout.Rendering.Table;
+using VellumPdf.TestSupport;
 using static VellumPdf.Layout.Tests.ContinuationSupport;
 
 namespace VellumPdf.Layout.Tests;
@@ -132,6 +134,58 @@ public sealed class TableContinuationLimitTests
         Assert.Equal(oneLine.Bytes, wrapped.Bytes);
         Assert.Equal(0, Dropped(wrapped));
         Assert.Equal(0, wrapped.Probes);
+    }
+
+    /// <summary>
+    /// A line that is empty because of control white space writes no show operator: the line of
+    /// control characters alone that a table laid out unbroken leaves out, and the blank line a
+    /// trailing line break leaves in a table that keeps its breaks. A cell that is empty as
+    /// written still writes its one empty string, as a table without control white space always
+    /// has, and so does a cell of spaces alone.
+    /// </summary>
+    [Theory]
+    [InlineData(false, "(x y)")]
+    [InlineData(true, "(xy)")]
+    public void ALineThatIsEmptyBecauseOfControlWhiteSpace_writesNoEmptyShow(bool heldByAWrapper, string expected)
+    {
+        var t = new TableElement { DefaultCellStyle = Helvetica() }.SetColumnWidths(100, 100, 100, 100);
+        t.AddRow().AddCell("\t\n").AddCell("").AddCell("x\ty").AddCell("   ");
+        IRenderer element = heldByAWrapper ? new Wrapper(new TableRenderer(t), WrapKind.PassThrough) : new TableRenderer(t);
+
+        var outcome = Run(TwoHundred, element);
+
+        Assert.Null(outcome.Error);
+        var content = PdfTestUtil.DecompressAllFlatStreams(outcome.Bytes!);
+        Assert.Single(Regex.Matches(content, "(?m)^" + Regex.Escape(expected) + " Tj$"));
+
+        // The cell that is empty as written and the cell of spaces alone each write their empty
+        // string, in both layouts, as they do in a table that holds no control white space.
+        var empties = Regex.Matches(content, @"(?m)^\(\) Tj$").Count;
+        Assert.Equal(2, empties);
+    }
+
+    /// <summary>
+    /// A table that holds no control white space reports its bound as every other table does,
+    /// though its two layouts are one. A call that reports nothing makes the document lay out the
+    /// rest of the placement as the twin, a new renderer that has none of the lines a cut row
+    /// carried, so the row would be drawn again from its first line on the next page.
+    /// </summary>
+    [Fact]
+    public void ATableWithNoControlWhiteSpace_drawsEachLineOfARowCutBetweenItsLinesOnce()
+    {
+        var table = new TableElement { DefaultCellStyle = Helvetica() }.SetColumnWidths(100, 100);
+        table.AddRow().AddCell(string.Join(" ", Enumerable.Range(0, 80).Select(i => "w" + i))).AddCell("side");
+        table.AddRow().AddCell("after").AddCell("row");
+        var page = new Setup { PageWidth = 400, PageHeight = 100 };
+
+        var kept = Run(page, new TableRenderer(table));
+        var oneLine = Run(page, new TableRenderer(table), measuredAsOneLine: true);
+
+        Assert.Null(kept.Error);
+        var words = Regex.Matches(PdfTestUtil.DecompressAllFlatStreams(kept.Bytes!), @"\bw[0-9]+\b");
+        Assert.Equal(80, words.Count);
+        Assert.Equal(80, words.Select(m => m.Value).Distinct().Count());
+        Assert.Equal(oneLine.Bytes, kept.Bytes);
     }
 
     /// <summary>
