@@ -62,6 +62,9 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     // break is kept.
     private HashSet<(int Row, int Cell)>? _oneLine;
 
+    // What the decision under way has measured of each cell; null outside it.
+    private TableMeasureCache? _measured;
+
     /// <summary>
     /// The number of passes over the table's heights that each stop at the first step changing
     /// another group's height. Pass 9 and later judge every group they reach, each on the heights
@@ -298,6 +301,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
                     ResolveGrid(area.Width, style, cache);
                 }
             }
+            _measured = null;
             _decidedFor = key;
         }
 
@@ -423,6 +427,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     private void ResolveGrid(double areaWidth, TextStyle style, TableMeasureCache? cache)
     {
         if (TableMeasureProbe.Current is { } probe) probe.Passes++;
+        _measured = cache;
         var rows = _table.Rows;
         var grid = new TableGridResolver { OneLineCells = _oneLine, Cache = cache };
         grid.Resolve(_table, areaWidth);
@@ -454,12 +459,143 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             LayoutValidation.ValidateFontSize(cs, $"Table row {r}, cell {cellIndex}");
             var colW = ColSpanWidth(col, cell.ColSpan);
             var innerW = colW - cell.Padding.Horizontal;
-            var lines = WordWrapCount(cell.Content, cs, Math.Max(1, innerW), HonoursBreaks(r, cellIndex));
+            var honourBreaks = HonoursBreaks(r, cellIndex);
+            var wrapWidth = Math.Max(1, innerW);
+            var lines = _measured is null
+                ? WordWrapCount(cell.Content, cs, wrapWidth, honourBreaks)
+                : CachedLineCount(_measured, (r, cellIndex, row.Cells.Count), cell.Content, cs, wrapWidth, honourBreaks);
             var cellH = lines * cs.EffectiveLeading + cell.Padding.Vertical;
             maxH = Math.Max(maxH, cellH);
             col += cell.ColSpan;
         }
         return maxH;
+    }
+
+    /// <summary>
+    /// The number of lines <see cref="WordWrapLines"/> wraps the text into at
+    /// <paramref name="width"/>, from the decision's cache when the width lies in the interval the
+    /// cached count was found for.
+    /// </summary>
+    private static int CachedLineCount(
+        TableMeasureCache cache, (int Row, int Cell, int CellCount) at, string text, TextStyle style,
+        double width, bool honourBreaks)
+    {
+        ref var entry = ref cache.Of(at.Row, at.Cell, at.CellCount, honourBreaks);
+        var probe = TableMeasureProbe.Current;
+        if (entry.Holds(width))
+        {
+            if (probe is not null)
+            {
+                probe.WrapHits++;
+                if (probe.Verify && WordWrapCount(text, style, width, honourBreaks) != entry.Lines)
+                    throw new InvalidOperationException(
+                        $"A cached line count of {entry.Lines} does not hold at width {width:R}.");
+            }
+            return entry.Lines;
+        }
+
+        if (probe is not null) probe.WrapMisses++;
+        entry.Lines = CountLines(text, style, width, honourBreaks, out entry.From, out entry.Below, out entry.Pinned);
+        entry.HasLines = true;
+        return entry.Lines;
+    }
+
+    /// <summary>
+    /// The number of lines <see cref="WordWrapLines"/> returns, without building them, and the
+    /// widths over which the count is the same. Each comparison of a width against a measurement
+    /// narrows <paramref name="from"/> and <paramref name="below"/>, so the count holds for every
+    /// width in [from, below), and for exactly the width given when a word wider than it was
+    /// broken at its characters (<paramref name="pinned"/>), because where that word breaks
+    /// follows the width. This method follows <see cref="WrapLine"/> step for step, an empty word
+    /// included, and takes the same measurements from the font in the same order.
+    /// </summary>
+    internal static int CountLines(
+        string text, TextStyle style, double maxWidth, bool honourBreaks,
+        out double from, out double below, out bool pinned)
+    {
+        from = double.NegativeInfinity;
+        below = double.PositiveInfinity;
+        pinned = false;
+        if (string.IsNullOrEmpty(text)) return 1;
+
+        var total = 0;
+        foreach (var line in CellLines(text, honourBreaks))
+            total += CountLine(line, style, maxWidth, ref from, ref below, ref pinned);
+        if (pinned) from = maxWidth;
+        return total;
+    }
+
+    private static int CountLine(
+        string text, TextStyle style, double maxWidth, ref double from, ref double below, ref bool pinned)
+    {
+        if (string.IsNullOrEmpty(text)) return 1;
+
+        var words = text.Split(' ');
+        var spaceW = style.FontRef.MeasureString(" ", style.FontSize);
+
+        // The length of the line under way, as WrapLine's buffer holds it: an empty word at the
+        // start of a line leaves the buffer empty, so the next word starts a line again.
+        var length = 0;
+        var lineW = 0.0;
+        var lines = 0;
+
+        foreach (var word in words)
+        {
+            var ww = style.FontRef.MeasureString(word, style.FontSize);
+            if (length > 0)
+            {
+                var joined = lineW + spaceW + ww;
+                if (joined <= maxWidth)
+                {
+                    from = Math.Max(from, joined);
+                    length += 1 + word.Length;
+                    lineW += spaceW + ww;
+                    continue;
+                }
+
+                below = Math.Min(below, joined);
+                lines++;
+                length = 0;
+                lineW = 0.0;
+            }
+
+            // The start of a line. A word wider than the line is broken at its characters, which
+            // adds its fragments and leaves no line under way.
+            if (ww > maxWidth)
+            {
+                below = Math.Min(below, ww);
+                pinned = true;
+                lines += CountHardBreakFragments(word, style, maxWidth);
+                continue;
+            }
+            from = Math.Max(from, ww);
+            length = word.Length;
+            lineW = ww;
+        }
+        if (length > 0) lines++;
+        return lines == 0 ? 1 : lines;
+    }
+
+    /// <summary>The number of lines <see cref="HardBreakWord"/> adds for a word.</summary>
+    private static int CountHardBreakFragments(string word, TextStyle style, double maxWidth)
+    {
+        var fragments = 0;
+        var open = false;
+        var fragmentW = 0.0;
+        foreach (var rune in word.EnumerateRunes())
+        {
+            var charW = style.FontRef.MeasureString(rune.ToString(), style.FontSize);
+            if (open && fragmentW + charW > maxWidth)
+            {
+                fragments++;
+                fragmentW = 0.0;
+                open = false;
+            }
+            open = true;
+            fragmentW += charW;
+        }
+        if (open) fragments++;
+        return fragments;
     }
 
     /// <summary>
@@ -1381,7 +1517,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     /// let the hard-break below (#473) reach both call sites from a single change instead of two
     /// that would otherwise have to be kept in step by hand.
     /// </summary>
-    private static int WordWrapCount(string text, TextStyle style, double maxWidth, bool honourBreaks) =>
+    internal static int WordWrapCount(string text, TextStyle style, double maxWidth, bool honourBreaks) =>
         WordWrapLines(text, style, maxWidth, honourBreaks).Count;
 
     /// <summary>
