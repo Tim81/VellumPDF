@@ -40,32 +40,48 @@ public sealed class Cell
     /// each such character as <see cref="VellumPdf.Layout.LayoutDiagnosticCode.NotdefGlyph"/>, and
     /// <see cref="Document.StrictDiagnostics"/> refuses it; see
     /// <see cref="TextStyle.FontRef"/>.</para>
-    /// <para>A cell has no tab stops, so a tab is one space. <b>A cell of a repeated header row, or
-    /// of rows joined by a <see cref="RowSpan"/>, is laid out unbroken when honouring the line
-    /// breaks of those rows would leave them no room on a page,</b> because such rows are never cut
-    /// between their lines. The header rows have no room when they do not fit a page, or when they
-    /// leave a row below them less than one line of one of its cells. A span group has no room when
-    /// it is taller than what a page leaves under the repeated header rows. The cell is then
-    /// wrapped at spaces alone and sized from its whole text, each tab and line break in it
-    /// measured at the width its font gives it and left out of what is drawn. The words they
-    /// separated run together in the drawing and in extracted text, and no line is wider than it
-    /// was measured, though a glyph wider than its column can still extend past it, as in any
-    /// cell. The save lists the cell as
-    /// <see cref="VellumPdf.Layout.LayoutDiagnosticCode.CellWhiteSpaceDropped"/>, a warning that
-    /// <see cref="Document.StrictDiagnostics"/> saves. Which cells are laid out this way is decided
-    /// in three steps, each taken only while the rows still have no room: the cells of the group
-    /// that hold a carriage return or a line feed, then those of the header rows, then every cell
-    /// that holds any control white space and sits in the group's rows, in the header rows, or in
-    /// an automatically sized column that a cell of those rows is in. A cell that holds only a
-    /// line feed can be laid out this way by any step. A cell outside those rows and columns keeps
-    /// its breaks, and a row that can be cut between its lines is cut when it is taller than a
-    /// page, which a repeated header row or a span group never is: those are refused. A table
-    /// whose rows are all headers repeats none of them, so its rows are ordinary rows and are cut
-    /// like any other. <b>Do not pass</b> a line break in a repeated header row or a span group
-    /// that has no room and expect the lines to be drawn: move the text to a row that can be cut,
-    /// or shorten it. A renderer you lay out without the document, through a
-    /// <see cref="LayoutContext"/> built with the public constructor, knows no page and keeps
-    /// every break.</para>
+    /// <para>A cell has no tab stops, so a tab is one space.</para>
+    /// <para><b>A cell is laid out unbroken, with its tabs and line breaks left out of what is
+    /// drawn, when reading them would leave a row that cannot be cut no room on a page.</b> This
+    /// is the one place that states the rule; the other members that mention it point here. The
+    /// rows that are never cut between their lines are the repeated header rows and the rows
+    /// joined by a <see cref="RowSpan"/>. The header rows have no room when they do not fit a
+    /// page, or when they leave a row below them less than one line of one of its cells. A span
+    /// group has no room when it is taller than what a page leaves under the repeated header
+    /// rows. The cause is a line break, which adds a line, or any other control white space,
+    /// because a tab is one space wide where the font measures the tab character at its own
+    /// width: a tab can tip a table that holds no line break. Such a cell is wrapped at spaces
+    /// alone and sized from its whole text, each tab and line break in it measured at the width
+    /// its font gives it and left out of what is drawn. The words they separated run together in
+    /// the drawing and in extracted text, and no line is wider than it was measured, though a
+    /// glyph wider than its column can still extend past it, as in any cell. The save lists the
+    /// cell as <see cref="VellumPdf.Layout.LayoutDiagnosticCode.CellWhiteSpaceDropped"/>, a
+    /// warning that <see cref="Document.StrictDiagnostics"/> saves.</para>
+    /// <para>Which cells give them up is decided in order: the header rows are judged first, then
+    /// each group of rows joined by a <see cref="RowSpan"/>, each on the heights the decisions
+    /// before it leave. A group is relieved in three steps, each taken only while the group still
+    /// has no room: the cells of the group that hold a carriage return or a line feed; then those
+    /// of the header rows; then every cell that holds any control white space and sits in the
+    /// group's rows, in the header rows, or in an automatically sized column that a cell of
+    /// those rows is in. The header rows are relieved in the same way: by their own cells that
+    /// hold a carriage return or a line feed, and then by every cell that holds any control white
+    /// space and sits in them or in an automatically sized column that a cell of them is in. A
+    /// cell that holds only a line feed can be reached by any step. A cell no step reaches keeps
+    /// its breaks.</para>
+    /// <para>The table's heights are measured again each time a header row, or a group in an
+    /// automatically sized column, gives up a cell, because that can change other rows. After the
+    /// table has been measured again 8 times for this decision, the groups not yet judged are
+    /// judged together on the heights as they stand. A table that needs no more than 8 such
+    /// measurements is laid out as if every group were judged on the heights the earlier ones
+    /// left; beyond that, a later group can give up cells that judging it on those heights would
+    /// have kept.</para>
+    /// <para>A row that can be cut between its lines is cut when it is taller than a page. A
+    /// repeated header row or a span group is never cut, and the save refuses it when it does not
+    /// fit; a table whose rows are all headers repeats none of them, so its rows are cut like any
+    /// other. <b>Do not pass</b> a line break in a repeated header row or a span group that has no
+    /// room and expect the lines to be drawn: move the text to a row that can be cut, or shorten
+    /// it. A renderer you lay out without the document, through a <see cref="LayoutContext"/> built
+    /// with the public constructor, knows no page and keeps every break.</para>
     /// </remarks>
     /// <inheritdoc cref="Heading.Text" path="/exception[@cref='T:System.ArgumentException']"/>
     public string Content { get; }

@@ -28,9 +28,10 @@ public sealed class RunningBand
 {
     /// <summary>Text template — may contain {page} and/or {pages}.</summary>
     /// <remarks>
-    /// A band is one line: a tab, a line break, a form feed or any other white-space control
-    /// character in the template is drawn as one space each, and is measured as one, so no
-    /// white-space control character reaches the font from it. The same holds for the text a
+    /// A band is one line: a tab, a line feed, a carriage return, a form feed or any other
+    /// white-space control character in the template is drawn as one space and measured as one,
+    /// so a carriage return and line feed pair is two spaces, and no white-space control
+    /// character reaches the font from it. The same holds for the text a
     /// <see cref="PageLabelRange"/> prints for <c>{page}</c>. A control character that is not white
     /// space, such as U+0001, is written as it is.
     /// <para>Not checked when it is set: the constructor stores a null template, and the save throws

@@ -27,8 +27,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     call must not reuse it.
 - **`LayoutDiagnosticCode.CellWhiteSpaceDropped` (301).** A table cell was wrapped at spaces alone
   and sized from its whole text, and its tabs and line breaks were left out of what is drawn,
-  because honouring the line breaks of the cells around it would have left a repeated header row
-  or rows joined by a `RowSpan` no room on a page. A warning, so `StrictDiagnostics` saves: the
+  because reading its line breaks, or its other control white space as spaces, would have left a
+  repeated header row or rows joined by a `RowSpan` no room on a page. A warning, so `StrictDiagnostics` saves: the
   text stays, and the words those characters separated run together in the drawing and in
   extracted text.
   `Count` is the number of pages on which the cell was drawn from its first line, so a repeated
@@ -563,9 +563,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     tall at 12 pt, where it was one. A table whose cell holds a line break gets taller rows and
     different automatic column widths. A table that holds none of tab, carriage return, line feed,
     form feed, line tabulation, next-line character, U+2028 and U+2029 saves to the same bytes as
-    before: 20,000 random tables whose texts include U+0001, U+007F, no-break spaces and U+2003
-    saved to identical bytes on the build before this change, and so did the first 3,331 of 4,000
-    set in DejaVu Sans.
+    before, and is refused where it was refused. Random tables whose texts include U+0001,
+    U+007F, no-break spaces and U+2003 matched the build before this change in both, 20,000 in
+    Helvetica and 4,000 in DejaVu Sans.
   - A band template measured a tab, a line feed, a carriage return or a form feed at its font's
     width for that character, zero in Helvetica, and now measures each as one space. A band that
     fit can therefore be cut: `A` followed by 120 tabs and `B` in Helvetica 10 on a 300 pt page
@@ -583,33 +583,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     2000 x 600 pt page in a 1900 pt column, saved in 314 pages on 2.3.3 and now stops at the limit
     of 50,000 page continuations with the `InvalidOperationException` that names it. The same cell
     of 2,350,047 words saves, in 50,001 pages, and one of 2,350,048 is refused.
-  - **A repeated header row, or rows joined by a `RowSpan`, whose breaks would leave them no room
-    on a page keep the one-line layout.** Those rows are never cut between their lines, so
-    honouring the breaks would turn a table that saved into a too-tall refusal. The header rows
-    have no room when they do not fit a page, or when they leave a row below them less than one
-    line of one of its cells; a span group has none when it is taller than what a page leaves
-    under the repeated header rows. A cell of them is then wrapped at
-    spaces alone and sized from its whole text, as 2.3.3 did, with each tab and break measured at
-    the width its font gives it and then left out of what is drawn, so no line is wider than it was
-    measured. A header of 60 two-letter lines stays inside its cell in a 100pt column and in
-    automatic columns on a 400pt page, and `pdftotext -raw` returns all 120 letters in order. A
-    glyph wider than its column still extends past it, as in any cell: a column 10pt wide draws a
-    `W` 5.44pt past its border. The words the dropped characters separated run together, in the
-    drawing and in extracted text. The save lists the cell as the new
+  - **A repeated header row, or rows joined by a `RowSpan`, keep the one-line layout of their cells
+    when reading the cells' breaks would leave them no room on a page.** Those rows are never cut
+    between their lines, so reading the breaks would turn a table that saved into a too-tall
+    refusal. The cause is a line break, or any other control white space, which a cell reads as a
+    space where 2.3.3 measured the character at its own width: a tab can tip a table that has no
+    line break in it. A cell of such rows is then wrapped at spaces alone and sized from its whole
+    text, as 2.3.3 did, with each tab and break measured at the width its font gives it and then
+    left out of what is drawn, so no line is wider than it was measured. The words they separated
+    run together, in the drawing and in extracted text. The save lists the cell as the new
     `LayoutDiagnosticCode.CellWhiteSpaceDropped` (301, a warning, so `StrictDiagnostics` still
-    saves). A header row of 46 two-letter lines, 560pt tall, keeps its lines on a 580pt page above
-    a 20pt row, where a line fits in the 20pt left; one of 47 is 572pt, fits the page alone, but
-    leaves the row 8pt, so it falls back. Which cells fall back is decided in steps, each taken only
-    while the rows still do not fit a page, and each ending its pass so the heights are taken
-    again before the next step is judged: the cells of the group that hold a carriage return or
-    line feed; then those of the header rows; then the cells that hold any control white-space
-    character and sit in the rows of the group or the header, or in an automatically sized column
-    that a cell of those rows is in. A cell that holds only a line feed can fall back at any of
-    the three steps. A cell no step reaches keeps its breaks. A row that can be cut is cut between
-    its lines when it is taller than a page; a repeated header row or a span group is never cut,
-    and is refused when it does not fit. A table whose rows are all headers repeats none of
-    them, so its rows are ordinary rows and are cut. A renderer laid out through a context built
-    with the public constructor knows no page and keeps every break.
+    saves). A header of 60 two-letter lines stays inside its cell in a 100pt column, and
+    `pdftotext -raw` returns all 120 letters in order. A header row of 46 two-letter lines, 560pt
+    tall, keeps its lines on a 580pt page above a 20pt row, where a line fits in the 20pt left;
+    one of 47 is 572pt, fits the page alone, but leaves the row 8pt, so it falls back. The XML
+    documentation of `Cell.Content` states when a header or a group has no room, which cells
+    fall back and in what order, and what a renderer laid out without the document does.
+  - **The decision costs a measurement of the whole table each time a header row, or a group
+    that gives up a cell in an automatically sized column, falls back.** After 8 such
+    measurements the groups not yet judged are judged together, which bounds the cost of a table
+    with many such groups. A table that needs no more than 8 measurements is decided exactly as
+    group-by-group judging would decide it; beyond that, a later group can give up cells that
+    group-by-group judging would have kept. Groups that give up a cell in fixed-width columns
+    only measure their own rows and do not count towards the 8.
 - **`/FontBBox` of an embedded font is the font's own bounding box (#596).** The descriptor of every
   embedded TrueType and OpenType font held `[0, hhea descender, 1000 * 1000 / unitsPerEm, hhea
   ascender]`: a zero for xMin and a constant for xMax, so DejaVu Sans, Liberation Sans and Liberation

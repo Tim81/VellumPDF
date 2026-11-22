@@ -31,15 +31,16 @@ namespace VellumPdf.Layout.Elements.Table;
 /// page is a <c>TD</c>, or a <c>TH</c> in a header row, and a cell with no line on the page is an
 /// empty <c>TD</c>, also in a header row.</para>
 /// <para>A carriage return or line feed in a cell ends a line, so it makes the row taller. A
-/// repeated header row, or rows joined by a <see cref="Cell.RowSpan"/>, whose breaks would leave
-/// them no room on a page are never cut, so cells of them are wrapped at spaces alone with each
-/// tab and break left out of what is drawn, and the save lists each as
-/// <see cref="LayoutDiagnosticCode.CellWhiteSpaceDropped"/>; see <see cref="Cell.Content"/>.
-/// Groups that give up cells in fixed-width columns only are judged together, in one measurement
-/// of the table. A header that gives up a cell, and a group that gives up a cell in an
-/// automatically sized column, each cost another measurement of the whole table, because they
-/// change the heights of other rows, so a table with many of those takes time that grows with
-/// the square of their number.</para>
+/// repeated header row, or rows joined by a <see cref="Cell.RowSpan"/>, can lose the breaks and
+/// tabs of some cells, and the save lists each as
+/// <see cref="LayoutDiagnosticCode.CellWhiteSpaceDropped"/>; <see cref="Cell.Content"/> says when
+/// and which.</para>
+/// <para><b>Each time a header row, or a group in an automatically sized column, gives up a cell,
+/// the save measures the whole table again.</b> A group that gives up cells in fixed-width
+/// columns only measures its own rows again. After 8 measurements of the whole table for this
+/// decision, the groups not yet judged are judged together, so a table with many groups in
+/// automatically sized columns does not take one more for each. <see cref="Cell.Content"/> says
+/// what that changes in what is drawn.</para>
 /// <para><b>These are refused, and never cut.</b> <see cref="Document.Save(System.IO.Stream)"/>
 /// throws <see cref="InvalidOperationException"/> whose message starts with the standard
 /// too-tall text and ends with a sentence naming the rows, for: header rows that together do not
