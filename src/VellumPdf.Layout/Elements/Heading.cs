@@ -101,9 +101,10 @@ public sealed class Heading
     /// <para><b>An unpaired surrogate is refused where a band prints the title.</b> When
     /// the heading is level 0 and a band sets <see cref="RunningBand.ChapterToken"/> and holds
     /// <c>{chapter}</c> in an embedded font, the save throws <see cref="ArgumentException"/>,
-    /// whatever font the heading is set in. A document without such a band saves it. The same band throws <see cref="InvalidOperationException"/>
-    /// when a template repeats <c>{chapter}</c> so often that the titles it prints add up to more
-    /// than <see cref="int.MaxValue"/> characters; see <see cref="RunningBand.ChapterToken"/>.</para>
+    /// whatever font the heading is set in. A document without such a band saves it. The same
+    /// band throws <see cref="InvalidOperationException"/> when a template repeats
+    /// <c>{chapter}</c> so often that the titles it prints add up to more than
+    /// <see cref="int.MaxValue"/> characters; see <see cref="RunningBand.ChapterToken"/>.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not

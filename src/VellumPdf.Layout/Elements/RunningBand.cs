@@ -43,10 +43,10 @@ public sealed class RunningBand
     /// text where the token stands, and the rest of the template is drawn as it is written. A
     /// page that holds no band, such as the blank page a recto break inserts, shows no title, and
     /// a page where a chapter starts partway down shows that chapter, although the one before it
-    /// holds the top of the page. The title is the heading's <see cref="Heading.BookmarkTitle"/> when it has
-    /// one and its text otherwise. A tab, a line break, a form feed or another control white-space
-    /// character in it is drawn as a space. Headings of other levels, and anything a custom
-    /// <see cref="IRenderer"/> draws, start no chapter.</para>
+    /// holds the top of the page. The title is the heading's <see cref="Heading.BookmarkTitle"/>
+    /// when it has one and its text otherwise. A tab, a line break, a form feed or another control
+    /// white-space character in it is drawn as a space. Headings of other levels, and anything a
+    /// custom <see cref="IRenderer"/> draws, start no chapter.</para>
     /// <para>The token is replaced by the title as it is, so a <c>{page}</c> or <c>{chapter}</c>
     /// in the title prints as that text. The title is measured and cut with the rest of the band, so one
     /// that does not fit is truncated and reported as <see cref="Template"/> says, and a character
