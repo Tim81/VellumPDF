@@ -434,6 +434,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **A paragraph that runs over many pages no longer re-measures all its lines on every page.**
+  `ParagraphRenderer.Layout` walked every line of the paragraph for its line height on each page. The height is now taken once, when the text is
+  wrapped, and every page of the split reuses it. Output is unchanged: the same documents
+  produce the same bytes. On one paragraph of `W` words, one per line and one line per page, on a
+  40 x 34.4 pt page in a Release build, 10,000 pages took 607 ms and now take 209 ms, and 50,000
+  pages took 11.4 s and now take 0.9 s. A heading and a list item that run over many pages
+  gain the same way. Allocation measured the same.
+
 - **`Save` and the signing path build the document catalog in one place (#606).** Both used to
   assemble it in separate blocks of `PdfDocument` that disagreed on key order and on where the
   output-intent objects are numbered. One private builder now writes the keys, and each path
