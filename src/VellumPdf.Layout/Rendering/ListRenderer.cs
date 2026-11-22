@@ -132,9 +132,9 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     // The y each visited item starts at, indexed like _offered. It is where an item's anchor lands.
     private List<double>? _tops;
 
-    // The ListLayoutRun.Generation this instance last laid out under. A document that finds an entry
-    // it cannot draw after other lists were laid out turns every list into its twin and lays them
-    // out again, and the paragraphs of the earlier layout remember where they were placed.
+    // The ListLayoutRun.Generation this instance last laid out under. A document that finds an
+    // entry it cannot draw after other lists were laid out turns every list into its twin and lays
+    // them out again, and the paragraphs of the earlier layout remember where they were placed.
     private int _generation;
 
     /// <summary>Creates a renderer for the list, optionally starting at <paramref name="startItem"/> for pagination.</summary>
@@ -910,11 +910,11 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
         return true;
     }
 
-    // Whether everything an entry would draw can be drawn in the document: its marker, which is set
-    // in the style the entry inherits, and each run that holds text (ListLayoutRun.CanDraw says what
-    // that asks of a style). A run with no text draws nothing, so its style is not read. A
-    // white-space-only run is read although it may yield no fragment, so this is stricter than the
-    // draw, in the safe direction. An item built from a string has one run, in the style it
+    // Whether everything an entry would draw can be drawn in the document: its marker, which is
+    // set in the style the entry inherits, and each run that holds text (ListLayoutRun.CanDraw
+    // says what that asks of a style). A run with no text draws nothing, so its style is not read.
+    // A white-space-only run is read although it may yield no fragment, so this is stricter than
+    // the draw, in the safe direction. An item built from a string has one run, in the style it
     // inherits, so that style is the only one to read.
     // Removed in 3.0 (#688), which refuses such a font where the style is built.
     private static bool CanDrawEntry(ListLayoutRun? run, TextStyle markerStyle, ListItem item)

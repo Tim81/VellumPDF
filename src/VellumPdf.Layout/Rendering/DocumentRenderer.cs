@@ -433,8 +433,8 @@ public sealed class DocumentRenderer
     /// </summary>
     internal void RunLayout()
     {
-        // Every list this layout lays out reads the run, whatever context it is handed, and a layout
-        // that a renderer of a caller's starts from inside this one gets a run of its own.
+        // Every list this layout lays out reads the run, whatever context it is handed, and a
+        // layout that a renderer of a caller's starts from inside this one gets a run of its own.
         // Removed in 3.0 (#688).
         var run = ListLayoutRun.Begin(_pdf, out var outerRun);
         try
@@ -519,13 +519,14 @@ public sealed class DocumentRenderer
             var asTwin = listRun.AllAsTwin;
             if (dependents is not null)
             {
-                // Resolves the dependents against each run's plan until they stop changing, so what the
-                // drawing pass prints names the page its target is drawn on.
-                totalPages = MeasureUntilStable(dependents);
+                // Resolves the dependents against each run's plan until they stop changing, so
+                // what the drawing pass prints names the page its target is drawn on.
+                totalPages = MeasureUntilStable(dependents, listRun);
             }
             else if (Header is not null || Footer is not null)
             {
-                // One measuring run: the same loop as the drawing pass, with no PDF objects created.
+                // One measuring run: the same loop as the drawing pass, with no PDF objects
+                // created.
                 totalPages = RunPass(measure: true, totalPages: 0);
             }
             else
@@ -539,7 +540,6 @@ public sealed class DocumentRenderer
             // what it counted is not what the drawing pass will lay out. Measure again, which can
             // happen once: the flag does not go back. Removed in 3.0 (#688).
             if (listRun.AllAsTwin == asTwin) break;
-            _continuationVerdicts = null;
             listRun.StartOver();
         }
 
@@ -961,8 +961,9 @@ public sealed class DocumentRenderer
         return _measurePages;
     }
 
-    private int MeasureUntilStable(List<IPlanDependent> dependents)
+    private int MeasureUntilStable(List<IPlanDependent> dependents, ListLayoutRun listRun)
     {
+        var asTwin = listRun.AllAsTwin;
         var history = new List<string>[dependents.Count];
         for (var i = 0; i < history.Length; i++)
             history[i] = [];
@@ -988,6 +989,11 @@ public sealed class DocumentRenderer
 
             var pages = RunPass(measure: true, totalPages: 0);
             pageCounts.Add(pages);
+
+            // A pass that found a font the document cannot draw laid its lists out two ways, so its
+            // plan is not one to settle on. The caller measures again from the start.
+            // Removed in 3.0 (#688).
+            if (listRun.AllAsTwin != asTwin) return pages;
 
             // Run 1 has no earlier run to equal. From run 2, a run that resolved nothing new laid
             // out the same strings as the run before it, so its plan is that run's plan.

@@ -13,11 +13,12 @@ namespace VellumPdf.Layout.Tests;
 
 /// <summary>
 /// A document that holds an entry in a font it cannot draw (a handle another document returned, a
-/// <see cref="Standard14"/> value the enumeration does not name) saves where that entry's text falls
-/// where it does not fit and is dropped, and throws where the text is drawn. Clamping or moving an
-/// entry ahead of it changes which, so every list of such a document is laid out as its twin. The
-/// rows compare each document with the same document whose lists are replaced by their twins, which
-/// is what the lists laid out before the clamp and the moving of entries (#476, #685).
+/// <see cref="Standard14"/> value the enumeration does not name) saves where that entry's text
+/// falls where it does not fit and is dropped, and throws where the text is drawn. Clamping or
+/// moving an entry ahead of it changes which, so every list of such a document is laid out as its
+/// twin. The rows compare each document with the same document whose lists are replaced by their
+/// twins, which is how the lists were laid out before the clamp and the moving of entries (#476,
+/// #685).
 /// </summary>
 public sealed class ListDocumentFontRuleTests
 {
@@ -157,7 +158,7 @@ public sealed class ListDocumentFontRuleTests
                 b.Add(new ListItem([new TextRun("bad", Bad(kind, 10))]) { Style = H(5) });
                 break;
             case "marker":
-                // The marker is too tall for what is left of the page and is dropped, and the text fits.
+                // The marker is too tall for the room left and is dropped; the text fits.
                 b.Add(new ListItem([new TextRun("t", H(5))]) { Style = Bad(kind, 30) });
                 break;
             default:
@@ -248,12 +249,7 @@ public sealed class ListDocumentFontRuleTests
         Assert.Equal(twin, Outcome(ShiftedByAMove(kind, how, header, twin: false, badFirst: true)));
     }
 
-    /// <summary>
-    /// A list that a renderer of the caller's holds is found when it is laid out, and the list after
-    /// it, which the document holds, is then laid out as its twin. Here the first list saves, with
-    /// its text dropped, so only the lists after it tell the two layouts apart.
-    /// </summary>
-    /// <summary>The font is in the marker's style, or in a nested child, whichever list holds it.</summary>
+    /// <summary>The font is in the marker's style, or in a nested child.</summary>
     [Theory]
     [InlineData("marker", "undefined", Visible)]
     [InlineData("marker", "foreign", 0)]
@@ -270,6 +266,11 @@ public sealed class ListDocumentFontRuleTests
         Assert.NotEqual(twin, Outcome(BadListFirst("ok", how, header: false, twin: false, where)));
     }
 
+    /// <summary>
+    /// A list that a renderer of the caller's holds is found when it is laid out, and the list
+    /// after it, which the document holds, is then laid out as its twin. Here the first list saves,
+    /// with its text dropped, so only the lists after it tell the two layouts apart.
+    /// </summary>
     [Theory]
     [InlineData("undefined", 0, false)]
     [InlineData("undefined", 1, false)]
@@ -353,7 +354,7 @@ public sealed class ListDocumentFontRuleTests
 
         Outcome(doc);
 
-        // The visible list A, element 4 of 6, reports 207 and the part of its entry that is dropped.
+        // The list the document holds reports 207 and the part of its entry that is dropped.
         Assert.Equal(
             [LayoutDiagnosticCode.ListIndentClampSkipped, LayoutDiagnosticCode.ListEntryPartDropped],
             Codes(doc));
@@ -371,8 +372,8 @@ public sealed class ListDocumentFontRuleTests
     }
 
     /// <summary>
-    /// The count is the entries the clamp would have narrowed, from the same gutters the clamp reads,
-    /// and 1 when it would have narrowed none.
+    /// The count is the entries the clamp would have narrowed, from the same gutters the clamp
+    /// reads, and 1 when it would have narrowed none.
     /// </summary>
     [Fact]
     public void TheFallbackCount_isTheEntriesTheClampWouldHaveNarrowed()
@@ -383,7 +384,7 @@ public sealed class ListDocumentFontRuleTests
             .Add(new ListItem("two", H(10)))
             .Add(new ListItem([new TextRun("bad", Bad("undefined", 10))]) { Style = H(10) });
         doc.Add(clamped);
-        // Indent 100 leaves a child's gutter, 200, no room on the 180 pt area, and its parent's none.
+        // Indent 100 leaves a child's gutter, 200, no room on the 180 pt area, and its parent some.
         var parent = new ListItem("p", H(10));
         parent.AddChild(new ListItem("c1", H(10)));
         parent.AddChild(new ListItem("c2", H(10)));
@@ -462,8 +463,8 @@ public sealed class ListDocumentFontRuleTests
         return (renderer, ms.ToArray());
     }
 
-    // The indent leaves the text no width where it is asked for, so a font the document cannot draw is
-    // held and its text is never drawn, which is what lets the document save.
+    // The indent leaves the text no width where it is asked for, so a font the document cannot
+    // draw is held and its text is never drawn, which is what lets the document save.
     private static ListElement OneEntry(string text, TextStyle style, double indent = 20) =>
         new ListElement(ListStyle.Unordered) { Indent = indent }
             .Add(new ListItem([new TextRun(text, style)]) { Style = H(10) });
@@ -471,7 +472,7 @@ public sealed class ListDocumentFontRuleTests
     /// <summary>
     /// A list ahead of a renderer of the caller's is laid out once more before it is drawn, to see
     /// whether that renderer holds a list the document cannot draw. The pass is not kept: the
-    /// document still reports that it measured nothing, as one without a header or a dependent does.
+    /// document still reports that it measured nothing, as one with no header or dependent does.
     /// </summary>
     [Fact]
     public void AListAheadOfACallersRenderer_isMeasuredOnceMore_andTheMeasureIsNotKept()
@@ -532,8 +533,28 @@ public sealed class ListDocumentFontRuleTests
     }
 
     /// <summary>
-    /// What the extra layout would raise is left for the drawing layout, which reaches the element in
-    /// the order it always did: a defect that the drawing layout meets first is the one reported.
+    /// A document whose text depends on the plan measures until it settles, and a pass that found the
+    /// font is measured again from the start: three passes where one list holds the font, two where
+    /// none does.
+    /// </summary>
+    [Theory]
+    [InlineData(false, 2)]
+    [InlineData(true, 3)]
+    public void ADependentThatSettles_isMeasuredAgainAfterAPassThatFoundTheFont(bool bad, int measureRuns)
+    {
+        var (renderer, _) = Render(r =>
+        {
+            r.Add(new ListRenderer(OneEntry("a", H(10))));
+            r.Add(new Holder(new ListRenderer(OneEntry("b", bad ? Bad("undefined", 10) : H(10), 1000)), 0));
+            r.Add(new Settled());
+        });
+
+        Assert.Equal(measureRuns, renderer.MeasureRuns);
+    }
+
+    /// <summary>
+    /// What the extra layout would raise is left for the drawing layout, which reaches the element
+    /// in the order it always did: a defect the drawing layout meets first is the one reported.
     /// </summary>
     [Fact]
     public void AnExceptionTheExtraLayoutRaises_isLeftForTheDrawingLayout()
@@ -678,8 +699,8 @@ public sealed class ListDocumentFontRuleTests
     }
 
     /// <summary>
-    /// A font is asked about once however many runs use it, and asking about the next font gives that
-    /// font's own answer, so the memo never answers for the wrong one.
+    /// A font is asked about once however many runs use it, and asking about the next font gives
+    /// that font's own answer, so the memo never answers for the wrong one.
     /// </summary>
     [Fact]
     public void TheMemoOfTheLastFont_neverAnswersForAnother()
@@ -723,8 +744,8 @@ public sealed class ListDocumentFontRuleTests
     {
         public LayoutResult Layout(LayoutContext context)
         {
-            // Mode 3 measures the list at a narrower width first and lays it out through the context
-            // afterwards, so the list sees two calls in a row at two widths.
+            // Mode 3 measures the list at a narrower width first and lays it out through the
+            // context afterwards, so the list sees two calls in a row at two widths.
             if (how == 3)
             {
                 var area = context.Area;
@@ -741,6 +762,23 @@ public sealed class ListDocumentFontRuleTests
         }
 
         public void Draw(DrawContext ctx) => inner.Draw(ctx);
+    }
+
+    /// <summary>A renderer whose text depends on the plan and never changes.</summary>
+    private sealed class Settled : IRenderer, IPlanDependent
+    {
+        public string TargetName => "settled";
+
+        public string ResolvedText => "x";
+
+        public bool Resolve(PaginationPlan plan) => false;
+
+        public LayoutResult Layout(LayoutContext context) =>
+            LayoutResult.Full(new LayoutBox(context.Area.X, context.Area.Y, 10, 10));
+
+        public void Draw(DrawContext ctx)
+        {
+        }
     }
 
     private sealed class Throws : IRenderer
@@ -771,7 +809,7 @@ public sealed class ListDocumentFontRuleTests
         }
     }
 
-    /// <summary>Saves another document from inside its own layout, and notes the run around it.</summary>
+    /// <summary>Saves another document from inside its layout and notes the run.</summary>
     private sealed class RunProbe(Document inner) : IRenderer
     {
         private bool _done;

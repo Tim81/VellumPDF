@@ -10,10 +10,10 @@ using VellumPdf.Layout.Rendering;
 namespace VellumPdf.Layout.Tests;
 
 /// <summary>
-/// <see cref="ParagraphRenderer.LineCountAt"/> says how many lines <see cref="ParagraphRenderer.Layout"/>
-/// wraps a paragraph into for a box of a given width, so it must take off the margins on both sides.
-/// The list's own content paragraphs have a left margin only, which leaves the right one unread by
-/// every list row.
+/// <see cref="ParagraphRenderer.LineCountAt"/> says how many lines
+/// <see cref="ParagraphRenderer.Layout"/> wraps a paragraph into for a box of a given width, so it
+/// must take off the margins on both sides. The list's own content paragraphs have a left margin
+/// only, which leaves the right one unread by every list row.
 /// </summary>
 public sealed class ParagraphLineCountAtTests
 {

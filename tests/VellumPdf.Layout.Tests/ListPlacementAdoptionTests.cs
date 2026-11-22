@@ -224,8 +224,8 @@ public sealed class ListPlacementAdoptionTests
     /// <summary>
     /// A run in an embedded font that another document returned would be refused at the save once
     /// its text is drawn, and the document never drew it. The document holds an entry it cannot
-    /// draw, so its list is laid out as its twin, the save is the one the list had, and the fallback
-    /// is reported.
+    /// draw, so its list is laid out as its twin, the save is the one the list had, and the
+    /// fallback is reported.
     /// </summary>
     [Theory]
     [InlineData("foreign-handle")]
