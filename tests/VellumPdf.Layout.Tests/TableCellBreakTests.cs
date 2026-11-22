@@ -1258,7 +1258,7 @@ public sealed class TableCellBreakTests : IDisposable
     /// <summary>
     /// Giving up the breaks of the groups in fixed columns costs a fixed number of measurements
     /// of the table, not one per group. The allocations of a table of 400 groups that each give up
-    /// their breaks stay within a small multiple of those of the same table with the lines
+    /// their breaks stay under one and a half times those of the same table with the lines
     /// separated by spaces, which has nothing to give up. Allocations are counted, not time,
     /// because the same run on a loaded machine takes several times as long.
     /// </summary>
@@ -1288,7 +1288,7 @@ public sealed class TableCellBreakTests : IDisposable
 
         Assert.Equal(400, withBreaks.Reported);
         Assert.Equal(0, withSpaces.Reported);
-        Assert.True(withBreaks.Bytes < 5 * withSpaces.Bytes, $"{withBreaks.Bytes} bytes against {withSpaces.Bytes} without breaks");
+        Assert.True(withBreaks.Bytes < 1.5 * withSpaces.Bytes, $"{withBreaks.Bytes} bytes against {withSpaces.Bytes} without breaks");
     }
 
     /// <summary>
@@ -1322,7 +1322,7 @@ public sealed class TableCellBreakTests : IDisposable
 
         Assert.Equal(400, withTabs.Reported);
         Assert.Equal(0, withoutTabs.Reported);
-        Assert.True(withTabs.Bytes < 5 * withoutTabs.Bytes, $"{withTabs.Bytes} bytes against {withoutTabs.Bytes} without tabs");
+        Assert.True(withTabs.Bytes < 1.5 * withoutTabs.Bytes, $"{withTabs.Bytes} bytes against {withoutTabs.Bytes} without tabs");
     }
 
     /// <summary>
