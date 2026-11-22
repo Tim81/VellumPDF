@@ -50,6 +50,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     before it, and with areas on pages it does not end up on. A `Full` result is still drawn after
     the last `Layout` call on that instance; see `IRenderer.Layout`.
 
+- **`{chapter}` in a running band (#603).** `RunningBand.ChapterToken` turns on a `{chapter}`
+  token that prints the title of the chapter the page is in, so a header can read "Hoofdstuk 2:
+  Ontwikkeling" on the pages of that chapter. It is `false` by default: a template that holds
+  `{chapter}` without it prints that text as it always did, and a document that does not set the
+  property saves to the same bytes.
+  - A chapter is a level-0 `Heading`. A page shows the first one whose first line is on the page,
+    else the last one drawn on an earlier page, else no text where the token stands; the rest of
+    the template is drawn as written. A heading that splits over a page break counts on the page
+    it starts on. A page where the next chapter starts partway down shows that next chapter, and
+    the blank page a recto break inserts has no band, so it shows no title. The title is the
+    heading's `BookmarkTitle` when set, otherwise its text. A tab, line break, form feed or other
+    control white space in it is drawn as a space.
+  - The save refuses a title with an unpaired surrogate when the band's font is embedded
+    (`ArgumentException`), and a template that repeats `{chapter}` until the text passes
+    `int.MaxValue` characters (`InvalidOperationException`).
+  - Headings of other levels and anything a custom `IRenderer` draws start no chapter.
+  - The save follows chapters only when a band sets the property and holds the token, and only in
+    the drawing pass, so the page count and the number of layout runs do not change. A title wider
+    than the band is cut and reported as `BandTruncated`, like any band text.
+  - `RunningBand.Resolve(int, int)` knows no headings and leaves `{chapter}` as given.
+
 - **`Document.MirrorMargins` for double-sided print (#608).** With it set, `Margins.Left` is the
   inside margin and `Margins.Right` the outside one. The inside margin is on the left of a
   right-hand page (an odd physical page number, page 1 first) and on the right of a left-hand

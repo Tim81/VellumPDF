@@ -150,3 +150,5 @@ VellumPdf.Layout.Elements.Paragraph.MinLinesAfterBreak.init -> void
 VellumPdf.Layout.LayoutDiagnosticCode.KeepWithNextRelaxed = 801 -> VellumPdf.Layout.LayoutDiagnosticCode
 VellumPdf.Layout.LayoutDiagnosticCode.KeepTogetherRelaxed = 802 -> VellumPdf.Layout.LayoutDiagnosticCode
 VellumPdf.Layout.LayoutDiagnosticCode.MinLinesRelaxed = 803 -> VellumPdf.Layout.LayoutDiagnosticCode
+VellumPdf.Layout.Elements.RunningBand.ChapterToken.get -> bool
+VellumPdf.Layout.Elements.RunningBand.ChapterToken.init -> void

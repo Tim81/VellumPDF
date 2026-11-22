@@ -130,6 +130,21 @@ public sealed class DocumentRenderer
     private BandText? _headerText;
     private BandText? _footerText;
 
+    // The chapter a band's {chapter} prints, followed through the drawing pass only. Both bands
+    // show the same one, so the tracker is shared. All three are null until a level-0 heading is
+    // drawn, and nothing is kept when no band asks for the token (_trackChapters).
+    private bool _trackChapters;
+    private string? _chapterBefore;  // the last chapter drawn on an earlier page
+    private string? _chapterFirst;   // the first chapter that starts on the current page
+    private string? _chapterLatest;  // the last chapter that starts on the current page
+
+    /// <summary>
+    /// Renderers the chapter tracker looked at in the last <see cref="RunLayout"/>, read by tests.
+    /// Zero when no band uses <c>{chapter}</c>, and zero in the measuring pass whatever the bands
+    /// are.
+    /// </summary>
+    internal int ChapterNotes { get; private set; }
+
     // Characters produced across every band draw of the save. Read by tests that pin the cost per
     // page, which no timing can pin at this size.
     internal long BandCharactersProduced { get; private set; }
@@ -426,6 +441,9 @@ public sealed class DocumentRenderer
         _guard = null;
         _navigation = new NavigationPlan();
         _labels = new PageLabelMap();
+        _trackChapters = WantsChapter(Header) || WantsChapter(Footer);
+        _chapterBefore = _chapterFirst = _chapterLatest = null;
+        ChapterNotes = 0;
 
         var contentArea = ContentArea;
         if (contentArea.Width <= 0 || contentArea.Height <= 0)
@@ -540,6 +558,28 @@ public sealed class DocumentRenderer
         _sink.CurrentPage = null;
     }
 
+    // A null template is left for the band's first draw to refuse, as it always was.
+    private static bool WantsChapter(RunningBand? band) =>
+        band is { ChapterToken: true, Template: not null }
+        && band.Compiled.TokenCounts[(int)BandToken.Chapter] > 0;
+
+    // Called with each renderer the drawing pass accepted, which is the placement that stays: the
+    // measuring pass never reaches it, and a renderer that was laid out and then replaced is not
+    // drawn. A split heading arrives as the piece that holds its first line; the overflow is a
+    // plain paragraph renderer, so it starts no chapter.
+    private void NoteChapter(IRenderer renderer)
+    {
+        ChapterNotes++;
+        if (renderer is not HeadingRenderer { Element: { Level: 0 } heading }) return;
+
+        var title = BandText.ControlSpacesToSpaces(heading.ResolvedBookmarkTitle);
+        _chapterFirst ??= title;
+        _chapterLatest = title;
+    }
+
+    // The page's chapter: the first one that starts on it, else the one in force from before.
+    private string? ChapterOnPage => _chapterFirst ?? _chapterBefore;
+
     private double HeaderHeight => Header?.EffectiveHeight ?? 0;
     private double FooterHeight => Footer?.EffectiveHeight ?? 0;
 
@@ -577,6 +617,14 @@ public sealed class DocumentRenderer
 
             _sink.SyncEncodingWarnings(_currentCanvas!, report: true);
             (_sink.CurrentKind, _sink.CurrentIndex, _sink.CurrentPage) = (kind, index, reportPage);
+
+            // The next page is in the chapter this one ended in.
+            if (_chapterLatest is not null)
+            {
+                _chapterBefore = _chapterLatest;
+                _chapterFirst = _chapterLatest = null;
+            }
+
             _textEncodingWarnings.AddRange(_currentCanvas.TextEncodingWarnings);
 
             _currentCanvas.Finish();
@@ -1266,6 +1314,8 @@ public sealed class DocumentRenderer
 
     private void DrawRenderer(IRenderer renderer)
     {
+        if (_trackChapters) NoteChapter(renderer);
+
         var pageBounds = new LayoutBox(0, 0, _pageSize.Width, _pageSize.Height);
         var ctx = new DrawContext(_currentCanvas!, pageBounds, _currentRendererCtx!, _pdf, _currentPage!)
         {
@@ -1305,7 +1355,8 @@ public sealed class DocumentRenderer
         if (Header is not null)
         {
             _sink.CurrentKind = LayoutElementKind.Header;
-            var text = ResolveBand(Header, ref _headerText, pageNumber, totalPages, LabelFor(Header, pageNumber));
+            var text = ResolveBand(
+                Header, ref _headerText, pageNumber, totalPages, LabelFor(Header, pageNumber), ChapterOnPage);
             var bandY = _margins.Top;
             var bandHeight = Header.EffectiveHeight;
             DrawBandText(ctx, canvas, text, Header, RunningBandKind.Header, pageNumber, bandY, bandHeight);
@@ -1316,7 +1367,8 @@ public sealed class DocumentRenderer
         if (Footer is not null)
         {
             _sink.CurrentKind = LayoutElementKind.Footer;
-            var text = ResolveBand(Footer, ref _footerText, pageNumber, totalPages, LabelFor(Footer, pageNumber));
+            var text = ResolveBand(
+                Footer, ref _footerText, pageNumber, totalPages, LabelFor(Footer, pageNumber), ChapterOnPage);
             var bandY = _pageSize.Height - _margins.Bottom - Footer.EffectiveHeight;
             var bandHeight = Footer.EffectiveHeight;
             DrawBandText(ctx, canvas, text, Footer, RunningBandKind.Footer, pageNumber, bandY, bandHeight);
@@ -1327,11 +1379,12 @@ public sealed class DocumentRenderer
     // refuses it. The cached BandText is replaced when the band was: Header and Footer are
     // settable, and a renderer's Draw can replace one between two pages of the same render.
     private static BandText ResolveBand(
-        RunningBand band, ref BandText? cache, int pageNumber, int totalPages, string? pageLabel)
+        RunningBand band, ref BandText? cache, int pageNumber, int totalPages, string? pageLabel,
+        string? chapter)
     {
         if (cache is null || !ReferenceEquals(cache.Template, band.Compiled))
             cache = new BandText(band.Compiled);
-        cache.Reset(pageNumber, totalPages, pageLabel);
+        cache.Reset(pageNumber, totalPages, pageLabel, chapter);
         return cache;
     }
 

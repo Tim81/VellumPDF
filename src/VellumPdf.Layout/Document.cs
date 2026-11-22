@@ -504,14 +504,16 @@ public sealed class Document : IDisposable
     /// <summary>
     /// Optional header band drawn at the top of every page.
     /// Set via <see cref="SetHeader"/> for a fluent API.
-    /// Supports {page} and {pages} tokens.
+    /// Supports {page} and {pages} tokens, and {chapter} when
+    /// <see cref="RunningBand.ChapterToken"/> is set.
     /// </summary>
     /// <remarks>
     /// A band whose <see cref="RunningBand.Template"/> is null is refused when the band is drawn,
     /// not when it is assigned. The band's height and style carry
     /// refusals of their own; see <see cref="RunningBand.Height"/>,
     /// <see cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/> and
-    /// <see cref="TextStyle.FontRef"/>.
+    /// <see cref="TextStyle.FontRef"/>. The chapter title that <c>{chapter}</c> prints comes from
+    /// the document's level-0 headings; see <see cref="RunningBand.ChapterToken"/>.
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
@@ -519,13 +521,16 @@ public sealed class Document : IDisposable
     /// its style's size or leading does; see <see cref="RunningBand.Height"/> and
     /// <see cref="RunningBand.Style"/>. It is also raised when the band measures text that holds an
     /// unpaired surrogate in an embedded font, which can include part of the template it then does
-    /// not draw; see <see cref="TextStyle.FontRef"/>.
+    /// not draw and the chapter title <see cref="RunningBand.ChapterToken"/> prints; see
+    /// <see cref="TextStyle.FontRef"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
     /// band's height, or its style's size or leading, is refused; see
     /// <see cref="RunningBand.Height"/>, <see cref="TextStyle.FontSize"/> and
-    /// <see cref="TextStyle.Leading"/>.
+    /// <see cref="TextStyle.Leading"/>. It is also raised when a template that repeats
+    /// <c>{chapter}</c> resolves to more than <see cref="int.MaxValue"/> characters; see
+    /// <see cref="RunningBand.ChapterToken"/>.
     /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, when the
@@ -537,7 +542,8 @@ public sealed class Document : IDisposable
     /// <summary>
     /// Optional footer band drawn at the bottom of every page.
     /// Set via <see cref="SetFooter"/> for a fluent API.
-    /// Supports {page} and {pages} tokens.
+    /// Supports {page} and {pages} tokens, and {chapter} when
+    /// <see cref="RunningBand.ChapterToken"/> is set.
     /// </summary>
     /// <inheritdoc cref="Header" path="/remarks"/>
     /// <inheritdoc cref="Header" path="/exception"/>

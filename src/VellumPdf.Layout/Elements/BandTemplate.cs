@@ -15,12 +15,19 @@ internal enum BandToken
 
     /// <summary><c>{pages}</c>: the total page count.</summary>
     Pages = 1,
+
+    /// <summary>
+    /// <c>{chapter}</c>: the title of the chapter the page is in. Recognised only in a template
+    /// compiled with the token on, which <see cref="RunningBand.ChapterToken"/> asks for.
+    /// </summary>
+    Chapter = 2,
 }
 
 /// <summary>
 /// The one table of tokens the save substitutes. A new token is a new <see cref="BandToken"/>
 /// member, a row here, a value in <see cref="BandText.Reset"/> and a pass in
-/// <c>RunningBand.Resolve</c>, which scans the template on its own.
+/// <c>RunningBand.Resolve</c>, which scans the template on its own. A token that a caller must ask
+/// for, as it must for <c>{chapter}</c>, also needs a test in <see cref="BandTemplate.Compile"/>.
 /// </summary>
 internal static class BandTokens
 {
@@ -33,6 +40,7 @@ internal static class BandTokens
     [
         ("{page}", BandToken.Page),
         ("{pages}", BandToken.Pages),
+        ("{chapter}", BandToken.Chapter),
     ];
 
     internal static int Count => Table.Length;
@@ -79,11 +87,16 @@ internal sealed class BandTemplate
         TokenCounts = counts;
     }
 
+    /// <param name="template">The template text.</param>
+    /// <param name="chapterToken">
+    /// Whether <c>{chapter}</c> is a token. When false the text stays literal, as it always has, so
+    /// a template that holds it is scanned exactly as before the token existed.
+    /// </param>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="template"/> is <see langword="null"/>. <c>ParamName</c> is <c>template</c>,
     /// as for <see cref="RunningBand.Resolve"/>.
     /// </exception>
-    internal static BandTemplate Compile(string template)
+    internal static BandTemplate Compile(string template, bool chapterToken = false)
     {
         if (template is null) throw new ArgumentNullException("template", "The band's template is null.");
 
@@ -103,6 +116,7 @@ internal sealed class BandTemplate
             var matched = false;
             foreach (var (text, kind) in BandTokens.Entries)
             {
+                if (kind == BandToken.Chapter && !chapterToken) continue;
                 if (!template.AsSpan(brace).StartsWith(text, StringComparison.Ordinal)) continue;
 
                 if (brace > runStart)
@@ -169,7 +183,12 @@ internal sealed class BandText
     /// What <c>{page}</c> prints, or null for the decimal <paramref name="pageNumber"/>. The text is
     /// copied as it is and never scanned for a token.
     /// </param>
-    internal void Reset(int pageNumber, int totalPages, string? pageLabel = null)
+    /// <param name="chapter">
+    /// What <c>{chapter}</c> prints, or null for no text. Copied as it is and never scanned for a
+    /// token. The caller has already read its control white space as spaces; see
+    /// <see cref="ControlSpacesToSpaces"/>.
+    /// </param>
+    internal void Reset(int pageNumber, int totalPages, string? pageLabel = null, string? chapter = null)
     {
         // The label is caller text, so a tab, a line break or a form feed in it is a space, as it
         // is in the template's own text; the replacement keeps the length, so what is measured is what
@@ -178,18 +197,53 @@ internal sealed class BandText
             ? pageNumber.ToString(System.Globalization.CultureInfo.InvariantCulture)
             : LayoutText.ControlSpacesToSpaces(pageLabel);
         _values[(int)BandToken.Pages] = totalPages.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        _values[(int)BandToken.Chapter] = chapter ?? "";
 
         long length = Template.LiteralLength;
         for (var k = 0; k < _values.Length; k++)
             length += (long)Template.TokenCounts[k] * _values[k].Length;
-        // Defensive: a string over 1,073,741,823 characters throws OutOfMemoryException first, a
-        // token is at least 6 characters and a number is at most 11, so this cannot overflow.
-        Length = checked((int)length);
+        // The literal text and the page and count values cannot overflow int: a template over
+        // 1,073,741,823 characters throws OutOfMemoryException first and a token is at least 6
+        // characters. A chapter title can: a long one repeated by many {chapter} tokens is a text
+        // no band could draw, and no string could hold.
+        if (length > int.MaxValue)
+            throw new InvalidOperationException(
+                "The band's text is too long: its template repeats {chapter} " +
+                $"{Template.TokenCounts[(int)BandToken.Chapter]} times and the chapter title is " +
+                $"{_values[(int)BandToken.Chapter].Length} characters long.");
+        Length = (int)length;
 
         _produced = 0;
         _segment = 0;
         _offset = 0;
     }
+
+    /// <summary>
+    /// Returns <paramref name="text"/> with every tab, line break, form feed and other control
+    /// white space replaced by U+0020, or the same instance when it holds none. A band draws one
+    /// line, and no font draws these characters, so left as written they reach glyph lookup. The
+    /// Unicode space separators, the no-break spaces among them, are left as they are, because a
+    /// font draws them.
+    /// </summary>
+    internal static string ControlSpacesToSpaces(string text)
+    {
+        var at = -1;
+        for (var i = 0; i < text.Length; i++)
+        {
+            if (IsControlSpace(text[i])) { at = i; break; }
+        }
+        if (at < 0) return text;
+
+        return string.Create(text.Length, (text, at), static (span, state) =>
+        {
+            state.text.AsSpan().CopyTo(span);
+            for (var i = state.at; i < span.Length; i++)
+                if (IsControlSpace(span[i])) span[i] = ' ';
+        });
+    }
+
+    private static bool IsControlSpace(char c) =>
+        char.IsWhiteSpace(c) && char.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.SpaceSeparator;
 
     internal char this[int index]
     {

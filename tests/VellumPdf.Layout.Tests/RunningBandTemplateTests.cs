@@ -285,13 +285,17 @@ public sealed class RunningBandTemplateTests
             }
         }
 
-        var template = "<" + string.Concat(entries.Select(e => e.Text + "-")) + ">";
+        // {chapter} is a token only when the band asks for it, and Resolve knows no headings, so it
+        // is the one entry both sides leave as given; ChapterTokenTests covers its substitution.
+        var substituted = entries.Where(e => e.Kind != BandToken.Chapter).ToArray();
+        var template = "<" + string.Concat(substituted.Select(e => e.Text + "-")) + "{chapter}>";
         var viaSave = Resolve(template, 7, 4321);
         var viaPublic = new RunningBand(template, Ten).Resolve(7, 4321);
 
         Assert.Equal(viaSave.Prefix(viaSave.Length), viaPublic);
-        foreach (var (text, _) in entries)
+        foreach (var (text, _) in substituted)
             Assert.DoesNotContain(text, viaPublic, StringComparison.Ordinal);
+        Assert.EndsWith("{chapter}>", viaPublic, StringComparison.Ordinal);
     }
 
     // Header and footer each keep their own BandText for the whole save. A footer that reused the
