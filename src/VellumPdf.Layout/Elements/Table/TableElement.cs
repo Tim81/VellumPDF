@@ -31,10 +31,15 @@ namespace VellumPdf.Layout.Elements.Table;
 /// page is a <c>TD</c>, or a <c>TH</c> in a header row, and a cell with no line on the page is an
 /// empty <c>TD</c>, also in a header row.</para>
 /// <para>A carriage return or line feed in a cell ends a line, so it makes the row taller. A
-/// header row, or rows joined by a <see cref="Cell.RowSpan"/>, whose breaks would make them taller
-/// than a page are never cut, so cells of them are wrapped at spaces alone with each tab and
-/// break left out of what is drawn, and the save lists each as
-/// <see cref="LayoutDiagnosticCode.CellWhiteSpaceDropped"/>; see <see cref="Cell.Content"/>.</para>
+/// repeated header row, or rows joined by a <see cref="Cell.RowSpan"/>, whose breaks would leave
+/// them no room on a page are never cut, so cells of them are wrapped at spaces alone with each
+/// tab and break left out of what is drawn, and the save lists each as
+/// <see cref="LayoutDiagnosticCode.CellWhiteSpaceDropped"/>; see <see cref="Cell.Content"/>.
+/// Groups that give up cells in fixed-width columns only are judged together, in one measurement
+/// of the table. A header that gives up a cell, and a group that gives up a cell in an
+/// automatically sized column, each cost another measurement of the whole table, because they
+/// change the heights of other rows, so a table with many of those takes time that grows with
+/// the square of their number.</para>
 /// <para><b>These are refused, and never cut.</b> <see cref="Document.Save(System.IO.Stream)"/>
 /// throws <see cref="InvalidOperationException"/> whose message starts with the standard
 /// too-tall text and ends with a sentence naming the rows, for: header rows that together do not

@@ -27,9 +27,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     call must not reuse it.
 - **`LayoutDiagnosticCode.CellWhiteSpaceDropped` (301).** A table cell was wrapped at spaces alone
   and sized from its whole text, and its tabs and line breaks were left out of what is drawn,
-  because honouring the line breaks of the cells around it would have made a header row or rows
-  joined by a `RowSpan` taller than a page. A warning, so `StrictDiagnostics` saves: the text stays,
-  and the words those characters separated run together in the drawing and in extracted text.
+  because honouring the line breaks of the cells around it would have left a repeated header row
+  or rows joined by a `RowSpan` no room on a page. A warning, so `StrictDiagnostics` saves: the
+  text stays, and the words those characters separated run together in the drawing and in
+  extracted text.
   `Count` is the number of pages on which the cell was drawn from its first line, so a repeated
   header row counts once per page and any other cell counts once, however many pages a cut row
   spans. See the entry for #611 under Fixed.
@@ -552,9 +553,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   maximum from the widest line, each line measured by itself where 2.3.3 measured the whole text.
   The width the column is given is shared out as before, and can be more than the maximum or less
   than the minimum.
-  A running band draws a tab, a line break or a form feed as one space, in its template and in the
-  text a page label prints for `{page}`, so the form feed of #613 item 34 is a space there too, and
-  a band's text is measured and cut as drawn.
+  A running band draws each tab, line feed, carriage return and form feed as one space, in its
+  template and in the text a page label prints for `{page}`, so a CR LF pair is two spaces, the
+  form feed of #613 item 34 is a space there too, and a band's text is measured and cut as drawn.
   **Deliberate output changes:**
   - `A<TAB>B` in a cell is `(A B)` in Standard 14 and a space glyph between the two letters in an
     embedded font (glyph 3 in DejaVu Sans), with no `<0000>` entry in the ToUnicode map.
@@ -572,16 +573,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     which `StrictDiagnostics` refuses.
   - A table that 2.3.3 refused as too tall can now save: 6 of 20,000 random tables with control
     characters (none of 20,000 without). Each is a refusal that names a `RowSpan` group, in a
-    table whose automatic columns are now measured per line. `qpdf --check` exits 0 for all six,
-    and no line crosses its cell border.
+    table whose automatic columns are now measured per line. `qpdf --check` exits 0 for all six.
+    Three of the six draw text outside the row it belongs to. That comes from a mismatch that
+    2.3.3 has too and this change does not alter: a row's height is measured with its cells in
+    consecutive columns, and the drawing skips a column that a span from an earlier row occupies.
+    Tables whose texts hold no tab, line break or form feed show it on 2.3.3 as well.
   - A cell with a very large number of lines can be refused where 2.3.3 saved it, because 2.3.3
     drew its line feeds inside one line. One cell of 2,500,000 two-letter words joined by LF, on a
     2000 x 600 pt page in a 1900 pt column, saved in 314 pages on 2.3.3 and now stops at the limit
     of 50,000 page continuations with the `InvalidOperationException` that names it. The same cell
     of 2,350,047 words saves, in 50,001 pages, and one of 2,350,048 is refused.
-  - **A header row, or rows joined by a `RowSpan`, whose breaks would make them taller than a page
-    keep the one-line layout.** Those rows are never cut between their lines, so honouring the
-    breaks would turn a table that saved into a too-tall refusal. A cell of them is then wrapped at
+  - **A repeated header row, or rows joined by a `RowSpan`, whose breaks would leave them no room
+    on a page keep the one-line layout.** Those rows are never cut between their lines, so
+    honouring the breaks would turn a table that saved into a too-tall refusal. The header rows
+    have no room when they do not fit a page, or when they leave a row below them less than one
+    line of one of its cells; a span group has none when it is taller than what a page leaves
+    under the repeated header rows. A cell of them is then wrapped at
     spaces alone and sized from its whole text, as 2.3.3 did, with each tab and break measured at
     the width its font gives it and then left out of what is drawn, so no line is wider than it was
     measured. A header of 60 two-letter lines stays inside its cell in a 100pt column and in
@@ -591,16 +598,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     drawing and in extracted text. The save lists the cell as the new
     `LayoutDiagnosticCode.CellWhiteSpaceDropped` (301, a warning, so `StrictDiagnostics` still
     saves). A header row of 46 two-letter lines, 560pt tall, keeps its lines on a 580pt page above
-    a 20pt row; one of 47 does not. Which cells fall back is decided in steps, each taken only
+    a 20pt row, where a line fits in the 20pt left; one of 47 is 572pt, fits the page alone, but
+    leaves the row 8pt, so it falls back. Which cells fall back is decided in steps, each taken only
     while the rows still do not fit a page, and each ending its pass so the heights are taken
     again before the next step is judged: the cells of the group that hold a carriage return or
     line feed; then those of the header rows; then the cells that hold any control white-space
     character and sit in the rows of the group or the header, or in an automatically sized column
     that a cell of those rows is in. A cell that holds only a line feed can fall back at any of
     the three steps. A cell no step reaches keeps its breaks. A row that can be cut is cut between
-    its lines when it is taller than a page; a header row or a span group is never cut, and is
-    refused when it does not fit. A renderer laid out through a context built with the public
-    constructor knows no page and keeps every break.
+    its lines when it is taller than a page; a repeated header row or a span group is never cut,
+    and is refused when it does not fit. A table whose rows are all headers repeats none of
+    them, so its rows are ordinary rows and are cut. A renderer laid out through a context built
+    with the public constructor knows no page and keeps every break.
 - **`/FontBBox` of an embedded font is the font's own bounding box (#596).** The descriptor of every
   embedded TrueType and OpenType font held `[0, hhea descender, 1000 * 1000 / unitsPerEm, hhea
   ascender]`: a zero for xMin and a constant for xMax, so DejaVu Sans, Liberation Sans and Liberation

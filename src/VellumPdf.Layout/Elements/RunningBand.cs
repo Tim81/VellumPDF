@@ -236,6 +236,10 @@ public sealed class RunningBand
     /// given, and a substituted number is never scanned again. A null template is refused here with
     /// <see cref="ArgumentNullException"/>; the save refuses it the same way where the band is
     /// first drawn.
+    /// <para><b>The string returned is not always what a save draws.</b> A tab, a line break, a
+    /// form feed or another white-space control character in the template, and in a page label, is
+    /// returned as written, where a save draws each as one space; see <see cref="Template"/>.
+    /// A caller that compares this string with the text of a drawn band sees that difference.</para>
     /// <para>This builds the whole text, so its cost is the template's length. A save does not call
     /// it: the save resolves a template as it draws, and its cost per page follows the characters
     /// that fit the content width, as <see cref="Template"/> describes.</para>

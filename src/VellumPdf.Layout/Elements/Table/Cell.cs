@@ -31,34 +31,41 @@ public sealed class Cell
     /// are, as in a paragraph. The other space separators, such as U+2003, are written as they are
     /// too, where a paragraph reads them as spaces. A column sized automatically takes its minimum
     /// from the widest word and its maximum from the widest line, each line of the cell measured on
-    /// its own, where 2.3.3 measured the whole text as one line. The width the column is then given is shared out among
-    /// the columns as it was, and can be more than the maximum or less than the minimum.</para>
+    /// its own, where 2.3.3 measured the whole text as one line. The width the column is then
+    /// given is shared out among the columns as it was, and can be more than the maximum or less
+    /// than the minimum.</para>
     /// <para>A control character that is not white space, such as U+0001, is written as it is: in a
     /// standard-14 font as its WinAnsi code, and in an embedded font as whatever glyph the font's
     /// character map gives it, which is .notdef (glyph 0) when the map has no entry. The save lists
     /// each such character as <see cref="VellumPdf.Layout.LayoutDiagnosticCode.NotdefGlyph"/>, and
-    /// <see cref="Document.StrictDiagnostics"/> refuses it; see <see cref="TextStyle.FontRef"/>.</para>
-    /// <para>A cell has no tab stops, so a tab is one space. <b>A cell of a header row, or of rows
-    /// joined by a <see cref="RowSpan"/>, is laid out unbroken when honouring the line breaks of
-    /// those rows would make them taller than a page,</b> because such rows are never cut between
-    /// their lines. It is then wrapped at spaces alone and sized from its whole text, each tab and
-    /// line break in it measured at the width its font gives it and left out of what is drawn. The
-    /// words they separated run together in the drawing and in extracted text, and no line is
-    /// wider than it was measured, though a glyph wider than its column can still extend past it,
-    /// as in any cell. The save lists the cell as
+    /// <see cref="Document.StrictDiagnostics"/> refuses it; see
+    /// <see cref="TextStyle.FontRef"/>.</para>
+    /// <para>A cell has no tab stops, so a tab is one space. <b>A cell of a repeated header row, or
+    /// of rows joined by a <see cref="RowSpan"/>, is laid out unbroken when honouring the line
+    /// breaks of those rows would leave them no room on a page,</b> because such rows are never cut
+    /// between their lines. The header rows have no room when they do not fit a page, or when they
+    /// leave a row below them less than one line of one of its cells. A span group has no room when
+    /// it is taller than what a page leaves under the repeated header rows. The cell is then
+    /// wrapped at spaces alone and sized from its whole text, each tab and line break in it
+    /// measured at the width its font gives it and left out of what is drawn. The words they
+    /// separated run together in the drawing and in extracted text, and no line is wider than it
+    /// was measured, though a glyph wider than its column can still extend past it, as in any
+    /// cell. The save lists the cell as
     /// <see cref="VellumPdf.Layout.LayoutDiagnosticCode.CellWhiteSpaceDropped"/>, a warning that
     /// <see cref="Document.StrictDiagnostics"/> saves. Which cells are laid out this way is decided
-    /// in three steps, each taken only while the rows still do not fit: the cells of the group that
-    /// hold a carriage return or a line feed, then those of the header rows, then every cell that
-    /// holds any control white space and sits in the group's rows, in the header rows, or in an
-    /// automatically sized column that a cell of those rows is in. A cell that holds only a line
-    /// feed can be laid out this way by any step. A cell outside those rows and columns keeps its
-    /// breaks, and a row that can be cut between its lines is cut when it is taller than a page,
-    /// which a header row or a span group never is: those are refused. <b>Do not pass</b> a line
-    /// break in a header row or a span group that is that tall and expect the lines to be drawn:
-    /// move the text to a row that can be cut, or shorten it. A renderer you lay out without the
-    /// document, through a <see cref="LayoutContext"/> built with the public constructor, knows no
-    /// page and keeps every break.</para>
+    /// in three steps, each taken only while the rows still have no room: the cells of the group
+    /// that hold a carriage return or a line feed, then those of the header rows, then every cell
+    /// that holds any control white space and sits in the group's rows, in the header rows, or in
+    /// an automatically sized column that a cell of those rows is in. A cell that holds only a
+    /// line feed can be laid out this way by any step. A cell outside those rows and columns keeps
+    /// its breaks, and a row that can be cut between its lines is cut when it is taller than a
+    /// page, which a repeated header row or a span group never is: those are refused. A table
+    /// whose rows are all headers repeats none of them, so its rows are ordinary rows and are cut
+    /// like any other. <b>Do not pass</b> a line break in a repeated header row or a span group
+    /// that has no room and expect the lines to be drawn: move the text to a row that can be cut,
+    /// or shorten it. A renderer you lay out without the document, through a
+    /// <see cref="LayoutContext"/> built with the public constructor, knows no page and keeps
+    /// every break.</para>
     /// </remarks>
     /// <inheritdoc cref="Heading.Text" path="/exception[@cref='T:System.ArgumentException']"/>
     public string Content { get; }

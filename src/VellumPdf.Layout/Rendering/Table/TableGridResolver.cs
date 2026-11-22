@@ -304,7 +304,8 @@ internal sealed class TableGridResolver
                     throw new ArgumentNullException("content", "A table cell has a null text and a column is sized automatically.");
 
                 // The widest word and the widest line of the lines the cell is measured in. A cell
-                // of one line, which is every cell that holds no line break, measures as it always has.
+                // of one line, which is every cell that holds no line break, measures as it always
+                // has.
                 var lines = TableRenderer.CellLines(cell.Content, honourBreaks: OneLineCells?.Contains((r, c)) != true);
                 var longest = 0.0;
                 var widest = 0.0;

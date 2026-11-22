@@ -119,7 +119,7 @@ public enum LayoutDiagnosticCode
     /// <summary>
     /// A table cell holds a tab, a line break or another control white-space character, and the
     /// save left it out of what it drew, because honouring the line breaks of the cells around it
-    /// would have made rows that cannot be cut between their lines taller than a page.
+    /// would have left rows that cannot be cut between their lines no room on a page.
     /// <see cref="LayoutDiagnostic.Count"/> is the number of pages on which the cell was drawn from
     /// its first line, so a header row that repeats on every page counts once per page, and any
     /// other cell counts once, however many pages a cut row spans. The message names the row and
@@ -131,16 +131,19 @@ public enum LayoutDiagnosticCode
     /// The cell is wrapped at spaces alone and sized from its whole text, each such character
     /// measured at the width its font gives it and then not drawn, so no line is wider than it was
     /// measured. A glyph wider than its column can still extend past it, as in any cell. The rows
-    /// in question are the leading header rows, which repeat on every page and are never cut, and
+    /// in question are the leading header rows that repeat on every page and are never cut, and
     /// the rows joined by a <see cref="Elements.Table.Cell.RowSpan"/>, which are never cut either.
-    /// A cell is laid out this way in three steps, each taken only when the rows still do not fit a
-    /// page: a cell of the group that holds a carriage return or a line feed; then such a cell of
-    /// the header rows; then a cell that holds any control white space and sits in the rows of the
-    /// group or the header, or in an automatically sized column that a cell of those rows is in. A
-    /// cell that holds only a line feed can be laid out this way by any of the three. A cell no
-    /// step reaches keeps its breaks and is not reported, in a table that has other such cells as
-    /// in any other.
-    /// <b>Do not pass</b> a header row or a span group whose line breaks do not fit one page: put
+    /// The header rows have no room when they do not fit a page, or when they leave a row below
+    /// them less than one line of one of its cells. A span group has no room when it is taller
+    /// than what a page leaves under the repeated header rows. A cell is laid out this way in
+    /// three steps, each taken only while the rows still have no room: a cell of the group that
+    /// holds a carriage return or a line feed; then such a cell of the header rows; then a cell
+    /// that holds any control white space and sits in the rows of the group or the header, or in
+    /// an automatically sized column that a cell of those rows is in. A cell that holds only a
+    /// line feed can be laid out this way by any of the three. A cell no step reaches keeps its
+    /// breaks and is not reported, in a table that has other such cells as in any other. A table
+    /// whose rows are all headers repeats none of them, so none of its cells is in question.
+    /// <b>Do not pass</b> a repeated header row or a span group that has no room on a page: put
     /// the breaks in rows that can be cut, or shorten the text.
     /// </remarks>
     CellWhiteSpaceDropped = 301,
