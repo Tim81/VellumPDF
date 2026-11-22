@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using VellumPdf.Canvas;
+using VellumPdf.Core;
 using VellumPdf.Document;
 using VellumPdf.Fonts;
 using VellumPdf.Layout.Core;
@@ -18,9 +19,10 @@ internal static class TextEmitter
 {
     /// <summary>
     /// Writes the <c>Tf</c> operator for <paramref name="style"/>, unless
-    /// <paramref name="current"/> already holds the same font reference. The comparison is on the
-    /// font only, not the size, so a later run in the same font at another size is drawn at the
-    /// size of the first. A caller that passes a fresh null writes a <c>Tf</c> every time.
+    /// <paramref name="current"/> already holds the same font reference at the same size. The size
+    /// is compared as the token the canvas writes, so two sizes that write the same number write
+    /// one <c>Tf</c>, and a run in the same font at a size that writes another number writes a
+    /// second. A caller that passes a fresh null writes a <c>Tf</c> every time.
     /// </summary>
     /// <remarks>
     /// Under a conformance claim, a named Standard 14 font that is selected is reported as
@@ -29,9 +31,14 @@ internal static class TextEmitter
     /// does not name is never reported: reading its name is what makes the save throw, and the
     /// report would turn that exception into the strict refusal.
     /// </remarks>
-    internal static void SelectFont(DrawContext ctx, PdfCanvas canvas, TextStyle style, ref FontReference? current)
+    internal static void SelectFont(DrawContext ctx, PdfCanvas canvas, TextStyle style, ref SelectedFont? current)
     {
-        if (current.HasValue && FontRefEqual(current.Value, style.FontRef))
+        // NaN and the infinities format without throwing and never equal a stored token, so the
+        // canvas still refuses them.
+        var sizeToken = PdfNumberFormat.FormatReal(style.FontSize);
+        if (current.HasValue
+            && FontRefEqual(current.Value.Font, style.FontRef)
+            && current.Value.SizeToken == sizeToken)
             return;
 
         if (style.FontRef.IsEmbedded)
@@ -53,7 +60,7 @@ internal static class TextEmitter
                     perElement: true,
                     clause: LayoutDiagnosticSink.ClauseFor(LayoutDiagnosticCode.UnembeddedFont, sink.Conformance));
         }
-        current = style.FontRef;
+        current = new SelectedFont(style.FontRef, sizeToken);
     }
 
     /// <summary>
@@ -67,6 +74,11 @@ internal static class TextEmitter
         else
             canvas.ShowText(text);
     }
+
+    /// <summary>
+    /// The font in force in a text object: the reference, and the size as the token written for it.
+    /// </summary>
+    internal readonly record struct SelectedFont(FontReference Font, string SizeToken);
 
     private static bool FontRefEqual(FontReference a, FontReference b)
     {

@@ -289,11 +289,13 @@ public sealed class TextStyle
     /// first glyph is drawn and ends where the text that follows it on the line starts, spaces
     /// stretched included, or, when the linked text closes the line, where its last glyph ends.
     /// A space that closes the linked run is inside the rectangle, and so is the stretch after it.
-    /// On such a line that holds an embedded-font run, a run that draws no glyph, such as a tab
-    /// with no stop to its right at the start of a line, gets no annotation; on one in standard-14
-    /// faces only, that tab is drawn as a space and its link covers that space. A line that is not
-    /// justified, and the last line of a justified paragraph, use the unstretched widths they are
-    /// drawn with.
+    /// A run that draws no glyph gets no annotation. A link run that opens the line at a tab stop
+    /// covers the space the tab is drawn as, in a standard-14 or an embedded face. A link on a run
+    /// of only spaces or tabs that does not open a line takes no rectangle, because those spaces
+    /// are drawn in the style of the run before them; a link on a leading tab with no stop to its
+    /// right takes none either, because the space is dropped at the start of a line. A line that is
+    /// not justified, and the last line of a justified paragraph, use the unstretched widths they
+    /// are drawn with.
     /// <para>Do not pass a value that is not an absolute URI. A later major version will refuse
     /// one.</para>
     /// <para>A <see cref="VellumPdf.Layout.Elements.Preformatted"/> refuses any value from its

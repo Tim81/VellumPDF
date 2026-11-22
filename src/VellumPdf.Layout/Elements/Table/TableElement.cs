@@ -156,6 +156,24 @@ public sealed class TableElement
 
     private PageBreakMode _breakBefore;
 
+    /// <summary>
+    /// A name that a link or an outside reference can jump to: the save adds a named destination at
+    /// the first placed row of this table, which is its top edge, or the repeated header row when
+    /// it has one. <see langword="null"/>, the default, adds none.
+    /// </summary>
+    /// <remarks>
+    /// The rule, the refusals and the position are those of <see cref="Paragraph.Anchor"/>. A table
+    /// that splits across pages is anchored on the page of its first row.
+    /// </remarks>
+    /// <inheritdoc cref="Paragraph.Anchor" path="/exception"/>
+    public string? Anchor
+    {
+        get => _anchor;
+        init => _anchor = AnchorNames.Validate(value);
+    }
+
+    private string? _anchor;
+
     /// <summary>The rows in the table, in render order.</summary>
     /// <remarks>
     /// A table that resolves to no columns is refused at save: no rows, or every row empty.

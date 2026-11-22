@@ -8,6 +8,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`Document.MirrorMargins` for double-sided print (#608).** With it set, `Margins.Left` is the
+  inside margin and `Margins.Right` the outside one. The inside margin is on the left of a
+  right-hand page (an odd physical page number, page 1 first) and on the right of a left-hand
+  page; top and bottom do not change. The default is `false`, where every page keeps `Margins`
+  as before and a document that does not set it saves to the same bytes.
+  - The content box has the same width on every page, so a paragraph wraps the same way on a
+    right-hand and a left-hand page and only its left edge moves. Nothing new is refused: the
+    margins a save refuses are the ones it refuses without the property, with the same exceptions.
+  - A header or footer aligned `Left` or `Right` swaps sides on a left-hand page, so a page number
+    aligned right stays on the outside edge. `Center` centres in that page's content box. A band is
+    drawn as left unless it asks for center or right, so `Justify` and a value the enumeration does
+    not name swap too. Body alignment never swaps.
+  - The side follows the page's position in the file, not its page label, and the blank page a
+    recto break inserts counts. The first page is always right-hand.
+  - A custom `IRenderer` is offered the content area of the page it lands on, so when `Left` and
+    `Right` differ its `Area.X` differs between pages. One that keeps an X from an earlier `Layout`
+    call must not reuse it.
+
 - **`Preformatted`, a block that keeps every space and tab (#591).** `Document.Add(Preformatted)`
   draws text whose spacing is its meaning: command blocks, configuration, ASCII tables. The default
   style is Courier at 10 pt. `Document.SetDefaultFont` does not apply.
@@ -36,6 +54,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     `NotdefGlyph` (102), as for a paragraph, so `StrictDiagnostics` refuses that save.
   - In a tagged document each drawn piece is one `P` structure element. Nothing in the character
     stream separates two lines. Documents without the element save to the same bytes as before.
+
+- **Page labels and anchors (#262, Layout).** A document can set the page numbers a viewer shows,
+  and name places that other documents and links can open it at.
+  - `PageLabelRange(style, prefix, firstNumber)` describes a run of pages: decimal, upper or lower
+    case Roman numerals, or upper or lower case letters, with an optional prefix and a first
+    number. `Document.PageLabel` starts a range at the first page and `PageBreak.PageLabel` at the
+    page the next element lands on. The save writes them as the catalog's `/PageLabels` number
+    tree. When no range starts at the first page it adds a decimal one there, because ISO 32000-2,
+    12.4.2 requires a value for page index 0. When two ranges land on one page the later one
+    applies, and `Document.PageLabel` counts as the earliest.
+  - `{page}` in a running band prints the page's label once any range exists (`iv`, `A-9`).
+    `{pages}` stays the number of pages, and a document with no range prints the decimal number
+    as before and writes no `/PageLabels`. A label is copied as it is and never scanned for
+    tokens.
+  - `Anchor` on `Paragraph`, `Heading`, `TableElement`, `ListElement`, `ListItem` and `LayoutImage`
+    adds a named destination, `[page /XYZ 0 top null]`, to the `/Names` `/Dests` tree at the
+    element's first placed line, whether or not a link refers to it, so `file.pdf#nameddest=name`
+    opens there. A name is 1 to 127 characters from `A-Z a-z 0-9 . _ - :`; any other name throws
+    `ArgumentException` from the `init` accessor, and so does a bad `PageLabelRange` argument from
+    its constructor.
+  - The save throws `InvalidOperationException` before any layout, leaving the document saveable,
+    for an anchor held by two elements and for a labelled `PageBreak` with no element after it.
+    It throws after the layout, leaving the document unsaveable, for an anchor on content the
+    renderer never draws, such as a list item below the second level.
+  - A custom `IRenderer` reports no anchor and cannot start a range; put a labelled `PageBreak`
+    before it.
+  - Nothing changes for a document that uses none of these members. Nine documents (bands,
+    headings, lists, tables, breaks, PDF/A-2u, tagged) saved to identical bytes before and after.
 
 - **`Heading` and `ListItem` take runs (#367).** `new Heading(IEnumerable<TextRun>)` and
   `new ListItem(IEnumerable<TextRun>)` build the element from runs in their own styles, as a
@@ -425,6 +471,64 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **An element exactly as tall as the content area is placed at the top of a page (#549).** At the
+  top of a page the document offered the height from the cursor to the bottom of the content area,
+  `(Y + H) - Y`, while the retry after a `Nothing` offered the content area's own height `H`. The
+  two can differ by one rounding step. On A4 with a 72 pt bottom, left and right margin, a top
+  margin of 440.16 pt gives a first offer 5.7e-14 pt below `H`, so a renderer that needs exactly
+  `H` returned `Nothing`, succeeded on the retry, had that result discarded, and was offered the
+  short box again until it reached the 50,000-continuation limit. A `LayoutImage` with
+  `Height = H` did the same. The first call at the top of a page is now offered the larger of
+  `H` and `(Y + H) - Y`; the retry and every mid-page offer are unchanged.
+  - **Deliberate output changes**, only where `(Y + H) - Y` is below `H`. The rule: an element whose
+    whole height, or whose last line, needs exactly `H` now saves where it threw the
+    continuation-limit `InvalidOperationException`, or keeps that last line on the page where it was
+    split. Measured at a top margin of 440.16 pt as examples, not as the class: a custom renderer, a
+    `LayoutImage` with `Height = H`, and a one-line paragraph, heading, line separator, one-item
+    list and preformatted block each of height `H` threw and now save on one page, and a paragraph
+    of ten lines with leading `H / 10` was split across two pages and now stays on one. Some exact
+    fills still split, as they did before: the paragraph fits `floor(area height / leading)` lines,
+    so seven lines with leading `H / 7` at a top margin of 472.71 pt, where `H / leading` comes out
+    just under 7, fit six. Where the two heights are equal, or `(Y + H) - Y` is the larger, the
+    first offer is the one it was and the bytes do not change.
+  - With a `NaN` or `-Infinity` left or right margin and a footer, a custom renderer exactly `H`
+    tall used to throw the continuation-limit `InvalidOperationException`. It now throws
+    `ArgumentException` from the band draw, and without a footer it saves. The save does not refuse
+    such a margin, before or after this change, so the outcome depends on the side and the element,
+    as the `Document.Margins` remarks describe.
+  - **Attention:** a custom `IRenderer` that returns `Nothing` for exactly `H` but fits the
+    one-step-shorter `(Y + H) - Y` is not supported. On a geometry where `(Y + H) - Y` is below `H`,
+    such a renderer was placed at the top of a page and now is refused at the save with
+    `InvalidOperationException`, "An element is too tall to fit on a single page". A renderer that
+    returns `Nothing` from a height lower than `H`, measured at one step, 1e-9, 1 and 100 pt below
+    `H`, behaves as it did, both alone on a page and after a paragraph. The documentation of
+    `IRenderer.Layout` and `LayoutContext.Area` states the boundary.
+  - An element that needs the larger `(Y + H) - Y` is still placed at the top of a page and still
+    refused after other content, as before: the retry offers `H`.
+- **A run in the font of the run before it, at another size, is drawn at its own size (#664).**
+  The font operator was skipped whenever the face matched the one in force, so a 20 pt run after a
+  10 pt run in the same font was drawn at 10 pt while the line was measured with the 20 pt width.
+  The operator is now written when the size differs as well, and a size is compared as the number
+  the file holds, so two sizes that write the same number write one operator. A cell
+  and a running band hold one style each, so only paragraph, heading and list text can change.
+  **Deliberate output change:** a paragraph, heading or list item with a run in the same font as
+  the run before it and a different size gains a `Tf` for that run, and the run is drawn at its
+  own size. Every other document keeps its bytes. Under a PDF/A or PDF/UA claim the report of a
+  non-embedded font counts one entry per `Tf` written, so the extra `Tf` is counted.
+- **A justified line in an embedded font draws every space it measures (#665).** The line width
+  counted a leading space and every space of a run of spaces after the first, but the drawing
+  skipped them, so a line that opened with a tab at a stop, or held two tabs in a row, ended short
+  of the right edge by each space it dropped and drew its words closer together than the same text
+  without the tab. Each space is now shown as a glyph of its own and advanced by its width. A space
+  between two words takes one share of the slack, as `Tw` gives it on a Standard 14 line, and the
+  line ends at the right edge. A space that ends the line takes half a share, where `Tw` gives it a
+  whole one; that is unchanged. A link run that opens the line at a tab stop now covers the spaces
+  drawn; it got no annotation before. A link on a run of only spaces or tabs that does not open a
+  line still gets none, because those spaces are drawn in the style of the run before them, and
+  neither does a link on a leading tab with no stop to its right, since the space is dropped at the
+  start of a line. **Deliberate output change:** a justified embedded-font line that holds a leading
+  space, or two spaces in a row (reachable through tab stops), is drawn with those spaces and a
+  different spread. Every other document keeps its bytes.
 - **`/FontBBox` of an embedded font is the font's own bounding box (#596).** The descriptor of every
   embedded TrueType and OpenType font held `[0, hhea descender, 1000 * 1000 / unitsPerEm, hhea
   ascender]`: a zero for xMin and a constant for xMax, so DejaVu Sans, Liberation Sans and Liberation
@@ -505,14 +609,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   gap before them) and could lie over other text. The rectangle now starts at the x where the linked
   run's first glyph is drawn and ends at the x where the text that follows it on the line starts, or
   where its own last glyph ends when it closes the line. A space that closes the run is inside the
-  rectangle, with the stretch after it, as on a standard-14 line. On a line that holds an
-  embedded-font run, a link run that draws no glyph, such as a tab with no stop to its right at a
-  line start, gets no annotation; on a line in standard-14 faces only that tab is drawn as a space
-  and its link covers it. This is a deliberate output change for one class of input: a justified
-  line, other than the last of its paragraph, that holds an embedded-font run and a `LinkUri` run. A
-  standard-14 link on such a mixed line moves the same way, and so does the link in a justified
-  `Heading` built from runs. Left, centred and right lines, the last line of a justified paragraph,
-  a line with no link and a line in standard-14 fonts only save the same bytes as before.
+  rectangle, with the stretch after it, as on a standard-14 line. A link run that
+  draws no glyph gets no annotation. A link run that opens the line at a tab stop covers the space
+  the tab is drawn as, in a standard-14 or an embedded face. A link on a run of only spaces or tabs
+  that does not open a line gets none, and neither does a link on a leading tab with no stop to
+  its right, because the space is dropped at the start of a line. This is a deliberate output
+  change for one class of input: a justified line, other than the last of its paragraph, that holds
+  an embedded-font run and a `LinkUri` run. A standard-14 link on such a mixed line moves the same
+  way, and so does the link in a justified `Heading` built from runs. Left, centred and right
+  lines, the last line of a justified paragraph, a line with no link and a line in standard-14
+  fonts only save the same bytes as before.
   `TextStyle.LinkUri` now states the rule once for both kinds of face.
 - **A long running-band template costs what fits the content width, not the template's length, on
   every page (#518).** `RunningBand.Resolve` built the whole substituted text for each band on each

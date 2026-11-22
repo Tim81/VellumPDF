@@ -155,6 +155,22 @@ public sealed class LayoutImage
     private PageBreakMode _breakBefore;
 
     /// <summary>
+    /// A name that a link or an outside reference can jump to: the save adds a named destination at
+    /// the top edge of this image, inside its margins. <see langword="null"/>, the default, adds none.
+    /// </summary>
+    /// <remarks>
+    /// The rule, the refusals and the position are those of <see cref="Paragraph.Anchor"/>.
+    /// </remarks>
+    /// <inheritdoc cref="Paragraph.Anchor" path="/exception"/>
+    public string? Anchor
+    {
+        get => _anchor;
+        init => _anchor = AnchorNames.Validate(value);
+    }
+
+    private string? _anchor;
+
+    /// <summary>
     /// Optional alternate text for the PDF /Figure structure element (tagged PDF).
     /// Used as the <c>/Alt</c> entry on the Figure struct elem when tagging is enabled.
     /// If null, a generic fallback "Figure" is used.

@@ -14,6 +14,7 @@ namespace VellumPdf.Layout.Rendering;
 internal sealed class PaginationPlan
 {
     private readonly Dictionary<object, (int PageIndex, double Y)>? _targets;
+    private readonly PageLabelMap? _labels;
 
     /// <summary>
     /// What the first measuring run resolves against: every target is on the first page, at y 0. A
@@ -26,7 +27,9 @@ internal sealed class PaginationPlan
     /// first placement.
     /// </param>
     /// <param name="pageCount">The pages the run counted.</param>
-    internal PaginationPlan(IReadOnlyList<Placement>? placements, int pageCount)
+    /// <param name="documentLabel">The range that starts at the first page, or null.</param>
+    internal PaginationPlan(
+        IReadOnlyList<Placement>? placements, int pageCount, Elements.PageLabelRange? documentLabel = null)
     {
         PageCount = pageCount;
         Placements = placements ?? [];
@@ -34,7 +37,27 @@ internal sealed class PaginationPlan
             return;
         _targets = new Dictionary<object, (int, double)>(ReferenceEqualityComparer.Instance);
         foreach (var p in placements)
+        {
             _targets.TryAdd(p.Key, (p.PageIndex, p.Y));
+
+            // A range is a placement: the labelled break reported the page the next element is on,
+            // so the labels follow the pages the run laid out.
+            if (p.Renderer is PageBreakRenderer { PageBreak.PageLabel: { } range })
+            {
+                _labels ??= StartLabels(documentLabel);
+                _labels.Add(p.PageIndex, range);
+            }
+        }
+
+        if (_labels is null && documentLabel is not null)
+            _labels = StartLabels(documentLabel);
+    }
+
+    private static PageLabelMap StartLabels(Elements.PageLabelRange? documentLabel)
+    {
+        var labels = new PageLabelMap();
+        if (documentLabel is not null) labels.Add(0, documentLabel);
+        return labels;
     }
 
     internal int PageCount { get; }
@@ -68,8 +91,17 @@ internal sealed class PaginationPlan
         return false;
     }
 
-    /// <summary>The label of the page: its decimal number.</summary>
-    internal string LabelOf(int pageIndex) => (pageIndex + 1).ToString(CultureInfo.InvariantCulture);
+    /// <summary>
+    /// The label of the page, as a viewer shows it: the decimal number when the document defines no
+    /// range, otherwise the page's range's prefix and numeral. Indices are relative to the first
+    /// page of the layout, like every other index in the plan.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The label would be longer than 32,767
+    /// characters.</exception>
+    internal string LabelOf(int pageIndex) =>
+        _labels is null
+            ? (pageIndex + 1).ToString(CultureInfo.InvariantCulture)
+            : _labels.LabelOf(pageIndex);
 }
 
 /// <summary>

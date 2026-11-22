@@ -77,7 +77,7 @@ public sealed class FontReportByteIdentityTests
         return Save(doc);
     }
 
-    // Two runs of one font at two sizes: the second is drawn at the size of the first.
+    // Two runs of one font at two sizes: each is selected at its own size.
     private static byte[] TwoSizesOfOneFont()
     {
         using var doc = NewDocument(PdfConformance.None);
@@ -127,12 +127,12 @@ public sealed class FontReportByteIdentityTests
     public void EmptyUnstyledCell_pinsBytes() => Pin("4E8A3E5ED673875A32D725DFA2580A780458527DA36CE7C10D2EED34873F19F3", EmptyUnstyledCell());
 
     [Fact]
-    public void TwoSizesOfOneFont_pinsBytes_andWritesOneFontOperator()
+    public void TwoSizesOfOneFont_pinsBytes_andWritesAFontOperatorPerSize()
     {
         var pdf = TwoSizesOfOneFont();
 
-        Assert.Equal(["/TT1 10 Tf"], TfLines(pdf));
-        Pin("F43A4C9947E3A4630FC0A7F3AF69141EFEC37C1F6295FE2727B2AB37E57588D0", pdf);
+        Assert.Equal(["/TT1 10 Tf", "/TT1 20 Tf"], TfLines(pdf));
+        Pin("D836D7AEB3BC11670D759B90C4961B83C0CDF66ED2A9450148DE2A5E58136DB5", pdf);
     }
 
     [Fact]

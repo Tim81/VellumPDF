@@ -103,6 +103,24 @@ public sealed class ListItem
     /// </remarks>
     public string? Language { get; init; }
 
+    /// <summary>
+    /// A name that a link or an outside reference can jump to: the save adds a named destination at
+    /// the first line of this list item, its marker line, whether the item is in the list or one of
+    /// its children. <see langword="null"/>, the default, adds none.
+    /// </summary>
+    /// <remarks>
+    /// The rule, the refusals and the position are those of <see cref="Paragraph.Anchor"/>. An item
+    /// below the second level is never drawn, so an anchor on one is refused after the layout.
+    /// </remarks>
+    /// <inheritdoc cref="Paragraph.Anchor" path="/exception"/>
+    public string? Anchor
+    {
+        get => _anchor;
+        init => _anchor = AnchorNames.Validate(value);
+    }
+
+    private string? _anchor;
+
     /// <summary>The nested child items, or null if this item has no children.</summary>
     /// <remarks>
     /// One level of nesting is supported, and only one. A child's own <see cref="Children"/>
