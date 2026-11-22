@@ -666,8 +666,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   template and in the text a page label prints for `{page}`, so a CR LF pair is two spaces, the
   form feed of #613 item 34 is a space there too, and a band's text is measured and cut as drawn.
   **Deliberate output changes:**
-  - `A<TAB>B` in a cell is `(A B)` in Standard 14 and a space glyph between the two letters in an
-    embedded font (glyph 3 in DejaVu Sans), with no `<0000>` entry in the ToUnicode map.
+  - `A<TAB>B` in a cell of a table the document lays out is `(A B)` in Standard 14 and a space
+    glyph between the two letters in an embedded font (glyph 3 in DejaVu Sans), with no `<0000>`
+    entry in the ToUnicode map. A table that a renderer of yours holds is the next item.
   - `line1<LF>line2` is two show strings, the second one leading lower, in a row 14.4 + 14.4 + 8 pt
     tall at 12 pt, where it was one. A table whose cell holds a line break gets taller rows and
     different automatic column widths. A table that holds none of tab, carriage return, line feed,
@@ -679,7 +680,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     width for that character, zero in Helvetica, and now measures each as one space. A band that
     fit can therefore be cut: `A` followed by 120 tabs and `B` in Helvetica 10 on a 300 pt page
     saved with no truncation, and now draws 1 of its 122 characters and reports `BandTruncated`,
-    which `StrictDiagnostics` refuses.
+    which `StrictDiagnostics` refuses. A centred band that holds a tab is placed by that width
+    too: it moves by half the difference between the width its font gave the tab and the width of
+    a space, and a right-aligned one by the whole difference. `Page {page}<TAB>of {total}` at 8 pt
+    in Helvetica, where the tab measured 0, starts 1.112 pt further left centred and 2.224 pt
+    further left right-aligned. In DejaVu Sans, where the glyph 0 the tab was written as is wider
+    than a space, it starts 1.128 pt and 2.256 pt further right. A left-aligned band does not
+    move.
   - **A table that is refused when every cell is measured as one line stays refused.** That is how
     2.3.3 measured a table. Reading a cell's line breaks can leave a column wider or narrower
     than that measurement does, and so tip a `RowSpan` group the other way. Such a table is
@@ -705,10 +712,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - **A table is laid out with its breaks read only where the document lays it out.** A
     `TableRenderer` that a renderer of yours holds and forwards `Layout` to, or that you lay out
     with a `LayoutContext` you build or narrow with `WithArea`, reads every cell unbroken and
-    reports nothing, as the table did before breaks were honoured, so its pages and its refusals
-    are those of that layout and not of the document's, however many lines its cells hold. Such a
-    renderer's `Draw` must forward to the same table. `IRenderer.Layout`, `TableRenderer.Layout` and
-    `TableElement` say so.
+    reports nothing, as the table did before breaks were honoured, so its pages and what it refuses
+    for room or for the continuation limit are those of that layout and not of the document's,
+    however many lines its cells hold. Such a renderer's `Draw` must forward to the same table.
+    `IRenderer.Layout`, `TableRenderer.Layout` and `TableElement` say so.
+    **Deliberate output change:** that table leaves each tab, line break and other control
+    white-space character out of what it draws, where a table laid out before wrote glyph 0 or a
+    raw control byte for it. `A<TAB>B` is `(AB)`, a DejaVu Sans cell holds no glyph 0 and no
+    `<0000>` entry in the ToUnicode map, and the save lists no `NotdefGlyph` or
+    `UnencodableCharacter` for it. The table does not read the character as a space, because that
+    would draw it wider than the layout measured it.
+  - **`StrictDiagnostics` does not refuse a control character in a cell.** A tab, a line break
+    or another control white-space character in a cell reaches no font, so the save lists no
+    `NotdefGlyph` (102) or `UnencodableCharacter` (103) for it, in a table the document lays out
+    and in one a renderer of yours holds. A document whose only error items were those reports
+    saves with the switch on. Any other error item still refuses it, and with the switch off
+    nothing a table refuses changes.
   - **A repeated header row, or rows joined by a `RowSpan`, keep the one-line layout of their cells
     when reading the cells' breaks would leave them no room on a page.** Those rows are never cut
     between their lines, so reading the breaks would turn a table that saved into a too-tall

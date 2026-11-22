@@ -231,7 +231,11 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     /// <see cref="TableRenderer"/> and forwards <see cref="Layout"/> to it, every cell is wrapped
     /// at spaces alone and measured with its control characters, and drawn without them, as the
     /// table was laid out before the breaks were read (#679). Nothing is reported for it, and the
-    /// two layouts can take a different number of pages. <b>Do not pass</b> a table to a renderer
+    /// characters it leaves out are listed as neither
+    /// <see cref="LayoutDiagnosticCode.NotdefGlyph"/> nor
+    /// <see cref="LayoutDiagnosticCode.UnencodableCharacter"/>, so
+    /// <see cref="Document.StrictDiagnostics"/> does not refuse the table for them. The two
+    /// layouts can take a different number of pages. <b>Do not pass</b> a table to a renderer
     /// of yours in the expectation that its line breaks are drawn: add it with
     /// <see cref="Document.Add(TableElement)"/>. A renderer of yours that forwards
     /// <see cref="Layout"/> must forward <see cref="Draw"/> to the same table as well. 3.0 lays a

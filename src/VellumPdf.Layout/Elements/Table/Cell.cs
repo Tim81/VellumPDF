@@ -27,13 +27,16 @@ public sealed class Cell
     /// here, where a <see cref="Elements.Paragraph"/> draws one. Runs of spaces are kept as
     /// written, where a paragraph collapses them. Every other white-space control character, which
     /// is a tab, a form feed, a line tabulation, a next-line character, U+2028 and U+2029, is one
-    /// space, so it reaches no font as a control character. The no-break spaces are written as they
-    /// are, as in a paragraph. The other space separators, such as U+2003, are written as they are
-    /// too, where a paragraph reads them as spaces. A column sized automatically takes its minimum
-    /// from the widest word and its maximum from the widest line, each line of the cell measured on
-    /// its own, where 2.3.3 measured the whole text as one line. The width the column is then
-    /// given is shared out among the columns as it was, and can be more than the maximum or less
-    /// than the minimum.</para>
+    /// space, so it reaches no font as a control character. None of these characters is reported
+    /// as <see cref="VellumPdf.Layout.LayoutDiagnosticCode.NotdefGlyph"/> or
+    /// <see cref="VellumPdf.Layout.LayoutDiagnosticCode.UnencodableCharacter"/>, so
+    /// <see cref="Document.StrictDiagnostics"/> does not refuse a cell for one. The no-break
+    /// spaces are written as they are, as in a paragraph. The other space separators, such as
+    /// U+2003, are written as they are too, where a paragraph reads them as spaces. A column sized
+    /// automatically takes its minimum from the widest word and its maximum from the widest line,
+    /// each line of the cell measured on its own, where 2.3.3 measured the whole text as one line.
+    /// The width the column is then given is shared out among the columns as it was, and can be
+    /// more than the maximum or less than the minimum.</para>
     /// <para>A control character that is not white space, such as U+0001, is written as it is: in a
     /// standard-14 font as its WinAnsi code, and in an embedded font as whatever glyph the font's
     /// character map gives it, which is .notdef (glyph 0) when the map has no entry. The save lists
