@@ -1,6 +1,8 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using VellumPdf.Layout.Rendering;
+
 namespace VellumPdf.Layout.Core;
 
 /// <summary>
@@ -69,6 +71,50 @@ public sealed class LayoutContext
     /// </summary>
     internal bool HonourLineCounts { get; init; }
 
+    // Target, Mode and Session exist only to keep the 2.3.3 continuation verdict; removed in 3.0
+    // (#688).
+    /// <summary>
+    /// The renderer the document called with this context. Null on a context built through the
+    /// public constructor or made by <see cref="WithArea"/>.
+    /// </summary>
+    internal IRenderer? Target { get; init; }
+
+    /// <summary>
+    /// Which layout <see cref="Target"/> uses. Read through <see cref="ModeFor"/>, never
+    /// directly, because it means nothing to any other renderer.
+    /// </summary>
+    internal ContinuationMode Mode { get; init; }
+
+    /// <summary>The session a renderer reports to; null wherever <see cref="Target"/> is.</summary>
+    internal ContinuationSession? Session { get; init; }
+
+    // 2.x compatibility device, removed in 3.0 (#688): 3.0 lays a built-in renderer out one way
+    // under every context, so there is no twin to select.
+    /// <summary>
+    /// The layout <paramref name="renderer"/> uses under this context: the mode the document
+    /// decided when this context is addressed to that instance, and the twin under any other
+    /// context. That is what makes a renderer of a caller's, a context from
+    /// <see cref="WithArea"/> and one from the public constructor lay a built-in renderer out as
+    /// 2.3.3 did.
+    /// </summary>
+    internal ContinuationMode ModeFor(IRenderer renderer) =>
+        ReferenceEquals(Target, renderer) ? Mode : ContinuationMode.Twin;
+
+    /// <summary>
+    /// A context for a built-in renderer that <paramref name="parent"/>, itself called under this
+    /// context, lays out as part of its own layout: addressed to <paramref name="child"/> and in
+    /// the parent's own mode, with the fresh-page area carried as <see cref="WithArea"/> carries
+    /// it. A parent that lays a child out under any other context leaves the child on its twin.
+    /// </summary>
+    internal LayoutContext Address(IRenderer parent, IRenderer child, LayoutBox area) =>
+        new(area, ContentTop)
+        {
+            FreshPageArea = FreshPageArea,
+            Target = child,
+            Mode = ModeFor(parent),
+            Session = Session,
+        };
+
     /// <summary>A minimum Y position, carried for callers that set one.</summary>
     /// <remarks>
     /// Nothing in this package acts on it, and the document passes <b>0</b> on every call. Use
@@ -77,7 +123,14 @@ public sealed class LayoutContext
     public double ContentTop { get; }
 
     /// <summary>Creates a context for the given available area and optional content top.</summary>
-    /// <remarks>Nothing is refused. Both arguments are stored as passed.</remarks>
+    /// <remarks>
+    /// Nothing is refused. Both arguments are stored as passed.
+    /// <para><b>A context you build is not the document's.</b> A built-in renderer that you lay
+    /// out under it uses the layout it had in 2.3.3 wherever a later fix would lay it out
+    /// differently. That keeps the verdict on the 50,000-continuation limit that the same element
+    /// had in 2.3.3. <b>Do not</b> lay a built-in renderer out under a context you built and expect
+    /// a fix that changes its layout to apply to it.</para>
+    /// </remarks>
     public LayoutContext(LayoutBox area, double contentTop = 0)
     {
         Area = area;
@@ -92,6 +145,11 @@ public sealed class LayoutContext
     /// is a page top and that a paragraph reads its line counts, are not copied: a smaller area is
     /// not known to be a page top, and a renderer that wraps a paragraph renderer places as many
     /// lines as fit.
+    /// <para><b>The copy is not the document's context.</b> A built-in renderer that you lay out
+    /// under it uses the layout it had in 2.3.3 wherever a later fix would lay it out differently,
+    /// which keeps the continuation limit's verdict for the element as it was in 2.3.3. <b>Do
+    /// not</b> narrow a context for a built-in renderer and expect a fix that changes its layout
+    /// to apply to it.</para>
     /// </remarks>
     public LayoutContext WithArea(LayoutBox area) => new(area, ContentTop) { FreshPageArea = FreshPageArea };
 }

@@ -1162,6 +1162,9 @@ public sealed class Document : IDisposable
     /// never gets smaller reaches that limit; <see cref="IRenderer.Layout"/> has the rule. The save
     /// then throws <see cref="InvalidOperationException"/> naming the limit. Split a long element
     /// yourself.
+    /// <para>A built-in renderer that your renderer lays out is laid out as in 2.3.3 wherever a
+    /// later fix would lay it out differently, so the limit's verdict for your element is the one
+    /// 2.3.3 gave; see <see cref="IRenderer.Layout"/>.</para>
     /// <para>A renderer you wrote yourself cannot ask for a page break. The library's own
     /// <see cref="ParagraphRenderer"/>, <see cref="TableRenderer"/>, <see cref="ListRenderer"/> and
     /// <see cref="LayoutImageRenderer"/> honour their element's <c>BreakBefore</c> when added here.

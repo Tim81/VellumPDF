@@ -41,6 +41,13 @@ public interface IRenderer
     /// <see cref="LayoutResult.Outcome.Nothing"/>, counts as one. An overflow that never gets
     /// smaller reaches the limit; the save then throws. Make each overflow hold less than the
     /// renderer that returned it.</para>
+    /// <para><b>A built-in renderer you lay out yourself is laid out as in 2.3.3.</b> The context
+    /// the document passes to your renderer is addressed to your renderer. A built-in renderer that
+    /// your renderer lays out under it, under <see cref="LayoutContext.WithArea"/> of it, or under
+    /// one you built, uses the layout it had in 2.3.3 wherever a later fix would lay it out
+    /// differently. That is what keeps the 50,000-continuation limit's verdict for your element as
+    /// 2.3.3 gave it. <b>Do not</b> rely on a later layout fix reaching a built-in renderer that you
+    /// lay out from your own.</para>
     /// <para><b>A renderer that fits a smaller area but not a larger one is not supported.</b> At
     /// the top of a page the document offers the larger of the content area's height and the
     /// height from the top of the content area to its bottom, which can differ by one rounding
