@@ -6,14 +6,15 @@ namespace VellumPdf.Layout.Rendering.Table;
 /// <summary>
 /// What one table decision has measured of its cells, so that measuring the table again does not
 /// measure every cell again. The decision that reads some cells unbroken measures the whole table
-/// once per step, while a cell's longest word and widest line depend on its text and mode alone,
-/// and its line count on those and the width it wraps at.
+/// once per pass, while a cell's longest word and widest line depend on its text, its style and
+/// its mode alone, and its line count on those and the width it wraps at.
 /// </summary>
 /// <remarks>
 /// <para>The cache holds, per cell and per mode (breaks kept or read unbroken), the cell's longest
-/// word and widest line, which depend on its text and mode alone, and the number of lines it wraps
-/// into, with the interval of widths over which that number holds. It lives for one decision and
-/// is dropped with it, so a table that is edited between saves is measured from nothing.</para>
+/// word and widest line, which depend on its text, style and mode alone, and the number of lines
+/// it wraps into, with the interval of widths over which that number holds. It lives for one
+/// decision and is dropped with it, so a table that is edited between saves is measured from
+/// nothing.</para>
 /// <para>Each entry is exact: a lookup returns what measuring again would return, bit for bit, or
 /// misses.</para>
 /// </remarks>
@@ -66,8 +67,10 @@ internal struct CellMeasure
 
 /// <summary>
 /// A hook for tests of the table caches: counts what the caches answered, and when
-/// <see cref="Verify"/> is set measures again on every hit and throws when the answer differs.
-/// It is thread-static and null by default, so a save pays one null test for it.
+/// <see cref="Verify"/> is set measures again on every hit, and on every step that raises the kept
+/// column widths, and throws when the answer differs.
+/// It is thread-static and null by default, so a save pays one thread-static read for it each
+/// time a cell is looked up.
 /// </summary>
 internal sealed class TableMeasureProbe
 {

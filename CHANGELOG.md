@@ -668,15 +668,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     as wide as 2.3.3 made them, and the header and the groups as tall. In a table with two 100pt
     columns and an automatic one, a group of two rows is 424pt tall on a page that leaves 280pt
     while a cell of the automatic column in a third row keeps its line break, and 100pt without it.
-  - **Every group is judged in order, and the decision measures each cell once.** A table that
-    gives up cells in several groups measures its cells' widths once per mode and its line counts
-    once per interval of column widths, keeps the pass going when a group's step leaves every
-    column width as it was, and resolves its grid once for all its pages. No limit on the number
-    of measurements applies, so a group is judged on the heights the groups before it leave
-    whatever their number. Measured in Release on net10.0, one run each: 400 groups that each
-    change the width the next is judged by took 0.95s and 170MB, where main took 4.55s and
-    3,022MB; 1,000 groups that each widen an automatic column took 8.6s and 13,376MB, where main
-    took 29.8s and 48,492MB.
+  - **Every group is judged in order, and the decision keeps what each cell measures.** A table
+    that gives up cells in several groups keeps each cell's widest word and widest line per mode
+    and its line count with the interval of column widths it holds over, a word broken at its
+    characters included. After a step it takes the column widths from the widths kept for the
+    pass, which the step raises. A step that gives up only cells in the group's own rows, and
+    leaves every column width as it was, does not end the pass, and a table resolves its grid
+    once for all its pages. No limit on the number of measurements applies, so a group is judged
+    on the heights the groups before it leave whatever their number. Measured in Release on
+    net10.0, one run each, against 2.3.3 on the same tables: 400 groups that each change the
+    width the next is judged by took 1.2s and 68MB, where 2.3.3 took 6.3s and 3,022MB; 1,000
+    groups that each widen an automatic column took 2.0s and 378MB, where 2.3.3 took 49.2s and
+    48,489MB; 6,400 groups that give up a cell in a shared automatic column took 1.9s and 498MB,
+    where 2.3.3 took 12.4s and 9,319MB. The cost of groups that each widen an automatic column
+    still grows with the square of their number: each such step ends the pass and the next pass
+    visits every cell again (1,000 groups allocate 6.5 times what 400 do).
 - **`/FontBBox` of an embedded font is the font's own bounding box (#596).** The descriptor of every
   embedded TrueType and OpenType font held `[0, hhea descender, 1000 * 1000 / unitsPerEm, hhea
   ascender]`: a zero for xMin and a constant for xMax, so DejaVu Sans, Liberation Sans and Liberation

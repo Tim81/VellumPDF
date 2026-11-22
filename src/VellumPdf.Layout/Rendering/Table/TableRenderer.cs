@@ -180,7 +180,8 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     /// under a context without the box is not cut.</para>
     /// <para>A carriage return or line feed in a cell ends a line. A repeated header row, or rows
     /// joined by a <see cref="Cell.RowSpan"/>, can lose the breaks of some cells, those of a cell
-    /// in an automatically sized column among them, and the save reports each as <see cref="LayoutDiagnosticCode.CellWhiteSpaceDropped"/>;
+    /// in an automatically sized column among them, and the save reports each as
+    /// <see cref="LayoutDiagnosticCode.CellWhiteSpaceDropped"/>;
     /// <see cref="Cell.Content"/> says when and which. A context built with the public
     /// constructor of <see cref="LayoutContext"/> keeps every break.</para>
     /// <para>These are refused with the too-tall exception, extended with a sentence naming the
@@ -988,7 +989,10 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         return found;
     }
 
-    /// <summary>True when a column that a cell at <paramref name="col"/> for <paramref name="span"/> columns is in is sized automatically.</summary>
+    /// <summary>
+    /// True when a column that a cell at <paramref name="col"/> for <paramref name="span"/>
+    /// columns is in is sized automatically.
+    /// </summary>
     private bool TouchesAutoColumn(int col, int span)
     {
         for (var k = 0; k < span && col + k < _colWidths.Length; k++)

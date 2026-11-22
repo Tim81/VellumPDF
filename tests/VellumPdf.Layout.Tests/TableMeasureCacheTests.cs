@@ -140,6 +140,27 @@ public sealed class TableMeasureCacheTests
         Assert.Equal(0, probe.WidthsRaised);
     }
 
+    /// <summary>
+    /// Counting the lines of a word broken at its characters measures each character without
+    /// allocating a string for it: 3,000 Latin-1 characters allocate under 4KB, where a string per
+    /// character is about 90KB. A cell that gives up its breaks is one long word, and the decision
+    /// counts it again at every width the columns take.
+    /// </summary>
+    [Fact]
+    public void CountingABrokenWordAllocatesNothingPerCharacter()
+    {
+        var style = Helvetica();
+        var word = string.Concat(Enumerable.Repeat("abc", 1000));
+        TableRenderer.CountLines(word, style, 100, true, out _, out _);
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        var lines = TableRenderer.CountLines(word, style, 100, true, out _, out _);
+        var bytes = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.True(lines > 100, $"{lines} lines");
+        Assert.True(bytes < 4096, $"{bytes} bytes");
+    }
+
     private static readonly string[] Alphabet =
         ["a", "i", "W", "ab", "word", "m", " ", " ", " ", "  ", "\n", "\t", "\r\n", "x\u00A0y", "\u0001", "WWWWWWWW"];
 
