@@ -326,8 +326,8 @@ public sealed class ContinuationLimitTests
     [InlineData(false)]
     public void Contract_belowTheBound_theNewLayoutAloneDecidesWhatIsRefused(bool twinThrows)
     {
-        // A bound within what is left of the limit runs no probe, so the mechanism decides only the
-        // limit. An adopter guarantees, below its bound, that its new layout refuses exactly where
+        // A bound within what is left of the limit (bound <= L') runs no probe. An adopter
+        // guarantees, where bound <= L', that its new layout refuses exactly where
         // its twin refuses and saves where its twin saves. This scripted renderer breaks that
         // guarantee in each direction to show what the document then does: it follows the new
         // layout.

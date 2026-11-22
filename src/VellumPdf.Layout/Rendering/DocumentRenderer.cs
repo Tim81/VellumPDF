@@ -1238,10 +1238,11 @@ public sealed class DocumentRenderer
     internal int ContinuationProbeFaults { get; private set; }
 
     // The verdict of a decision that ran probes, kept for the start it was made from: the element
-    // the document placed, where on the page it starts, and the continuations already counted.
+    // the document placed, where on the page it starts, whether it starts at the retry after a
+    // Nothing, and the continuations already counted.
     // Both passes and every simulation of the keep rules start the same element from the same
     // place, so each asks once. The x position is not part of the key: mirrored margins move only
-    // x, and a layout depends on the width. A measuring run of a plan-dependent document starts it
+    // x, so a reporting renderer's answer must not depend on x, only on the width. A measuring run of a plan-dependent document starts it
     // from the same place too, but with a different text, so the verdicts are dropped whenever a
     // resolve changes one. Y and Height are both kept: they determine each other only up to
     // rounding.
@@ -1291,7 +1292,7 @@ public sealed class DocumentRenderer
     //
     // A bound within what is left of the limit (bound <= L', where L' is the limit minus the
     // continuations counted) needs no probe, whatever the element's real count: the new layout is
-    // trusted not to reach the limit, and the twin never takes more continuations than it. There
+    // trusted not to reach the limit, and the bound covers the twin's continuations too. There
     // the new layout alone decides what is refused, so it must refuse where its twin refuses and
     // save where its twin saves. Above it the element is laid out twice without drawing, the twin
     // first and the new layout second, and the new layout is chosen only when both finish
