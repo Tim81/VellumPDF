@@ -167,8 +167,9 @@ public sealed class Paragraph
     /// page there is no later page to try, and it skips that second pass), so a document that
     /// sets this on many elements makes more layout calls; see <see cref="IRenderer.Layout"/>. The
     /// walk stops at the first element that starts on a later page than the one before it ended
-    /// on. A refusal that laying out the next element raises is therefore raised while the group is laid out, before
-    /// the elements ahead of it are drawn; it is the one that element raises when it is placed.
+    /// on. A refusal that laying out the next element raises is therefore raised while the group
+    /// is laid out, before the elements ahead of it are drawn; it is the one that element raises
+    /// when it is placed.
     /// <b>Do not</b> read this as keeping a whole run on one page: a paragraph that splits keeps
     /// only its last piece with the element after it, and the pieces before that fall where the
     /// pages end.</para>
