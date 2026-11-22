@@ -14,8 +14,8 @@ namespace VellumPdf.Layout.Tests;
 /// <summary>
 /// A list lays out its new way (the indent clamp of #476, the moved entries of #685) only where the
 /// document addressed the call to it and decided the continuation limit (#686). These rows pin what
-/// that means for the list: any other context, an entry that cannot be drawn, an entry no page holds
-/// and a first box with no height all give the placement the list had before, which is what
+/// that means for the list: any other context, an entry that cannot be drawn, an entry no page
+/// holds and a first box with no height all give the placement the list had before, which is what
 /// <see cref="ListRenderer.Unclamped"/> lays out.
 /// </summary>
 public sealed class ListPlacementAdoptionTests
@@ -48,7 +48,9 @@ public sealed class ListPlacementAdoptionTests
 
     private static LayoutDiagnosticCode[] Codes(Document doc) => doc.Diagnostics.Select(d => d.Code).ToArray();
 
-    /// <summary>The document the list is added to as a list, and the same document with its twin.</summary>
+    /// <summary>
+    /// The document the list is added to as a list, and the same document with its twin.
+    /// </summary>
     private static (byte[] New, Document NewDoc, byte[] Twin, Document TwinDoc) Both(
         Func<Document> page, Func<ListElement> list)
     {
@@ -148,7 +150,8 @@ public sealed class ListPlacementAdoptionTests
 
     /// <summary>
     /// One renderer that a caller laid out under a context of its own, and the document then lays
-    /// out itself, is the new layout for the document: what the first call left does not carry over.
+    /// out itself, is the new layout for the document: what the first call left does not carry
+    /// over.
     /// </summary>
     [Fact]
     public void AListLaidOutUnderAContextOfTheCallers_isLaidOutNewForTheDocumentAfterwards()
@@ -167,7 +170,9 @@ public sealed class ListPlacementAdoptionTests
         Assert.Contains(documentRenderer.Diagnostics, d => d.Code == LayoutDiagnosticCode.ListIndentClamped);
     }
 
-    /// <summary>The document places the same object in the measuring pass and the drawing pass.</summary>
+    /// <summary>
+    /// The document places the same object in the measuring pass and the drawing pass.
+    /// </summary>
     [Fact]
     public void TheTwin_isTheSameObjectOnEveryCall()
     {
@@ -180,9 +185,10 @@ public sealed class ListPlacementAdoptionTests
     // ── A first box with no height ───────────────────────────────────────────
 
     /// <summary>
-    /// A paragraph whose leading fills the 20-point area leaves the list a box with no height, which
-    /// it answers Nothing for before it builds an item. The decision is made at the retry on the
-    /// next page, where the list reports, so the list that would pass the limit is placed as it was.
+    /// A paragraph whose leading fills the 20-point area leaves the list a box with no height,
+    /// which it answers Nothing for before it builds an item. The decision is made at the retry on
+    /// the next page, where the list reports, so the list that would pass the limit is placed as it
+    /// was.
     /// </summary>
     [Fact]
     public void AListFirstOfferedNoHeight_isDecidedAtTheRetry()
@@ -216,9 +222,9 @@ public sealed class ListPlacementAdoptionTests
     private static TextStyle StyleOf(FontReference font, double size = 10) => new() { FontRef = font, FontSize = size };
 
     /// <summary>
-    /// A run in an embedded font that another document returned would be refused at the save once its
-    /// text is drawn, and the document never drew it. The entry is not clamped, so the save is the
-    /// one the list had.
+    /// A run in an embedded font that another document returned would be refused at the save once
+    /// its text is drawn, and the document never drew it. The entry is not clamped, so the save is
+    /// the one the list had.
     /// </summary>
     [Theory]
     [InlineData("foreign-handle")]
@@ -277,8 +283,8 @@ public sealed class ListPlacementAdoptionTests
     [InlineData("move")]
     public void AChildWithARunThatCannotBeDrawn_isNeitherClampedNorMoved(string rule)
     {
-        // An undefined Standard 14 value measures zero, which the clamp never narrows, so the clamp row
-        // uses a handle another document returned, which measures.
+        // An undefined Standard 14 value measures zero, which the clamp never narrows, so the clamp
+        // row uses a handle another document returned, which measures.
         var undefined = rule == "move" ? StyleOf((Standard14)99, 20) : StyleOf(ForeignHandle());
         var (bytes, doc, twin, _) = Both(
             () => rule == "move" ? Page(200, 100, leadLines: 4) : Page(400, 400),
@@ -293,7 +299,9 @@ public sealed class ListPlacementAdoptionTests
         Assert.DoesNotContain(LayoutDiagnosticCode.ListIndentClamped, Codes(doc));
     }
 
-    /// <summary>The control: a font this document defines is drawn, so the entry is clamped and moved.</summary>
+    /// <summary>
+    /// The control: a font this document defines is drawn, so the entry is clamped and moved.
+    /// </summary>
     [Fact]
     public void AnEntryWithARunThisDocumentDefines_isStillClampedAndMoved()
     {
@@ -310,9 +318,9 @@ public sealed class ListPlacementAdoptionTests
 
     /// <summary>
     /// An entry at a page top is never moved: moving it answers Nothing for the list, and the retry
-    /// offers the same top. Every entry fits a page of its own where the document lays the list out,
-    /// so the document never offers a top that is smaller than that page, but a context that does
-    /// leaves the entry where it falls.
+    /// offers the same top. Every entry fits a page of its own where the document lays the list
+    /// out, so the document never offers a top that is smaller than that page, but a context that
+    /// does leaves the entry where it falls.
     /// </summary>
     [Fact]
     public void AnEntryAtAPageTopThatDoesNotFitItsBox_isNotMoved()
@@ -356,8 +364,8 @@ public sealed class ListPlacementAdoptionTests
 
     /// <summary>
     /// The list the document calls answers with its twin's layout, and the document asks the
-    /// instance it called for the placements of the list's anchors and of its items'. Both come from
-    /// the twin, so the destinations are the ones the twin writes.
+    /// instance it called for the placements of the list's anchors and of its items'. Both come
+    /// from the twin, so the destinations are the ones the twin writes.
     /// </summary>
     [Fact]
     public void AListWithAnEntryNoPageHolds_keepsTheAnchorsItsTwinReports()
@@ -377,8 +385,8 @@ public sealed class ListPlacementAdoptionTests
 
     /// <summary>
     /// A marker that wraps and gets only some of its lines on a page of its own is an entry no page
-    /// holds, so an entry ahead of it that would move stays where it falls, and the list is placed as
-    /// before.
+    /// holds, so an entry ahead of it that would move stays where it falls, and the list is placed
+    /// as before.
     /// </summary>
     [Fact]
     public void AMarkerTallerThanAPageThatWraps_isAnEntryNoPageHolds()
@@ -431,8 +439,9 @@ public sealed class ListPlacementAdoptionTests
     }
 
     /// <summary>
-    /// Text with no width is discarded, not unplaced: an entry whose marker wraps and gets some of its
-    /// lines mid-page, beside text with no width, moves to the page that holds the marker whole.
+    /// Text with no width is discarded, not unplaced: an entry whose marker wraps and gets some of
+    /// its lines mid-page, beside text with no width, moves to the page that holds the marker
+    /// whole.
     /// </summary>
     [Fact]
     public void AMarkerThatGetsSomeOfItsLines_besideTextWithNoWidth_moves()
@@ -455,8 +464,8 @@ public sealed class ListPlacementAdoptionTests
 
     /// <summary>
     /// A list reads every entry before it places the first, to find one no page holds. A refusal an
-    /// entry raises is the layout's to raise where it reached it, so the refusal the list reports is
-    /// the one it always did: an element too tall, before the colour of a later entry.
+    /// entry raises is the layout's to raise where it reached it, so the refusal the list reports
+    /// is the one it always did: an element too tall, before the colour of a later entry.
     /// </summary>
     [Fact]
     public void ARefusalALaterEntryRaises_doesNotReplaceTheOneAnEarlierEntryRaisesFirst()
@@ -508,7 +517,10 @@ public sealed class ListPlacementAdoptionTests
 
     private sealed record Run(byte[] Bytes, IReadOnlyList<LayoutDiagnostic> Diagnostics);
 
-    /// <summary>A renderer of a caller's that lays another renderer out, through the context or through one it makes.</summary>
+    /// <summary>
+    /// A renderer of a caller's that lays another renderer out, through the context or through one
+    /// it makes.
+    /// </summary>
     private sealed class PassOn(IRenderer inner, int how) : IRenderer
     {
         public LayoutResult Layout(LayoutContext context) => inner.Layout(how switch
@@ -521,7 +533,10 @@ public sealed class ListPlacementAdoptionTests
         public void Draw(DrawContext ctx) => inner.Draw(ctx);
     }
 
-    /// <summary>Reserves a band above the renderer it wraps and lays that out in the rest through <c>WithArea</c>.</summary>
+    /// <summary>
+    /// Reserves a band above the renderer it wraps and lays that out in the rest through
+    /// <c>WithArea</c>.
+    /// </summary>
     private sealed class Inset(IRenderer inner, double top) : IRenderer
     {
         public LayoutResult Layout(LayoutContext context)

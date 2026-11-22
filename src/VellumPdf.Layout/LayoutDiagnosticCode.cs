@@ -166,9 +166,9 @@ public enum LayoutDiagnosticCode
     /// An entry whose marker or text uses a font the document cannot draw, which is a handle
     /// another document returned or a <see cref="VellumPdf.Fonts.Standard14"/> value the
     /// enumeration does not name, is not clamped either. Nor is any entry of a list that holds an
-    /// entry no page holds; see <see cref="ListEntryPartDropped"/>. A list that a renderer of
-    /// yours lays out is not clamped, and reports nothing. <b>Do not pass</b> an indent that leaves an entry's
-    /// text no width: 3.0 will refuse it. See <see cref="Elements.ListElement.Indent"/>.
+    /// entry no page holds; see <see cref="ListEntryPartDropped"/>. A list that a renderer of yours
+    /// lays out is not clamped, and reports nothing. <b>Do not pass</b> an indent that leaves an
+    /// entry's text no width: 3.0 will refuse it. See <see cref="Elements.ListElement.Indent"/>.
     /// </remarks>
     ListIndentClamped = 203,
 
