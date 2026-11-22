@@ -56,10 +56,15 @@ public sealed class LayoutImageRenderer : IRenderer, IPageBreakSource, IKeepSour
     /// <see cref="InvalidOperationException"/> saying the element is too tall to fit. This method
     /// raises the image's size refusals itself. When the document calls this method, they reach you
     /// from the save.
+    /// <para>With <see cref="LayoutImage.FitToPage"/> set, the size is scaled to the content height
+    /// of a fresh page, which the document supplies. A context you build with the public
+    /// constructor carries none, so there the image is fitted to <paramref name="ctx"/>'s own
+    /// <see cref="LayoutContext.Area"/>, less the image's margins.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// <see cref="LayoutImage.Width"/> or <see cref="LayoutImage.Height"/>, or the height derived
-    /// from the width, is refused; see those members and <see cref="LayoutImage.Margins"/>.
+    /// from the width, is refused, or a fitted extent is; see those members,
+    /// <see cref="LayoutImage.FitToPage"/> and <see cref="LayoutImage.Margins"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// The image's own pixel width or height is not a positive number.
@@ -113,11 +118,56 @@ public sealed class LayoutImageRenderer : IRenderer, IPageBreakSource, IKeepSour
         // stream non-invertible (#478).
         LayoutValidation.ValidateImageExtent(_w, _h);
 
-        if (_h > area.Height) return LayoutResult.Nothing();
+        if (_img.FitToPage)
+        {
+            // Fitted to the box every fresh page offers and not to the area left on this one, so
+            // that an image too tall for the rest of a page still moves to the next page at the
+            // size it would have there. The box is the one the retry is offered, so a fitted
+            // image is placeable on it by construction. Only the height and width of the box are
+            // read: under mirrored margins its X differs from page to page. A caller-built
+            // context carries no such box, and the area offered is the only one known.
+            var fit = (ctx.FreshPageArea ?? ctx.Area).Deflate(_img.Margins).Height;
+
+            // A box with no positive height cannot hold a scaled image, so the image is left as
+            // sized and refused as too tall. NaN fails the comparison and is left the same way.
+            if (fit > 0 && _h > fit)
+            {
+                _w *= fit / _h;
+                _h = fit;
+
+                // The factor can take a wide, short source under the smallest written extent.
+                LayoutValidation.ValidateImageExtent(_w, _h);
+            }
+        }
+
+        if (_h > area.Height)
+        {
+            // The reason is read only when the retry on a fresh page also answers Nothing, which
+            // is a call at a page top, so any other call skips building the string.
+            return ctx.AtPageTop
+                ? LayoutResult.Nothing(TooTallReason(area.Height))
+                : LayoutResult.Nothing();
+        }
 
         _occupied = ctx.Area.WithHeight(_h + _img.Margins.Vertical);
         return LayoutResult.Full(_occupied);
     }
+
+    // Names the axis that overflowed and both numbers, because the document's own sentence cannot:
+    // it does not know the image. Whole points, trimmed to two decimals.
+    private string TooTallReason(double contentHeight)
+    {
+        var content = Pt(contentHeight);
+        if (_img.Height is not null)
+            return $"LayoutImage.Height {Pt(_h)} exceeds the {content} content height.";
+
+        return "The height derived from the width and the image's proportions, " +
+            $"{Pt(_h)}, exceeds the {content} content height" +
+            (_img.FitToPage ? "." : "; set FitToPage to scale it down.");
+    }
+
+    private static string Pt(double points) =>
+        points.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "pt";
 
     /// <summary>Draws the image XObject, emitting a tagged Figure struct element when tagging is enabled.</summary>
     /// <remarks>See <see cref="IRenderer.Draw"/>.</remarks>

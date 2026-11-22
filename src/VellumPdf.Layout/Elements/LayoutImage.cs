@@ -10,7 +10,8 @@ namespace VellumPdf.Layout.Elements;
 /// <remarks>
 /// <see cref="Width"/> and <see cref="Height"/> carry the size refusals. A null
 /// <see cref="Image"/> makes the save throw. <see cref="HorizontalAlignment.Justify"/> is drawn
-/// as <see cref="HorizontalAlignment.Left"/>.
+/// as <see cref="HorizontalAlignment.Left"/>. An image that is too tall for a page makes the save
+/// throw unless <see cref="FitToPage"/> scales it down.
 /// </remarks>
 public sealed class LayoutImage
 {
@@ -65,9 +66,10 @@ public sealed class LayoutImage
     /// then names the height rather than the width. Positive infinity is not refused as a
     /// non-finite width: it is clamped to the content box's width. The height derived from that
     /// clamped width can still exceed the box's height, and that overflow throws this same type
-    /// through the generic too-tall exception. Whether it does is decided by proportion rather
-    /// than by absolute size, so a source proportionally taller than the box is refused however
-    /// narrow it is.
+    /// through the generic too-tall exception, whose message then names the derived height and
+    /// the content height. Whether it does is decided by proportion rather than by absolute size,
+    /// so a source proportionally taller than the box is refused however narrow it is, unless
+    /// <see cref="FitToPage"/> is set.
     /// </exception>
     public double? Width { get; init; }  // null = fit to available width
 
@@ -78,7 +80,9 @@ public sealed class LayoutImage
     /// <remarks>
     /// Setting this is a request for a non-proportional box: unlike a null height, it is not
     /// rescaled when the width is clamped to the content box. An image taller than the remaining
-    /// space moves to the next page.
+    /// space moves to the next page. One taller than a page makes the save throw
+    /// <see cref="InvalidOperationException"/>, and the message names this height and the content
+    /// height, unless <see cref="FitToPage"/> scales it down.
     /// <para>Zero and non-finite values are <b>refused</b>, for the same reason as
     /// <see cref="Width"/>: the emitted transformation matrix is either singular or not made of PDF
     /// numbers. Do <b>not</b> pass a negative height; it is not refused today and flips the image
@@ -94,6 +98,43 @@ public sealed class LayoutImage
     /// property, for zero, for a magnitude under 5e-6, and for any non-finite value.
     /// </exception>
     public double? Height { get; init; }  // null = maintain aspect ratio
+
+    /// <summary>
+    /// Whether an image taller than a page is scaled down to the height of a page, keeping its
+    /// width-to-height ratio. The default, <see langword="false"/>, leaves the size as
+    /// <see cref="Width"/> and <see cref="Height"/> give it.
+    /// </summary>
+    /// <remarks>
+    /// <b>A fitted extent too small to paint is refused.</b>
+    /// <see cref="Document.Save(System.IO.Stream)"/> throws <see cref="InvalidOperationException"/>
+    /// when the scale takes the width or the height under 5e-6 points, because the canvas writes it as <c>0</c> and the transformation matrix
+    /// has no inverse; a 1 by 2147483648 pixel image fitted to a 400 point height is about
+    /// 1.9e-7 points wide. The exception comes from the save, not from this <c>init</c> accessor,
+    /// which has nothing to refuse.
+    /// <para>The image is sized first as it is without this member, from <see cref="Width"/>,
+    /// <see cref="Height"/>, the source's proportions and the clamp to the content width. When
+    /// that height is more than a page's content height, less <see cref="Margins"/>, both extents
+    /// are multiplied by the one factor that makes the height equal it. This applies to whatever
+    /// the other members produced, so an explicit <see cref="Height"/> is scaled too, along with
+    /// the width it was stretched to. The image is never enlarged: one that already fits keeps
+    /// its size, and the output is the same as with the default.</para>
+    /// <para>The content height is that of a fresh page, not what is left on the current one. An
+    /// image that fits a page but not the space below the previous element moves to the next page
+    /// at the size it has there, as it does without this member. Only the height and width of that
+    /// page's content area are read, so mirrored margins do not change the size. A running header
+    /// or footer shortens it, as it shortens any element's area. When a renderer is laid out
+    /// through a <see cref="LayoutContext"/> built by calling its public constructor, no fresh
+    /// page is known, and the image is fitted to the area that context offers.</para>
+    /// <para>When no positive height is left once the margins are taken off, the image is not
+    /// scaled and the save throws the too-tall exception, as it does without this member.</para>
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when the fitted width or height is under 5e-6 points. The message names
+    /// that extent. A size refused before the scale, such as a <see cref="Width"/> of zero, is
+    /// refused with the message it has without this member.
+    /// </exception>
+    public bool FitToPage { get; init; }
 
     /// <summary>Horizontal alignment of the image within the available width.</summary>
     /// <remarks>

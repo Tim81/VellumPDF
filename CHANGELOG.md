@@ -432,6 +432,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     refuses.
   - A paragraph with no stops, or an empty list, is drawn exactly as before: a tab is a space.
 
+- **`LayoutImage.FitToPage` scales an image down to the height of a page (#471).** An image with
+  no `Width` takes the full width of the content box, and its height follows from its proportions,
+  so on a page wider than it is tall a square image was taller than the page and the save threw.
+  With `FitToPage` set, both extents are multiplied by the one factor that makes the height equal the
+  content height of a page. It is `false` by default, and a document that does not set it saves to
+  the same bytes.
+  - The image is sized first as it is without the member, from `Width`, `Height`, its proportions
+    and the clamp to the content width. An explicit `Height` is scaled along with the width it was
+    stretched to, so the proportions the other members produced are kept. An image is never
+    enlarged: one that fits keeps its size.
+  - The height it is fitted to is that of a fresh page, less the image's `Margins`, and a running
+    header or footer shortens it. An image too tall for the space left on the current page still
+    moves to the next page, at the size it has there. Mirrored margins move the image and do not
+    change its size.
+  - The save throws `InvalidOperationException` when the scale takes the width or the height under
+    0.000005 pt, as it does for any image extent that would be written as zero. Nothing else is
+    refused.
+  - A `LayoutImageRenderer` that you lay out with a `LayoutContext` built through the public
+    constructor fits the image to the area that context offers.
+  - The exception for an image too tall for a page keeps its type and its first sentence, and now
+    ends with the axis and both numbers: `LayoutImage.Height 401pt exceeds the 400pt content
+    height.`, or, for a height derived from the width, the derived height, the content height and
+    a pointer to `FitToPage`. This applies with or without the member. The files that save are
+    unchanged.
+
 ### Changed
 
 - **`Save` and the signing path build the document catalog in one place (#606).** Both used to
