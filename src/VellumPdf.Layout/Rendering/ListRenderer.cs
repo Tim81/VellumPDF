@@ -22,38 +22,43 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
 
     // Flattened (marker, content-renderer) pairs, built once during first Layout.
     /// <summary>
-    /// An upper bound on the page continuations a placement of this list can take, or zero when no
-    /// entry from the start item on had its gutter clamped (or the box leaves no width, so nothing
-    /// is built).
+    /// An upper bound on the page continuations a placement of this list can take, or zero when the
+    /// box leaves no room (so nothing is built) or this is the list laid out as it was before the
+    /// clamp and the moving of entries.
     /// </summary>
     /// <remarks>
     /// The bound is the number of units the list holds from its start item, an entry or one wrapped
     /// line of its text, whichever is more for that entry. Every <c>Partial</c> the list returns
     /// consumes at least one unit: a split before an entry has placed at least one whole entry, and
     /// a split inside an entry has placed at least one of its lines, because
-    /// <see cref="ParagraphRenderer"/> only splits when <c>maxLines</c> is positive. The piece that
-    /// ends the list consumes at least one more. A <c>Nothing</c> the document then retries on the
-    /// next page can only come first: the document offers a page top the area the retry was offered
-    /// and the list answers the same height the same way, so the call after a <c>Nothing</c> or a
-    /// <c>Partial</c>, which is at a page top, is neither. So continuations are at most one
-    /// <c>Nothing</c> plus the <c>Partial</c> count, and the count is at most the units less one.
+    /// <see cref="ParagraphRenderer"/> only splits when <c>maxLines</c> is positive, and an entry
+    /// that moves to the next page leaves the entries before it as the piece that ends. The piece
+    /// that ends the list consumes at least one more. A <c>Nothing</c> the document then retries on
+    /// the next page can only come first: the document offers a page top the area the retry was
+    /// offered and the list answers the same height the same way, so the call after a
+    /// <c>Nothing</c> or a <c>Partial</c> , which is at a page top, is neither. So continuations
+    /// are at most one <c>Nothing</c> plus the <c>Partial</c> count, and the count is at most the
+    /// units less one.
     /// </remarks>
     internal long ContinuationBound(LayoutBox offered)
     {
         if (_unclamped) return 0;
+
+        // Layout's own first test: it returns Nothing before it builds an item, so an item that
+        // refuses to build is not reached either. The bound must not build one earlier.
         var area = offered.Deflate(_list.Margins);
-        if (area.Width <= 0) return 0;
+        if (area.IsEmpty) return 0;
 
         _items ??= BuildItems(area.Width);
-        var any = false;
+        if (_startItem < 0) return 0;
+
+        // Wrapping an entry here is what its layout does first, at the width it would use, and the
+        // wrap refuses nothing that BuildItems has not already refused, so it cannot raise a
+        // refusal the layout would not.
         long units = 0;
         for (var i = _startItem; i < _items.Count; i++)
-        {
-            any |= _items[i].Clamped;
             units += Math.Max(1, _items[i].Content.LineCountAt(area.Width));
-        }
-
-        return any ? units : 0;
+        return units;
     }
 
     /// <summary>
@@ -63,7 +68,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     internal ListRenderer Unclamped() => _twin ??= new ListRenderer(_list, _startItem, _partialContentOverrideAtStart)
     {
         _unclamped = true,
-        _clampSkipped = _indentClamped,
+        _clampSkipped = Math.Max(1, _indentClamped),
     };
 
     // The last answer of a continuation probe and the cursor it was made at; see
@@ -93,8 +98,9 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     // starts the list is the one that is drawn.
     private int _indentClamped;
 
-    // True on the twin Unclamped returns: BuildItems then leaves every gutter as it was before the
-    // clamp existed, so the twin lays the list out as it was laid out without it.
+    // True on the twin Unclamped returns, and on every piece a split of it hands on: BuildItems
+    // then leaves every gutter as it was before the clamp existed and Layout moves no entry, so the
+    // twin lays the list out as it was laid out without either.
     private bool _unclamped;
 
     // The number of entries the clamp would have narrowed on the list this one is the unclamped
@@ -263,8 +269,21 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                 ? LayoutResult.Nothing()
                 : contentRenderer.Layout(itemCtx);
 
-            if (markerResult.Status == LayoutResult.Outcome.Nothing
-                && contentResult.Status == LayoutResult.Outcome.Nothing)
+            // An entry is placed when its marker and its content are both placed. When one of them
+            // is not, because the marker returned Nothing or only some of its lines, or the content
+            // returned Nothing, the entry moves whole to the next page, as an entry does when
+            // neither fits, if a page of its own holds both. Where that page would not (the entry
+            // starts one, or no page holds both), nothing is gained by moving it: it keeps the part
+            // that fits, as it always has, and Draw reports the part that does not. Text that has
+            // no width is not a part that did not fit: it is discarded, as it always was, and the
+            // clamp reports the entries it can give a width.
+            var moves = !_unclamped
+                && PartUnplaced(markerResult, contentResult, contentRenderer, area.Width)
+                && !(i == _startItem && context.AtPageTop)
+                && FitsFreshPage(context, area, markerRenderer, contentRenderer);
+
+            if ((markerResult.Status == LayoutResult.Outcome.Nothing
+                && contentResult.Status == LayoutResult.Outcome.Nothing) || moves)
             {
                 // Nothing fits
                 if (i == _startItem)
@@ -278,10 +297,12 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                 var overflow = new ListRenderer(_list, i)
                 {
                     _items = _items,
+                    _unclamped = _unclamped,
                 };
                 var split = new ListRenderer(_list, _startItem, _partialContentOverrideAtStart)
                 {
                     _items = _items,
+                    _unclamped = _unclamped,
                     _indentClamped = _indentClamped,
                     _clampSkipped = _clampSkipped,
                     _endItem = i,
@@ -312,11 +333,13 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                 var overflowList = new ListRenderer(_list, i, contentOverflow)
                 {
                     _items = _items,
+                    _unclamped = _unclamped,
                 };
 
                 var split = new ListRenderer(_list, _startItem, _partialContentOverrideAtStart)
                 {
                     _items = _items,
+                    _unclamped = _unclamped,
                     _indentClamped = _indentClamped,
                     _clampSkipped = _clampSkipped,
                     _endItem = i + 1,
@@ -336,6 +359,35 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
         _offered = offered;
         _tops = tops;
         return LayoutResult.Full(_occupied);
+    }
+
+    // Whether a page of its own places both the marker and the text of an entry. A context built
+    // through the public constructor names no such page, and the answer is then no, which keeps
+    // the entry where it is.
+    private bool FitsFreshPage(
+        LayoutContext context, LayoutBox area, ParagraphRenderer marker, ParagraphRenderer content)
+    {
+        if (context.FreshPageArea is not { } fresh) return false;
+
+        var page = fresh.Deflate(_list.Margins);
+        var freshCtx = context.WithArea(new LayoutBox(area.X, page.Y, area.Width, page.Height));
+        if (marker.Layout(freshCtx).Status != LayoutResult.Outcome.Full) return false;
+
+        return content.Layout(freshCtx).Status != LayoutResult.Outcome.Nothing;
+    }
+
+    // True when exactly one side of an entry is not placed: the marker did not get all its lines,
+    // or the text got none although it has a width. Both Nothing is the case that splits the list
+    // before the entry, and text with no width is discarded, not unplaced.
+    private static bool PartUnplaced(
+        LayoutResult marker, LayoutResult content, ParagraphRenderer contentRenderer, double areaWidth)
+    {
+        var markerNothing = marker.Status == LayoutResult.Outcome.Nothing;
+        var contentNothing = content.Status == LayoutResult.Outcome.Nothing;
+        if (markerNothing && contentNothing) return false;
+
+        return marker.Status != LayoutResult.Outcome.Full
+            || (contentNothing && contentRenderer.LineCountAt(areaWidth) != 0);
     }
 
     // ── Phase 2: Draw ─────────────────────────────────────────────────────────
@@ -371,7 +423,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                 sink.Report(
                     LayoutDiagnosticCode.ListIndentClampSkipped,
                     0,
-                    "A list indent left an entry's text no width beside its gutter, and giving that text a width would have taken more page continuations than one element may use, so the list was laid out without it and that text is not drawn.",
+                    "Laying the list out with the text of its entries given a width, or with the entries that do not fit moved to the next page, would have taken more page continuations than one element may use, so the list was laid out as it was before both.",
                     _clampSkipped,
                     perElement: true);
         }
@@ -387,6 +439,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
         if (ctx.Tagged)
             listElem = new PdfStructElem("L");
 
+        var partDropped = 0;
         for (var i = _startItem; i < _endItem; i++)
         {
             var (marker, baseContent, _, _) = _items[i];
@@ -404,10 +457,18 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             var itemArea = new LayoutBox(area.X, y, area.Width, offeredHeight);
             var itemCtx = new LayoutContext(itemArea);
 
-            var markerH = isContinuation ? 0 : marker.Layout(itemCtx).OccupiedArea?.Height ?? 0;
+            var markerResult = isContinuation ? null : marker.Layout(itemCtx);
+            var markerH = markerResult?.OccupiedArea?.Height ?? 0;
             var contentResult = content.Layout(itemCtx);
+            if (markerResult is not null && PartUnplaced(markerResult, contentResult, content, area.Width))
+                partDropped++;
 
             var itemH = Math.Max(markerH, contentResult.OccupiedArea?.Height ?? 0);
+
+            // A clamped entry whose line does not fit where it is placed has its text dropped, as
+            // it was when the text had no width. Its paragraph has been wrapped, so drawing it
+            // would write an empty text object where that left none (#685).
+            var placedWithoutText = _items[i].Clamped && contentResult.Status == LayoutResult.Outcome.Nothing;
 
             if (ctx.Tagged && listElem is not null)
             {
@@ -432,7 +493,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
 
                 if (!isContinuation)
                     DrawMarker(marker, ctx);
-                content.Draw(ctx);
+                if (!placedWithoutText) content.Draw(ctx);
 
                 // Reset for safety (layout/draw may be called multiple times in pagination)
                 if (!isContinuation)
@@ -447,7 +508,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             {
                 if (!isContinuation)
                     DrawMarker(marker, ctx);
-                content.Draw(ctx);
+                if (!placedWithoutText) content.Draw(ctx);
             }
 
             y += itemH;
@@ -455,6 +516,16 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
 
         if (listElem is not null)
             ctx.RegisterStructElemTree(listElem);
+
+        // An entry reaches this count only at the top of a page that cannot hold both its marker
+        // and its text, or in the list laid out as it was before entries moved.
+        if (partDropped > 0 && ctx.Diagnostics is { } dropSink)
+            dropSink.Report(
+                LayoutDiagnosticCode.ListEntryPartDropped,
+                0,
+                "A list entry's marker or its text is taller than the room the page gives it, so the entry was placed with the part that fits and the other part is not drawn.",
+                partDropped,
+                perElement: true);
     }
 
     // A marker is text the library wrote, not the caller's: a '?' it substitutes, such as the
@@ -603,8 +674,8 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             return true;
         }
 
-        // The result is never left of markerInset, so no clamp is needed after the loop. The word is
-        // narrower than room = fl(areaWidth - markerInset), so fl(areaWidth - word) is at least
+        // The result is never left of markerInset, so no clamp is needed after the loop. The word
+        // is narrower than room = fl(areaWidth - markerInset), so fl(areaWidth - word) is at least
         // fl(areaWidth - BitDecrement(room)), which is at least markerInset: the exact difference
         // sits one spacing of room above it, and rounding moves it by at most half that. The loop
         // steps only while g is above markerInset, and a double above one steps down to it at
@@ -660,9 +731,17 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             // An indent that leaves the content no width at all discards the text and keeps the
             // marker, because ParagraphRenderer.Layout returns Nothing for a non-positive width.
             // Only that case is changed; a width that is positive but short of the widest word
-            // keeps the hard-breaking it has always had.
+            // keeps the hard-breaking it has always had. That Nothing is also why no run's style
+            // was read: the wrap and the line-height walk come after it. Giving the text a width
+            // starts them, so an entry is clamped only when every run that holds text passes the
+            // walk's checks (a finite font size, a finite colour). The content paragraph has no tab
+            // stops, so the leader and stop checks cannot fire, and a null style is refused by
+            // ListItem; a surrogate the wrap refuses in an embedded font is one WidestWord has
+            // already measured.
             var clampedGutter = gutter;
-            var clamped = !_unclamped && TryClampGutter(areaWidth, gutter, 0, widest, out clampedGutter);
+            var clamped = !_unclamped
+                && LayoutValidation.AreRunStylesAccepted(contentRuns)
+                && TryClampGutter(areaWidth, gutter, 0, widest, out clampedGutter);
             if (clamped)
             {
                 gutter = clampedGutter;
@@ -730,6 +809,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                     // content may start.
                     var clampedChildGutter = childGutter;
                     var childClamped = !_unclamped
+                        && LayoutValidation.AreRunStylesAccepted(childRuns)
                         && TryClampGutter(areaWidth, childGutter, indent, childWidest, out clampedChildGutter);
                     if (childClamped)
                     {

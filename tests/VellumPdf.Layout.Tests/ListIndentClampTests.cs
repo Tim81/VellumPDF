@@ -344,7 +344,9 @@ public sealed class ListIndentClampTests
         Assert.StartsWith("An element is too tall to fit on a single page and cannot be rendered.", ex.Message, StringComparison.Ordinal);
     }
 
-    /// <summary>The same fixtures with a marker that fits: the clamp applies, both are drawn.</summary>
+    /// <summary>
+    /// The same fixtures with a marker that fits: the clamp applies, both are drawn.
+    /// </summary>
     [Fact]
     public void TheSameEntries_withAMarkerThatFits_drawMarkerAndText()
     {

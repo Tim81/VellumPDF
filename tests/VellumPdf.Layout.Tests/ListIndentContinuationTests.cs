@@ -267,7 +267,7 @@ public sealed class ListIndentContinuationTests
         Assert.Equal(375, fellBack);
         Assert.Equal(631, keptClamp);
         Assert.Equal(1727, bothRefused);
-        Assert.Equal(671, probed);
+        Assert.Equal(701, probed);
     }
 
     // ── Full size, at the limit the library ships with ──────────────────────────
@@ -296,7 +296,8 @@ public sealed class ListIndentContinuationTests
     }
 
     // A thousand entries of fifty words, and ahead of them one entry of `first` words when that is
-    // not zero: 50,000 + first lines, so 49,999 + first continuations on a page that holds one line.
+    // not zero: 50,000 + first lines, so 49,999 + first continuations on a page that holds one
+    // line.
     private static ListElement AroundTheLimit(int first)
     {
         var list = new ListElement(ListStyle.OrderedDecimal) { Indent = 1000 };
@@ -364,5 +365,24 @@ public sealed class ListIndentContinuationTests
         Assert.Equal(30_000, run.Pages);
         Assert.Equal(1000, Assert.Single(run.Diagnostics).Count);
         Assert.Equal(LayoutDiagnosticCode.ListIndentClamped, Assert.Single(run.Diagnostics).Code);
+    }
+
+    /// <summary>
+    /// A list above the bound whose entries all carry a run style the line-height walk refuses has
+    /// no clamped entry, so the list placed without the clamp is the list as it was, and the
+    /// refusal is the limit's, as it was, not the colour's.
+    /// </summary>
+    [Fact]
+    public void AListAboveTheBound_whoseStylesAreRefused_isRefusedAtTheLimitNotByTheStyle()
+    {
+        var refused = new TextStyle { FontRef = new FontReference(Standard14.Helvetica), FontSize = 10, Color = new ColorRgb(double.NaN, 0, 0) };
+        var list = new ListElement(ListStyle.OrderedDecimal) { Indent = 1000 };
+        for (var i = 0; i < 150; i++) list.Add(new ListItem([new TextRun("W", refused)]) { Style = Helv10() });
+
+        var run = Place(new ListRenderer(list), OneLinePage, limit: 100);
+
+        Assert.NotNull(run.Error);
+        Assert.Contains("page continuations", run.Error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("colour", run.Error.Message, StringComparison.Ordinal);
     }
 }

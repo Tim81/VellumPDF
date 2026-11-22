@@ -592,26 +592,55 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     is at or above it, which on a 256 pt area is an indent from 128 pt. The item text is now in the
     content stream. These keep their output: a width that is positive but short of the widest word,
     so that a word is broken a glyph a line; an entry with no word that measures wider than zero
-    (white space only, font size 0, Symbol and ZapfDingbats), whose text is still discarded; and a
-    line taller than the area, which is not drawn at any indent. A nested list whose indent
-    reaches the area width still throws `InvalidOperationException`, with the same message.
+    (white space only, font size 0, Symbol and ZapfDingbats), whose text is still discarded; and an
+    entry with a run that holds text and has a non-finite font size or colour channel, whose text
+    is still discarded and which still saves, because a width would have made the layout read that
+    style and refuse it. An entry whose line is taller than the room it is placed in is counted in
+    the report and its line is not drawn, so the file is the one written before. A nested list
+    whose indent reaches the area width still throws `InvalidOperationException`, with the same
+    message.
   - An entry that is clamped and whose marker has no room, because its line is taller than what is
-    left of the page, is placed as it was when its text had no width: the list splits before it,
-    and at a page top the save throws the same "An element is too tall" `InvalidOperationException`.
-    A save that drew the text and dropped the marker would have been a refusal that became a save.
-  - A list whose clamped layout would pass the 50,000 page continuations one element may take is
-    placed without the clamp, so a list that saved still saves, and a list refused at that limit
-    is still refused with the same message. The decision is made by laying the list out without
-    drawing first, and only for a list that could reach the limit: one with more than 50,000
-    entries and wrapped lines, counted together. The new `LayoutDiagnosticCode.ListIndentClampSkipped`
-    (207, severity `Error`) reports it, with the number of entries the clamp would have narrowed
-    as `Count`. The text of those entries is not drawn.
+    left of the page, is not placed where it does not fit: the list splits before it, as it did
+    when the text had no width, and at a page top the save throws the same "An element is too
+    tall" `InvalidOperationException`. Mid-page the entry then moves to the next page, where its
+    text is drawn and the clamp is reported. A save that drew the text and dropped the marker would
+    have been a refusal that became a save.
+  - A list whose layout, with clamped text or with moved entries (see #685 below), would pass the
+    50,000 page continuations one element may take is placed as it was before both, so a list that
+    saved still saves, and a list refused at that limit is still refused with the same message.
+    The decision is made by laying the list out without drawing first, and only for a list whose
+    size exceeds 50,000: the sum over its entries of the larger of one and the entry's wrapped
+    lines. The new `LayoutDiagnosticCode.ListIndentClampSkipped` (207, severity `Error`) reports
+    it, with the number of entries the clamp would have narrowed as `Count`, or 1 when it would
+    have narrowed none. The text of the entries the clamp would have narrowed is not drawn.
   - A new `LayoutDiagnosticCode.ListIndentClamped` (203, severity `Error`) reports a clamped list
     once, with the number of clamped entries as `Count`. `StrictDiagnostics` refuses it, and the
     default saves. A list is reported when the document draws it from its first entry; a
     `ListRenderer` you build to start at a later entry clamps and reports nothing.
   - `ListElement.Indent` carries a "Do not pass" paragraph for an indent that leaves an entry's text
     no width: 3.0 will refuse it.
+
+- **A list entry whose marker or text did not fit what was left of a page lost that part (#685).**
+  `ListRenderer` placed an entry when either its marker or its text was placed. An entry whose
+  marker fitted the rest of a page and whose text did not was drawn there with the text missing,
+  and one whose text fitted and whose marker did not was drawn with the marker missing, or with it
+  overprinting the line above; nothing reported either. An entry is now placed when both parts
+  are: otherwise it moves whole to the next page, as it already did when neither fitted, provided
+  a page of its own holds both. A marker that wrapped into more lines than the room left counts
+  as not placed. Text that has no width, which `ListElement.Indent` describes, is not a part that
+  did not fit.
+  - **Deliberate output change**, for a document with such an entry that is not at the top of a
+    page. In the 13,000 generated documents compared with the previous commit, 193 changed this
+    way without any other report: each keeps every piece of text it had and gains the text that was
+    missing, and 4 more draw the same text at other positions. The dropped text is back on the next
+    page.
+  - An entry that no page holds, because its marker or one line of its text is taller than a page,
+    keeps the part that fits and is placed where it falls, as before, and is now reported by the new
+    `LayoutDiagnosticCode.ListEntryPartDropped` (208, severity `Error`, `Count` the number of such
+    entries in the pieces drawn). `StrictDiagnostics` refuses it, and the default saves.
+  - Moving entries adds pages, so the continuation bound now covers every list, not only a list
+    with a clamped entry, and a list that would pass the limit because of moved entries is placed
+    as it was before, with `ListIndentClampSkipped` (207).
 
 - **An element exactly as tall as the content area is placed at the top of a page (#549).** At the
   top of a page the document offered the height from the cursor to the bottom of the content area,

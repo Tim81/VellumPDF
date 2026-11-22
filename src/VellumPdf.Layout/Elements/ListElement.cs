@@ -47,10 +47,17 @@ public enum ListStyle
 /// negative indices is on <see cref="FormatMarker"/>.
 /// <para>The last item a list draws on a page keeps all of its lines: the draw pass offers each
 /// item the height the layout pass did.</para>
+/// <para>An item is placed when its marker and its text are both placed. When only one of them
+/// fits what is left of a page, or a marker that wraps gets only some of its lines, the item moves
+/// whole to the next page, as it does when neither fits. When no page holds both, because a line of
+/// the marker or of the text is taller than a page, the item keeps the part that fits and the other
+/// part is not drawn, and <see cref="LayoutDiagnosticCode.ListEntryPartDropped"/> reports it. Text
+/// that has no width is not a line that did not fit: it is discarded, as <see cref="Indent"/>
+/// describes, and is not reported by that code.</para>
 /// <para><b>Attention</b>: an item whose text holds only white space is laid out at the leading of
 /// <see cref="TextStyle.Default"/>, as on <see cref="Paragraph"/>, while its marker is laid out in
-/// the item's own style. When the marker's line does not fit where the item lands, the item is
-/// placed without its marker, and nothing reports it.</para>
+/// the item's own style, so the marker's line can be the one that does not fit where the item
+/// lands. The item then moves, as above.</para>
 /// </remarks>
 public sealed class ListElement
 {
@@ -97,16 +104,21 @@ public sealed class ListElement
     /// <para>These keep their earlier output, and are not reported: a gutter that leaves the text a
     /// width, however narrow; an entry with no word that measures wider than zero, such as one
     /// holding only white space, set at font size 0 or set in Symbol or ZapfDingbats, whose text is
-    /// discarded; and an entry whose marker has no room, which splits the list before it or, at a
-    /// page top, is refused as before. A nested list throws at the area width, as the exception
-    /// records. Below that, from half the area width, a child's text is clamped in the same way,
-    /// because the nested gutter reaches the area width at half the indent a top-level gutter
-    /// needs.</para>
+    /// discarded; and an entry with a run that holds text and has a non-finite font size or a
+    /// non-finite colour channel, whose text is discarded and which does not make the save throw,
+    /// because a width would have let the layout read that style and refuse it. Two cases are
+    /// clamped and reported but placed as before: an entry whose marker has no room on the page
+    /// splits the list before it, and the entry is then clamped on the next page, or, at the top of
+    /// a page, is refused as before; and an entry whose line is taller than the room it is placed
+    /// in is counted and its line is not drawn. A nested list throws at the area width, as the
+    /// exception records. Below that, from half the area width, a child's text is clamped in the
+    /// same way, because the nested gutter reaches the area width at half the indent a top-level
+    /// gutter needs.</para>
     /// <para>One element may take at most 50,000 page continuations; see
     /// <see cref="Rendering.DocumentRenderer"/>. Drawing the text of a clamped entry adds lines, so
     /// a list whose clamped layout could pass that limit is laid out without drawing first, and
-    /// when it would pass it the list is placed without the clamp instead: no gutter is narrowed, an
-    /// entry the clamp would have changed keeps its marker and loses its text, and
+    /// when it would pass it the list is placed without the clamp instead: no gutter is narrowed,
+    /// an entry the clamp would have changed keeps its marker and loses its text, and
     /// <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/> reports it. That list then saves,
     /// or throws the limit's <see cref="InvalidOperationException"/>, as a list with no clamp does.
     /// </para>
@@ -124,7 +136,10 @@ public sealed class ListElement
     /// has no width, as for any indent at or beyond that width. A finite negative value is not
     /// refused either.</para>
     /// <para><b>Do not pass</b> an indent that leaves an entry's text no width beside its gutter:
-    /// the text is clamped and reported, as above, and 3.0 will refuse the input.</para>
+    /// the text is given a width and reported as
+    /// <see cref="LayoutDiagnosticCode.ListIndentClamped"/> , or left out and reported as
+    /// <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/> when that would take the list past
+    /// the continuation limit, as above. 3.0 will refuse the input.</para>
     /// <para>A finite negative value can put linked item text, or a linked nested marker, at a
     /// non-finite position when the gutter taken from it, added to the list's left edge, overflows,
     /// as a nested list with an indent of -1e308 and a left margin of -1e308 does. The save then
@@ -142,10 +157,11 @@ public sealed class ListElement
     /// <exception cref="InvalidOperationException">
     /// Raised from a save rather than from this property, when a list with nested children has an
     /// indent that reaches the list's own area width, which is the page's content width narrowed by
-    /// the left and right edges of <see cref="Margins"/>, positive infinity included. A flat list at
-    /// such an indent is not refused for the indent: it is refused only where an entry's marker has
-    /// no room on a page, which no indent changes. The message reports an element too tall to fit
-    /// and names neither this property nor the list.
+    /// the left and right edges of <see cref="Margins"/> , positive infinity included. A flat list
+    /// at such an indent is not refused for the indent. It is refused where an entry's marker has
+    /// no room at the top of a page, or where the list would pass the page-continuation limit, as
+    /// at any indent. The message reports an element too tall to fit and names neither this
+    /// property nor the list.
     /// </exception>
     public double Indent { get; init; } = 20;
 
