@@ -528,6 +528,9 @@ public sealed class TableCellBreakTests : IDisposable
     [InlineData("H\tX", "H X")]
     [InlineData("H\nX", "H X")]
     [InlineData("H\r\nX", "H  X")]
+    [InlineData("H\u0085X", "H X")]
+    [InlineData("H\u2028X", "H X")]
+    [InlineData("H\u2029X", "H X")]
     public void ABandDrawsAControlSpaceAsASpace(string template, string drawn)
     {
         using var doc = ShortPage();
@@ -1035,13 +1038,17 @@ public sealed class TableCellBreakTests : IDisposable
     /// next group is judged after the table is measured again, not by the heights taken before.
     /// Group A, 30 lines tall, gives up its breaks; group B, 12 lines of three words, fits once
     /// the column it shares with the long text below has been measured again, and keeps its
-    /// breaks. Only the cell of group A is reported.
+    /// breaks. Only the cell of group A is reported. A column given the width 0 is an automatic
+    /// column, so setting both widths to 0 reads the same.
     /// </summary>
-    [Fact]
-    public void ARelievedGroupIsMeasuredAgainBeforeTheNextGroupIsJudged()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ARelievedGroupIsMeasuredAgainBeforeTheNextGroupIsJudged(bool zeroWidths)
     {
         using var doc = new Document { PageSize = new PdfRectangle(0, 0, 600, 300), Margins = new EdgeInsets(10) };
         var t = new TableElement { DefaultCellStyle = Helvetica(10) };
+        if (zeroWidths) t.SetColumnWidths(0, 0);
         t.AddRow().AddCell(new Cell(Words(30)) { RowSpan = 2 }).AddCell("x");
         t.AddRow().AddCell("y");
         t.AddRow().AddCell(new Cell(Words(12).Replace("ab", "word word word")) { RowSpan = 2 }).AddCell("z");
@@ -1061,15 +1068,18 @@ public sealed class TableCellBreakTests : IDisposable
     /// unbroken at the third step: "ab", a tab and "ab" fit a 36pt column as one word and as two
     /// words wrap one line taller, and the second header row is 44 plain lines. The two rows are
     /// 556pt with the one line and 568pt with two, and the 20pt row below fits under the first and
-    /// not under the second.
+    /// not under the second. The tab is in the first header row or in the last one: the last row
+    /// of the header is one of the rows that step reaches.
     /// </summary>
-    [Fact]
-    public void AHeaderThatATabTipsIsLaidOutUnbroken()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void AHeaderThatATabTipsIsLaidOutUnbroken(bool tabInFirstRow)
     {
         using var doc = WidePage();
         var t = Wide10(36, 36);
-        t.AddRow(isHeader: true).AddCell("ab\tab");
-        t.AddRow(isHeader: true).AddCell(Words(44, " "));
+        t.AddRow(isHeader: true).AddCell(tabInFirstRow ? "ab\tab" : Words(44, " "));
+        t.AddRow(isHeader: true).AddCell(tabInFirstRow ? Words(44, " ") : "ab\tab");
         t.AddRow().AddCell("x");
         doc.Add(t);
 
@@ -1078,7 +1088,7 @@ public sealed class TableCellBreakTests : IDisposable
 
         Assert.Equal(1, PageCount(bytes));
         Assert.Contains("abab", Texts(Content(bytes)));
-        Assert.Contains("row 0, cell 0", report.Message, StringComparison.Ordinal);
+        Assert.Contains(tabInFirstRow ? "row 0, cell 0" : "row 1, cell 0", report.Message, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -1100,6 +1110,133 @@ public sealed class TableCellBreakTests : IDisposable
 
         Assert.Contains("row 0, cell 0", report.Message, StringComparison.Ordinal);
         Assert.Contains("a b", texts);
+    }
+
+    /// <summary>
+    /// A row below the header can be the one with no room for a line: the first row under the
+    /// header holds a cell with no padding, which fits the 20pt a header of 46 lines leaves, and
+    /// the second holds a cell with 10pt of padding above and below, which does not. The header
+    /// gives up its breaks, and the table saves on one page.
+    /// </summary>
+    [Fact]
+    public void AHeaderIsRelievedWhenALaterRowHasNoRoomForALine()
+    {
+        using var doc = WidePage();
+        var t = Wide10(1900);
+        t.AddRow(isHeader: true).AddCell(Words(46));
+        t.AddRow().AddCell(new Cell("x") { Padding = new EdgeInsets(0) });
+        t.AddRow().AddCell(new Cell("y") { Padding = new EdgeInsets(10) });
+        doc.Add(t);
+
+        var bytes = Save(doc);
+
+        Assert.Equal(1, PageCount(bytes));
+        Assert.Contains(Words(46, ""), Texts(Content(bytes)));
+        Assert.Contains("row 0, cell 0", CellReport(doc)!.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A table of nothing but header rows repeats none of them, so a row of 48 lines, 584pt on a
+    /// 580pt page, is an ordinary row: it is cut between its lines over two pages and nothing is
+    /// laid out unbroken.
+    /// </summary>
+    [Fact]
+    public void ATableOfNothingButHeaderRowsIsCutLikeAnyOther()
+    {
+        using var doc = WidePage();
+        var t = Wide10(1900);
+        t.AddRow(isHeader: true).AddCell(Words(48));
+        doc.Add(t);
+
+        var bytes = Save(doc);
+
+        Assert.Equal(2, PageCount(bytes));
+        Assert.Equal(48, Texts(Content(bytes)).Count(x => x == "ab"));
+        Assert.Null(CellReport(doc));
+    }
+
+    /// <summary>
+    /// A cell that holds the line breaks is found by its place among the row's cells, not by the
+    /// column it starts in: here it is the second cell of its row and starts in the third column,
+    /// after a cell that spans two. It is laid out unbroken, measured and drawn alike, so the rows
+    /// are one line tall and the table saves on one page.
+    /// </summary>
+    [Fact]
+    public void AFallbackCellAfterAColSpanIsMeasuredAsItIsDrawn()
+    {
+        using var doc = WidePage();
+        var t = Wide10(400, 400, 1100);
+        t.AddRow().AddCell(new Cell("a") { ColSpan = 2 }).AddCell(new Cell(Words(60)) { RowSpan = 2 });
+        t.AddRow().AddCell(new Cell("c") { ColSpan = 2 });
+        doc.Add(t);
+
+        var bytes = Save(doc);
+        var content = Content(bytes);
+
+        Assert.Equal(1, PageCount(bytes));
+        Assert.Equal(3, Borders(content).Length);
+        Assert.All(Heights(content), h => Assert.True(h < 60, $"a border {h}pt tall"));
+        Assert.Contains(Words(60, ""), Texts(content));
+        Assert.Contains("row 0, cell 1", CellReport(doc)!.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Every group that has no room is judged and relieved, and one that has room keeps its
+    /// breaks: the first and the third group are 60 lines tall and the second 10. The columns are
+    /// fixed, so no group's height depends on another's.
+    /// </summary>
+    [Fact]
+    public void EveryGroupWithNoRoomInFixedColumnsIsRelievedAndAFittingOneIsNot()
+    {
+        using var doc = WidePage();
+        var t = Wide10(1500, 400);
+        foreach (var lines in new[] { 60, 10, 60 })
+        {
+            t.AddRow().AddCell(new Cell(Words(lines)) { RowSpan = 2 }).AddCell("x");
+            t.AddRow().AddCell("y");
+        }
+        doc.Add(t);
+
+        var texts = Texts(Content(Save(doc)));
+        var reports = doc.Diagnostics.Where(d => d.Code == LayoutDiagnosticCode.CellWhiteSpaceDropped).ToList();
+
+        Assert.Equal(2, reports.Count);
+        Assert.Contains(reports, r => r.Message.Contains("row 0, cell 0", StringComparison.Ordinal));
+        Assert.Contains(reports, r => r.Message.Contains("row 4, cell 0", StringComparison.Ordinal));
+        Assert.Equal(10, texts.Count(x => x == "ab"));
+    }
+
+    /// <summary>
+    /// Giving up the breaks of the groups in fixed columns costs a fixed number of measurements
+    /// of the table, not one per group. The allocations of a table of 400 groups that each give up
+    /// their breaks stay within a small multiple of those of the same table with the lines
+    /// separated by spaces, which has nothing to give up. Allocations are counted, not time,
+    /// because the same run on a loaded machine takes several times as long.
+    /// </summary>
+    [Fact]
+    public void TheCostOfGivingUpBreaksInFixedColumnsDoesNotGrowWithEachGroup()
+    {
+        static long Allocated(int groups, string separator)
+        {
+            using var doc = WidePage();
+            var t = Wide10(1500, 400);
+            for (var i = 0; i < groups; i++)
+            {
+                t.AddRow().AddCell(new Cell(Words(60, separator)) { RowSpan = 2 }).AddCell("x");
+                t.AddRow().AddCell("y");
+            }
+            doc.Add(t);
+            var before = GC.GetAllocatedBytesForCurrentThread();
+            Save(doc);
+            return GC.GetAllocatedBytesForCurrentThread() - before;
+        }
+
+        Allocated(10, "\n");
+        Allocated(10, " ");
+        var withBreaks = Allocated(400, "\n");
+        var withSpaces = Allocated(400, " ");
+
+        Assert.True(withBreaks < 5 * withSpaces, $"{withBreaks} bytes against {withSpaces} without breaks");
     }
 
     /// <summary>
