@@ -17,8 +17,8 @@ namespace VellumPdf.Conformance.Rules.Structure;
 /// veraPDF's PDF/A-2 profile, and ISO 19005-2 was not held when it was written. The 2026-11-21
 /// audit against the clause text (#418) found it narrower: 6.1.8 binds font, colourant and
 /// structure type names file-wide, and this rule reaches fonts and colour spaces only through a
-/// page's own <c>/Resources</c> (not through form, pattern or annotation resources, nested colour
-/// spaces or image colour spaces).
+/// page's own or inherited <c>/Resources</c> (not through form, pattern or annotation resources,
+/// nested colour spaces or image colour spaces).
 /// </para>
 /// <para>
 /// The parser (<see cref="VellumPdf.Reader.PdfDocumentReader"/>) decodes each PDF name's

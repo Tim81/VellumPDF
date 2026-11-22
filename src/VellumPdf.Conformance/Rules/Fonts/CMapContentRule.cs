@@ -44,15 +44,18 @@ namespace VellumPdf.Conformance.Rules.Fonts;
 /// Cites ISO 19005-2:2011 §6.2.11.3.3. Its behaviour was checked against veraPDF's PDF/A-2 profile,
 /// and ISO 19005-2 was not held when it was written. It was cross-validated against veraPDF 1.30.2
 /// via oracle probes. The 2026-11-21 audit against the clause text (#418) found agreement on what
-/// the two checks require, and the scope narrower. The probes were:
+/// the WMode check requires and the scope narrower. The usecmap check is narrower than veraPDF's:
+/// it reads the <c>usecmap</c> operator, and veraPDF reads the CMap stream's <c>/UseCMap</c> key
+/// (see the last probe). The probes were:
 /// <list type="bullet">
 ///   <item>WMode dict=1/prog=0 and dict=0/prog=1 → FAIL on <c>CMapFile</c> object (confirmed).</item>
 ///   <item>WMode both=1, both absent (=0), dict=0/prog=absent (=0) → PASS (confirmed).</item>
 ///   <item>WMode mismatch on an unused font → PASS (confirms scoping to used fonts).</item>
 ///   <item>§6.2.11.3.3-3 verified via the veraPDF profile XML (object <c>PDReferencedCMap</c>,
-///   test checks <c>CMapName</c> against Table 118 list); usecmap oracle fixtures are impractical
-///   (veraPDF requires a fully resolved <c>PDReferencedCMap</c> structure; in-process tests
-///   cover the rule directly).</item>
+///   test checks <c>CMapName</c> against Table 118 list). In-process tests cover the operator
+///   path. A later hand-built file whose CMap stream carries <c>/UseCMap</c> naming another CMap
+///   stream fails 6.2.11.3.3-3 in veraPDF 1.30.2 and 1.30.4, on the page and inside a form, and
+///   passes here.</item>
 /// </list>
 /// </para>
 /// </remarks>

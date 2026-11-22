@@ -245,7 +245,8 @@ public static class ConformanceCatalog
             "/ToUnicode passes here and fails veraPDF, and so does an Identity-H font with no " +
             "/ToUnicode shown inside a form XObject (#418).",
         ["6.2.11.8-1"] =
-            "A .notdef glyph shown in text rendering mode 3 passes here and fails veraPDF (#418).",
+            "A .notdef glyph shown in text rendering mode 3 passes here and fails veraPDF, and " +
+            "so does code 0 shown in text rendering mode 0 inside a form XObject (#418).",
         ["6.3.1-1"] = "An annotation of an unknown subtype passes here and fails veraPDF (#418).",
         ["6.3.3-1"] =
             "A rectangle with one zero dimension is exempt from the appearance requirement here, " +
@@ -272,9 +273,9 @@ public static class ConformanceCatalog
         // veraPDF failed both and this library failed only the page. Type 3 glyph procedures,
         // patterns and annotation appearances were not probed.
         ["6.1.8-1"] =
-            "Font and colourant names are read from the page's own resources only: a font whose " +
-            "/BaseFont is not valid UTF-8, shown inside a form XObject, passes here and fails " +
-            "veraPDF (#418).",
+            "Font and colourant names are read from the page's resources only, own or inherited: " +
+            "a font whose /BaseFont is not valid UTF-8, shown inside a form XObject, passes here " +
+            "and fails veraPDF (#418).",
         ["6.1.13-8"] =
             "Only page content is checked for graphics-state nesting: 30 nested q operators " +
             "inside a form XObject pass here and fail veraPDF (#418).",
@@ -334,6 +335,14 @@ public static class ConformanceCatalog
             "Only JPXDecode images that page content draws directly are checked: one with bit " +
             "depths 8, 8 and 7, drawn inside a form XObject, passes here and fails veraPDF " +
             "(#418).",
+        ["6.2.8-4"] =
+            "Only images that page content draws directly are checked: an image with " +
+            "/BitsPerComponent 3, drawn inside a form XObject, passes here and fails veraPDF " +
+            "(#418).",
+        ["6.2.11.3.3-3"] =
+            "Only the usecmap operator is read, not the CMap stream's /UseCMap key: a /UseCMap " +
+            "naming a CMap stream outside the predefined set passes here, on the page and " +
+            "inside a form XObject, and fails veraPDF (#418).",
         ["6.2.9-1"] =
             "Only forms that page content draws directly are checked: a form with /OPI, /PS or " +
             "/Subtype2 /PS that is drawn from inside another form passes here and fails veraPDF " +
@@ -418,15 +427,18 @@ public static class ConformanceCatalog
             "whose program has several cmap subtables and no (3,0), shown inside a form XObject, " +
             "passes here and fails veraPDF (#418).",
         // 6.1.8-1 moved to Implemented (NameUtf8Rule: CheckStructureTypeNames now delegates to
+        //   6.1.8-1 is now Partial, see PdfAPartial.
         //   StructureTree.Analyze for a full-depth walk; oracle fixture pdfa2b-deep-struct-invalid-utf8
         //   confirmed veraPDF fires on the 2nd-level /S name; pdfa2b-deep-struct-valid-utf8 FP-safe).
         // 6.2.3-1 moved to Implemented (META batch, 2026-07-02): OutputIntentRule now validates the
+        //   6.2.3-1 is now Partial, see PdfAPartial.
         //   DestOutputProfile ICC header device class (prtr/mntr/scnr/spac) and major version < 5, in
         //   addition to the acsp signature and /N; positive-knowledge/FP-safe (fires only on a
         //   read device-class tag outside the permitted four or version >= 5), mirroring §6.2.4.2-1.
         // 6.2.4.2-2 moved to Implemented (Batch N3 continued, 2026-07-02): overprint state threaded
         //   into Form XObjects at every Do site; see PdfAOutOfScope comment for full detail.
         // 6.2.4.3-2/-3/-4 moved to Implemented (COL batch, 2026-07-02): DocumentDeviceColourTypes now
+        //   6.2.4.3-2, 6.2.4.3-3, 6.2.4.3-4 are now Partial, see PdfAPartial.
         //   also detects device colour reached via image XObject /ColorSpace entries (drawn images from
         //   page content and reachable non-page streams) and via the /Alternate space of named colour
         //   spaces selected by cs/CS operators (Separation, DeviceN, uncoloured Pattern base); the
@@ -453,6 +465,7 @@ public static class ConformanceCatalog
         //   fixtures: pdfa2b-inherited-resource-pattern-violation (VIOLATING) and
         //   pdfa2b-inherited-resource-pattern-compliant (COMPLIANT). 2026-07-02.
         // 6.2.11.4.1-1/-2 and 6.2.11.5-1 moved to Implemented (Wave 2a+2b, 2026-07-02): glyph presence
+        //   6.2.11.4.1-1, 6.2.11.4.1-2, 6.2.11.5-1 are now Partial, see PdfAPartial.
         //   and width are checked across every embedded font path — CIDFontType2 (Identity or stream
         //   CIDToGIDMap), Type0 with an embedded non-Identity CMap, simple non-symbolic TrueType,
         //   CIDFontType0/CFF (Type2 charstring width interpreter + FDSelect/FDArray), and simple Type1
@@ -472,6 +485,7 @@ public static class ConformanceCatalog
         // 6.6.2.3.3-15 moved to Implemented: pdfaType:field rdf:Seq check + null/pdfaType
         //   prefix check added (same null-prefix leniency, probe-confirmed 2026-06-23).
         // 6.6.2.3.1-2 moved to Implemented: clean-room predefined property type table added for
+        //   6.6.2.3.1-2 is now Partial, see PdfAPartial.
         //   dc:, xmp:, pdf:, and pdfaid: namespaces (XMP Spec 2005 §8); FP-safe by construction —
         //   any property not in the table is skipped (unknown → no finding).
         // 6.6.2.3.3-8 moved to Implemented (META batch, 2026-07-02): ExtensionSchemaRule now enforces
@@ -524,6 +538,7 @@ public static class ConformanceCatalog
         // 6.7.3.4-1/-2/-3 moved to Implemented (A2aStructureTypeRule: structure-tree walker —
         //   non-standard type unmapped, circular role-map, standard type remapped to non-standard).
         // 6.7.4-1 moved to Implemented (A2aLangSyntaxRule: catalog /Lang + struct-elem /Lang syntax).
+        //   6.7.4-1 is now Partial, see PdfAPartial.
     };
 
     // PDF/A checks deliberately not implemented in-process (tracked in follow-up issues; excluded from
@@ -696,7 +711,8 @@ public static class ConformanceCatalog
             "fonts are not (#428).",
         ["7.21.5-1"] =
             "Only Identity CIDFontType2 fonts are examined, and a width mismatch of 2 units " +
-            "passes where 7.21.5 allows at most 1 (#428).",
+            "passes where 7.21.5 allows at most 1. A shown Type 1 simple font with /Widths [278] " +
+            "for code 32 passes here and fails veraPDF (#428).",
         ["7.20-1"] =
             "Only forms that page content draws directly are checked: a /Ref in a form drawn " +
             "from inside another form passes here and fails veraPDF (#428).",
@@ -827,10 +843,12 @@ public static class ConformanceCatalog
 
         // §7.1 artifact/tagging rules — Batch C2:
         // 7.1-1 and 7.1-2 moved to PdfUaImplemented (Batch C2 — UaArtifactTaggingRule: Artifact
+        //   7.1-1, 7.1-2 are now Partial, see PdfUaPartial.
         //   BDC inside struct-linked ancestor; non-Artifact BDC with MCID in ParentTree inside
         //   Artifact ancestor. MarkedContentSequence extended with HasArtifactAncestor and
         //   AncestorMcid; empirically verified against veraPDF 1.30.2 probe series).
         // 7.1-3 moved to PdfUaImplemented (Batch C3 — UaSimpleContentItemRule: SESimpleContentItem
+        //   7.1-3 is now Partial, see PdfUaPartial.
         //   operator set Tj/TJ/'/", S/s/f/F/f*/B/B*/b/b*, EI (at ID), image-Do, sh; fires when
         //   EffectiveMcid==null AND !IsInsideArtifact; verified FP-free against veraPDF 1.30.2
         //   battery: tagged-text, named-ref-BDC, artifact+decoration, image-figure, path-in-tagged,
@@ -838,23 +856,34 @@ public static class ConformanceCatalog
 
         // §7.21 font deferred notes — Batch A3 assessment:
         // 7.21.4.1-1 moved to PdfUaImplemented (Batch A5a — UaFontEmbeddingRule, rendering-mode-scoped).
+        //   7.21.4.1-1 is now Partial, see PdfUaPartial.
         // 7.21.4.1-2 moved to PdfUaImplemented (Batch A5c — UaGlyphPresenceRule, Tr-3-exempt).
+        //   7.21.4.1-2 is now Partial, see PdfUaPartial.
         // 7.21.5-1 moved to PdfUaImplemented (Batch A5d — UaGlyphWidthRule, Identity-H CIDFontType2;
+        //   7.21.5-1 is now Partial, see PdfUaPartial.
         //   Tr-3-exempt; cross-validated against veraPDF 1.30.2: violation fires, unused and Tr-3 silent).
         // 7.21.3.1-1 moved to PdfUaPartial (Batch A4 — UaCidSystemInfoRule).
         // 7.21.3.3-1/-2/-3 moved to PdfUaImplemented (Batch A4 — UaCMapRule).
+        //   7.21.3.3-1, 7.21.3.3-2, 7.21.3.3-3 are now Partial, see PdfUaPartial.
         // 7.21.4.2-1 moved to PdfUaImplemented (Batch A4 — UaType1CharSetRule).
+        //   7.21.4.2-1 is now Partial, see PdfUaPartial.
         // 7.21.4.2-2 moved to PdfUaImplemented (Batch A4 — UaCidSetRule).
+        //   7.21.4.2-2 is now Partial, see PdfUaPartial.
         // 7.21.6-1/-2/-4 moved to PdfUaImplemented (Batch A6 — UaTrueTypeCmapRule: non-symbolic TrueType
+        //   7.21.6-1, 7.21.6-2, 7.21.6-4 are now Partial, see PdfUaPartial.
         //   cmap structure and Differences-AGL compliance; verified FP-free against veraPDF 1.30.2).
         // 7.21.7-1 moved to PdfUaImplemented (UaToUnicodeCharMappingRule: used simple-font (Type1/TrueType)
+        //   7.21.7-1 is now Partial, see PdfUaPartial.
         //   codes must have a Unicode value by /ToUnicode or by AGL glyph-name derivation (base encoding +
         //   /Differences, incl. uniXXXX/uXXXXXX). Fires only when a used code has a glyph name that is
         //   non-AGL-resolvable and no /ToUnicode maps it; composite Type0 fonts and no-/Encoding fonts are
         //   skipped (FP-safe under-detection of veraPDF's CID/program-encoding derivation).
         // 7.21.7-2 moved to PdfUaImplemented (Batch A5b — UaToUnicodeForbiddenRule, shown-glyph-scoped).
+        //   7.21.7-2 is now Partial, see PdfUaPartial.
         // 7.21.8-1 moved to PdfUaImplemented (Batch A5b — UaNotdefGlyphRule, Identity-H scope).
+        //   7.21.8-1 is now Partial, see PdfUaPartial.
         // 7.21.4.1-2 moved to PdfUaImplemented (Batch A5c — UaGlyphPresenceRule, Tr-3-exempt).
+        //   7.21.4.1-2 is now Partial, see PdfUaPartial.
         // 7.1-5 moved to PdfUaImplemented (Batch B9 — UaNonStandardTypeRule, non-standard type
         //   unmapped; standard-type set empirically verified complete against veraPDF 1.30.2).
         // 7.1-6 moved to PdfUaImplemented (Batch B1 — UaRoleMapRule, circular role-map).
@@ -903,14 +932,17 @@ public static class ConformanceCatalog
         //   not skip; tracks previous heading level in document order; fires when n > prevLevel + 1;
         //   prevLevel starts at 0; empirically verified against veraPDF 1.30.2 probe series).
         // 7.5-1/-2 moved to PdfUaImplemented (Batch B10 — UaTableHeaderRule: TD connected-header
+        //   7.5-1 is now Partial, see PdfUaPartial.
         //   check; scoped TH in same table satisfies all TDs; explicit /Headers resolved against TH
         //   /ID set; no-TH table passes (undefined, not false); empirically verified against
         //   veraPDF 1.30.2 probe series).
         // 7.2-30/-31/-32/-34 moved to PdfUaImplemented (Batch C1 — UaMarkedContentLangRule: /Span
+        //   7.2-30, 7.2-31, 7.2-32, 7.2-34 are now Partial, see PdfUaPartial.
         //   BDC with /ActualText, /Alt, /E, and text-show operators require determinable language;
         //   gContainsCatalogLang short-circuit; content-stream BMC/BDC/EMC stack + inline-dict
         //   property parser added to ContentStreamUsage; veraPDF 1.30.2 probe confirmed).
         // 7.1-1/-2 moved to PdfUaImplemented (Batch C2 — UaArtifactTaggingRule: Artifact BDC inside
+        //   7.1-1, 7.1-2 are now Partial, see PdfUaPartial.
         //   struct-linked ancestor; non-Artifact BDC with MCID in ParentTree inside Artifact ancestor;
         //   MarkedContentSequence extended with HasArtifactAncestor + AncestorMcid; verified against
         //   veraPDF 1.30.2 probe series).

@@ -15,11 +15,12 @@ namespace VellumPdf.Conformance;
 /// </summary>
 /// <remarks>
 /// Unless its remarks say otherwise, a PDF/A-2 or PDF/UA-1 rule was written from veraPDF's
-/// profiles, not from the text of ISO 19005-2 or ISO 14289-1, and is checked against veraPDF. A
-/// clean result means no rule reported a finding, which is not a statement that the file
-/// conforms to the standard: audits on
-/// 2026-11-21 (#418, #428) found many rules narrower than the clause text. A rule's remarks say
-/// which clause it cites and where the audit found it narrower or broader.
+/// profiles, not from the text of ISO 19005-2 or ISO 14289-1. It was checked against veraPDF's
+/// verdict on the oracle fixtures that exercise it, and a rule that no fixture fires was checked
+/// against veraPDF's profile only. A clean result means no rule reported a finding, which is
+/// not a statement that the file conforms to the standard: audits on 2026-11-21 (#418, #428)
+/// found many rules narrower than the clause text. A rule's remarks say which clause it cites
+/// and where the audit found it narrower or broader.
 /// </remarks>
 public static class PdfPreflight
 {

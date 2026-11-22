@@ -20,12 +20,11 @@ namespace VellumPdf.Conformance.Rules.Structure;
 /// the 32767-byte limit, which no clause grants. Broader: a name's length is measured as the UTF-8
 /// length of its Latin-1 decoded text, so every byte of 0x80 or more counts twice and a 69-byte
 /// name made only of such bytes is refused. The scalar limits are checked by walking every indirect
-/// object's value graph;
-/// the indirect-object count comes from the cross-reference table; and each page-boundary box
-/// (MediaBox, CropBox, BleedBox, TrimBox, ArtBox) is checked to have sides in the 3–14400 unit
-/// range (§6.1.13 t11). The content-stream q/Q nesting limit (t8), the CMap CID maximum (t10) and
-/// the
-/// DeviceN colourant limit (t9) are not checked here: they are implemented in <see
+/// object's value graph; the indirect-object count comes from the cross-reference table; and
+/// each page-boundary box (MediaBox, CropBox, BleedBox, TrimBox, ArtBox) is checked to have sides
+/// in the 3–14400 unit range (§6.1.13 t11). The content-stream q/Q nesting limit (t8), the CMap
+/// CID maximum (t10) and the DeviceN colourant limit (t9) are not checked here: they are
+/// implemented in <see
 /// cref="VellumPdf.Conformance.Rules.Graphics.GraphicsStateNestingRule"/>, <see
 /// cref="VellumPdf.Conformance.Rules.Fonts.CidRangeRule"/> and <see
 /// cref="VellumPdf.Conformance.Rules.Colour.DeviceNColorantRule"/>.

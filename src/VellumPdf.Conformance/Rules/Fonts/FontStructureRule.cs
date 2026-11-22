@@ -22,11 +22,11 @@ namespace VellumPdf.Conformance.Rules.Fonts;
 /// Cites ISO 19005-2:2011, 6.2.11.2 / 6.2.11.3.1 / 6.2.11.3.2 / 6.2.11.6 and ISO 32000-1:2008,
 /// 9.6–9.7. Its behaviour was checked against veraPDF's PDF/A-2 profile, and ISO 19005-2 was not
 /// held when it was written. The 2026-11-21 audit against the clause text (#418) found it both
-/// broader and narrower. Broader: the CIDSystemInfo Supplement comparison is inverted (6.2.11.3.1
+/// broader and narrower. Broader: CIDSet bits beyond the glyph count are refused, which rests on
+/// ISO 32000-1 Table 124. Narrower: the CIDSystemInfo Supplement comparison is inverted (6.2.11.3.1
 /// requires the CIDFont's Supplement to be greater than or equal to the CMap's; the inverted test
 /// also accepts a CIDFont Supplement below the CMap's, as the PDF/UA-1 twin of this check does on a
-/// hand-built file, #428), and CIDSet bits
-/// beyond the glyph count are refused, which rests on ISO 32000-1 Table 124. Narrower: an embedded
+/// hand-built file, #428), an embedded
 /// CMap named Identity is exempt, predefined non-Identity CMaps are skipped, CharSet and CIDSet are
 /// checked for subset fonts only, <c>/CIDToGIDMap</c> is checked only for presence, and there is no
 /// <c>/Differences</c> check for non-symbolic TrueType. Several checks were cross-validated against

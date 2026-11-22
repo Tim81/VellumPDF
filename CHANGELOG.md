@@ -1240,25 +1240,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   against, and where the audit found it narrower or broader than the clause or citing another
   clause. `DocumentCatalogRule` was in neither audit and says so. A rule whose reported id or
   clause is wrong says so and points to #418 or #428; the ids and clauses themselves are not
-  changed. The exceptions say so in their remarks, and the READMEs and `ConformanceCatalog` name
-  them: `FontEmbeddingRule` and `ActionRule` were re-derived from the clause text under #418,
-  `UaEncryptionPermissionsRule` was authored from ISO 32000-2, and `A2aContentItemTaggingRule` has
-  no veraPDF counterpart.
-  - **Catalog status.** 59 PDF/A-2 clause tests and 25 PDF/UA-1 tests are now `Partial`, each with
-    a note naming the construct that passes here and fails veraPDF. 17 PDF/A-2 tests and 10
-    PDF/UA-1 tests come from the audits' own probes: six PDF/UA-1 tests whose rule examines only
-    some font forms (`7.21.4.1-1`, `7.21.4.1-2`, `7.21.5-1`, `7.21.7-1`, `7.21.7-2`, `7.21.8-1`),
-    and `7.20-1`, `7.21.3.3-3`, `7.5-1` and `7.1-3`. The other 42 PDF/A-2 tests and 15 PDF/UA-1
-    tests come from a sweep of the rules whose resource walk starts at the page's own resources.
-    Each probe
-    put the violating construct inside a form XObject that page content draws and, as a control,
-    on the page itself: veraPDF 1.30.2 and 1.30.4 failed both files and the rule failed only the
-    page. Type 3 glyph procedures, tiling patterns and annotation appearance streams were not
-    probed. The sweep also found rules that already reach forms (`6.2.2-1`, `6.1.10-1`,
-    `6.2.4.4-2`) and two PDF/UA-1 font clauses, `7.21.4.1-2` and `7.21.5-1`, that veraPDF does
-    not fail inside a form either. `6.2.10-2`, which no rule checks (`BlendModeRule` checks the
-    blend mode, not the page group colour space), and `6.2.11.7.3-1`, which no rule implements,
-    are now `Deferred`. `ConformanceCatalog.Coverage` therefore reports 78.7%, 78.6% and 78.6% for
+  changed. The exceptions say so in their remarks: `FontEmbeddingRule` and `ActionRule` were
+  re-derived from the clause text under #418, `UaEncryptionPermissionsRule` was authored from
+  ISO 32000-2, and `A2aContentItemTaggingRule` has no veraPDF counterpart. The `ConformanceCatalog`
+  remarks name all four, the package README names the two re-derived rules by description, and the
+  repository README says only that exceptions exist and points to the remarks.
+  - **Catalog status.** 61 PDF/A-2 clause tests and 25 PDF/UA-1 tests are now `Partial`. Most
+    notes name a construct that passes here and fails veraPDF. The exceptions are `7.21.4.1-2`,
+    whose note says only that simple and CFF fonts are not examined, and the three older entries
+    that record an infeasible residual (#139). 17 PDF/A-2 tests and 10 PDF/UA-1 tests come from
+    the audits. The audits probed the 17 PDF/A-2 tests and eight of the 10 PDF/UA-1 tests
+    (`7.21.4.1-1`, `7.21.7-1`, `7.21.7-2`, `7.21.8-1`, `7.20-1`, `7.21.3.3-3`, `7.5-1` and
+    `7.1-3`); they read `7.21.4.1-2` and `7.21.5-1` from the source without probing them. For
+    `7.21.5-1` a later probe found a construct: a shown Type 1 font with `/Widths [278]` for code
+    32 passes here and fails veraPDF 1.30.2 and 1.30.4. The other 44 PDF/A-2 tests and 15 PDF/UA-1 tests come from a
+    sweep of the rules whose resource walk starts at the page's own resources. Each probe put the
+    violating construct inside a form XObject that page content draws and, as a control, on the
+    page itself: veraPDF 1.30.2 and 1.30.4 failed both files and the rule failed only the page.
+    Type 3 glyph procedures, tiling patterns and annotation appearance streams were not probed.
+    The sweep also found clause tests whose rules already reach forms (`6.2.2-1`, `6.1.10-1`,
+    `6.2.4.4-2`) and two PDF/UA-1 font tests, `7.21.4.1-2` and `7.21.5-1`, that veraPDF does not
+    fail inside a form either. `6.2.10-2`, which no rule checks (`BlendModeRule` checks the blend
+    mode, not the page group colour space), and `6.2.11.7.3-1`, which no rule implements, are now
+    `Deferred`. `ConformanceCatalog.Coverage` therefore reports 78.0%, 77.9% and 78.0% for
     PDF/A-2b, 2u and 2a (99.3% at each level before) and 87.7% for PDF/UA-1 (99.5% before), each
     computed from `Coverage(...).Percent` on the built assembly. The denominator leaves out the
     one PDF/A-2 check marked `OutOfScope` (`6.8-5`); PDF/UA-1 has none. The READMEs' "veraPDF

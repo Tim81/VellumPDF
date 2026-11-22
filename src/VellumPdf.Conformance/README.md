@@ -8,7 +8,7 @@ In-process PDF/A and PDF/UA preflight validation for **[VellumPdf](https://githu
 - Validates PDF/A-2b/2u/2a and PDF/UA-1.
 - Returns machine-readable assertions: rule id, ISO clause, severity, and object reference.
 - BCL-only, AOT- and trim-ready — rules are registered explicitly, with no reflection.
-- Coverage is catalogued per veraPDF check: `ConformanceCatalog` marks 78.6 to 78.7% of veraPDF's PDF/A-2b/2u/2a checks and 87.7% of its PDF/UA-1 checks Implemented, counting a Partial check as half and leaving out the one PDF/A-2 check marked OutOfScope. That measures which veraPDF checks a rule covers, not agreement with the text of the standards.
+- Coverage is catalogued per veraPDF check: `ConformanceCatalog` marks 77.9 to 78.0% of veraPDF's PDF/A-2b/2u/2a checks and 87.7% of its PDF/UA-1 checks Implemented, counting a Partial check as half and leaving out the one PDF/A-2 check marked OutOfScope. That measures which veraPDF checks a rule covers, not agreement with the text of the standards.
 
 > **Stable as of 2.0.** The public API is locked and analyzer-enforced. Rule coverage is
 > still growing: the checks the catalog marks Partial or Deferred, and the rules found narrower
