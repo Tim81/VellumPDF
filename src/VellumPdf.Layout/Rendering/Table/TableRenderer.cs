@@ -271,7 +271,14 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             var decided = key is not null && _decidedFor is { } was && was.Equals(key.Value);
             if (!decided) _oneLine = null;
 
-            ResolveGrid(area.Width, style);
+            // A decision that reads some cells unbroken measures the table once per step, so it
+            // keeps what each cell measures: nothing else depends on the cells' text, and the
+            // cache is dropped with the decision. A table that reads no cell unbroken measures
+            // once.
+            var passesNeeded = !decided && fresh is not null && AnyControlSpace(rows);
+            var cache = passesNeeded ? new TableMeasureCache(rows.Count) : null;
+
+            ResolveGrid(area.Width, style, cache);
 
             // Rows that cannot be cut between their lines must not be left without room on a page
             // by reading a cell's line breaks, or its other control white space as spaces;
@@ -281,14 +288,14 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             // no second pass. Each pass costs one measurement of the whole table, so after
             // MaxPassesBeforeBatching of them a pass no longer stops at the first group step that
             // changes other groups' heights. A step in the header rows still ends it.
-            if (!decided && fresh is not null && AnyControlSpace(rows))
+            if (passesNeeded)
             {
                 var passes = 0;
-                while (CellsToReadAsOneLine(fresh, style, ++passes > MaxPassesBeforeBatching) is { } more)
+                while (CellsToReadAsOneLine(fresh!, style, ++passes > MaxPassesBeforeBatching) is { } more)
                 {
                     _oneLine ??= [];
                     _oneLine.UnionWith(more);
-                    ResolveGrid(area.Width, style);
+                    ResolveGrid(area.Width, style, cache);
                 }
             }
             _decidedFor = key;
@@ -413,10 +420,11 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     /// Resolves the column widths and every row's height, reading the breaks of the cells in
     /// <c>_oneLine</c> unbroken. The checks run in the order the exceptions are documented in.
     /// </summary>
-    private void ResolveGrid(double areaWidth, TextStyle style)
+    private void ResolveGrid(double areaWidth, TextStyle style, TableMeasureCache? cache)
     {
+        if (TableMeasureProbe.Current is { } probe) probe.Passes++;
         var rows = _table.Rows;
-        var grid = new TableGridResolver { OneLineCells = _oneLine };
+        var grid = new TableGridResolver { OneLineCells = _oneLine, Cache = cache };
         grid.Resolve(_table, areaWidth);
         _colWidths = grid.ColWidths;
 
