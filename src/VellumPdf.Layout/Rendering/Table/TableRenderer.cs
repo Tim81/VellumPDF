@@ -1032,14 +1032,23 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     }
 
     /// <summary>
-    /// The runs of rows held together by <see cref="Cell.RowSpan"/> declarations, from the first
-    /// data row on, merged where one reaches into another. The same runs as
-    /// <see cref="SpanGroupOf"/> finds one at a time, found in one pass over the rows.
+    /// The runs of rows that the layout keeps whole, which the decision judges one at a time: the
+    /// runs of rows held together by <see cref="Cell.RowSpan"/> declarations in the data rows,
+    /// merged where one reaches into another, and each data row that lies under a span declared in
+    /// a header row. The same runs as <see cref="BuildRowspanBlockedSet"/> never splits, found in
+    /// one pass over the rows, in order.
     /// </summary>
+    /// <remarks>
+    /// A span declared in a header row holds the data rows under it together as far as the cut is
+    /// concerned (<see cref="InSpanGroup"/>), but the layout may still end a page between them, so
+    /// each of those rows is judged alone: a run of them is not a group, and counting one as a
+    /// group made rows that fit a page on their own give up their breaks.
+    /// </remarks>
     private List<(int First, int Last)> SpanGroups(int firstDataRow)
     {
         var rows = _table.Rows;
         var groups = new List<(int First, int Last)>();
+        var headerReach = -1;
         for (var q = 0; q < rows.Count; q++)
         {
             var reach = 1;
@@ -1048,15 +1057,35 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             if (reach <= 1) continue;
 
             var end = (int)Math.Min((long)q + reach - 1, rows.Count - 1);
-            var start = Math.Max(q, firstDataRow);
-            if (end < start) continue;
+            if (q < firstDataRow)
+            {
+                headerReach = Math.Max(headerReach, end);
+                continue;
+            }
 
-            if (groups.Count > 0 && start <= groups[^1].Last)
+            if (groups.Count > 0 && q <= groups[^1].Last)
                 groups[^1] = (groups[^1].First, Math.Max(groups[^1].Last, end));
             else
-                groups.Add((start, end));
+                groups.Add((q, end));
         }
-        return groups;
+
+        if (headerReach < firstDataRow) return groups;
+
+        // The data rows under a header span that no group holds, each alone, in order with the rest.
+        var all = new List<(int First, int Last)>(groups.Count + headerReach - firstDataRow + 1);
+        var next = 0;
+        for (var r = firstDataRow; r <= headerReach; r++)
+        {
+            while (next < groups.Count && groups[next].Last < r) all.Add(groups[next++]);
+            if (next < groups.Count && groups[next].First <= r)
+            {
+                r = groups[next].Last;
+                continue;
+            }
+            all.Add((r, r));
+        }
+        while (next < groups.Count) all.Add(groups[next++]);
+        return all;
     }
 
     // ── Cutting a row between its lines ──

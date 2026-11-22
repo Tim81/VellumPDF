@@ -164,6 +164,98 @@ public sealed class TableLastStepTests
         Assert.True(PageCount(bytes) > 1);
     }
 
+    // ── A RowSpan declared in a header row ──────────────────────────────────────
+
+    private static string Lines(int n) => string.Join("\n", Enumerable.Repeat("ab", n));
+
+    /// <summary>
+    /// A header row of 20pt whose first cell spans the two data rows under it, 152pt each on a
+    /// page that leaves 280pt. Each row fits on its own under the header and the two together do
+    /// not. The layout ends a page between them, because it keeps only a span that a data row
+    /// declares whole, so neither row gives up its breaks.
+    /// </summary>
+    [Fact]
+    public void RowsUnderAHeaderSpanAreJudgedOneAtATime()
+    {
+        using var doc = SmallPage();
+        var t = new TableElement { DefaultCellStyle = Helvetica() }.SetColumnWidths(100, 100);
+        t.AddRow(true).AddCell(new Cell("h") { RowSpan = 3 }).AddCell("H");
+        t.AddRow().AddCell(Lines(12));
+        t.AddRow().AddCell(Lines(12));
+        doc.Add(t);
+
+        var bytes = Save(doc);
+
+        Assert.Empty(Dropped(doc));
+        Assert.Equal(2, PageCount(bytes));
+    }
+
+    /// <summary>
+    /// A row under a header span that is too tall for a page under the header with its breaks, and
+    /// fits without them, gives them up, and the row beside it, which fits, keeps its own.
+    /// </summary>
+    [Fact]
+    public void ARowUnderAHeaderSpanThatHasNoRoomGivesUpItsBreaks()
+    {
+        using var doc = SmallPage();
+        var t = new TableElement { DefaultCellStyle = Helvetica() }.SetColumnWidths(100, 100);
+        t.AddRow(true).AddCell(new Cell("h") { RowSpan = 3 }).AddCell("H");
+        t.AddRow().AddCell(Lines(25));
+        t.AddRow().AddCell(Lines(3));
+        doc.Add(t);
+
+        Save(doc);
+
+        Assert.Equal(["row 1, cell 0"], Dropped(doc));
+    }
+
+    /// <summary>
+    /// The shape of a span declared in the last header row over two data rows that each fit a page
+    /// on their own, with a cell of an automatic column in a row of no group that holds a break.
+    /// Nothing has no room, so no cell gives up its breaks; counting the two rows as a group, the
+    /// last step took the cells of the automatic column in the rows below as well.
+    /// </summary>
+    [Theory]
+    [InlineData(18)]
+    [InlineData(24)]
+    [InlineData(26)]
+    [InlineData(34)]
+    public void ASpanInTheLastHeaderRowIsNotAGroupOverTheRowsItReaches(int lines)
+    {
+        string Long(int k) => string.Join(" ", Enumerable.Repeat("lorem ipsum dolor sit amet consectetur adipiscing", k));
+        using var doc = new Document { PageSize = new PdfRectangle(0, 0, 600, 400), Margins = new EdgeInsets(10) };
+        var t = new TableElement { DefaultCellStyle = Helvetica() }.SetColumnWidths(300, 60, 0);
+        t.AddRow(true).AddCell(new Cell("span") { RowSpan = 3 }).AddCell("H");
+        t.AddRow().AddCell(Long(lines)).AddCell("a\nb");
+        t.AddRow().AddCell(Long(lines)).AddCell("c\nd");
+        for (var i = 0; i < 4; i++) t.AddRow().AddCell("x").AddCell("plain").AddCell("keep\nbreak");
+        doc.Add(t);
+
+        Save(doc);
+
+        Assert.Empty(Dropped(doc));
+    }
+
+    /// <summary>
+    /// The same span declared in the first data row is a group: the two rows are kept whole, they
+    /// do not fit a page together, and the table is refused as on 2.3.3.
+    /// </summary>
+    [Fact]
+    public void ASpanInADataRowStillHoldsItsRowsWhole()
+    {
+        string Long(int k) => string.Join(" ", Enumerable.Repeat("lorem ipsum dolor sit amet consectetur adipiscing", k));
+        using var doc = new Document { PageSize = new PdfRectangle(0, 0, 600, 400), Margins = new EdgeInsets(10) };
+        var t = new TableElement { DefaultCellStyle = Helvetica() }.SetColumnWidths(300, 60, 0);
+        t.AddRow(true).AddCell("h").AddCell("H");
+        t.AddRow().AddCell(new Cell(Long(24)) { RowSpan = 2 }).AddCell("a\nb");
+        t.AddRow().AddCell(Long(24)).AddCell("c\nd");
+        doc.Add(t);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => Save(doc));
+
+        Assert.Contains("RowSpan", ex.Message, StringComparison.Ordinal);
+    }
+
     // ── Property: a table that fits measured as one line is saved ───────────────
 
     /// <summary>

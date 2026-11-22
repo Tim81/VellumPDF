@@ -48,14 +48,16 @@ public sealed class Cell
     /// joined by a <see cref="RowSpan"/>. The header rows have no room when they do not fit a
     /// page, or when they leave a row below them less than one line of one of its cells. A span
     /// group has no room when it is taller than what a page leaves under the repeated header
-    /// rows. The cause is a line break, which adds a line, or any other control white space,
-    /// because a tab is one space wide where the font measures the tab character at its own
-    /// width: a tab can tip a table that holds no line break. Such a cell is wrapped at spaces
-    /// alone and sized from its whole text, each tab and line break in it measured at the width
-    /// its font gives it and left out of what is drawn. The words they separated run together in
-    /// the drawing and in extracted text, and no line is wider than it was measured, though a
-    /// glyph wider than its column can still extend past it, as in any cell. The save lists the
-    /// cell as <see cref="VellumPdf.Layout.LayoutDiagnosticCode.CellWhiteSpaceDropped"/>, a
+    /// rows. A span declared in a header row makes no group of the data rows under it, because a
+    /// page may end between them; each of those rows is judged by its own height, and a span
+    /// declared in a data row is a group. The cause is a line break, which adds a line, or any
+    /// other control white space, because a tab is one space wide where the font measures the tab
+    /// character at its own width: a tab can tip a table that holds no line break. Such a cell is
+    /// wrapped at spaces alone and sized from its whole text, each tab and line break in it
+    /// measured at the width its font gives it and left out of what is drawn. The words they
+    /// separated run together in the drawing and in extracted text, and no line is wider than it
+    /// was measured, though a glyph wider than its column can still extend past it, as in any
+    /// cell. The save lists the cell as <see cref="VellumPdf.Layout.LayoutDiagnosticCode.CellWhiteSpaceDropped"/>, a
     /// warning that <see cref="Document.StrictDiagnostics"/> saves.</para>
     /// <para>Which cells give them up is decided in order: the header rows are judged first, then
     /// each group of rows joined by a <see cref="RowSpan"/>, each on the heights the decisions

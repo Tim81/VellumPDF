@@ -668,6 +668,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     as wide as 2.3.3 made them, and the header and the groups as tall. In a table with two 100pt
     columns and an automatic one, a group of two rows is 424pt tall on a page that leaves 280pt
     while a cell of the automatic column in a third row keeps its line break, and 100pt without it.
+    A span declared in a header row makes no group of the data rows under it, because a page may
+    end between them, so each of those rows is judged by its own height; a span declared in a data
+    row is a group.
   - **Every group is judged in order, and the decision keeps what each cell measures.** A table
     that gives up cells in several groups keeps each cell's widest word and widest line per mode
     and its line count with the interval of column widths it holds over, a word broken at its
