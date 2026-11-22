@@ -77,8 +77,8 @@ public sealed class ListIndentContinuationTests
     // ── The decision, at a limit small enough to reach in a blink ───────────────
 
     /// <summary>
-    /// One entry of N words, a page that holds one line: the clamped list takes N - 1 continuations.
-    /// At the limit it keeps the clamp, one more word and it is placed unclamped.
+    /// One entry of N words, a page that holds one line: the clamped list takes N - 1
+    /// continuations. At the limit it keeps the clamp, one more word and it is placed unclamped.
     /// </summary>
     [Theory]
     [InlineData(100, false)]
@@ -198,7 +198,7 @@ public sealed class ListIndentContinuationTests
             }
         }
 
-        // Measured for this seed. Each branch of the decision is reached, or the loop proves nothing.
+        // Measured for this seed. Each branch is reached, or the loop above proves nothing.
         Assert.Equal(375, fellBack);
         Assert.Equal(631, keptClamp);
         Assert.Equal(1727, bothRefused);
@@ -230,19 +230,57 @@ public sealed class ListIndentContinuationTests
         Assert.Equal(1, item.PageNumber);
     }
 
+    // A thousand entries of fifty words, and ahead of them one entry of `first` words when that is
+    // not zero: 50,000 + first lines, so 49,999 + first continuations on a page that holds one line.
+    private static ListElement AroundTheLimit(int first)
+    {
+        var list = new ListElement(ListStyle.OrderedDecimal) { Indent = 1000 };
+        if (first > 0) list.Add(new ListItem(Words(first), Helv10()));
+        for (var i = 0; i < 1000; i++) list.Add(new ListItem(Words(50), Helv10()));
+        return list;
+    }
+
     /// <summary>
-    /// The same list one word per entry shorter: 50,000 lines is 49,999 continuations on a page that
-    /// holds one line, the limit's own boundary, so the clamp is kept.
+    /// 50,001 lines on a page that holds one line is 50,000 continuations, the most one element may
+    /// take: the bound cannot rule it out, so the list is probed once, and it keeps its clamp.
     /// </summary>
     [Fact]
-    public void AListAtExactlyTheLimit_keepsItsClamp()
+    public void AListOneLineAboveTheBound_isProbedAndKeepsItsClampAtTheLimitExactly()
     {
-        var run = Place(new ListRenderer(FlatList(1000, 50)), OneLinePage);
+        var run = Place(new ListRenderer(AroundTheLimit(1)), OneLinePage);
+
+        Assert.Null(run.Error);
+        Assert.Equal(1, run.Probes);
+        Assert.Equal(50_001, Shows(run, "W"));
+        Assert.Equal(50_001, run.Pages);
+        Assert.False(Skipped(run));
+    }
+
+    /// <summary>
+    /// One line more is 50,001 continuations, which the limit refuses, so the list is placed
+    /// unclamped.
+    /// </summary>
+    [Fact]
+    public void AListOneContinuationPastTheLimit_isPlacedUnclamped()
+    {
+        var run = Place(new ListRenderer(AroundTheLimit(2)), OneLinePage);
+
+        Assert.Null(run.Error);
+        Assert.Equal(1, run.Probes);
+        Assert.Equal(0, Shows(run, "W"));
+        Assert.Equal(1001, run.Pages);
+        Assert.True(Skipped(run));
+    }
+
+    /// <summary>50,000 lines is at the bound, so no probe runs and the clamp is kept.</summary>
+    [Fact]
+    public void AListAtTheBound_isNotProbed()
+    {
+        var run = Place(new ListRenderer(AroundTheLimit(0)), OneLinePage);
 
         Assert.Null(run.Error);
         Assert.Equal(0, run.Probes);
         Assert.Equal(50_000, Shows(run, "W"));
-        Assert.Equal(50_000, run.Pages);
         Assert.False(Skipped(run));
     }
 

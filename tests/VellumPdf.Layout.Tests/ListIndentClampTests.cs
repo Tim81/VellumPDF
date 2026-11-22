@@ -128,9 +128,9 @@ public sealed class ListIndentClampTests
     }
 
     /// <summary>
-    /// A flat list at a 256pt area, an indent of 256, thirty items on a page that holds twelve: the
-    /// list is split, and the report comes from the piece that starts the list, once, with the count
-    /// of every entry, on page 1.
+    /// A flat list at a 256pt area, an indent of 256, thirty items on a page that holds twelve:
+    /// the list is split, and the report comes from the piece that starts the list, once, with the
+    /// count of every entry, on page 1.
     /// </summary>
     [Fact]
     public void ASplitList_reportsOnceFromItsFirstPage_withEveryEntryCounted()
@@ -159,7 +159,10 @@ public sealed class ListIndentClampTests
         Assert.StartsWith("StrictDiagnostics refused the save: ListIndentClamped in List 0, page 1: ", ex.Message, StringComparison.Ordinal);
     }
 
-    /// <summary>A nested list from half the area: the child text is drawn at the width of its widest word, its marker where it was.</summary>
+    /// <summary>
+    /// A nested list from half the area: the child text is drawn at the width of its widest word,
+    /// its marker where it was.
+    /// </summary>
     [Theory]
     [InlineData(128.0, "200,306")]
     [InlineData(200.0, "272,306")]
@@ -245,7 +248,10 @@ public sealed class ListIndentClampTests
         Assert.Empty(doc.Diagnostics);
     }
 
-    /// <summary>A word wider than the whole area, at the default indent: the content stays at the gutter, not on the marker.</summary>
+    /// <summary>
+    /// A word wider than the whole area, at the default indent: the content stays at the gutter,
+    /// not on the marker.
+    /// </summary>
     [Fact]
     public void ALongWord_widerThanTheArea_keepsItsGutter()
     {
@@ -262,7 +268,7 @@ public sealed class ListIndentClampTests
     [Theory]
     [InlineData("   ", 10.0)]
     [InlineData("abc", 0.0)]
-    public void AnEntryWithNoWordToMeasure_isNotClamped(string text, double size)
+    public void AnEntryWithNoWordWidth_isNotClamped(string text, double size)
     {
         using var doc = Narrow(new ListElement(ListStyle.OrderedDecimal) { Indent = 56 }.Add(new ListItem(text, Helv(size))));
 
@@ -270,7 +276,10 @@ public sealed class ListIndentClampTests
         Assert.Empty(doc.Diagnostics);
     }
 
-    /// <summary>The child's own marker inset reaches the area: refused as before, with the same type and message.</summary>
+    /// <summary>
+    /// The child's own marker inset reaches the area: refused as before, with the same type and
+    /// message.
+    /// </summary>
     [Theory]
     [InlineData(256.0)]
     [InlineData(300.0)]
@@ -308,8 +317,8 @@ public sealed class ListIndentClampTests
 
     /// <summary>
     /// A marker taller than the page has no room, and an entry whose text had no width was refused
-    /// for it. Giving the text a width must not turn that refusal into a save that draws the text and
-    /// no marker.
+    /// for it. Giving the text a width must not turn that refusal into a save that draws the text
+    /// and no marker.
     /// </summary>
     [Theory]
     [InlineData(56.0)]
@@ -335,7 +344,7 @@ public sealed class ListIndentClampTests
         Assert.StartsWith("An element is too tall to fit on a single page and cannot be rendered.", ex.Message, StringComparison.Ordinal);
     }
 
-    /// <summary>The same fixtures with a marker that fits: the clamp applies and both are drawn.</summary>
+    /// <summary>The same fixtures with a marker that fits: the clamp applies, both are drawn.</summary>
     [Fact]
     public void TheSameEntries_withAMarkerThatFits_drawMarkerAndText()
     {
@@ -378,9 +387,9 @@ public sealed class ListIndentClampTests
     /// <summary>
     /// For seeded areas, widest words and marker insets: the paragraph's own deflation
     /// (<c>area - gutter</c>) never comes out below the width the word needs, and the gutter is the
-    /// widest that holds, so no word is broken and none gets more than a rounding error above the width it asks for. The
-    /// seed, the pair count and the number of pairs a plain <c>area - word</c> would have broken
-    /// are stated so the correction is shown to be reachable.
+    /// widest that holds, so no word is broken and none gets more than a rounding error above the
+    /// width it asks for. The seed, the pair count and the number of pairs a plain
+    /// <c>area - word</c> would have broken are stated so the correction is shown to be reachable.
     /// </summary>
     [Fact]
     public void ClampedGutter_leavesTheWordItsWidth_forSeededPairs()
@@ -395,6 +404,10 @@ public sealed class ListIndentClampTests
             var word = rng.NextDouble() * area;
             var inset = i % 3 == 0 ? 0 : rng.NextDouble() * area * 0.9;
             if (i % 50 == 0) word = area;
+
+            // The widest word the room allows short of the room itself, where the gutter comes
+            // closest to the marker's inset.
+            if (i % 7 == 0 && area - inset > 0) word = Math.BitDecrement(area - inset);
 
             Assert.True(ListRenderer.TryClampGutter(area, area + rng.NextDouble(), inset, word, out var gutter));
 

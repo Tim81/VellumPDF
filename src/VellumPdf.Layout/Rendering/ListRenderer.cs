@@ -97,8 +97,8 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     // clamp existed, so the twin lays the list out as it was laid out without it.
     private bool _unclamped;
 
-    // The number of entries the clamp would have narrowed on the list this one is the unclamped twin
-    // of, which Draw reports as ListIndentClampSkipped. Carried by splits like _indentClamped.
+    // The number of entries the clamp would have narrowed on the list this one is the unclamped
+    // twin of, which Draw reports as ListIndentClampSkipped. Carried by splits like _indentClamped.
     private int _clampSkipped;
 
     // The twin Unclamped hands out, built once so the measuring and the drawing pass place the same
@@ -605,9 +605,15 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             return true;
         }
 
+        // The result is never left of markerInset, so no clamp is needed after the loop. The word is
+        // narrower than room = fl(areaWidth - markerInset), so fl(areaWidth - word) is at least
+        // fl(areaWidth - BitDecrement(room)), which is at least markerInset: the exact difference
+        // sits one spacing of room above it, and rounding moves it by at most half that. The loop
+        // steps only while g is above markerInset, and a double above one steps down to it at
+        // worst.
         var g = areaWidth - widestWord;
         while (g > markerInset && areaWidth - g < widestWord) g = Math.BitDecrement(g);
-        clamped = Math.Max(g, markerInset);
+        clamped = g;
         return true;
     }
 

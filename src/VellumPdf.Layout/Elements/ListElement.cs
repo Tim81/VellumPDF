@@ -76,22 +76,24 @@ public sealed class ListElement
     /// own left edge. At the top level that gutter is the larger of this value and that item's own
     /// marker width. One level in, the marker itself starts at this value, so what has to be
     /// cleared is a position rather than a width, and the gutter is the larger of twice this value
-    /// and this value plus the child's marker width. One case overrides both: where the widened
+    /// and this value plus the child's marker width. Two cases override both. Where the widened
     /// gutter would leave less room than the item's longest word, the gutter reverts to the
-    /// unwidened figure. That is this value at the top level and twice it when nested. The
-    /// override rewrites a gutter and never a marker's own inset, so no marker moves with it.
+    /// unwidened figure, which is this value at the top level and twice it when nested. Where that
+    /// gutter leaves the text no width at all, the clamp described below replaces it. Neither
+    /// rewrites a marker's own inset, so no marker moves with them.
     /// <para>Every boundary below is measured against the list's own area width, which is the
     /// page's content width narrowed by the left and right edges of <see cref="Margins"/>. The top
     /// and bottom edges do not enter into it. A left or right inset narrows that area, so every
     /// boundary below moves in with it, each in proportion to where it sits.</para>
-    /// <para>An indent reaching that area width is <b>not</b> refused on a flat list. An entry whose
-    /// gutter would leave its text no width at all, which is a gutter at or beyond the area width,
-    /// gets one instead: the width of its widest word, or all the room right of its marker's inset
-    /// when the word is wider, where the word is broken. The content then starts at the area's
-    /// right edge less that width, and never left of the marker's inset. A marker is never moved,
-    /// so the text can overprint it. The text is drawn as it is at any indent, so a line taller
-    /// than the area is not drawn. A list the document draws from its first entry reports its
-    /// clamped entries as one <see cref="LayoutDiagnosticCode.ListIndentClamped"/> item.</para>
+    /// <para>An indent reaching that area width is <b>not</b> refused on a flat list. An entry
+    /// whose gutter would leave its text no width at all, which is a gutter at or beyond the area
+    /// width, gets one instead: the width of its widest word, or all the room right of its
+    /// marker's inset when the word is wider, where the word is broken. The content then starts at
+    /// the area's right edge less that width, and never left of the marker's inset. A marker is
+    /// never moved, so the text can overprint it. The text is drawn as it is at any indent, so a
+    /// line taller than the area is not drawn. A list the document draws from its first entry
+    /// reports its clamped entries as one <see cref="LayoutDiagnosticCode.ListIndentClamped"/>
+    /// item.</para>
     /// <para>These keep their earlier output, and are not reported: a gutter that leaves the text a
     /// width, however narrow; an entry with no word that measures wider than zero, such as one
     /// holding only white space, set at font size 0 or set in Symbol or ZapfDingbats, whose text is
@@ -102,8 +104,8 @@ public sealed class ListElement
     /// needs.</para>
     /// <para>One element may take at most 50,000 page continuations; see
     /// <see cref="Rendering.DocumentRenderer"/>. Drawing the text of a clamped entry adds lines, so
-    /// a list whose clamped layout could pass that limit is laid out without drawing first, and when
-    /// it would pass it the list is placed without the clamp instead: no gutter is narrowed, an
+    /// a list whose clamped layout could pass that limit is laid out without drawing first, and
+    /// when it would pass it the list is placed without the clamp instead: no gutter is narrowed, an
     /// entry the clamp would have changed keeps its marker and loses its text, and
     /// <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/> reports it. That list then saves,
     /// or throws the limit's <see cref="InvalidOperationException"/>, as a list with no clamp does.

@@ -1206,7 +1206,7 @@ public sealed class DocumentRenderer
     // decision below at a size that is cheap to reach.
     internal int ContinuationLimit { get; init; } = MaxContinuationsPerElement;
 
-    /// <summary>Continuation probes run by the last <see cref="RunLayout"/>, read by tests.</summary>
+    /// <summary>Continuation probes the last <see cref="RunLayout"/> ran, read by tests.</summary>
     internal int ContinuationProbes { get; private set; }
 
     // While a probe runs, the placement loop reports reaching the limit instead of throwing it, and
