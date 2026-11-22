@@ -681,9 +681,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - **Every group is judged in order, and the decision keeps what each cell measures.** A table
     that gives up cells in several groups keeps each cell's widest word and widest line per mode
     and its line count with the interval of column widths it holds over, a word broken at its
-    characters included. After a step it takes the column widths from the widths kept for the
-    pass, which the step raises. A step that gives up only cells in the group's own rows, and
-    leaves every column width as it was, does not end the pass, and a table resolves its grid
+    characters included. To decide whether a step that gives up cells in an automatic column
+    moves a column, it raises the widths kept for the pass by what the step's cells contribute,
+    and measures the table again when a cell would contribute less. A step that gives up only
+    cells in the group's own rows, and leaves every column width as it was, does not end the
+    pass. A step that does move a column, or reaches a row outside the group, ends it, and the
+    next pass measures the whole table from what the cells measured. A table resolves its grid
     once for all its pages. No limit on the number of measurements applies, so a group is judged
     on the heights the groups before it leave whatever their number. Measured in Release on
     net10.0, one run each, against 2.3.3 on the same tables: 400 groups that each change the
