@@ -1300,11 +1300,12 @@ public sealed class DocumentRenderer
     // throws, which keeps a save 2.3.3 made.
     //
     // At the retry site the loop offers the next call the page-top box, which can be one rounding
-    // step taller than the box the retry got (the two are computed differently). So the probes
-    // start at the retry's own box: the twin probe first calls the twin there, and a Nothing
-    // counts as a fault, which keeps the refusal 2.3.3 raised at the retry. The new layout's
-    // retry is the call that reported, and SettleCall chooses the twin when that call answered
-    // Nothing, so the new layout is never probed on a box taller than the one it was given.
+    // step taller than the box the retry got (the two are computed differently). A probe that
+    // starts at that next call would skip the retry's own check, so the twin probe first calls the
+    // twin on the retry's box, and a Nothing there counts as a fault, which keeps the refusal
+    // 2.3.3 raised at the retry. The new layout's retry is the call that reported, and SettleCall
+    // chooses the twin when that call answered Nothing, so the new layout is probed only after a
+    // retry that fit, and then from the call the real placement makes next.
     private ContinuationMode DecideContinuation(IRenderer renderer, ContinuationSession session, int continuations, bool keepTogether, bool lineCounts, bool retry)
     {
         if (session.Bound <= (long)ContinuationLimit - continuations) return ContinuationMode.New;
