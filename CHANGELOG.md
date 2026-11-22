@@ -634,13 +634,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     fit can therefore be cut: `A` followed by 120 tabs and `B` in Helvetica 10 on a 300 pt page
     saved with no truncation, and now draws 1 of its 122 characters and reports `BandTruncated`,
     which `StrictDiagnostics` refuses.
-  - A table that 2.3.3 refused as too tall can now save: 6 of 20,000 random tables with control
-    characters (none of 20,000 without). Each is a refusal that names a `RowSpan` group, in a
-    table whose automatic columns are now measured per line. `qpdf --check` exits 0 for all six.
-    Three of the six draw text outside the row it belongs to. That comes from a mismatch that
-    2.3.3 has too and this change does not alter: a row's height is measured with its cells in
-    consecutive columns, and the drawing skips a column that a span from an earlier row occupies.
-    Tables whose texts hold no tab, line break or form feed show it on 2.3.3 as well.
+  - **A table that is refused when every cell is measured as one line stays refused.** That is how
+    2.3.3 measured a table. Reading a cell's line breaks can leave a column wider or narrower
+    than that measurement does, and so tip a `RowSpan` group the other way. Such a table is
+    refused here with the message of the one-line measurement, though every header and group has
+    room with its breaks read. The cells give up their breaks only to save a table that
+    measurement saves. A release that measures the columns a `RowSpan` occupies as they are
+    drawn can save some of these tables.
   - A cell with a very large number of lines can be refused where 2.3.3 saved it, because 2.3.3
     drew its line feeds inside one line. One cell of 2,500,000 two-letter words joined by LF, on a
     2000 x 600 pt page in a 1900 pt column, saved in 314 pages on 2.3.3 and now stops at the limit

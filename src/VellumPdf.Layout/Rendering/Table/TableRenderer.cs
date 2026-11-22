@@ -62,6 +62,12 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     // break is kept.
     private HashSet<(int Row, int Cell)>? _oneLine;
 
+    // True when every cell is laid out unbroken, as the table was measured before breaks were
+    // honoured. Layout sets it when the decision finds that the table, so measured, is refused:
+    // the table is then refused with that measurement's refusal. It is decided with _oneLine, so it
+    // goes with it.
+    private bool _allUnbroken;
+
     // What the decision under way has measured of each cell; null outside it.
     private TableMeasureCache? _measured;
 
@@ -255,7 +261,11 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
                 ? (area.Width, fresh[0].Y, fresh[0].Bottom, fresh[1].Y, fresh[1].Bottom)
                 : ((double, double, double, double, double)?)null;
             var decided = key is not null && _decidedFor is { } was && was.Equals(key.Value);
-            if (!decided) _oneLine = null;
+            if (!decided)
+            {
+                _oneLine = null;
+                _allUnbroken = false;
+            }
 
             // The grid and the heights that decision was made with stand too: they follow from the
             // table, the width and the cells read unbroken, which are all the same. The renderer
@@ -289,10 +299,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
                 // one line, with nothing to decide.
                 if (passesNeeded && TableMeasureProbe.Current is { ReadEveryCellUnbroken: true })
                 {
-                    _oneLine = [];
-                    for (var r = 0; r < rows.Count; r++)
-                        for (var c = 0; c < rows[r].Cells.Count; c++)
-                            _oneLine.Add((r, c));
+                    _allUnbroken = true;
                     passesNeeded = false;
                 }
 
@@ -313,6 +320,33 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
                         _oneLine ??= [];
                         _oneLine.UnionWith(more);
                         ResolveGrid(area.Width, style, cache);
+                    }
+
+                    // A table that 2.3.3 refused stays refused: the decision above keeps the breaks
+                    // of the cells that left every header and group room, and that can leave the
+                    // table fit where it measures every cell as one line and is refused. Cell.Content
+                    // says why.
+                    if (AnyControlSpaceKeepsItsBreaks(rows))
+                    {
+                        var (widths, heights) = (_colWidths, _rowHeights);
+                        _allUnbroken = true;
+
+                        // A trial that is dropped must leave nothing in the file: a tab measured
+                        // in an embedded font would otherwise add glyph 0 to its subset.
+                        FontReference.MeasuringWithoutRegistering = true;
+                        try
+                        {
+                            ResolveGrid(area.Width, style, cache);
+                        }
+                        finally
+                        {
+                            FontReference.MeasuringWithoutRegistering = false;
+                        }
+                        if (!RefusedOnAFreshPage(fresh!, style))
+                        {
+                            _allUnbroken = false;
+                            (_colWidths, _rowHeights) = (widths, heights);
+                        }
                     }
                 }
                 _measured = null;
@@ -419,10 +453,11 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             _headSlice = head,
             _tailSlice = tail,
             _oneLine = _oneLine,
+            _allUnbroken = _allUnbroken,
             _decidedFor = _decidedFor,
         };
         var overflow = tail is null
-            ? new TableRenderer(_table, lastFit + 1) { _continuation = true, _colWidths = _colWidths, _rowHeights = _rowHeights, _oneLine = _oneLine, _decidedFor = _decidedFor }
+            ? new TableRenderer(_table, lastFit + 1) { _continuation = true, _colWidths = _colWidths, _rowHeights = _rowHeights, _oneLine = _oneLine, _allUnbroken = _allUnbroken, _decidedFor = _decidedFor }
             : new TableRenderer(_table, tail.Row)
             {
                 _continuation = true,
@@ -431,6 +466,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
                 _resumeLines = tail.Source,
                 _resumeFrom = tail.Next(),
                 _oneLine = _oneLine,
+                _allUnbroken = _allUnbroken,
                 _decidedFor = _decidedFor,
             };
         return LayoutResult.Partial(_occupied, split, overflow);
@@ -445,7 +481,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         if (TableMeasureProbe.Current is { } probe) probe.Passes++;
         _measured = cache;
         var rows = _table.Rows;
-        var grid = new TableGridResolver { OneLineCells = _oneLine, Cache = cache };
+        var grid = new TableGridResolver { OneLineCells = _allUnbroken ? EveryCell.Instance : _oneLine, Cache = cache };
         grid.Resolve(_table, areaWidth);
         _colWidths = grid.ColWidths;
         _content = grid.ContentUsed;
@@ -649,7 +685,36 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     /// <summary>
     /// True when the cell's line breaks are kept; false when the table lays the cell out unbroken.
     /// </summary>
-    private bool HonoursBreaks(int row, int cell) => _oneLine?.Contains((row, cell)) != true;
+    private bool HonoursBreaks(int row, int cell) => !_allUnbroken && _oneLine?.Contains((row, cell)) != true;
+
+    /// <summary>True when some cell holds control white space and the table reads its breaks.</summary>
+    private bool AnyControlSpaceKeepsItsBreaks(IReadOnlyList<Row> rows)
+    {
+        for (var r = 0; r < rows.Count; r++)
+        {
+            var cells = rows[r].Cells;
+            for (var c = 0; c < cells.Count; c++)
+                if (HonoursBreaks(r, c) && LayoutText.HasControlSpace(cells[c].Content)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>The set of every cell, for a table that lays out every cell unbroken.</summary>
+    private sealed class EveryCell : IReadOnlySet<(int Row, int Cell)>
+    {
+        public static readonly EveryCell Instance = new();
+
+        public int Count => throw new NotSupportedException();
+        public bool Contains((int Row, int Cell) item) => true;
+        public bool IsProperSubsetOf(IEnumerable<(int Row, int Cell)> other) => throw new NotSupportedException();
+        public bool IsProperSupersetOf(IEnumerable<(int Row, int Cell)> other) => throw new NotSupportedException();
+        public bool IsSubsetOf(IEnumerable<(int Row, int Cell)> other) => throw new NotSupportedException();
+        public bool IsSupersetOf(IEnumerable<(int Row, int Cell)> other) => throw new NotSupportedException();
+        public bool Overlaps(IEnumerable<(int Row, int Cell)> other) => throw new NotSupportedException();
+        public bool SetEquals(IEnumerable<(int Row, int Cell)> other) => throw new NotSupportedException();
+        public IEnumerator<(int Row, int Cell)> GetEnumerator() => throw new NotSupportedException();
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => throw new NotSupportedException();
+    }
 
     private static bool AnyControlSpace(IReadOnlyList<Row> rows)
     {
@@ -1113,6 +1178,65 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         foreach (var box in fresh)
             if (!(box.Y + headerHeight + height > box.Bottom + 0.001))
                 return true;
+        return false;
+    }
+
+    /// <summary>
+    /// True when laying the table out from <c>_rowHeights</c> and <c>_colWidths</c>, page after
+    /// page, ends with a page that answers <see cref="LayoutResult.Outcome.Nothing"/> from the top
+    /// of a fresh page, which the save refuses with the too-tall exception.
+    /// </summary>
+    /// <remarks>
+    /// The layout answers Nothing where no row fits the page it is given and the first row cannot
+    /// be cut. It is given a fresh page after every break, and a break falls only where
+    /// <see cref="BuildRowspanBlockedSet"/> allows one, so the layout is refused exactly when
+    /// the header rows do not fit a page, or a run of rows it never breaks inside does not fit
+    /// one, and the run is not a single row that can be cut between its lines. Fitting is the fit
+    /// loop's own test, row by row on the running height, on each of the two boxes a fresh page
+    /// can offer.
+    /// </remarks>
+    private bool RefusedOnAFreshPage(LayoutBox[] fresh, TextStyle style)
+    {
+        var rows = _table.Rows;
+        var header = FindHeaderRowIndices(rows);
+        var lastHeaderRow = header.Count > 0 ? header[^1] + 1 : 0;
+        var headerHeight = 0.0;
+        foreach (var i in header) headerHeight += _rowHeights[i];
+
+        var first = Math.Max(_startRow, lastHeaderRow);
+        if (first >= rows.Count) return false;
+        if (header.Count > 0 && !FitsFresh(fresh, 0, headerHeight)) return true;
+
+        var blocked = BuildRowspanBlockedSet(rows, lastHeaderRow);
+        var ctx = new RefusalContext(fresh, header, headerHeight, lastHeaderRow);
+        for (var s = first; s < rows.Count;)
+        {
+            var last = s;
+            while (blocked.Contains(last)) last++;
+            if (!RunFitsFresh(fresh, headerHeight, s, last) && (last != s || !CanCut(s, ctx, style)))
+                return true;
+            s = last + 1;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// True when rows <paramref name="first"/> to <paramref name="last"/>, taken one after the
+    /// other under the header rows, fit one of the fresh boxes by the fit loop's own arithmetic.
+    /// </summary>
+    private bool RunFitsFresh(LayoutBox[] fresh, double headerHeight, int first, int last)
+    {
+        foreach (var box in fresh)
+        {
+            var run = headerHeight;
+            var fits = true;
+            for (var r = first; r <= last && fits; r++)
+            {
+                fits = !(box.Y + run + _rowHeights[r] > box.Bottom + 0.001);
+                run += _rowHeights[r];
+            }
+            if (fits) return true;
+        }
         return false;
     }
 

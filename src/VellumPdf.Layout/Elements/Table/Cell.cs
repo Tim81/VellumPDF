@@ -82,6 +82,14 @@ public sealed class Cell
     /// change other rows: the column's width is shared with every row that has a cell in it. The
     /// groups after it are judged on the heights that result, so every group is judged on the
     /// heights the decisions before it leave, however many groups the table has.</para>
+    /// <para><b>A table that is refused when every cell is measured as one line is refused, with
+    /// the message that measurement gives.</b> <see cref="Document.Save(System.IO.Stream)"/>
+    /// throws <see cref="InvalidOperationException"/>, the too-tall exception, though every header
+    /// and group has room with its breaks read: reading the breaks can leave a column wider or
+    /// narrower than the one-line measurement does and so tip a group the other way, and the
+    /// cells above give up their breaks only to save a table that measurement saves. <b>Do not
+    /// pass</b> a table in the expectation that it stays refused: a release that measures the
+    /// columns a <see cref="RowSpan"/> occupies as they are drawn can save some of them.</para>
     /// <para>A row that can be cut between its lines is cut when it is taller than a page. A
     /// repeated header row or a span group is never cut, and the save refuses it when it does not
     /// fit; a table whose rows are all headers repeats none of them, so its rows are cut like any
