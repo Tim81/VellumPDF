@@ -505,6 +505,52 @@ public sealed class ImageFitToPageTests
     }
 
     [Fact]
+    public void ATooTallImage_withOffsettingVerticalMargins_stillUsesTheMarginLabel()
+    {
+        // The label depends on the two edges, not on their sum: 5 and -5 add to zero.
+        using var doc = NewDocument();
+        doc.Add(Image(2, 2, null, 401, margins: new EdgeInsets(5, 0, -5, 0)));
+
+        var e = Assert.Throws<InvalidOperationException>(() => Save(doc));
+
+        Assert.EndsWith("exceeds the 400pt content height inside its margins.", e.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ATooTallImage_whoseContentHeightRoundsToNegativeZero_doesNotPrintMinusZero()
+    {
+        // Margins of 200.0005 on a 400 pt page leave about -0.001 pt, and "0.##" prints that as
+        // "-0". The image's 0.001 pt prints as "0", so a comparison of the strings must not see
+        // two different figures, and the sentence must not read "-0pt".
+        using var doc = NewDocument();
+        doc.Add(Image(2, 2, null, 0.001, margins: new EdgeInsets(200.0005, 0, 200.0005, 0)));
+
+        var e = Assert.Throws<InvalidOperationException>(() => Save(doc));
+
+        Assert.DoesNotContain("-0pt", e.Message, StringComparison.Ordinal);
+        var m = Regex.Match(e.Message, @"LayoutImage\.Height (\S+)pt exceeds the (\S+)pt content height inside its margins\.$");
+        Assert.True(m.Success, e.Message);
+        Assert.NotEqual(m.Groups[1].Value, m.Groups[2].Value);
+        Assert.Equal(0.001, double.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture));
+        Assert.True(double.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture) < 0);
+    }
+
+    [Theory]
+    [InlineData(999999999999999.0, "999999999999999pt")]
+    [InlineData(1e15, "1000000000000000pt")]
+    [InlineData(1e16, "10000000000000000pt")]
+    [InlineData(1e17, "1E+17pt")]
+    public void ATooTallImage_acrossTheMagnitudeWhereTwoDecimalsStop_printsTheShortestFigure(double height, string printed)
+    {
+        using var doc = NewDocument();
+        doc.Add(Image(2, 2, null, height));
+
+        var e = Assert.Throws<InvalidOperationException>(() => Save(doc));
+
+        Assert.Equal(TooTall + " LayoutImage.Height " + printed + " exceeds the 400pt content height.", e.Message);
+    }
+
+    [Fact]
     public void ATooTallImage_withAHugeHeight_printsItInExponentForm()
     {
         using var doc = NewDocument();

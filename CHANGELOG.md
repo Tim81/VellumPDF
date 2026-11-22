@@ -458,9 +458,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - For an image the document lays out, the exception for one too tall for a page keeps its type
     and its first sentence, and now ends with the axis and both numbers: `LayoutImage.Height 401pt
     exceeds the 400pt content height.`, or, for a height derived from the width, the derived
-    height, the content height and a pointer to `FitToPage`. When the image has top or bottom
-    margins the content height is the one left inside them, and the sentence says so. This applies
-    with or without the member. The files that save are unchanged.
+    height, the content height and, when the member is unset, a pointer to `FitToPage`. When the
+    image has a non-zero top or bottom margin the content height is the one left inside them, and
+    the sentence says so. This applies with or without the member. The files that save are
+    unchanged.
 
 ### Changed
 

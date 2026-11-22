@@ -167,7 +167,7 @@ public sealed class LayoutImageRenderer : IRenderer, IPageBreakSource, IKeepSour
     private string TooTallReason(double contentHeight)
     {
         var (height, content) = Points(_h, contentHeight);
-        var label = _img.Margins.Vertical == 0
+        var label = _img.Margins.Top == 0 && _img.Margins.Bottom == 0
             ? "content height"
             : "content height inside its margins";
         if (_img.Height is not null)
@@ -180,21 +180,29 @@ public sealed class LayoutImageRenderer : IRenderer, IPageBreakSource, IKeepSour
 
     // Whole points, trimmed to two decimals. Two heights that differ by less than that would print
     // as one figure and the sentence would read "exceeds" over a tie, so those print with the
-    // shortest string that round-trips. So do a magnitude past 1e15, where two decimals would
-    // print hundreds of digits, and a value that is not finite, which has no decimals to trim.
+    // shortest string that round-trips. So do a magnitude of 1e15 or more, where two decimals
+    // would print up to 309 digits (that form switches to exponent notation at 1e17), and a value
+    // that is not finite, which has no decimals to trim.
     private static (string, string) Points(double height, double content)
     {
         var (h, c) = (Pt(height), Pt(content));
         return h != c ? (h, c) : (Exact(height), Exact(content));
     }
 
-    private static string Pt(double points) =>
-        double.IsFinite(points) && Math.Abs(points) < 1e15
-            ? points.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "pt"
-            : Exact(points);
+    // "0.##" prints a value in (-0.005, 0) as "-0pt", and that would miss a tie with 0, so the
+    // sign of a figure that rounds to zero is dropped before the strings are compared.
+    private static string Pt(double points)
+    {
+        if (!double.IsFinite(points) || Math.Abs(points) >= 1e15)
+            return Exact(points);
 
+        var text = points.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+        return (text == "-0" ? "0" : text) + "pt";
+    }
+
+    // Adding 0.0 turns -0.0 into 0.0 and changes no other value.
     private static string Exact(double points) =>
-        points.ToString("R", System.Globalization.CultureInfo.InvariantCulture) +
+        (points + 0.0).ToString("R", System.Globalization.CultureInfo.InvariantCulture) +
         (double.IsFinite(points) ? "pt" : " pt");
 
     /// <summary>Draws the image XObject, emitting a tagged Figure struct element when tagging is enabled.</summary>

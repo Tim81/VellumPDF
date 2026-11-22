@@ -66,8 +66,8 @@ public sealed class LayoutImage
     /// then names the height rather than the width. Positive infinity is not refused as a
     /// non-finite width: it is clamped to the content box's width. The height derived from that
     /// clamped width can still exceed the box's height, and that overflow throws this same type
-    /// through the generic too-tall exception, whose message then names the derived height and
-    /// the content height. Whether it does is decided by proportion rather than by absolute size,
+    /// through the generic too-tall exception. For an image the document lays out, the message
+    /// then names the derived height and the content height. Whether it does is decided by proportion rather than by absolute size,
     /// so a source proportionally taller than the box is refused however narrow it is, unless
     /// <see cref="FitToPage"/> scales it down.
     /// </exception>
@@ -81,8 +81,8 @@ public sealed class LayoutImage
     /// Setting this is a request for a non-proportional box: unlike a null height, it is not
     /// rescaled when the width is clamped to the content box. An image taller than the remaining
     /// space moves to the next page. One taller than a page makes the save throw
-    /// <see cref="InvalidOperationException"/>, and the message names this height and the content
-    /// height, unless <see cref="FitToPage"/> scales it down.
+    /// <see cref="InvalidOperationException"/>, unless <see cref="FitToPage"/> scales it down. For an
+    /// image the document lays out, the message names this height and the content height.
     /// <para>Zero and non-finite values are <b>refused</b>, for the same reason as
     /// <see cref="Width"/>: the emitted transformation matrix is either singular or not made of PDF
     /// numbers. Do <b>not</b> pass a negative height; it is not refused today and flips the image
@@ -138,9 +138,11 @@ public sealed class LayoutImage
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when the fitted width or height is under 5e-6 points, or when no
-    /// positive height is left for the scale, as described above. The message names
-    /// that extent. A size refused before the scale, such as a <see cref="Width"/> of zero, is
-    /// refused with the message it has without this member.
+    /// positive height is left for the scale, as described above. For a fitted extent the
+    /// message names that extent; with no positive height left, it is the too-tall message,
+    /// which names the image's height and the content height. A size refused before the scale,
+    /// such as a <see cref="Width"/> of zero, is refused with the message it has without this
+    /// member.
     /// </exception>
     public bool FitToPage { get; init; }
 
@@ -154,7 +156,7 @@ public sealed class LayoutImage
     /// <summary>Margins around the image.</summary>
     /// <remarks>
     /// With <see cref="FitToPage"/> set, the top and bottom edges are taken off the content
-    /// height the image is fitted to, so the fitted image and its margins fill that height.
+    /// height the image is fitted to, so an image that is scaled down and its margins fill that height.
     /// A non-finite edge is not checked before the layout; see <see cref="Document"/>. The save throws <see cref="ArgumentException"/> from
     /// <see cref="VellumPdf.Canvas.PdfCanvas"/> only where it would write the value.
     /// <b>Do not
@@ -172,9 +174,9 @@ public sealed class LayoutImage
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when the box the edges leave is too small for the element, in
-    /// which case the message says the element is too tall to fit on a page. Its last sentence
-    /// names the image's height and the content height left inside these margins, not the margins
-    /// themselves. With <see cref="Width"/> null, the width the edges leave is refused when it is
+    /// which case the message says the element is too tall to fit on a page. For an image the
+    /// document lays out, its last sentence names the image's height and the content height left
+    /// inside these margins, not the margins themselves. With <see cref="Width"/> null, the width the edges leave is refused when it is
     /// under 5e-6 in magnitude, or not finite, and so is a height derived from it that is under
     /// 5e-6 or not finite. The message then names that width or height instead.
     /// </exception>
