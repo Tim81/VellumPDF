@@ -124,3 +124,28 @@ VellumPdf.Layout.Elements.Paragraph.Anchor.get -> string?
 VellumPdf.Layout.Elements.Paragraph.Anchor.init -> void
 VellumPdf.Layout.Elements.Table.TableElement.Anchor.get -> string?
 VellumPdf.Layout.Elements.Table.TableElement.Anchor.init -> void
+VellumPdf.Layout.Elements.Paragraph.KeepWithNext.get -> bool
+VellumPdf.Layout.Elements.Paragraph.KeepWithNext.init -> void
+VellumPdf.Layout.Elements.Paragraph.KeepTogether.get -> bool
+VellumPdf.Layout.Elements.Paragraph.KeepTogether.init -> void
+VellumPdf.Layout.Elements.Heading.KeepWithNext.get -> bool
+VellumPdf.Layout.Elements.Heading.KeepWithNext.init -> void
+VellumPdf.Layout.Elements.Heading.KeepTogether.get -> bool
+VellumPdf.Layout.Elements.Heading.KeepTogether.init -> void
+VellumPdf.Layout.Elements.Table.TableElement.KeepWithNext.get -> bool
+VellumPdf.Layout.Elements.Table.TableElement.KeepWithNext.init -> void
+VellumPdf.Layout.Elements.Table.TableElement.KeepTogether.get -> bool
+VellumPdf.Layout.Elements.Table.TableElement.KeepTogether.init -> void
+VellumPdf.Layout.Elements.ListElement.KeepWithNext.get -> bool
+VellumPdf.Layout.Elements.ListElement.KeepWithNext.init -> void
+VellumPdf.Layout.Elements.ListElement.KeepTogether.get -> bool
+VellumPdf.Layout.Elements.ListElement.KeepTogether.init -> void
+VellumPdf.Layout.Elements.LayoutImage.KeepWithNext.get -> bool
+VellumPdf.Layout.Elements.LayoutImage.KeepWithNext.init -> void
+VellumPdf.Layout.Elements.Paragraph.MinLinesBeforeBreak.get -> int
+VellumPdf.Layout.Elements.Paragraph.MinLinesBeforeBreak.init -> void
+VellumPdf.Layout.Elements.Paragraph.MinLinesAfterBreak.get -> int
+VellumPdf.Layout.Elements.Paragraph.MinLinesAfterBreak.init -> void
+VellumPdf.Layout.LayoutDiagnosticCode.KeepWithNextRelaxed = 801 -> VellumPdf.Layout.LayoutDiagnosticCode
+VellumPdf.Layout.LayoutDiagnosticCode.KeepTogetherRelaxed = 802 -> VellumPdf.Layout.LayoutDiagnosticCode
+VellumPdf.Layout.LayoutDiagnosticCode.MinLinesRelaxed = 803 -> VellumPdf.Layout.LayoutDiagnosticCode

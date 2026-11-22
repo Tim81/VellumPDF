@@ -16,7 +16,7 @@ namespace VellumPdf.Layout.Rendering;
 /// <remarks>
 /// Grandchildren are ignored; see <see cref="ListItem.Children"/>.
 /// </remarks>
-public sealed class ListRenderer : IRenderer, IPageBreakSource, IPlacementSource
+public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPlacementSource
 {
     private readonly ListElement _list;
 
@@ -76,6 +76,10 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IPlacementSource
     // The mode belongs to the element, so a renderer added through Document.Add(IRenderer) honours
     // it as well.
     PageBreakMode IPageBreakSource.BreakBefore => _list.BreakBefore;
+
+    bool IKeepSource.KeepWithNext => _list.KeepWithNext;
+
+    bool IKeepSource.KeepTogether => _list.KeepTogether;
 
     // Explicit, as above. The list's anchor is its first placed line and an item's anchor is the
     // line it starts on, so a piece reports an item only when that item starts in it: the item a

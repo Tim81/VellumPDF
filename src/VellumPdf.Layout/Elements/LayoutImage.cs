@@ -155,6 +155,23 @@ public sealed class LayoutImage
     private PageBreakMode _breakBefore;
 
     /// <summary>
+    /// Whether the image stays on the page the next element starts on. The default,
+    /// <see langword="false"/>, places the image without looking at what follows.
+    /// </summary>
+    /// <remarks>
+    /// <b>Nothing is refused, and a request the pages cannot hold is dropped and reported, not
+    /// thrown.</b> The group, the order in which requests are dropped, the diagnostic and the extra
+    /// layout are those of <see cref="Paragraph.KeepWithNext"/>.
+    /// <para>The flag is read from an image added with <see cref="Document.Add(LayoutImage)"/>,
+    /// and from a <see cref="Rendering.LayoutImageRenderer"/> added with
+    /// <see cref="Document.Add(IRenderer)"/> or
+    /// <see cref="Rendering.DocumentRenderer.Add(IRenderer)"/>. An image does not split, so it has
+    /// no keep-together flag. Set on an image, this keeps the image and the paragraph after it,
+    /// such as its caption, on one page.</para>
+    /// </remarks>
+    public bool KeepWithNext { get; init; }
+
+    /// <summary>
     /// A name that a link or an outside reference can jump to: the save adds a named destination at
     /// the top edge of this image, inside its margins. <see langword="null"/>, the default, adds none.
     /// </summary>
