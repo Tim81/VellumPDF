@@ -536,8 +536,10 @@ public sealed class ImageFitToPageTests
     }
 
     [Theory]
+    [InlineData(123456789012345.67, "123456789012346pt")]
     [InlineData(999999999999999.0, "999999999999999pt")]
     [InlineData(1e15, "1000000000000000pt")]
+    [InlineData(1000000000000000.1, "1000000000000000.1pt")]
     [InlineData(1e16, "10000000000000000pt")]
     [InlineData(1e17, "1E+17pt")]
     public void ATooTallImage_acrossTheMagnitudeWhereTwoDecimalsStop_printsTheShortestFigure(double height, string printed)
