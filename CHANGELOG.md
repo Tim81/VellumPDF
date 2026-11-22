@@ -595,11 +595,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     (white space only, font size 0, Symbol and ZapfDingbats), whose text is still discarded; an
     entry with a run that holds text and has a non-finite font size or colour channel, whose text
     is still discarded and which still saves, because a width would have made the layout read that
-    style and refuse it; an entry with a run or a marker in a font the document cannot draw (a
-    handle that another document returned, or a `Standard14` value the enumeration does not name),
-    because drawing it would make the save throw; and every entry of a list that holds an entry no
-    page holds (see #685 below). A nested list whose indent reaches the area width still throws
-    `InvalidOperationException`, with the same message.
+    style and refuse it; and every entry of a list that is laid out as it was before the clamp,
+    which the #685 entry below lists. A nested list whose indent reaches the area width still
+    throws `InvalidOperationException`, with the same message.
   - The clamp applies to a list the document lays out itself. A list that a renderer of yours lays
     out through the context it was given, through `LayoutContext.WithArea` or through the public
     `LayoutContext` constructor is laid out as it was: no gutter is narrowed and no entry moves
@@ -608,7 +606,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     `WithArea` say so, with a "Do not rely on" paragraph: 3.0 lays a list out one way.
   - An entry whose marker has no room at the top of a page is still refused: the save throws the
     same "An element is too tall" `InvalidOperationException`. That entry fits no page, so its list
-    is placed as it was before (#685 below).
+    is placed as it was before (#685 below). The page-continuation limit is refused with its own
+    message, which begins "A single element needed more than 50000 page continuations"; the
+    documentation of `ListElement.Indent` gives each refusal its message.
   - A list whose layout, with clamped text or with moved entries (see #685 below), would pass the
     50,000 page continuations one element may take is placed as it was before both, so a list that
     saved still saves, and a list refused at that limit is still refused with the same message.
@@ -652,10 +652,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     holds shows the lines its start allows, so such a document can show fewer lines of that entry
     than before. Of the 13,000 documents, 26 show fewer of an entry's lines, every one of them with a 208.
     With every list started at the top of a page, in 12,000 other documents, none does.
-  - An entry whose marker or text uses a font the document cannot draw is not moved, because
-    drawing it would make the save throw where it saved: it keeps the place it had, and is
-    reported with 208 when a part of it is missing. A list that a renderer of yours lays out is
-    placed as it was, and reports 208 for the entries it leaves with a part missing.
+  - **A document that holds an entry in a font it cannot draw lays every list out as it was before
+    the clamp and the moving of entries.** A handle that another document returned, or a
+    `Standard14` value the enumeration does not name, makes the save throw where an entry's text or
+    marker is drawn, and 2.3.3 saved when that text fell where it did not fit and was dropped.
+    Clamping or moving an entry changes where everything after it falls, so a document could flip
+    from saving to throwing, or the reverse, without any list touching the entry. The rule is
+    therefore per document: when any list holds such an entry, at any depth and under any context
+    (a list added to the document, or one that a renderer of yours lays out through the context,
+    through `LayoutContext.WithArea` or through the public constructor), no list of the document is
+    clamped or moved, and the save gives what 2.3.3 gave: the same bytes, or the same exception
+    and message. `ListIndentClampSkipped` (207) reports each list the document placed this way, with
+    the number of entries the clamp would have narrowed as `Count`, or 1, and
+    `ListEntryPartDropped` (208) reports an entry left with a part missing.
+  - A list that a renderer of yours holds is found when it is laid out, after the lists ahead of
+    it were laid out the new way. A document with a list ahead of a renderer from outside the
+    library is therefore laid out once more, before it is drawn, unless it has a header or footer,
+    whose page-counting pass serves; a document with a header measures twice when that pass finds
+    the font. A renderer of yours that draws text in such a font itself, and not through a list,
+    can still be moved by a list ahead of it, as `ListRenderer.Layout` says.
+  - A list that a renderer of yours holds reports nothing: neither 207 nor 208, because the
+    document did not place it. The bytes are those of the list laid out as it was.
   - Moving entries adds pages, so the continuation bound now covers every list, not only a list
     with a clamped entry, and a list that would pass the limit because of moved entries is placed
     as it was before, with `ListIndentClampSkipped` (207).

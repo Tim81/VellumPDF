@@ -536,9 +536,9 @@ public sealed class ListDocumentFontRuleTests
     }
 
     /// <summary>
-    /// A list builds its entries once for each layout, however many pages it spans: the pieces of a
-    /// list that starts over carry the generation, and do not build the entries again for each page.
-    /// Four builds are two lists in two passes, the extra layout and the drawing layout.
+    /// A list builds its entries once for each layout, however many pages it spans: the pieces of
+    /// a list that starts over carry the generation, and do not build the entries again for each
+    /// page. Four builds are two lists in two passes, the extra layout and the drawing layout.
     /// </summary>
     [Fact]
     public void AListThatSpansManyPages_buildsItsEntriesOncePerLayout()
