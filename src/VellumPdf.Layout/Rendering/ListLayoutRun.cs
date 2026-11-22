@@ -54,8 +54,13 @@ internal sealed class ListLayoutRun
     internal bool AllAsTwin { get; private set; }
 
     /// <summary>
-    /// Counts the times the layout's lists were told to start over, which is once at most, by
-    /// <see cref="StartOver"/>. A list that was laid out before keeps the paragraphs it laid out,
+    /// True while the document lays out only to find <see cref="AllAsTwin"/>. Every list lays out
+    /// as its twin then, whether or not the document turns out to hold such an entry.
+    /// </summary>
+    internal bool Probing { get; set; }
+
+    /// <summary>
+    /// Counts the times the layout's lists were told to start over, by <see cref="StartOver"/>. A list that was laid out before keeps the paragraphs it laid out,
     /// and a paragraph that is later laid out where its text does not fit is drawn from where it
     /// was placed last. Lists that an earlier pass placed differently would draw text where 2.3.3
     /// dropped it, so a list that sees a new generation forgets what it built, and from then on
@@ -82,9 +87,8 @@ internal sealed class ListLayoutRun
     internal void NoteUndrawable() => AllAsTwin = true;
 
     /// <summary>
-    /// Tells every list to forget the layout it holds, before the first pass that lays out with
-    /// <see cref="AllAsTwin"/> set from the start. The pass that found the entry laid its lists out
-    /// both ways, and what it left behind is not what a layout that is twin throughout would have.
+    /// Tells every list to forget the layout it holds, after a pass whose result is not kept. What
+    /// it left behind is not what a first layout would have.
     /// </summary>
     internal void StartOver() => Generation++;
 

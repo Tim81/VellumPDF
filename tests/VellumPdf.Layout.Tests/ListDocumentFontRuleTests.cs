@@ -513,13 +513,36 @@ public sealed class ListDocumentFontRuleTests
     }
 
     /// <summary>
-    /// A header already measures the document, so that pass serves, and it runs twice only when it
-    /// found the font: the pass that found it laid lists out two ways.
+    /// The extra layout lays lists out as their twins. A list laid out the new way measures text
+    /// that 2.3.3 never measured, here the space between two words that the clamp gives a width,
+    /// which adds a glyph to the subset of an embedded font, so the saved file would differ from
+    /// the one 2.3.3 wrote. The document compared here holds the font, so it is that file.
+    /// </summary>
+    [Fact]
+    public void TheExtraLayout_addsNoGlyphToAFontSubset()
+    {
+        Document Build(bool twin)
+        {
+            var doc = Page(200, 400, 0, header: false);
+            var own = doc.UseTrueTypeFont(FontReportSupport.DejaVuBytes);
+            var ahead = new ListElement(ListStyle.Unordered) { Indent = 1000 }
+                .Add(new ListItem([new TextRun("ab cd", new TextStyle { FontRef = own, FontSize = 10 })]) { Style = H(10) });
+            Place(doc, ahead, Visible, twin);
+            Place(doc, OneEntry("b", Bad("undefined", 10), 1000), 0, twin);
+            return doc;
+        }
+
+        Assert.Equal(Outcome(Build(twin: true)), Outcome(Build(twin: false)));
+    }
+
+    /// <summary>
+    /// A header's page-counting pass is the one the document reports, whether or not the extra
+    /// layout found the font: that layout runs first, as a pass of its own, and is not counted.
     /// </summary>
     [Theory]
     [InlineData(false, 1)]
-    [InlineData(true, 2)]
-    public void AHeaderMeasure_isRepeatedOnlyWhenAListHoldsTheFont(bool bad, int measureRuns)
+    [InlineData(true, 1)]
+    public void AHeaderMeasure_runsOnceWhetherOrNotAListHoldsTheFont(bool bad, int measureRuns)
     {
         var (renderer, _) = Render(
             r =>
@@ -577,14 +600,13 @@ public sealed class ListDocumentFontRuleTests
     }
 
     /// <summary>
-    /// A document whose text depends on the plan measures until it settles, and a pass that found
-    /// the font is measured again from the start: three passes where one list holds the font, two
-    /// where none does.
+    /// A document whose text depends on the plan measures until it settles, in two passes here,
+    /// whether or not the extra layout found the font.
     /// </summary>
     [Theory]
     [InlineData(false, 2)]
-    [InlineData(true, 3)]
-    public void ADependentThatSettles_isMeasuredAgainAfterAPassThatFoundTheFont(bool bad, int measureRuns)
+    [InlineData(true, 2)]
+    public void ADependentThatSettles_isMeasuredTwice_whetherOrNotAListHoldsTheFont(bool bad, int measureRuns)
     {
         var (renderer, _) = Render(r =>
         {

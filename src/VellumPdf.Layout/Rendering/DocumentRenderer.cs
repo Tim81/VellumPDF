@@ -511,36 +511,23 @@ public sealed class DocumentRenderer
         // and the guard compares the drawing pass with them. Tests set RecordPlacements.
         _collect = dependents is not null || RecordPlacements || _navigation.HasAnchors || _navigation.HasBreakLabels;
 
-        var probeLists = ScanLists(listRun);
+        if (ScanLists(listRun)) ProbeForUndrawableLists(listRun);
 
         int totalPages;
-        while (true)
+        if (dependents is not null)
         {
-            var asTwin = listRun.AllAsTwin;
-            if (dependents is not null)
-            {
-                // Resolves the dependents against each run's plan until they stop changing, so
-                // what the drawing pass prints names the page its target is drawn on.
-                totalPages = MeasureUntilStable(dependents, listRun);
-            }
-            else if (Header is not null || Footer is not null)
-            {
-                // One measuring run: the same loop as the drawing pass, with no PDF objects
-                // created.
-                totalPages = RunPass(measure: true, totalPages: 0);
-            }
-            else
-            {
-                totalPages = 0; // unknown / irrelevant
-                if (probeLists && !asTwin) ProbeForUndrawableLists(listRun);
-            }
-
-            // A list found in the pass that holds an entry the document cannot draw turned every
-            // list into its twin from there on, so the pass laid some of them out the other way and
-            // what it counted is not what the drawing pass will lay out. Measure again, which can
-            // happen once: the flag does not go back. Removed in 3.0 (#688).
-            if (listRun.AllAsTwin == asTwin) break;
-            listRun.StartOver();
+            // Resolves the dependents against each run's plan until they stop changing, so what the
+            // drawing pass prints names the page its target is drawn on.
+            totalPages = MeasureUntilStable(dependents);
+        }
+        else if (Header is not null || Footer is not null)
+        {
+            // One measuring run: the same loop as the drawing pass, with no PDF objects created.
+            totalPages = RunPass(measure: true, totalPages: 0);
+        }
+        else
+        {
+            totalPages = 0; // unknown / irrelevant
         }
 
         // The drawing pass, with running bands resolved. A document with a dependent compares each
@@ -812,10 +799,10 @@ public sealed class DocumentRenderer
     // needs to know (ListLayoutRun). Every list the document holds itself is read here, and every
     // list sits at the top level: no built-in renderer builds one. A renderer from outside this
     // assembly can lay a ListRenderer out from its own Layout, and that list is found only when it
-    // is laid out. Returns whether that can matter: a list that is laid out the new way, ahead of
-    // such a renderer, has already moved what follows it when the renderer's list turns out to hold
-    // an entry the document cannot draw, which is the case a pass that only measures finds out
-    // about before the drawing pass starts.
+    // is laid out. Returns whether a pass must find it first: a list laid out the new way ahead of
+    // such a renderer has already moved what follows it by the time the renderer's list turns out
+    // to hold an entry the document cannot draw, and a pass that has drawn cannot be undone. A
+    // renderer ahead of every list needs no pass, because no list was laid out before it.
     // Removed in 3.0 (#688).
     private bool ScanLists(ListLayoutRun listRun)
     {
@@ -837,17 +824,21 @@ public sealed class DocumentRenderer
         return opaqueAfterList && !listRun.AllAsTwin;
     }
 
-    // A measuring pass that no band or dependent asked for, run only to let the lists a renderer of
-    // a caller's lays out say whether the document can draw them. Its result is not kept, so a
-    // document that measured nothing before still reports that it did not, and a refusal it raises
-    // is left to the drawing pass, which reaches it in the order it always did: the drawing pass
-    // draws each element before it lays the next out. The lists forget what the pass built: a
-    // paragraph keeps where its last layout placed it, and a list's Draw reads that when the
-    // layout it makes for itself answers Nothing, so an entry whose text this pass placed on a
-    // page where it fits would be drawn there by the pass that follows, where 2.3.3 dropped it.
+    // A measuring pass, run only to let the lists a renderer of a caller's lays out say whether the
+    // document can draw them. Every list lays out as its twin in it, because the font does not
+    // depend on where an entry falls and because a list laid out the new way measures text that
+    // 2.3.3 never measured, which adds glyphs to the subset of an embedded font that the saved
+    // document would then hold. Its result is not kept, so a document that measured nothing before
+    // still reports that it did not, and a refusal it raises is left to the passes that follow,
+    // which reach it in the order they always did: the drawing pass draws each element before it
+    // lays the next out. The lists forget what the pass built: a paragraph keeps where its last
+    // layout placed it, and a list's Draw reads that when the layout it makes for itself answers
+    // Nothing, so an entry whose text this pass placed on a page where it fits would be drawn
+    // there by the pass that follows, where 2.3.3 dropped it.
     // Removed in 3.0 (#688).
     private void ProbeForUndrawableLists(ListLayoutRun listRun)
     {
+        listRun.Probing = true;
         try
         {
             RunPass(measure: true, totalPages: 0);
@@ -858,6 +849,7 @@ public sealed class DocumentRenderer
         }
         finally
         {
+            listRun.Probing = false;
             MeasureRuns = 0;
             _measureSink = null;
             _measurePages = 0;
@@ -965,9 +957,8 @@ public sealed class DocumentRenderer
         return _measurePages;
     }
 
-    private int MeasureUntilStable(List<IPlanDependent> dependents, ListLayoutRun listRun)
+    private int MeasureUntilStable(List<IPlanDependent> dependents)
     {
-        var asTwin = listRun.AllAsTwin;
         var history = new List<string>[dependents.Count];
         for (var i = 0; i < history.Length; i++)
             history[i] = [];
@@ -993,11 +984,6 @@ public sealed class DocumentRenderer
 
             var pages = RunPass(measure: true, totalPages: 0);
             pageCounts.Add(pages);
-
-            // A pass that found a font the document cannot draw laid its lists out two ways, so its
-            // plan is not one to settle on. The caller measures again from the start.
-            // Removed in 3.0 (#688).
-            if (listRun.AllAsTwin != asTwin) return pages;
 
             // Run 1 has no earlier run to equal. From run 2, a run that resolved nothing new laid
             // out the same strings as the run before it, so its plan is that run's plan.

@@ -267,7 +267,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
         if (!_unclamped)
         {
             if (ListLayoutRun.Current is { } run && run.Generation != _generation) ForgetEarlierLayout(run.Generation);
-            if (ListLayoutRun.Current is { AllAsTwin: true })
+            if (ListLayoutRun.Current is { AllAsTwin: true } or { Probing: true })
                 return LayOutAsTwin(context, TwinPlacement.Fonts);
             if (context.ModeFor(this) == ContinuationMode.Twin)
                 return LayOutAsTwin(context, TwinPlacement.Document);
