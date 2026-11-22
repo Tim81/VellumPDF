@@ -1574,9 +1574,6 @@ public sealed class DocumentRenderer
         Debug.Assert(!AssertOnUnreportedChild, "A built-in parent addressed a reporting child and did not report for itself.");
     }
 
-    // Kept as its own frame: the stack-depth tests count it, and a tier-1 recompile that folds this
-    // small method into its caller leaves them no frame to count.
-    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
     private void PlaceRenderer(IRenderer renderer, int totalPages)
     {
         // Read once, from the element the caller added: the overflow this loop continues with
@@ -1588,6 +1585,7 @@ public sealed class DocumentRenderer
         PlaceLoop(renderer, totalPages, keepTogether, lineCounts, session, 0);
     }
 
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
     private void PlaceLoop(IRenderer renderer, int totalPages, bool keepTogether, bool lineCounts, ContinuationSession session, int continuations)
     {
         var split = false;
