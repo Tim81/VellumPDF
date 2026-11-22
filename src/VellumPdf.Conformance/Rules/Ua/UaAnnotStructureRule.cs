@@ -63,8 +63,11 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// </list>
 /// </para>
 /// <para>
-/// Clean-room: derived from ISO 14289-1:2014 §7.18 and the veraPDF 1.30.2 profile predicates,
-/// empirically validated. Not derived from any third-party implementation.
+/// Cites ISO 14289-1:2014 §7.18 and takes its tests from the veraPDF 1.30.2 profile predicates,
+/// empirically validated. It was written from veraPDF's PDF/UA-1 profile and checked against
+/// veraPDF, before ISO 14289-1 was held. The 2026-11-21 audit against the clause text (#428) found
+/// it broader: 7.18.1 also exempts Popup annotations, and the helper this rule uses does not. The
+/// Widget-to-Form, Link-to-Link and PrinterMark checks agree with 7.18.4, 7.18.5 and 7.18.8.
 /// </para>
 /// </remarks>
 internal sealed class UaAnnotStructureRule : IConformanceRule
@@ -98,8 +101,8 @@ internal sealed class UaAnnotStructureRule : IConformanceRule
 
                 var subtype = (context.Resolve(annot.Get(PdfName.Subtype)) as PdfName)?.Value;
 
-                // Exempt: hidden (F&2) or entirely outside the crop box — all §7.18 rules share
-                // these two exemptions, verified against veraPDF 1.30.2.
+                // Exempt: hidden (F&2) or entirely outside the crop box. 7.18.1 names a third
+                // exemption, Popup annotations, which UaAnnotationHelper does not implement.
                 if (UaAnnotationHelper.IsExempt(context, annot, page))
                     continue;
 

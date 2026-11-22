@@ -12,12 +12,15 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// every glyph present in the font program (excluding <c>.notdef</c>).
 /// </summary>
 /// <remarks>
-/// Authored from ISO 14289-1:2014, 7.21.4.2 and cross-validated against veraPDF 1.30.2 (clause
-/// 7.21.4.2, testNumber 1). The PDF/UA-1 predicate is identical to the PDF/A-2 §6.2.11.4.2-1
-/// predicate (<c>containsFontFile == false || fontName.search(/[A-Z]{6}\+/) != 0 ||
-/// CharSet == null || charSetListsAllGlyphs == true</c>), so this rule reuses the same
-/// subset-tag detection, CharSet parsing, Type 1 program parser (<see cref="Type1Glyphs"/>), and
-/// usage-scoping pattern as <c>FontStructureRule</c>.
+/// Cites ISO 14289-1:2014, 7.21.4.2, and takes its predicate from veraPDF 1.30.2 (clause 7.21.4.2,
+/// testNumber 1). It was written from veraPDF's PDF/UA-1 profile and checked against veraPDF,
+/// before ISO 14289-1 was held. The 2026-11-21 audit against the clause text (#428) found it
+/// narrower: it examines only subset-tagged fonts with a <c>/FontFile</c> (not <c>/FontFile3</c>)
+/// and exempts <c>.notdef</c>, none of which 7.21.4.2 says. The PDF/UA-1 predicate is identical to
+/// the PDF/A-2 §6.2.11.4.2-1 predicate (<c>containsFontFile == false ||
+/// fontName.search(/[A-Z]{6}\+/) != 0 || CharSet == null || charSetListsAllGlyphs == true</c>), so
+/// this rule reuses the same subset-tag detection, CharSet parsing, Type 1 program parser (<see
+/// cref="Type1Glyphs"/>), and usage-scoping pattern as <c>FontStructureRule</c>.
 /// <para>
 /// Only subset-tagged fonts (a <c>XXXXXX+Name</c> BaseFont) with an embedded <c>/FontFile</c>
 /// that carry a <c>/CharSet</c> are checked. A missing or parse-failing program degrades to no
@@ -29,6 +32,10 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// glyph) → veraPDF fires clause 7.21.4.2-1. The same font with a complete CharSet → veraPDF
 /// accepts (clause 7.21.4.2-1 absent). Cross-validated using the Noto Sans Shavian PFB test
 /// asset that anchors the equivalent PDF/A-2 §6.2.11.4.2-1 oracle fixtures.
+/// </para>
+/// <para>
+/// A font shown only inside a form XObject is not examined, and veraPDF 1.30.2 and 1.30.4
+/// refuse a violating one there on a hand-built file (#428).
 /// </para>
 /// </remarks>
 internal sealed class UaType1CharSetRule : IConformanceRule

@@ -10,8 +10,10 @@ namespace VellumPdf.Conformance.Rules.Structure;
 /// (embedded-file) entry shall contain both the <c>/F</c> and <c>/UF</c> file-name keys (§6.8-2).
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.8 and ISO 32000-1:2008, 7.11.3. Clean-room: derived from the
-/// specification text, not from any third-party validation profile.
+/// Cites ISO 19005-2:2011, 6.8 and ISO 32000-1:2008, 7.11.3. Its behaviour was checked against
+/// veraPDF's PDF/A-2 profile, and ISO 19005-2 was not held when it was written. The 2026-11-21
+/// audit against the clause text (#418) found agreement. How a file specification is recognised
+/// follows veraPDF, as the next paragraph says.
 /// <para>
 /// The requirement applies only to actual file specification dictionaries — not to any dictionary
 /// that merely happens to carry an <c>/EF</c> key. Empirically (cross-checked against veraPDF 1.30.2)

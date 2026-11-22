@@ -13,7 +13,10 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// interactive form field.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 14289-1:2014, 7.18.4 (testNumber 2). Clean-room.
+/// Cites ISO 14289-1:2014, 7.18.4; the id follows veraPDF's testNumber 2. It was written from
+/// veraPDF's PDF/UA-1 profile and checked against veraPDF, before ISO 14289-1 was held. The
+/// 2026-11-21 audit against the clause text (#428) found agreement with the table 7.18.4 refers to
+/// (ISO 32000-1 Table 340).
 ///
 /// <para><strong>Scope:</strong> fires only when the Form struct element lacks a <c>/Role</c>
 /// attribute in its <c>/A</c> (attribute) dict. A Form element WITH a /Role attribute takes on a

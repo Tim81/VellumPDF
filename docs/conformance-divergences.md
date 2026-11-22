@@ -139,14 +139,14 @@ These are not disagreements and do not belong in the table above, but they are t
 alone is not enough. A diff between two implementations cannot surface a requirement both of them
 omit, because they agree.
 
-Measured against an inventory of ISO 19005-2 clause 6 by number and heading, 19 of its 73
+Measured against an inventory of ISO 19005-2 clause 6 by number and heading, 18 of its 72
 file-scoped clauses are checked by neither this library nor veraPDF. The inventory is
 `eng/data/iso19005-2-clauses.yml`, and `eng/clause-coverage.py` reports the split, so a clone that
 has a veraPDF jar can recompute the figure. Without one the script says the profiles are unavailable
-and reports the 20 clauses no rule cites, rather than silently counting every clause as one veraPDF
+and reports the 19 clauses no rule cites, rather than silently counting every clause as one veraPDF
 does not check.
 
-Seven of the 19 are Level A only, and Level A is the accessibility level this library advertises:
+Seven of the 18 are Level A only, and Level A is the accessibility level this library advertises:
 
 - 6.7.2.1 Tagged PDF, general
 - 6.7.3.1 Specification of artefacts
@@ -158,10 +158,17 @@ Seven of the 19 are Level A only, and Level A is the accessibility level this li
 
 Two cautions carry with that number. Entries titled "General" may be introductory rather than
 independently checkable, and the detection is deliberately generous, crediting a rule that cites a
-parent clause. So 19 is a floor on the coverage gap rather than a count of defects.
+parent clause. So 18 is a floor on the coverage gap rather than a count of defects.
 
-One clause sits in both places. **6.6.5, File identifiers**, is checked here and by no veraPDF rule,
-so under the current two-directional diff being right registers as a phantom id.
+One clause shows as checked here and by no veraPDF rule, and it is a grouping artifact rather
+than a divergence. **6.2.8.1, General**, is credited to this library because `ForbiddenXObjectRule`
+names it, while veraPDF files the same requirements under the parent clause 6.2.8.
+
+Two other clauses need a note. **6.6.5, File identifiers**, is checked
+by neither: the detection ignores a clause number that follows a digit or a dot, so the ISO 32000-1
+citation "§8.6.6.5" in the DeviceN rules does not count as a mention of it. **6.2.7, Flatness**, is
+not a gap: it binds readers, which ignore `/FL` and the `i` operand, so a file validator has
+nothing to check and the inventory scopes it `reader`.
 
 ## Adding and removing rows
 

@@ -15,9 +15,14 @@ namespace VellumPdf.Conformance.Rules.Annotations;
 /// and appearance-dictionary requirements still apply to <c>/Link</c>.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.3 (forbidden subtypes §6.3.1, flags §6.3.2, appearance
-/// §6.3.3) and ISO 32000-1:2008, 12.5.3 (Table 165 annotation flags). Clean-room: derived from the
-/// specification text, not from any third-party validation profile.
+/// Cites ISO 19005-2:2011, 6.3 (forbidden subtypes §6.3.1, flags §6.3.2, appearance §6.3.3) and ISO
+/// 32000-1:2008, 12.5.3 (Table 165 annotation flags), and reports every finding under 6.3 rather
+/// than the sub-clause. Its behaviour was checked against veraPDF's PDF/A-2 profile, and ISO
+/// 19005-2 was not held when it was written. The 2026-11-21 audit against the clause text (#418)
+/// found it narrower: it exempts an annotation with a zero width <em>or</em> a zero height from the
+/// appearance requirement, where 6.3.3 needs both to be zero; it truncates a fractional
+/// <c>/Rect</c> to whole units; and it accepts an annotation subtype that ISO 32000-1 does not
+/// define.
 /// </remarks>
 internal sealed class AnnotationRule : IConformanceRule
 {
@@ -136,10 +141,12 @@ internal sealed class AnnotationRule : IConformanceRule
             if (subtype == "Link" || subtype == "Popup")
                 continue;
 
-            // §6.3.3-1: an annotation whose /Rect is degenerate (zero width or zero height) has no
-            // visible extent and is exempt from the appearance-presence requirement. veraPDF 1.30.2
-            // accepts such annotations (including invisible signature widgets with /Rect [0 0 0 0])
-            // without flagging the missing /AP. The flag and /AP-kind checks above still apply.
+            // §6.3.3-1: an annotation whose /Rect has a zero width or a zero height is exempt
+            // from the appearance-presence requirement here. On hand-built files, veraPDF 1.30.2
+            // and 1.30.4 both accept a missing /AP when the rectangle is [0 0 0 0] or [10 10 10 10]
+            // (an invisible signature widget is the usual case) and both refuse a rectangle with
+            // only one zero side, so the exemption needs both to be zero (#418). The flag and
+            // /AP-kind checks above still apply.
             if (HasDegenerateRect(context, annot))
                 continue;
 
@@ -151,11 +158,10 @@ internal sealed class AnnotationRule : IConformanceRule
         }
     }
 
-    // Returns true when the annotation's /Rect is degenerate — i.e. has zero width (x0 == x2) or
-    // zero height (y1 == y3). A degenerate rect means the annotation has no visible area, so it
-    // carries no renderable content and is exempt from the appearance-stream presence requirement
-    // (§6.3.3-1). veraPDF 1.30.2 confirms: it accepts annotations with /Rect [0 0 0 0] (and any
-    // other zero-area rectangle) without flagging a missing /AP.
+    // Returns true when the annotation's /Rect has zero width (x0 == x2) or zero height
+    // (y1 == y3). Such a rect has no visible area, so the annotation is exempt from the
+    // appearance-stream presence requirement here (§6.3.3-1). veraPDF accepts a missing /AP only
+    // when both are zero (see the call site), so one zero side is a looser reading than veraPDF's.
     private static bool HasDegenerateRect(PreflightContext context, PdfDictionary annot)
     {
         if (context.Resolve(annot.Get(_rect)) is not PdfArray { Count: 4 } rect)

@@ -11,8 +11,11 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// structure order.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 14289-1:2014, 7.18.3 and ISO 32000-1:2008, 7.7.3.3. Clean-room: derived from
-/// the specification text, not from any third-party validation profile.
+/// Cites ISO 14289-1:2014, 7.18.3 and ISO 32000-1:2008, 7.7.3.3. It was written from veraPDF's
+/// PDF/UA-1 profile and checked against veraPDF, before ISO 14289-1 was held. The 2026-11-21 audit
+/// against the clause text (#428) found it broader: 7.18.1 exempts annotations whose hidden flag is
+/// set and Popup annotations, and this rule fires on any annotation without consulting those
+/// exemptions.
 /// </remarks>
 internal sealed class UaTabsRule : IConformanceRule
 {

@@ -52,9 +52,11 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// references are de-duplicated by object number; the fired-once guard ensures at most one
 /// finding per violation.</para>
 ///
-/// <para>Authored clean-room from ISO 14289-1:2014 §7.20 and ISO 32000-1:2008 §14.7.4.4
-/// (Form XObject /StructParents convention). veraPDF 1.30.2 used only as a behavioural oracle,
-/// not as an implementation reference.</para>
+/// <para>Cites ISO 14289-1:2014 §7.20 and ISO 32000-1:2008 §14.7.4.4 (Form XObject /StructParents
+/// convention). The condition is veraPDF's <c>isUniqueSemanticParent</c> predicate, named above. It
+/// was written from veraPDF's PDF/UA-1 profile and checked against veraPDF, before ISO 14289-1 was
+/// held. The 2026-11-21 audit against the clause text (#428) found it narrower: it fires only for a
+/// form drawn from two or more pages, and skips reuse on one page and nested reuse.</para>
 /// </remarks>
 internal sealed class UaFormXObjectSemanticParentRule : IConformanceRule
 {

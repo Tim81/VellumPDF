@@ -9,12 +9,18 @@ namespace VellumPdf.Conformance.Rules.Graphics;
 /// ISO 19005-2 §6.2.8 (Images) and §6.2.9 (XObjects). A conforming file shall not draw:
 /// a <b>PostScript XObject</b> (<c>/Subtype /PS</c>, §6.2.9); an <b>Image XObject</b> carrying
 /// <c>/Alternates</c>, <c>/OPI</c>, <c>/Interpolate true</c>, or an out-of-range
-/// <c>/BitsPerComponent</c> (§6.2.8); or a <b>form XObject</b> carrying <c>/OPI</c>, <c>/PS</c>,
-/// <c>/Subtype2 /PS</c>, or a reference (<c>/Ref</c>) — a reference XObject (§6.2.9).
+/// <c>/BitsPerComponent</c> (ISO 32000-1 Table 89, not an ISO 19005-2 requirement); or a <b>form
+/// XObject</b> carrying <c>/OPI</c>, <c>/PS</c>, <c>/Subtype2 /PS</c>, or a reference (<c>/Ref</c>)
+/// — a reference XObject (§6.2.9).
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.2.8 and 6.2.9. Clean-room: derived from the specification
-/// text, not from any third-party validation profile.
+/// Cites ISO 19005-2:2011, 6.2.8 and 6.2.9, at the level of the parent clause; the requirements are
+/// in 6.2.8.1 and 6.2.9.1 to 6.2.9.3. Its behaviour was checked against veraPDF's PDF/A-2 profile,
+/// and ISO 19005-2 was not held when it was written. The <c>/BitsPerComponent</c> check is not in
+/// ISO 19005-2: it rests on ISO 32000-1:2008 Table 89 and mirrors veraPDF's profile, which files it
+/// under 6.2.8, so the clause it reports is wrong (#418). The 2026-11-21 audit against the clause
+/// text (#418) found the rule narrower: it examines only XObjects drawn from page content, so an
+/// image with <c>/Interpolate true</c> drawn from a form XObject passes here and fails veraPDF.
 /// <para>
 /// Scoped to XObjects the page actually paints with a <c>Do</c> operator (determined by
 /// <see cref="ContentStreamUsage"/>). An XObject that is present in <c>/Resources</c> but never
@@ -27,7 +33,7 @@ namespace VellumPdf.Conformance.Rules.Graphics;
 /// This slice inspects XObjects drawn from a page's own or inherited <c>/Resources /XObject</c>.
 /// XObjects reached only from within another form XObject, a tiling pattern, a Type 3 glyph
 /// procedure, or an annotation appearance stream are deferred to the later resource-graph slice.
-/// The JPEG2000 codestream constraints (§6.2.8.3) need image-data parsing and are also deferred.
+/// The JPEG2000 codestream constraints (§6.2.8.3) are checked by <see cref="Jpeg2000Rule"/>.
 /// </para>
 /// </remarks>
 internal sealed class ForbiddenXObjectRule : IConformanceRule

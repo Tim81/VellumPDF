@@ -56,6 +56,10 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// and annotation appearance streams are not walked.</para>
 ///
 /// <para>Empirically validated against veraPDF 1.30.2 (probe series, Batch C2).</para>
+/// <para>Its behaviour was checked against veraPDF's PDF/UA-1 profile, and ISO 14289-1 was not
+/// held when it was written. The 2026-11-21 audit against the clause text (#428) found it
+/// narrower in scope: only page content streams are walked, so a form XObject is not
+/// examined.</para>
 /// </remarks>
 internal sealed class UaArtifactTaggingRule : IConformanceRule
 {

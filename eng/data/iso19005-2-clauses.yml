@@ -62,7 +62,9 @@ clauses:
   - { id: "6.2.4.5",    title: "Indexed and Pattern colour spaces",       scope: file }
   - { id: "6.2.5",      title: "Extended graphics state",                 scope: file }
   - { id: "6.2.6",      title: "Rendering intents",                       scope: file }
-  - { id: "6.2.7",      title: "Flatness",                                scope: file }
+  # 6.2.7 was scope: file until the 2026-11-21 audit (#418) read it: it binds readers, which ignore
+  # /FL and the i operand, so a file validator has nothing to check.
+  - { id: "6.2.7",      title: "Flatness",                                scope: reader }
   - { id: "6.2.8",      title: "Images",                                  scope: container }
   - { id: "6.2.8.1",    title: "General",                                 scope: file }
   - { id: "6.2.8.2",    title: "Thumbnail images",                        scope: reader }

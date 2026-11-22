@@ -9,13 +9,15 @@ namespace VellumPdf.Conformance.Rules.Structure;
 /// single EOL marker (§6.1.4-2).
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.1.4 and ISO 32000-1:2008, 7.5.4. Clean-room: derived from the
-/// specification text, not from any third-party validation profile. This is a byte-level check: the
-/// cross-reference table is located through the file's final <c>startxref</c> offset (not by scanning
-/// for the word "xref", which could occur inside a stream), so the check inspects exactly one place
-/// and cannot misfire on stream content. A file whose cross-reference data is a cross-reference
-/// <em>stream</em> (the offset points at an indirect object, not the <c>xref</c> keyword) has no
-/// <c>xref</c> keyword and is therefore outside this clause.
+/// Cites ISO 19005-2:2011, 6.1.4 and ISO 32000-1:2008, 7.5.4. Its behaviour was checked against
+/// veraPDF's PDF/A-2 profile, and ISO 19005-2 was not held when it was written. The 2026-11-21
+/// audit against the clause text (#418) found it narrower: 6.1.4 applies to every cross-reference
+/// table, and this rule follows only the final <c>startxref</c>. This is a byte-level check: the
+/// cross-reference table is located through the file's final <c>startxref</c> offset (not by
+/// scanning for the word "xref", which could occur inside a stream), so the check inspects exactly
+/// one place and cannot misfire on stream content. A file whose cross-reference data is a
+/// cross-reference <em>stream</em> (the offset points at an indirect object, not the <c>xref</c>
+/// keyword) has no <c>xref</c> keyword and is therefore outside this clause.
 /// </remarks>
 internal sealed class CrossReferenceRule : IConformanceRule
 {

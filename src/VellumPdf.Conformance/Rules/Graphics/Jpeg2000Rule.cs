@@ -38,9 +38,10 @@ namespace VellumPdf.Conformance.Rules.Graphics;
 /// are read from the <c>bpcc</c> box; for a raw codestream they come from the Ssiz fields in SIZ.
 /// </para>
 /// <para>
-/// <strong>Scope:</strong> all JPXDecode image XObjects drawn via <c>Do</c> in any page's resource
-/// graph (exactly matching <see cref="ForbiddenXObjectRule"/>). An XObject present in resources but
-/// never drawn is not checked (matches veraPDF's content-usage scoping).
+/// <strong>Scope:</strong> JPXDecode image XObjects that page content draws via <c>Do</c>
+/// (matching <see cref="ForbiddenXObjectRule"/>). An XObject present in resources but never drawn
+/// is not checked, which matches veraPDF's content-usage scoping. One drawn inside a form XObject
+/// is not checked either, and veraPDF 1.30.2 and 1.30.4 do refuse a violating one there (#418).
 /// </para>
 /// <para>
 /// <strong>Defensive operation:</strong> any parse failure, truncation, or unexpected structure in
@@ -53,8 +54,11 @@ namespace VellumPdf.Conformance.Rules.Graphics;
 /// do not apply (no <c>colr</c> boxes exist); -1 and -5 are fully checked via the SIZ marker.
 /// </para>
 /// <para>
-/// Clean-room: authored from ISO 19005-2:2011 §6.2.8.3 and ISO 15444-1 §A.5.1 / §I.5.3.
-/// Cross-validated against veraPDF 1.30.2: a conformant JP2 (NC=3, METH=1, EnumCS=16,
+/// Cites ISO 19005-2:2011 §6.2.8.3 and ISO 15444-1 §A.5.1 / §I.5.3. Its behaviour was checked
+/// against veraPDF's PDF/A-2 profile, and ISO 19005-2 was not held when it was written. The
+/// 2026-11-21 audit against the clause text (#418) found the five checks agree with the clause and
+/// the scope narrower: only <c>JPXDecode</c> images that page content draws with <c>Do</c> are
+/// examined. Cross-validated against veraPDF 1.30.2: a conformant JP2 (NC=3, METH=1, EnumCS=16,
 /// uniform BPC=8, single colr with APPROX=0) passes all five rules with zero findings.
 /// </para>
 /// </remarks>

@@ -11,8 +11,10 @@ namespace VellumPdf.Conformance.Rules.Structure;
 /// PDF/A and PDF/UA level from ISO 32000.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 32000-1:2008, 7.7.2 ("Document catalog"). Clean-room: derived from the
-/// specification text, not from any third-party validation profile.
+/// Authored from ISO 32000-1:2008, 7.7.2 ("Document catalog"). Neither the #418 nor the #428
+/// audit covered this rule. On a hand-built file whose catalog has no <c>/Type</c>, veraPDF 1.30.2
+/// and 1.30.4 report no failure under PDF/A-2b or PDF/UA-1, so this rule reports a file that
+/// veraPDF passes.
 /// </remarks>
 internal sealed class DocumentCatalogRule : IConformanceRule
 {

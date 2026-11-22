@@ -15,8 +15,12 @@ namespace VellumPdf.Conformance.Rules.Structure;
 /// separated by hyphens, with the primary subtag restricted to letters only.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.7.4 and the veraPDF predicate on <c>CosLang</c>:
-/// <c>unicodeValue == '' || /^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*$/.test(unicodeValue)</c>.
+/// Cites ISO 19005-2:2011, 6.7.4 and takes its pattern from the veraPDF predicate on
+/// <c>CosLang</c>, which is a veraPDF model object and not a name ISO 19005-2 uses: <c>unicodeValue
+/// == '' || /^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*$/.test(unicodeValue)</c>. ISO 19005-2 was not held
+/// when the rule was written. The 2026-11-21 audit against the clause text (#418) found it
+/// narrower: 6.7.4 binds <c>/Lang</c> in marked-content property lists as well, and this rule reads
+/// only the catalog and structure elements.
 ///
 /// <para>Scope (empirically verified against veraPDF 1.30.2, flavour 2a):</para>
 /// <list type="bullet">

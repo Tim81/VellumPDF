@@ -87,8 +87,9 @@ internal sealed class StructureTreeNode
 /// </summary>
 /// <remarks>
 /// ISO 32000-1:2008 §14.7 defines the StructTreeRoot, StructElem, and role-map structure.
-/// The Table 333 standard structure types are embedded verbatim and are the canonical list
-/// for role-map resolution. Authored clean-room from the specification text.
+/// The standard structure types of 14.8.4 are embedded as the list for role-map resolution
+/// (Table 333 itself lists only the grouping elements among them). The set was probed against
+/// veraPDF 1.30.2 name by name; see <see cref="Ua.UaNonStandardTypeRule"/>.
 /// </remarks>
 internal sealed class StructureTree
 {

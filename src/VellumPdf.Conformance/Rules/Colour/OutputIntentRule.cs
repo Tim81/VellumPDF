@@ -9,17 +9,22 @@ namespace VellumPdf.Conformance.Rules.Colour;
 /// ISO 19005-2 §6.2.3 (Output intents) and §6.2.4.3 (device colour spaces). A document that paints
 /// device-dependent colour shall have a PDF/A (<c>GTS_PDFA1</c>) output intent (§6.2.4.3); the
 /// output intent's <c>/DestOutputProfile</c> shall be a valid ICC profile stream (carrying the
-/// <c>acsp</c> signature, a permitted device class of <c>prtr</c>/<c>mntr</c>/<c>scnr</c>/<c>spac</c>,
-/// and an ICC major version below 5) with a component count (<c>/N</c>) of 1, 3, or 4; and when more
-/// than one output intent carries a <c>/DestOutputProfile</c>, all shall reference the same profile
-/// stream (§6.2.3).
+/// <c>acsp</c> signature, a device class this rule accepts of
+/// <c>prtr</c>/<c>mntr</c>/<c>scnr</c>/<c>spac</c> (6.2.3 itself names <c>prtr</c> and
+/// <c>mntr</c>), and an ICC major version below 5) with a component count (<c>/N</c>) of 1, 3, or
+/// 4; and when more than one output intent carries a <c>/DestOutputProfile</c>, all shall reference
+/// the same profile stream (§6.2.3).
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.2.3 and 6.2.4.3 and ISO 32000-1:2008, 14.11.5 / 8.6.5.5. Clean-room:
-/// derived from the specification text and empirical veraPDF-oracle probing (2026-06-23), not from any
-/// third-party validation profile.
+/// Cites ISO 19005-2:2011, 6.2.3 and 6.2.4.3 and ISO 32000-1:2008, 14.11.5 / 8.6.5.5. The per-type
+/// semantics below were set by probing veraPDF (2026-06-23). Its behaviour was checked against
+/// veraPDF's PDF/A-2 profile, and ISO 19005-2 was not held when it was written. The 2026-11-21
+/// audit against the clause text (#418) found it narrower: 6.2.3 requires the profile class
+/// <c>prtr</c> or <c>mntr</c> and this rule also accepts <c>scnr</c> and <c>spac</c>, and 6.2.4.3
+/// tests for a <c>Default*</c> colour space at the point of use, where this rule accepts one from
+/// any page.
 /// <para>
-/// Per-type §6.2.4.3 semantics (confirmed empirically against veraPDF 1.30.2, 2026-06-23):
+/// Per-type §6.2.4.3 semantics (observed by probing veraPDF 1.30.2, 2026-06-23):
 /// <list type="bullet">
 ///   <item><description>DeviceRGB: satisfied by a <c>/DefaultRGB</c> colour space in the page's
 ///   <c>/Resources /ColorSpace</c> dict, OR a PDF/A output intent whose <c>/DestOutputProfile</c>
@@ -36,6 +41,9 @@ namespace VellumPdf.Conformance.Rules.Colour;
 /// require an output intent when no device colour is used, so neither does this rule (issue #128).
 /// Device colour reached through image <c>/ColorSpace</c> entries and through the <c>/Alternate</c>
 /// space of selected named colour spaces (Separation, DeviceN, uncoloured Pattern) is also detected.
+/// A device colour operator inside a form XObject is not: a DeviceRGB, DeviceCMYK or DeviceGray
+/// colour used there, with no matching output intent, passes here and fails veraPDF 1.30.2 and
+/// 1.30.4 (#418).
 /// The remaining requirements (a present profile's ICC validity, <c>/N</c>, and the
 /// single-shared-profile constraint) are checked unconditionally.
 /// </para>

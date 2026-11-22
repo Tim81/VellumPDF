@@ -12,10 +12,12 @@ namespace VellumPdf.Conformance.Rules.Forms;
 /// (§6.4.1); and the document catalog shall not contain the <c>/NeedsRendering</c> key (§6.4.2).
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.4.1 and 6.4.2. Clean-room: derived from the specification
-/// text, not from any third-party validation profile. The <c>/XFA</c> prohibition (§6.4.2) lives in
-/// <see cref="XfaRule"/>; the digital-signature constraints (§6.4.3) need PKCS#7/ByteRange parsing
-/// and are deferred.
+/// Cites ISO 19005-2:2011, 6.4.1 and 6.4.2. Its behaviour was checked against veraPDF's PDF/A-2
+/// profile, and ISO 19005-2 was not held when it was written. The 2026-11-21 audit against the
+/// clause text (#418) found agreement. The <c>/XFA</c> prohibition (§6.4.2) lives in <see
+/// cref="XfaRule"/>. This rule does not check signatures: <see cref="Signature.SignatureRule"/>
+/// checks the ByteRange, certificate and single-signer requirements, which ISO 19005-2 states in
+/// Annex B.1, and neither rule checks that signatures go through signature fields (§6.4.3).
 /// </remarks>
 internal sealed class InteractiveFormRule : IConformanceRule
 {

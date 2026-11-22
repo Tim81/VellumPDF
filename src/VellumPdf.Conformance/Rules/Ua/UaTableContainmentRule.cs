@@ -6,7 +6,9 @@ using VellumPdf.Conformance.Rules.Structure;
 namespace VellumPdf.Conformance.Rules.Ua;
 
 /// <summary>
-/// ISO 14289-1 §7.2 table-structure containment rules:
+/// Table-structure containment rules, reported under ISO 14289-1 §7.2. 7.2 requires only that the
+/// most semantically appropriate tag be used; the structure comes from ISO 32000-1 Table 337, which
+/// ISO 14289-1 7.5 applies to tables (#428):
 /// <list type="bullet">
 ///   <item>7.2-3  (SETable)   — Table kids ∈ {TR, THead, TBody, TFoot, Caption}</item>
 ///   <item>7.2-4  (SETR)      — TR parent ∈ {Table, THead, TBody, TFoot}</item>

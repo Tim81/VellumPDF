@@ -53,6 +53,14 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// </list>
 /// Fires at most once per document.
 /// </para>
+/// <para>Its behaviour was checked against veraPDF's PDF/UA-1 profile, and ISO 14289-1 was not
+/// held when it was written. The 2026-11-21 audit against the clause text (#428) found it
+/// narrower: only Type 1 and TrueType fonts with an <c>/Encoding</c> are examined, and it
+/// models veraPDF's derived-Unicode approach, not the four exemptions the text lists.</para>
+/// <para>
+/// A font shown only inside a form XObject is not examined, and veraPDF 1.30.2 and 1.30.4
+/// refuse a violating one there on a hand-built file (#428).
+/// </para>
 /// </remarks>
 internal sealed class UaToUnicodeCharMappingRule : IConformanceRule
 {

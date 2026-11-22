@@ -14,8 +14,10 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// prefix — a non-<c>pdfuaid</c>, non-null prefix is a violation.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 14289-1:2014, 5 and ISO 16684-1 (XMP). Clean-room: derived from the
-/// specification text, not from any third-party validation profile.
+/// Cites ISO 14289-1:2014, 5 and ISO 16684-1 (XMP). It was written from veraPDF's PDF/UA-1 profile
+/// and checked against veraPDF, before ISO 14289-1 was held. The 2026-11-21 audit against the
+/// clause text (#428) found it narrower: clause 5 requires the prefix <c>pdfuaid</c>, and this rule
+/// also accepts the default (null) prefix; the format of <c>pdfuaid:amd</c> is not checked.
 /// <para>
 /// Prefix checks (§5-3/5-4/5-5): fire only when the property IS present bound to the PDF/UA
 /// identification namespace URI (<c>http://www.aiim.org/pdfua/ns/id/</c>) via a prefix that is

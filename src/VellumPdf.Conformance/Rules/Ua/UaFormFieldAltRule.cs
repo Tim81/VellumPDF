@@ -13,7 +13,11 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// field shall have a non-empty <c>/Alt</c> entry on its enclosing structure element.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 14289-1:2014, 7.18.1 (testNumber 3). Clean-room.
+/// Cites ISO 14289-1:2014, 7.18.1; the id follows veraPDF's testNumber 3. It was written from
+/// veraPDF's PDF/UA-1 profile and checked against veraPDF, before ISO 14289-1 was held. The
+/// 2026-11-21 audit against the clause text (#428) found it broader: the rule never reads
+/// <c>/Contents</c>, which 7.18.1 accepts as the alternative description, so a widget with
+/// <c>/Contents</c> and no <c>/TU</c> still fails.
 ///
 /// <para><strong>Exemptions (per §7.18):</strong> a Widget annotation is exempt from §7.18
 /// requirements when it is hidden (<c>F &amp; 2</c>) or its <c>/Rect</c> lies entirely outside the

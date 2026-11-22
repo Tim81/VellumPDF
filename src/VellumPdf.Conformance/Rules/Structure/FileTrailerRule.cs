@@ -11,8 +11,12 @@ namespace VellumPdf.Conformance.Rules.Structure;
 /// end-of-file marker (<c>%%EOF</c>) except an optional single end-of-line marker.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.1.3 and ISO 32000-1:2008, 7.5.5 / 14.4. Clean-room: derived
-/// from the specification text, not from any third-party validation profile.
+/// Cites ISO 19005-2:2011, 6.1.3 and ISO 32000-1:2008, 7.5.5 / 14.4. Its behaviour was checked
+/// against veraPDF's PDF/A-2 profile, and ISO 19005-2 was not held when it was written. The
+/// 2026-11-21 audit against the clause text (#418) found agreement for the <c>/ID</c> and
+/// <c>/Encrypt</c> requirements. The check for data after the last end-of-file marker rests on ISO
+/// 32000-1 §7.5.5, which 6.1.3 mentions only in an informative note, so citing 6.1.3 as its source
+/// overstates it.
 /// <para>
 /// §6.1.3 also forbids the <c>/Encrypt</c> key, and that is checked here. It used to be enforced
 /// by the reader refusing to open any encrypted document at all; since #97 the reader reads them,
