@@ -1281,11 +1281,11 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     /// <remarks>
     /// The layout answers Nothing where no row fits the page it is given and the first row cannot
     /// be cut. It is given a fresh page after every break, and a break falls only where
-    /// <see cref="BuildRowspanBlockedSet"/> allows one, so the layout is refused exactly when
-    /// the header rows do not fit a page, or a run of rows it never breaks inside does not fit
-    /// one, and the run is not a single row that can be cut between its lines. Fitting is the fit
-    /// loop's own test, row by row on the running height, on each of the two boxes a fresh page
-    /// can offer.
+    /// <see cref="BuildRowspanBlockedSet"/> allows one, so the layout is refused exactly when a
+    /// run of rows it never breaks inside does not fit a page under the header rows, and the run
+    /// is not a single row that can be cut between its lines. Header rows that do not fit a page
+    /// leave every run without room and are the same case. Fitting is the fit loop's own test,
+    /// row by row on the running height, on each of the two boxes a fresh page can offer.
     /// </remarks>
     private bool RefusedOnAFreshPage(LayoutBox[] fresh, TextStyle style)
     {
@@ -1297,7 +1297,6 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
 
         var first = Math.Max(_startRow, lastHeaderRow);
         if (first >= rows.Count) return false;
-        if (header.Count > 0 && !FitsFresh(fresh, 0, headerHeight)) return true;
 
         var blocked = BuildRowspanBlockedSet(rows, lastHeaderRow);
         var ctx = new RefusalContext(fresh, header, headerHeight, lastHeaderRow);
