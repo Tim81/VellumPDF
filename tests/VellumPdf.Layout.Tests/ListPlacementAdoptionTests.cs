@@ -279,6 +279,46 @@ public sealed class ListPlacementAdoptionTests
     }
 
     /// <summary>
+    /// The list the document calls answers with its twin's layout, and the document asks the
+    /// instance it called for the placements of the list's anchors and of its items'. Both come from
+    /// the twin, so the destinations are the ones the twin writes.
+    /// </summary>
+    [Fact]
+    public void AListWithAnEntryNoPageHolds_keepsTheAnchorsItsTwinReports()
+    {
+        var (bytes, _, twin, _) = Both(
+            () => Page(200, 100, leadLines: 5),
+            () =>
+            {
+                var list = MovesThenNoPageHolds();
+                return new ListElement(ListStyle.OrderedDecimal) { Anchor = "whole-list" }
+                    .Add(new ListItem([new TextRun("dropped", H(20))]) { Style = H(10), Anchor = "first-item" })
+                    .Add(new ListItem([new TextRun("abc", H(10))]) { Style = H(500) });
+            });
+
+        Assert.Equal(Sha(twin), Sha(bytes));
+        var text = System.Text.Encoding.Latin1.GetString(bytes);
+        Assert.Contains("whole-list", text, StringComparison.Ordinal);
+        Assert.Contains("first-item", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A marker that wraps and gets only some of its lines on a page of its own is an entry no page
+    /// holds. The list is placed as before, and the marker shows the lines that fit.
+    /// </summary>
+    [Fact]
+    public void AMarkerTallerThanAPageThatWraps_isAnEntryNoPageHolds()
+    {
+        var (bytes, doc, twin, _) = Both(
+            () => new Document { PageSize = new PdfRectangle(0, 0, 60, 100), Margins = new EdgeInsets(10) },
+            () => new ListElement(ListStyle.OrderedDecimal)
+                .Add(new ListItem("x", H(10)) { Style = H(60) }));
+
+        Assert.Equal(Sha(twin), Sha(bytes));
+        Assert.Equal([LayoutDiagnosticCode.ListEntryPartDropped], Codes(doc));
+    }
+
+    /// <summary>
     /// A clamped entry whose clamped line is taller than a page fits no page, so the list keeps its
     /// earlier layout whole and reports no clamp.
     /// </summary>
