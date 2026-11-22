@@ -463,34 +463,37 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             return LayoutResult.Full(_occupied);
 
         // Partial
-        var split = new TableRenderer(_table, _startRow)
+        var split = Carrying(new TableRenderer(_table, _startRow)
         {
             _continuation = _continuation,
-            _colWidths = _colWidths,
-            _rowHeights = _rowHeights,
             _occupied = _occupied,
             _headSlice = head,
             _tailSlice = tail,
-            _oneLine = _oneLine,
-            _allUnbroken = _allUnbroken,
-            _readsUnbrokenForTheLimit = _readsUnbrokenForTheLimit,
-            _decidedFor = _decidedFor,
-        };
+        });
         var overflow = tail is null
-            ? new TableRenderer(_table, lastFit + 1) { _continuation = true, _colWidths = _colWidths, _rowHeights = _rowHeights, _oneLine = _oneLine, _allUnbroken = _allUnbroken, _readsUnbrokenForTheLimit = _readsUnbrokenForTheLimit, _decidedFor = _decidedFor }
-            : new TableRenderer(_table, tail.Row)
+            ? Carrying(new TableRenderer(_table, lastFit + 1) { _continuation = true })
+            : Carrying(new TableRenderer(_table, tail.Row)
             {
                 _continuation = true,
-                _colWidths = _colWidths,
-                _rowHeights = _rowHeights,
                 _resumeLines = tail.Source,
                 _resumeFrom = tail.Next(),
-                _oneLine = _oneLine,
-                _allUnbroken = _allUnbroken,
-                _readsUnbrokenForTheLimit = _readsUnbrokenForTheLimit,
-                _decidedFor = _decidedFor,
-            };
+            });
         return LayoutResult.Partial(_occupied, split, overflow);
+    }
+
+    /// <summary>
+    /// Gives a renderer for a later page what this layout decided: the grid, the heights, the
+    /// cells read unbroken and the reason they are, with the key they were decided for.
+    /// </summary>
+    private TableRenderer Carrying(TableRenderer next)
+    {
+        next._colWidths = _colWidths;
+        next._rowHeights = _rowHeights;
+        next._oneLine = _oneLine;
+        next._allUnbroken = _allUnbroken;
+        next._readsUnbrokenForTheLimit = _readsUnbrokenForTheLimit;
+        next._decidedFor = _decidedFor;
+        return next;
     }
 
     /// <summary>

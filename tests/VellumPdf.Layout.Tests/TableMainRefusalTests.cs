@@ -393,7 +393,7 @@ public sealed class TableMainRefusalTests
             _ => t.SetColumnWidths(rng.Next(60, 140), rng.Next(60, 140), 0),
         };
         var header = rng.Next(3) == 0;
-        var spanText = string.Join(rng.Next(4) == 0 ? "\n" : " ", Enumerable.Repeat("lorem ipsum", rng.Next(1, 5)));
+        var spanText = string.Join(rng.Next(4) == 0 ? "\n" : " ", Enumerable.Repeat("lorem ipsum", rng.Next(1, header ? 60 : 5)));
         var row0 = t.AddRow(header);
         row0.AddCell(header ? new Cell(spanText) : new Cell(spanText) { RowSpan = 2 }).AddCell("a");
         t.AddRow().AddCell("b");

@@ -701,11 +701,10 @@ public sealed class DocumentRenderer
     // An element whose layout may need more page continuations than one element may is placed
     // once without drawing to see whether it does (ReachesContinuationLimit). _guarding is set
     // while that runs, and _limitReached when the loop it runs would have thrown for the limit.
-    // The answer depends on the renderer and on the area its first call is offered, so it is kept
-    // for both passes and for the simulations of the keep rules.
+    // The answer is asked again by each pass and by each simulation of the keep rules, because it
+    // depends on where the element starts.
     private bool _guarding;
     private bool _limitReached;
-    private Dictionary<(IRenderer Renderer, double Height, bool AtTop), bool>? _continuationVerdicts;
 
     // Set when a run was dropped in the drawing pass; the report is made once its first element is
     // placed (ReportPendingKeepWithNext).
@@ -1214,12 +1213,8 @@ public sealed class DocumentRenderer
     // Places the element on a copy of the cursor, from where the loop is, and answers whether the
     // loop would throw for the continuation limit. Nothing is drawn, reported or kept. Anything
     // else the placement throws is left for the placement that follows, which throws it again.
-    private bool ReachesContinuationLimit(IRenderer renderer, double height, bool atTop)
+    private bool ReachesContinuationLimit(IRenderer renderer)
     {
-        var key = (renderer, height, atTop);
-        if (_continuationVerdicts is not null && _continuationVerdicts.TryGetValue(key, out var known))
-            return known;
-
         var saved = (_measuring, _measureArea, _measureY, _pageIndex, _placedOnPage, _simulating, _simFirstOnly, _simFirstPage, _guarding, _limitReached);
         var cursor = Cursor;
         var reached = false;
@@ -1243,7 +1238,6 @@ public sealed class DocumentRenderer
             (_measuring, _measureArea, _measureY, _pageIndex, _placedOnPage, _simulating, _simFirstOnly, _simFirstPage, _guarding, _limitReached) = saved;
         }
 
-        (_continuationVerdicts ??= [])[key] = reached;
         return reached;
     }
 
@@ -1276,7 +1270,7 @@ public sealed class DocumentRenderer
                 guard = null;
                 if (result.Status != LayoutResult.Outcome.Full
                     && asked.ContinuationBound > MaxContinuationsPerElement
-                    && ReachesContinuationLimit(renderer, availableArea.Height, atTop))
+                    && ReachesContinuationLimit(renderer))
                 {
                     renderer = asked.WithoutBreaks();
                     result = CallLayout(renderer, availableArea, lineCounts, atTop: atTop);
