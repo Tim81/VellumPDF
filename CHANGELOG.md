@@ -552,6 +552,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - A new `LayoutDiagnosticCode.ListIndentClamped` (203, severity `Error`) reports each list that had
     an entry clamped, with the number of entries as `Count`. `StrictDiagnostics` refuses it, and the
     default saves.
+  - A list whose clamped layout would pass the 50,000 page continuations one element may take is
+    placed without the clamp, so a list that saved still saves, and a list that was refused at
+    that limit is still refused with the same message. The decision is made by laying the list out
+    without drawing first, and only for a list that could reach the limit: one whose entries and
+    wrapped lines, counted together, number more than 50,000. The new
+    `LayoutDiagnosticCode.ListIndentClampSkipped` (207, severity `Error`) reports it, with the
+    number of entries the clamp would have narrowed as `Count`. Their text is not drawn.
   - `ListElement.Indent` carries a "Do not pass" paragraph for an indent that leaves an entry's text
     no width: 3.0 will refuse it.
 

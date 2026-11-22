@@ -96,6 +96,14 @@ public sealed class ListElement
     /// as the exception records. Below that, from half the area width, a child's text is clamped in
     /// the same way, because the nested gutter reaches the area width at half the indent a top-level
     /// gutter needs.</para>
+    /// <para>One element may take at most 50,000 page continuations; see
+    /// <see cref="Rendering.DocumentRenderer"/>. Drawing the text of a clamped entry adds lines, so
+    /// a list whose clamped layout could pass that limit is laid out without drawing first, and when
+    /// it would pass it the list is placed without the clamp instead: no gutter is narrowed, an
+    /// entry the clamp would have changed keeps its marker and loses its text, and
+    /// <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/> reports it. That list then saves,
+    /// or throws the limit's <see cref="InvalidOperationException"/>, as a list with no clamp does.
+    /// </para>
     /// <para>Do <b>not</b> pass a negative value. It can carry content left of the margin and off
     /// the page, and a finite negative value is not reported. 3.0 will reject it.</para>
     /// <para>A non-finite indent is not checked before the layout; see <see cref="Document"/>. A

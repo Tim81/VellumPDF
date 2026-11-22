@@ -17,6 +17,7 @@ VellumPdf.Layout.LayoutDiagnosticCode.BandTruncated = 401 -> VellumPdf.Layout.La
 VellumPdf.Layout.LayoutDiagnosticCode.DiagnosticsDropped = 901 -> VellumPdf.Layout.LayoutDiagnosticCode
 VellumPdf.Layout.LayoutDiagnosticCode.NullGrandchild = 202 -> VellumPdf.Layout.LayoutDiagnosticCode
 VellumPdf.Layout.LayoutDiagnosticCode.ListIndentClamped = 203 -> VellumPdf.Layout.LayoutDiagnosticCode
+VellumPdf.Layout.LayoutDiagnosticCode.ListIndentClampSkipped = 207 -> VellumPdf.Layout.LayoutDiagnosticCode
 VellumPdf.Layout.LayoutDiagnosticCode.NullGrandchildText = 201 -> VellumPdf.Layout.LayoutDiagnosticCode
 VellumPdf.Layout.LayoutDiagnosticCode.NullTextRunStyle = 101 -> VellumPdf.Layout.LayoutDiagnosticCode
 VellumPdf.Layout.LayoutDiagnosticCode.UnencodableCharacter = 103 -> VellumPdf.Layout.LayoutDiagnosticCode

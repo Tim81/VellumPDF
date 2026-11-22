@@ -21,7 +21,62 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     private readonly ListElement _list;
 
     // Flattened (marker, content-renderer) pairs, built once during first Layout.
-    private List<(ParagraphRenderer Marker, ParagraphRenderer Content, ListItem Item)>? _items;
+    /// <summary>
+    /// An upper bound on the page continuations a placement of this list can take, or zero when no
+    /// entry from the start item on had its gutter clamped (or the box leaves no width, so nothing
+    /// is built).
+    /// </summary>
+    /// <remarks>
+    /// The bound is the number of units the list holds from its start item, an entry or one wrapped
+    /// line of its text, whichever is more for that entry. Every <c>Partial</c> the list returns
+    /// consumes at least one unit: a split before an entry has placed at least one whole entry, and
+    /// a split inside an entry has placed at least one of its lines, because
+    /// <see cref="ParagraphRenderer"/> only splits when <c>maxLines</c> is positive. The piece that
+    /// ends the list consumes at least one more. A <c>Nothing</c> the document then retries on the
+    /// next page can only come first: the document offers a page top the area the retry was offered
+    /// and the list answers the same height the same way, so the call after a <c>Nothing</c> or a
+    /// <c>Partial</c>, which is at a page top, is neither. So continuations are at most one
+    /// <c>Nothing</c> plus the <c>Partial</c> count, and the count is at most the units less one.
+    /// </remarks>
+    internal long ContinuationBound(LayoutBox offered)
+    {
+        if (_unclamped) return 0;
+        var area = offered.Deflate(_list.Margins);
+        if (area.Width <= 0) return 0;
+
+        _items ??= BuildItems(area.Width);
+        var any = false;
+        long units = 0;
+        for (var i = _startItem; i < _items.Count; i++)
+        {
+            any |= _items[i].Clamped;
+            units += Math.Max(1, _items[i].Content.LineCountAt(area.Width));
+        }
+
+        return any ? units : 0;
+    }
+
+    /// <summary>
+    /// The list laid out as it was before the clamp: no gutter is narrowed, so an entry whose text
+    /// has no width keeps its marker and loses its text. The same object on every call.
+    /// </summary>
+    internal ListRenderer Unclamped() => _twin ??= new ListRenderer(_list, _startItem, _partialContentOverrideAtStart)
+    {
+        _unclamped = true,
+        _clampSkipped = _indentClamped,
+    };
+
+    // The last answer of a continuation probe and the cursor it was made at; see
+    // DocumentRenderer.
+    internal bool TryGetProbe(double y, double height, out bool reaches)
+    {
+        reaches = _probe is { } p && p.Y == y && p.Height == height && p.Reaches;
+        return _probe is { } q && q.Y == y && q.Height == height;
+    }
+
+    internal void RememberProbe(double y, double height, bool reaches) => _probe = (y, height, reaches);
+
+    private List<(ParagraphRenderer Marker, ParagraphRenderer Content, ListItem Item, bool Clamped)>? _items;
 
     // Pagination window
     private readonly int _startItem;
@@ -37,6 +92,19 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     // list from its first entry. The pieces a split returns carry it, because the piece that
     // starts the list is the one that is drawn.
     private int _indentClamped;
+
+    // True on the twin Unclamped returns: BuildItems then leaves every gutter as it was before the
+    // clamp existed, so the twin lays the list out as it was laid out without it.
+    private bool _unclamped;
+
+    // The number of entries the clamp would have narrowed on the list this one is the unclamped twin
+    // of, which Draw reports as ListIndentClampSkipped. Carried by splits like _indentClamped.
+    private int _clampSkipped;
+
+    // The twin Unclamped hands out, built once so the measuring and the drawing pass place the same
+    // object, and the answer of the last continuation probe, which depends on where the cursor was.
+    private ListRenderer? _twin;
+    private (double Y, double Height, bool Reaches)? _probe;
 
     // The height Layout offered each item it visited, indexed by the item's offset from the start
     // item. Draw offers the same height: it lays the item out a second time, a paragraph's line
@@ -206,6 +274,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                 {
                     _items = _items,
                     _indentClamped = _indentClamped,
+                    _clampSkipped = _clampSkipped,
                     _endItem = i,
                     _occupied = _occupied,
                     _offered = offered,
@@ -240,6 +309,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                 {
                     _items = _items,
                     _indentClamped = _indentClamped,
+                    _clampSkipped = _clampSkipped,
                     _endItem = i + 1,
                     _occupied = _occupied,
                     _offered = offered,
@@ -288,6 +358,13 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                     "A list indent left an entry's text no width beside its gutter, so the text was given the width of its widest word and may overprint the marker.",
                     _indentClamped,
                     perElement: true);
+            if (_clampSkipped > 0)
+                sink.Report(
+                    LayoutDiagnosticCode.ListIndentClampSkipped,
+                    0,
+                    "A list indent left an entry's text no width beside its gutter, and giving that text a width would have taken more page continuations than one element may use, so the list was laid out without it and that text is not drawn.",
+                    _clampSkipped,
+                    perElement: true);
         }
 
         // _occupied is already the margin-deflated area from Layout; do not deflate again.
@@ -303,7 +380,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
 
         for (var i = _startItem; i < _endItem; i++)
         {
-            var (marker, baseContent, _) = _items[i];
+            var (marker, baseContent, _, _) = _items[i];
 
             // On a continuation page the start item resumes mid-content; its marker
             // was already drawn on the page where the item began, so suppress it here
@@ -523,9 +600,9 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
         return true;
     }
 
-    private List<(ParagraphRenderer Marker, ParagraphRenderer Content, ListItem Item)> BuildItems(double areaWidth)
+    private List<(ParagraphRenderer Marker, ParagraphRenderer Content, ListItem Item, bool Clamped)> BuildItems(double areaWidth)
     {
-        var result = new List<(ParagraphRenderer, ParagraphRenderer, ListItem)>();
+        var result = new List<(ParagraphRenderer, ParagraphRenderer, ListItem, bool)>();
         var indent = _list.Indent;
         var defaultStyle = _list.DefaultStyle ?? TextStyle.Default;
 
@@ -569,7 +646,9 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             // marker, because ParagraphRenderer.Layout returns Nothing for a non-positive width.
             // Only that case is changed; a width that is positive but short of the widest word
             // keeps the hard-breaking it has always had.
-            if (TryClampGutter(areaWidth, gutter, 0, widest, out var clampedGutter))
+            var clampedGutter = gutter;
+            var clamped = !_unclamped && TryClampGutter(areaWidth, gutter, 0, widest, out clampedGutter);
+            if (clamped)
             {
                 gutter = clampedGutter;
                 _indentClamped++;
@@ -591,7 +670,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             };
             var contentRenderer = new ParagraphRenderer(contentPara) { ElementLanguage = item.Language, RunOwner = "A list item" };
 
-            result.Add((markerRenderer, contentRenderer, item));
+            result.Add((markerRenderer, contentRenderer, item, clamped));
 
             // A null child of a top-level item is refused here, where the position is known. The
             // same null on a grandchild is counted when the list is drawn instead, because
@@ -634,7 +713,10 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
 
                     // The child's marker starts at `indent`, so that is the leftmost the clamped
                     // content may start.
-                    if (TryClampGutter(areaWidth, childGutter, indent, childWidest, out var clampedChildGutter))
+                    var clampedChildGutter = childGutter;
+                    var childClamped = !_unclamped
+                        && TryClampGutter(areaWidth, childGutter, indent, childWidest, out clampedChildGutter);
+                    if (childClamped)
                     {
                         childGutter = clampedChildGutter;
                         _indentClamped++;
@@ -652,7 +734,8 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                     result.Add((
                         new ParagraphRenderer(childMarkerPara) { RunOwner = "A list item" },
                         new ParagraphRenderer(childContentPara) { ElementLanguage = child.Language, RunOwner = "A list item" },
-                        child));
+                        child,
+                        childClamped));
                 }
             }
         }

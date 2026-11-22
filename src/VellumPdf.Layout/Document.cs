@@ -115,6 +115,8 @@ public sealed class Document : IDisposable
     /// <see cref="LayoutDiagnosticCode.NullGrandchild"/> (a null below the second level of a list),
     /// <see cref="LayoutDiagnosticCode.ListIndentClamped"/> (an indent that left list text no
     /// width),
+    /// <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/> (a list laid out without that
+    /// clamp, because the clamp would have taken it past the continuation limit),
     /// <see cref="LayoutDiagnosticCode.NotdefGlyph"/> (a character an embedded font has no glyph
     /// for, written as glyph 0), <see cref="LayoutDiagnosticCode.UnembeddedFont"/> (an element that
     /// selects a Standard 14 font under a conformance claim),

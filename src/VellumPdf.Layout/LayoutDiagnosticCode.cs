@@ -167,6 +167,22 @@ public enum LayoutDiagnosticCode
     ListIndentClamped = 203,
 
     /// <summary>
+    /// A list with an entry whose indent leaves its text no width would have needed more page
+    /// continuations with the text drawn than one element may take, so the list was laid out
+    /// without the clamp described at <see cref="ListIndentClamped"/> and that text is not drawn.
+    /// <see cref="LayoutDiagnostic.Count"/> is the number of entries the clamp would have narrowed.
+    /// </summary>
+    /// <remarks>
+    /// <b>The text of those entries is discarded, and only their markers are drawn.</b> The list
+    /// then saves, or throws <see cref="InvalidOperationException"/> for the continuation limit,
+    /// as a list with every gutter left as <see cref="Elements.ListElement.Indent"/> and the marker
+    /// widths give it would. Strict mode refuses it. It is reported for a list the document draws
+    /// from its first entry. <b>Do not pass</b> an indent that leaves an entry's text no width: 3.0
+    /// will refuse it. See <see cref="Elements.ListElement.Indent"/>.
+    /// </remarks>
+    ListIndentClampSkipped = 207,
+
+    /// <summary>
     /// A running band's resolved text was cut to fit the content box. It mirrors
     /// <see cref="Document.BandTruncations"/>, and there is one item per band.
     /// </summary>

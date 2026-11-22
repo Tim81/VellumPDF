@@ -1202,9 +1202,65 @@ public sealed class DocumentRenderer
         }
     }
 
+    // The most continuations one element may take; the constant, except in tests that probe the
+    // decision below at a size that is cheap to reach.
+    internal int ContinuationLimit { get; init; } = MaxContinuationsPerElement;
+
+    /// <summary>Continuation probes run by the last <see cref="RunLayout"/>, read by tests.</summary>
+    internal int ContinuationProbes { get; private set; }
+
+    // While a probe runs, the placement loop reports reaching the limit instead of throwing it, and
+    // does not look for a list to probe.
+    private bool _probingLimit;
+    private bool _limitHit;
+
+    // A list whose clamp could take it past the continuation limit is laid out without drawing
+    // first, from where the cursor is, and is placed without the clamp when that run reaches the
+    // limit. Without the clamp the list is laid out as it was before the clamp existed, so what it
+    // saves, or the exception it throws, is what it was. The bound keeps the run for the lists that
+    // could reach the limit at all.
+    private IRenderer ChooseListPlacement(ListRenderer list, LayoutBox offered)
+    {
+        if (list.ContinuationBound(offered) <= ContinuationLimit) return list;
+
+        if (!list.TryGetProbe(offered.Y, offered.Height, out var reaches))
+        {
+            reaches = ReachesContinuationLimit(list);
+            list.RememberProbe(offered.Y, offered.Height, reaches);
+        }
+
+        return reaches ? list.Unclamped() : list;
+    }
+
+    // Places the renderer on a copy of the cursor, the way RunHolds places the elements of a keep
+    // run, and answers whether it needed more continuations than the limit allows.
+    private bool ReachesContinuationLimit(IRenderer renderer)
+    {
+        ContinuationProbes++;
+        var saved = (_measuring, _measureArea, _measureY, _pageIndex, _placedOnPage, _simulating, _simFirstOnly, _simFirstPage, _probingLimit, _limitHit);
+        var cursor = Cursor;
+        try
+        {
+            _measuring = true;
+            _simulating = true;
+            _simFirstOnly = false;
+            _measureArea = ContentArea;
+            _measureY = cursor;
+            _probingLimit = true;
+            _limitHit = false;
+            PlaceRenderer(renderer, 0);
+            return _limitHit;
+        }
+        finally
+        {
+            (_measuring, _measureArea, _measureY, _pageIndex, _placedOnPage, _simulating, _simFirstOnly, _simFirstPage, _probingLimit, _limitHit) = saved;
+        }
+    }
+
     private void PlaceRenderer(IRenderer renderer, int totalPages)
     {
         var continuations = 0;
+        var listChosen = false;
 
         // Read once, from the element the caller added: the overflow this loop continues with
         // holds the same element and must not ask again.
@@ -1217,6 +1273,15 @@ public sealed class DocumentRenderer
 
             var availableArea = OfferedArea(PlaceArea);
             var atTop = AtPageTop;
+
+            // Once, on the element the caller added, and only where its width is the one every
+            // page offers. The pieces a split returns are not asked again.
+            if (!listChosen)
+            {
+                listChosen = true;
+                if (renderer is ListRenderer list && !_probingLimit)
+                    renderer = ChooseListPlacement(list, availableArea);
+            }
 
             var result = CallLayout(renderer, availableArea, lineCounts, atTop: atTop);
 
@@ -1290,8 +1355,14 @@ public sealed class DocumentRenderer
                     throw new InvalidOperationException($"Unknown layout outcome {result.Status}.");
             }
 
-            if (++continuations > MaxContinuationsPerElement)
+            if (++continuations > ContinuationLimit)
             {
+                if (_probingLimit)
+                {
+                    _limitHit = true;
+                    return;
+                }
+
                 // Commit the open page rather than leave its canvas unflushed; the page still
                 // stays in the document. Both branches reach this throw, but only the Nothing
                 // branch can arrive with a page still open, because the Partial branch has
