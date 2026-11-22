@@ -105,10 +105,14 @@ public sealed class RunningBand
 
     /// <summary>Horizontal alignment of the band text.</summary>
     /// <remarks>
-    /// <see cref="HorizontalAlignment.Justify"/> is neither refused nor honoured. It falls through
-    /// to left alignment, and so does a value the enumeration does not name. A single-line band has
-    /// nothing to justify against. The band's default is centred. Asking for justify loses the
-    /// centring, and nothing reports it.
+    /// <b>Only <see cref="HorizontalAlignment.Center"/> and <see cref="HorizontalAlignment.Right"/>
+    /// are honoured.</b> Any other value is treated as <see cref="HorizontalAlignment.Left"/>, and
+    /// nothing reports it: <see cref="HorizontalAlignment.Justify"/>, which a single-line band has
+    /// nothing to justify against, and a value the enumeration does not name. The band's default is
+    /// centred, so asking for justify loses the centring.
+    /// <para>With <see cref="Document.MirrorMargins"/> set, a band treated as left on a left-hand
+    /// page is drawn on the right, the outside edge, exactly as an explicit
+    /// <see cref="HorizontalAlignment.Left"/> is; see that property.</para>
     /// </remarks>
     public HorizontalAlignment Alignment { get; }
 

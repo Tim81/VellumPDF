@@ -101,6 +101,8 @@ VellumPdf.Layout.Elements.Preformatted.TabWidth.init -> void
 VellumPdf.Layout.Elements.Preformatted.Text.get -> string!
 VellumPdf.Layout.LayoutDiagnosticCode.PreformattedLineWrapped = 104 -> VellumPdf.Layout.LayoutDiagnosticCode
 VellumPdf.Layout.LayoutElementKind.Preformatted = 11 -> VellumPdf.Layout.LayoutElementKind
+VellumPdf.Layout.Document.MirrorMargins.get -> bool
+VellumPdf.Layout.Document.MirrorMargins.set -> void
 VellumPdf.Layout.Document.PageLabel.get -> VellumPdf.Layout.Elements.PageLabelRange?
 VellumPdf.Layout.Document.PageLabel.set -> void
 VellumPdf.Layout.Elements.PageLabelRange
