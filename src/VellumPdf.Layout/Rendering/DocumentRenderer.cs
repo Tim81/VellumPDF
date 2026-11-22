@@ -1265,55 +1265,59 @@ public sealed class DocumentRenderer
     /// </summary>
     internal bool AssertOnUnreportedChild { get; init; } = true;
 
-    private readonly struct ContinuationKey(IRenderer root, double y, double height, int continuations)
+    private readonly struct ContinuationKey(IRenderer root, double y, double height, int continuations, bool retry)
         : IEquatable<ContinuationKey>
     {
         private readonly IRenderer _root = root;
         private readonly double _y = y;
         private readonly double _height = height;
         private readonly int _continuations = continuations;
+        private readonly bool _retry = retry;
 
         // The renderer is compared by reference: a renderer may define Equals, and two equal ones
         // are still two elements.
         public bool Equals(ContinuationKey other) =>
             ReferenceEquals(_root, other._root) && _y.Equals(other._y) && _height.Equals(other._height)
-            && _continuations == other._continuations;
+            && _continuations == other._continuations && _retry == other._retry;
 
         public override bool Equals(object? obj) => obj is ContinuationKey other && Equals(other);
 
         public override int GetHashCode() =>
-            HashCode.Combine(System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(_root), _y, _height, _continuations);
+            HashCode.Combine(System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(_root), _y, _height, _continuations, _retry);
     }
 
     // Decides between a renderer's new layout and its twin, at the first call that reported (#686).
     // `continuations` is the count the loop holds where the next call would start.
     //
-    // A bound within what is left of the limit needs no probe: the new layout cannot reach the
-    // limit, and the twin never takes more continuations than it. Below it the new layout alone
-    // decides what is refused, so it must refuse where its twin refuses and save where its twin
-    // saves; the mechanism decides only the limit. Otherwise the element is laid out twice without
-    // drawing, the twin first and the new layout second, and the new layout is chosen only when
-    // both finish cleanly. The twin is chosen when the twin reaches the limit or throws, which
-    // keeps a refusal 2.3.3 made with the twin's own exception, and when the new layout reaches the
-    // limit or throws, which keeps a save 2.3.3 made.
+    // A bound within what is left of the limit (bound <= L', where L' is the limit minus the
+    // continuations counted) needs no probe, whatever the element's real count: the new layout is
+    // trusted not to reach the limit, and the twin never takes more continuations than it. There
+    // the new layout alone decides what is refused, so it must refuse where its twin refuses and
+    // save where its twin saves. Above it the element is laid out twice without drawing, the twin
+    // first and the new layout second, and the new layout is chosen only when both finish
+    // cleanly. The twin is chosen when the twin reaches the limit or throws, which keeps a refusal
+    // 2.3.3 made with the twin's own exception, and when the new layout reaches the limit or
+    // throws, which keeps a save 2.3.3 made.
     //
-    // At the retry site the probe starts at the loop call that follows the retry, which is where
-    // the real placement goes on: the retry's result is read only to see whether it is Nothing, so
-    // leaving the twin's retry out of the probe loses nothing but a refusal the real placement
-    // raises on its own.
-    private ContinuationMode DecideContinuation(IRenderer renderer, ContinuationSession session, int continuations, bool keepTogether, bool lineCounts)
+    // At the retry site the loop offers the next call the page-top box, which can be one rounding
+    // step taller than the box the retry got (the two are computed differently). So the probes
+    // start at the retry's own box: the twin probe first calls the twin there, and a Nothing
+    // counts as a fault, which keeps the refusal 2.3.3 raised at the retry. The new layout's
+    // retry is the call that reported, and SettleCall chooses the twin when that call answered
+    // Nothing, so the new layout is never probed on a box taller than the one it was given.
+    private ContinuationMode DecideContinuation(IRenderer renderer, ContinuationSession session, int continuations, bool keepTogether, bool lineCounts, bool retry)
     {
         if (session.Bound <= (long)ContinuationLimit - continuations) return ContinuationMode.New;
 
         var offered = OfferedArea(PlaceArea);
-        var key = new ContinuationKey(renderer, offered.Y, offered.Height, continuations);
+        var key = new ContinuationKey(renderer, offered.Y, offered.Height, continuations, retry);
         if (_continuationVerdicts is not null && _continuationVerdicts.TryGetValue(key, out var known))
             return known;
 
         var twin = session.Reporter!.Twin();
         var verdict =
-            ProbeContinuations(twin, ContinuationMode.Twin, keepTogether, lineCounts, continuations) == ProbeOutcome.Clean
-            && ProbeContinuations(renderer, ContinuationMode.New, keepTogether, lineCounts, continuations) == ProbeOutcome.Clean
+            ProbeContinuations(twin, ContinuationMode.Twin, keepTogether, lineCounts, continuations, retry) == ProbeOutcome.Clean
+            && ProbeContinuations(renderer, ContinuationMode.New, keepTogether, lineCounts, continuations, retryFirst: false) == ProbeOutcome.Clean
                 ? ContinuationMode.New
                 : ContinuationMode.Twin;
         (_continuationVerdicts ??= [])[key] = verdict;
@@ -1328,10 +1332,13 @@ public sealed class DocumentRenderer
     }
 
     // Places the renderer in one mode on a copy of the cursor, the way RunHolds places the elements
-    // of a keep run, and answers whether the loop would have thrown for the limit. Nothing is
-    // drawn, reported or kept. Any other exception is counted and left for the placement that
-    // follows. Running out of memory and a cancellation are not ours to absorb.
-    private ProbeOutcome ProbeContinuations(IRenderer renderer, ContinuationMode mode, bool keepTogether, bool lineCounts, int continuations)
+    // of a keep run, and answers Clean when the loop finishes, Limit when it would have thrown for
+    // the limit and Fault when anything else stopped it. Nothing is drawn, reported or kept. Any
+    // other exception is counted and left for the placement that follows. Running out of memory
+    // and a cancellation are not ours to absorb. At the retry site (retryFirst) the renderer is
+    // first called on the retry's box with the retry's flags, and a Nothing there is a Fault: the
+    // real placement refuses the element too, as the loop does for a retry that answers Nothing.
+    private ProbeOutcome ProbeContinuations(IRenderer renderer, ContinuationMode mode, bool keepTogether, bool lineCounts, int continuations, bool retryFirst)
     {
         ContinuationProbes++;
         var probe = new ContinuationSession(mode, probing: true);
@@ -1345,7 +1352,15 @@ public sealed class DocumentRenderer
             _simFirstOnly = false;
             _measureArea = ContentArea;
             _measureY = cursor;
-            PlaceLoop(renderer, 0, keepTogether, lineCounts, probe, continuations);
+            if (retryFirst && CallLayout(renderer, PlaceArea, lineCounts, probe, retry: true).Status == LayoutResult.Outcome.Nothing)
+            {
+                ContinuationProbeFaults++;
+                fault = true;
+            }
+            else
+            {
+                PlaceLoop(renderer, 0, keepTogether, lineCounts, probe, continuations);
+            }
         }
         catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
         {
@@ -1375,7 +1390,11 @@ public sealed class DocumentRenderer
 
         // A call that reports starts the placement it reports for, as the loop's next call would.
         // The retry has already moved to the next page, where the count has gone up by the Nothing.
-        var mode = DecideContinuation(renderer, session, retry ? continuations + 1 : continuations, keepTogether, lineCounts);
+        // A retry that answers Nothing is refused by the loop; the twin decides that refusal, as it
+        // did in 2.3.3, so it is chosen without probing.
+        var mode = retry && result.Status == LayoutResult.Outcome.Nothing
+            ? ContinuationMode.Twin
+            : DecideContinuation(renderer, session, retry ? continuations + 1 : continuations, keepTogether, lineCounts, retry);
         session.Mode = mode;
         if (mode != ContinuationMode.Twin) return (result, renderer);
 

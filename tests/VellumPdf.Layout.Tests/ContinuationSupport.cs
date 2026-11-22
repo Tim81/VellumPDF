@@ -440,6 +440,9 @@ internal static class ContinuationSupport
         /// </summary>
         internal bool AllowUnreportedChild { get; init; }
         internal int Limit { get; init; } = ContinuationSupport.Limit;
+
+        /// <summary>Replaces the margins when set.</summary>
+        internal EdgeInsets? Margins { get; init; }
     }
 
     internal sealed record Outcome(
@@ -453,7 +456,7 @@ internal static class ContinuationSupport
     internal static Outcome Run(Setup setup, Log log, params IRenderer[] elements)
     {
         var pdf = PlacementLoopSupport.NewPdf();
-        var margins = setup.Mirror ? new EdgeInsets(10, 5, 10, 25) : new EdgeInsets(10);
+        var margins = setup.Margins ?? (setup.Mirror ? new EdgeInsets(10, 5, 10, 25) : new EdgeInsets(10));
         var renderer = new DocumentRenderer(pdf, new PdfRectangle(0, 0, 200, setup.PageHeight), margins)
         {
             ContinuationLimit = setup.Limit,

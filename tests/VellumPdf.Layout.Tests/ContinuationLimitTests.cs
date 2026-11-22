@@ -912,4 +912,104 @@ public sealed class ContinuationLimitTests
         Assert.True(IsLimitRefusal(outcome.Error));
         Assert.Equal(0, outcome.Probes);
     }
+
+    // The page-top box and the retry's box are computed differently. With a top margin of 33.3, a
+    // bottom margin of 10.1 and a page of 100 the retry is offered 56.6 and the loop's call after
+    // it 56.60000000000001, one rounding step more.
+    private static readonly Setup EdgeSetup = new() { Margins = new EdgeInsets(33.3, 10, 10.1, 10) };
+    private const double TallerBox = 56.60000000000001;
+
+    /// <summary>
+    /// A renderer that needs a given height in each layout, and reports at the first page top it
+    /// is offered.
+    /// </summary>
+    private sealed class HeightGated : IRenderer, IContinuationTwin
+    {
+        private readonly double _needNew, _needTwin;
+        private readonly bool _reports, _twin;
+        private readonly long _bound;
+        private readonly Log _log;
+        private HeightGated? _twinInstance;
+
+        internal HeightGated(double needNew, double needTwin, bool reports, Log log, long bound, bool twin = false)
+        {
+            _bound = bound;
+            _needNew = needNew;
+            _needTwin = needTwin;
+            _reports = reports;
+            _log = log;
+            _twin = twin;
+        }
+
+        IRenderer IContinuationTwin.Twin() => _twinInstance ??= new HeightGated(_needNew, _needTwin, false, _log, _bound, twin: true);
+
+        public LayoutResult Layout(LayoutContext context)
+        {
+            var mode = context.ModeFor(this);
+            if (!_twin && mode == ContinuationMode.Twin) return ((IContinuationTwin)this).Twin().Layout(context);
+
+            var reportsNow = !_twin && _reports && mode == ContinuationMode.Undecided && context.AtPageTop;
+            var asNew = !_twin && (mode == ContinuationMode.New || reportsNow);
+            if (reportsNow) context.Session!.Report(this, _bound);
+
+            var need = asNew ? _needNew : _needTwin;
+            return context.Area.Height >= need ? LayoutResult.Full(context.Area.WithHeight(need)) : LayoutResult.Nothing();
+        }
+
+        public void Draw(DrawContext context) => _log.Draws.Add(_twin ? "twin" : "new");
+    }
+
+    private static Outcome PlaceHeightGated(double needNew, double needTwin, bool reports, long bound = 1000)
+    {
+        var log = new Log();
+        return Run(EdgeSetup, log, new Block(50), new HeightGated(needNew, needTwin, reports, log, bound));
+    }
+
+    [Fact]
+    public void RetrySite_twinThatFitsOnlyTheTallerPageTopBox_keepsItsRefusal()
+    {
+        // 2.3.3 laid the twin out alone and its retry, offered 56.6, answered Nothing. The probe
+        // starts at the retry's own box, so the twin's Nothing there is a fault and the twin is
+        // chosen, instead of a clean probe at 56.60000000000001 choosing the new layout.
+        var alone = PlaceHeightGated(10, TallerBox, reports: false);
+        var decided = PlaceHeightGated(10, TallerBox, reports: true);
+
+        Assert.IsType<InvalidOperationException>(alone.Error);
+        Assert.IsType<InvalidOperationException>(decided.Error);
+        Assert.Equal(alone.Error!.Message, decided.Error!.Message);
+        Assert.Equal(1, decided.Probes);
+        Assert.Equal(1, decided.Faults);
+    }
+
+    [Theory]
+    [InlineData(1000L)]
+    [InlineData(1L)]
+    public void RetrySite_newLayoutThatFitsOnlyTheTallerPageTopBox_keepsTheTwinsSave(long bound)
+    {
+        // 2.3.3 saved this with the twin. The new layout's retry, the call that reported, answers
+        // Nothing at 56.6, so the twin is chosen without a probe that would offer the taller box,
+        // and that holds with a bound within what is left of the limit as well.
+        var alone = PlaceHeightGated(TallerBox, 10, reports: false);
+        var decided = PlaceHeightGated(TallerBox, 10, reports: true, bound);
+
+        Assert.Null(alone.Error);
+        Assert.Null(decided.Error);
+        Assert.Equal(alone.Bytes, decided.Bytes);
+        Assert.Equal(0, decided.Probes);
+        Assert.DoesNotContain("new", decided.Log.Draws);
+    }
+
+    [Fact]
+    public void Decision_aNewDecision_doesNotMarkThePlacementAsChosenTwin()
+    {
+        // Both layouts finish cleanly, so the new layout is chosen: no call of the document may
+        // say a decision chose the twin.
+        var log = new Log();
+        var outcome = Run(new Setup(), log, new Scripted(new Plan { NewPages = 100, TwinPages = 100 }, log));
+        Assert.Null(outcome.Error);
+        Assert.Equal(2, outcome.Probes);
+        Assert.Equal("new", log.Draws[^1]);
+        Assert.True(log.RealCalls.Count() > 100);
+        Assert.DoesNotContain(log.Calls, c => c.PlacedAsTwin);
+    }
 }
