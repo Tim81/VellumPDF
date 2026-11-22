@@ -90,19 +90,43 @@ public sealed class ListEntryPlacementTests
     }
 
     /// <summary>
-    /// A marker that wraps into two lines of 72 in an area 56 wide gets only one of them under a
-    /// line of 48. The base commit placed the entry with the second line gone and no marker drawn.
-    /// The entry moves, and the marker is drawn whole.
+    /// A marker 40 points high in an area 20 wide breaks into two lines of 48, and eight lead lines
+    /// leave room for one. The base commit placed the entry with the marker's second line gone, a
+    /// "1" with no stop; the entry now moves, and the marker is drawn whole.
     /// </summary>
     [Fact]
     public void AnEntryWhoseMarkerGetsSomeOfItsLines_movesToTheNextPage()
     {
-        using var doc = new Document { PageSize = new PdfRectangle(0, 0, 200, 300), Margins = new EdgeInsets(72) };
-        doc.Add(new Paragraph("lead", H(40)) { Margins = EdgeInsets.Zero });
-        doc.Add(new ListElement(ListStyle.OrderedDecimal).Add(new ListItem([new TextRun("abc", H(10))]) { Style = H(60) }));
+        using var doc = new Document { PageSize = new PdfRectangle(0, 0, 200, 300), Margins = new EdgeInsets(72, 90, 72, 90) };
+        for (var i = 0; i < 8; i++) doc.Add(new Paragraph("l" + i, H(10)) { Margins = EdgeInsets.Zero });
+        doc.Add(new ListElement(ListStyle.OrderedDecimal) { Indent = 5 }
+            .Add(new ListItem([new TextRun("abc", H(10))]) { Style = H(40) }));
 
-        Assert.Equal(["lea", "d", "1.", "abc"], Shows(Save(doc)));
+        var bytes = Save(doc);
+
+        Assert.Equal(["l0", "l1", "l2", "l3", "l4", "l5", "l6", "l7", "1", ".", "ab", "c"], Shows(bytes));
         Assert.Empty(doc.Diagnostics);
+    }
+
+    /// <summary>
+    /// At the top of a page nothing is gained by moving an entry, so it is placed where it is even
+    /// when a page of its own, as the context describes it, would hold both parts.
+    /// </summary>
+    [Fact]
+    public void AnEntryAtThePageTop_isNeverMoved()
+    {
+        var list = new ListElement(ListStyle.OrderedDecimal)
+            .Add(new ListItem([new TextRun("dropped", H(20))]) { Style = H(10) });
+        var renderer = new ListRenderer(list);
+        var context = new LayoutContext(new LayoutBox(10, 10, 180, 20))
+        {
+            AtPageTop = true,
+            FreshPageArea = new LayoutBox(10, 10, 180, 80),
+        };
+
+        var result = renderer.Layout(context);
+
+        Assert.Equal(LayoutResult.Outcome.Full, result.Status);
     }
 
     /// <summary>The same entry with no lead lines is drawn on the first page, as before.</summary>
