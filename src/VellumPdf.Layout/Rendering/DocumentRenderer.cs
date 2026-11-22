@@ -275,6 +275,7 @@ public sealed class DocumentRenderer
     {
         ArgumentNullException.ThrowIfNull(pdf);
         _pdf = pdf;
+        _session = new ContinuationSession { Pdf = pdf };
         _pageSize = pageSize ?? pdf.DefaultPageSize;
         _margins = margins ?? new EdgeInsets(72); // 1-inch default margins (72pt)
 
@@ -1417,13 +1418,16 @@ public sealed class DocumentRenderer
         Debug.Assert(!AssertOnUnreportedChild, "A built-in parent addressed a reporting child and did not report for itself.");
     }
 
+    // Kept as its own frame: the stack-depth tests count it, and a tier-1 recompile that folds this
+    // small method into its caller leaves them no frame to count.
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
     private void PlaceRenderer(IRenderer renderer, int totalPages)
     {
         // Read once, from the element the caller added: the overflow this loop continues with
         // holds the same element and must not ask again.
         var keepTogether = renderer is IKeepSource { KeepTogether: true };
         var lineCounts = renderer is ParagraphRenderer;
-        var session = _session ??= new ContinuationSession { Pdf = _pdf };
+        var session = _session ??= new ContinuationSession();
         session.Reset();
         PlaceLoop(renderer, totalPages, keepTogether, lineCounts, session, 0);
     }
