@@ -89,7 +89,6 @@ public sealed class TableMeasureCacheTests
         var probe = Probed(() => Save(doc));
 
         Assert.Equal(Enumerable.Range(0, groups).Select(i => $"row {2 * i}, cell 2").ToArray(), Dropped(doc));
-        Assert.True(probe.Passes > groups, $"{probe.Passes} resolutions");
         const int cells = 4 * groups;
         Assert.Equal(cells + groups, probe.WidthMisses);
         Assert.True(probe.WidthHits > probe.WidthMisses, $"{probe.WidthHits} hits, {probe.WidthMisses} misses");
@@ -215,5 +214,77 @@ public sealed class TableMeasureCacheTests
         finally { TableMeasureProbe.Current = null; }
 
         Assert.Equal(["row 0, cell 0"], Dropped(doc));
+    }
+
+    /// <summary>
+    /// A group that gives up its breaks in an automatic column does not end the pass when no
+    /// column changes width: the unbroken text of its cell is narrower than a word of another row
+    /// in the same column, so the table is measured once for all six groups, not once for each.
+    /// </summary>
+    [Fact]
+    public void AStepThatLeavesEveryColumnWidthAsItWasDoesNotEndThePass()
+    {
+        const int groups = 6;
+        using var doc = WidePage();
+        var t = new TableElement { DefaultCellStyle = Helvetica() };
+        t.AddRow().AddCell("x").AddCell(new string('W', 100)).AddCell("x");
+        for (var i = 0; i < groups; i++)
+        {
+            t.AddRow().AddCell("x").AddCell(new Cell(Words(60)) { RowSpan = 2 }).AddCell("x");
+            t.AddRow().AddCell("y").AddCell("y");
+        }
+        doc.Add(t);
+
+        var probe = Probed(() => Save(doc));
+
+        Assert.Equal(Enumerable.Range(0, groups).Select(i => $"row {2 * i + 1}, cell 1").ToArray(), Dropped(doc));
+        Assert.Equal(groups, probe.StepsKeptPassGoing);
+        Assert.True(probe.Passes <= 3, $"{probe.Passes} resolutions");
+    }
+
+    /// <summary>
+    /// A step that moves a column's width still ends the pass: the next group is judged on the
+    /// widths it leaves. Each group's cell is longer than the one before it, so each step widens
+    /// the automatic column, no step keeps a pass going, and the table is resolved once for each
+    /// group and once more.
+    /// </summary>
+    [Fact]
+    public void AStepThatMovesAColumnWidthStillEndsThePass()
+    {
+        const int groups = 4;
+        using var doc = WidePage();
+        var t = new TableElement { DefaultCellStyle = Helvetica() };
+        for (var i = 0; i < groups; i++)
+        {
+            t.AddRow().AddCell("x").AddCell(new Cell(Words(60 + (20 * i))) { RowSpan = 2 });
+            t.AddRow().AddCell("y");
+        }
+        doc.Add(t);
+
+        var probe = Probed(() => Save(doc));
+
+        Assert.Equal(groups, Dropped(doc).Length);
+        Assert.Equal(0, probe.StepsKeptPassGoing);
+        Assert.True(probe.Passes > groups, $"{probe.Passes} resolutions");
+    }
+
+    /// <summary>
+    /// A step in a row outside the group does not keep the pass going even when no column moves,
+    /// because that row is measured again: a tab in the header, which the group's third step
+    /// takes, changes the header's height.
+    /// </summary>
+    [Fact]
+    public void AStepInAHeaderRowStillEndsThePass()
+    {
+        using var doc = WidePage();
+        var t = new TableElement { DefaultCellStyle = Helvetica() };
+        t.AddRow(isHeader: true).AddCell(new string('W', 100)).AddCell("a" + (char)9 + "b");
+        t.AddRow().AddCell(new Cell("a") { RowSpan = 2 }).AddCell("b" + (char)9 + "b");
+        t.AddRow().AddCell(Words(47, " "));
+        doc.Add(t);
+
+        var probe = Probed(() => Save(doc));
+
+        Assert.Equal(0, probe.StepsKeptPassGoing);
     }
 }

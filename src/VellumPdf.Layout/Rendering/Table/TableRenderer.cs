@@ -243,6 +243,14 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             _resumeLines = null;
             _resumeFrom = null;
 
+            // A decision made for this width and these boxes by the renderer that handed the table
+            // over stands: the cells it read unbroken are the cells this layout reads unbroken.
+            var key = fresh is { Length: 2 }
+                ? (area.Width, fresh[0].Y, fresh[0].Bottom, fresh[1].Y, fresh[1].Bottom)
+                : ((double, double, double, double, double)?)null;
+            var decided = key is not null && _decidedFor is { } was && was.Equals(key.Value);
+            if (!decided) _oneLine = null;
+
             // Before the grid resolves: a ColSpan of zero gives a column count of zero, so Resolve
             // returns no widths and Layout gives up below, and the caller was told the table was too
             // tall to fit (#481). Checking here names the cell instead.
@@ -254,14 +262,6 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             }
 
             LayoutValidation.ValidateLineWidthIsFinite(_table.BorderWidth, "A table");
-
-            // A decision made for this width and these boxes by the renderer that handed the table
-            // over stands: the cells it read unbroken are the cells this layout reads unbroken.
-            var key = fresh is { Length: 2 }
-                ? (area.Width, fresh[0].Y, fresh[0].Bottom, fresh[1].Y, fresh[1].Bottom)
-                : ((double, double, double, double, double)?)null;
-            var decided = key is not null && _decidedFor is { } was && was.Equals(key.Value);
-            if (!decided) _oneLine = null;
 
             // A decision that reads some cells unbroken measures the table once per step, so it
             // keeps what each cell measures: nothing else depends on the cells' text, and the
@@ -280,7 +280,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             // no second pass.
             if (passesNeeded)
             {
-                while (CellsToReadAsOneLine(fresh!, style) is { } more)
+                while (CellsToReadAsOneLine(fresh!, style, area.Width, cache!) is { } more)
                 {
                     _oneLine ??= [];
                     _oneLine.UnionWith(more);
@@ -609,7 +609,8 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     /// two header steps takes every cell it reaches at once, so the header ends at most two
     /// passes.
     /// </summary>
-    private HashSet<(int Row, int Cell)>? CellsToReadAsOneLine(LayoutBox[] fresh, TextStyle style)
+    private HashSet<(int Row, int Cell)>? CellsToReadAsOneLine(
+        LayoutBox[] fresh, TextStyle style, double areaWidth, TableMeasureCache cache)
     {
         var rows = _table.Rows;
         var header = FindHeaderRowIndices(rows);
@@ -627,9 +628,33 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         var own = (First: -1, Last: -1);
         var shared = false;
 
+        // Whether a cell was added in a row outside the group, which changes that row's height
+        // whatever the columns do.
+        var outside = false;
+
+        // True when the cells found so far, read unbroken, leave every column the width it has.
+        // Then no row outside the group measures differently, so a step that stayed in the group's
+        // rows does not end the pass: going on judges the next group on the heights a new pass
+        // would start from. The widths are compared bit for bit, because a width that moved by
+        // one unit in the last place can move a line break.
+        bool ColumnWidthsHold()
+        {
+            if (outside) return false;
+            var trial = new HashSet<(int Row, int Cell)>(_oneLine ?? []);
+            trial.UnionWith(found!);
+            var grid = new TableGridResolver { OneLineCells = trial, Cache = cache };
+            grid.Resolve(_table, areaWidth);
+            if (grid.ColWidths.Length != _colWidths.Length) return false;
+            for (var i = 0; i < _colWidths.Length; i++)
+                if (BitConverter.DoubleToInt64Bits(grid.ColWidths[i]) != BitConverter.DoubleToInt64Bits(_colWidths[i]))
+                    return false;
+            if (TableMeasureProbe.Current is { } probe) probe.StepsKeptPassGoing++;
+            return true;
+        }
+
         void Note(int r, int col, int span)
         {
-            if (r < own.First || r > own.Last) { shared = true; return; }
+            if (r < own.First || r > own.Last) { shared = true; outside = true; return; }
             for (var k = 0; k < span && col + k < _colWidths.Length; k++)
                 if (IsAutoColumn(col + k)) { shared = true; return; }
         }
@@ -723,9 +748,10 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
                 // other group's height, so the next group is judged in the same pass.
                 own = (first, last);
                 shared = false;
+                outside = false;
                 if (CollectBreaks(first, last))
                 {
-                    if (shared) return found;
+                    if (shared && !ColumnWidthsHold()) return found;
 
                     // Only this group's rows are measured again, in the columns they have.
                     (_oneLine ??= []).UnionWith(found!);
@@ -735,7 +761,22 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
                 own = (-1, -1);
                 if (header.Count > 0 && CollectBreaks(0, header[^1])) return found;
                 own = (first, last);
-                if (CollectControlSpace(first, last) && shared) return found;
+                shared = false;
+                outside = false;
+                if (CollectControlSpace(first, last) && shared)
+                {
+                    // The last step takes every cell it can reach, so the group is not judged
+                    // again after it; the cells are applied here when the pass goes on.
+                    if (ColumnWidthsHold())
+                    {
+                        (_oneLine ??= []).UnionWith(found!);
+                        for (var r = first; r <= last; r++) _rowHeights[r] = MeasureRow(r, style);
+                    }
+                    else
+                    {
+                        return found;
+                    }
+                }
                 break;
             }
         }

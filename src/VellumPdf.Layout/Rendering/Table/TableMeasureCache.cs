@@ -105,6 +105,12 @@ internal sealed class TableMeasureProbe
     /// <summary>Cells whose longest word and widest line a resolution measured.</summary>
     public int WidthMisses { get; set; }
 
+    /// <summary>
+    /// Steps that gave up cells in a column other rows share and left every column width as it
+    /// was, so the pass went on.
+    /// </summary>
+    public int StepsKeptPassGoing { get; set; }
+
     /// <summary>The number of times the decision measured the whole table.</summary>
     public int Passes { get; set; }
 }
