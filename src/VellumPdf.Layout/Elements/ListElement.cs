@@ -142,9 +142,10 @@ public sealed class ListElement
     /// <exception cref="InvalidOperationException">
     /// Raised from a save rather than from this property, when a list with nested children has an
     /// indent that reaches the list's own area width, which is the page's content width narrowed by
-    /// the left and right edges of <see cref="Margins"/>, positive infinity included; a flat list at
-    /// any such indent is not refused. The message reports an element too tall to fit and names
-    /// neither this property nor the list.
+    /// the left and right edges of <see cref="Margins"/>, positive infinity included. A flat list at
+    /// such an indent is not refused for the indent: it is refused only where an entry's marker has
+    /// no room on a page, which no indent changes. The message reports an element too tall to fit
+    /// and names neither this property nor the list.
     /// </exception>
     public double Indent { get; init; } = 20;
 
