@@ -49,6 +49,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     A custom `IRenderer` that is the element after a group can be laid out ahead of the elements
     before it, and with areas on pages it does not end up on. A `Full` result is still drawn after
     the last `Layout` call on that instance; see `IRenderer.Layout`.
+
 - **`{chapter}` in a running band (#603).** `RunningBand.ChapterToken` turns on a `{chapter}`
   token that prints the title of the chapter the page is in, so a header can read "Hoofdstuk 2:
   Ontwikkeling" on the pages of that chapter. It is `false` by default: a template that holds
