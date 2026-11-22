@@ -38,9 +38,10 @@ namespace VellumPdf.Layout.Elements.Table;
 /// <para><b>Each time a header row, or a group in an automatically sized column, gives up a cell,
 /// the save measures the whole table again.</b> A group that gives up cells in fixed-width
 /// columns only measures its own rows again. After 8 measurements of the whole table for this
-/// decision, the groups not yet judged are judged together, so a table with many groups in
-/// automatically sized columns does not take one more for each. <see cref="Cell.Content"/> says
-/// what that changes in what is drawn.</para>
+/// decision, a pass judges every group it reaches together, which saves measurements only when
+/// no group is tipped by the cells another gave up: a table in which each group's cells change
+/// the width of a column the next group is judged by is still measured once for each group.
+/// <see cref="Cell.Content"/> says what that changes in what is drawn.</para>
 /// <para><b>These are refused, and never cut.</b> <see cref="Document.Save(System.IO.Stream)"/>
 /// throws <see cref="InvalidOperationException"/> whose message starts with the standard
 /// too-tall text and ends with a sentence naming the rows, for: header rows that together do not

@@ -64,9 +64,12 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IPlacementSourc
 
     /// <summary>
     /// The number of passes over the table's heights that each stop at the first step changing
-    /// another group's height. Pass 9 and later judge every group they reach together, which
-    /// bounds the cost of a table with many groups that give up a cell in an automatically sized
-    /// column.
+    /// another group's height. Pass 9 and later judge every group they reach, each on the heights
+    /// as they stand, and the passes repeat until one adds no cell. That keeps the measurements
+    /// down for groups that all lack room on the heights the table starts with. It does not for a
+    /// chain in which each group is tipped by the cells the one before it gave up: that table is
+    /// measured once per group.
+    /// <see cref="Cell.Content"/> states the rule.
     /// </summary>
     internal const int MaxPassesBeforeBatching = 8;
 
@@ -272,8 +275,8 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IPlacementSourc
             // them so are laid out unbroken, and the grid and the heights are taken again. Each
             // pass adds cells, so this ends; most tables, which hold no control white space, take
             // no second pass. Each pass costs one measurement of the whole table, so after
-            // MaxPassesBeforeBatching of them a pass no longer stops at the first step that
-            // changes other groups' heights.
+            // MaxPassesBeforeBatching of them a pass no longer stops at the first group step that
+            // changes other groups' heights. A step in the header rows still ends it.
             if (!decided && fresh is not null && AnyControlSpace(rows))
             {
                 var passes = 0;
@@ -468,8 +471,11 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IPlacementSourc
     /// method judges the header rows first and then each <see cref="Cell.RowSpan"/> group in
     /// order, and a group again after its own breaks are given up in fixed-width columns. A step
     /// that adds a cell in a header row, or in an automatically sized column, ends the pass,
-    /// because every height has to be taken again before the next group is judged; with
-    /// <paramref name="batch"/> set it ends that group's judging instead.
+    /// because every height has to be taken again before the next group is judged. With
+    /// <paramref name="batch"/> set, a step in a group ends that group's judging instead and the
+    /// next group is judged on the heights as they stand; a step in the header rows still ends
+    /// the pass. Each of the two header steps takes every cell it reaches at once, so the header
+    /// ends at most two passes.
     /// </summary>
     private HashSet<(int Row, int Cell)>? CellsToReadAsOneLine(LayoutBox[] fresh, TextStyle style, bool batch)
     {
@@ -581,7 +587,8 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IPlacementSourc
                 // A step that adds a cell the other groups' heights can depend on ends the pass,
                 // because the next group would be judged by heights that the step changes, a
                 // column's width among them. After the bound on such passes (see the caller) it
-                // ends this group's judging instead, and the groups after it are judged together.
+                // ends this group's judging instead, and the groups after it are judged on the
+                // heights as they stand. The header steps below end the pass in either case.
                 // A step that stays in this group's rows and in fixed-width columns changes no
                 // other group's height, so the next group is judged in the same pass.
                 own = (first, last);

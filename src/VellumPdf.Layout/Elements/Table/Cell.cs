@@ -70,11 +70,16 @@ public sealed class Cell
     /// its breaks.</para>
     /// <para>The table's heights are measured again each time a header row, or a group in an
     /// automatically sized column, gives up a cell, because that can change other rows. After the
-    /// table has been measured again 8 times for this decision, the groups not yet judged are
-    /// judged together on the heights as they stand. A table that needs no more than 8 such
-    /// measurements is laid out as if every group were judged on the heights the earlier ones
-    /// left; beyond that, a later group can give up cells that judging it on those heights would
-    /// have kept.</para>
+    /// table has been measured again 8 times for this decision, a pass no longer ends at the
+    /// first group that gives up such a cell: it judges every group it reaches on the heights as
+    /// they stand, and passes repeat until one adds no cell. A header row that gives up cells
+    /// still ends the pass. A table that needs no more than 8 such measurements is laid out as if
+    /// every group were judged on the heights the earlier ones left; beyond that, a later group
+    /// can give up more cells than judging it on those heights would, or fewer. That keeps the
+    /// measurements down for groups that all lack room on the heights the table starts with. When
+    /// the cells each group gives up change the width of an automatically sized column that the
+    /// next group is judged by, the next group is found only by the next measurement, so the
+    /// table is still measured once for each group.</para>
     /// <para>A row that can be cut between its lines is cut when it is taller than a page. A
     /// repeated header row or a span group is never cut, and the save refuses it when it does not
     /// fit; a table whose rows are all headers repeats none of them, so its rows are cut like any

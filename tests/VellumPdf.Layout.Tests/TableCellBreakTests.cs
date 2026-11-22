@@ -1456,11 +1456,12 @@ public sealed class TableCellBreakTests : IDisposable
     }
 
     /// <summary>
-    /// A group that gives up a cell in an automatically sized column measures the whole table again,
-    /// so the measurements of such groups are bounded: after eight, the groups not yet judged are
-    /// judged together. The allocations of 400 such groups stay under a fixed multiple of those of
-    /// the same table with the lines separated by spaces, which has nothing to give up. Without the
-    /// bound the multiple grows with the number of groups. Allocations are counted, not time.
+    /// A group that gives up a cell in an automatically sized column measures the whole table again.
+    /// After eight such measurements a pass judges every group it reaches, so groups that all lack
+    /// room on the heights the table starts with no longer take one measurement each. The
+    /// allocations of 400 such groups stay under a fixed multiple of those of the same table with
+    /// the lines separated by spaces, which has nothing to give up. Without the limit the multiple
+    /// grows with the number of groups. Allocations are counted, not time.
     /// </summary>
     [Fact]
     public void TheCostOfGivingUpBreaksInAutoColumnsIsBounded()
@@ -1524,6 +1525,157 @@ public sealed class TableCellBreakTests : IDisposable
         Assert.Equal(fillers + 1 + (laterGroupGivesUp ? 1 : 0), dropped.Length);
         Assert.Contains($"row {2 * fillers}, cell 0", dropped);
         Assert.Equal(laterGroupGivesUp, dropped.Contains($"row {2 * fillers + 2}, cell 0"));
+    }
+
+    /// <summary>The cells that <paramref name="fillers"/> filler groups give up, in row order.</summary>
+    private static string[] FillerReports(int fillers) =>
+        [.. Enumerable.Range(0, fillers).Select(i => $"row {2 * i + 1}, cell 2")];
+
+    /// <summary>
+    /// Columns of 36pt, 36pt and one sized by its content, after an optional header. Each filler
+    /// group is a cell of 60 lines in the last column beside two short cells. It has no room on the
+    /// page and gives up its breaks in a column that other rows share, so each filler ends one
+    /// pass, and the pass after <paramref name="fillers"/> of them is the first to judge past a
+    /// group that ends its own judging.
+    /// </summary>
+    private static TableElement FillerTable(int fillers, Action<TableElement>? header = null)
+    {
+        var t = Wide10(36, 36, 0);
+        header?.Invoke(t);
+        for (var i = 0; i < fillers; i++)
+        {
+            t.AddRow().AddCell("x").AddCell("x").AddCell(new Cell(Words(60)) { RowSpan = 2 });
+            t.AddRow().AddCell("y");
+        }
+        return t;
+    }
+
+    private static void LineFeedHeader(TableElement t) => t.AddRow(isHeader: true).AddCell(Words(30));
+
+    /// <summary>
+    /// A group of 268pt: a row of two short cells, the first spanning both rows, and a row of 20
+    /// lines. A header of 30 lines leaves it 212pt, and a header of one line leaves it 560pt.
+    /// </summary>
+    private static void TwentyLineGroup(TableElement t)
+    {
+        t.AddRow().AddCell(new Cell("a") { RowSpan = 2 }).AddCell("b");
+        t.AddRow().AddCell(Words(20));
+    }
+
+    /// <summary>
+    /// Every row of a group is measured again after the group gives up cells in it. A header of 30
+    /// lines leaves 212pt, and a group of three rows is 20 + 20 + 248pt with the lines of one row.
+    /// Once that row's lines are given up the group is 60pt and fits, so the header keeps its
+    /// breaks. A measurement that leaves out the last row, or reads only the first, keeps the group
+    /// too tall and the header is relieved as well. The row with the lines is the middle row, then
+    /// the last.
+    /// </summary>
+    [Theory]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void EveryRowOfAGroupIsMeasuredAgainAfterItGivesUpItsBreaks(int rowWithLines)
+    {
+        using var doc = WidePage();
+        var t = Wide10(950, 950);
+        t.AddRow(isHeader: true).AddCell(Words(30));
+        t.AddRow().AddCell(new Cell("a") { RowSpan = 3 }).AddCell("b");
+        t.AddRow().AddCell(rowWithLines == 2 ? Words(20) : "c");
+        t.AddRow().AddCell(rowWithLines == 3 ? Words(20) : "c");
+        doc.Add(t);
+
+        Save(doc);
+
+        Assert.Equal([$"row {rowWithLines}, cell 0"], Dropped(doc));
+    }
+
+    /// <summary>
+    /// After eight measurements a header row that gives up its breaks still ends the pass. The
+    /// header of 30 lines leaves 212pt. The group after the fillers is 232pt, 17 plain words in a
+    /// column of one word, and has no breaks of its own, so the header is relieved on its account.
+    /// The group after it, 268pt with its 20 lines, then fits the 560pt that remain and keeps
+    /// them. Judged in the same pass, on the header as it stood, it would give them up.
+    /// </summary>
+    [Fact]
+    public void AHeaderThatGivesUpItsBreaksStillEndsAPassAfterEightMeasurements()
+    {
+        using var doc = WidePage();
+        var t = FillerTable(8, LineFeedHeader);
+        t.AddRow().AddCell(new Cell("a") { RowSpan = 2 }).AddCell("b");
+        t.AddRow().AddCell(Words(17, " "));
+        TwentyLineGroup(t);
+        doc.Add(t);
+
+        Save(doc);
+
+        Assert.Equal(["row 0, cell 0", .. FillerReports(8)], Dropped(doc));
+    }
+
+    /// <summary>
+    /// After eight measurements a group that gives up a cell in a shared column ends only its own
+    /// judging: the group after it is judged in the same pass, on the heights as they stand. The
+    /// group here gives up its cell in the automatic column and is still too tall for the room the
+    /// header leaves, so its judging ends there. The group after it is judged on the old header,
+    /// 212pt of room, and gives up its 20 lines, which it would keep on the 560pt left once the
+    /// header is relieved.
+    /// </summary>
+    [Fact]
+    public void AGroupThatEndsItsOwnJudgingAfterEightMeasurementsLeavesTheNextGroupToTheSamePass()
+    {
+        using var doc = WidePage();
+        var t = FillerTable(8, LineFeedHeader);
+        t.AddRow().AddCell("a").AddCell("b").AddCell(new Cell(Words(3)) { RowSpan = 2 });
+        t.AddRow().AddCell(Words(17, " "));
+        TwentyLineGroup(t);
+        doc.Add(t);
+
+        Save(doc);
+
+        Assert.Equal(["row 0, cell 0", .. FillerReports(9), "row 20, cell 0"], Dropped(doc));
+    }
+
+    /// <summary>
+    /// A shared step that ended one group's judging does not carry over to the next group. The
+    /// ninth filler gives up its cell in the shared column. The group after it gives up a cell in
+    /// fixed columns only, is judged again and still has no room, so the header is relieved and the
+    /// pass ends before the last group is judged. Were the first group's step remembered, the
+    /// second group would end its judging without being judged again, and the last group would
+    /// give up its 20 lines.
+    /// </summary>
+    [Fact]
+    public void ASharedStepDoesNotEndTheJudgingOfTheNextGroupAfterEightMeasurements()
+    {
+        using var doc = WidePage();
+        var t = FillerTable(9, LineFeedHeader);
+        t.AddRow().AddCell(new Cell("a") { RowSpan = 2 }).AddCell(Words(3));
+        t.AddRow().AddCell(Words(17, " "));
+        TwentyLineGroup(t);
+        doc.Add(t);
+
+        Save(doc);
+
+        Assert.Equal(["row 0, cell 0", .. FillerReports(9), "row 19, cell 1"], Dropped(doc));
+    }
+
+    /// <summary>
+    /// A tab that tips a group, with one in the header too, is a shared step of the third step.
+    /// After eight measurements it ends only that group's judging: the group after it is judged in
+    /// the same pass, on the header as it stood (32pt, 548pt of room), and gives up its 44 lines.
+    /// Its 556pt fits the 560pt left once the tab in the header is laid out unbroken.
+    /// </summary>
+    [Fact]
+    public void ASharedThirdStepAfterEightMeasurementsLeavesTheNextGroupToTheSamePass()
+    {
+        using var doc = WidePage();
+        var t = FillerTable(8, x => x.AddRow(isHeader: true).AddCell("ab\tab"));
+        t.AddRow().AddCell(new Cell("a") { RowSpan = 2 }).AddCell("ab\tab");
+        t.AddRow().AddCell(Words(43, " "));
+        t.AddRow().AddCell(new Cell("a") { RowSpan = 2 }).AddCell("b");
+        t.AddRow().AddCell(Words(44));
+        doc.Add(t);
+
+        Save(doc);
+
+        Assert.Equal(["row 0, cell 0", .. FillerReports(8), "row 17, cell 1", "row 20, cell 0"], Dropped(doc));
     }
 
     /// <summary>
