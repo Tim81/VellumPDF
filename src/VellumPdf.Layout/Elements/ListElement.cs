@@ -97,28 +97,27 @@ public sealed class ListElement
     /// width, gets one instead: the width of its widest word, or all the room right of its
     /// marker's inset when the word is wider, where the word is broken. The content then starts at
     /// the area's right edge less that width, and never left of the marker's inset. A marker is
-    /// never moved, so the text can overprint it. The text is drawn as it is at any indent, so a
-    /// line taller than the area is not drawn. A list the document draws from its first entry
-    /// reports its clamped entries as one <see cref="LayoutDiagnosticCode.ListIndentClamped"/>
-    /// item.</para>
+    /// never moved, so the text can overprint it. The entry is then placed as at any indent: when
+    /// its marker or its text does not fit what is left of a page it moves to the next page, and a
+    /// line taller than a page is not drawn; see <see cref="ListElement"/>. A list the document
+    /// draws from its first entry reports its clamped entries as one
+    /// <see cref="LayoutDiagnosticCode.ListIndentClamped"/> item.</para>
     /// <para>These keep their earlier output, and are not reported: a gutter that leaves the text a
     /// width, however narrow; an entry with no word that measures wider than zero, such as one
     /// holding only white space, set at font size 0 or set in Symbol or ZapfDingbats, whose text is
     /// discarded; and an entry with a run that holds text and has a non-finite font size or a
     /// non-finite colour channel, whose text is discarded and which does not make the save throw,
-    /// because a width would have let the layout read that style and refuse it. Two cases are
-    /// clamped and reported but placed as before: an entry whose marker has no room on the page
-    /// splits the list before it, and the entry is then clamped on the next page, or, at the top of
-    /// a page, is refused as before; and an entry whose line is taller than the room it is placed
-    /// in is counted and its line is not drawn. A nested list throws at the area width, as the
-    /// exception records. Below that, from half the area width, a child's text is clamped in the
-    /// same way, because the nested gutter reaches the area width at half the indent a top-level
-    /// gutter needs.</para>
+    /// because a width would have let the layout read that style and refuse it. An entry whose
+    /// marker has no room at the top of a page is refused as before. A nested list throws at the
+    /// area width, as the exception records. Below that, from half the area width, a child's text
+    /// is clamped in the same way, because the nested gutter reaches the area width at half the
+    /// indent a top-level gutter needs.</para>
     /// <para>One element may take at most 50,000 page continuations; see
-    /// <see cref="Rendering.DocumentRenderer"/>. Drawing the text of a clamped entry adds lines, so
-    /// a list whose clamped layout could pass that limit is laid out without drawing first, and
-    /// when it would pass it the list is placed without the clamp instead: no gutter is narrowed,
-    /// an entry the clamp would have changed keeps its marker and loses its text, and
+    /// <see cref="Rendering.DocumentRenderer"/>. Drawing the text of a clamped entry adds lines,
+    /// and moving an entry adds pages, so a list whose layout could pass that limit is laid out
+    /// without drawing first, and when it would pass it the list is placed as it was before both:
+    /// no gutter is narrowed, an entry the clamp would have changed keeps its marker and loses its
+    /// text, no entry moves, and
     /// <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/> reports it. That list then saves,
     /// or throws the limit's <see cref="InvalidOperationException"/>, as a list with no clamp does.
     /// </para>
@@ -137,7 +136,7 @@ public sealed class ListElement
     /// refused either.</para>
     /// <para><b>Do not pass</b> an indent that leaves an entry's text no width beside its gutter:
     /// the text is given a width and reported as
-    /// <see cref="LayoutDiagnosticCode.ListIndentClamped"/> , or left out and reported as
+    /// <see cref="LayoutDiagnosticCode.ListIndentClamped"/>, or left out and reported as
     /// <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/> when that would take the list past
     /// the continuation limit, as above. 3.0 will refuse the input.</para>
     /// <para>A finite negative value can put linked item text, or a linked nested marker, at a
@@ -157,7 +156,7 @@ public sealed class ListElement
     /// <exception cref="InvalidOperationException">
     /// Raised from a save rather than from this property, when a list with nested children has an
     /// indent that reaches the list's own area width, which is the page's content width narrowed by
-    /// the left and right edges of <see cref="Margins"/> , positive infinity included. A flat list
+    /// the left and right edges of <see cref="Margins"/>, positive infinity included. A flat list
     /// at such an indent is not refused for the indent. It is refused where an entry's marker has
     /// no room at the top of a page, or where the list would pass the page-continuation limit, as
     /// at any indent. The message reports an element too tall to fit and names neither this

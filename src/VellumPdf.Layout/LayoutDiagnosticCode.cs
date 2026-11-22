@@ -163,9 +163,9 @@ public enum LayoutDiagnosticCode
     /// and reports nothing. An indent that leaves the text a width, however narrow, is not clamped
     /// and not reported. Neither is an entry with no word that measures wider than zero, or one
     /// with a run whose font size or colour channel is not finite, whose text is still discarded.
-    /// An entry whose line is taller than the room it is placed in is counted, and its line is not
-    /// drawn. <b>Do not pass</b> an indent that leaves an entry's text no width: 3.0 will refuse
-    /// it. See <see cref="Elements.ListElement.Indent"/>.
+    /// An entry whose text line is taller than a page is counted, and the line is not drawn; see
+    /// <see cref="ListEntryPartDropped"/>. <b>Do not pass</b> an indent that leaves an entry's
+    /// text no width: 3.0 will refuse it. See <see cref="Elements.ListElement.Indent"/>.
     /// </remarks>
     ListIndentClamped = 203,
 

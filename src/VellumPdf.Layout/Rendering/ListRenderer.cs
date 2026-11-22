@@ -133,7 +133,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     /// returns <see cref="LayoutResult.Full"/> occupying no height, and <see cref="Draw"/> then
     /// throws <see cref="ArgumentOutOfRangeException"/>.
     /// A null <paramref name="list"/> is refused here. A renderer that starts after the first
-    /// entry still clamps an entry's gutter, and reports nothing; see
+    /// entry still clamps an entry's gutter, and does not report that; see
     /// <see cref="LayoutDiagnosticCode.ListIndentClamped"/>.
     /// <para>Do not pass a start outside the list's entries, which count each child after its
     /// parent. 3.0 will throw from this constructor.</para>
@@ -196,7 +196,8 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     /// <summary>Paginates the list item-by-item, splitting at item boundaries on overflow; handles mid-item splits by chaining content overflow renderers.</summary>
     /// <remarks>
     /// See the constructor for a negative or past-end start. Overflow splits at an item, or
-    /// mid-item when a paragraph does. When the document calls this method, the exceptions it lists
+    /// mid-item when a paragraph does. An item whose marker or text does not fit what is left of a
+    /// page moves whole to the next page; see <see cref="ListElement"/>. When the document calls this method, the exceptions it lists
     /// reach you from the save. A list added with <see cref="Document.Add(ListElement)"/> never
     /// starts at a negative item, so <see cref="ArgumentOutOfRangeException"/> reaches the save
     /// only from a renderer you construct with a negative start and add yourself.

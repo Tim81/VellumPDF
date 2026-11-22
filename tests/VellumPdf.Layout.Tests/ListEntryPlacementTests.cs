@@ -243,6 +243,7 @@ public sealed class ListEntryPlacementTests
         Assert.Equal(main.Content, run.Content);
         Assert.Equal(main.Pages, run.Pages);
         Assert.Contains(run.Diagnostics, d => d.Code == LayoutDiagnosticCode.ListIndentClampSkipped && d.Count == 1);
+        Assert.Contains(run.Diagnostics, d => d.Code == LayoutDiagnosticCode.ListEntryPartDropped);
     }
 
     [Fact]
