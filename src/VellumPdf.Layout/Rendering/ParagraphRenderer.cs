@@ -41,7 +41,8 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     /// How many fragments this instance visited taking the line height; the wrap makes it one pass.
     /// </summary>
     internal int LeadingVisits { get; private set; }
-    private double _lineHeight;      // max EffectiveLeading across the paragraph, set with _lines
+    private double _lineHeight;      // max EffectiveLeading across the paragraph
+    private bool _lineHeightTaken;   // _lineHeight is the maximum over the whole of _lines
     private LayoutBox _occupied;
 
     // How many runs with a null style yielded no word, found where the wrap is made and cached with
@@ -147,21 +148,21 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
             // The document checks this before any layout for its own paragraphs; a renderer of
             // yours that lays one out meets it here.
             LayoutValidation.ValidateLeaderSizes(_para);
-            var stops = StopsWithin(_para, area.Width, out var tabStopsBeyond);
-            var (lines, lineEnds) = WordWrap(_para.Runs, area.Width, out var nullStyleRuns, stops);
-            WrapCalls++;
-
-            // The line height is a property of the wrap, so it is taken where the wrap is made and
-            // lives and dies with _lines: every later Layout on this renderer, and every piece a
-            // split hands on, reads the same wrap. Walking the whole wrap on each call cost
-            // O(lines) per page the paragraph crossed. A validation failure leaves no wrap behind,
-            // so a second call wraps and refuses again, as it did when the walk ran on every call.
-            var lineHeight = MaxLeading(lines);
-            _tabStopsBeyond = tabStopsBeyond;
+            var stops = StopsWithin(_para, area.Width, out _tabStopsBeyond);
+            (_lines, _lineEnds) = WordWrap(_para.Runs, area.Width, out var nullStyleRuns, stops);
             _nullStyleRuns = nullStyleRuns;
-            _lineEnds = lineEnds;
-            _lineHeight = lineHeight;
-            _lines = lines;
+            WrapCalls++;
+        }
+
+        // The line height is a property of the wrap, so it is taken once per wrap: every later
+        // Layout on this renderer, and every piece a split hands on, reads the same _lines.
+        // Walking the whole wrap on each call cost O(lines) per page the paragraph crossed. The
+        // flag is set only after the walk completes, so a style the walk refuses is refused again
+        // on the next call, as it was when the walk ran every time.
+        if (!_lineHeightTaken)
+        {
+            TakeLineHeight();
+            _lineHeightTaken = true;
         }
 
         var maxLines = (int)Math.Floor(area.Height / _lineHeight);
@@ -205,6 +206,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
             _lines = _lines,
             _lineEnds = _lineEnds,
             _lineHeight = _lineHeight,
+            _lineHeightTaken = true,
             _nullStyleRuns = _nullStyleRuns,
             _tabStopsBeyond = _tabStopsBeyond,
             StructType = StructType,
@@ -218,6 +220,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
             _lineEnds = _lineEnds,
             _endLine = _endLine,
             _lineHeight = _lineHeight,
+            _lineHeightTaken = true,
             _occupied = _occupied,
             _nullStyleRuns = _nullStyleRuns,
             _tabStopsBeyond = _tabStopsBeyond,
@@ -230,21 +233,23 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
         return LayoutResult.Partial(_occupied, split, overflow);
     }
 
-    // Line height = max EffectiveLeading across every fragment in every line.
-    private double MaxLeading(List<LineFragment[]> lines)
+    // Line height = max EffectiveLeading across every fragment in every line. _lineHeight is
+    // written as the walk goes, so a walk that throws leaves what it had reached.
+    private void TakeLineHeight()
     {
-        var height = 0.0;
-        foreach (var line in lines)
+        _lineHeight = 0;
+        foreach (var line in _lines!)
             foreach (var frag in line)
             {
                 // A non-finite size makes every height derived from it non-finite, every height
                 // comparison false, and the paragraph reports that it placed nothing -- which the
                 // document renderer reads as "too tall" (#481).
                 LayoutValidation.ValidateStyle(frag.Style, RunOwner);
-                height = Math.Max(height, frag.Style.EffectiveLeading);
+                _lineHeight = Math.Max(_lineHeight, frag.Style.EffectiveLeading);
                 LeadingVisits++;
             }
-        return height <= 0 ? TextStyle.Default.EffectiveLeading : height;
+        if (_lineHeight <= 0)
+            _lineHeight = TextStyle.Default.EffectiveLeading;
     }
 
     // ── Phase 2: Draw ─────────────────────────────────────────────────────────

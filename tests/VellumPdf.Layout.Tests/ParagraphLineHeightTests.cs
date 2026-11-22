@@ -14,7 +14,8 @@ namespace VellumPdf.Layout.Tests;
 /// <summary>
 /// A paragraph takes its line height once, where it wraps, and every page of a split reads that
 /// value. The output tests pin bytes that a build without the cache wrote; the cost tests count
-/// the fragments visited, which does not depend on how loaded the machine is.
+/// the fragments visited, which does not depend on how loaded the machine is. A counter sees only
+/// the walk that increments it, so a second walk written elsewhere would not show in these tests.
 /// </summary>
 public sealed class ParagraphLineHeightTests
 {
