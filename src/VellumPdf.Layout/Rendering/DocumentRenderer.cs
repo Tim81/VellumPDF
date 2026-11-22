@@ -891,11 +891,22 @@ public sealed class DocumentRenderer
 
     // FreshPageArea is the area of the page a Nothing answer is retried on: the next page, or, for
     // the retry itself, the page it is already on. Under mirrored margins the two differ in x.
-    private LayoutResult CallLayout(IRenderer renderer, LayoutBox area, bool retry = false, bool atTop = false)
+    // pagesAhead is how far the page the area belongs to is from the page the loop is on, so that a
+    // probe of the next page names the page after it as the one a Nothing is retried on.
+    private LayoutResult CallLayout(IRenderer renderer, LayoutBox area, bool lineCounts, bool retry = false, bool atTop = false, int pagesAhead = 0)
     {
         LayoutCalls++;
-        var fresh = AreaOnPage(_measuring ? _measureArea : ContentArea, retry ? _pageIndex : _pageIndex + 1);
-        return renderer.Layout(new LayoutContext(area) { FreshPageArea = fresh, AtPageTop = retry || atTop });
+        var fresh = AreaOnPage(_measuring ? _measureArea : ContentArea, _pageIndex + pagesAhead + (retry ? 0 : 1));
+
+        // The line counts are read for a paragraph renderer the caller added, and for the pieces
+        // its splits return. A renderer that wraps one, and the pieces that wrapper returns, are
+        // handed a context without the flag.
+        return renderer.Layout(new LayoutContext(area)
+        {
+            FreshPageArea = fresh,
+            AtPageTop = retry || atTop,
+            HonourLineCounts = lineCounts,
+        });
     }
 
     // True when the cursor is at the top of the content area, where no later page is better. The
@@ -1008,9 +1019,10 @@ public sealed class DocumentRenderer
     // the shorter and leaves a page top whose difference is the longer exactly as it was. The
     // cursor equals the area's Y exactly there: EnsurePage, AdvancePage and the measuring pass set
     // it from the expression ContentArea evaluates for Y.
-    private LayoutBox OfferedArea(LayoutBox contentArea)
+    private LayoutBox OfferedArea(LayoutBox contentArea) => OfferedArea(contentArea, Cursor);
+
+    private static LayoutBox OfferedArea(LayoutBox contentArea, double cursor)
     {
-        var cursor = Cursor;
         var height = contentArea.Bottom - cursor;
         if (cursor == contentArea.Y && contentArea.Height > height)
             height = contentArea.Height;
@@ -1128,6 +1140,8 @@ public sealed class DocumentRenderer
         // Read once, from the element the caller added: the overflow this loop continues with
         // holds the same element and must not ask again.
         var keepTogether = renderer is IKeepSource { KeepTogether: true };
+        var lineCounts = renderer is ParagraphRenderer;
+        var split = false;
         while (true)
         {
             if (!_measuring) EnsurePage();
@@ -1135,15 +1149,20 @@ public sealed class DocumentRenderer
             var availableArea = OfferedArea(PlaceArea);
             var atTop = AtPageTop;
 
-            var result = CallLayout(renderer, availableArea, atTop: atTop);
+            var result = CallLayout(renderer, availableArea, lineCounts, atTop: atTop);
 
-            if (keepTogether && continuations == 0 && result.Status == LayoutResult.Outcome.Partial)
+            // Checked on every call until the element has split once, not only on the first: a
+            // Nothing moves the element to the top of the next page, and a keep-together element
+            // that cannot be placed whole there splits there, which is reported the same way.
+            if (keepTogether && !split && result.Status == LayoutResult.Outcome.Partial)
             {
                 // The element would split. It moves whole when an empty page holds it; at the top
-                // of a page there is no better page, so it splits there as well.
+                // of a page there is no better page, so it splits there as well. The probe offers
+                // the box a page top is offered, so what it answers is what the move gets.
+                var next = AreaOnPage(_measuring ? _measureArea : ContentArea, _pageIndex + 1);
                 var whole = atTop
                     ? result
-                    : CallLayout(renderer, AreaOnPage(_measuring ? _measureArea : ContentArea, _pageIndex + 1), atTop: true);
+                    : CallLayout(renderer, OfferedArea(next, next.Y), lineCounts, atTop: true, pagesAhead: 1);
                 if (whole.Status == LayoutResult.Outcome.Full)
                     result = LayoutResult.Nothing();
                 else
@@ -1162,6 +1181,7 @@ public sealed class DocumentRenderer
                     return;
 
                 case LayoutResult.Outcome.Partial:
+                    split = true;
                     _placedOnPage = true;
                     NoteFirstPiece();
                     ReportPlacements(result.SplitRenderer);
@@ -1177,7 +1197,7 @@ public sealed class DocumentRenderer
                 case LayoutResult.Outcome.Nothing:
                     AdvancePage(totalPages);
                     if (!_measuring) EnsurePage();
-                    var retry = CallLayout(renderer, PlaceArea, retry: true);
+                    var retry = CallLayout(renderer, PlaceArea, lineCounts, retry: true);
                     if (retry.Status == LayoutResult.Outcome.Nothing)
                     {
                         if (!_measuring) FinishCurrentPage(totalPages);

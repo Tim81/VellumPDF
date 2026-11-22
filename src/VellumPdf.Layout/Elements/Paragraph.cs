@@ -141,13 +141,16 @@ public sealed class Paragraph
     /// <b>Nothing is refused, and a request the pages cannot hold is dropped and reported, not
     /// thrown.</b> Consecutive top-level elements that set this, and the element added after the
     /// last of them, form a group. The group is placed as it stands when each of its elements
-    /// starts on the page the one before it ends on. When one does not, the whole run moves to the
-    /// next page. The element after the run is placed by its own rules, so its
+    /// starts on the page the one before it ends on, which for an element that splits is the page
+    /// of its last piece. When one does not, the whole run moves to the next page if the group
+    /// holds from there. The element after the run is placed by its own rules, so its
     /// <see cref="KeepTogether"/> or <see cref="MinLinesBeforeBreak"/> decides what counts as a
     /// first piece that fits.
     /// <para>The request is dropped, and the elements are placed as if it were not set, when the
     /// run already starts at the top of a page, because moving it would leave that page empty, and
-    /// when the group does not hold together on an empty page either. The save then lists
+    /// when the group does not hold from the top of the next page either, as when the run ends
+    /// exactly at the foot of a page and the element after it must start on another. A run that
+    /// fills more than a page is not dropped for that alone. The save then lists
     /// <see cref="LayoutDiagnosticCode.KeepWithNextRelaxed"/>, a warning, against the first
     /// element of the run. When two requests conflict this one is dropped first, then
     /// <see cref="KeepTogether"/>, then the line counts: a heading that cannot share a page with a
@@ -159,13 +162,15 @@ public sealed class Paragraph
     /// or <see cref="Rendering.DocumentRenderer.Add(IRenderer)"/>. It is ignored on the overflow
     /// of a split paragraph. A custom <see cref="IRenderer"/> sets none, and as the element after
     /// a run it is placed like any other.</para>
-    /// <para>The document lays the group out once or twice more before it places it, so a document
-    /// that sets this on every element lays each out about twice; see
-    /// <see cref="IRenderer.Layout"/>. A refusal that laying out the next element raises is
-    /// therefore raised while the group is laid out, before the elements ahead of it are drawn; it
-    /// is the one that element raises when it is placed. <b>Do not</b> set this on a run that
-    /// together fills more than a page: it never holds, so the request is dropped and reported
-    /// after the extra layout.</para>
+    /// <para>The document lays the group out once more before it places it, and once more from the
+    /// next page when it does not hold where it stands, so a document that sets this on many
+    /// elements makes more layout calls; see <see cref="IRenderer.Layout"/>. The walk stops at the
+    /// first element that starts on a later page than the one before it ended on. A refusal that
+    /// laying out the next element raises is therefore raised while the group is laid out, before
+    /// the elements ahead of it are drawn; it is the one that element raises when it is placed.
+    /// <b>Do not</b> read this as keeping a whole run on one page: a paragraph that splits keeps
+    /// only its last piece with the element after it, and the pieces before that fall where the
+    /// pages end.</para>
     /// </remarks>
     public bool KeepWithNext { get; init; }
 
@@ -180,11 +185,13 @@ public sealed class Paragraph
     /// starts at the top of one, it splits as it would without this flag, and the save lists
     /// <see cref="LayoutDiagnosticCode.KeepTogetherRelaxed"/>, a warning, against it. Its line
     /// counts, <see cref="MinLinesBeforeBreak"/> and <see cref="MinLinesAfterBreak"/>, still apply
-    /// to the pieces of a paragraph that splits.
+    /// to the pieces of a paragraph that splits. The request is checked until the paragraph has
+    /// split once, so a paragraph that a line count moved to the top of the next page and that
+    /// does not fit there is reported as well.
     /// <para>The flag is read where <see cref="KeepWithNext"/> is, and ignored where that is. When
-    /// the paragraph would split, the document lays it out up to twice more, which is at most two
-    /// more calls for each page the paragraph is moved or split on; see
-    /// <see cref="IRenderer.Layout"/>.</para>
+    /// the paragraph would split, the document lays it out once more on an empty page to see
+    /// whether it fits there, and a move adds the retry the document makes after any
+    /// <see cref="LayoutResult.Outcome.Nothing"/>; see <see cref="IRenderer.Layout"/>.</para>
     /// </remarks>
     public bool KeepTogether { get; init; }
 
@@ -202,12 +209,22 @@ public sealed class Paragraph
     /// page, which some call orphan control, and <see cref="MinLinesAfterBreak"/> the lines carried
     /// to the next page, which some call widow control.</para>
     /// <para>When the page cannot take that many lines, the paragraph moves to the next page. When
-    /// it already starts at the top of a page, or no break leaves enough lines on both sides, the
-    /// paragraph splits where the page ends, as it would with the default, and the save lists
-    /// <see cref="LayoutDiagnosticCode.MinLinesRelaxed"/>, a warning, against it. A paragraph that
-    /// fits whole on its page is never split by this count. The count applies to every break
-    /// inside the paragraph, so it holds for each page a long paragraph continues onto. It is read
-    /// where <see cref="KeepWithNext"/> is, and ignored where that is.</para>
+    /// it already starts at the top of a page, the paragraph splits where the page ends, as it
+    /// would with the default, and the save lists
+    /// <see cref="LayoutDiagnosticCode.MinLinesRelaxed"/>, a warning, against it. When no break
+    /// leaves enough lines on both sides but the page it starts on is not a page top, the whole
+    /// paragraph moves to the next page, and it is reported only if the counts cannot be met there
+    /// either. A paragraph that fits whole on its page is never split by this count. The count
+    /// applies to every break inside the paragraph, so it holds for each page a long paragraph
+    /// continues onto.</para>
+    /// <para>The document reads the count for a paragraph added with
+    /// <see cref="Document.Add(Paragraph)"/>, and for a <see cref="Rendering.ParagraphRenderer"/>
+    /// added with <see cref="Document.Add(IRenderer)"/> or
+    /// <see cref="Rendering.DocumentRenderer.Add(IRenderer)"/>. It is ignored for a paragraph that
+    /// is laid out in any other way: behind a custom <see cref="IRenderer"/> that wraps a
+    /// <see cref="Rendering.ParagraphRenderer"/>, and in a call to
+    /// <see cref="Rendering.ParagraphRenderer.Layout"/> that you make, where as many lines as the
+    /// area holds are placed. Setting it there cannot make a save throw.</para>
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// Raised from this <c>init</c> accessor when the value is below 1.

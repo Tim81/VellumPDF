@@ -27,9 +27,9 @@ public sealed class KeepRulesOracleTests : IDisposable
         catch (UnauthorizedAccessException) { /* best-effort cleanup */ }
     }
 
-    // A handbook: twelve chapters, each a heading and two paragraphs, on a page small enough that
+    // Twelve chapters, each a heading and two paragraphs, on a page small enough that
     // a heading meets a page foot several times. Embedded font, PDF/A-2u.
-    private static Document Handbook(bool keep)
+    private static Document Chapters(bool keep)
     {
         var fontPath = Path.Combine(FontReportSupport.FontsDir, "DejaVuSans.ttf");
         if (!File.Exists(fontPath))
@@ -94,7 +94,8 @@ public sealed class KeepRulesOracleTests : IDisposable
 
     private static int PageCountOf(string path)
     {
-        ExternalTool.TryRun("qpdf", ["--show-npages", path], out var exit, out var stdout, out var stderr, out var timedOut);
+        if (!ExternalTool.TryRun("qpdf", ["--show-npages", path], out var exit, out var stdout, out var stderr, out var timedOut))
+            OracleGate.Unavailable("qpdf");
         Assert.False(timedOut);
         Assert.True(exit == 0, stderr);
         return int.Parse(stdout.Trim(), CultureInfo.InvariantCulture);
@@ -105,7 +106,7 @@ public sealed class KeepRulesOracleTests : IDisposable
     [Fact]
     public void ADocumentOfHeadingsAndText_hasNoHeadingLastOnAPage_onlyWithTheFlags()
     {
-        var control = Write(Save(Handbook(keep: false)), "control.pdf");
+        var control = Write(Save(Chapters(keep: false)), "control.pdf");
         var strandedWithout = 0;
         for (var page = 1; page <= PageCountOf(control); page++)
             if (LinesOf(PageText(control, page)) is { Length: > 0 } lines && IsHeading(lines[^1]))
@@ -114,7 +115,7 @@ public sealed class KeepRulesOracleTests : IDisposable
         // The control has to strand a heading, or the assertion below proves nothing.
         Assert.True(strandedWithout > 0, "the document without the flags strands no heading");
 
-        using var doc = Handbook(keep: true);
+        using var doc = Chapters(keep: true);
         var path = Write(Save(doc), "keep.pdf");
         var pages = PageCountOf(path);
         var headingsSeen = 0;
@@ -133,11 +134,12 @@ public sealed class KeepRulesOracleTests : IDisposable
     [Fact]
     public void TheKeptDocument_passesQpdf_andIsPdfA2uCompliant()
     {
-        using var doc = Handbook(keep: true);
+        using var doc = Chapters(keep: true);
         var bytes = Save(doc);
         var path = Write(bytes, "kept-2u.pdf");
 
-        ExternalTool.TryRun("qpdf", ["--check", path], out var exit, out var stdout, out var stderr, out var timedOut);
+        if (!ExternalTool.TryRun("qpdf", ["--check", path], out var exit, out var stdout, out var stderr, out var timedOut))
+            OracleGate.Unavailable("qpdf");
         Assert.False(timedOut);
         Assert.True(exit == 0, stdout + stderr);
         Assert.Contains("No syntax or stream encoding errors found", stdout, StringComparison.Ordinal);

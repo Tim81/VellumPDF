@@ -837,9 +837,11 @@ public sealed class KeepRulesTests
             return flags && drawn;
         }
 
+        // Mostly a few lines, sometimes more than a page holds, and sometimes the largest count.
         int Count()
         {
-            var drawn = 1 + r.Next(3);
+            var kind = r.Next(8);
+            var drawn = kind == 0 ? int.MaxValue : kind == 1 ? 12 + r.Next(40) : 1 + r.Next(3);
             return flags ? drawn : 1;
         }
 
@@ -1051,6 +1053,332 @@ public sealed class KeepRulesTests
         }
 
         Assert.True(pairs > 50, $"{pairs} kept pairs were checked");
+    }
+
+    // ── A keep-together element that splits is reported, however it got to the split ──
+
+    private static void AssertEachReportedOnce(Document doc) =>
+        Assert.All(doc.Diagnostics, d => Assert.Equal(1, d.Count));
+
+    [Fact]
+    public void KeepTogetherParagraph_afterAFullPage_splitsAtThePageTop_andIsReportedOnce()
+    {
+        // Nothing of the paragraph fits under eleven lines, so it moves to page 2 and does not fit
+        // there either. Its first call returned Nothing, which is not the call that splits it.
+        using var doc = NewDoc();
+        doc.Add(Lines("f", 11));
+        doc.Add(Lines("k", 15, keepTogether: true));
+        var pages = PagesOf(doc);
+
+        Assert.Equal(Seq("f", 1, 11), pages[0]);
+        Assert.Equal(Seq("k", 1, 11), pages[1]);
+        Assert.Equal(Seq("k", 12, 15), pages[2]);
+        AssertDiagnostics(doc, (LayoutDiagnosticCode.KeepTogetherRelaxed, LayoutElementKind.Paragraph, 1, 2));
+        AssertEachReportedOnce(doc);
+    }
+
+    [Fact]
+    public void KeepTogetherParagraph_withMinLinesThatRefuseTheFirstPage_splitsOnTheNextAndIsReported()
+    {
+        // Two lines are left on page 1 and the paragraph wants three before a break: the line
+        // count moves it, and then it is too long for page 2.
+        using var doc = NewDoc();
+        doc.Add(Lines("f", 9));
+        doc.Add(Lines("k", 15, keepTogether: true, before: 3));
+        var pages = PagesOf(doc);
+
+        Assert.Equal(Seq("f", 1, 9), pages[0]);
+        Assert.Equal(Seq("k", 1, 11), pages[1]);
+        Assert.Equal(Seq("k", 12, 15), pages[2]);
+        AssertDiagnostics(doc, (LayoutDiagnosticCode.KeepTogetherRelaxed, LayoutElementKind.Paragraph, 1, 2));
+        AssertEachReportedOnce(doc);
+    }
+
+    [Fact]
+    public void KeepTogetherParagraph_withMinLinesThatMoveItToAPageItFits_isMovedWholeAndNotReported()
+    {
+        using var doc = NewDoc();
+        doc.Add(Lines("f", 9));
+        doc.Add(Lines("k", 8, keepTogether: true, before: 3));
+        var pages = PagesOf(doc);
+
+        Assert.Equal(Seq("f", 1, 9), pages[0]);
+        Assert.Equal(Seq("k", 1, 8), pages[1]);
+        Assert.Empty(doc.Diagnostics);
+    }
+
+    [Fact]
+    public void KeepTogetherParagraphOfThreePages_isReportedOnce_notOnceForEachPiece()
+    {
+        using var doc = NewDoc();
+        doc.Add(Lines("f", 11));
+        doc.Add(Lines("k", 30, keepTogether: true));
+        var pages = PagesOf(doc);
+
+        Assert.Equal([11, 11, 11, 8], pages.Select(p => p.Length));
+        AssertDiagnostics(doc, (LayoutDiagnosticCode.KeepTogetherRelaxed, LayoutElementKind.Paragraph, 1, 2));
+        AssertEachReportedOnce(doc);
+    }
+
+    [Fact]
+    public void KeepTogetherTable_afterAFullPage_splitsAtThePageTop_andIsReportedOnce()
+    {
+        using var doc = NewDoc();
+        doc.Add(Lines("f", 11));
+        var table = new TableElement { KeepTogether = true };
+        for (var r = 1; r <= 30; r++)
+            table.AddRow().AddCell("R" + r.ToString(CultureInfo.InvariantCulture));
+        doc.Add(table);
+        var pages = PagesOf(doc);
+
+        Assert.Equal(Seq("f", 1, 11), pages[0]);
+        Assert.Equal(1, PageOf(pages, "R1"));
+        Assert.Equal(6, pages.Length);
+        AssertDiagnostics(doc, (LayoutDiagnosticCode.KeepTogetherRelaxed, LayoutElementKind.Table, 1, 2));
+        AssertEachReportedOnce(doc);
+    }
+
+    [Fact]
+    public void KeepTogetherList_afterAFullPage_splitsAtThePageTop_andIsReportedOnce()
+    {
+        using var doc = NewDoc();
+        doc.Add(Lines("f", 11));
+        var list = new ListElement { KeepTogether = true };
+        for (var i = 1; i <= 20; i++) list.Add("L" + i.ToString(CultureInfo.InvariantCulture), Body);
+        doc.Add(list);
+        var pages = PagesOf(doc);
+
+        Assert.Equal(Seq("f", 1, 11), pages[0]);
+        Assert.Equal(1, PageOf(pages, "\u2022L1"));
+        Assert.Equal(2, PageOf(pages, "\u2022L20"));
+        AssertDiagnostics(doc, (LayoutDiagnosticCode.KeepTogetherRelaxed, LayoutElementKind.List, 1, 2));
+        AssertEachReportedOnce(doc);
+    }
+
+    [Fact]
+    public void KeepTogetherParagraph_thatFitsOnlyWhenOfferedThePageTopBox_movesWhole()
+    {
+        // The content area is 154.1 pt tall and starts 32.2 pt down, so the box a page top is
+        // offered, bottom minus top, is one rounding step taller than the height. Ten lines of
+        // exactly that box over ten fit the page-top box and not the height. The check for an empty
+        // page has to offer the box the page gets, or it reports a paragraph the page would hold.
+        var tight = new TextStyle { Font = VellumPdf.Fonts.Standard14.Helvetica, FontSize = 12, Leading = 15.410000000000002 };
+        using var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, 300, 200),
+            Margins = new EdgeInsets(32.2, 20, 13.7, 20),
+            Timestamp = new DateTimeOffset(2026, 11, 20, 12, 0, 0, TimeSpan.Zero),
+            DocumentId = Convert.FromHexString("000102030405060708090A0B0C0D0E0F"),
+        };
+        doc.Add(new Paragraph("f1", tight));
+        doc.Add(new Paragraph(string.Join('\n', Enumerable.Range(1, 10).Select(i => "k" + i.ToString(CultureInfo.InvariantCulture))), tight) { KeepTogether = true });
+        var pages = PagesOf(doc);
+
+        Assert.Equal(["f1"], pages[0]);
+        Assert.Equal(Seq("k", 1, 10), pages[1]);
+        Assert.Empty(doc.Diagnostics);
+    }
+
+    // ── Line counts are read where the document places the paragraph, and nowhere else ──
+
+    // Lays out a paragraph renderer through a context the caller chooses.
+    private sealed class Wrapped(IRenderer inner, Func<LayoutContext, LayoutContext> context) : IRenderer
+    {
+        public LayoutResult Layout(LayoutContext c) => inner.Layout(context(c));
+
+        public void Draw(DrawContext c) => inner.Draw(c);
+    }
+
+    private static Document WrappedParagraph(Func<LayoutContext, LayoutContext> context, int filler, Paragraph paragraph)
+    {
+        var doc = NewDoc();
+        if (filler > 0) doc.Add(Lines("f", filler));
+        doc.Add(new Wrapped(new ParagraphRenderer(paragraph), context));
+        return doc;
+    }
+
+    [Fact]
+    public void ARendererThatWrapsAParagraphRenderer_inAFreshContext_ignoresTheLineCounts()
+    {
+        // A count above the page, at the top of a page: read, the save would report it.
+        using var doc = WrappedParagraph(c => new LayoutContext(c.Area), 0, Lines("w", 30, after: 50));
+        var pages = PagesOf(doc);
+
+        Assert.Equal([11, 11, 8], pages.Select(p => p.Length));
+        Assert.Empty(doc.Diagnostics);
+    }
+
+    [Fact]
+    public void ARendererThatWrapsAParagraphRenderer_withWithArea_ignoresTheLineCounts()
+    {
+        using var doc = WrappedParagraph(c => c.WithArea(c.Area), 0, Lines("w", 30, after: 50));
+        var pages = PagesOf(doc);
+
+        Assert.Equal([11, 11, 8], pages.Select(p => p.Length));
+        Assert.Empty(doc.Diagnostics);
+    }
+
+    [Fact]
+    public void ARendererThatWrapsAParagraphRenderer_inALowerSubArea_ignoresTheLineCounts()
+    {
+        // The wrapper hands on a box 30 pt down the page, which holds nine lines. It is not a page
+        // top, and a count that asked for a move there would have nowhere to go.
+        using var doc = WrappedParagraph(
+            c => c.WithArea(new LayoutBox(c.Area.X, c.Area.Y + 30, c.Area.Width, c.Area.Height - 30)),
+            0,
+            Lines("w", 12, before: 40));
+        var pages = PagesOf(doc);
+
+        Assert.Equal(Seq("w", 1, 9), pages[0]);
+        Assert.Equal(Seq("w", 10, 12), pages[1]);
+        Assert.Empty(doc.Diagnostics);
+    }
+
+    [Fact]
+    public void ARendererThatWrapsAParagraphRenderer_belowAPageTop_splitsWhereThePageEnds()
+    {
+        // Read, before = 3 would move the paragraph to page 2 because two lines are left.
+        using var doc = WrappedParagraph(c => new LayoutContext(c.Area), 9, Lines("w", 15, before: 3));
+        var pages = PagesOf(doc);
+
+        Assert.Equal([.. Seq("f", 1, 9), "w1", "w2"], pages[0]);
+        Assert.Equal(Seq("w", 3, 13), pages[1]);
+        Assert.Equal(["w14", "w15"], pages[2]);
+        Assert.Empty(doc.Diagnostics);
+    }
+
+    [Fact]
+    public void ParagraphRendererLayout_calledDirectly_placesAsManyLinesAsFit()
+    {
+        // Five lines, four of which fit, with a count of five lines to carry over.
+        var area = new LayoutBox(0, 0, 200, (14.4 * 4) + 1);
+        var direct = new ParagraphRenderer(Lines("z", 5, after: 5)).Layout(new LayoutContext(area));
+        Assert.Equal(LayoutResult.Outcome.Partial, direct.Status);
+
+        var viaWithArea = new ParagraphRenderer(Lines("z", 5, before: 5)).Layout(new LayoutContext(area).WithArea(area));
+        Assert.Equal(LayoutResult.Outcome.Partial, viaWithArea.Status);
+    }
+
+    [Fact]
+    public void WithArea_carriesTheFreshPageArea_andNeitherTheTopOfPageNorTheLineCountFlag()
+    {
+        var fresh = new LayoutBox(1, 2, 3, 4);
+        var context = new LayoutContext(new LayoutBox(0, 0, 100, 100)) { FreshPageArea = fresh, AtPageTop = true, HonourLineCounts = true };
+
+        var copy = context.WithArea(new LayoutBox(0, 50, 100, 50));
+
+        Assert.Equal(fresh, copy.FreshPageArea);
+        Assert.False(copy.AtPageTop);
+        Assert.False(copy.HonourLineCounts);
+    }
+
+    [Fact]
+    public void AParagraphRendererAddedToTheDocument_readsTheLineCounts()
+    {
+        using var doc = NewDoc();
+        doc.Add(Lines("f", 10));
+        doc.Add(new ParagraphRenderer(Lines("o", 3, before: 2)));
+        var pages = PagesOf(doc);
+
+        Assert.Equal(Seq("f", 1, 10), pages[0]);
+        Assert.Equal(["o1", "o2", "o3"], pages[1]);
+        Assert.Empty(doc.Diagnostics);
+    }
+
+    // ── Counts a page cannot meet never turn a document that saves into one that throws ──
+
+    [Fact]
+    public void MinLinesBeforeBreak_moreThanAPage_afterAShortFiller_saves_andReportsTheSplits()
+    {
+        using var doc = NewDoc();
+        doc.Add(Lines("f", 2));
+        doc.Add(Lines("m", 30, before: 12));
+        var pages = PagesOf(doc);
+
+        Assert.Equal([2, 11, 11, 8], pages.Select(p => p.Length));
+        var item = Assert.Single(doc.Diagnostics);
+        Assert.Equal(LayoutDiagnosticCode.MinLinesRelaxed, item.Code);
+        Assert.Equal(2, item.PageNumber);
+        Assert.Equal(2, item.Count);
+    }
+
+    [Theory]
+    [InlineData(int.MaxValue, 1)]
+    [InlineData(1, int.MaxValue)]
+    [InlineData(int.MaxValue, int.MaxValue)]
+    public void LargestLineCounts_afterAShortFiller_save_andReportTheSplits(int before, int after)
+    {
+        using var doc = NewDoc();
+        doc.Add(Lines("f", 3));
+        doc.Add(Lines("m", 30, before: before, after: after));
+        var pages = PagesOf(doc);
+
+        Assert.Equal([3, 11, 11, 8], pages.Select(p => p.Length));
+        var item = Assert.Single(doc.Diagnostics);
+        Assert.Equal(LayoutDiagnosticCode.MinLinesRelaxed, item.Code);
+        Assert.Equal(2, item.PageNumber);
+        Assert.Equal(2, item.Count);
+    }
+
+    [Fact]
+    public void MinLinesBeforeBreak_ofExactlyTheLinesThatFit_keepsThemOnThePage()
+    {
+        // Two lines are left on page 1 and two are asked for.
+        using var doc = NewDoc();
+        doc.Add(Lines("f", 9));
+        doc.Add(Lines("m", 15, before: 2));
+        var pages = PagesOf(doc);
+
+        Assert.Equal([.. Seq("f", 1, 9), "m1", "m2"], pages[0]);
+        Assert.Equal(Seq("m", 3, 13), pages[1]);
+        Assert.Equal(["m14", "m15"], pages[2]);
+        Assert.Empty(doc.Diagnostics);
+    }
+
+    [Fact]
+    public void MinLines_thatNoBreakMeets_butNotAtAPageTop_moveTheWholeParagraphAndReportNothing()
+    {
+        // Eight lines cannot leave six on each side, and the paragraph fits the next page whole.
+        using var doc = NewDoc();
+        doc.Add(Lines("f", 5));
+        doc.Add(Lines("m", 8, before: 6, after: 6));
+        var pages = PagesOf(doc);
+
+        Assert.Equal(Seq("f", 1, 5), pages[0]);
+        Assert.Equal(Seq("m", 1, 8), pages[1]);
+        Assert.Empty(doc.Diagnostics);
+    }
+
+    [Fact]
+    public void KeepWithNext_onAParagraphOfSeveralPages_keepsOnlyItsLastPieceWithTheNextElement()
+    {
+        // 20 lines under three filler lines: 8 on page 1, 11 on page 2, and the last one on page 3
+        // with the element after it.
+        using var doc = NewDoc();
+        doc.Add(Lines("f", 3));
+        doc.Add(Lines("k", 20, keepWithNext: true));
+        doc.Add(new Paragraph("after", Body));
+        var pages = PagesOf(doc);
+
+        Assert.Equal([.. Seq("f", 1, 3), .. Seq("k", 1, 8)], pages[0]);
+        Assert.Equal(Seq("k", 9, 19), pages[1]);
+        Assert.Equal(["k20", "after"], pages[2]);
+        Assert.Empty(doc.Diagnostics);
+    }
+
+    [Fact]
+    public void KeepWithNext_onAParagraphWhoseLastPieceFillsAPage_isReportedAtThePageTop()
+    {
+        // Two full pages: the next element cannot start on the page the last piece ends on.
+        using var doc = NewDoc();
+        doc.Add(Lines("k", 22, keepWithNext: true));
+        doc.Add(new Paragraph("after", Body));
+        var pages = PagesOf(doc);
+
+        Assert.Equal(Seq("k", 1, 11), pages[0]);
+        Assert.Equal(Seq("k", 12, 22), pages[1]);
+        Assert.Equal(["after"], pages[2]);
+        AssertDiagnostics(doc, (LayoutDiagnosticCode.KeepWithNextRelaxed, LayoutElementKind.Paragraph, 0, 1));
     }
 
     // ── Cost ─────────────────────────────────────────────────────────────────

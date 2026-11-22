@@ -23,21 +23,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     When that element's first piece would start on a later page than the page the run ends on, the
     whole run moves to the next page. A `PageBreak`, or an element with `BreakBefore` set, ends the
     group. The next element is placed by its own rules, so its line counts and `KeepTogether`
-    decide what counts as a first piece that fits.
+    decide what counts as a first piece that fits. A paragraph that splits keeps only its last
+    piece with the element after it.
   - A request is dropped, not thrown, when honouring it would leave a page empty or cannot be done
-    on an empty page: a run that starts at the top of a page, a group taller than a page, a
-    `KeepTogether` element taller than a page, a line count no break can meet. When two requests
-    conflict, `KeepWithNext` is dropped first, then `KeepTogether`, then the line counts. The save
-    lists each one as a new warning, `LayoutDiagnosticCode.KeepWithNextRelaxed` (801),
-    `KeepTogetherRelaxed` (802) or `MinLinesRelaxed` (803), with the element kind, its position and
-    the page. They are warnings, so `StrictDiagnostics` still saves.
+    on an empty page: a run that starts at the top of a page, a group that does not hold from the
+    top of the next page either, a `KeepTogether` element that does not fit on an empty page, a
+    paragraph whose line counts cannot be met at the top of a page. When two requests conflict,
+    `KeepWithNext` is dropped first, then `KeepTogether`, then the line counts. The save lists each
+    one as a new warning, `LayoutDiagnosticCode.KeepWithNextRelaxed` (801), `KeepTogetherRelaxed`
+    (802) or `MinLinesRelaxed` (803), with the element kind, its position and the page. They are
+    warnings, so `StrictDiagnostics` still saves. A `KeepTogether` element is reported whenever it
+    splits, including when a line count first moved it to the top of the next page and it does not
+    fit there.
+  - The line counts are read for a paragraph added to the document, as a `Paragraph` or as a
+    `ParagraphRenderer`. A custom `IRenderer` that wraps a `ParagraphRenderer`, and a call to
+    `ParagraphRenderer.Layout` that you make yourself, ignore them and place as many lines as fit,
+    so setting them there cannot make a save throw.
   - Anchors, outline entries, page-label ranges and mirrored margins follow the page an element is
     finally placed on, and an element moved to the next page takes that page's margins.
   - **Attention:** to decide where a group goes, the document lays out the group and the element
-    after it once or twice more before it places any of them. A custom `IRenderer` that is the
-    element after a group can be laid out ahead of the elements before it, and with areas on pages
-    it does not end up on. A `Full` result is still drawn after the last `Layout` call on that
-    instance; see `IRenderer.Layout`.
+    after it once more before it places any of them, and again from the next page when the group
+    does not hold where it stands, so a document that flags many elements makes more layout calls.
+    A custom `IRenderer` that is the element after a group can be laid out ahead of the elements
+    before it, and with areas on pages it does not end up on. A `Full` result is still drawn after
+    the last `Layout` call on that instance; see `IRenderer.Layout`.
 
 - **`Document.MirrorMargins` for double-sided print (#608).** With it set, `Margins.Left` is the
   inside margin and `Margins.Right` the outside one. The inside margin is on the left of a

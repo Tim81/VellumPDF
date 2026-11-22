@@ -105,6 +105,13 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     /// the area it returns <see cref="LayoutResult.Outcome.Nothing"/>; the document then retries on
     /// a new page, and, if that fails too, its save throws <see cref="InvalidOperationException"/>
     /// saying the element is too tall to fit.
+    /// <para><see cref="Paragraph.MinLinesBeforeBreak"/> and <see cref="Paragraph.MinLinesAfterBreak"/>
+    /// are read only when <see cref="DocumentRenderer"/> places this renderer, or the pieces it
+    /// returns, itself. Below the top of a page this method then returns
+    /// <see cref="LayoutResult.Outcome.Nothing"/> when the counts cannot be met there. A call you make, with a context
+    /// you built or made with <see cref="LayoutContext.WithArea"/>, places as many lines as the area
+    /// holds and never reads them, so a renderer of yours that wraps this one cannot make the save
+    /// throw by setting them.</para>
     /// <para>When the document calls this method, the exceptions it lists reach you from the
     /// save.</para>
     /// </remarks>
@@ -177,7 +184,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
         // where the page ends and the document reports that the count was dropped.
         var fit = maxLines;
         var relaxed = false;
-        if (_para.MinLinesBeforeBreak > 1 || _para.MinLinesAfterBreak > 1)
+        if (context.HonourLineCounts && (_para.MinLinesBeforeBreak > 1 || _para.MinLinesAfterBreak > 1))
         {
             var kept = Math.Min(maxLines, remaining - _para.MinLinesAfterBreak);
             if (kept >= _para.MinLinesBeforeBreak)
