@@ -62,10 +62,12 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IPlacementSourc
     // it and gives it to the renderers that draw the pages; null when every break is kept.
     private HashSet<(int Row, int Cell)>? _oneLine;
 
-    // What _oneLine was decided for: the table width and the fresh boxes. A renderer that carries
-    // the decision to the next page reuses it when it lays out at the same width and boxes, and so
-    // resolves the grid once, where deciding again would resolve it once per pass on every page.
-    private (double Width, LayoutBox First, LayoutBox Second)? _decidedFor;
+    // What _oneLine was decided for: the table width and the vertical extent of the two fresh boxes.
+    // A renderer that carries the decision to the next page reuses it when it lays out at the same
+    // width and heights, and so resolves the grid once, where deciding again would resolve it once
+    // per pass on every page. The boxes' x is left out of the key: the decision never reads it, and
+    // mirrored margins move it on every other page.
+    private (double Width, double Top0, double Bottom0, double Top1, double Bottom1)? _decidedFor;
 
     /// <summary>The lines each cell of one row wraps into, at one table width.</summary>
     private sealed class RowLines(int row, double width, List<string>?[] cells)
@@ -249,7 +251,9 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IPlacementSourc
 
             // A decision made for this width and these boxes by the renderer that handed the table
             // over stands: the cells it read unbroken are the cells this layout reads unbroken.
-            var key = fresh is { Length: 2 } ? (area.Width, fresh[0], fresh[1]) : ((double, LayoutBox, LayoutBox)?)null;
+            var key = fresh is { Length: 2 }
+                ? (area.Width, fresh[0].Y, fresh[0].Bottom, fresh[1].Y, fresh[1].Bottom)
+                : ((double, double, double, double, double)?)null;
             var decided = key is not null && _decidedFor is { } was && was.Equals(key.Value);
             if (!decided) _oneLine = null;
 
@@ -537,11 +541,11 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IPlacementSourc
             var height = 0.0;
             for (var i = first; i <= last; i++) height += _rowHeights[i];
             if (FitsFresh(fresh, headerHeight, height)) continue;
-            if (CollectBreaks(first, last)) continue;
-
-            // The header's own heights are taken again before another group is judged by them.
+            // Every step that adds a cell ends the pass: the next group is judged by heights that
+            // this step changes, a column's width among them.
+            if (CollectBreaks(first, last)) return found;
             if (header.Count > 0 && CollectBreaks(0, header[^1])) return found;
-            CollectControlSpace(first, last);
+            if (CollectControlSpace(first, last)) return found;
         }
 
         return found;
@@ -1381,11 +1385,11 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IPlacementSourc
     /// <see cref="WrapLine"/>. A hard line ends at a carriage return and line feed pair, a lone
     /// carriage return or a lone line feed. An empty hard line is a blank line, and so is the one
     /// after a trailing break, which a paragraph drops. Runs of spaces are kept as written, where a
-    /// paragraph collapses them. Every other white-space character except the no-break spaces is a
-    /// space. A null text, and text with nothing in it, is one empty line. With
-    /// <paramref name="honourBreaks"/> false the text is wrapped at spaces alone, measuring each
-    /// control white-space character at its own width, and the lines are drawn without them, so a
-    /// line is never wider than it was measured.
+    /// paragraph collapses them. Every other white-space control character is a space; the no-break
+    /// spaces and the other space separators are written as they are. A null text, and text with
+    /// nothing in it, is one empty line. With <paramref name="honourBreaks"/> false the text is
+    /// wrapped at spaces alone, measuring each control white-space character at its own width, and
+    /// the lines are drawn without them, so a line is never wider than it was measured.
     /// </summary>
     private static List<string> WordWrapLines(string text, TextStyle style, double maxWidth, bool honourBreaks)
     {
@@ -1410,17 +1414,16 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IPlacementSourc
 
     /// <summary>
     /// The lines a cell's text is measured in. When <paramref name="honourBreaks"/> is true, the
-    /// hard lines of the text with their white space turned into spaces. Otherwise the text as the
-    /// one line it is measured as, with its control characters at their own width and its Unicode
-    /// space separators as spaces.
+    /// hard lines of the text with their control white space turned into spaces. Otherwise the text
+    /// itself as the one line it is measured as, control characters and all.
     /// </summary>
     internal static string[] CellLines(string text, bool honourBreaks)
     {
-        if (!honourBreaks) return [LayoutText.SeparatorSpacesToSpaces(text)];
+        if (!honourBreaks) return [text];
 
         var lines = LayoutText.SplitHardLines(text);
         for (var i = 0; i < lines.Length; i++)
-            lines[i] = LayoutText.SeparatorSpacesToSpaces(LayoutText.ControlSpacesToSpaces(lines[i]));
+            lines[i] = LayoutText.ControlSpacesToSpaces(lines[i]);
         return lines;
     }
 

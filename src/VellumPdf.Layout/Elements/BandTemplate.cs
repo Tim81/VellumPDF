@@ -171,8 +171,12 @@ internal sealed class BandText
     /// </param>
     internal void Reset(int pageNumber, int totalPages, string? pageLabel = null)
     {
-        _values[(int)BandToken.Page] =
-            pageLabel ?? pageNumber.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        // The label is caller text, so a tab, a line break or a form feed in it is a space, as it is
+        // in the template's own text; the replacement keeps the length, so what is measured is what
+        // is drawn.
+        _values[(int)BandToken.Page] = pageLabel is null
+            ? pageNumber.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            : LayoutText.ControlSpacesToSpaces(pageLabel);
         _values[(int)BandToken.Pages] = totalPages.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
         long length = Template.LiteralLength;

@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using System.Globalization;
-using VellumPdf.Fonts;
 
 namespace VellumPdf.Layout.Core;
 
@@ -14,10 +13,8 @@ namespace VellumPdf.Layout.Core;
 /// A character is a control space when <see cref="char.IsWhiteSpace(char)"/> holds for it and it is
 /// not in the Unicode category Space Separator: the C0 and C1 controls tab, line feed, line
 /// tabulation, form feed, carriage return and next line, and the line and paragraph separators
-/// U+2028 and U+2029. The Unicode space separators other than the no-break spaces, such as U+2003
-/// EM SPACE, are separator spaces: a cell reads each as U+0020, as
-/// <see cref="Rendering.ParagraphRenderer"/> reads every white-space character except a line
-/// feed and the no-break spaces U+00A0, U+202F and U+2007. A band reads only the control spaces.
+/// U+2028 and U+2029. The no-break spaces and the other space separators, such as U+2003 EM SPACE,
+/// are not control spaces: a font draws them, so they are left as written.
 /// </remarks>
 internal static class LayoutText
 {
@@ -64,20 +61,6 @@ internal static class LayoutText
         lines.Add(text.Substring(start));
         return [.. lines];
     }
-
-    /// <summary>
-    /// True for a Unicode space separator that a cell reads as U+0020: every character of the
-    /// category Space Separator except U+0020 itself and the no-break spaces.
-    /// </summary>
-    internal static bool IsSeparatorSpace(char c) =>
-        c != ' ' && !NoBreakSpaces.IsNoBreakSpace(c)
-        && char.GetUnicodeCategory(c) == UnicodeCategory.SpaceSeparator;
-
-    /// <summary>
-    /// Returns <paramref name="text"/> with every separator space replaced by U+0020, or the same
-    /// instance when it holds none. A control space is left as it is.
-    /// </summary>
-    internal static string SeparatorSpacesToSpaces(string text) => Replace(text, IsSeparatorSpace);
 
     /// <summary>
     /// Returns <paramref name="text"/> with every control space removed, or the same instance when
