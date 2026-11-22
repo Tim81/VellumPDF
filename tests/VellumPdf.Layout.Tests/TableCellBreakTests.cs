@@ -1092,6 +1092,30 @@ public sealed class TableCellBreakTests : IDisposable
     }
 
     /// <summary>
+    /// A tab in the last header row that tips a RowSpan group over the page, while the header fits
+    /// and leaves its rows room: the group's third step reaches the header rows, the last one
+    /// included. The header cell is one line, 20pt, as one word and two, 32pt, as two; under it
+    /// the group is 556pt, which is 576pt with the one line and 588pt with two.
+    /// </summary>
+    [Fact]
+    public void ATabInTheLastHeaderRowThatTipsAGroupIsLaidOutUnbroken()
+    {
+        using var doc = WidePage();
+        var t = Wide10(36, 36);
+        t.AddRow(isHeader: true).AddCell("ab	ab");
+        t.AddRow().AddCell(new Cell("a") { RowSpan = 2 }).AddCell("b");
+        t.AddRow().AddCell(Words(44, " "));
+        doc.Add(t);
+
+        var bytes = Save(doc);
+        var report = Assert.Single(doc.Diagnostics, d => d.Code == LayoutDiagnosticCode.CellWhiteSpaceDropped);
+
+        Assert.Equal(1, PageCount(bytes));
+        Assert.Contains("abab", Texts(Content(bytes)));
+        Assert.Contains("row 0, cell 0", report.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// A line separator, U+2028, is a space and not a break, so it is not the first step: a group
     /// that its cell does not tip is left as written, and only the cell with the line feeds is laid
     /// out unbroken.
@@ -1237,6 +1261,37 @@ public sealed class TableCellBreakTests : IDisposable
         var withSpaces = Allocated(400, " ");
 
         Assert.True(withBreaks < 5 * withSpaces, $"{withBreaks} bytes against {withSpaces} without breaks");
+    }
+
+    /// <summary>
+    /// The same holds when a tab tips the groups over the page, the third step: each group is a
+    /// span cell, a tab cell that wraps one line taller as two words than as one, and 46 plain
+    /// lines. The tab cell gives up its tab in every group, in one pass.
+    /// </summary>
+    [Fact]
+    public void TheCostOfGivingUpTabsInFixedColumnsDoesNotGrowWithEachGroup()
+    {
+        static long Allocated(int groups, string tabCell)
+        {
+            using var doc = WidePage();
+            var t = Wide10(36, 36);
+            for (var i = 0; i < groups; i++)
+            {
+                t.AddRow().AddCell(new Cell("a") { RowSpan = 2 }).AddCell(tabCell);
+                t.AddRow().AddCell(Words(46, " "));
+            }
+            doc.Add(t);
+            var before = GC.GetAllocatedBytesForCurrentThread();
+            Save(doc);
+            return GC.GetAllocatedBytesForCurrentThread() - before;
+        }
+
+        Allocated(10, "ab	ab");
+        Allocated(10, "abab");
+        var withTabs = Allocated(400, "ab	ab");
+        var withoutTabs = Allocated(400, "abab");
+
+        Assert.True(withTabs < 5 * withoutTabs, $"{withTabs} bytes against {withoutTabs} without tabs");
     }
 
     /// <summary>
