@@ -698,6 +698,15 @@ public sealed class DocumentRenderer
     private int _simFirstPage;
     private int _keepResolvedUntil;
 
+    // An element whose layout may need more page continuations than one element may is placed
+    // once without drawing to see whether it does (ReachesContinuationLimit). _guarding is set
+    // while that runs, and _limitReached when the loop it runs would have thrown for the limit.
+    // The answer depends on the renderer and on the area its first call is offered, so it is kept
+    // for both passes and for the simulations of the keep rules.
+    private bool _guarding;
+    private bool _limitReached;
+    private Dictionary<(IRenderer Renderer, double Height, bool AtTop), bool>? _continuationVerdicts;
+
     // Set when a run was dropped in the drawing pass; the report is made once its first element is
     // placed (ReportPendingKeepWithNext).
     private bool _keepRelaxedPending;
@@ -1202,6 +1211,42 @@ public sealed class DocumentRenderer
         }
     }
 
+    // Places the element on a copy of the cursor, from where the loop is, and answers whether the
+    // loop would throw for the continuation limit. Nothing is drawn, reported or kept. Anything
+    // else the placement throws is left for the placement that follows, which throws it again.
+    private bool ReachesContinuationLimit(IRenderer renderer, double height, bool atTop)
+    {
+        var key = (renderer, height, atTop);
+        if (_continuationVerdicts is not null && _continuationVerdicts.TryGetValue(key, out var known))
+            return known;
+
+        var saved = (_measuring, _measureArea, _measureY, _pageIndex, _placedOnPage, _simulating, _simFirstOnly, _simFirstPage, _guarding, _limitReached);
+        var cursor = Cursor;
+        var reached = false;
+        try
+        {
+            _measuring = true;
+            _simulating = true;
+            _simFirstOnly = false;
+            _guarding = true;
+            _limitReached = false;
+            _measureArea = ContentArea;
+            _measureY = cursor;
+            PlaceRenderer(renderer, 0);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            reached = _limitReached;
+        }
+        finally
+        {
+            (_measuring, _measureArea, _measureY, _pageIndex, _placedOnPage, _simulating, _simFirstOnly, _simFirstPage, _guarding, _limitReached) = saved;
+        }
+
+        (_continuationVerdicts ??= [])[key] = reached;
+        return reached;
+    }
+
     private void PlaceRenderer(IRenderer renderer, int totalPages)
     {
         var continuations = 0;
@@ -1211,6 +1256,7 @@ public sealed class DocumentRenderer
         var keepTogether = renderer is IKeepSource { KeepTogether: true };
         var lineCounts = renderer is ParagraphRenderer;
         var split = false;
+        var guard = _guarding ? null : renderer as IContinuationGuard;
         while (true)
         {
             if (!_measuring) EnsurePage();
@@ -1219,6 +1265,23 @@ public sealed class DocumentRenderer
             var atTop = AtPageTop;
 
             var result = CallLayout(renderer, availableArea, lineCounts, atTop: atTop);
+
+            // Asked once, after the first call has given the renderer what it needs to bound the
+            // continuations: an element that fits where it is has none to count. One that would
+            // reach the limit the way it lays itself out is laid out the other way, from this
+            // first call on, so it is refused or saved as it was before it had the first.
+            if (guard is not null)
+            {
+                var asked = guard;
+                guard = null;
+                if (result.Status != LayoutResult.Outcome.Full
+                    && asked.ContinuationBound > MaxContinuationsPerElement
+                    && ReachesContinuationLimit(renderer, availableArea.Height, atTop))
+                {
+                    renderer = asked.WithoutBreaks();
+                    result = CallLayout(renderer, availableArea, lineCounts, atTop: atTop);
+                }
+            }
 
             // Checked on every call until the element has split once, not only on the first: a
             // Nothing moves the element to the top of the next page, and a keep-together element
@@ -1292,6 +1355,8 @@ public sealed class DocumentRenderer
 
             if (++continuations > MaxContinuationsPerElement)
             {
+                if (_guarding) _limitReached = true;
+
                 // Commit the open page rather than leave its canvas unflushed; the page still
                 // stays in the document. Both branches reach this throw, but only the Nothing
                 // branch can arrive with a page still open, because the Partial branch has

@@ -42,8 +42,9 @@ public sealed class Cell
     /// <see cref="TextStyle.FontRef"/>.</para>
     /// <para>A cell has no tab stops, so a tab is one space.</para>
     /// <para><b>A cell is laid out unbroken, with its tabs and line breaks left out of what is
-    /// drawn, when reading them would leave a row that cannot be cut no room on a page.</b> This
-    /// is the one place that states the rule; the other members that mention it point here. The
+    /// drawn, when reading them would leave a row that cannot be cut no room on a page, or would
+    /// take the table more page continuations than one element may take.</b> This is the one
+    /// place that states the rule; the other members that mention it point here. The
     /// rows that are never cut between their lines are the repeated header rows and the rows
     /// joined by a <see cref="RowSpan"/>. The header rows have no room when they do not fit a
     /// page, or when they leave a row below them less than one line of one of its cells. A span
@@ -82,6 +83,16 @@ public sealed class Cell
     /// change other rows: the column's width is shared with every row that has a cell in it. The
     /// groups after it are judged on the heights that result, so every group is judged on the
     /// heights the decisions before it leave, however many groups the table has.</para>
+    /// <para>The limit is the 50,000 page continuations of <see cref="IRenderer.Layout"/>. A table
+    /// whose line breaks, read, would take more lays every cell out unbroken from its first page,
+    /// as it was measured before breaks were honoured. It is saved in the pages that measurement
+    /// takes, and refused with the limit's message when that takes more than the limit too. The
+    /// save lists each cell that holds control white space as
+    /// <see cref="VellumPdf.Layout.LayoutDiagnosticCode.CellWhiteSpaceDropped"/>. The count
+    /// depends on where the table starts: a table that keeps its breaks at the top of a page can
+    /// give them up when it starts lower and first moves to the next page. <b>Do not pass</b> a
+    /// cell with more lines than a document can hold and expect them drawn: shorten the text or
+    /// split the table.</para>
     /// <para><b>A table that is refused when every cell is measured as one line is refused, with
     /// the message that measurement gives.</b> <see cref="Document.Save(System.IO.Stream)"/>
     /// throws <see cref="InvalidOperationException"/>, the too-tall exception, though every header

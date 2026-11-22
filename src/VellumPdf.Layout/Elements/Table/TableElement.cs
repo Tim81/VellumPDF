@@ -18,7 +18,9 @@ namespace VellumPdf.Layout.Elements.Table;
 /// rows are all headers has no repeatable header and draws each row once; see
 /// <see cref="AddRow(bool)"/>.
 /// The table is one element for the page limit described on <see cref="IRenderer.Layout"/>: a
-/// table that needs more than <b>50,000</b> page continuations makes the save throw.
+/// table that needs more than <b>50,000</b> page continuations makes the save throw. A table whose
+/// line breaks, read, would need more is laid out with every cell unbroken instead, as
+/// <see cref="Cell.Content"/> says, and the save throws only when it then needs more.
 /// <para>A row that does not fit the room left on a page, and fits neither box a fresh page
 /// offers, is cut between its lines and continues on the next page. Those boxes are the page's
 /// content area under the repeated header rows and inside <see cref="Margins"/>, so a row that
@@ -31,10 +33,10 @@ namespace VellumPdf.Layout.Elements.Table;
 /// page is a <c>TD</c>, or a <c>TH</c> in a header row, and a cell with no line on the page is an
 /// empty <c>TD</c>, also in a header row.</para>
 /// <para>A carriage return or line feed in a cell ends a line, so it makes the row taller. A
-/// repeated header row, or rows joined by a <see cref="Cell.RowSpan"/>, can lose the breaks and
-/// tabs of some cells, those of a cell in an automatically sized column among them, and the save
-/// lists each as <see cref="LayoutDiagnosticCode.CellWhiteSpaceDropped"/>;
-/// <see cref="Cell.Content"/> says when and which.</para>
+/// table can make some cells give up their breaks and tabs, among them cells in rows that are
+/// neither header rows nor joined by a <see cref="Cell.RowSpan"/>, and the save lists each as
+/// <see cref="LayoutDiagnosticCode.CellWhiteSpaceDropped"/>; <see cref="Cell.Content"/> says when
+/// and which.</para>
 /// <para><b>Every group is judged on the heights the groups before it leave.</b> A header row, or
 /// a group in an automatically sized column, that gives up a cell can change the width of a
 /// column the next group is judged by, so the next group is judged on the widths that result,

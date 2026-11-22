@@ -91,7 +91,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`LayoutDiagnosticCode.CellWhiteSpaceDropped` (301).** A table cell was wrapped at spaces alone
   and sized from its whole text, and its tabs and line breaks were left out of what is drawn,
   because reading its line breaks, or its other control white space as spaces, would have left a
-  repeated header row or rows joined by a `RowSpan` no room on a page. A warning, so `StrictDiagnostics` saves: the
+  repeated header row or rows joined by a `RowSpan` no room on a page, or would have taken the table
+  more page continuations than one element may take. A warning, so `StrictDiagnostics` saves: the
   text stays, and the words those characters separated run together in the drawing and in
   extracted text.
   `Count` is the number of pages on which the cell was drawn from its first line, so a repeated
@@ -641,11 +642,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     room with its breaks read. The cells give up their breaks only to save a table that
     measurement saves. A release that measures the columns a `RowSpan` occupies as they are
     drawn can save some of these tables.
-  - A cell with a very large number of lines can be refused where 2.3.3 saved it, because 2.3.3
-    drew its line feeds inside one line. One cell of 2,500,000 two-letter words joined by LF, on a
-    2000 x 600 pt page in a 1900 pt column, saved in 314 pages on 2.3.3 and now stops at the limit
-    of 50,000 page continuations with the `InvalidOperationException` that names it. The same cell
-    of 2,350,047 words saves, in 50,001 pages, and one of 2,350,048 is refused.
+  - **A table whose breaks would take more than 50,000 page continuations is laid out with every
+    cell unbroken.** One element may take at most 50,000 page continuations, and reading a cell's
+    line feeds as breaks can take a table past that where measuring each cell as one line does
+    not. The table is placed once without drawing when a bound says it could reach the limit.
+    When it would, every cell that holds control white space is laid out unbroken from the first
+    page, as the table was measured before breaks were honoured, and the save lists each as
+    `CellWhiteSpaceDropped`. The table then saves in the pages that measurement takes, or is
+    refused with the limit's message when that takes more. One cell of 2,350,047 two-letter words
+    joined by LF, on a 2000 x 600 pt page in a 1900 pt column, keeps its breaks, in 50,001
+    pages; one of 2,350,048 is laid out unbroken, in 295, and one of 2,500,000 in 314.
   - **A repeated header row, or rows joined by a `RowSpan`, keep the one-line layout of their cells
     when reading the cells' breaks would leave them no room on a page.** Those rows are never cut
     between their lines, so reading the breaks would turn a table that saved into a too-tall

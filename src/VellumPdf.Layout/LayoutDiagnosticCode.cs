@@ -119,7 +119,8 @@ public enum LayoutDiagnosticCode
     /// <summary>
     /// A table cell holds a tab, a line break or another control white-space character, and the
     /// save left it out of what it drew, because reading it would have left a row that cannot be
-    /// cut no room on a page.
+    /// cut no room on a page, or would have taken the table more page continuations than one
+    /// element may take.
     /// <see cref="LayoutDiagnostic.Count"/> is the number of pages on which the cell was drawn from
     /// its first line, so a header row that repeats on every page counts once per page, and any
     /// other cell counts once, however many pages a cut row spans. The message names the row and
@@ -131,7 +132,8 @@ public enum LayoutDiagnosticCode
     /// A cell that keeps its breaks is not reported. <see cref="Elements.Table.Cell.Content"/>
     /// says which rows, when, and which cells. <b>Do not pass</b> a repeated header row or a span
     /// group that has no room on a page: put the breaks in rows that can be cut, or shorten the
-    /// text.
+    /// text. A cell with more lines than a document can hold is the other case: shorten the text
+    /// or split the table.
     /// </remarks>
     CellWhiteSpaceDropped = 301,
 

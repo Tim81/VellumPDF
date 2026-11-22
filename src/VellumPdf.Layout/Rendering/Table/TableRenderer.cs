@@ -33,7 +33,7 @@ namespace VellumPdf.Layout.Rendering.Table;
 /// is tagged as a header cell. A table that has a row that is not a header after its leading
 /// header rows repeats those header rows on every page.
 /// </remarks>
-public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IPlacementSource
+public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IPlacementSource, IContinuationGuard
 {
     private readonly TableElement _table;
     private readonly int _startRow;  // first data row index (0-based)
@@ -67,6 +67,16 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     // the table is then refused with that measurement's refusal. It is decided with _oneLine, so it
     // goes with it.
     private bool _allUnbroken;
+
+    // True for a renderer the document made because laying the table out with its breaks read
+    // would take more page continuations than one element may: it reads every cell unbroken from
+    // the start, as the table was measured before breaks were honoured, and says so in the
+    // diagnostics. Copies carry it.
+    private bool _readsUnbrokenForTheLimit;
+
+    // An upper bound on the page continuations the decision's layout needs, set where the decision
+    // is made; see ContinuationBoundOf.
+    private long _continuationBound;
 
     // What the decision under way has measured of each cell; null outside it.
     private TableMeasureCache? _measured;
@@ -166,6 +176,12 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
 
     internal TableElement Element => _table;
 
+    // Explicit, as above.
+    long IContinuationGuard.ContinuationBound => _continuationBound;
+
+    IRenderer IContinuationGuard.WithoutBreaks() =>
+        new TableRenderer(_table, _startRow) { _continuation = _continuation, _readsUnbrokenForTheLimit = true };
+
     /// <summary>Resolves column widths and row heights, fitting as many rows as possible and splitting at row boundaries on overflow, or between the lines of a row that fits no fresh page.</summary>
     /// <remarks>
     /// Overflow splits at a row boundary. A row that does not fit the area is cut between its
@@ -184,9 +200,9 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     /// cut keeps cutting under such a context only at the width it was cut at. At another width
     /// the saved lines are dropped and the row is laid out again from its first line, which
     /// under a context without the box is not cut.</para>
-    /// <para>A carriage return or line feed in a cell ends a line. A repeated header row, or rows
-    /// joined by a <see cref="Cell.RowSpan"/>, can lose the breaks of some cells, those of a cell
-    /// in an automatically sized column among them, and the save reports each as
+    /// <para>A carriage return or line feed in a cell ends a line. A table can make some cells give
+    /// up their breaks, among them cells in rows that are neither header rows nor joined by a
+    /// <see cref="Cell.RowSpan"/>, and the save reports each as
     /// <see cref="LayoutDiagnosticCode.CellWhiteSpaceDropped"/>;
     /// <see cref="Cell.Content"/> says when and which. A context built with the public
     /// constructor of <see cref="LayoutContext"/> keeps every break.</para>
@@ -296,8 +312,10 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
                 var passesNeeded = !decided && fresh is not null && AnyControlSpace(rows);
 
                 // A test measures the table as it was before breaks were honoured: every cell as
-                // one line, with nothing to decide.
-                if (passesNeeded && TableMeasureProbe.Current is { ReadEveryCellUnbroken: true })
+                // one line, with nothing to decide. So does the renderer made for a table whose
+                // breaks would take it past the limit of page continuations.
+                if (_readsUnbrokenForTheLimit
+                    || (passesNeeded && TableMeasureProbe.Current is { ReadEveryCellUnbroken: true }))
                 {
                     _allUnbroken = true;
                     passesNeeded = false;
@@ -352,6 +370,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
                 _measured = null;
                 _content = null;
                 _decidedFor = key;
+                if (fresh is not null && !_readsUnbrokenForTheLimit) _continuationBound = ContinuationBoundOf(fresh);
             }
         }
 
@@ -454,10 +473,11 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             _tailSlice = tail,
             _oneLine = _oneLine,
             _allUnbroken = _allUnbroken,
+            _readsUnbrokenForTheLimit = _readsUnbrokenForTheLimit,
             _decidedFor = _decidedFor,
         };
         var overflow = tail is null
-            ? new TableRenderer(_table, lastFit + 1) { _continuation = true, _colWidths = _colWidths, _rowHeights = _rowHeights, _oneLine = _oneLine, _allUnbroken = _allUnbroken, _decidedFor = _decidedFor }
+            ? new TableRenderer(_table, lastFit + 1) { _continuation = true, _colWidths = _colWidths, _rowHeights = _rowHeights, _oneLine = _oneLine, _allUnbroken = _allUnbroken, _readsUnbrokenForTheLimit = _readsUnbrokenForTheLimit, _decidedFor = _decidedFor }
             : new TableRenderer(_table, tail.Row)
             {
                 _continuation = true,
@@ -467,6 +487,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
                 _resumeFrom = tail.Next(),
                 _oneLine = _oneLine,
                 _allUnbroken = _allUnbroken,
+                _readsUnbrokenForTheLimit = _readsUnbrokenForTheLimit,
                 _decidedFor = _decidedFor,
             };
         return LayoutResult.Partial(_occupied, split, overflow);
@@ -1182,6 +1203,51 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     }
 
     /// <summary>
+    /// An upper bound on the page continuations that laying the table out from
+    /// <c>_rowHeights</c> and <c>_colWidths</c> takes, over every page.
+    /// </summary>
+    /// <remarks>
+    /// A continuation is a layout call that answers Partial, or Nothing and is retried on the next
+    /// page. Every Partial takes at least one row, or at least one line of a row cut between its
+    /// lines, so the Partials number at most the units less one, where a row is one unit unless
+    /// it fits neither fresh box, when it is cut and counts a unit for each of its lines. A
+    /// Nothing is followed by a call that makes progress, which is a Partial or the last call, so
+    /// the Nothings number at most the Partials and one. Together at most twice the units less
+    /// one.
+    /// </remarks>
+    private long ContinuationBoundOf(LayoutBox[] fresh)
+    {
+        var rows = _table.Rows;
+        var header = FindHeaderRowIndices(rows);
+        var headerHeight = 0.0;
+        foreach (var i in header) headerHeight += _rowHeights[i];
+        var style = _table.DefaultCellStyle ?? TextStyle.Default;
+
+        var units = 0L;
+        for (var r = Math.Max(_startRow, header.Count > 0 ? header[^1] + 1 : 0); r < rows.Count; r++)
+        {
+            if (FitsFresh(fresh, headerHeight, _rowHeights[r]))
+            {
+                units++;
+                continue;
+            }
+
+            var lines = 0L;
+            var cells = rows[r].Cells;
+            var col = 0;
+            for (var c = 0; c < cells.Count && col < _colWidths.Length; c++)
+            {
+                var cell = cells[c];
+                var innerW = ColSpanWidth(col, cell.ColSpan) - cell.Padding.Horizontal;
+                lines += WordWrapCount(cell.Content, cell.Style ?? style, Math.Max(1, innerW), HonoursBreaks(r, c));
+                col += cell.ColSpan;
+            }
+            units += Math.Max(1, lines);
+        }
+        return (2 * units) - 1;
+    }
+
+    /// <summary>
     /// True when laying the table out from <c>_rowHeights</c> and <c>_colWidths</c>, page after
     /// page, ends with a page that answers <see cref="LayoutResult.Outcome.Nothing"/> from the top
     /// of a fresh page, which the save refuses with the too-tall exception.
@@ -1442,6 +1508,14 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         }
         return (first, last);
     }
+
+    private static string DroppedForRoom(long subject) => string.Create(
+        System.Globalization.CultureInfo.InvariantCulture,
+        $"Table row {subject >> 32}, cell {subject & 0xFFFFFFFF} holds a tab, a line break or another control white-space character that is left out of what is drawn, because reading its line breaks, or its other control white space as spaces, would leave a row that cannot be cut no room on a page. The words it separated run together.");
+
+    private static string DroppedForTheLimit(long subject) => string.Create(
+        System.Globalization.CultureInfo.InvariantCulture,
+        $"Table row {subject >> 32}, cell {subject & 0xFFFFFFFF} holds a tab, a line break or another control white-space character that is left out of what is drawn, because reading the table's line breaks would take it more page continuations than one element may take. The words it separated run together.");
 
     /// <summary>Draws cell backgrounds, borders and text (repeating header rows) and builds the tagged Table struct tree when tagging is enabled.</summary>
     /// <remarks>
@@ -1745,9 +1819,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             ctx.Diagnostics?.Report(
                 LayoutDiagnosticCode.CellWhiteSpaceDropped,
                 ((long)rowIndex << 32) | (uint)cellIndex,
-                static subject => string.Create(
-                    System.Globalization.CultureInfo.InvariantCulture,
-                    $"Table row {subject >> 32}, cell {subject & 0xFFFFFFFF} holds a tab, a line break or another control white-space character that is left out of what is drawn, because reading its line breaks, or its other control white space as spaces, would leave a row that cannot be cut no room on a page. The words it separated run together."),
+                _readsUnbrokenForTheLimit ? DroppedForTheLimit : DroppedForRoom,
                 perElement: true);
         }
 
