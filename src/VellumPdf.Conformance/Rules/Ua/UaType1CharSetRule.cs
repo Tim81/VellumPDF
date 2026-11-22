@@ -33,6 +33,10 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// accepts (clause 7.21.4.2-1 absent). Cross-validated using the Noto Sans Shavian PFB test
 /// asset that anchors the equivalent PDF/A-2 §6.2.11.4.2-1 oracle fixtures.
 /// </para>
+/// <para>
+/// A font shown only inside a form XObject is not examined, and veraPDF 1.30.2 and 1.30.4
+/// refuse a violating one there on a hand-built file (#428).
+/// </para>
 /// </remarks>
 internal sealed class UaType1CharSetRule : IConformanceRule
 {

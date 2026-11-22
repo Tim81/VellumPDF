@@ -12,19 +12,20 @@ clause 0.3. Regenerate with `python eng/generate-pdf20-inventory.py`.
 > **This is a coverage inventory, not a conformance test.** Whether output actually conforms is
 > settled by the test suite, not by this page.
 
-> **Apart from two rules, the PDF/A-2 clause citations were not derived from the text.** ISO 19005-2 is not among the
+> **Most PDF/A-2 clause citations were not derived from the text.** ISO 19005-2 is not among the
 > specifications held locally. 50 of the 101 rule classes in `VellumPdf.Conformance` cite
-> it, and they were written against veraPDF's bundled profiles, which encode the standard as
-> test cases rather than reproducing its text; two were later re-derived from the clause text
-> (`FontEmbeddingRule` and `ActionRule`, #418). CI fails the build when an oracle fixture makes
+> it, and most were written against veraPDF's bundled profiles, which encode the standard as
+> test cases rather than reproducing its text. Two were later re-derived from the clause text
+> (`FontEmbeddingRule` and `ActionRule`, #418), and `A2aContentItemTaggingRule` has no veraPDF
+> counterpart. CI fails the build when an oracle fixture makes
 > this library and veraPDF disagree, for PDF/A-2 and PDF/UA-1 alike. Of those
 > 50, 48 carry a dated `ISO 19005-2:2011` citation; the other two are PDF/UA-1
 > rules mentioning a PDF/A clause in prose. An audit on 2026-11-21 read clause 6 and Annexes A and
-> B on a licensed online copy and compared those 48 rule classes with it. By primary verdict, 13
+> B on a licensed online copy and compared 48 rule classes with it. By primary verdict, 13
 > match the clause, 26 are narrower, 3 are broader and 6 cite the wrong clause (#418).
-> ISO 14289-1 was acquired on 2026-09-07, after its rules were written; the
+> ISO 14289-1 was acquired on 2026-09-07, after most of its rules were written; the
 > 53 rule classes citing it are checkable against the text. A second audit on 2026-11-21
-> read clauses 5, 6.1 to 6.2 and 7 and compared 52 of them with them: 8 match, 23 are narrower,
+> read clauses 5, 6.1 to 6.2 and 7 and compared 52 of them with it: 8 match, 23 are narrower,
 > 12 are broader, 6 cite the wrong clause and 3 are unsure (#428). Apart from the two re-derived PDF/A-2 rules, the audits compared
 > the rules with the text and did not re-derive them; the corrections are tracked in those
 > issues.

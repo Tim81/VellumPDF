@@ -48,10 +48,11 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// <para>Cross-validated against veraPDF 1.30.2 for each probe (violating + compliant fixture).</para>
 /// <para>Its behaviour was checked against veraPDF's PDF/UA-1 profile, and ISO 14289-1 was not
 /// held when it was written. The 2026-11-21 audit against the clause text (#428) found 7.4.4-1
-/// in agreement and 7.4.4-2 and 7.4.4-3 unsure. The text lets a strongly structured document
-/// use numbered headings, and also says a document is strongly or weakly structured but not
-/// both; this rule and veraPDF 1.30.4 fail any mix of H and H1 to H6 on a hand-built file. An
-/// interpretation of "both" would settle it.</para>
+/// in agreement. For 7.4.4-2 and 7.4.4-3 it found the clause ambiguous: 7.4.4 lets a strongly
+/// structured document use numbered headings, and also says a document is strongly or weakly
+/// structured, not both. This rule treats a document that uses both H and one of H1 to H6 as
+/// mixed, and veraPDF 1.30.2 and 1.30.4 fail a hand-built file that does. Whether that is what
+/// the clause means by "both" is not settled.</para>
 /// </remarks>
 internal sealed class UaHeadingRule : IConformanceRule
 {
@@ -109,7 +110,8 @@ internal sealed class UaHeadingRule : IConformanceRule
                     "ISO14289-1:7.4.4-2",
                     "ISO 14289-1:2014, 7.4.4",
                     PreflightSeverity.Error,
-                    "A document uses both the H (strongly structured) and Hn (H1–H6, weakly structured) heading types; H and Hn must not be mixed (§7.4.4).");
+                    "A document uses both the H (strongly structured) and Hn (H1–H6, weakly "
+                    + "structured) heading types; H and Hn must not be mixed (§7.4.4).");
             }
 
             // 7.4.4-3: an Hn element is non-conformant when the document also uses H.
@@ -119,7 +121,8 @@ internal sealed class UaHeadingRule : IConformanceRule
                     "ISO14289-1:7.4.4-3",
                     "ISO 14289-1:2014, 7.4.4",
                     PreflightSeverity.Error,
-                    "A document uses both the Hn (H1–H6, weakly structured) and H (strongly structured) heading types; H and Hn must not be mixed (§7.4.4).");
+                    "A document uses both the Hn (H1–H6, weakly structured) and H (strongly "
+                    + "structured) heading types; H and Hn must not be mixed (§7.4.4).");
             }
         }
     }

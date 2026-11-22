@@ -57,6 +57,10 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// <para>
 /// Only fonts actually selected via <c>Tf</c> in page content are evaluated.
 /// </para>
+/// <para>
+/// A font shown only inside a form XObject is not examined, and veraPDF 1.30.2 and 1.30.4
+/// refuse a violating one there on a hand-built file (#428).
+/// </para>
 /// </remarks>
 internal sealed class UaTrueTypeCmapRule : IConformanceRule
 {

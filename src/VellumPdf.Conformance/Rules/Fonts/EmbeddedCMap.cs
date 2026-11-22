@@ -13,7 +13,8 @@ namespace VellumPdf.Conformance.Rules.Fonts;
 /// </summary>
 /// <remarks>
 /// Authored from ISO 32000-1:2008, §9.7.5 and §9.7.6, and exercised through the rules that use
-/// it, which were checked against veraPDF. Returns null on any parse failure — never throws, never emits a spurious finding.
+/// it, which were checked against veraPDF. Returns null on any parse failure — never throws, never
+/// emits a spurious finding.
 /// </remarks>
 internal static class EmbeddedCMapParser
 {

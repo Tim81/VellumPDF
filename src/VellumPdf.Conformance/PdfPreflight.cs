@@ -15,8 +15,9 @@ namespace VellumPdf.Conformance;
 /// </summary>
 /// <remarks>
 /// Unless its remarks say otherwise, a PDF/A-2 or PDF/UA-1 rule was written from veraPDF's
-/// profiles, not from the text of ISO 19005-2 or ISO 14289-1, and is checked against veraPDF. A clean result means no rule
-/// reported a finding, which is not a statement that the file conforms to the standard: audits on
+/// profiles, not from the text of ISO 19005-2 or ISO 14289-1, and is checked against veraPDF. A
+/// clean result means no rule reported a finding, which is not a statement that the file
+/// conforms to the standard: audits on
 /// 2026-11-21 (#418, #428) found many rules narrower than the clause text. A rule's remarks say
 /// which clause it cites and where the audit found it narrower or broader.
 /// </remarks>

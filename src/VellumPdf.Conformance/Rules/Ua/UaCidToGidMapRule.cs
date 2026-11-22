@@ -30,6 +30,10 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// validated (matching veraPDF, which validates only the current graphics state — issue #118).
 /// Fonts present in <c>/Resources /Font</c> but never selected are not checked.
 /// </para>
+/// <para>
+/// A font shown only inside a form XObject is not examined, and veraPDF 1.30.2 and 1.30.4
+/// refuse a violating one there on a hand-built file (#428).
+/// </para>
 /// </remarks>
 internal sealed class UaCidToGidMapRule : IConformanceRule
 {

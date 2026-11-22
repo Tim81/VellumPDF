@@ -60,10 +60,8 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// be satisfied anyway, so the check is applied consistently: fire unless the widget's struct
 /// element has <c>/Lang</c>.</para>
 ///
-/// <para><strong>7.2-33 (XMPLangAlt):</strong> deferred — requires parsing the XMP packet to
-/// locate dc:title lang-alt arrays and checking for an x-default entry. The rule only fires
-/// when the catalog also lacks <c>/Lang</c> (i.e. <c>gContainsCatalogLang = false</c>), so it
-/// is already covered for conformant documents. See ConformanceCatalog Deferred note.</para>
+/// <para><strong>7.2-33 (XMPLangAlt):</strong> not checked here. It needs the lang-alt arrays in
+/// the XMP packet, which <see cref="UaOutlineLangRule"/> reads.</para>
 ///
 /// <para>Cites ISO 14289-1:2014 §7.2 and was empirically validated against veraPDF 1.30.2. It was
 /// written from veraPDF's PDF/UA-1 profile and checked against veraPDF, before ISO 14289-1 was

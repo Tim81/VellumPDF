@@ -12,8 +12,9 @@ namespace VellumPdf.Conformance.Rules.Structure;
 /// </summary>
 /// <remarks>
 /// Authored from ISO 32000-1:2008, 7.7.2 ("Document catalog"). Neither the #418 nor the #428
-/// audit covered this rule, so it has not been compared with veraPDF's profiles or with a held
-/// copy of either PDF/A or PDF/UA.
+/// audit covered this rule. On a hand-built file whose catalog has no <c>/Type</c>, veraPDF 1.30.2
+/// and 1.30.4 report no failure under PDF/A-2b or PDF/UA-1, so this rule reports a file that
+/// veraPDF passes.
 /// </remarks>
 internal sealed class DocumentCatalogRule : IConformanceRule
 {

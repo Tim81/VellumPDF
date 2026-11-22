@@ -66,9 +66,9 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// <para>Its behaviour was checked against veraPDF's PDF/UA-1 profile, and ISO 14289-1 was not
 /// held when it was written. The 2026-11-21 audit against the clause text (#428) found it
 /// narrower: one TH with a <c>/Scope</c> satisfies every TD in its table, where 7.5 puts the
-/// requirement on each TH. veraPDF 1.30.4 fails a hand-built table whose second TH has no
-/// <c>/Scope</c> and this rule passes it, so the 1.30.2 probes quoted above no longer describe
-/// the CI-pinned veraPDF.</para>
+/// requirement on each TH. A hand-built table whose second TH has no <c>/Scope</c> and whose
+/// TDs have no <c>/Headers</c> fails 7.5-1 in veraPDF 1.30.2 and in 1.30.4, and this rule passes
+/// it.</para>
 /// </remarks>
 internal sealed class UaTableHeaderRule : IConformanceRule
 {

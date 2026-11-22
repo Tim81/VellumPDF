@@ -342,12 +342,22 @@ def arlington_delta():
 
 RULES_DIR = os.path.join(os.path.dirname(__file__), "..", "src", "VellumPdf.Conformance", "Rules")
 
+# Audit results, typed from the two audit reports of 2026-11-21: #418 for ISO 19005-2 and #428 for
+# ISO 14289-1. They describe the rule classes as audited, at origin/main 9747913, so they are not
+# derived from the tree and do not move when a rule class is added or removed afterwards. Each
+# "compared" figure is the audited population, which is why it is typed here and is not the live
+# count rule_class_provenance() returns for the same standard.
+AUDIT_19005_2 = {"compared": 48, "match": 13, "narrower": 26, "broader": 3, "wrong_clause": 6}
+AUDIT_14289_1 = {"compared": 52, "match": 8, "narrower": 23, "broader": 12, "wrong_clause": 6,
+                 "unsure": 3}
+
 
 def rule_class_provenance():
     """Counts behind the PDF/A-2 and PDF/UA-1 disclosure below: how many rule classes there are
     and how many cite each standard, read from the rule classes themselves rather than typed.
-    The audit verdict counts and the number of rule classes each audit compared are not derived
-    from the tree: they are typed from the two audit reports (#418, #428) in render().
+    Only these four counts are derived from the tree. The audit verdict counts and the number of
+    rule classes each audit compared are typed in AUDIT_19005_2 and AUDIT_14289_1 from the two
+    audit reports (#418, #428), because they record the tree as audited.
 
     A rule class is a .cs file under Rules/ containing ": IConformanceRule"; Rules/ also holds
     helper files that are not rule classes, and counting those instead gives a larger
@@ -383,6 +393,7 @@ def render():
     new_objects, new_keys, dep_keys, tsv_count = arlington_delta()
     extensions, extensions_date = pdf_extensions()
     rule_total, rule_19005_2, rule_19005_2_dated, rule_14289_1 = rule_class_provenance()
+    a1, a2 = AUDIT_19005_2, AUDIT_14289_1
     counts = {}
     for r in refs:
         verdict = STATUS.get(r["key"], (None,))[0]
@@ -404,20 +415,21 @@ def render():
     w("> **This is a coverage inventory, not a conformance test.** Whether output actually conforms is")
     w("> settled by the test suite, not by this page.")
     w("")
-    w("> **Apart from two rules, the PDF/A-2 clause citations were not derived from the text.** ISO 19005-2 is not among the")
+    w("> **Most PDF/A-2 clause citations were not derived from the text.** ISO 19005-2 is not among the")
     w(f"> specifications held locally. {rule_19005_2} of the {rule_total} rule classes in `VellumPdf.Conformance` cite")
-    w("> it, and they were written against veraPDF's bundled profiles, which encode the standard as")
-    w("> test cases rather than reproducing its text; two were later re-derived from the clause text")
-    w("> (`FontEmbeddingRule` and `ActionRule`, #418). CI fails the build when an oracle fixture makes")
+    w("> it, and most were written against veraPDF's bundled profiles, which encode the standard as")
+    w("> test cases rather than reproducing its text. Two were later re-derived from the clause text")
+    w("> (`FontEmbeddingRule` and `ActionRule`, #418), and `A2aContentItemTaggingRule` has no veraPDF")
+    w("> counterpart. CI fails the build when an oracle fixture makes")
     w("> this library and veraPDF disagree, for PDF/A-2 and PDF/UA-1 alike. Of those")
     w(f"> {rule_19005_2}, {rule_19005_2_dated} carry a dated `ISO 19005-2:2011` citation; the other two are PDF/UA-1")
     w("> rules mentioning a PDF/A clause in prose. An audit on 2026-11-21 read clause 6 and Annexes A and")
-    w(f"> B on a licensed online copy and compared those {rule_19005_2_dated} rule classes with it. By primary verdict, 13")
-    w("> match the clause, 26 are narrower, 3 are broader and 6 cite the wrong clause (#418).")
-    w("> ISO 14289-1 was acquired on 2026-09-07, after its rules were written; the")
+    w(f"> B on a licensed online copy and compared {a1['compared']} rule classes with it. By primary verdict, {a1['match']}")
+    w(f"> match the clause, {a1['narrower']} are narrower, {a1['broader']} are broader and {a1['wrong_clause']} cite the wrong clause (#418).")
+    w("> ISO 14289-1 was acquired on 2026-09-07, after most of its rules were written; the")
     w(f"> {rule_14289_1} rule classes citing it are checkable against the text. A second audit on 2026-11-21")
-    w("> read clauses 5, 6.1 to 6.2 and 7 and compared 52 of them with them: 8 match, 23 are narrower,")
-    w("> 12 are broader, 6 cite the wrong clause and 3 are unsure (#428). Apart from the two re-derived PDF/A-2 rules, the audits compared")
+    w(f"> read clauses 5, 6.1 to 6.2 and 7 and compared {a2['compared']} of them with it: {a2['match']} match, {a2['narrower']} are narrower,")
+    w(f"> {a2['broader']} are broader, {a2['wrong_clause']} cite the wrong clause and {a2['unsure']} are unsure (#428). Apart from the two re-derived PDF/A-2 rules, the audits compared")
     w("> the rules with the text and did not re-derive them; the corrections are tracked in those")
     w("> issues.")
     w("")

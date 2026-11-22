@@ -38,9 +38,10 @@ namespace VellumPdf.Conformance.Rules.Graphics;
 /// are read from the <c>bpcc</c> box; for a raw codestream they come from the Ssiz fields in SIZ.
 /// </para>
 /// <para>
-/// <strong>Scope:</strong> all JPXDecode image XObjects drawn via <c>Do</c> in any page's resource
-/// graph (exactly matching <see cref="ForbiddenXObjectRule"/>). An XObject present in resources but
-/// never drawn is not checked (matches veraPDF's content-usage scoping).
+/// <strong>Scope:</strong> JPXDecode image XObjects that page content draws via <c>Do</c>
+/// (matching <see cref="ForbiddenXObjectRule"/>). An XObject present in resources but never drawn
+/// is not checked, which matches veraPDF's content-usage scoping. One drawn inside a form XObject
+/// is not checked either, and veraPDF 1.30.2 and 1.30.4 do refuse a violating one there (#418).
 /// </para>
 /// <para>
 /// <strong>Defensive operation:</strong> any parse failure, truncation, or unexpected structure in

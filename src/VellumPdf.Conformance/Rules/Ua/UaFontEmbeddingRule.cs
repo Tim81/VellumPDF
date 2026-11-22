@@ -47,6 +47,10 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// Helvetica drawn only with 3 Tr → veraPDF does NOT fire 7.21.4.1-1 (3 Tr exemption); (c) embedded
 /// TrueType drawn visibly → veraPDF does not fire 7.21.4.1-1.
 /// </para>
+/// <para>
+/// A font shown only inside a form XObject is not examined, and veraPDF 1.30.2 and 1.30.4
+/// refuse a violating one there on a hand-built file (#428).
+/// </para>
 /// </remarks>
 internal sealed class UaFontEmbeddingRule : IConformanceRule
 {

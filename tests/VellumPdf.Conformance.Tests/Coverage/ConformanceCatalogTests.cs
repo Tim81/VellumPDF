@@ -48,7 +48,9 @@ public sealed class ConformanceCatalogTests
         //     the predefined-CJK-CMap sub-conditions.
         //   - Partial, found by the 2026-11-21 audits: PDF/A-2 clause tests that veraPDF fails
         //     on a probe file the rule passes (#418), and PDF/UA-1 tests whose rule covers one
-        //     font form or one content scope only (#428).
+        //     font form or one content scope only (#428). Most are rules that read only what page
+        //     content reaches and so miss the same construct inside a form XObject; the form
+        //     probes behind them are listed in the catalog notes.
         //   - Deferred: 6.2.10-2 and 6.2.11.7.3-1, which no rule implements (#418).
         //   - OutOfScope: 6.8-5 (needs a PDF/A-1 profile, #140).
         // 7.16-1 moved to Implemented in #138: UaEncryptionPermissionsRule checks /Encrypt /P bit
@@ -56,12 +58,30 @@ public sealed class ConformanceCatalogTests
         // can reach rule evaluation at all.
         var expectedPartial = new HashSet<string>(StringComparer.Ordinal)
         {
+            // Infeasible residual (#139).
             "6.1.13-10", "6.2.11.3.1-1", "7.21.3.1-1",
-            "6.1.2-1", "6.1.13-2", "6.1.13-5", "6.2.3-1", "6.2.4.3-2", "6.2.5-1", "6.2.6-1",
-            "6.2.8-3", "6.2.11.7.2-1", "6.2.11.8-1", "6.3.1-1", "6.3.3-1", "6.5.1-1",
-            "6.6.2.1-2", "6.6.2.3.1-1", "6.6.2.3.1-2", "6.7.4-1",
+            // PDF/A-2: a construct the rule accepts and veraPDF refuses (#418).
+            "6.1.2-1", "6.1.13-2", "6.1.13-5", "6.2.3-1", "6.2.6-1", "6.2.11.7.2-1", "6.2.11.8-1",
+            "6.3.1-1", "6.3.3-1", "6.5.1-1", "6.6.2.1-2", "6.6.2.3.1-1", "6.6.2.3.1-2", "6.7.4-1",
+            // PDF/A-2: rules that read only what page content reaches, so a form XObject escapes
+            // them (#418).
+            "6.1.8-1", "6.1.13-8", "6.1.13-9",
+            "6.2.4.2-1", "6.2.4.3-2", "6.2.4.3-3", "6.2.4.3-4", "6.2.4.4-1",
+            "6.2.5-1", "6.2.5-2", "6.2.5-3", "6.2.5-4", "6.2.5-5", "6.2.5-6",
+            "6.2.8-1", "6.2.8-2", "6.2.8-3",
+            "6.2.8.3-1", "6.2.8.3-2", "6.2.8.3-3", "6.2.8.3-4", "6.2.8.3-5",
+            "6.2.9-1", "6.2.9-2", "6.2.9-3", "6.2.10-1",
+            "6.2.11.2-1", "6.2.11.2-2", "6.2.11.2-3", "6.2.11.2-4", "6.2.11.2-5", "6.2.11.2-6",
+            "6.2.11.2-7", "6.2.11.3.2-1", "6.2.11.3.3-1", "6.2.11.3.3-2",
+            "6.2.11.4.1-1", "6.2.11.4.1-2", "6.2.11.4.2-1", "6.2.11.4.2-2", "6.2.11.5-1",
+            "6.2.11.6-1", "6.2.11.6-2", "6.2.11.6-3", "6.2.11.6-4",
+            // PDF/UA-1: a font form or content scope the rule skips (#428).
             "7.21.4.1-1", "7.21.7-1", "7.21.7-2", "7.21.8-1", "7.21.4.1-2", "7.21.5-1",
             "7.20-1", "7.21.3.3-3", "7.5-1", "7.1-3",
+            // PDF/UA-1: rules that read only what page content reaches (#428).
+            "7.1-1", "7.1-2", "7.2-30", "7.2-31", "7.2-32", "7.2-34",
+            "7.21.3.2-1", "7.21.3.3-1", "7.21.3.3-2", "7.21.4.2-1", "7.21.4.2-2",
+            "7.21.6-1", "7.21.6-2", "7.21.6-3", "7.21.6-4",
         };
         var expectedDeferred = new HashSet<string>(StringComparer.Ordinal)
             { "6.2.10-2", "6.2.11.7.3-1" };
@@ -72,7 +92,9 @@ public sealed class ConformanceCatalogTests
             all.Where(c => c.Status == CoverageStatus.Partial).Select(c => c.TestId).ToHashSet(StringComparer.Ordinal));
         Assert.Equal(
             expectedDeferred,
-            all.Where(c => c.Status == CoverageStatus.Deferred).Select(c => c.TestId).ToHashSet(StringComparer.Ordinal));
+            all.Where(c => c.Status == CoverageStatus.Deferred)
+                .Select(c => c.TestId)
+                .ToHashSet(StringComparer.Ordinal));
         Assert.Equal(
             expectedOutOfScope,
             all.Where(c => c.Status == CoverageStatus.OutOfScope).Select(c => c.TestId).ToHashSet(StringComparer.Ordinal));

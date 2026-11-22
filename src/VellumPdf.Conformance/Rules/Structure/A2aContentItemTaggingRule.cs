@@ -45,11 +45,11 @@ namespace VellumPdf.Conformance.Rules.Structure;
 /// <para><strong>Scope.</strong> Page content streams only, at most one report per page, matching
 /// <see cref="Ua.UaSimpleContentItemRule"/>. Form XObjects, Type 3 CharProcs and annotation
 /// appearance streams are not walked, so this under-detects rather than over-detects.</para>
-/// <para>Its behaviour was checked against veraPDF's PDF/A-2 profile, and ISO 19005-2 was not
-/// held when it was written. The 2026-11-21 audit against the clause text (#418) found it in
-/// agreement, including its severity: 6.7.3.3 makes rooting content in the structure tree a
-/// shall and its granularity a should, and no sentence requires all content to be tagged, so a
-/// warning holds.</para>
+/// <para>veraPDF's PDF/A-2 profile has no equivalent check, so this rule was not checked against
+/// it, and ISO 19005-2 was not held when it was written. The 2026-11-21 audit against the clause
+/// text (#418) found it in agreement, including its severity: 6.7.3.3 makes rooting content in
+/// the structure tree a shall and its granularity a should, and no sentence requires all content
+/// to be tagged, so a warning holds.</para>
 /// </remarks>
 internal sealed class A2aContentItemTaggingRule : IConformanceRule
 {

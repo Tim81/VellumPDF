@@ -23,7 +23,8 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// not, and skips predefined CMaps other than the Identity ones. On hand-built files veraPDF 1.30.4
 /// behaves the same for the first two: it fails a CIDFont Supplement above the CMap's, passes one
 /// below it, and passes the Identity-named embedded CMap whose Ordering differs. The third, the
-/// skipped predefined CMaps, was not probed. The PDF/UA-1 predicate is identical to the PDF/A-2 §6.2.11.3.1-1 predicate, so this
+/// skipped predefined CMaps, was not probed. The PDF/UA-1 predicate is identical to the PDF/A-2
+/// §6.2.11.3.1-1 predicate, so this
 /// rule reuses the same logic as <c>FontStructureRule.CheckCidSystemInfo</c>.
 /// <para>
 /// <strong>Scope (Partial — same as the PDF/A-2 rule):</strong>

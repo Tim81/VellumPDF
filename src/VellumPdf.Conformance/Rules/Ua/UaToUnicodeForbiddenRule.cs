@@ -43,6 +43,10 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// narrower: only shown codes of Identity CIDFontType2 fonts are examined, where the text
 /// speaks of all values in the ToUnicode CMap, and a simple font whose ToUnicode maps the shown
 /// code to U+0000 passes here and fails veraPDF 1.30.4.</para>
+/// <para>
+/// A font shown only inside a form XObject is not examined, and veraPDF 1.30.2 and 1.30.4
+/// refuse a violating one there on a hand-built file (#428).
+/// </para>
 /// </remarks>
 internal sealed class UaToUnicodeForbiddenRule : IConformanceRule
 {

@@ -27,7 +27,9 @@ namespace VellumPdf.Conformance.Rules.Graphics;
 /// <para>
 /// Deferred edges: <c>q</c>/<c>Q</c> operators inside form XObjects, Type 3 glyph procedures,
 /// tiling patterns, and annotation appearance streams are not yet scanned (consistent with the
-/// other content-stream-scoped rules). Only page-level content streams are checked.
+/// other content-stream-scoped rules). Only page-level content streams are checked, so 30 nested
+/// <c>q</c> operators inside a form that page content draws pass here and fail veraPDF 1.30.2 and
+/// 1.30.4 (#418).
 /// </para>
 /// </remarks>
 internal sealed class GraphicsStateNestingRule : IConformanceRule

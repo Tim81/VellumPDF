@@ -41,6 +41,9 @@ namespace VellumPdf.Conformance.Rules.Colour;
 /// require an output intent when no device colour is used, so neither does this rule (issue #128).
 /// Device colour reached through image <c>/ColorSpace</c> entries and through the <c>/Alternate</c>
 /// space of selected named colour spaces (Separation, DeviceN, uncoloured Pattern) is also detected.
+/// A device colour operator inside a form XObject is not: a DeviceRGB, DeviceCMYK or DeviceGray
+/// colour used there, with no matching output intent, passes here and fails veraPDF 1.30.2 and
+/// 1.30.4 (#418).
 /// The remaining requirements (a present profile's ICC validity, <c>/N</c>, and the
 /// single-shared-profile constraint) are checked unconditionally.
 /// </para>

@@ -36,12 +36,14 @@ public enum CoverageStatus
 /// clause the standard puts the requirement in (#418, #428); the number after the dash is veraPDF's
 /// own test number, which neither standard has. The id lists below are veraPDF's rule inventory, so
 /// veraPDF profile content is embodied here as data. The titles, notes, and status are this
-/// project's own assessment. The rules behind these ids were written from veraPDF's profiles and
-/// checked against veraPDF, because ISO 19005-2 was not held and ISO 14289-1 was acquired after its
-/// rules were written. Two PDF/A-2 rules, <c>FontEmbeddingRule</c> and <c>ActionRule</c>, were
-/// later re-derived from the clause text (#418), and a rule's own remarks say what it was checked
-/// against. The status says whether a rule covers the veraPDF check, not that it agrees
-/// with the clause text: the 2026-11-21 audits (#418, #428) found rules narrower than the clauses.
+/// project's own assessment. Most of the rules behind these ids were written from veraPDF's
+/// profiles and checked against veraPDF, because ISO 19005-2 was not held and ISO 14289-1 was
+/// acquired after most of its rules were written. The exceptions say so in their remarks:
+/// <c>FontEmbeddingRule</c> and <c>ActionRule</c> were re-derived from the clause text (#418),
+/// <c>UaEncryptionPermissionsRule</c> was authored from ISO 32000-2, and
+/// <c>A2aContentItemTaggingRule</c> has no veraPDF counterpart. The status says whether a rule
+/// covers the veraPDF check, not that it agrees with the clause text: the 2026-11-21 audits (#418,
+/// #428) found rules narrower than the clauses.
 /// docs/pdf20-conformance.md records which citations are checkable against a held copy and which
 /// are not.
 /// </remarks>
@@ -212,23 +214,209 @@ public static class ConformanceCatalog
         ["6.2.11.3.1-1"] = "Identity and embedded-CMap CIDSystemInfo compared; the predefined-CMap registry match is authored but not cross-validated (needs a conformant CJK CIDFont oracle asset). Tracked in #139.",
         // Partial: the 2026-11-21 audit (#418) found a construct that veraPDF refuses and the rule
         // accepts. Each note names it.
-        ["6.1.2-1"] = "The byte after the version digit is not checked: a header %PDF-1.7x passes here and fails veraPDF (#418).",
-        ["6.1.13-2"] = "Content-stream operands are not checked: a 40-digit real passes here and fails veraPDF (#418).",
-        ["6.1.13-5"] = "Content-stream operands are not checked: a real below 1.175e-38 passes here and fails veraPDF (#418).",
-        ["6.2.3-1"] = "A DestOutputProfile of device class scnr passes here and fails veraPDF (#418).",
-        ["6.2.4.3-2"] = "A DefaultRGB colour space on another page satisfies the check here, and veraPDF refuses that file (#418).",
-        ["6.2.5-1"] = "Only ExtGStates that page content applies are checked: a /TR applied inside a form passes here and fails veraPDF (#418).",
-        ["6.2.6-1"] = "An image's /Intent is not checked: /Intent /Bogus passes here and fails veraPDF (#418).",
-        ["6.2.8-3"] = "An Interpolate true image drawn from a form XObject, and an inline image with /I true, pass here and fail veraPDF (#418).",
-        ["6.2.11.7.2-1"] = "Only Type 0 fonts using Identity-H or Identity-V are checked: a Type 3 font with glyph names outside the Adobe Glyph List and no /ToUnicode passes here and fails veraPDF (#418).",
-        ["6.2.11.8-1"] = "A .notdef glyph shown in text rendering mode 3 passes here and fails veraPDF (#418).",
+        ["6.1.2-1"] =
+            "The byte after the version digit is not checked: a header %PDF-1.7x passes here and " +
+            "fails veraPDF (#418).",
+        ["6.1.13-2"] =
+            "Content-stream operands are not checked: a 40-digit real passes here and fails " +
+            "veraPDF (#418).",
+        ["6.1.13-5"] =
+            "Content-stream operands are not checked: a real below 1.175e-38 passes here and " +
+            "fails veraPDF (#418).",
+        ["6.2.3-1"] =
+            "A DestOutputProfile of device class scnr passes here and fails veraPDF (#418).",
+        ["6.2.4.3-2"] =
+            "A DefaultRGB colour space on another page satisfies the check here, and veraPDF " +
+            "refuses that file; a DeviceRGB colour used inside a form XObject, in a file with no " +
+            "output intent, passes here and fails veraPDF (#418).",
+        ["6.2.5-1"] =
+            "Only ExtGStates that page content applies are checked: a /TR applied inside a form " +
+            "passes here and fails veraPDF (#418).",
+        ["6.2.6-1"] =
+            "An image's /Intent is not checked: /Intent /Bogus passes here and fails veraPDF. A " +
+            "/Bogus rendering intent set by the ri operator, or by /RI in an ExtGState applied " +
+            "inside a form, passes here and fails veraPDF too (#418).",
+        ["6.2.8-3"] =
+            "An Interpolate true image drawn from a form XObject, and an inline image with /I " +
+            "true, pass here and fail veraPDF (#418).",
+        ["6.2.11.7.2-1"] =
+            "Only Type 0 fonts using Identity-H or Identity-V that page content selects with Tf " +
+            "are checked: a Type 3 font with glyph names outside the Adobe Glyph List and no " +
+            "/ToUnicode passes here and fails veraPDF, and so does an Identity-H font with no " +
+            "/ToUnicode shown inside a form XObject (#418).",
+        ["6.2.11.8-1"] =
+            "A .notdef glyph shown in text rendering mode 3 passes here and fails veraPDF (#418).",
         ["6.3.1-1"] = "An annotation of an unknown subtype passes here and fails veraPDF (#418).",
-        ["6.3.3-1"] = "A rectangle with one zero dimension is exempt from the appearance requirement here, where the clause needs both to be zero; such an annotation with no /AP passes here and fails veraPDF (#418).",
-        ["6.5.1-1"] = "Actions on outline items are not checked: a Launch action there passes here and fails veraPDF (#418).",
-        ["6.6.2.1-2"] = "Only the catalog, page, field and embedded-file packets are checked: a bytes attribute in an image's /Metadata passes here and fails veraPDF (#418).",
-        ["6.6.2.3.1-1"] = "Property names inside a predefined namespace are not checked: dc:fooBar passes here and fails veraPDF (#418).",
-        ["6.6.2.3.1-2"] = "Property names inside a predefined namespace are not checked: dc:fooBar passes here and fails veraPDF (#418).",
-        ["6.7.4-1"] = "/Lang in marked-content property lists is not checked: an invalid tag there passes here and fails veraPDF (#418).",
+        ["6.3.3-1"] =
+            "A rectangle with one zero dimension is exempt from the appearance requirement here, " +
+            "where the clause needs both to be zero; such an annotation with no /AP passes here " +
+            "and fails veraPDF (#418).",
+        ["6.5.1-1"] =
+            "Actions on outline items are not checked: a Launch action there passes here and " +
+            "fails veraPDF (#418).",
+        ["6.6.2.1-2"] =
+            "Only the catalog, page, field and embedded-file packets are checked: a bytes " +
+            "attribute in an image's /Metadata passes here and fails veraPDF (#418).",
+        ["6.6.2.3.1-1"] =
+            "Property names inside a predefined namespace are not checked: dc:fooBar passes here " +
+            "and fails veraPDF (#418).",
+        ["6.6.2.3.1-2"] =
+            "Property names inside a predefined namespace are not checked: dc:fooBar passes here " +
+            "and fails veraPDF (#418).",
+        ["6.7.4-1"] =
+            "/Lang in marked-content property lists is not checked: an invalid tag there passes " +
+            "here and fails veraPDF (#418).",
+        // Partial: the rule reads only what page content reaches, and the 2026-11-21 sweep (#418)
+        // found veraPDF refusing the same construct inside a form XObject that page content draws.
+        // The probe for each id put the construct in a form and, as a control, on the page itself;
+        // veraPDF failed both and this library failed only the page. Type 3 glyph procedures,
+        // patterns and annotation appearances were not probed.
+        ["6.1.8-1"] =
+            "Font and colourant names are read from the page's own resources only: a font whose " +
+            "/BaseFont is not valid UTF-8, shown inside a form XObject, passes here and fails " +
+            "veraPDF (#418).",
+        ["6.1.13-8"] =
+            "Only page content is checked for graphics-state nesting: 30 nested q operators " +
+            "inside a form XObject pass here and fail veraPDF (#418).",
+        ["6.1.13-9"] =
+            "Only DeviceN spaces that page content selects with cs or CS are checked: one with " +
+            "33 colourants, selected inside a form XObject, passes here and fails veraPDF (#418).",
+        ["6.2.4.2-1"] =
+            "Only ICCBased spaces that page content selects with cs or CS are checked: one whose " +
+            "profile has device class abst, selected inside a form XObject, passes here and " +
+            "fails veraPDF (#418).",
+        ["6.2.4.3-3"] =
+            "A DeviceCMYK colour used inside a form XObject, in a file whose only output intent " +
+            "is RGB, passes here and fails veraPDF (#418).",
+        ["6.2.4.3-4"] =
+            "A DeviceGray colour used inside a form XObject, in a file with no output intent, " +
+            "passes here and fails veraPDF (#418).",
+        ["6.2.4.4-1"] =
+            "Only DeviceN spaces that page content selects with cs or CS are checked: one with a " +
+            "spot colourant that is missing from /Colorants, selected inside a form XObject, " +
+            "passes here and fails veraPDF (#418).",
+        ["6.2.5-2"] =
+            "Only ExtGStates that page content applies are checked: a /TR2 other than /Default, " +
+            "applied inside a form, passes here and fails veraPDF (#418).",
+        ["6.2.5-3"] =
+            "Only ExtGStates that page content applies are checked: an /HTP applied inside a " +
+            "form passes here and fails veraPDF (#418).",
+        ["6.2.5-4"] =
+            "Only ExtGStates that page content applies are checked: an /HT with a /HalftoneType " +
+            "other than 1 or 5, applied inside a form, passes here and fails veraPDF (#418).",
+        ["6.2.5-5"] =
+            "Only ExtGStates that page content applies are checked: an /HT with a /HalftoneName, " +
+            "applied inside a form, passes here and fails veraPDF (#418).",
+        ["6.2.5-6"] =
+            "Only ExtGStates that page content applies are checked: an /HT with a " +
+            "/TransferFunction, applied inside a form, passes here and fails veraPDF (#418).",
+        ["6.2.8-1"] =
+            "Only images that page content draws directly are checked: an image with " +
+            "/Alternates, drawn inside a form XObject, passes here and fails veraPDF (#418).",
+        ["6.2.8-2"] =
+            "Only images that page content draws directly are checked: an image with /OPI, drawn " +
+            "inside a form XObject, passes here and fails veraPDF (#418).",
+        ["6.2.8.3-1"] =
+            "Only JPXDecode images that page content draws directly are checked: one with two " +
+            "colour channels, drawn inside a form XObject, passes here and fails veraPDF (#418).",
+        ["6.2.8.3-2"] =
+            "Only JPXDecode images that page content draws directly are checked: one with two " +
+            "colr boxes and no APPROX of 1, drawn inside a form XObject, passes here and fails " +
+            "veraPDF (#418).",
+        ["6.2.8.3-3"] =
+            "Only JPXDecode images that page content draws directly are checked: one with a colr " +
+            "box of METH 4, drawn inside a form XObject, passes here and fails veraPDF (#418).",
+        ["6.2.8.3-4"] =
+            "Only JPXDecode images that page content draws directly are checked: one in " +
+            "enumerated colour space 19, drawn inside a form XObject, passes here and fails " +
+            "veraPDF (#418).",
+        ["6.2.8.3-5"] =
+            "Only JPXDecode images that page content draws directly are checked: one with bit " +
+            "depths 8, 8 and 7, drawn inside a form XObject, passes here and fails veraPDF " +
+            "(#418).",
+        ["6.2.9-1"] =
+            "Only forms that page content draws directly are checked: a form with /OPI, /PS or " +
+            "/Subtype2 /PS that is drawn from inside another form passes here and fails veraPDF " +
+            "(#418).",
+        ["6.2.9-2"] =
+            "Only forms that page content draws directly are checked: a form with /Ref that is " +
+            "drawn from inside another form passes here and fails veraPDF (#418).",
+        ["6.2.9-3"] =
+            "Only XObjects that page content draws directly are checked: a /Subtype /PS XObject " +
+            "drawn from inside a form passes here and fails veraPDF (#418).",
+        ["6.2.10-1"] =
+            "Only ExtGStates that page content applies are checked: /BM /Bogus applied inside a " +
+            "form passes here and fails veraPDF (#418).",
+        ["6.2.11.2-1"] =
+            "Only fonts that page content selects with Tf are checked: a font dictionary with no " +
+            "/Type, shown inside a form XObject, passes here and fails veraPDF (#418).",
+        ["6.2.11.2-2"] =
+            "Only fonts that page content selects with Tf are checked: a Type 0 font whose " +
+            "descendant has /Subtype /Foo, shown inside a form XObject, passes here and fails " +
+            "veraPDF (#418).",
+        ["6.2.11.2-3"] =
+            "Only fonts that page content selects with Tf are checked: a TrueType font with no " +
+            "/BaseFont, shown inside a form XObject, passes here and fails veraPDF (#418).",
+        ["6.2.11.2-4"] =
+            "Only fonts that page content selects with Tf are checked: a simple font with no " +
+            "/FirstChar, shown inside a form XObject, passes here and fails veraPDF (#418).",
+        ["6.2.11.2-5"] =
+            "Only fonts that page content selects with Tf are checked: a simple font with no " +
+            "/LastChar, shown inside a form XObject, passes here and fails veraPDF (#418).",
+        ["6.2.11.2-6"] =
+            "Only fonts that page content selects with Tf are checked: a simple font with no " +
+            "/Widths, shown inside a form XObject, passes here and fails veraPDF (#418).",
+        ["6.2.11.2-7"] =
+            "Only fonts that page content selects with Tf are checked: an embedded /FontFile3 " +
+            "with /Subtype /Foo, in a font shown inside a form XObject, passes here and fails " +
+            "veraPDF (#418).",
+        ["6.2.11.3.2-1"] =
+            "Only fonts that page content selects with Tf are checked: an embedded CIDFontType2 " +
+            "with no /CIDToGIDMap, shown inside a form XObject, passes here and fails veraPDF " +
+            "(#418).",
+        ["6.2.11.3.3-1"] =
+            "Only fonts that page content selects with Tf are checked: a Type 0 font whose " +
+            "/Encoding names no predefined CMap, shown inside a form XObject, passes here and " +
+            "fails veraPDF (#418).",
+        ["6.2.11.3.3-2"] =
+            "Only fonts that page content selects with Tf are checked: an embedded CMap whose " +
+            "/WMode differs between its stream dictionary and its program, in a font shown " +
+            "inside a form XObject, passes here and fails veraPDF (#418).",
+        ["6.2.11.4.1-1"] =
+            "Only fonts that page content selects with Tf are checked: a non-embedded Helvetica " +
+            "shown only inside a form XObject passes here and fails veraPDF (#418).",
+        ["6.2.11.4.1-2"] =
+            "Only fonts that page content selects with Tf are checked: a code beyond the glyph " +
+            "count of an embedded CIDFontType2, shown inside a form XObject, passes here and " +
+            "fails veraPDF (#418).",
+        ["6.2.11.4.2-1"] =
+            "Only fonts that page content selects with Tf are checked: a Type 1 subset whose " +
+            "/CharSet omits a glyph, shown inside a form XObject, passes here and fails veraPDF " +
+            "(#418).",
+        ["6.2.11.4.2-2"] =
+            "Only fonts that page content selects with Tf are checked: an embedded CIDFontType2 " +
+            "whose /CIDSet omits a shown CID, shown inside a form XObject, passes here and fails " +
+            "veraPDF (#418).",
+        ["6.2.11.5-1"] =
+            "Only fonts that page content selects with Tf are checked: a TrueType font whose " +
+            "/Widths differ from the embedded program, shown inside a form XObject, passes here " +
+            "and fails veraPDF (#418).",
+        ["6.2.11.6-1"] =
+            "Only fonts that page content selects with Tf are checked: a non-symbolic TrueType " +
+            "program with no cmap table, in a font shown inside a form XObject, passes here and " +
+            "fails veraPDF (#418).",
+        ["6.2.11.6-2"] =
+            "Only fonts that page content selects with Tf are checked: a non-symbolic TrueType " +
+            "font with /Encoding /MacExpertEncoding, shown inside a form XObject, passes here " +
+            "and fails veraPDF (#418).",
+        ["6.2.11.6-3"] =
+            "Only fonts that page content selects with Tf are checked: a symbolic TrueType font " +
+            "with an /Encoding entry, shown inside a form XObject, passes here and fails veraPDF " +
+            "(#418).",
+        ["6.2.11.6-4"] =
+            "Only fonts that page content selects with Tf are checked: a symbolic TrueType font " +
+            "whose program has several cmap subtables and no (3,0), shown inside a form XObject, " +
+            "passes here and fails veraPDF (#418).",
         // 6.1.8-1 moved to Implemented (NameUtf8Rule: CheckStructureTypeNames now delegates to
         //   StructureTree.Analyze for a full-depth walk; oracle fixture pdfa2b-deep-struct-invalid-utf8
         //   confirmed veraPDF fires on the 2nd-level /S name; pdfa2b-deep-struct-valid-utf8 FP-safe).
@@ -312,8 +500,13 @@ public static class ConformanceCatalog
 
     private static readonly Dictionary<string, string> PdfADeferred = new(StringComparer.Ordinal)
     {
-        ["6.2.10-2"] = "No rule checks the page group colour space: a page that uses transparency, with no PDF/A output intent and no page group colour space, passes here and fails veraPDF (#418).",
-        ["6.2.11.7.3-1"] = "No rule implements the Level A requirement that a private-use character has an ActualText replacement (#418).",
+        ["6.2.10-2"] =
+            "No rule checks the page group colour space: a page that uses transparency, with no " +
+            "PDF/A output intent and no page group colour space, passes here and fails veraPDF " +
+            "(#418).",
+        ["6.2.11.7.3-1"] =
+            "No rule implements the Level A requirement that a private-use character has an " +
+            "ActualText replacement (#418).",
         // 6.1.6-2 moved to Implemented (HexStringRule: byte scan runs before lazy object resolution;
         //   oracle fixture pdfa2b-hex-invalid-digit confirmed veraPDF fires on <1G0> in page dict;
         //   reader's InvalidDataException is caught by PdfPreflight.Validate outer catch after rule fires).
@@ -400,18 +593,18 @@ public static class ConformanceCatalog
         // 7.20-1 is Partial, see PdfUaPartial (UaReferenceXObjectRule)
         "7.20-2",              // UaFormXObjectSemanticParentRule: structure-linked form drawn from 2+ distinct pages
         // Batch A3 — font clauses:
-        "7.21.3.2-1",          // UaCidToGidMapRule: embedded CIDFontType2 must have /CIDToGIDMap
-        "7.21.6-3",            // UaSymbolicFontRule: symbolic TrueType must have no /Encoding
+        // 7.21.3.2-1 is Partial, see PdfUaPartial (UaCidToGidMapRule)
+        // 7.21.6-3 is Partial, see PdfUaPartial (UaSymbolicFontRule)
         // Batch A6 — TrueType cmap / Differences-compliance:
-        "7.21.6-1",            // UaTrueTypeCmapRule: non-symbolic TrueType must have non-symbol cmap entries
-        "7.21.6-2",            // UaTrueTypeCmapRule: non-symbolic TrueType Differences must be AGL-compliant + (3,1) cmap
-        "7.21.6-4",            // UaTrueTypeCmapRule: symbolic TrueType must have exactly 1 cmap or include (3,0)
+        // 7.21.6-1 is Partial, see PdfUaPartial (UaTrueTypeCmapRule)
+        // 7.21.6-2 is Partial, see PdfUaPartial (UaTrueTypeCmapRule)
+        // 7.21.6-4 is Partial, see PdfUaPartial (UaTrueTypeCmapRule)
         // Batch A4 — font clauses (CMap, CharSet, CIDSet):
-        "7.21.3.3-1",          // UaCMapRule: composite /Encoding must be predefined or embedded CMap
-        "7.21.3.3-2",          // UaCMapRule: embedded CMap WMode dict must equal program WMode
+        // 7.21.3.3-1 is Partial, see PdfUaPartial (UaCMapRule)
+        // 7.21.3.3-2 is Partial, see PdfUaPartial (UaCMapRule)
         // 7.21.3.3-3 is Partial, see PdfUaPartial (UaCMapRule)
-        "7.21.4.2-1",          // UaType1CharSetRule: Type1 subset CharSet must list all glyphs
-        "7.21.4.2-2",          // UaCidSetRule: CIDFontType2 subset CIDSet must list all CIDs
+        // 7.21.4.2-1 is Partial, see PdfUaPartial (UaType1CharSetRule)
+        // 7.21.4.2-2 is Partial, see PdfUaPartial (UaCidSetRule)
         // Batch A5a — rendering-mode-scoped font embedding:
         // 7.21.4.1-1 is Partial, see PdfUaPartial (UaFontEmbeddingRule)
         // Batch A5b — glyph-level clauses (Identity-H/V CIDFontType2-Identity scope):
@@ -455,13 +648,13 @@ public static class ConformanceCatalog
         // 7.5-1 is Partial, see PdfUaPartial (UaTableHeaderRule)
         "7.5-2",               // UaTableHeaderRule: TD /Headers references unknown IDs (hasConnectedHeader, unknownHeaders!='')
         // Batch C1 — §7.2 natural-language determination for marked-content sequences:
-        "7.2-30",              // UaMarkedContentLangRule: /Span BDC /ActualText → BDC or ancestor must have /Lang
-        "7.2-31",              // UaMarkedContentLangRule: /Span BDC /Alt → BDC or ancestor must have /Lang
-        "7.2-32",              // UaMarkedContentLangRule: /Span BDC /E → BDC or ancestor must have /Lang
-        "7.2-34",              // UaMarkedContentLangRule: text-show → enclosing BDC or ancestor must have /Lang
+        // 7.2-30 is Partial, see PdfUaPartial (UaMarkedContentLangRule)
+        // 7.2-31 is Partial, see PdfUaPartial (UaMarkedContentLangRule)
+        // 7.2-32 is Partial, see PdfUaPartial (UaMarkedContentLangRule)
+        // 7.2-34 is Partial, see PdfUaPartial (UaMarkedContentLangRule)
         // Batch C2 — §7.1 artifact/tagged-content nesting:
-        "7.1-1",               // UaArtifactTaggingRule: Artifact BDC inside struct-linked (tagged) ancestor BDC
-        "7.1-2",               // UaArtifactTaggingRule: non-Artifact BDC with MCID in ParentTree inside Artifact ancestor
+        // 7.1-1 is Partial, see PdfUaPartial (UaArtifactTaggingRule)
+        // 7.1-2 is Partial, see PdfUaPartial (UaArtifactTaggingRule)
         // Batch C3 — §7.1-3 SESimpleContentItem: real content must be tagged or marked as Artifact:
         // 7.1-3 is Partial, see PdfUaPartial (UaSimpleContentItemRule)
         // §7.16-1 — encryption dictionary /P bit 10 (#138):
@@ -479,16 +672,102 @@ public static class ConformanceCatalog
         ["7.21.3.1-1"] = "Identity and embedded-CMap CIDSystemInfo compared; the predefined-CMap registry match is authored but not cross-validated (needs a conformant CJK CIDFont oracle asset). Tracked in #139.",
         // Partial: the 2026-11-21 audit (#428) found a construct that veraPDF refuses and the rule
         // accepts, or a font form or content stream the rule skips. Each note names it.
-        ["7.21.4.1-1"] = "Type 0 fonts are skipped and only fonts that page content selects with Tf are examined: a visible non-embedded CIDFontType2 passes here and fails veraPDF (#428).",
-        ["7.21.7-1"] = "Type 0, Type 3 and MMType1 fonts and fonts with no /Encoding are skipped: a visible non-embedded CIDFontType2 with no /ToUnicode passes here and fails veraPDF (#428).",
-        ["7.21.7-2"] = "Only Identity CIDFontType2 fonts are examined: a simple font whose /ToUnicode maps the shown code to U+0000 passes here and fails veraPDF (#428).",
-        ["7.21.8-1"] = "Only Identity CIDFontType2 fonts are examined: a /Differences entry that maps a shown code to .notdef in a simple font passes here and fails veraPDF (#428).",
-        ["7.21.4.1-2"] = "Only visible shows of Identity CIDFontType2 fonts are examined; simple and CFF fonts are not (#428).",
-        ["7.21.5-1"] = "Only Identity CIDFontType2 fonts are examined, and a width mismatch of 2 units passes where 7.21.5 allows at most 1 (#428).",
-        ["7.20-1"] = "Only forms that page content draws directly are checked: a /Ref in a form drawn from inside another form passes here and fails veraPDF (#428).",
-        ["7.21.3.3-3"] = "Only the usecmap operator is read, not the CMap stream's /UseCMap key: a /UseCMap naming a CMap outside the predefined set passes here and fails veraPDF (#428).",
-        ["7.5-1"] = "One TH with a /Scope satisfies every TD in its table: a table whose other TH lacks /Scope, and whose TDs have no /Headers, passes here and fails veraPDF 1.30.4 (#428).",
-        ["7.1-3"] = "Only page content streams are scanned: untagged text drawn inside a form XObject, outside marked content, passes here and fails veraPDF (#428).",
+        ["7.21.4.1-1"] =
+            "Type 0 fonts are skipped and only fonts that page content selects with Tf are " +
+            "examined: a visible non-embedded CIDFontType2 passes here and fails veraPDF, and so " +
+            "does a non-embedded simple font shown only inside a form XObject (#428).",
+        ["7.21.7-1"] =
+            "Type 0, Type 3 and MMType1 fonts and fonts with no /Encoding are skipped: a visible " +
+            "non-embedded CIDFontType2 with no /ToUnicode passes here and fails veraPDF. A " +
+            "simple font with a glyph name outside the Adobe Glyph List and no /ToUnicode, shown " +
+            "inside a form XObject, passes here and fails veraPDF too (#428).",
+        ["7.21.7-2"] =
+            "Only Identity CIDFontType2 fonts that page content selects with Tf are examined: a " +
+            "simple font whose /ToUnicode maps the shown code to U+0000 passes here and fails " +
+            "veraPDF, and so does an Identity CIDFontType2 font with that mapping shown inside a " +
+            "form XObject (#428).",
+        ["7.21.8-1"] =
+            "Only Identity CIDFontType2 fonts that page content selects with Tf are examined: a " +
+            "/Differences entry that maps a shown code to .notdef in a simple font passes here " +
+            "and fails veraPDF, and so does code 0 shown in an Identity CIDFontType2 font inside " +
+            "a form XObject (#428).",
+        ["7.21.4.1-2"] =
+            "Only visible shows of Identity CIDFontType2 fonts are examined; simple and CFF " +
+            "fonts are not (#428).",
+        ["7.21.5-1"] =
+            "Only Identity CIDFontType2 fonts are examined, and a width mismatch of 2 units " +
+            "passes where 7.21.5 allows at most 1 (#428).",
+        ["7.20-1"] =
+            "Only forms that page content draws directly are checked: a /Ref in a form drawn " +
+            "from inside another form passes here and fails veraPDF (#428).",
+        ["7.21.3.3-3"] =
+            "Only the usecmap operator is read, not the CMap stream's /UseCMap key: a /UseCMap " +
+            "naming a CMap outside the predefined set passes here and fails veraPDF (#428).",
+        ["7.5-1"] =
+            "One TH with a /Scope satisfies every TD in its table: a table whose other TH lacks " +
+            "/Scope, and whose TDs have no /Headers, passes here and fails veraPDF (#428).",
+        // The next entries come from the 2026-11-21 form-XObject sweep (#428): each rule reads only
+        // what page content reaches, and veraPDF refuses the same construct inside a form XObject
+        // that page content draws. The probe put the construct in a form and, as a control, on the
+        // page; veraPDF failed both and this library failed only the page.
+        ["7.1-1"] =
+            "Only page content streams are scanned: an Artifact sequence nested in a " +
+            "structure-linked sequence, inside a form XObject, passes here and fails veraPDF " +
+            "(#428).",
+        ["7.1-2"] =
+            "Only page content streams are scanned: a structure-linked sequence nested in an " +
+            "Artifact sequence, inside a form XObject, passes here and fails veraPDF (#428).",
+        ["7.2-30"] =
+            "Only page content streams are scanned: a /Span sequence with /ActualText and no " +
+            "determinable language, inside a form XObject, passes here and fails veraPDF (#428).",
+        ["7.2-31"] =
+            "Only page content streams are scanned: a /Span sequence with /Alt and no " +
+            "determinable language, inside a form XObject, passes here and fails veraPDF (#428).",
+        ["7.2-32"] =
+            "Only page content streams are scanned: a /Span sequence with /E and no determinable " +
+            "language, inside a form XObject, passes here and fails veraPDF (#428).",
+        ["7.2-34"] =
+            "Only page content streams are scanned: text shown inside a form XObject with no " +
+            "determinable language passes here and fails veraPDF (#428).",
+        ["7.21.3.2-1"] =
+            "Only fonts that page content selects with Tf are examined: an embedded CIDFontType2 " +
+            "with no /CIDToGIDMap, shown inside a form XObject, passes here and fails veraPDF " +
+            "(#428).",
+        ["7.21.3.3-1"] =
+            "Only fonts that page content selects with Tf are examined: a Type 0 font whose " +
+            "/Encoding names no predefined CMap, shown inside a form XObject, passes here and " +
+            "fails veraPDF (#428).",
+        ["7.21.3.3-2"] =
+            "Only fonts that page content selects with Tf are examined: an embedded CMap whose " +
+            "/WMode differs between its stream dictionary and its program, in a font shown " +
+            "inside a form XObject, passes here and fails veraPDF (#428).",
+        ["7.21.4.2-1"] =
+            "Only fonts that page content selects with Tf are examined: a Type 1 subset whose " +
+            "/CharSet omits a glyph, shown inside a form XObject, passes here and fails veraPDF " +
+            "(#428).",
+        ["7.21.4.2-2"] =
+            "Only fonts that page content selects with Tf are examined: an embedded CIDFontType2 " +
+            "whose /CIDSet omits a shown CID, shown inside a form XObject, passes here and fails " +
+            "veraPDF (#428).",
+        ["7.21.6-1"] =
+            "Only fonts that page content selects with Tf are examined: a non-symbolic TrueType " +
+            "program with no cmap table, in a font shown inside a form XObject, passes here and " +
+            "fails veraPDF (#428).",
+        ["7.21.6-2"] =
+            "Only fonts that page content selects with Tf are examined: a non-symbolic TrueType " +
+            "font with /Encoding /MacExpertEncoding, shown inside a form XObject, passes here " +
+            "and fails veraPDF (#428).",
+        ["7.21.6-3"] =
+            "Only fonts that page content selects with Tf are examined: a symbolic TrueType font " +
+            "with an /Encoding entry, shown inside a form XObject, passes here and fails veraPDF " +
+            "(#428).",
+        ["7.21.6-4"] =
+            "Only fonts that page content selects with Tf are examined: a symbolic TrueType font " +
+            "whose program has several cmap subtables and no (3,0), shown inside a form XObject, " +
+            "passes here and fails veraPDF (#428).",
+        ["7.1-3"] =
+            "Only page content streams are scanned: untagged text drawn inside a form XObject, " +
+            "outside marked content, passes here and fails veraPDF (#428).",
     };
 
     // PDF/UA-1 checks deliberately not implemented in-process (tracked in follow-up issues; excluded

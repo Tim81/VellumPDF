@@ -141,12 +141,12 @@ internal sealed class AnnotationRule : IConformanceRule
             if (subtype == "Link" || subtype == "Popup")
                 continue;
 
-            // §6.3.3-1: an annotation whose /Rect is degenerate (zero width or zero height) is
-            // exempt from the appearance-presence requirement here. veraPDF 1.30.2 accepts
-            // /Rect [0 0 0 0] (an invisible signature widget) without flagging the missing /AP,
-            // but the 2026-11-21 audit found veraPDF 1.30.4 refuses a rectangle with one zero side,
-            // so the clause's exemption needs both (#418). The flag and /AP-kind checks above
-            // still apply.
+            // §6.3.3-1: an annotation whose /Rect has a zero width or a zero height is exempt
+            // from the appearance-presence requirement here. On hand-built files, veraPDF 1.30.2
+            // and 1.30.4 both accept a missing /AP when the rectangle is [0 0 0 0] or [10 10 10 10]
+            // (an invisible signature widget is the usual case) and both refuse a rectangle with
+            // only one zero side, so the exemption needs both to be zero (#418). The flag and
+            // /AP-kind checks above still apply.
             if (HasDegenerateRect(context, annot))
                 continue;
 
@@ -158,11 +158,10 @@ internal sealed class AnnotationRule : IConformanceRule
         }
     }
 
-    // Returns true when the annotation's /Rect is degenerate — i.e. has zero width (x0 == x2) or
-    // zero height (y1 == y3). A degenerate rect means the annotation has no visible area, so it
-    // carries no renderable content and is exempt from the appearance-stream presence requirement
-    // (§6.3.3-1). veraPDF 1.30.2 confirms: it accepts annotations with /Rect [0 0 0 0] (and any
-    // other zero-area rectangle) without flagging a missing /AP.
+    // Returns true when the annotation's /Rect has zero width (x0 == x2) or zero height
+    // (y1 == y3). Such a rect has no visible area, so the annotation is exempt from the
+    // appearance-stream presence requirement here (§6.3.3-1). veraPDF accepts a missing /AP only
+    // when both are zero (see the call site), so one zero side is a looser reading than veraPDF's.
     private static bool HasDegenerateRect(PreflightContext context, PdfDictionary annot)
     {
         if (context.Resolve(annot.Get(_rect)) is not PdfArray { Count: 4 } rect)

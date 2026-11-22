@@ -29,6 +29,10 @@ namespace VellumPdf.Conformance.Rules.Colour;
 /// under-detect rather than risk a false positive) — only spaces selected by a page-content
 /// <c>cs</c>/<c>CS</c> operator and resolved through <c>/Resources /ColorSpace</c> are checked.
 /// </para>
+/// <para>
+/// A form XObject is one of those edges: a DeviceN space with 33 colourants, selected inside a
+/// form that page content draws, passes here and fails veraPDF 1.30.2 and 1.30.4 (#418).
+/// </para>
 /// </remarks>
 internal sealed class DeviceNColorantRule : IConformanceRule
 {

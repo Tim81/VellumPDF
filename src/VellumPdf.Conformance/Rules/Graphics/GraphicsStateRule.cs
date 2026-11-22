@@ -27,7 +27,9 @@ namespace VellumPdf.Conformance.Rules.Graphics;
 /// current state and is not a violation, matching veraPDF (issues #127, #128). The <c>ri</c> operator
 /// intents are read from the same content scan. The halftone-dictionary constraints (§6.2.5 t4–t6,
 /// the <c>/HT</c> subdictionary) are checked here too. An image XObject's <c>/Intent</c> entry is
-/// not checked.
+/// not checked. The content scan is the page's own, so a state or an <c>ri</c> operator that a
+/// form XObject applies is not read: a <c>/TR2</c>, <c>/HTP</c>, <c>/HT</c> or <c>/RI</c> there
+/// passes here and fails veraPDF 1.30.2 and 1.30.4 (#418).
 /// </para>
 /// </remarks>
 internal sealed class GraphicsStateRule : IConformanceRule

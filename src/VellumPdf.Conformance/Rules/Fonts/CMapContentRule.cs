@@ -27,9 +27,11 @@ namespace VellumPdf.Conformance.Rules.Fonts;
 /// <para>
 /// <strong>Scope:</strong> only composite (Type 0) fonts with an embedded CMap stream (not
 /// Identity-H/V or a predefined named CMap) that are actually selected via a <c>Tf</c> operator
-/// in page content are evaluated. This matches veraPDF, which evaluates these rules on the
-/// <c>CMapFile</c> / <c>PDReferencedCMap</c> objects reachable from rendered text operators.
-/// Unused fonts present in <c>/Resources</c> are not checked. Predefined named CMaps (a
+/// in page content are evaluated. veraPDF evaluates these rules on the <c>CMapFile</c> /
+/// <c>PDReferencedCMap</c> objects reachable from rendered text operators, which includes a font
+/// shown inside a form XObject; this rule does not read one there, so a mismatched <c>/WMode</c>
+/// in such a font passes here and fails veraPDF 1.30.2 and 1.30.4 (#418). Unused fonts present in
+/// <c>/Resources</c> are not checked. Predefined named CMaps (a
 /// name-object <c>/Encoding</c>) have no embedded program, so neither rule applies to them —
 /// these are legitimately <em>Implemented</em> (not Partial) because the check is not deferred;
 /// predefined CMaps simply have no embedded program to check.
@@ -41,8 +43,8 @@ namespace VellumPdf.Conformance.Rules.Fonts;
 /// <para>
 /// Cites ISO 19005-2:2011 §6.2.11.3.3. Its behaviour was checked against veraPDF's PDF/A-2 profile,
 /// and ISO 19005-2 was not held when it was written. It was cross-validated against veraPDF 1.30.2
-/// via oracle probes. The 2026-11-21 audit against the clause text (#418) found agreement. The
-/// probes were:
+/// via oracle probes. The 2026-11-21 audit against the clause text (#418) found agreement on what
+/// the two checks require, and the scope narrower. The probes were:
 /// <list type="bullet">
 ///   <item>WMode dict=1/prog=0 and dict=0/prog=1 → FAIL on <c>CMapFile</c> object (confirmed).</item>
 ///   <item>WMode both=1, both absent (=0), dict=0/prog=absent (=0) → PASS (confirmed).</item>

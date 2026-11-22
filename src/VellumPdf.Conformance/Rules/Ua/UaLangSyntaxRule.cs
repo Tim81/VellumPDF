@@ -8,15 +8,15 @@ using VellumPdf.Core;
 namespace VellumPdf.Conformance.Rules.Ua;
 
 /// <summary>
-/// ISO 14289-1 §7.2 (Text — natural language, language tag syntax). Every <c>/Lang</c> value
-/// reachable from the document catalog — the catalog's own <c>/Lang</c> and the page-dictionary
-/// <c>/Lang</c> on each page — shall conform to the RFC 1766 / BCP 47 syntax for language tags
-/// (this rule checks only the catalog's <c>/Lang</c>, not the page dictionaries'): one or more
-/// subtags of 1–8 ASCII letters or digits separated by hyphens.
+/// ISO 14289-1 §7.2 (Text — natural language, language tag syntax). The catalog's <c>/Lang</c>
+/// shall conform to the RFC 1766 / BCP 47 syntax for language tags: one or more subtags of 1–8
+/// ASCII letters or digits separated by hyphens. The clause also reaches the <c>/Lang</c> of
+/// structure elements and marked-content property lists (ISO 32000-1, 14.9.2); this rule reads
+/// only the catalog's.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 14289-1:2014, 7.2 (CosLang predicate:
-/// <c>/^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*$/.test(unicodeValue)</c>) and empirically validated
+/// Cites ISO 14289-1:2014, 7.2, and takes its test from veraPDF's CosLang predicate
+/// (<c>/^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*$/.test(unicodeValue)</c>), empirically validated
 /// against veraPDF 1.30.2 (test id 7.2-29).
 ///
 /// NOTE on provenance, corrected: an earlier version of this comment claimed the rule was derived
@@ -39,9 +39,9 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// Scope (to avoid false positives empirically confirmed against veraPDF):
 /// <list type="bullet">
 ///   <item>Only the document catalog <c>/Lang</c> is checked — veraPDF 7.2-29 does not fire for
-///         an invalid <c>/Lang</c> on a page dictionary or structure element.  Struct-element
-///         <c>/Lang</c> values require the structure-tree walker (a later slice) and are left
-///         Deferred (test ids 7.2-30 through 7.2-43).</item>
+///         an invalid <c>/Lang</c> on a structure element. Other rules read structure-element
+///         and marked-content <c>/Lang</c> values for the later 7.2 test ids, and the catalog
+///         lists each with its status.</item>
 ///   <item>An empty <c>/Lang</c> string is treated as a violation — veraPDF 1.30.2 rejects it for
 ///         7.2-29 (empirically confirmed). Although PDF 32000-1 §14.9.2 permits an empty string to
 ///         inherit the default language, the UA-1 predicate requires a syntactically valid BCP-47

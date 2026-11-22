@@ -33,6 +33,10 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// veraPDF fires clause 7.21.4.2-2. The same font with a correct /CIDSet → veraPDF accepts.
 /// Cross-validated using the DejaVu Sans TTF test asset that anchors the §6.2.11.4.2-2 fixtures.
 /// </para>
+/// <para>
+/// A font shown only inside a form XObject is not examined, and veraPDF 1.30.2 and 1.30.4
+/// refuse a violating one there on a hand-built file (#428).
+/// </para>
 /// </remarks>
 internal sealed class UaCidSetRule : IConformanceRule
 {
