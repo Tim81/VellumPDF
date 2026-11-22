@@ -559,6 +559,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     wrapped lines, counted together, number more than 50,000. The new
     `LayoutDiagnosticCode.ListIndentClampSkipped` (207, severity `Error`) reports it, with the
     number of entries the clamp would have narrowed as `Count`. Their text is not drawn.
+  - An entry that is clamped and whose marker has no room, because its line is taller than what is
+    left of the page, is placed as it was when its text had no width: the list splits before it,
+    and at a page top the save throws the same "An element is too tall" `InvalidOperationException`.
+    The clamp does not turn that refusal into a save with the text and no marker.
   - `ListElement.Indent` carries a "Do not pass" paragraph for an indent that leaves an entry's text
     no width: 3.0 will refuse it.
 

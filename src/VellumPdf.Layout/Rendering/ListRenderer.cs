@@ -252,7 +252,16 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
 
             // Layout both marker and content at the same Y (side-by-side).
             var markerResult = markerRenderer.Layout(itemCtx);
-            var contentResult = contentRenderer.Layout(itemCtx);
+
+            // The text of a clamped entry was discarded before the clamp, so an entry whose marker
+            // has no room was placed by that outcome: both Nothing, which splits the list before
+            // the entry or, at a page top, refuses it. Giving the text a width must not turn that
+            // refusal into a save that draws the text and drops the marker. A continuation
+            // resumes an entry whose marker was drawn, so it is not decided here.
+            var restart = i == _startItem && _partialContentOverrideAtStart is not null;
+            var contentResult = _items[i].Clamped && !restart && markerResult.Status == LayoutResult.Outcome.Nothing
+                ? LayoutResult.Nothing()
+                : contentRenderer.Layout(itemCtx);
 
             if (markerResult.Status == LayoutResult.Outcome.Nothing
                 && contentResult.Status == LayoutResult.Outcome.Nothing)

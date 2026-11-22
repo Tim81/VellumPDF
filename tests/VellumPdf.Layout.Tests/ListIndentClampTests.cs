@@ -290,6 +290,88 @@ public sealed class ListIndentClampTests
         Assert.Throws<ArgumentException>(() => Content(doc));
     }
 
+    // ── What was refused stays refused ───────────────────────────────────────
+
+    // 200 x 150 with margins of 10 above and below and 72 either side: an area 56pt wide and 130pt
+    // tall, so a marker set at 200pt (a 240pt line) fits no page, and one at 100pt (120pt) fits a
+    // page top but not what is left under a line of ten-point text.
+    private static Document TallPage(ListElement list)
+    {
+        var doc = new Document { PageSize = new PdfRectangle(0, 0, 200, 150), Margins = new EdgeInsets(10, 72, 10, 72) };
+        doc.Add(list);
+        return doc;
+    }
+
+    private static ListItem TextAt10(string text, TextStyle markerStyle) =>
+        new([new TextRun(text, Helv(10))]) { Style = markerStyle };
+
+    /// <summary>
+    /// A marker taller than the page has no room, and an entry whose text had no width was refused
+    /// for it. Giving the text a width must not turn that refusal into a save that draws the text and
+    /// no marker.
+    /// </summary>
+    [Theory]
+    [InlineData(56.0)]
+    [InlineData(1000.0)]
+    public void AFlatEntry_whoseMarkerHasNoRoom_isStillRefused(double indent)
+    {
+        using var doc = TallPage(new ListElement(ListStyle.OrderedDecimal) { Indent = indent }.Add(TextAt10("abc", Helv(200))));
+
+        var ex = Assert.Throws<InvalidOperationException>(() => Content(doc));
+
+        Assert.StartsWith("An element is too tall to fit on a single page and cannot be rendered.", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ANestedEntry_whoseMarkerHasNoRoom_isStillRefused()
+    {
+        var parent = new ListItem("p", Helv(10));
+        parent.AddChild(TextAt10("abc", Helv(200)));
+        using var doc = TallPage(new ListElement(ListStyle.OrderedDecimal) { Indent = 30 }.Add(parent));
+
+        var ex = Assert.Throws<InvalidOperationException>(() => Content(doc));
+
+        Assert.StartsWith("An element is too tall to fit on a single page and cannot be rendered.", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>The same fixtures with a marker that fits: the clamp applies and both are drawn.</summary>
+    [Fact]
+    public void TheSameEntries_withAMarkerThatFits_drawMarkerAndText()
+    {
+        var parent = new ListItem("p", Helv(10));
+        parent.AddChild(TextAt10("abc", Helv(10)));
+        using var flat = TallPage(new ListElement(ListStyle.OrderedDecimal) { Indent = 56 }.Add(TextAt10("abc", Helv(10))));
+        using var nested = TallPage(new ListElement(ListStyle.OrderedDecimal) { Indent = 30 }.Add(parent));
+
+        Assert.Equal(["1.", "abc"], Shows(Content(flat)));
+        Assert.Equal(["1.", "p", "1.", "abc"], Shows(Content(nested)));
+        Assert.Equal(1, Assert.Single(flat.Diagnostics).Count);
+        Assert.Equal(1, Assert.Single(nested.Diagnostics).Count);
+    }
+
+    /// <summary>
+    /// Under a line of ten-point text 118pt are left, and the second entry's marker needs 120. The
+    /// marker has no room there, so the entry moves whole to the top of the next page, as it did
+    /// when its text was discarded; it is not drawn on the first page without its marker.
+    /// </summary>
+    [Fact]
+    public void AClampedEntry_whoseMarkerHasNoRoomOnThisPage_movesWholeToTheNext()
+    {
+        // An area 120pt wide, so that the 83pt marker is not broken.
+        var list = new ListElement(ListStyle.OrderedDecimal) { Indent = 120 }
+            .Add(TextAt10("one", Helv(10)))
+            .Add(TextAt10("abc", Helv(100)));
+        using var doc = new Document { PageSize = new PdfRectangle(0, 0, 200, 150), Margins = new EdgeInsets(10, 40, 10, 40) };
+        doc.Add(list);
+
+        var content = Content(doc);
+
+        Assert.Equal(["1.", "one", "2.", "abc"], Shows(content));
+        var positions = Positions(content);
+        Assert.Equal("40,130", positions[0]);
+        Assert.Equal("40,40", positions[2]);
+    }
+
     // ── The arithmetic ───────────────────────────────────────────────────────
 
     /// <summary>
