@@ -60,11 +60,12 @@ internal sealed class ListLayoutRun
     internal bool Probing { get; set; }
 
     /// <summary>
-    /// Counts the times the layout's lists were told to start over, by <see cref="StartOver"/>. A list that was laid out before keeps the paragraphs it laid out,
-    /// and a paragraph that is later laid out where its text does not fit is drawn from where it
-    /// was placed last. Lists that an earlier pass placed differently would draw text where 2.3.3
-    /// dropped it, so a list that sees a new generation forgets what it built, and from then on
-    /// keeps what it builds, as a list does across the passes of a document with a header.
+    /// Counts the times the layout's lists were told to start over, by <see cref="StartOver"/>.
+    /// A list that was laid out before keeps the paragraphs it laid out, and a paragraph that is
+    /// later laid out where its text does not fit is drawn from where it was placed last. A pass
+    /// that placed a list differently would make a later pass draw text where 2.3.3 dropped it, so
+    /// a list that sees a new generation forgets what it built, and from then on keeps what it
+    /// builds, as a list does across the passes of a document with a header.
     /// </summary>
     internal int Generation { get; private set; }
 
