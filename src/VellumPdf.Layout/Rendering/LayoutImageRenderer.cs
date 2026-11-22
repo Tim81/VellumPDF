@@ -56,10 +56,22 @@ public sealed class LayoutImageRenderer : IRenderer, IPageBreakSource, IKeepSour
     /// <see cref="InvalidOperationException"/> saying the element is too tall to fit. This method
     /// raises the image's size refusals itself. When the document calls this method, they reach you
     /// from the save.
+    /// <para>With <see cref="LayoutImage.FitToPage"/> set, an image taller than the content height
+    /// of a fresh page, less the image's margins, is scaled down to that height, and the document
+    /// supplies that page. A context you build with the public constructor carries none, so there
+    /// the image is fitted to <paramref name="ctx"/>'s own <see cref="LayoutContext.Area"/>, less
+    /// the image's margins.
+    /// A context made by the context's <c>WithArea</c> method keeps the fresh page of the one it
+    /// came from, so a renderer of yours that wraps this one and passes it a smaller area still
+    /// gets the image fitted to the page. An image that fits the page and not that area then
+    /// answers <see cref="LayoutResult.Outcome.Nothing"/> on the retry as well, and the save
+    /// throws the too-tall exception without a closing reason, because that method does not
+    /// carry the page-top flag the reason is built for.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// <see cref="LayoutImage.Width"/> or <see cref="LayoutImage.Height"/>, or the height derived
-    /// from the width, is refused; see those members and <see cref="LayoutImage.Margins"/>.
+    /// from the width, is refused, or a fitted extent is; see those members,
+    /// <see cref="LayoutImage.FitToPage"/> and <see cref="LayoutImage.Margins"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// The image's own pixel width or height is not a positive number.
@@ -113,11 +125,85 @@ public sealed class LayoutImageRenderer : IRenderer, IPageBreakSource, IKeepSour
         // stream non-invertible (#478).
         LayoutValidation.ValidateImageExtent(_w, _h);
 
-        if (_h > area.Height) return LayoutResult.Nothing();
+        if (_img.FitToPage)
+        {
+            // Fitted to the box every fresh page offers and not to the area left on this one, so
+            // that an image too tall for the rest of a page still moves to the next page at the
+            // size it would have there. The box is the one the retry is offered, so a fitted
+            // image fits the retry's area. A context from WithArea keeps this box but not
+            // AtPageTop, so a wrapper that narrows the area gets the page's fit and a refusal.
+            // Only the height is read: under mirrored margins the box's X differs from page to
+            // page. A caller-built context carries no such box, and the area offered is the only
+            // one known.
+            var fit = (ctx.FreshPageArea ?? ctx.Area).Deflate(_img.Margins).Height;
+
+            // A box with no positive height cannot hold a scaled image, so the image is left as
+            // sized and refused as too tall. NaN fails the comparison and is left the same way.
+            if (fit > 0 && _h > fit)
+            {
+                _w *= fit / _h;
+                _h = fit;
+
+                // The factor can take a wide, short source under the smallest written extent.
+                LayoutValidation.ValidateImageExtent(_w, _h);
+            }
+        }
+
+        if (_h > area.Height)
+        {
+            // The reason is read only when the retry on a fresh page also answers Nothing, which
+            // is a call at a page top, so any other call skips building the string.
+            return ctx.AtPageTop
+                ? LayoutResult.Nothing(TooTallReason(area.Height))
+                : LayoutResult.Nothing();
+        }
 
         _occupied = ctx.Area.WithHeight(_h + _img.Margins.Vertical);
         return LayoutResult.Full(_occupied);
     }
+
+    // Names the axis that overflowed and both numbers, because the document's own sentence cannot:
+    // it does not know the image. The height is the area's less the image's margins, which the
+    // band sentence before it does not take off, so the wording says so when there are margins.
+    private string TooTallReason(double contentHeight)
+    {
+        var (height, content) = Points(_h, contentHeight);
+        var label = _img.Margins.Top == 0 && _img.Margins.Bottom == 0
+            ? "content height"
+            : "content height inside its margins";
+        if (_img.Height is not null)
+            return $"LayoutImage.Height {height} exceeds the {content} {label}.";
+
+        return "The height derived from the width and the image's proportions, " +
+            $"{height}, exceeds the {content} {label}" +
+            (_img.FitToPage ? "." : "; set FitToPage to scale it down.");
+    }
+
+    // Whole points, trimmed to two decimals and 15 significant digits. Two heights that differ by
+    // less than that would print as one figure and the sentence would read "exceeds" over a tie,
+    // so those print with the shortest string that round-trips. So do a magnitude of 1e15 or
+    // more, where two decimals would print up to 309 digits (the round-trip form switches to
+    // exponent notation at 1e17), and a value that is not finite, which has no decimals to trim.
+    private static (string, string) Points(double height, double content)
+    {
+        var (h, c) = (Pt(height), Pt(content));
+        return h != c ? (h, c) : (Exact(height), Exact(content));
+    }
+
+    // "0.##" prints a value in (-0.005, 0) as "-0pt", and that would miss a tie with 0, so the
+    // sign of a figure that rounds to zero is dropped before the strings are compared.
+    private static string Pt(double points)
+    {
+        if (!double.IsFinite(points) || Math.Abs(points) >= 1e15)
+            return Exact(points);
+
+        var text = points.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+        return (text == "-0" ? "0" : text) + "pt";
+    }
+
+    private static string Exact(double points) =>
+        points.ToString("R", System.Globalization.CultureInfo.InvariantCulture) +
+        (double.IsFinite(points) ? "pt" : " pt");
 
     /// <summary>Draws the image XObject, emitting a tagged Figure struct element when tagging is enabled.</summary>
     /// <remarks>See <see cref="IRenderer.Draw"/>.</remarks>
