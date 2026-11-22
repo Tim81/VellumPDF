@@ -111,6 +111,12 @@ internal sealed class TableMeasureProbe
     /// </summary>
     public int StepsKeptPassGoing { get; set; }
 
+    /// <summary>
+    /// Layouts that kept the grid and heights of the decision they were handed, and resolved
+    /// nothing.
+    /// </summary>
+    public int GridsReused { get; set; }
+
     /// <summary>The number of times the decision measured the whole table.</summary>
     public int Passes { get; set; }
 }

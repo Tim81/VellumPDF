@@ -251,44 +251,55 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             var decided = key is not null && _decidedFor is { } was && was.Equals(key.Value);
             if (!decided) _oneLine = null;
 
-            // Before the grid resolves: a ColSpan of zero gives a column count of zero, so Resolve
-            // returns no widths and Layout gives up below, and the caller was told the table was too
-            // tall to fit (#481). Checking here names the cell instead.
-            for (var r = 0; r < _table.Rows.Count; r++)
+            // The grid and the heights that decision was made with stand too: they follow from the
+            // table, the width and the cells read unbroken, which are all the same. The renderer
+            // that made the decision resolved the grid and ran every check below on it, so a
+            // renderer that carries it to a later page checks and resolves nothing again.
+            if (decided && _colWidths.Length > 0 && _rowHeights.Length == rows.Count)
             {
-                var cells = _table.Rows[r].Cells;
-                for (var c = 0; c < cells.Count; c++)
-                    LayoutValidation.ValidateCell(cells[c], r, c);
+                if (TableMeasureProbe.Current is { } held) held.GridsReused++;
             }
-
-            LayoutValidation.ValidateLineWidthIsFinite(_table.BorderWidth, "A table");
-
-            // A decision that reads some cells unbroken measures the table once per step, so it
-            // keeps what each cell measures: nothing else depends on the cells' text, and the
-            // cache is dropped with the decision. A table that reads no cell unbroken measures
-            // once.
-            var passesNeeded = !decided && fresh is not null && AnyControlSpace(rows);
-            var cache = passesNeeded ? new TableMeasureCache(rows.Count) : null;
-
-            ResolveGrid(area.Width, style, cache);
-
-            // Rows that cannot be cut between their lines must not be left without room on a page
-            // by reading a cell's line breaks, or its other control white space as spaces;
-            // Cell.Content says when, and which cells give them up. The cells that would leave
-            // them so are laid out unbroken, and the grid and the heights are taken again. Each
-            // pass adds cells, so this ends; most tables, which hold no control white space, take
-            // no second pass.
-            if (passesNeeded)
+            else
             {
-                while (CellsToReadAsOneLine(fresh!, style, area.Width, cache!) is { } more)
+                // Before the grid resolves: a ColSpan of zero gives a column count of zero, so
+                // Resolve returns no widths and Layout gives up below, and the caller was told the
+                // table was too tall to fit (#481). Checking here names the cell instead.
+                for (var r = 0; r < _table.Rows.Count; r++)
                 {
-                    _oneLine ??= [];
-                    _oneLine.UnionWith(more);
-                    ResolveGrid(area.Width, style, cache);
+                    var cells = _table.Rows[r].Cells;
+                    for (var c = 0; c < cells.Count; c++)
+                        LayoutValidation.ValidateCell(cells[c], r, c);
                 }
+
+                LayoutValidation.ValidateLineWidthIsFinite(_table.BorderWidth, "A table");
+
+                // A decision that reads some cells unbroken measures the table once per step, so
+                // it keeps what each cell measures: nothing else depends on the cells' text, and
+                // the cache is dropped with the decision. A table that reads no cell unbroken
+                // measures once.
+                var passesNeeded = !decided && fresh is not null && AnyControlSpace(rows);
+                var cache = passesNeeded ? new TableMeasureCache(rows.Count) : null;
+
+                ResolveGrid(area.Width, style, cache);
+
+                // Rows that cannot be cut between their lines must not be left without room on a
+                // page by reading a cell's line breaks, or its other control white space as
+                // spaces; Cell.Content says when, and which cells give them up. The cells that
+                // would leave them so are laid out unbroken, and the grid and the heights are
+                // taken again. Each pass adds cells, so this ends; most tables, which hold no
+                // control white space, take no second pass.
+                if (passesNeeded)
+                {
+                    while (CellsToReadAsOneLine(fresh!, style, area.Width, cache!) is { } more)
+                    {
+                        _oneLine ??= [];
+                        _oneLine.UnionWith(more);
+                        ResolveGrid(area.Width, style, cache);
+                    }
+                }
+                _measured = null;
+                _decidedFor = key;
             }
-            _measured = null;
-            _decidedFor = key;
         }
 
         // The repeatable header is the leading contiguous run of IsHeader rows — see

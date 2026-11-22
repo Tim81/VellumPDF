@@ -287,4 +287,75 @@ public sealed class TableMeasureCacheTests
 
         Assert.Equal(0, probe.StepsKeptPassGoing);
     }
+
+    /// <summary>
+    /// A table that runs over many pages resolves its grid once: the renderer that carries it to
+    /// the next page, laid out at the same width and fresh page, keeps the grid and the heights.
+    /// </summary>
+    [Fact]
+    public void ATableOverManyPagesResolvesItsGridOnce()
+    {
+        using var doc = WidePage();
+        var t = new TableElement { DefaultCellStyle = Helvetica() }.SetColumnWidths(500, 500);
+        for (var i = 0; i < 400; i++) t.AddRow().AddCell("row " + i).AddCell("x");
+        doc.Add(t);
+
+        var probe = Probed(() => Save(doc));
+
+        Assert.Equal(1, probe.Passes);
+        Assert.True(probe.GridsReused >= 5, $"{probe.GridsReused} layouts kept the grid");
+    }
+
+    /// <summary>
+    /// A page of another width resolves the grid again: the cached one was made for the width the
+    /// first page had.
+    /// </summary>
+    [Fact]
+    public void ALaterPageOfAnotherWidthResolvesTheGridAgain()
+    {
+        var t = new TableElement { DefaultCellStyle = Helvetica() };
+        for (var i = 0; i < 100; i++) t.AddRow().AddCell("row " + i).AddCell(Words(3, " "));
+        var tall = new LayoutBox(10, 10, 1980, 600);
+        var narrow = new LayoutBox(10, 10, 300, 600);
+
+        var probe = new TableMeasureProbe();
+        TableMeasureProbe.Current = probe;
+        try
+        {
+            var first = new TableRenderer(t).Layout(new LayoutContext(new LayoutBox(10, 10, 1980, 100)) { FreshPageArea = tall });
+            var same = first.OverflowRenderer!.Layout(new LayoutContext(new LayoutBox(10, 10, 1980, 100)) { FreshPageArea = tall });
+            Assert.Equal(1, probe.GridsReused);
+            Assert.NotNull(same.OverflowRenderer);
+
+            same.OverflowRenderer!.Layout(new LayoutContext(narrow) { FreshPageArea = narrow });
+        }
+        finally { TableMeasureProbe.Current = null; }
+
+        Assert.Equal(1, probe.GridsReused);
+        Assert.Equal(2, probe.Passes);
+    }
+
+    /// <summary>
+    /// A cell that is refused is refused when the table is first laid out, whichever page it is
+    /// on, so keeping the grid for the later pages hides no refusal: the save throws from the
+    /// first page, naming the cell, as it does when nothing is kept.
+    /// </summary>
+    [Theory]
+    [InlineData("fontSize")]
+    [InlineData("colSpan")]
+    public void ACellOnALaterPageIsRefusedFromTheFirstPage(string fault)
+    {
+        using var doc = WidePage();
+        var t = new TableElement { DefaultCellStyle = Helvetica() }.SetColumnWidths(500, 500);
+        for (var i = 0; i < 200; i++) t.AddRow().AddCell("row " + i).AddCell("x");
+        var last = t.AddRow().AddCell("last");
+        last.AddCell(fault == "fontSize"
+            ? new Cell("bad") { Style = Helvetica(double.NaN) }
+            : new Cell("bad") { ColSpan = 0 });
+        doc.Add(t);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => Save(doc));
+
+        Assert.Contains("row 200, cell 1", ex.Message);
+    }
 }
