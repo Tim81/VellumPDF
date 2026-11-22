@@ -58,6 +58,13 @@ public interface IRenderer
     /// document applies those fixes only to a list it lays out itself, where it can see the limit.
     /// <b>Do not</b> rely on where such a list lands: 3.0 lays a list out one way, whatever called
     /// it.</para>
+    /// <para><b>A document that holds a list ahead of a renderer of yours is laid out once more
+    /// before it is drawn.</b> The extra layout finds out whether your renderer lays out a
+    /// <see cref="VellumPdf.Layout.Rendering.ListRenderer"/> whose items use a font the document
+    /// cannot draw, in which case every list of the document is laid out as it was before the
+    /// fixes above; see <see cref="VellumPdf.Layout.Elements.ListElement"/>. A header or footer
+    /// already adds a layout, and that one serves. An exception the extra layout raises is not
+    /// raised from it: the drawing layout reaches the same element and raises it there.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other

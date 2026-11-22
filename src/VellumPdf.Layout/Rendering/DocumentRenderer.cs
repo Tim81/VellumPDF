@@ -275,7 +275,6 @@ public sealed class DocumentRenderer
     {
         ArgumentNullException.ThrowIfNull(pdf);
         _pdf = pdf;
-        _session = new ContinuationSession { Pdf = pdf };
         _pageSize = pageSize ?? pdf.DefaultPageSize;
         _margins = margins ?? new EdgeInsets(72); // 1-inch default margins (72pt)
 
@@ -434,6 +433,22 @@ public sealed class DocumentRenderer
     /// </summary>
     internal void RunLayout()
     {
+        // Every list this layout lays out reads the run, whatever context it is handed, and a layout
+        // that a renderer of a caller's starts from inside this one gets a run of its own.
+        // Removed in 3.0 (#688).
+        var run = ListLayoutRun.Begin(_pdf, out var outerRun);
+        try
+        {
+            RunLayoutWith(run);
+        }
+        finally
+        {
+            ListLayoutRun.End(outerRun);
+        }
+    }
+
+    private void RunLayoutWith(ListLayoutRun listRun)
+    {
         // A refusal belongs to the layout that raised it; a renderer reused for another layout starts clean.
         _deferredCanvasRefusal = null;
         MeasureRuns = 0;
@@ -496,21 +511,36 @@ public sealed class DocumentRenderer
         // and the guard compares the drawing pass with them. Tests set RecordPlacements.
         _collect = dependents is not null || RecordPlacements || _navigation.HasAnchors || _navigation.HasBreakLabels;
 
+        var probeLists = ScanLists(listRun);
+
         int totalPages;
-        if (dependents is not null)
+        while (true)
         {
-            // Resolves the dependents against each run's plan until they stop changing, so what the
-            // drawing pass prints names the page its target is drawn on.
-            totalPages = MeasureUntilStable(dependents);
-        }
-        else if (Header is not null || Footer is not null)
-        {
-            // One measuring run: the same loop as the drawing pass, with no PDF objects created.
-            totalPages = RunPass(measure: true, totalPages: 0);
-        }
-        else
-        {
-            totalPages = 0; // unknown / irrelevant
+            var asTwin = listRun.AllAsTwin;
+            if (dependents is not null)
+            {
+                // Resolves the dependents against each run's plan until they stop changing, so what the
+                // drawing pass prints names the page its target is drawn on.
+                totalPages = MeasureUntilStable(dependents);
+            }
+            else if (Header is not null || Footer is not null)
+            {
+                // One measuring run: the same loop as the drawing pass, with no PDF objects created.
+                totalPages = RunPass(measure: true, totalPages: 0);
+            }
+            else
+            {
+                totalPages = 0; // unknown / irrelevant
+                if (probeLists && !asTwin) ProbeForUndrawableLists();
+            }
+
+            // A list found in the pass that holds an entry the document cannot draw turned every
+            // list into its twin from there on, so the pass laid some of them out the other way and
+            // what it counted is not what the drawing pass will lay out. Measure again, which can
+            // happen once: the flag does not go back. Removed in 3.0 (#688).
+            if (listRun.AllAsTwin == asTwin) break;
+            _continuationVerdicts = null;
+            listRun.StartOver();
         }
 
         // The drawing pass, with running bands resolved. A document with a dependent compares each
@@ -777,6 +807,59 @@ public sealed class DocumentRenderer
         MirrorMargins && !IsRecto(pageIndex)
             ? new LayoutBox(_margins.Right, area.Y, area.Width, area.Height)
             : area;
+
+    // Finds, before anything is laid out, what a list's rule for fonts the document cannot draw
+    // needs to know (ListLayoutRun). Every list the document holds itself is read here, and every
+    // list sits at the top level: no built-in renderer builds one. A renderer from outside this
+    // assembly can lay a ListRenderer out from its own Layout, and that list is found only when it
+    // is laid out. Returns whether that can matter: a list that is laid out the new way, ahead of
+    // such a renderer, has already moved what follows it when the renderer's list turns out to hold
+    // an entry the document cannot draw, which is the case a pass that only measures finds out
+    // about before the drawing pass starts.
+    // Removed in 3.0 (#688).
+    private bool ScanLists(ListLayoutRun listRun)
+    {
+        var listBefore = false;
+        var opaqueAfterList = false;
+        foreach (var renderer in _renderers)
+        {
+            if (renderer is ListRenderer list)
+            {
+                listBefore = true;
+                if (ListRenderer.HoldsUndrawableEntry(list.Element, listRun)) listRun.NoteUndrawable();
+            }
+            else if (listBefore && renderer.GetType().Assembly != typeof(ListRenderer).Assembly)
+            {
+                opaqueAfterList = true;
+            }
+        }
+
+        return opaqueAfterList && !listRun.AllAsTwin;
+    }
+
+    // A measuring pass that no band or dependent asked for, run only to let the lists a renderer of
+    // a caller's lays out say whether the document can draw them. Its result is not kept, so a
+    // document that measured nothing before still reports that it did not, and a refusal it raises
+    // is left to the drawing pass, which reaches it in the order it always did: the drawing pass
+    // draws each element before it lays the next out.
+    // Removed in 3.0 (#688).
+    private void ProbeForUndrawableLists()
+    {
+        try
+        {
+            RunPass(measure: true, totalPages: 0);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Left for the drawing pass, as above.
+        }
+        finally
+        {
+            MeasureRuns = 0;
+            _measureSink = null;
+            _measurePages = 0;
+        }
+    }
 
     // Only the renderers added to this document are searched, not ones a renderer holds inside
     // itself.

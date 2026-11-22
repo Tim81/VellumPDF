@@ -49,20 +49,24 @@ public enum ListStyle
 /// item the height the layout pass did.</para>
 /// <para>An item is placed when its marker and its text are both placed. When only one of them
 /// fits what is left of a page, or a marker that wraps gets only some of its lines, the item moves
-/// whole to the next page, as it does when neither fits. Where the document lays the list out
-/// itself, the item stays where it falls, with the part that fits and the other part not drawn, in
-/// three cases. No page holds it, because a line of its marker, or of its text at the width the
-/// clamp of <see cref="Indent"/> would give it, is taller than a page: the whole list is then laid
-/// out as it was before the clamp and the moving of items, so no item of it is clamped or moved.
-/// It has a font the document cannot draw, which is a handle another document returned or a
-/// <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name. Or the list is
-/// one the continuation limit sends back to its earlier layout, as <see cref="Indent"/> describes.
-/// <see cref="LayoutDiagnosticCode.ListEntryPartDropped"/> reports each such item. The clamp
-/// (#476) and the moving of items (#685) apply only to a list the document lays out itself: a
-/// list that a renderer of yours lays out is placed as it was before them; see
-/// <see cref="Rendering.ListRenderer.Layout"/>. Text that has no width is not a line that did not
-/// fit: it is discarded, as <see cref="Indent"/> describes, and is not reported by that
-/// code.</para>
+/// whole to the next page, as it does when neither fits. Text that has no width is not a line that
+/// did not fit: it is discarded, as <see cref="Indent"/> describes, and is not reported.</para>
+/// <para><b>A list is laid out as it was before the clamp of <see cref="Indent"/> (#476) and this
+/// moving of items (#685) in four cases, and then none of its items is clamped or moved.</b> Each
+/// item stays where it falls, with the part that fits drawn and the other part not.
+/// <see cref="LayoutDiagnosticCode.ListEntryPartDropped"/> reports each such item, and
+/// <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/> reports the list in the last two
+/// cases. First, a renderer of yours lays the list out, whatever context it passes on; see
+/// <see cref="Rendering.ListRenderer.Layout"/>. Second, no page holds one of its items, because a
+/// line of its marker, or of its text at the width the clamp would give it, is taller than a page.
+/// Third, laying it out the new way would take it past the continuation limit, as
+/// <see cref="Indent"/> describes. Fourth, any list of the document holds an item whose marker or
+/// text is in a font the document cannot draw, which is a handle another document returned or a
+/// <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name. Every list of
+/// that document is then laid out that way. The save throws where such text is drawn and saves
+/// where it is dropped at the bottom of a page, so widening or moving anything ahead of the item
+/// can turn one outcome into the other, and a document keeps the outcome it had only while
+/// nothing ahead of the item moves.</para>
 /// <para><b>Attention</b>: an item whose text holds only white space is laid out at the leading of
 /// <see cref="TextStyle.Default"/>, as on <see cref="Paragraph"/>, while its marker is laid out in
 /// the item's own style, so the marker's line can be the one that does not fit where the item
@@ -112,19 +116,19 @@ public sealed class ListElement
     /// <see cref="ListElement"/>. A list the document
     /// draws from its first entry reports its clamped entries as one
     /// <see cref="LayoutDiagnosticCode.ListIndentClamped"/> item.</para>
-    /// <para>These keep their earlier output, and are not reported: a gutter that leaves the text a
-    /// width, however narrow; an entry with no word that measures wider than zero, such as one
-    /// holding only white space, set at font size 0 or set in Symbol or ZapfDingbats, whose text is
-    /// discarded; an entry with a run that holds text and has a non-finite font size or a
+    /// <para>These keep their earlier output, and are not reported by
+    /// <see cref="LayoutDiagnosticCode.ListIndentClamped"/>: a gutter that leaves the text a width,
+    /// however narrow; an entry with no word that measures wider than zero, such as one holding
+    /// only white space, set at font size 0 or set in Symbol or ZapfDingbats, whose text is
+    /// discarded; and an entry with a run that holds text and has a non-finite font size or a
     /// non-finite colour channel, whose text is discarded and which does not make the save throw,
-    /// because a width would have let the layout read that style and refuse it; and an entry whose
-    /// marker or text is in a font the document cannot draw, because drawing it would make the save
-    /// throw. So does every entry of a list that holds an entry no page holds, and so does a list a
-    /// renderer of yours lays out; see <see cref="Rendering.ListRenderer.Layout"/>. An entry whose
-    /// marker has no room at the top of a page is refused as before. A nested list throws at the
-    /// area width, as the exception records. Below that, from half the area width, a child's text
-    /// is clamped in the same way, because the nested gutter reaches the area width at half the
-    /// indent a top-level gutter needs.</para>
+    /// because a width would have let the layout read that style and refuse it. So does every
+    /// entry of a list that is laid out as it was before the clamp, which
+    /// <see cref="ListElement"/> lists in four cases. An entry whose marker has no room at the top
+    /// of a page is refused as before. A nested list throws at the area width, as the exception
+    /// records. Below that, from half the area width, a child's text is clamped in the same way,
+    /// because the nested gutter reaches the area width at half the indent a top-level gutter
+    /// needs.</para>
     /// <para>One element may take at most 50,000 page continuations; see
     /// <see cref="Rendering.DocumentRenderer"/>. Drawing the text of a clamped entry adds lines,
     /// and moving an entry adds pages, so a list the document lays out, and whose layout could
@@ -171,10 +175,11 @@ public sealed class ListElement
     /// Raised from a save rather than from this property, when a list with nested children has an
     /// indent that reaches the list's own area width, which is the page's content width narrowed by
     /// the left and right edges of <see cref="Margins"/>, positive infinity included. A flat list
-    /// at such an indent is not refused for the indent. It is refused where an entry's marker has
-    /// no room at the top of a page, or where the list would pass the page-continuation limit, as
-    /// at any indent. The message reports an element too tall to fit and names neither this
-    /// property nor the list.
+    /// at such an indent is not refused for the indent. It is refused for two other reasons, as at
+    /// any indent. An entry's marker has no room at the top of a page: the message begins "An
+    /// element is too tall to fit on a single page". Or the list would pass the page-continuation
+    /// limit: the message begins "A single element needed more than 50000 page continuations".
+    /// Neither message names this property or the list.
     /// </exception>
     public double Indent { get; init; } = 20;
 

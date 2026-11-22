@@ -110,6 +110,15 @@ public sealed class LayoutContext
 
     // Removed in 3.0 (#688).
     /// <summary>
+    /// Whether the document called <paramref name="renderer"/> itself, outside a probe. False for a
+    /// renderer a caller's renderer holds, and for one a probe lays out, because neither was placed
+    /// by the document: the document is not the one that reads where such a renderer falls.
+    /// </summary>
+    internal bool IsAddressedByDocument(IRenderer renderer) =>
+        Session is { Probing: false } session && ReferenceEquals(session.Called, renderer);
+
+    // Removed in 3.0 (#688).
+    /// <summary>
     /// A context for a built-in renderer that <paramref name="parent"/>, itself called under this
     /// context, lays out as part of its own layout: addressed to <paramref name="child"/> and in
     /// the parent's own mode, with the fresh-page area carried as <see cref="WithArea"/> carries

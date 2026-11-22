@@ -1,0 +1,809 @@
+// Copyright © Timothy van der Ham (@Tim81)
+// SPDX-License-Identifier: Apache-2.0
+
+using System.Security.Cryptography;
+using System.Text.RegularExpressions;
+using VellumPdf.Document;
+using VellumPdf.Fonts;
+using VellumPdf.Layout.Core;
+using VellumPdf.Layout.Elements;
+using VellumPdf.Layout.Rendering;
+
+namespace VellumPdf.Layout.Tests;
+
+/// <summary>
+/// A document that holds an entry in a font it cannot draw (a handle another document returned, a
+/// <see cref="Standard14"/> value the enumeration does not name) saves where that entry's text falls
+/// where it does not fit and is dropped, and throws where the text is drawn. Clamping or moving an
+/// entry ahead of it changes which, so every list of such a document is laid out as its twin. The
+/// rows compare each document with the same document whose lists are replaced by their twins, which
+/// is what the lists laid out before the clamp and the moving of entries (#476, #685).
+/// </summary>
+public sealed class ListDocumentFontRuleTests
+{
+    private static TextStyle H(double size) => new() { FontRef = new FontReference(Standard14.Helvetica), FontSize = size };
+
+    private static readonly DateTimeOffset Stamp = new(2026, 1, 2, 3, 4, 5, TimeSpan.Zero);
+
+    // How a list is placed. A visible list is one the document holds itself; the others are lists
+    // that a renderer of the caller's lays out, through the context, through WithArea and through
+    // the public constructor.
+    private const int Visible = -1;
+
+    private static EmbeddedFontHandle ForeignHandle() => new Document().UseTrueTypeFont(FontReportSupport.DejaVuBytes);
+
+    // A handle whose resource name is TT2, which a document that embedded one font does not define.
+    private static EmbeddedFontHandle SecondForeignHandle()
+    {
+        var other = new Document();
+        other.UseTrueTypeFont(FontReportSupport.LiberationMonoBytes);
+        return other.UseTrueTypeFont(FontReportSupport.DejaVuBytes);
+    }
+
+    // "ok" is a font the document draws, for the controls.
+    private static TextStyle Bad(string kind, double size) => new()
+    {
+        FontRef = kind switch
+        {
+            "foreign" => ForeignHandle(),
+            "ok" => new FontReference(Standard14.Helvetica),
+            _ => new FontReference((Standard14)99),
+        },
+        FontSize = size,
+    };
+
+    private static Document Page(double width, double height, int leadLines, bool header)
+    {
+        var doc = new Document { PageSize = new PdfRectangle(0, 0, width, height), Margins = new EdgeInsets(10) };
+        if (header) doc.Header = new RunningBand("H {page}/{pages}", H(8));
+        for (var i = 0; i < leadLines; i++) doc.Add(new Paragraph("lead" + i, H(10)) { Margins = EdgeInsets.Zero });
+        return doc;
+    }
+
+    private static void Place(Document doc, ListElement list, int how, bool twin)
+    {
+        var renderer = new ListRenderer(list);
+        if (how == Visible)
+        {
+            if (twin) doc.Add(renderer.Unclamped());
+            else doc.Add(list);
+        }
+        else
+        {
+            doc.Add(new Holder(twin ? renderer.Unclamped() : renderer, how));
+        }
+    }
+
+    // What a save gives, as one string: the SHA of the file, or the exception's type and message.
+    private static string Outcome(Document doc)
+    {
+        doc.Timestamp = Stamp;
+        doc.DocumentId = Enumerable.Range(1, 16).Select(i => (byte)i).ToArray();
+        try
+        {
+            using var ms = new MemoryStream();
+            doc.Save(ms);
+            return "OK " + Convert.ToHexString(SHA256.HashData(ms.ToArray()))[..16];
+        }
+        catch (Exception ex)
+        {
+            return "EX " + ex.GetType().Name + " " + ex.Message;
+        }
+    }
+
+    private static string[] Shows(Document doc)
+    {
+        doc.Timestamp = Stamp;
+        doc.DocumentId = Enumerable.Range(1, 16).Select(i => (byte)i).ToArray();
+        using var ms = new MemoryStream();
+        doc.Save(ms);
+        return Regex.Matches(PdfTestUtil.DecompressAllFlatStreams(ms.ToArray()), @"\(((?:\\.|[^\\)])*)\)\s*Tj")
+            .Select(m => m.Groups[1].Value).ToArray();
+    }
+
+    private static LayoutDiagnosticCode[] Codes(Document doc) => doc.Diagnostics.Select(d => d.Code).ToArray();
+
+    // ── The scenarios ────────────────────────────────────────────────────────
+
+    // An entry that moves whole to the next page, then one whose text fits where it falls on the
+    // first page and does not on the second, or the reverse. Page 200x100, margins 10.
+    private static Document ShiftedByAMove(string kind, int how, bool header, bool twin, bool badFirst)
+    {
+        var doc = Page(200, 100, 4, header);
+        var a = new ListElement(ListStyle.OrderedDecimal)
+            .Add(new ListItem("a", H(10)))
+            .Add(new ListItem([new TextRun("mover", H(20))]) { Style = H(10) });
+        var b = new ListElement(ListStyle.Unordered)
+            .Add(new ListItem([new TextRun("bad", Bad(kind, 10))]) { Style = H(6) });
+        if (badFirst)
+        {
+            Place(doc, b, how, twin);
+            Place(doc, a, Visible, twin);
+        }
+        else
+        {
+            Place(doc, a, Visible, twin);
+            Place(doc, b, how, twin);
+        }
+
+        return doc;
+    }
+
+    // A clamped nested child grows, pushing the entry after it down. Indent 100 on a 180 pt area.
+    private static Document ShiftedByAClamp(string kind, int how, bool header, bool twin, double child)
+    {
+        var doc = Page(200, 100, 0, header);
+        var parent = new ListItem("p", H(10));
+        parent.AddChild(new ListItem([new TextRun("kid", H(child))]) { Style = H(10) });
+        var a = new ListElement(ListStyle.OrderedDecimal) { Indent = 100 }.Add(parent);
+        var b = new ListElement(ListStyle.OrderedDecimal)
+            .Add(new ListItem([new TextRun("bad", Bad(kind, 30))]) { Style = H(10) });
+        Place(doc, a, Visible, twin);
+        Place(doc, b, how, twin);
+        return doc;
+    }
+
+    // The list that holds the font comes first and drops its text at the bottom of page 1, so it
+    // saves. The list after it starts page 2 with an entry that moves where it is laid out the new
+    // way, so only a document that lays it out as its twin is the document 2.3.3 saved.
+    // The font sits in the text of the entry, in its marker, or in the text of a nested child.
+    private static Document BadListFirst(string kind, int how, bool header, bool twin, string where = "text")
+    {
+        var doc = Page(200, 100, where == "child" ? 5 : header ? 5 : 6, header);
+        var b = new ListElement(ListStyle.Unordered);
+        switch (where)
+        {
+            case "text":
+                b.Add(new ListItem([new TextRun("bad", Bad(kind, 10))]) { Style = H(5) });
+                break;
+            case "marker":
+                // The marker is too tall for what is left of the page and is dropped, and the text fits.
+                b.Add(new ListItem([new TextRun("t", H(5))]) { Style = Bad(kind, 30) });
+                break;
+            default:
+                var parent = new ListItem([new TextRun("p", H(10))]) { Style = H(10) };
+                parent.AddChild(new ListItem([new TextRun("bad", Bad(kind, 10))]) { Style = H(5) });
+                b.Add(parent);
+                break;
+        }
+
+        var a = new ListElement(ListStyle.OrderedDecimal)
+            .Add(new ListItem("a", H(10)))
+            .Add(new ListItem([new TextRun("mover", H(header ? 50 : 60))]) { Style = H(10) });
+        Place(doc, b, how, twin);
+        Place(doc, a, Visible, twin);
+        return doc;
+    }
+
+    // The entry that holds the font follows the entry that moves in the same list.
+    private static Document SameListAfterAMove(string kind, bool header, bool twin)
+    {
+        var doc = Page(200, 100, 5, header);
+        var list = new ListElement(ListStyle.OrderedDecimal)
+            .Add(new ListItem([new TextRun("dropped", H(20))]) { Style = H(10) })
+            .Add(new ListItem([new TextRun("bad", Bad(kind, 10))]) { Style = H(6) });
+        Place(doc, list, Visible, twin);
+        return doc;
+    }
+
+    // ── The rule ─────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// An entry that follows a moved entry in its own list, which the first version of the check
+    /// left on the new layout: main dropped its text at the page bottom and saved.
+    /// </summary>
+    [Theory]
+    [InlineData("undefined", false)]
+    [InlineData("undefined", true)]
+    [InlineData("foreign", false)]
+    [InlineData("foreign", true)]
+    public void AnUndrawableEntryAfterAMovedEntryInItsOwnList_keepsTheOutcomeItHad(string kind, bool header)
+    {
+        var twin = Outcome(SameListAfterAMove(kind, header, twin: true));
+        var doc = SameListAfterAMove(kind, header, twin: false);
+
+        Assert.Equal(twin, Outcome(doc));
+        if (!header)
+        {
+            Assert.StartsWith("OK ", twin);
+            Assert.Equal(["lead0", "lead1", "lead2", "lead3", "lead4", "1.", "2."], Shows(SameListAfterAMove(kind, header, twin: false)));
+        }
+    }
+
+    /// <summary>
+    /// The entry sits in another list, which the first list's moved entry shifts. The other list is
+    /// laid out as its twin would be, so nothing of it changes by itself.
+    /// </summary>
+    [Theory]
+    [InlineData("undefined", Visible, false)]
+    [InlineData("undefined", Visible, true)]
+    [InlineData("undefined", 0, false)]
+    [InlineData("undefined", 0, true)]
+    [InlineData("undefined", 1, false)]
+    [InlineData("undefined", 2, false)]
+    [InlineData("undefined", 2, true)]
+    [InlineData("undefined", 3, false)]
+    [InlineData("foreign", 3, false)]
+    [InlineData("foreign", Visible, false)]
+    [InlineData("foreign", 0, false)]
+    [InlineData("foreign", 0, true)]
+    [InlineData("foreign", 1, false)]
+    [InlineData("foreign", 2, false)]
+    public void AnUndrawableListAfterAMovingList_keepsTheOutcomeItHad(string kind, int how, bool header)
+    {
+        var twin = Outcome(ShiftedByAMove(kind, how, header, twin: true, badFirst: false));
+
+        Assert.Equal(twin, Outcome(ShiftedByAMove(kind, how, header, twin: false, badFirst: false)));
+    }
+
+    [Theory]
+    [InlineData("undefined", 0, false)]
+    [InlineData("undefined", 2, false)]
+    [InlineData("foreign", 1, false)]
+    [InlineData("foreign", 1, true)]
+    public void AnUndrawableListBeforeAMovingList_keepsTheOutcomeItHad(string kind, int how, bool header)
+    {
+        var twin = Outcome(ShiftedByAMove(kind, how, header, twin: true, badFirst: true));
+
+        Assert.Equal(twin, Outcome(ShiftedByAMove(kind, how, header, twin: false, badFirst: true)));
+    }
+
+    /// <summary>
+    /// A list that a renderer of the caller's holds is found when it is laid out, and the list after
+    /// it, which the document holds, is then laid out as its twin. Here the first list saves, with
+    /// its text dropped, so only the lists after it tell the two layouts apart.
+    /// </summary>
+    /// <summary>The font is in the marker's style, or in a nested child, whichever list holds it.</summary>
+    [Theory]
+    [InlineData("marker", "undefined", Visible)]
+    [InlineData("marker", "foreign", 0)]
+    [InlineData("marker", "undefined", 3)]
+    [InlineData("child", "undefined", Visible)]
+    [InlineData("child", "foreign", 1)]
+    [InlineData("child", "undefined", 2)]
+    public void AnUndrawableMarkerOrChild_turnsTheListsAfterItIntoTheirTwins(string where, string kind, int how)
+    {
+        var twin = Outcome(BadListFirst(kind, how, header: false, twin: true, where));
+
+        Assert.StartsWith("OK ", twin);
+        Assert.Equal(twin, Outcome(BadListFirst(kind, how, header: false, twin: false, where)));
+        Assert.NotEqual(twin, Outcome(BadListFirst("ok", how, header: false, twin: false, where)));
+    }
+
+    [Theory]
+    [InlineData("undefined", 0, false)]
+    [InlineData("undefined", 1, false)]
+    [InlineData("undefined", 2, true)]
+    [InlineData("undefined", 3, false)]
+    [InlineData("foreign", 0, false)]
+    [InlineData("foreign", 2, false)]
+    [InlineData("foreign", 3, false)]
+    [InlineData("foreign", 1, true)]
+    public void AHeldListThatSavesWithItsTextDropped_turnsTheListsAfterItIntoTheirTwins(string kind, int how, bool header)
+    {
+        var twin = Outcome(BadListFirst(kind, how, header, twin: true));
+
+        Assert.StartsWith("OK ", twin);
+        Assert.Equal(twin, Outcome(BadListFirst(kind, how, header, twin: false)));
+        Assert.NotEqual(twin, Outcome(BadListFirst("ok", how, header, twin: false)));
+    }
+
+    /// <summary>
+    /// A clamp ahead of the entry pushes it down past the room its text needs. Main drew the text
+    /// and threw, and the document still throws.
+    /// </summary>
+    [Theory]
+    [InlineData("undefined", Visible, 50.0, false)]
+    [InlineData("undefined", Visible, 60.0, true)]
+    [InlineData("undefined", 0, 50.0, false)]
+    [InlineData("undefined", 1, 60.0, false)]
+    [InlineData("undefined", 2, 50.0, true)]
+    [InlineData("foreign", Visible, 50.0, false)]
+    [InlineData("foreign", 0, 60.0, false)]
+    [InlineData("foreign", 2, 50.0, false)]
+    public void AnUndrawableEntryAfterAClampedChild_keepsTheOutcomeItHad(string kind, int how, double child, bool header)
+    {
+        var twin = Outcome(ShiftedByAClamp(kind, how, header, twin: true, child));
+
+        Assert.StartsWith("EX ", twin);
+        Assert.Equal(twin, Outcome(ShiftedByAClamp(kind, how, header, twin: false, child)));
+
+        // The clamp is what makes the entry's text not fit: with a font the document draws, the
+        // document saves, and not as the twin does.
+        Assert.StartsWith("OK ", Outcome(ShiftedByAClamp("ok", how, header, twin: false, child)));
+    }
+
+    /// <summary>
+    /// The fixture holds the change: with a font the document draws, the same documents are not
+    /// their twins, so the rows above compare two layouts that differ where the font allows it.
+    /// </summary>
+    [Theory]
+    [InlineData(Visible, false)]
+    [InlineData(0, false)]
+    [InlineData(1, false)]
+    [InlineData(2, false)]
+    [InlineData(3, false)]
+    public void AControlWithAFontTheDocumentDraws_isNotLaidOutAsItsTwin(int how, bool header)
+    {
+        var doc = ShiftedByAMove("ok", how, header, twin: false, badFirst: false);
+        var twin = Outcome(ShiftedByAMove("ok", how, header, twin: true, badFirst: false));
+
+        Assert.NotEqual(twin, Outcome(doc));
+    }
+
+    [Fact]
+    public void AControlWithAFontTheDocumentDraws_isClampedAndMovedAfterAMovedEntry()
+    {
+        var doc = SameListAfterAMove("ok", header: false, twin: false);
+
+        Assert.Equal(["lead0", "lead1", "lead2", "lead3", "lead4", "1.", "dropped", "2.", "bad"], Shows(doc));
+        Assert.Empty(doc.Diagnostics);
+    }
+
+    // ── What is reported ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Every list the document placed reports the fallback once, whether or not it holds the entry,
+    /// and a list a renderer of the caller's holds reports nothing, 208 included.
+    /// </summary>
+    [Fact]
+    public void EveryListTheDocumentPlaces_reportsTheFallbackOnce_andAHeldListReportsNothing()
+    {
+        var doc = ShiftedByAMove("undefined", 0, header: false, twin: false, badFirst: false);
+
+        Outcome(doc);
+
+        // The visible list A, element 4 of 6, reports 207 and the part of its entry that is dropped.
+        Assert.Equal(
+            [LayoutDiagnosticCode.ListIndentClampSkipped, LayoutDiagnosticCode.ListEntryPartDropped],
+            Codes(doc));
+        Assert.All(doc.Diagnostics, d => Assert.Equal(LayoutElementKind.List, d.ElementKind));
+    }
+
+    [Fact]
+    public void BothVisibleLists_reportTheFallback()
+    {
+        var doc = ShiftedByAMove("foreign", Visible, header: false, twin: false, badFirst: false);
+
+        Outcome(doc);
+
+        Assert.Equal(2, doc.Diagnostics.Count(d => d.Code == LayoutDiagnosticCode.ListIndentClampSkipped));
+    }
+
+    /// <summary>
+    /// The count is the entries the clamp would have narrowed, from the same gutters the clamp reads,
+    /// and 1 when it would have narrowed none.
+    /// </summary>
+    [Fact]
+    public void TheFallbackCount_isTheEntriesTheClampWouldHaveNarrowed()
+    {
+        var doc = Page(200, 400, 0, header: false);
+        var clamped = new ListElement(ListStyle.OrderedDecimal) { Indent = 1000 }
+            .Add(new ListItem("one", H(10)))
+            .Add(new ListItem("two", H(10)))
+            .Add(new ListItem([new TextRun("bad", Bad("undefined", 10))]) { Style = H(10) });
+        doc.Add(clamped);
+        // Indent 100 leaves a child's gutter, 200, no room on the 180 pt area, and its parent's none.
+        var parent = new ListItem("p", H(10));
+        parent.AddChild(new ListItem("c1", H(10)));
+        parent.AddChild(new ListItem("c2", H(10)));
+        doc.Add(new ListElement(ListStyle.Unordered) { Indent = 100 }.Add(parent));
+        var untouched = new ListElement(ListStyle.Unordered).Add(new ListItem("x", H(10)));
+        doc.Add(untouched);
+
+        Outcome(doc);
+
+        var skipped = doc.Diagnostics.Where(d => d.Code == LayoutDiagnosticCode.ListIndentClampSkipped).ToArray();
+        Assert.Equal(3, skipped.Length);
+        Assert.Equal(2, skipped[0].Count);
+        Assert.Equal(2, skipped[1].Count);
+        Assert.Equal(1, skipped[2].Count);
+    }
+
+    /// <summary>A list with no items has nothing to report.</summary>
+    [Fact]
+    public void AnEmptyList_reportsNothingInADocumentThatHoldsTheFont()
+    {
+        var doc = Page(200, 100, 0, header: false);
+        doc.Add(new ListElement(ListStyle.Unordered));
+        doc.Add(new ListElement(ListStyle.Unordered) { Indent = 1000 }
+            .Add(new ListItem([new TextRun("bad", Bad("undefined", 10))])));
+
+        Outcome(doc);
+
+        Assert.Single(doc.Diagnostics, d => d.Code == LayoutDiagnosticCode.ListIndentClampSkipped);
+    }
+
+    /// <summary>
+    /// A twin used only because a caller's renderer holds the list reports nothing. A part of its
+    /// entry is dropped at the page bottom, as it was, and no diagnostic says so.
+    /// </summary>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void AListACallersRendererHolds_reportsNoPartDropped(int how)
+    {
+        var doc = Page(200, 100, 5, header: false);
+        var list = new ListElement(ListStyle.OrderedDecimal)
+            .Add(new ListItem([new TextRun("dropped", H(20))]) { Style = H(10) });
+        doc.Add(new Holder(new ListRenderer(list), how));
+
+        var outcome = Outcome(doc);
+
+        Assert.StartsWith("OK ", outcome);
+        Assert.Empty(doc.Diagnostics);
+    }
+
+    /// <summary>The same list, added to the document itself, is reported as before.</summary>
+    [Fact]
+    public void AListTheDocumentPlacesAsItsTwin_stillReportsThePartDropped()
+    {
+        var doc = Page(200, 100, 5, header: false);
+        doc.Add(new ListRenderer(new ListElement(ListStyle.OrderedDecimal)
+            .Add(new ListItem([new TextRun("dropped", H(20))]) { Style = H(10) })).Unclamped());
+
+        Outcome(doc);
+
+        Assert.Equal([LayoutDiagnosticCode.ListEntryPartDropped], Codes(doc));
+    }
+
+    // ── The extra layout ─────────────────────────────────────────────────────
+
+    private static (DocumentRenderer Renderer, byte[] Bytes) Render(
+        Action<DocumentRenderer> add, bool header = false, PdfDocument? pdf = null)
+    {
+        pdf ??= new PdfDocument { Timestamp = Stamp, DocumentId = new byte[16] };
+        var renderer = new DocumentRenderer(pdf, new PdfRectangle(0, 0, 200, 100), new EdgeInsets(10));
+        if (header) renderer.Header = new RunningBand("H {page}/{pages}", H(8));
+        add(renderer);
+        using var ms = new MemoryStream();
+        renderer.Render(ms);
+        return (renderer, ms.ToArray());
+    }
+
+    // The indent leaves the text no width where it is asked for, so a font the document cannot draw is
+    // held and its text is never drawn, which is what lets the document save.
+    private static ListElement OneEntry(string text, TextStyle style, double indent = 20) =>
+        new ListElement(ListStyle.Unordered) { Indent = indent }
+            .Add(new ListItem([new TextRun(text, style)]) { Style = H(10) });
+
+    /// <summary>
+    /// A list ahead of a renderer of the caller's is laid out once more before it is drawn, to see
+    /// whether that renderer holds a list the document cannot draw. The pass is not kept: the
+    /// document still reports that it measured nothing, as one without a header or a dependent does.
+    /// </summary>
+    [Fact]
+    public void AListAheadOfACallersRenderer_isMeasuredOnceMore_andTheMeasureIsNotKept()
+    {
+        var (renderer, _) = Render(r =>
+        {
+            r.Add(new ListRenderer(OneEntry("a", H(10))));
+            r.Add(new Holder(new ListRenderer(OneEntry("b", H(10))), 0));
+        });
+
+        Assert.Equal(0, renderer.MeasureRuns);
+        Assert.Null(renderer.MeasurePlan);
+        Assert.Equal(4, renderer.LayoutCalls);
+    }
+
+    [Fact]
+    public void ADocumentWithOnlyBuiltInRenderers_isNotMeasuredOnceMore()
+    {
+        var (renderer, _) = Render(r =>
+        {
+            r.Add(new ListRenderer(OneEntry("a", H(10))));
+            r.Add(new ParagraphRenderer(new Paragraph("x", H(10))));
+        });
+
+        Assert.Equal(2, renderer.LayoutCalls);
+    }
+
+    [Fact]
+    public void ACallersRendererAheadOfTheLists_isNotMeasuredOnceMore()
+    {
+        var (renderer, _) = Render(r =>
+        {
+            r.Add(new Holder(new ListRenderer(OneEntry("b", H(10))), 0));
+            r.Add(new ListRenderer(OneEntry("a", H(10))));
+        });
+
+        Assert.Equal(2, renderer.LayoutCalls);
+    }
+
+    /// <summary>
+    /// A header already measures the document, so that pass serves, and it runs twice only when it
+    /// found the font: the pass that found it laid lists out two ways.
+    /// </summary>
+    [Theory]
+    [InlineData(false, 1)]
+    [InlineData(true, 2)]
+    public void AHeaderMeasure_isRepeatedOnlyWhenAListHoldsTheFont(bool bad, int measureRuns)
+    {
+        var (renderer, _) = Render(
+            r =>
+            {
+                r.Add(new ListRenderer(OneEntry("a", H(10))));
+                r.Add(new Holder(new ListRenderer(OneEntry("b", bad ? Bad("undefined", 10) : H(10), 1000)), 0));
+            },
+            header: true);
+
+        Assert.Equal(measureRuns, renderer.MeasureRuns);
+    }
+
+    /// <summary>
+    /// What the extra layout would raise is left for the drawing layout, which reaches the element in
+    /// the order it always did: a defect that the drawing layout meets first is the one reported.
+    /// </summary>
+    [Fact]
+    public void AnExceptionTheExtraLayoutRaises_isLeftForTheDrawingLayout()
+    {
+        var pdf = new PdfDocument { Timestamp = Stamp, DocumentId = new byte[16] };
+        var renderer = new DocumentRenderer(pdf, new PdfRectangle(0, 0, 200, 100), new EdgeInsets(10));
+        renderer.Add(new ListRenderer(OneEntry("a", H(10))));
+        renderer.Add(new Throws());
+        renderer.Add(new Holder(new ListRenderer(OneEntry("b", H(10))), 0));
+
+        using var ms = new MemoryStream();
+        var ex = Assert.Throws<InvalidOperationException>(() => renderer.Render(ms));
+
+        // The extra layout was the first call and raised "layout 1"; the drawing layout made the
+        // second and is the one that reports.
+        Assert.Equal("layout 2", ex.Message);
+        Assert.Equal(0, renderer.MeasureRuns);
+    }
+
+    /// <summary>
+    /// The run belongs to the layout in progress. A layout started from inside a renderer of the
+    /// caller's has a run of its own, and the outer one is as it was afterwards.
+    /// </summary>
+    [Fact]
+    public void ALayoutInsideALayout_leavesTheOuterRunAsItWas()
+    {
+        Assert.Null(ListLayoutRun.Current);
+        var inner = new Document();
+        inner.Add(OneEntry("bad", Bad("undefined", 10)));
+        var seen = new Capture();
+        inner.Add(seen);
+        var probe = new RunProbe(inner);
+        var (renderer, _) = Render(r =>
+        {
+            r.Add(new ListRenderer(OneEntry("a", H(10))));
+            r.Add(probe);
+        });
+
+        Assert.NotNull(probe.Outer);
+        Assert.Same(probe.Outer, probe.AfterInner);
+        Assert.NotNull(seen.Run);
+        Assert.NotSame(probe.Outer, seen.Run);
+        Assert.False(probe.Outer.AllAsTwin);
+        Assert.True(seen.Run.AllAsTwin);
+        Assert.Null(ListLayoutRun.Current);
+        Assert.Equal(0, renderer.MeasureRuns);
+    }
+
+    [Fact]
+    public void TheRun_isGoneAfterALayoutThatThrows()
+    {
+        var pdf = new PdfDocument { Timestamp = Stamp, DocumentId = new byte[16] };
+        var renderer = new DocumentRenderer(pdf, new PdfRectangle(0, 0, 200, 100), new EdgeInsets(10));
+        renderer.Add(new Throws());
+
+        using var ms = new MemoryStream();
+        Assert.Throws<InvalidOperationException>(() => renderer.Render(ms));
+
+        Assert.Null(ListLayoutRun.Current);
+    }
+
+    // ── What the document is asked about ─────────────────────────────────────
+
+    private static bool Holds(ListElement list, PdfDocument? pdf = null)
+    {
+        var run = ListLayoutRun.Begin(pdf ?? new PdfDocument(), out var previous);
+        try
+        {
+            return ListRenderer.HoldsUndrawableEntry(list, run);
+        }
+        finally
+        {
+            ListLayoutRun.End(previous);
+        }
+    }
+
+    [Fact]
+    public void ARunInTheMarkersStyle_isRead()
+    {
+        var list = new ListElement(ListStyle.Unordered)
+            .Add(new ListItem([new TextRun("ok", H(10))]) { Style = Bad("undefined", 10) });
+
+        Assert.True(Holds(list));
+    }
+
+    [Fact]
+    public void ACharacterlessRun_isNotRead()
+    {
+        var list = new ListElement(ListStyle.Unordered)
+            .Add(new ListItem([new TextRun("", Bad("undefined", 10)), new TextRun("ok", H(10))]) { Style = H(10) });
+
+        Assert.False(Holds(list));
+    }
+
+    [Fact]
+    public void AnItemBuiltFromAString_isReadInTheStyleItInherits()
+    {
+        var inherits = new ListElement(ListStyle.Unordered) { DefaultStyle = Bad("undefined", 10) }
+            .Add(new ListItem("text"));
+        var own = new ListElement(ListStyle.Unordered) { DefaultStyle = Bad("undefined", 10) }
+            .Add(new ListItem("text", H(10)));
+
+        Assert.True(Holds(inherits));
+        Assert.False(Holds(own));
+    }
+
+    [Fact]
+    public void AChildsRuns_areRead_andAChildInheritsItsParentsStyle()
+    {
+        var run = new ListItem("p", H(10));
+        run.AddChild(new ListItem([new TextRun("c", Bad("undefined", 10))]));
+        var inherited = new ListItem("p", Bad("undefined", 10));
+        inherited.AddChild(new ListItem("c"));
+        var fine = new ListItem("p", H(10));
+        fine.AddChild(new ListItem("c"));
+
+        Assert.True(Holds(new ListElement(ListStyle.Unordered).Add(run)));
+        Assert.True(Holds(new ListElement(ListStyle.Unordered).Add(inherited)));
+        Assert.False(Holds(new ListElement(ListStyle.Unordered).Add(fine)));
+    }
+
+    [Fact]
+    public void AHandleTheDocumentDefines_isDrawable_andOneItDoesNot_isNot()
+    {
+        var pdf = new PdfDocument();
+        var own = pdf.UseTrueTypeFont(FontReportSupport.DejaVuBytes);
+
+        Assert.False(Holds(OneEntry("x", new TextStyle { FontRef = own, FontSize = 10 }), pdf));
+        Assert.True(Holds(OneEntry("x", new TextStyle { FontRef = ForeignHandle() }), new PdfDocument()));
+    }
+
+    /// <summary>
+    /// With no document to ask, an embedded font cannot be said to be defined, and a Standard 14
+    /// value is read from the enumeration.
+    /// </summary>
+    [Fact]
+    public void WithNoRun_anEmbeddedFontIsNotDrawable_andAStandard14ValueIsRead()
+    {
+        Assert.False(ListLayoutRun.CanDraw(null, new TextStyle { FontRef = ForeignHandle() }));
+        Assert.False(ListLayoutRun.CanDraw(null, new TextStyle { FontRef = (Standard14)99 }));
+        Assert.True(ListLayoutRun.CanDraw(null, H(10)));
+    }
+
+    /// <summary>
+    /// A font is asked about once however many runs use it, and asking about the next font gives that
+    /// font's own answer, so the memo never answers for the wrong one.
+    /// </summary>
+    [Fact]
+    public void TheMemoOfTheLastFont_neverAnswersForAnother()
+    {
+        var pdf = new PdfDocument();
+        var own = pdf.UseTrueTypeFont(FontReportSupport.LiberationMonoBytes);
+        var foreign = SecondForeignHandle();
+        var run = ListLayoutRun.Begin(pdf, out var previous);
+        try
+        {
+            var styles = new[]
+            {
+                new TextStyle { FontRef = own },
+                new TextStyle { FontRef = own },
+                new TextStyle { FontRef = foreign },
+                new TextStyle { FontRef = foreign },
+                new TextStyle { FontRef = own },
+                H(10),
+                new TextStyle { FontRef = (Standard14)99 },
+                new TextStyle { FontRef = (Standard14)99 },
+                H(10),
+            };
+
+            Assert.Equal(
+                [true, true, false, false, true, true, false, false, true],
+                styles.Select(s => ListLayoutRun.CanDraw(run, s)).ToArray());
+        }
+        finally
+        {
+            ListLayoutRun.End(previous);
+        }
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// A renderer of a caller's that lays a list out through the context it was given, through
+    /// <see cref="LayoutContext.WithArea"/> or through the public constructor.
+    /// </summary>
+    private sealed class Holder(IRenderer inner, int how) : IRenderer
+    {
+        public LayoutResult Layout(LayoutContext context)
+        {
+            // Mode 3 measures the list at a narrower width first and lays it out through the context
+            // afterwards, so the list sees two calls in a row at two widths.
+            if (how == 3)
+            {
+                var area = context.Area;
+                inner.Layout(context.WithArea(new LayoutBox(area.X, area.Y, area.Width * 0.75, area.Height)));
+                return inner.Layout(context);
+            }
+
+            return inner.Layout(how switch
+            {
+                0 => context,
+                1 => context.WithArea(context.Area),
+                _ => new LayoutContext(context.Area, context.ContentTop),
+            });
+        }
+
+        public void Draw(DrawContext ctx) => inner.Draw(ctx);
+    }
+
+    private sealed class Throws : IRenderer
+    {
+        private int _calls;
+
+        public LayoutResult Layout(LayoutContext context) =>
+            throw new InvalidOperationException("layout " + ++_calls);
+
+        public void Draw(DrawContext ctx)
+        {
+        }
+    }
+
+    /// <summary>Notes the run it is laid out under.</summary>
+    private sealed class Capture : IRenderer
+    {
+        public ListLayoutRun? Run { get; private set; }
+
+        public LayoutResult Layout(LayoutContext context)
+        {
+            Run = ListLayoutRun.Current;
+            return LayoutResult.Full(new LayoutBox(context.Area.X, context.Area.Y, 1, 1));
+        }
+
+        public void Draw(DrawContext ctx)
+        {
+        }
+    }
+
+    /// <summary>Saves another document from inside its own layout, and notes the run around it.</summary>
+    private sealed class RunProbe(Document inner) : IRenderer
+    {
+        private bool _done;
+
+        public ListLayoutRun? Outer { get; private set; }
+
+        public ListLayoutRun? AfterInner { get; private set; }
+
+        public LayoutResult Layout(LayoutContext context)
+        {
+            if (!_done)
+            {
+                _done = true;
+                Outer = ListLayoutRun.Current;
+                using var ms = new MemoryStream();
+                try
+                {
+                    inner.Save(ms);
+                }
+                catch (IndexOutOfRangeException)
+                {
+                    // The font is the point of the document, not a failure of the test.
+                }
+
+                AfterInner = ListLayoutRun.Current;
+            }
+
+            return LayoutResult.Full(new LayoutBox(context.Area.X, context.Area.Y, 10, 10));
+        }
+
+        public void Draw(DrawContext ctx)
+        {
+        }
+    }
+}
