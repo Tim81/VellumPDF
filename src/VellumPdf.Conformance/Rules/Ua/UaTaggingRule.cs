@@ -11,8 +11,9 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// reference a document structure tree (<c>/StructTreeRoot</c>).
 /// </summary>
 /// <remarks>
-/// Authored from ISO 14289-1:2014, 7.1 and ISO 32000-1:2008, 14.7. Clean-room: derived from the
-/// specification text, not from any third-party validation profile.
+/// Cites ISO 14289-1:2014, 7.1 and ISO 32000-1:2008, 14.7. It was written from veraPDF's PDF/UA-1
+/// profile and checked against veraPDF, before ISO 14289-1 was held. The 2026-11-21 audit against
+/// the clause text (#428) found agreement.
 /// </remarks>
 internal sealed class UaTaggingRule : IConformanceRule
 {

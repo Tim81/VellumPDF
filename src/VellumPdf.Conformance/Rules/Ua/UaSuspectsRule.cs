@@ -11,9 +11,10 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// The default (absent) and the explicit value <see langword="false"/> are both acceptable.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 14289-1:2014, 7.1 (CosDocument predicate: <c>Suspects != true</c>) and
-/// ISO 32000-1:2008, 14.7.1. Clean-room: derived from the specification text and empirically
-/// validated against veraPDF 1.30.2 (test id 7.1-4), not from any third-party validation profile.
+/// Cites ISO 14289-1:2014, 7.1 and ISO 32000-1:2008, 14.7.1, and takes its test from veraPDF's
+/// CosDocument predicate <c>Suspects != true</c> (test id 7.1-4). It was written from veraPDF's
+/// PDF/UA-1 profile and checked against veraPDF, before ISO 14289-1 was held. The 2026-11-21 audit
+/// against the clause text (#428) found agreement.
 /// </remarks>
 internal sealed class UaSuspectsRule : IConformanceRule
 {

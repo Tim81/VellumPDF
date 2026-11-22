@@ -24,8 +24,9 @@ namespace VellumPdf.Conformance.Rules.Ua;
 ///     (but does fire 7.4.4-2 and 7.4.4-3 because both H and Hn are present).</item>
 /// </list>
 /// </para>
-/// <para><strong>7.4.4-2 / 7.4.4-3 predicate (mixing weak and strong heading structure):</strong>
-/// A document must be either weakly structured (uses H only) or strongly structured (uses H1–H6 only).
+/// <para><strong>7.4.4-2 / 7.4.4-3 predicate (mixing strong and weak heading structure):</strong> A
+/// document must be either strongly structured (uses H only) or weakly structured (uses H1–H6
+/// only); that assignment follows ISO 32000-1 14.8.4.3.5.
 /// <list type="bullet">
 ///   <item>7.4.4-2 fires on every H element when <c>usesHn == true</c> (both H and Hn present).</item>
 ///   <item>7.4.4-3 fires on every Hn element when <c>usesH == true</c> (both H and Hn present).</item>
@@ -45,6 +46,13 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// <para><strong>FP-safety — null StandardType.</strong> Elements with an unknown/unmapped /S
 /// are skipped for all three checks.</para>
 /// <para>Cross-validated against veraPDF 1.30.2 for each probe (violating + compliant fixture).</para>
+/// <para>Its behaviour was checked against veraPDF's PDF/UA-1 profile, and ISO 14289-1 was not
+/// held when it was written. The 2026-11-21 audit against the clause text (#428) found 7.4.4-1
+/// in agreement. For 7.4.4-2 and 7.4.4-3 it found the clause ambiguous: 7.4.4 lets a strongly
+/// structured document use numbered headings, and also says a document is strongly or weakly
+/// structured, not both. This rule treats a document that uses both H and one of H1 to H6 as
+/// mixed, and veraPDF 1.30.2 and 1.30.4 fail a hand-built file that does. Whether that is what
+/// the clause means by "both" is not settled.</para>
 /// </remarks>
 internal sealed class UaHeadingRule : IConformanceRule
 {
@@ -102,7 +110,8 @@ internal sealed class UaHeadingRule : IConformanceRule
                     "ISO14289-1:7.4.4-2",
                     "ISO 14289-1:2014, 7.4.4",
                     PreflightSeverity.Error,
-                    "A document uses both the H (weakly structured) and Hn (H1–H6, strongly structured) heading types; H and Hn must not be mixed (§7.4.4).");
+                    "A document uses both the H (strongly structured) and Hn (H1–H6, weakly "
+                    + "structured) heading types; H and Hn must not be mixed (§7.4.4).");
             }
 
             // 7.4.4-3: an Hn element is non-conformant when the document also uses H.
@@ -112,7 +121,8 @@ internal sealed class UaHeadingRule : IConformanceRule
                     "ISO14289-1:7.4.4-3",
                     "ISO 14289-1:2014, 7.4.4",
                     PreflightSeverity.Error,
-                    "A document uses both the Hn (H1–H6, strongly structured) and H (weakly structured) heading types; H and Hn must not be mixed (§7.4.4).");
+                    "A document uses both the Hn (H1–H6, weakly structured) and H (strongly "
+                    + "structured) heading types; H and Hn must not be mixed (§7.4.4).");
             }
         }
     }

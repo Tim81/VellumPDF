@@ -7,16 +7,19 @@ using VellumPdf.Reader;
 namespace VellumPdf.Conformance.Rules.Structure;
 
 /// <summary>
-/// ISO 19005-2 §6.8 (PDF/A-2a — logical structure). A Level A file shall be tagged: the catalog's
-/// <c>/MarkInfo</c> dictionary shall set <c>/Marked true</c>, the catalog shall reference a
-/// <c>/StructTreeRoot</c>, and the structure tree's <c>/RoleMap</c> (if present) shall map roles
-/// without circular references.
+/// ISO 19005-2 §6.7 (PDF/A-2a — logical structure; the rule reports under 6.8, see the remarks). A
+/// Level A file shall be tagged: the catalog's <c>/MarkInfo</c> dictionary shall set <c>/Marked
+/// true</c>, the catalog shall reference a <c>/StructTreeRoot</c>, and the structure tree's
+/// <c>/RoleMap</c> (if present) shall map roles without circular references.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.8 and ISO 32000-1:2008, 14.7–14.8. Clean-room: derived from
-/// the specification text, not from any third-party validation profile. The ParentTree ↔ MCID
-/// bijection requires marked-content parsing of page content streams and is validated in a later
-/// slice.
+/// Cites ISO 19005-2:2011, 6.8 and ISO 32000-1:2008, 14.7–14.8, and reports the id
+/// <c>6.8-logical-structure</c>. 6.8 is the embedded-files clause. The requirements checked are in
+/// 6.7.2.2 (the <c>/MarkInfo</c> dictionary), 6.7.3.3 (the structure tree root) and 6.7.3.4 (a role
+/// mapping that terminates), so the reported clause and id are wrong; correcting them changes what
+/// the rule reports and is tracked in #418. Its behaviour was checked against veraPDF's PDF/A-2
+/// profile, and ISO 19005-2 was not held when it was written. The ParentTree ↔ MCID bijection
+/// requires marked-content parsing of page content streams and is validated in a later slice.
 /// </remarks>
 internal sealed class LogicalStructureRule : IConformanceRule
 {

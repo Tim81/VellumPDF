@@ -6,7 +6,9 @@ using VellumPdf.Core;
 namespace VellumPdf.Conformance.Rules.Ua;
 
 /// <summary>
-/// Shared helpers for the two PDF/UA-1 annotation exemptions that recur in §7.18 rules:
+/// Shared helpers for two of the three annotation exemptions that ISO 14289-1 7.18.1 gives (hidden,
+/// and outside the crop box). The third, Popup annotations, is not implemented, so the §7.18 rules
+/// using this helper are broader than the clause (#428):
 /// <list type="bullet">
 ///   <item><b>isOutsideCropBox</b>: the annotation's <c>/Rect</c> lies entirely outside the
 ///     page's <c>/CropBox</c> (or <c>/MediaBox</c> when no crop box is present, both
@@ -19,7 +21,8 @@ namespace VellumPdf.Conformance.Rules.Ua;
 ///     is invisible regardless of its position; the annotation is exempt from §7.18 requirements.
 ///     Default (absent <c>/F</c>) is 0, so no flag = not exempt.</item>
 /// </list>
-/// Annotations satisfying either exemption are skipped by every §7.18 rule that references them.
+/// Annotations satisfying either exemption are skipped by the §7.18 rules that reference them;
+/// <c>UaTabsRule</c> does not use this helper.
 /// </summary>
 internal static class UaAnnotationHelper
 {

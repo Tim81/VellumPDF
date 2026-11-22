@@ -6,7 +6,9 @@ using VellumPdf.Conformance.Rules.Structure;
 namespace VellumPdf.Conformance.Rules.Ua;
 
 /// <summary>
-/// ISO 14289-1 §7.2 table count and caption-position rules:
+/// Table count and caption-position rules, reported under ISO 14289-1 §7.2. Their substance matches
+/// ISO 32000-1 Table 337, not 7.2; mixing TR children with TBody, and the order of THead, TBody and
+/// TFoot, are not checked (#428):
 /// <list type="bullet">
 ///   <item>7.2-11 (SETable) — at most one THead child</item>
 ///   <item>7.2-12 (SETable) — at most one TFoot child</item>

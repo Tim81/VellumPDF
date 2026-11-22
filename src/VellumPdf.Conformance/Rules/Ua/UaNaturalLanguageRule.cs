@@ -21,11 +21,12 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// </summary>
 /// <remarks>
 /// <para><strong>gContainsCatalogLang short-circuit (the dominant path).</strong>
-/// ISO 14289-1 §7.2 already requires a non-empty catalog <c>/Lang</c> (UaLangRule, 7.2-lang).
-/// Every conformant PDF/UA-1 file therefore has a catalog <c>/Lang</c>, which satisfies ALL five
-/// rules unconditionally (<c>gContainsCatalogLang == true</c>). These rules can only fire in a
-/// document that already fails 7.2-lang, making them low-FP-risk. When the catalog carries a
-/// non-empty <c>/Lang</c>, this rule emits nothing and returns immediately.</para>
+/// UaLangRule (7.2-lang) requires a non-empty catalog <c>/Lang</c>, which ISO 14289-1 §7.2 does not
+/// require when the language is declared another way. A file that passes UaLangRule therefore has a
+/// catalog <c>/Lang</c>, which satisfies ALL five rules unconditionally (<c>gContainsCatalogLang ==
+/// true</c>). These rules can only fire in a document that already fails 7.2-lang, making them
+/// low-FP-risk. When the catalog carries a non-empty <c>/Lang</c>, this rule emits nothing and
+/// returns immediately.</para>
 ///
 /// <para><strong>Clause semantics confirmed by veraPDF 1.30.2 probing:</strong></para>
 /// <list type="bullet">
@@ -59,13 +60,14 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// be satisfied anyway, so the check is applied consistently: fire unless the widget's struct
 /// element has <c>/Lang</c>.</para>
 ///
-/// <para><strong>7.2-33 (XMPLangAlt):</strong> deferred — requires parsing the XMP packet to
-/// locate dc:title lang-alt arrays and checking for an x-default entry. The rule only fires
-/// when the catalog also lacks <c>/Lang</c> (i.e. <c>gContainsCatalogLang = false</c>), so it
-/// is already covered for conformant documents. See ConformanceCatalog Deferred note.</para>
+/// <para><strong>7.2-33 (XMPLangAlt):</strong> not checked here. It needs the lang-alt arrays in
+/// the XMP packet, which <see cref="UaOutlineLangRule"/> reads.</para>
 ///
-/// <para>Clean-room: derived from ISO 14289-1:2014 §7.2 and empirically validated against
-/// veraPDF 1.30.2. Not derived from any third-party implementation.</para>
+/// <para>Cites ISO 14289-1:2014 §7.2 and was empirically validated against veraPDF 1.30.2. It was
+/// written from veraPDF's PDF/UA-1 profile and checked against veraPDF, before ISO 14289-1 was
+/// held. The 2026-11-21 audit against the clause text (#428) found it broader: 7.2-24 and 7.2-25
+/// accept only the direct structure parent's <c>/Lang</c>, not a language inherited through the
+/// structure hierarchy (ISO 32000-1 14.9.2.3).</para>
 /// </remarks>
 internal sealed class UaNaturalLanguageRule : IConformanceRule
 {

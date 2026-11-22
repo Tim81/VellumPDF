@@ -33,15 +33,18 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// the normal tagged-PDF pattern.</para>
 ///
 /// <para><strong>gContainsCatalogLang short-circuit (the dominant path).</strong>
-/// Every conformant PDF/UA-1 document has a catalog <c>/Lang</c> (required by UaLangRule).
-/// These rules can only fire in a document that already fails 7.2-lang. The short-circuit keys
-/// on the mere presence of the catalog <c>/Lang</c> key, matching veraPDF's <c>containsLang</c>.</para>
+/// A document that passes UaLangRule has a catalog <c>/Lang</c> (ISO 14289-1 §7.2 itself does not
+/// require one when the language is declared another way). These rules can only fire in a document
+/// that already fails 7.2-lang. The short-circuit keys on the mere presence of the catalog
+/// <c>/Lang</c> key, matching veraPDF's <c>containsLang</c>.</para>
 ///
 /// <para><strong>Scope:</strong> page content streams only. Form XObjects, Type 3 CharProcs,
 /// and annotation appearance streams are not walked.</para>
 ///
-/// <para>Clean-room: derived from ISO 14289-1:2014 §7.2 and empirically validated against
-/// veraPDF 1.30.2. Not derived from any third-party implementation.</para>
+/// <para>Cites ISO 14289-1:2014 §7.2 and was empirically validated against veraPDF 1.30.2. It was
+/// written from veraPDF's PDF/UA-1 profile and checked against veraPDF, before ISO 14289-1 was
+/// held. The 2026-11-21 audit against the clause text (#428) found the predicate matches the clause
+/// and the scope narrower: only page content streams are walked.</para>
 /// </remarks>
 internal sealed class UaMarkedContentLangRule : IConformanceRule
 {

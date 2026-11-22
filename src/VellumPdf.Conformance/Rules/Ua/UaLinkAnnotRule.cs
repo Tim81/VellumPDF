@@ -11,10 +11,11 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// entry providing an alternate text description.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 14289-1:2014, 7.18.5 (PDLinkAnnot predicate for testNumber 2:
-/// <c>(Contents != null &amp;&amp; Contents != '') || isOutsideCropBox == true || (F &amp; 2) == 2</c>)
-/// and empirically validated against veraPDF 1.30.2 (clause 7.18.5, testNumber 2). Clean-room:
-/// derived from the specification text and the veraPDF profile, not from any third-party implementation.
+/// Cites ISO 14289-1:2014, 7.18.5, and takes its test from veraPDF's PDLinkAnnot predicate for
+/// testNumber 2: <c>(Contents != null &amp;&amp; Contents != '') || isOutsideCropBox == true || (F
+/// &amp; 2) == 2</c> (clause 7.18.5, testNumber 2). It was written from veraPDF's PDF/UA-1 profile
+/// and checked against veraPDF, before ISO 14289-1 was held. The 2026-11-21 audit against the
+/// clause text (#428) found agreement.
 /// <para>
 /// This rule implements testNumber 2 only (the alt-text / Contents requirement). testNumber 1
 /// is a structure-tree rule (the Link annotation must be linked to the structure tree) that

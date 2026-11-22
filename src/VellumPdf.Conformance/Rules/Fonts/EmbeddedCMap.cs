@@ -12,8 +12,9 @@ namespace VellumPdf.Conformance.Rules.Fonts;
 /// and <see cref="GlyphPresenceRule"/> (§6.2.11.4.1/§6.2.11.5 non-Identity paths).
 /// </summary>
 /// <remarks>
-/// Authored from ISO 32000-1:2008, §9.7.5 and §9.7.6. Clean-room: derived from the specification
-/// text. Returns null on any parse failure — never throws, never emits a spurious finding.
+/// Authored from ISO 32000-1:2008, §9.7.5 and §9.7.6, and exercised through the rules that use
+/// it, which were checked against veraPDF. Returns null on any parse failure — never throws, never
+/// emits a spurious finding.
 /// </remarks>
 internal static class EmbeddedCMapParser
 {

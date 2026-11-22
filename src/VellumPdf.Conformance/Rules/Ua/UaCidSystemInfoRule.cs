@@ -10,12 +10,22 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// ISO 14289-1 §7.21.3.1 test 1 (Type0 CIDSystemInfo compatibility). The <c>CIDSystemInfo</c>
 /// of a composite font's descendant <c>CIDFont</c> and its <c>CMap</c> must be compatible:
 /// their <c>/Registry</c> and <c>/Ordering</c> values must be identical and
-/// <c>CIDFont.Supplement</c> must be ≤ <c>CMap.Supplement</c>.
+/// <c>CIDFont.Supplement</c> must be ≤ <c>CMap.Supplement</c> as this rule tests it; 7.21.3.1
+/// requires the opposite, the CIDFont's Supplement greater than or equal to the CMap's (#428).
 /// </summary>
 /// <remarks>
-/// Authored from ISO 14289-1:2014, 7.21.3.1 and cross-validated against veraPDF 1.30.2 (clause
-/// 7.21.3.1, testNumber 1). The PDF/UA-1 predicate is identical to the PDF/A-2 §6.2.11.3.1-1
-/// predicate, so this rule reuses the same logic as <c>FontStructureRule.CheckCidSystemInfo</c>.
+/// Cites ISO 14289-1:2014, 7.21.3.1, and takes its predicate from veraPDF 1.30.2 (clause 7.21.3.1,
+/// testNumber 1). It was written from veraPDF's PDF/UA-1 profile and checked against veraPDF,
+/// before ISO 14289-1 was held. The 2026-11-21 audit against the clause text (#428) found it both
+/// broader and narrower. Its Supplement test is inverted: 7.21.3.1 requires the CIDFont's
+/// Supplement to be greater than or equal to the CMap's, and this rule requires less than or equal.
+/// It exempts an embedded CMap named <c>Identity-H</c> or <c>Identity-V</c>, which 7.21.3.1 does
+/// not, and skips predefined CMaps other than the Identity ones. On hand-built files veraPDF 1.30.4
+/// behaves the same for the first two: it fails a CIDFont Supplement above the CMap's, passes one
+/// below it, and passes the Identity-named embedded CMap whose Ordering differs. The third, the
+/// skipped predefined CMaps, was not probed. The PDF/UA-1 predicate is identical to the PDF/A-2
+/// §6.2.11.3.1-1 predicate, so this
+/// rule reuses the same logic as <c>FontStructureRule.CheckCidSystemInfo</c>.
 /// <para>
 /// <strong>Scope (Partial — same as the PDF/A-2 rule):</strong>
 /// <list type="bullet">

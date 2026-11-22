@@ -4,14 +4,18 @@
 namespace VellumPdf.Conformance.Rules.Ua;
 
 /// <summary>
-/// ISO 14289-1 §6.1 (File header). A PDF/UA-1 file shall begin, at byte offset 0, with a header
-/// line whose entire content is exactly <c>%PDF-1.n</c> where <c>n</c> is a single digit 0–7,
-/// followed immediately by an end-of-line sequence (CR, LF, or CR+LF).
+/// File header, reported under ISO 14289-1 §6.1, which states no header form (see the remarks).
+/// This rule requires a PDF/UA-1 file to begin, at byte offset 0, with a header line whose entire
+/// content is exactly <c>%PDF-1.n</c> where <c>n</c> is a single digit 0–7, followed immediately by
+/// an end-of-line sequence (CR, LF, or CR+LF).
 /// </summary>
 /// <remarks>
-/// Authored from ISO 14289-1:2014, 6.1 (CosDocument predicate: <c>/^%PDF-1\.[0-7]$/.test(header)</c>)
-/// and ISO 32000-1:2008, 7.5.2. Clean-room: derived from the specification text and empirically
-/// validated against veraPDF 1.30.2 (test id 6.1-1), not from any third-party validation profile.
+/// Takes its pattern from veraPDF's CosDocument predicate <c>/^%PDF-1\.[0-7]$/.test(header)</c>
+/// (test id 6.1-1). It was written from veraPDF's PDF/UA-1 profile and checked against veraPDF,
+/// before ISO 14289-1 was held. The 2026-11-21 audit against the clause text (#428) found the
+/// citation wrong: 6.1 says the version shall not be used in determining conformance and has no
+/// header syntax; the header form comes from ISO 32000-1:2008, 7.5.2. Whether that clause forbids a
+/// trailing space after the version is not settled.
 ///
 /// Intentional differences from the PDF/A-2 <c>FileHeaderRule</c>:
 /// <list type="bullet">

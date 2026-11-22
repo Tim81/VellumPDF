@@ -19,11 +19,14 @@ namespace VellumPdf.Conformance.Rules.Fonts;
 /// compared against the program's advance width.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.2.11.4.1 and ISO 32000-1:2008, 9.4.3 / 9.7.4. Clean-room:
-/// derived from the specification text. The embedded program's glyph count comes from
-/// <see cref="SfntMetrics"/> (the maxp table); the glyph indices used are read from the page
-/// content streams. Cross-validated against veraPDF (a Type0/Identity-H font shown a glyph index
-/// beyond its TrueType program's glyph count fails clause 6.2.11.4.1-2).
+/// Cites ISO 19005-2:2011, 6.2.11.4.1 and ISO 32000-1:2008, 9.4.3 / 9.7.4. Its behaviour was
+/// checked against veraPDF's PDF/A-2 profile, and ISO 19005-2 was not held when it was written. The
+/// 2026-11-21 audit against the clause text (#418) found it narrower: it returns before every check
+/// when the text rendering mode is 3, where 6.2.11.8 refuses a reference to <c>.notdef</c> in any
+/// mode, and it reads page content streams only. The embedded program's glyph count comes from <see
+/// cref="SfntMetrics"/> (the maxp table); the glyph indices used are read from the page content
+/// streams. Cross-validated against veraPDF (a Type0/Identity-H font shown a glyph index beyond its
+/// TrueType program's glyph count fails clause 6.2.11.4.1-2).
 /// <para>
 /// Wave 2a coverage (implemented paths):
 /// <list type="bullet">
@@ -32,9 +35,9 @@ namespace VellumPdf.Conformance.Rules.Fonts;
 ///   <item>Type 0 / embedded CMap stream / CIDFontType2 / Identity or stream CIDToGIDMap (4b).</item>
 ///   <item>Simple non-symbolic TrueType / WinAnsi or MacRoman encoding (4c).</item>
 /// </list>
-/// CFF programs, CIDFontType0, and Type 1 simple fonts are deferred to Wave 2b.
-/// Glyphs drawn from within form XObjects, patterns, Type 3 procedures, or annotation appearances
-/// are not yet detected here.
+/// CIDFontType0 (CFF) and simple Type 1 fonts are covered by further paths in this class. Glyphs
+/// drawn from within form XObjects, patterns, Type 3 procedures, or annotation appearances are not
+/// yet detected here.
 /// </para>
 /// </remarks>
 internal sealed class GlyphPresenceRule : IConformanceRule

@@ -89,9 +89,10 @@ namespace VellumPdf.Conformance.Rules.Colour;
 /// </list>
 /// </para>
 /// <para>
-/// Authored from ISO 19005-2:2011, §6.2.4.2 and ISO 32000-1:2008, §8.4.5 (Table 58).
-/// Clean-room: derived from the specification text and empirical veraPDF oracle probing,
-/// not from any third-party validation profile.
+/// Cites ISO 19005-2:2011, §6.2.4.2 and ISO 32000-1:2008, §8.4.5 (Table 58). The oracle probes
+/// above set the details. Its behaviour was checked against veraPDF's PDF/A-2 profile, and ISO
+/// 19005-2 was not held when it was written. The 2026-11-21 audit against the clause text (#418)
+/// found agreement.
 /// </para>
 /// </remarks>
 internal sealed class OverprintRule : IConformanceRule

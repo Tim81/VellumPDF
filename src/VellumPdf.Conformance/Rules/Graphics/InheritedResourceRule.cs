@@ -15,8 +15,11 @@ namespace VellumPdf.Conformance.Rules.Graphics;
 /// page's resource scope.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.2.2 and ISO 32000-1:2008, 7.8.3. Empirical veraPDF-oracle
-/// probing (2026-06-23) establishes the precise trigger for each stream kind:
+/// Cites ISO 19005-2:2011, 6.2.2 and ISO 32000-1:2008, 7.8.3. Its behaviour was checked against
+/// veraPDF's PDF/A-2 profile, and ISO 19005-2 was not held when it was written. The precise trigger
+/// for each stream kind was set by probing veraPDF (2026-06-23). The 2026-11-21 audit against the
+/// clause text (#418) found the trigger matches the clause for names that resolve only by
+/// inheritance, and the rule narrower for patterns, whose content streams are not scanned.
 /// <list type="bullet">
 ///   <item><description>
 ///   <strong>Page content stream:</strong> fires when (a) the page dictionary itself has no

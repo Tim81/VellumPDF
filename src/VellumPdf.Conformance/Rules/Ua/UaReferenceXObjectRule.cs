@@ -10,9 +10,11 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// PDF/UA-1 file shall not be a reference XObject (it shall not contain a <c>/Ref</c> entry).
 /// </summary>
 /// <remarks>
-/// Authored from ISO 14289-1:2014, 7.20 (PDXForm predicate: <c>containsRef == false</c>) and
-/// empirically validated against veraPDF 1.30.2 (clause 7.20, testNumber 1). Clean-room: derived
-/// from the specification text and the veraPDF profile, not from any third-party implementation.
+/// Cites ISO 14289-1:2014, 7.20, and takes its test from veraPDF's PDXForm predicate <c>containsRef
+/// == false</c> (clause 7.20, testNumber 1). It was written from veraPDF's PDF/UA-1 profile and
+/// checked against veraPDF, before ISO 14289-1 was held. The 2026-11-21 audit against the clause
+/// text (#428) found it narrower: it inspects only forms that page content draws, so a reference
+/// XObject drawn from inside another form, or from an appearance stream, passes.
 /// <para>
 /// Reference XObjects embed or reference external content (ISO 32000-1:2008, 8.10.4). They are
 /// also forbidden by PDF/A-2 (<c>ForbiddenXObjectRule</c> §6.2.9-2); this UA rule

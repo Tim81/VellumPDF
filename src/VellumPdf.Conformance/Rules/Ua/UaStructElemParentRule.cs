@@ -7,8 +7,9 @@ using VellumPdf.Core;
 namespace VellumPdf.Conformance.Rules.Ua;
 
 /// <summary>
-/// ISO 14289-1 §7.1 testNumber 12 (PDF/UA-1: PDStructElem — every structure element shall
-/// contain a <c>/P</c> (parent) entry).
+/// ISO 14289-1 §7.1 testNumber 12 (PDF/UA-1: PDStructElem — every structure element shall contain a
+/// <c>/P</c> (parent) entry). ISO 14289-1 7.1 says nothing about <c>/P</c>; the requirement is ISO
+/// 32000-1 Table 323, reached through ISO 14289-1 6.2, and the rule reports the clause 7.1 (#428).
 /// </summary>
 /// <remarks>
 /// The veraPDF predicate (object PDStructElem, clause 7.1, testNumber 12) is:

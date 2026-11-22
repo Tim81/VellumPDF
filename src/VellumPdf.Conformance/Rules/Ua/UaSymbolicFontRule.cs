@@ -11,10 +11,12 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// shall <em>not</em> carry an <c>/Encoding</c> entry in its font dictionary.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 14289-1:2014, 7.21.6 and cross-validated against veraPDF 1.30.2 (clause
-/// 7.21.6, testNumber 3). Clean-room: derived from the specification text and the veraPDF
-/// validation profile (<c>PDTrueTypeFont</c> predicate:
-/// <c>isSymbolic == false || Encoding == null</c>), not from any third-party implementation.
+/// Cites ISO 14289-1:2014, 7.21.6, and takes its test from veraPDF's PDTrueTypeFont predicate
+/// <c>isSymbolic == false || Encoding == null</c> (clause 7.21.6, testNumber 3). It was written
+/// from veraPDF's PDF/UA-1 profile and checked against veraPDF, before ISO 14289-1 was held. The
+/// 2026-11-21 audit against the clause text (#428) found the predicate matches the clause and the
+/// scope narrower: the clause is not limited to used fonts, and this rule skips fonts page content
+/// does not select and fonts used only in forms.
 /// <para>
 /// The rule fires only when the font's <c>/Subtype</c> is <c>TrueType</c> AND the font has a
 /// <c>/FontDescriptor</c> AND the Symbolic bit (bit 3, value 4) is set in the descriptor's

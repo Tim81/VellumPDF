@@ -13,13 +13,21 @@ namespace VellumPdf.Conformance.Rules.Structure;
 /// 8388607 indirect objects.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.1.13 and ISO 32000-1:2008, Annex C. Clean-room: derived from the
-/// specification text, not from any third-party validation profile. The scalar limits are checked by
-/// walking every indirect object's value graph; the indirect-object count comes from the
-/// cross-reference table; and each page-boundary box (MediaBox, CropBox, BleedBox, TrimBox, ArtBox)
-/// is checked to have sides in the 3–14400 unit range (§6.1.13 t11). The content-stream q/Q nesting
-/// limit (t8) and the CMap CID maximum (t10) need content/CMap parsing. The DeviceN colourant limit
-/// (t9) is implemented in <see cref="VellumPdf.Conformance.Rules.Colour.DeviceNColorantRule"/>.
+/// Cites ISO 19005-2:2011, 6.1.13 and ISO 32000-1:2008, Annex C. Its behaviour was checked against
+/// veraPDF's PDF/A-2 profile, and ISO 19005-2 was not held when it was written. The 2026-11-21
+/// audit against the clause text (#418) found it both narrower and broader. Narrower:
+/// content-stream operands are not checked, and a signature <c>/Contents</c> string is exempt from
+/// the 32767-byte limit, which no clause grants. Broader: a name's length is measured as the UTF-8
+/// length of its Latin-1 decoded text, so every byte of 0x80 or more counts twice and a 69-byte
+/// name made only of such bytes is refused. The scalar limits are checked by walking every indirect
+/// object's value graph; the indirect-object count comes from the cross-reference table; and
+/// each page-boundary box (MediaBox, CropBox, BleedBox, TrimBox, ArtBox) is checked to have sides
+/// in the 3–14400 unit range (§6.1.13 t11). The content-stream q/Q nesting limit (t8), the CMap
+/// CID maximum (t10) and the DeviceN colourant limit (t9) are not checked here: they are
+/// implemented in <see
+/// cref="VellumPdf.Conformance.Rules.Graphics.GraphicsStateNestingRule"/>, <see
+/// cref="VellumPdf.Conformance.Rules.Fonts.CidRangeRule"/> and <see
+/// cref="VellumPdf.Conformance.Rules.Colour.DeviceNColorantRule"/>.
 /// </remarks>
 internal sealed class NumericLimitsRule : IConformanceRule
 {

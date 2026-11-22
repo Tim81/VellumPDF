@@ -1334,6 +1334,76 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Documentation
 
+- **The Conformance package says which rules were checked against veraPDF's profiles, and no
+  longer says they were derived from the standards' text (#675).** Two audits on 2026-11-21 (#418
+  for ISO 19005-2, #428 for ISO 14289-1) found that most of the PDF/A-2 and PDF/UA-1 rules were
+  written from veraPDF's profiles before the text of either standard was available to the project,
+  that many of them differ from the clause text, and that several cite the wrong clause. The
+  package README, the repository README, `docs/architecture.md`, the generated
+  `docs/pdf20-conformance.md`, the `ConformanceCatalog` remarks, the package description and the
+  XML remarks of `PdfPreflight` and of the rule classes said otherwise or said nothing about it.
+  The remarks of all 101 rule classes now state which clause a rule cites, what it was checked
+  against, and where the audit found it narrower or broader than the clause or citing another
+  clause. `DocumentCatalogRule` was in neither audit and says so. A rule whose reported id or
+  clause is wrong says so and points to #418 or #428; the ids and clauses themselves are not
+  changed. The exceptions say so in their remarks: `FontEmbeddingRule` and `ActionRule` were
+  re-derived from the clause text under #418, `UaEncryptionPermissionsRule` was authored from
+  ISO 32000-2, and `A2aContentItemTaggingRule` has no veraPDF counterpart. The `ConformanceCatalog`
+  remarks name all four, the package README names the two re-derived rules by description, and the
+  repository README says only that exceptions exist and points to the remarks.
+  - **Catalog status.** 61 PDF/A-2 clause tests and 25 PDF/UA-1 tests are now `Partial`. Most
+    notes name a construct that passes here and fails veraPDF. The exceptions are `7.21.4.1-2`,
+    whose note says only that simple and CFF fonts are not examined, and the three older entries
+    that record an infeasible residual (#139). 17 PDF/A-2 tests and 10 PDF/UA-1 tests come from
+    the audits. The audits probed the 17 PDF/A-2 tests and eight of the 10 PDF/UA-1 tests
+    (`7.21.4.1-1`, `7.21.7-1`, `7.21.7-2`, `7.21.8-1`, `7.20-1`, `7.21.3.3-3`, `7.5-1` and
+    `7.1-3`); they read `7.21.4.1-2` and `7.21.5-1` from the source without probing them. For
+    `7.21.5-1` a later probe found a construct: a shown Type 1 font with `/Widths [278]` for code
+    32 passes here and fails veraPDF 1.30.2 and 1.30.4. The other 44 PDF/A-2 tests and 15
+    PDF/UA-1 tests come from a sweep of the rules whose resource walk starts at the page's own
+    resources. Each probe put the
+    violating construct inside a form XObject that page content draws and, as a control, on the
+    page itself: veraPDF 1.30.2 and 1.30.4 failed both files and the rule failed only the page.
+    Type 3 glyph procedures, tiling patterns and annotation appearance streams were not probed.
+    The sweep also found clause tests whose rules already reach forms (`6.2.2-1`, `6.1.10-1`,
+    `6.2.4.4-2`) and two PDF/UA-1 font tests, `7.21.4.1-2` and `7.21.5-1`, that veraPDF does not
+    fail inside a form either. `6.2.10-2`, which no rule checks (`BlendModeRule` checks the blend
+    mode, not the page group colour space), and `6.2.11.7.3-1`, which no rule implements, are now
+    `Deferred`. `ConformanceCatalog.Coverage` therefore reports 78.0%, 77.9% and 78.0% for
+    PDF/A-2b, 2u and 2a (99.3% at each level before) and 87.7% for PDF/UA-1 (99.5% before), each
+    computed from `Coverage(...).Percent` on the built assembly. The denominator leaves out the
+    one PDF/A-2 check marked `OutOfScope` (`6.8-5`); PDF/UA-1 has none. The READMEs' "veraPDF
+    parity is about 99%" is replaced by those figures, with a statement of what they measure:
+    which veraPDF checks a rule covers, not agreement with the standards' text.
+  - **`docs/conformance-divergences.md`.** The count of clauses checked by neither this library
+    nor veraPDF goes from 19 of 73 to 18 of 72, and three clauses moved. 6.2.7 is scoped `reader`
+    in `eng/data/iso19005-2-clauses.yml`, since it binds readers, so it leaves the population
+    (one fewer clause, 73 to 72). 6.6.5 moves from "checked here only" to "checked by neither":
+    `eng/clause-coverage.py` matched it inside the ISO 32000-1 citation `§8.6.6.5`, and the
+    pattern now ignores a number that follows a digit or a dot. 6.2.8.1 moves from "checked by
+    neither" to "checked here only", because the `ForbiddenXObjectRule` remark now names it. The
+    last move is a grouping artifact: veraPDF files the same requirements under 6.2.8. The 6.2.7
+    and 6.6.5 moves cancel in the count of 19, and the 6.2.8.1 move is the one that takes it to
+    18. Both counts come from running `eng/clause-coverage.py` on the tree before and after.
+  - **Smaller corrections.** The `PreflightAssertion.RuleId` example now names a real id,
+    `ISO19005-2:6.2.3-output-intent`. The section numbers in the `RuleRegistry` comments are the
+    ones ISO 19005-2 uses. Remarks that called `H` "weakly structured" and `H1` to `H6` "strongly
+    structured" now say the reverse, as ISO 32000-1 14.8.4.3.5 does. Remarks that said ISO 14289-1 7.2
+    requires a catalog `/Lang`, that `Table 333` lists every standard structure type, that a page
+    dictionary carries `/Lang`, that 7.2-30 to 7.2-43 are deferred, or that a requirement sits in a
+    clause it does not sit in are corrected. The `AnnotationRule` comment that said veraPDF accepts
+    any zero-area `/Rect` without an appearance now says it accepts only one whose width and
+    height are both zero.
+  - **Attention.** No rule changes what it reports on any file, with two exceptions in message
+    text. The messages of `ISO14289-1:7.4.4-2` and `ISO14289-1:7.4.4-3` now call `H` "strongly
+    structured" and `H1` to `H6` "weakly structured" (they said the opposite). The message of
+    `ISO19005-2:6.8-5-embedded-pdfa` no longer says the validator covers "approximately 83 %" of
+    veraPDF's rules, a figure the catalog does not support; no test pinned the old wording. The
+    rule ids and clauses are unchanged, so a caller that suppresses by id is unaffected.
+    `ConformanceCatalog.All` and `Coverage` return the corrected statuses and the new notes.
+    Messages that cite a wrong clause (for example the `Table 333` wording in the role-map
+    messages) are left as they are and are corrected with their rules, tracked in #418 and #428.
+
 - **Every file in `docs/` is now either in the site navigation or kept off the site on purpose
   (#220).** `docs/toc.yml` already lists nine of the eleven Markdown files. The other two,
   `vellumpdf-inline-fontdict-quirk.md` and `vellumpdf-showtext-winansi-quirk.md`, are Dutch

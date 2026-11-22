@@ -37,6 +37,11 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// skipped (StandardType == null); only elements that resolve to exactly "Figure" or "Formula"
 /// are checked.</para>
 /// <para>Cross-validated against veraPDF 1.30.2 for each probe (violating + compliant fixture).</para>
+/// <para>Its behaviour was checked against veraPDF's PDF/UA-1 profile, and ISO 14289-1 was not
+/// held when it was written. The 2026-11-21 audit against the clause text (#428) found 7.3 in
+/// agreement and 7.7 narrower: the rule accepts <c>/ActualText</c> for a Formula, where 7.7
+/// names the Alt attribute only. A Formula with <c>/ActualText</c> and no <c>/Alt</c> passes
+/// here and in veraPDF 1.30.4 on a hand-built file.</para>
 /// </remarks>
 internal sealed class UaAltTextRule : IConformanceRule
 {

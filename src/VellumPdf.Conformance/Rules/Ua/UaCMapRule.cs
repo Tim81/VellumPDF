@@ -24,9 +24,12 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// </list>
 /// </summary>
 /// <remarks>
-/// Authored from ISO 14289-1:2014, 7.21.3.3 and cross-validated against veraPDF 1.30.2 (clause
-/// 7.21.3.3 testNumbers 1, 2, 3). The PDF/UA-1 predicates are identical to PDF/A-2
-/// §6.2.11.3.3-1 / §6.2.11.3.3-2 / §6.2.11.3.3-3:
+/// Cites ISO 14289-1:2014, 7.21.3.3, and takes its predicates from veraPDF 1.30.2 (clause 7.21.3.3
+/// testNumbers 1, 2, 3). It was written from veraPDF's PDF/UA-1 profile and checked against
+/// veraPDF, before ISO 14289-1 was held. The 2026-11-21 audit against the clause text (#428) found
+/// it narrower: it checks only the <c>usecmap</c> operator and never the CMap stream's
+/// <c>/UseCMap</c> key. The PDF/UA-1 predicates are identical to PDF/A-2 §6.2.11.3.3-1 /
+/// §6.2.11.3.3-2 / §6.2.11.3.3-3:
 /// <list type="bullet">
 ///   <item>7.21.3.3-1 mirrors the <c>FontStructureRule.CheckCMapEncoding</c> check.</item>
 ///   <item>7.21.3.3-2 mirrors the <c>CMapContentRule</c> WMode check.</item>
@@ -40,6 +43,10 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// <para>
 /// Defensive operation: any CMap parse failure stops the scan and produces no finding; a malformed
 /// CMap program never causes a spurious finding.
+/// </para>
+/// <para>
+/// A font shown only inside a form XObject is not examined, and veraPDF 1.30.2 and 1.30.4
+/// refuse a violating one there on a hand-built file (#428).
 /// </para>
 /// </remarks>
 internal sealed class UaCMapRule : IConformanceRule

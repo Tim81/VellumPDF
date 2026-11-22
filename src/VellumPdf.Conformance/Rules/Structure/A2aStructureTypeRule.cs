@@ -6,6 +6,13 @@ namespace VellumPdf.Conformance.Rules.Structure;
 /// <summary>
 /// ISO 19005-2 §6.7.2.2 and §6.7.3.4 — structure-element type conformance for PDF/A-2a.
 ///
+/// <para>Provenance: the 2026-11-21 audit (#418) found two attributions wrong: §6.7.2.2 is the
+/// clause for the <c>/MarkInfo</c> dictionary, not for "type is defined", and §6.7.3.4 does not say
+/// that a standard type may not be remapped, which rests on ISO 32000-1 14.7.3. The ids and clauses
+/// are unchanged here because they are reported output. Behaviour was checked against veraPDF's
+/// PDF/A-2 profile, whose predicates are quoted below, and ISO 19005-2 was not held when the rule
+/// was written.</para>
+///
 /// <para>§6.7.2.2-1 — <c>isDefined</c>: every structure element's <c>/S</c> type must be
 /// "defined" — either a standard ISO 32000-1 Table 333 type, or a non-standard type that is
 /// role-mapped (via the <c>/RoleMap</c> chain) to a standard type. A non-standard type with no

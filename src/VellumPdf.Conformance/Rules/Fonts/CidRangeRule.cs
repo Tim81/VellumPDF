@@ -16,13 +16,13 @@ namespace VellumPdf.Conformance.Rules.Fonts;
 /// naming the offending CID value.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.1.13 and cross-validated against veraPDF 1.30.2, which
-/// evaluates this rule on the <c>CMapFile</c> object and gates it on the actual CIDs produced
-/// from text-show operators (<c>Tj</c>, <c>TJ</c>, <c>'</c>, <c>"</c>) rendered through the
-/// Type 0 font — only character codes actually used in content are checked, not the abstract
-/// maximum of all declared cidrange entries.
-/// Clean-room: derived from the specification text and empirical veraPDF oracle probing, not from
-/// any third-party validation profile.
+/// Cites ISO 19005-2:2011, 6.1.13 and was cross-validated against veraPDF 1.30.2, which evaluates
+/// this rule on the <c>CMapFile</c> object and gates it on the actual CIDs produced from text-show
+/// operators (<c>Tj</c>, <c>TJ</c>, <c>'</c>, <c>"</c>) rendered through the Type 0 font — only
+/// character codes actually used in content are checked, not the abstract maximum of all declared
+/// cidrange entries. That scoping is veraPDF's. The 2026-11-21 audit against the clause text (#418)
+/// found it narrower: 6.1.13 states the CID limit without it, and predefined named CMaps are not
+/// checked.
 /// <para>
 /// <strong>Scope:</strong>
 /// <list type="bullet">

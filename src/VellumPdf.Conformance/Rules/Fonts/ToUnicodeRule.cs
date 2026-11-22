@@ -12,11 +12,15 @@ namespace VellumPdf.Conformance.Rules.Fonts;
 /// CMap to make its text extractable as Unicode.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.2.11.7.2 and ISO 32000-1:2008, 9.10. Clean-room: derived from
-/// the specification text, not from any third-party validation profile. This rule targets the
-/// unambiguous Identity-encoded case; simple fonts whose Unicode values are derivable from a
-/// standard encoding, and Type0 fonts using a predefined non-Identity CMap, are mappable without a
-/// /ToUnicode entry and are validated in a later slice.
+/// Cites ISO 19005-2:2011, 6.2.11.7.2 and ISO 32000-1:2008, 9.10. Its behaviour was checked against
+/// veraPDF's PDF/A-2 profile, and ISO 19005-2 was not held when it was written. The 2026-11-21
+/// audit against the clause text (#418) found it narrower: 6.2.11.7.2 binds every font outside four
+/// exempt categories, and this rule targets only Type 0 fonts using <c>Identity-H</c> or
+/// <c>Identity-V</c>. A Type 3 font with glyph names that are not in the Adobe Glyph List and no
+/// <c>/ToUnicode</c> passes here and fails veraPDF under PDF/A-2u. The Unicode values and the
+/// completeness of the mapping are not checked either. Simple fonts whose Unicode values are
+/// derivable from a standard encoding, and Type 0 fonts using a predefined non-Identity CMap, are
+/// mappable without a <c>/ToUnicode</c> entry and are not checked here.
 /// <para>
 /// Only fonts that a page actually selects via a <c>Tf</c> operator in its content stream are
 /// validated (matching veraPDF, which validates only the current graphics state — issue #118).
