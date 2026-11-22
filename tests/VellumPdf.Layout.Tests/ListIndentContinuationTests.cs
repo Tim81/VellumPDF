@@ -150,11 +150,12 @@ public sealed class ListIndentContinuationTests
 
     /// <summary>
     /// The probe places the list on a copy of the cursor and puts the cursor back. With mirrored
-    /// margins the page it starts on decides its left edge, and a probe that moved the page index by
-    /// an odd number would put page 1 on the outside margin.
+    /// margins the page a later element lands on decides its left edge: a paragraph that follows
+    /// the list is on page 2, a left-hand page, so it starts at the outside margin. A probe that
+    /// leaves the page index moved by an odd number puts it on the inside one.
     /// </summary>
     [Fact]
-    public void TheProbe_leavesThePageTheListStartsOn()
+    public void TheProbe_leavesThePageIndexWhereItWas()
     {
         var pdf = NewPdf();
         var renderer = new DocumentRenderer(pdf, OneLinePage, new EdgeInsets(10, 30, 10, 10))
@@ -163,6 +164,7 @@ public sealed class ListIndentContinuationTests
             MirrorMargins = true,
         };
         renderer.Add(new ListRenderer(FlatList(1, 150)));
+        renderer.Add(new ParagraphRenderer(new Paragraph("para", Helv10())));
         using var ms = new MemoryStream();
 
         renderer.Render(ms);
@@ -170,6 +172,7 @@ public sealed class ListIndentContinuationTests
         var content = PdfTestUtil.DecompressAllFlatStreams(ms.ToArray());
         Assert.Equal(1, renderer.ContinuationProbes);
         Assert.Single(Regex.Matches(content, @"1 0 0 1 10 \S+ Tm\s+\(1\.\)"));
+        Assert.Single(Regex.Matches(content, @"1 0 0 1 30 \S+ Tm\s+\(para\)"));
     }
 
     [Fact]
