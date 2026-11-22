@@ -141,7 +141,7 @@ public sealed class ParagraphLineHeightTests
     }
 
     // The piece a split keeps for this page is built with the height, so laying it out again, as a
-    // keep-together probe does, does not walk the wrap.
+    // renderer of the caller's may, does not walk the wrap.
     [Fact]
     public void ThePieceASplitKeeps_doesNotWalkTheWrapWhenLaidOutAgain()
     {

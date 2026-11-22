@@ -440,7 +440,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reuses it. Output is unchanged: the same documents produce the same bytes. On a paragraph made of
   the word `W` repeated, one word per line and one line per page, on a 40 x 34.4 pt page in a
   Release build, 10,000 pages went from 607 ms to 209 ms and 50,000 pages from 11.4 s to 0.9 s.
-  Those are single runs on a shared machine, so read the ratio, not the milliseconds. A heading
+  Those are single runs on a shared machine, and the figures move with its load. A heading
   and a list item that run over many pages gain the same way. Allocation measured the same.
 
 - **`Save` and the signing path build the document catalog in one place (#606).** Both used to

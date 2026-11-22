@@ -42,7 +42,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     /// </summary>
     internal int LeadingVisits { get; private set; }
     private double _lineHeight;      // max EffectiveLeading across the paragraph
-    private bool _lineHeightTaken;   // _lineHeight is the maximum over the whole of _lines
+    private bool _lineHeightTaken;   // _lineHeight is taken: max over all of _lines, or the default
     private LayoutBox _occupied;
 
     // How many runs with a null style yielded no word, found where the wrap is made and cached with
