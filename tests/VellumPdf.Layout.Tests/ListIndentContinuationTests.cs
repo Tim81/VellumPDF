@@ -128,6 +128,27 @@ public sealed class ListIndentContinuationTests
     }
 
     /// <summary>
+    /// An entry with no text is a unit as well: it is a marker line that takes a page here. One
+    /// clamped entry and 150 empty ones is 152 units against a limit of 100, so the list is probed,
+    /// and the probe finds the 150 pages the empty entries take, which main refuses too.
+    /// </summary>
+    [Fact]
+    public void EntriesWithNoText_countAsOneUnitEach()
+    {
+        var list = new ListElement(ListStyle.OrderedDecimal) { Indent = 1000 };
+        list.Add(new ListItem(Words(2), Helv10()));
+        for (var i = 0; i < 150; i++) list.Add(new ListItem("", Helv10()));
+        var unclamped = Place(new ListRenderer(list).Unclamped(), OneLinePage, limit: 100);
+
+        var run = Place(new ListRenderer(list), OneLinePage, limit: 100);
+
+        Assert.NotNull(unclamped.Error);
+        Assert.Equal(1, run.Probes);
+        Assert.NotNull(run.Error);
+        Assert.Equal(unclamped.Error.Message, run.Error.Message);
+    }
+
+    /// <summary>
     /// The unclamped placement is the placement a list gets with no clamp in the library: a list
     /// that main refuses at the limit is refused here with the same message.
     /// </summary>
