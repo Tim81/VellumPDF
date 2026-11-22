@@ -291,62 +291,94 @@ public sealed class TableMainRefusalTests
     }
 
     /// <summary>
-    /// The bound the document asks for is never below the continuations a table takes: over random
-    /// tables on short pages, where rows are cut between their lines, and rows and groups move to
-    /// the next page.
+    /// What a table that is laid out page by page takes: the bound the renderer reports after its
+    /// first layout, and the continuations of laying it out the way the document does, a Partial
+    /// each time with the overflow in the area of the next page. Null when the table is refused.
     /// </summary>
-    [Fact]
-    public void TheContinuationBoundIsNeverBelowTheContinuationsATableTakes()
+    private static (long Bound, long Continuations)? BoundAndContinuations(TableElement t, LayoutBox area)
+    {
+        var ctx = new LayoutContext(area) { FreshPageArea = area };
+        IRenderer renderer = new TableRenderer(t);
+        var continuations = 0L;
+        try
+        {
+            var result = renderer.Layout(ctx);
+            var bound = ((Rendering.IContinuationGuard)renderer).ContinuationBound;
+            while (result.Status == LayoutResult.Outcome.Partial)
+            {
+                continuations++;
+                renderer = result.OverflowRenderer!;
+                result = renderer.Layout(ctx);
+            }
+
+            return result.Status == LayoutResult.Outcome.Nothing ? null : (bound, continuations);
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The bound the document asks for is never below the continuations a table takes: over random
+    /// tables on short pages, where rows are cut between their lines and rows and groups move to
+    /// the next page, and over tables of short rows on taller ones, where none is cut and the
+    /// bound follows the heights.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void TheContinuationBoundIsNeverBelowTheContinuationsATableTakes(bool shortRows)
     {
         var most = 0L;
-        for (var seed = 0; seed < 400; seed++)
+        var checkedTables = 0;
+        for (var seed = 0; seed < 500; seed++)
         {
             var rng = new Random(seed);
-            var area = new LayoutBox(10, 10, rng.Next(150, 500), rng.Next(60, 200));
+            var area = shortRows
+                ? new LayoutBox(10, 10, rng.Next(150, 500), rng.Next(150, 500))
+                : new LayoutBox(10, 10, rng.Next(150, 500), rng.Next(60, 200));
             var t = new TableElement { DefaultCellStyle = Helvetica() };
             var cols = rng.Next(1, 4);
             if (rng.Next(2) == 0) t.SetColumnWidths([.. Enumerable.Range(0, cols).Select(_ => (double)rng.Next(30, 120))]);
-            for (var r = rng.Next(1, 30); r > 0; r--)
+            for (var r = rng.Next(1, shortRows ? 400 : 30); r > 0; r--)
             {
                 var row = t.AddRow(isHeader: r == 1 && rng.Next(4) == 0);
                 for (var c = 0; c < cols; c++)
                 {
-                    var lines = rng.Next(1, rng.Next(6) == 0 ? 40 : 4);
+                    var lines = rng.Next(1, shortRows ? 3 : rng.Next(6) == 0 ? 40 : 4);
                     var text = string.Join("\n", Enumerable.Range(0, lines).Select(_ => "w" + W(rng.Next(1, 12))));
                     row.AddCell(new Cell(text) { RowSpan = rng.Next(8) == 0 ? 2 : 1 });
                 }
             }
 
-            // Laid out the way the document does: a Partial each time, the overflow in the area of
-            // the next page.
-            var ctx = new LayoutContext(area) { FreshPageArea = area };
-            IRenderer renderer = new TableRenderer(t);
-            var continuations = 0L;
-            long bound;
-            try
-            {
-                var result = renderer.Layout(ctx);
-                bound = ((Rendering.IContinuationGuard)renderer).ContinuationBound;
-                while (result.Status == LayoutResult.Outcome.Partial)
-                {
-                    continuations++;
-                    renderer = result.OverflowRenderer!;
-                    result = renderer.Layout(ctx);
-                }
-
-                if (result.Status == LayoutResult.Outcome.Nothing) continue;
-            }
-            catch (InvalidOperationException)
-            {
-                continue;
-            }
-
-            Assert.True(bound >= continuations, $"seed {seed}: bound {bound}, continuations {continuations}");
-            most = Math.Max(most, continuations);
+            if (BoundAndContinuations(t, area) is not { } taken) continue;
+            checkedTables++;
+            Assert.True(taken.Bound >= taken.Continuations, $"seed {seed}: bound {taken.Bound}, continuations {taken.Continuations}");
+            most = Math.Max(most, taken.Continuations);
         }
 
-        // Not vacuous: tables here take many pages.
+        // Not vacuous: a good share of the tables here are laid out, and take many pages.
+        Assert.True(checkedTables > 100, $"only {checkedTables} tables were laid out");
         Assert.True(most > 10, $"the most continuations over the tables was {most}");
+    }
+
+    /// <summary>
+    /// A table of 30,000 rows that takes a few thousand pages is far below the limit, and the
+    /// bound says so, so the document does not place it a second time to find out.
+    /// </summary>
+    [Fact]
+    public void TheBoundOfAManyRowTableThatTakesFewPagesIsBelowTheLimit()
+    {
+        var t = new TableElement { DefaultCellStyle = Helvetica() }.SetColumnWidths(100, 100);
+        for (var i = 0; i < 30_000; i++) t.AddRow().AddCell("a\nb").AddCell("c");
+        var area = new LayoutBox(10, 10, 580, 780);
+
+        var taken = BoundAndContinuations(t, area);
+
+        Assert.NotNull(taken);
+        Assert.InRange(taken.Value.Continuations, 1_000, 5_000);
+        Assert.InRange(taken.Value.Bound, taken.Value.Continuations, 50_000);
     }
 
     private static Document Shaped(int seed)

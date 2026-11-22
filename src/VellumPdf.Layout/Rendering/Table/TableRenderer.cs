@@ -1215,6 +1215,13 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     /// Nothing is followed by a call that makes progress, which is a Partial or the last call, so
     /// the Nothings number at most the Partials and one. Together at most twice the units less
     /// one.
+    /// <para>When no row is cut, each page but the first is filled until the next row, or run of
+    /// rows that is never split, does not fit, so two pieces in a row are taller together than
+    /// what a page leaves under the header rows. Over the pieces after the first that gives at
+    /// most <c>2H / A</c> pieces more than one, where <c>H</c> is the height of all the rows and
+    /// <c>A</c> what the smaller fresh box leaves under the header, so at most
+    /// <c>3 + 4H / A</c> continuations. A table of many short rows takes far fewer than its
+    /// units.</para>
     /// </remarks>
     private long ContinuationBoundOf(LayoutBox[] fresh)
     {
@@ -1225,14 +1232,18 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         var style = _table.DefaultCellStyle ?? TextStyle.Default;
 
         var units = 0L;
+        var height = 0.0;
+        var cutAny = false;
         for (var r = Math.Max(_startRow, header.Count > 0 ? header[^1] + 1 : 0); r < rows.Count; r++)
         {
             if (FitsFresh(fresh, headerHeight, _rowHeights[r]))
             {
                 units++;
+                height += _rowHeights[r];
                 continue;
             }
 
+            cutAny = true;
             var lines = 0L;
             var cells = rows[r].Cells;
             var col = 0;
@@ -1245,7 +1256,18 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             }
             units += Math.Max(1, lines);
         }
-        return (2 * units) - 1;
+
+        var bound = (2 * units) - 1;
+        if (!cutAny)
+        {
+            var room = Math.Min(fresh[0].Bottom - fresh[0].Y, fresh[1].Bottom - fresh[1].Y) - headerHeight - 0.001;
+            if (room > 0 && double.IsFinite(height))
+            {
+                var byHeight = Math.Ceiling(3 + (4 * height / room));
+                if (byHeight < bound) bound = (long)byHeight;
+            }
+        }
+        return bound;
     }
 
     /// <summary>
