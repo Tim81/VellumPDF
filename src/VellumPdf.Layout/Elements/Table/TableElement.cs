@@ -35,13 +35,10 @@ namespace VellumPdf.Layout.Elements.Table;
 /// tabs of some cells, and the save lists each as
 /// <see cref="LayoutDiagnosticCode.CellWhiteSpaceDropped"/>; <see cref="Cell.Content"/> says when
 /// and which.</para>
-/// <para><b>Each time a header row, or a group in an automatically sized column, gives up a cell,
-/// the save measures the whole table again.</b> A group that gives up cells in fixed-width
-/// columns only measures its own rows again. After 8 measurements of the whole table for this
-/// decision, a pass judges every group it reaches together, which saves measurements only when
-/// no group is tipped by the cells another gave up: a table in which each group's cells change
-/// the width of a column the next group is judged by is still measured once for each group.
-/// <see cref="Cell.Content"/> says what that changes in what is drawn.</para>
+/// <para><b>Every group is judged on the heights the groups before it leave.</b> A header row, or
+/// a group in an automatically sized column, that gives up a cell can change the width of a
+/// column the next group is judged by, so the next group is judged on the widths that result,
+/// however many groups there are. <see cref="Cell.Content"/> says which cells are given up.</para>
 /// <para><b>These are refused, and never cut.</b> <see cref="Document.Save(System.IO.Stream)"/>
 /// throws <see cref="InvalidOperationException"/> whose message starts with the standard
 /// too-tall text and ends with a sentence naming the rows, for: header rows that together do not

@@ -662,19 +662,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     one of 47 is 572pt, fits the page alone, but leaves the row 8pt, so it falls back. The XML
     documentation of `Cell.Content` states when a header or a group has no room, which cells
     fall back and in what order, and what a renderer laid out without the document does.
-  - **The decision costs a measurement of the whole table each time a header row, or a group
-    that gives up a cell in an automatically sized column, falls back.** After 8 such
-    measurements a pass no longer ends at the first group that gives up a cell: it judges every
-    group it reaches on the heights as they stand, and the passes repeat until one adds nothing.
-    That keeps the cost off the number of groups when they all lack room on the heights the table
-    starts with. A table that needs no more than 8 measurements is decided exactly as
-    group-by-group judging would decide it; beyond that, a later group can give up more cells
-    than group-by-group judging would, or fewer. When each group's fallback changes the width of
-    an automatic column that the next group is judged by, the next group is found only by the
-    next measurement, so the table is still measured once for each group: 400 such groups took
-    23s and 9,382MB of allocation in one run, where the same table took 4.9s and 3,023MB before
-    this change. Groups that give up a cell in fixed-width columns only measure their own rows and do
-    not count towards the 8.
 - **`/FontBBox` of an embedded font is the font's own bounding box (#596).** The descriptor of every
   embedded TrueType and OpenType font held `[0, hhea descender, 1000 * 1000 / unitsPerEm, hhea
   ascender]`: a zero for xMin and a constant for xMax, so DejaVu Sans, Liberation Sans and Liberation

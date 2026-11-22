@@ -65,17 +65,6 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     // What the decision under way has measured of each cell; null outside it.
     private TableMeasureCache? _measured;
 
-    /// <summary>
-    /// The number of passes over the table's heights that each stop at the first step changing
-    /// another group's height. Pass 9 and later judge every group they reach, each on the heights
-    /// as they stand, and the passes repeat until one adds no cell. That keeps the measurements
-    /// down for groups that all lack room on the heights the table starts with. It does not for a
-    /// chain in which each group is tipped by the cells the one before it gave up: that table is
-    /// measured once per group.
-    /// <see cref="Cell.Content"/> states the rule.
-    /// </summary>
-    internal const int MaxPassesBeforeBatching = 8;
-
     // What _oneLine was decided for: the table width and the vertical extent of the two fresh
     // boxes.
     // A renderer that carries the decision to the next page reuses it when it lays out at the same
@@ -288,13 +277,10 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             // Cell.Content says when, and which cells give them up. The cells that would leave
             // them so are laid out unbroken, and the grid and the heights are taken again. Each
             // pass adds cells, so this ends; most tables, which hold no control white space, take
-            // no second pass. Each pass costs one measurement of the whole table, so after
-            // MaxPassesBeforeBatching of them a pass no longer stops at the first group step that
-            // changes other groups' heights. A step in the header rows still ends it.
+            // no second pass.
             if (passesNeeded)
             {
-                var passes = 0;
-                while (CellsToReadAsOneLine(fresh!, style, ++passes > MaxPassesBeforeBatching) is { } more)
+                while (CellsToReadAsOneLine(fresh!, style) is { } more)
                 {
                     _oneLine ??= [];
                     _oneLine.UnionWith(more);
@@ -619,13 +605,11 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     /// method judges the header rows first and then each <see cref="Cell.RowSpan"/> group in
     /// order, and a group again after its own breaks are given up in fixed-width columns. A step
     /// that adds a cell in a header row, or in an automatically sized column, ends the pass,
-    /// because every height has to be taken again before the next group is judged. With
-    /// <paramref name="batch"/> set, a step in a group ends that group's judging instead and the
-    /// next group is judged on the heights as they stand; a step in the header rows still ends
-    /// the pass. Each of the two header steps takes every cell it reaches at once, so the header
-    /// ends at most two passes.
+    /// because every height has to be taken again before the next group is judged. Each of the
+    /// two header steps takes every cell it reaches at once, so the header ends at most two
+    /// passes.
     /// </summary>
-    private HashSet<(int Row, int Cell)>? CellsToReadAsOneLine(LayoutBox[] fresh, TextStyle style, bool batch)
+    private HashSet<(int Row, int Cell)>? CellsToReadAsOneLine(LayoutBox[] fresh, TextStyle style)
     {
         var rows = _table.Rows;
         var header = FindHeaderRowIndices(rows);
@@ -734,20 +718,14 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
 
                 // A step that adds a cell the other groups' heights can depend on ends the pass,
                 // because the next group would be judged by heights that the step changes, a
-                // column's width among them. After the bound on such passes (see the caller) it
-                // ends this group's judging instead, and the groups after it are judged on the
-                // heights as they stand. The header steps below end the pass in either case.
+                // column's width among them. The header steps below end it too.
                 // A step that stays in this group's rows and in fixed-width columns changes no
                 // other group's height, so the next group is judged in the same pass.
                 own = (first, last);
                 shared = false;
                 if (CollectBreaks(first, last))
                 {
-                    if (shared)
-                    {
-                        if (!batch) return found;
-                        break;
-                    }
+                    if (shared) return found;
 
                     // Only this group's rows are measured again, in the columns they have.
                     (_oneLine ??= []).UnionWith(found!);
@@ -757,7 +735,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
                 own = (-1, -1);
                 if (header.Count > 0 && CollectBreaks(0, header[^1])) return found;
                 own = (first, last);
-                if (CollectControlSpace(first, last) && shared && !batch) return found;
+                if (CollectControlSpace(first, last) && shared) return found;
                 break;
             }
         }
