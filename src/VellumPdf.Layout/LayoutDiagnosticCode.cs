@@ -152,17 +152,19 @@ public enum LayoutDiagnosticCode
 
     /// <summary>
     /// A list's <see cref="Elements.ListElement.Indent"/> left the text of one or more entries no
-    /// width beside its gutter, so the save gave the text the width of its widest word.
+    /// width beside its gutter, so the save gave that text a width: the width of its widest word,
+    /// or all the room right of its marker's inset when the word is wider.
     /// <see cref="LayoutDiagnostic.Count"/> is the number of entries whose gutter was narrowed.
     /// </summary>
     /// <remarks>
-    /// Without it the text would have been discarded and the marker drawn alone. The text is
-    /// drawn, and it may overprint its marker, so strict mode refuses it. It is reported for a list
-    /// the document draws from its first entry; a <see cref="Rendering.ListRenderer"/> you build to
-    /// start at a later entry reports nothing. An indent that leaves the text a width, however
-    /// narrow, is not clamped and not reported, and neither is an entry with no word to measure.
-    /// <b>Do not pass</b> an indent that leaves an entry's text no width: 3.0 will refuse it. See
-    /// <see cref="Elements.ListElement.Indent"/>.
+    /// The text is drawn, and it may overprint its marker, so strict mode refuses it. It is
+    /// reported once for a list the document draws from its first entry; a
+    /// <see cref="Rendering.ListRenderer"/> you build to start at a later entry clamps its entries
+    /// and reports nothing. An indent that leaves the text a width, however narrow, is not clamped
+    /// and not reported. Neither is an entry with no word that measures wider than zero, whose text
+    /// is still discarded, nor a line taller than the list's area, which is not drawn at any
+    /// indent. <b>Do not pass</b> an indent that leaves an entry's text no width: 3.0 will refuse
+    /// it. See <see cref="Elements.ListElement.Indent"/>.
     /// </remarks>
     ListIndentClamped = 203,
 

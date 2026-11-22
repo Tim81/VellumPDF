@@ -86,16 +86,20 @@ public sealed class ListElement
     /// boundary below moves in with it, each in proportion to where it sits.</para>
     /// <para>An indent reaching that area width is <b>not</b> refused on a flat list. An entry whose
     /// gutter would leave its text no width at all, which is a gutter at or beyond the area width,
-    /// gets the width of its widest word instead, so the text is drawn and never discarded. The
-    /// content then starts at the area's right edge less that width, or at the entry's own
-    /// marker inset when the word is wider than what is left of the area, where the word is
-    /// broken. A marker is never moved, so the text can overprint it. Nothing else changes: a gutter
-    /// that leaves the text a width, however narrow, keeps its output, and so does an entry with no
-    /// word to measure, such as one holding only white space. Each clamped entry is reported as
-    /// <see cref="LayoutDiagnosticCode.ListIndentClamped"/>. A nested list throws at the area width,
-    /// as the exception records. Below that, from half the area width, a child's text is clamped in
-    /// the same way, because the nested gutter reaches the area width at half the indent a top-level
-    /// gutter needs.</para>
+    /// gets one instead: the width of its widest word, or all the room right of its marker's inset
+    /// when the word is wider, where the word is broken. The content then starts at the area's
+    /// right edge less that width, and never left of the marker's inset. A marker is never moved,
+    /// so the text can overprint it. The text is drawn as it is at any indent, so a line taller
+    /// than the area is not drawn. A list the document draws from its first entry reports its
+    /// clamped entries as one <see cref="LayoutDiagnosticCode.ListIndentClamped"/> item.</para>
+    /// <para>These keep their earlier output, and are not reported: a gutter that leaves the text a
+    /// width, however narrow; an entry with no word that measures wider than zero, such as one
+    /// holding only white space, set at font size 0 or set in Symbol or ZapfDingbats, whose text is
+    /// discarded; and an entry whose marker has no room, which splits the list before it or, at a
+    /// page top, is refused as before. A nested list throws at the area width, as the exception
+    /// records. Below that, from half the area width, a child's text is clamped in the same way,
+    /// because the nested gutter reaches the area width at half the indent a top-level gutter
+    /// needs.</para>
     /// <para>One element may take at most 50,000 page continuations; see
     /// <see cref="Rendering.DocumentRenderer"/>. Drawing the text of a clamped entry adds lines, so
     /// a list whose clamped layout could pass that limit is laid out without drawing first, and when
@@ -114,8 +118,9 @@ public sealed class ListElement
     /// negative-infinity indent, because the gutter widens to the marker's own width, and a list with
     /// no items saves with any. <b>Do not pass</b> a non-finite indent: 3.0 refuses it.</para>
     /// <para>Positive infinity is not refused here, because it writes no invalid token. A nested list
-    /// throws at the area width as described above, and a flat list clamps the text of each entry,
-    /// as for any indent at or beyond that width. A finite negative value is not refused either.</para>
+    /// throws at the area width as described above, and a flat list clamps each entry whose text
+    /// has no width, as for any indent at or beyond that width. A finite negative value is not
+    /// refused either.</para>
     /// <para><b>Do not pass</b> an indent that leaves an entry's text no width beside its gutter:
     /// the text is clamped and reported, as above, and 3.0 will refuse the input.</para>
     /// <para>A finite negative value can put linked item text, or a linked nested marker, at a

@@ -101,7 +101,8 @@ public sealed class ListIndentClampTests
         Assert.Equal(1, item.Count);
         Assert.Equal(
             "Error ListIndentClamped List[0] page 1: A list indent left an entry's text no width beside its gutter, "
-            + "so the text was given the width of its widest word and may overprint the marker.",
+            + "so the text was given a width, that of its widest word or the room right of its marker, "
+            + "and may overprint the marker.",
             item.ToString());
     }
 

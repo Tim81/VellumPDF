@@ -126,7 +126,9 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     /// <see cref="LayoutResult.Full"/> occupying no height. A negative start on an empty list also
     /// returns <see cref="LayoutResult.Full"/> occupying no height, and <see cref="Draw"/> then
     /// throws <see cref="ArgumentOutOfRangeException"/>.
-    /// A null <paramref name="list"/> is refused here.
+    /// A null <paramref name="list"/> is refused here. A renderer that starts after the first
+    /// entry still clamps an entry's gutter, and reports nothing; see
+    /// <see cref="LayoutDiagnosticCode.ListIndentClamped"/>.
     /// <para>Do not pass a start outside the list's entries, which count each child after its
     /// parent. 3.0 will throw from this constructor.</para>
     /// </remarks>
@@ -364,7 +366,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                 sink.Report(
                     LayoutDiagnosticCode.ListIndentClamped,
                     0,
-                    "A list indent left an entry's text no width beside its gutter, so the text was given the width of its widest word and may overprint the marker.",
+                    "A list indent left an entry's text no width beside its gutter, so the text was given a width, that of its widest word or the room right of its marker, and may overprint the marker.",
                     _indentClamped,
                     perElement: true);
             if (_clampSkipped > 0)
