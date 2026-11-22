@@ -412,6 +412,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
                             // and the bound must cover both: the grid read unbroken, which is the
                             // twin's, and the grid that keeps the breaks, taken below. A table
                             // that is refused here is laid out unbroken, which is the twin's.
+                            // Removed in 3.0 (#688).
                             oneLineBound = ContinuationBoundOf(fresh!);
                             _allUnbroken = false;
                             (_colWidths, _rowHeights) = (widths, heights);
@@ -428,7 +429,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             // Every first call of a placement reports, not only the call that made the decision:
             // the document places this instance again for each pass and each simulation of the
             // keep rules, and a decision it carries would otherwise read as a call with no report,
-            // which fixes the twin.
+            // which fixes the twin. Removed in 3.0 (#688).
             if (fresh is not null && mode == ContinuationMode.Undecided)
                 context.Session!.Report(this, _reportBound);
         }
@@ -1633,7 +1634,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     /// </exception>
     public void Draw(DrawContext ctx)
     {
-        // Laid out by the twin, which holds what was decided.
+        // Laid out by the twin, which holds what was decided. Removed in 3.0 (#688).
         if (_laidOutBy is { } twin)
         {
             twin.Draw(ctx);
@@ -1909,6 +1910,8 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         // A cell the table laid out unbroken is reported where it is first drawn: once per page for
         // a repeated header row, and from its first slice for a cut row. Only a cell that holds a
         // control character loses anything by it, which is the separation its words had.
+        // A twin reports it only where the document chose the twin (#688); one a caller holds is
+        // the table as it was before breaks were honoured, which reports nothing.
         if ((!_readsUnbrokenForTheLimit || _placedAsTwin)
             && !HonoursBreaks(rowIndex, cellIndex) && LayoutText.HasControlSpace(cell.Content)
             && (slice is null || slice.First[cellIndex] == 0))
