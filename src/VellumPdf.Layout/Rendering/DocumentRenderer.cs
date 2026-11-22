@@ -650,6 +650,10 @@ public sealed class DocumentRenderer
     private int _simFirstPage;
     private int _keepResolvedUntil;
 
+    // Set when a run was dropped in the drawing pass; the report is made once its first element is
+    // placed (ReportPendingKeepWithNext).
+    private bool _keepRelaxedPending;
+
     private PlacementSink _placements = new();
     private PlacementSink? _measureSink;
     private PlacementSink? _drawSink;
@@ -741,6 +745,7 @@ public sealed class DocumentRenderer
         _pageIndex = 0;
         _placedOnPage = false;
         _keepResolvedUntil = 0;
+        _keepRelaxedPending = false;
         _pendingBreak = PageBreakMode.None;
         _pendingBreakers = null;
         _placements = new PlacementSink();
@@ -1037,8 +1042,25 @@ public sealed class DocumentRenderer
     private void ReportRelaxed(LayoutDiagnosticCode code, string message)
     {
         if (_measuring) return;
+
+        // The run's report goes first, as it did when it was made at the decision, so a later
+        // report of the same element follows it.
+        ReportPendingKeepWithNext();
         _sink.CurrentPage = _pdf.Pages.Count;
         _sink.Report(code, 0, message, perElement: true);
+    }
+
+    // The keep-with-next report of a run is made when its first element has been placed, not when
+    // the run was decided: that element can still move to the next page by its own keep-together
+    // rule or a line count, and the report names the page it ends up on.
+    private void ReportPendingKeepWithNext()
+    {
+        if (!_keepRelaxedPending || _measuring) return;
+        _keepRelaxedPending = false;
+        _sink.CurrentPage = _pdf.Pages.Count;
+        _sink.Report(LayoutDiagnosticCode.KeepWithNextRelaxed, 0,
+            "The elements asked to stay with the one after them and do not fit one page together, or already start a page, so they were placed where they fall.",
+            perElement: true);
     }
 
     // Records the page an element's first piece landed on, for the simulation.
@@ -1092,8 +1114,7 @@ public sealed class DocumentRenderer
             return;
         }
 
-        ReportRelaxed(LayoutDiagnosticCode.KeepWithNextRelaxed,
-            "The elements asked to stay with the one after them and do not fit one page together, or already start a page, so they were placed where they fall.");
+        _keepRelaxedPending = !_measuring;
     }
 
     // Places elements first..end on a copy of the cursor, from the current page or from the next
@@ -1175,6 +1196,7 @@ public sealed class DocumentRenderer
                 case LayoutResult.Outcome.Full:
                     _placedOnPage = true;
                     NoteFirstPiece();
+                    ReportPendingKeepWithNext();
                     ReportPlacements(renderer);
                     if (!_measuring) DrawRenderer(renderer);
                     Cursor = result.OccupiedArea!.Value.Bottom;
@@ -1184,6 +1206,7 @@ public sealed class DocumentRenderer
                     split = true;
                     _placedOnPage = true;
                     NoteFirstPiece();
+                    ReportPendingKeepWithNext();
                     ReportPlacements(result.SplitRenderer);
                     if (result.SplitRenderer is ParagraphRenderer { MinLinesRelaxed: true })
                         ReportRelaxed(LayoutDiagnosticCode.MinLinesRelaxed,

@@ -30,7 +30,8 @@ public interface IRenderer
     /// <para>Keep requests, such as <see cref="VellumPdf.Layout.Elements.Paragraph.KeepWithNext"/>,
     /// add calls of the same kind. To decide where a group of elements goes, the document lays out
     /// the group and the first element after it once more before it places any of them, and again
-    /// from the next page when the group does not hold where it stands.
+    /// from the next page when the group does not hold where it stands below the top of a page. At
+    /// the top of a page there is no later page to try, so that second pass is skipped.
     /// Your renderer can therefore be laid out ahead of the elements before it, and with areas on
     /// pages it is not placed on in the end. The document draws a <see cref="LayoutResult.Full"/>
     /// result after the last call on that instance, so a renderer that draws from what its last

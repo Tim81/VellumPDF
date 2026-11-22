@@ -163,10 +163,11 @@ public sealed class Paragraph
     /// of a split paragraph. A custom <see cref="IRenderer"/> sets none, and as the element after
     /// a run it is placed like any other.</para>
     /// <para>The document lays the group out once more before it places it, and once more from the
-    /// next page when it does not hold where it stands, so a document that sets this on many
-    /// elements makes more layout calls; see <see cref="IRenderer.Layout"/>. The walk stops at the
-    /// first element that starts on a later page than the one before it ended on. A refusal that
-    /// laying out the next element raises is therefore raised while the group is laid out, before
+    /// next page when it does not hold where it stands below the top of a page (at the top of a
+    /// page there is no later page to try, and it skips that second pass), so a document that
+    /// sets this on many elements makes more layout calls; see <see cref="IRenderer.Layout"/>. The
+    /// walk stops at the first element that starts on a later page than the one before it ended
+    /// on. A refusal that laying out the next element raises is therefore raised while the group is laid out, before
     /// the elements ahead of it are drawn; it is the one that element raises when it is placed.
     /// <b>Do not</b> read this as keeping a whole run on one page: a paragraph that splits keeps
     /// only its last piece with the element after it, and the pieces before that fall where the
@@ -189,8 +190,9 @@ public sealed class Paragraph
     /// split once, so a paragraph that a line count moved to the top of the next page and that
     /// does not fit there is reported as well.
     /// <para>The flag is read where <see cref="KeepWithNext"/> is, and ignored where that is. When
-    /// the paragraph would split, the document lays it out once more on an empty page to see
-    /// whether it fits there, and a move adds the retry the document makes after any
+    /// the paragraph would split below the top of a page, the document lays it out once more on an
+    /// empty page to see whether it fits there; at the top of a page it makes no such call. A move
+    /// adds the retry the document makes after any
     /// <see cref="LayoutResult.Outcome.Nothing"/>; see <see cref="IRenderer.Layout"/>.</para>
     /// </remarks>
     public bool KeepTogether { get; init; }
@@ -202,8 +204,10 @@ public sealed class Paragraph
     /// <remarks>
     /// <b>A value below 1 is refused.</b> This <c>init</c> accessor throws
     /// <see cref="ArgumentOutOfRangeException"/>. There is no upper bound: a value above the
-    /// number of lines the paragraph has puts the whole paragraph on the next page whenever it
-    /// would split below the top of a page, as <see cref="KeepTogether"/> does.
+    /// number of lines the paragraph has, which no break can meet. Where the paragraph would split
+    /// below the top of a page it moves to the next page, and where it would split at the top of a
+    /// page it splits where the page ends and the save lists
+    /// <see cref="LayoutDiagnosticCode.MinLinesRelaxed"/>.
     /// <para>Typographic traditions define <i>widow</i> and <i>orphan</i> in opposite ways, so the
     /// two counts are named for what they do. This one controls the lines left at the foot of the
     /// page, which some call orphan control, and <see cref="MinLinesAfterBreak"/> the lines carried
@@ -244,8 +248,10 @@ public sealed class Paragraph
     /// <remarks>
     /// <b>A value below 1 is refused.</b> This <c>init</c> accessor throws
     /// <see cref="ArgumentOutOfRangeException"/>. There is no upper bound: a value above the number
-    /// of lines the paragraph has puts the whole paragraph on the next page whenever it would split
-    /// below the top of a page, as <see cref="KeepTogether"/> does.
+    /// of lines the paragraph has, which no break can meet. Where the paragraph would split below
+    /// the top of a page it moves to the next page, and where it would split at the top of a page
+    /// it splits where the page ends and the save lists
+    /// <see cref="LayoutDiagnosticCode.MinLinesRelaxed"/>.
     /// <para>When fewer lines would carry over, the break moves up until that many do, as long as
     /// <see cref="MinLinesBeforeBreak"/> lines still stay. When they cannot, the paragraph moves to
     /// the next page, or, at the top of a page, splits where the page ends and the save lists

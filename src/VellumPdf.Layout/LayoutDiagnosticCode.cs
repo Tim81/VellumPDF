@@ -199,7 +199,8 @@ public enum LayoutDiagnosticCode
     /// <c>KeepWithNext</c>, was placed without that request, because the group of elements did not
     /// hold together on a page of its own, or the run already started at the top of a page, where
     /// moving it would leave that page empty. The element is the first of the run, and
-    /// <see cref="LayoutDiagnostic.PageNumber"/> the page it is placed on.
+    /// <see cref="LayoutDiagnostic.PageNumber"/> the page that element's first piece is placed
+    /// on, after its own keep-together or line count has moved it.
     /// </summary>
     /// <remarks>
     /// Nothing the caller wrote is lost, so this is a warning and strict mode saves. When this

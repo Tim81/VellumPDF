@@ -1381,6 +1381,93 @@ public sealed class KeepRulesTests
         AssertDiagnostics(doc, (LayoutDiagnosticCode.KeepWithNextRelaxed, LayoutElementKind.Paragraph, 0, 1));
     }
 
+    [Fact]
+    public void KeepWithNextRelaxed_isReportedOnThePageTheFirstElementMovedTo()
+    {
+        // The paragraph does not fit the three lines left of page 1, and it asks to be kept whole,
+        // so it moves to page 2 by its own rule. The group does not hold on one page, so the run's
+        // request is dropped; the report names page 2, where the element is, not page 1, where the
+        // decision was made.
+        using var doc = NewDoc();
+        doc.Add(Lines("f", 3));
+        doc.Add(Lines("k", LinesPerPage, keepWithNext: true, keepTogether: true));
+        doc.Add(Lines("n", 1));
+        var pages = PagesOf(doc);
+
+        Assert.Equal(Seq("f", 1, 3), pages[0]);
+        Assert.Equal(Seq("k", 1, LinesPerPage), pages[1]);
+        Assert.Equal(["n1"], pages[2]);
+        AssertDiagnostics(doc, (LayoutDiagnosticCode.KeepWithNextRelaxed, LayoutElementKind.Paragraph, 1, 2));
+        Assert.Equal(1, doc.Diagnostics[0].Count);
+    }
+
+    // 5 filler lines leave 6 on page 1 and the paragraph has 15, so it is taller than a page.
+    private static Document TallParagraphAfterFiller(bool keepTogether, int before = 1, int after = 1)
+    {
+        var doc = NewDoc();
+        doc.Add(Lines("f", 5));
+        doc.Add(Lines("k", 15, keepTogether: keepTogether, before: before, after: after));
+        return doc;
+    }
+
+    [Fact]
+    public void KeepTogetherParagraphTallerThanAPage_splitsWhereItStands_andIsReportedOnPage1()
+    {
+        using var doc = TallParagraphAfterFiller(keepTogether: true);
+        var pages = PagesOf(doc);
+
+        Assert.Equal([.. Seq("f", 1, 5), .. Seq("k", 1, 6)], pages[0]);
+        Assert.Equal(Seq("k", 7, 15), pages[1]);
+        AssertDiagnostics(doc, (LayoutDiagnosticCode.KeepTogetherRelaxed, LayoutElementKind.Paragraph, 1, 1));
+    }
+
+    [Theory]
+    [InlineData(20, 1)]
+    [InlineData(1, 20)]
+    public void LineCountAboveTheLineCount_onAParagraphTallerThanAPage_movesItWhole_thenSplitsAtThePageTop(
+        int before, int after)
+    {
+        using var doc = TallParagraphAfterFiller(keepTogether: false, before, after);
+        var pages = PagesOf(doc);
+
+        Assert.Equal(Seq("f", 1, 5), pages[0]);
+        Assert.Equal(Seq("k", 1, LinesPerPage), pages[1]);
+        Assert.Equal(Seq("k", 12, 15), pages[2]);
+        AssertDiagnostics(doc, (LayoutDiagnosticCode.MinLinesRelaxed, LayoutElementKind.Paragraph, 1, 2));
+    }
+
+    // Fits only in an area that starts at x = 50, which is the left edge of an even page when the
+    // outside margin is 50, so it fits page 2 of a mirrored document and not page 1.
+    private sealed class FitsOnlyAtX50(double height) : IRenderer
+    {
+        public LayoutResult Layout(LayoutContext context) =>
+            context.Area.X == 50 && context.Area.Height >= height
+                ? LayoutResult.Full(context.Area.WithHeight(height))
+                : LayoutResult.Nothing();
+
+        public void Draw(DrawContext context)
+        {
+        }
+    }
+
+    [Fact]
+    public void ARunAtAPageTop_thatHoldsOnlyOnTheNextPage_isNotMovedOffIt()
+    {
+        // The heading starts page 1 and the next element fits only the next page's margins. Moving
+        // the heading would leave page 1 empty, so the request is dropped and reported there.
+        using var doc = NewDoc();
+        doc.MirrorMargins = true;
+        doc.Margins = new EdgeInsets(20, 50, 20, 10);
+        doc.Add(new Heading("HeadT", Body) { KeepWithNext = true });
+        doc.Add(new FitsOnlyAtX50(40));
+        doc.Add(new Paragraph("Tail", Body));
+        var pages = PagesOf(doc);
+
+        Assert.Equal(["HeadT"], pages[0]);
+        Assert.Equal(["Tail"], pages[1]);
+        AssertDiagnostics(doc, (LayoutDiagnosticCode.KeepWithNextRelaxed, LayoutElementKind.Heading, 0, 1));
+    }
+
     // ── Cost ─────────────────────────────────────────────────────────────────
 
     private static (int Calls, long Allocated) CostOf(bool keep, int every = 1)
@@ -1431,5 +1518,43 @@ public sealed class KeepRulesTests
 
         Assert.True(flagCalls <= baseCalls + (2 * flagged) + (3 * 64), $"{flagCalls} layout calls against {baseCalls} unflagged");
         Assert.True(flagBytes <= baseBytes * 1.2, $"{flagBytes} bytes against {baseBytes} unflagged");
+    }
+
+    // Layout calls of a document that holds a single flagged heading at the top of the first page
+    // and then one paragraph of 50 pages, rendered through the renderer API to count the calls.
+    private static int CallsOfAHeadingBeforeA50PageParagraph()
+    {
+        var renderer = new DocumentRenderer(NewPdf(), new PdfRectangle(0, 0, 300, 200), new EdgeInsets(20));
+        renderer.Add(new HeadingRenderer(new Heading("Head", Body) { KeepWithNext = true }));
+        renderer.Add(new ParagraphRenderer(Lines("k", 50 * LinesPerPage)));
+        using var ms = new MemoryStream();
+        renderer.Render(ms);
+        return renderer.LayoutCalls;
+    }
+
+    [Fact]
+    public void TheGroupSimulation_placesTheElementAfterTheRunOnlyAsFarAsItsFirstPiece()
+    {
+        // The heading is laid out in the simulation and when it is placed. The paragraph is laid
+        // out once in the simulation, which stops at its first piece, and once for each of its
+        // pages when it is placed: 54 calls were counted on this document. Placing it in full in
+        // the simulation too adds about one call for each of its 50 pages, so the bound sits
+        // between the two.
+        var calls = CallsOfAHeadingBeforeA50PageParagraph();
+
+        Assert.True(calls <= 56, $"{calls} layout calls");
+    }
+
+    [Fact]
+    public void AKeepTogetherParagraphAtThePageTop_isLaidOutOncePerPage_withNoProbeForAnEmptyPage()
+    {
+        // 25 lines are three pages on this geometry, and the first starts at a page top, where no
+        // empty page is better, so the check for one makes no call.
+        var renderer = new DocumentRenderer(NewPdf(), new PdfRectangle(0, 0, 300, 200), new EdgeInsets(20));
+        renderer.Add(new ParagraphRenderer(Lines("k", 25, keepTogether: true)));
+        using var ms = new MemoryStream();
+        renderer.Render(ms);
+
+        Assert.Equal(3, renderer.LayoutCalls);
     }
 }

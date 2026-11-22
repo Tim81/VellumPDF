@@ -16,9 +16,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     `KeepTogether` on the same types except the image, which does not split.
     `Paragraph.MinLinesBeforeBreak` and `MinLinesAfterBreak`, 1 by default. A count below 1 throws
     `ArgumentOutOfRangeException` from the `init` accessor. There is no upper bound: a count above
-    the paragraph's line count moves the whole paragraph to the next page when it would split. The
-    two counts are named for what they do, because the traditions that define "widow" and "orphan"
-    define them the opposite way round.
+    the paragraph's line count moves the whole paragraph to the next page when it would split
+    below the top of a page, and splits it where the page ends, with a warning, at the top of one.
+    The two counts are named for what they do, because the traditions that define "widow" and
+    "orphan" define them the opposite way round.
   - Consecutive top-level elements with `KeepWithNext`, and the element after them, form a group.
     When that element's first piece would start on a later page than the page the run ends on, the
     whole run moves to the next page. A `PageBreak`, or an element with `BreakBefore` set, ends the
@@ -43,7 +44,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     finally placed on, and an element moved to the next page takes that page's margins.
   - **Attention:** to decide where a group goes, the document lays out the group and the element
     after it once more before it places any of them, and again from the next page when the group
-    does not hold where it stands, so a document that flags many elements makes more layout calls.
+    does not hold where it stands below the top of a page (at a page top that second pass is
+    skipped), so a document that flags many elements makes more layout calls.
     A custom `IRenderer` that is the element after a group can be laid out ahead of the elements
     before it, and with areas on pages it does not end up on. A `Full` result is still drawn after
     the last `Layout` call on that instance; see `IRenderer.Layout`.
