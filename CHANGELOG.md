@@ -434,10 +434,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **`LayoutImage.FitToPage` scales an image down to a page's content height (#471).** An image with
   no `Width` takes the full width of the content box, and its height follows from its proportions,
-  so when the content box is wider than it is tall, a square image is taller than the box and the
+  so when the content box is wider than it is tall, a square image was taller than the box and the
   save threw. With `FitToPage` set, both extents are multiplied by the one factor that makes the
-  height equal the content height of a fresh page, less the image's margins. It is `false` by default, and a document that does not set it saves to
-  the same bytes.
+  height equal the content height of a fresh page, less the image's margins. It is `false` by
+  default, and a document that does not set it saves to the same bytes.
   - The image is sized first as it is without the member, from `Width`, `Height`, its proportions
     and the clamp to the content width. An explicit `Height` is scaled along with the width it was
     stretched to, so the proportions the other members produced are kept. An image is never
