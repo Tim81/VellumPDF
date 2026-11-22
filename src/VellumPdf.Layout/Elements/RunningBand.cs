@@ -9,7 +9,8 @@ namespace VellumPdf.Layout.Elements;
 /// A header or footer band repeated on every page.
 /// Text supports <c>{page}</c> (the current page number, or its label when the document defines
 /// page-label ranges) and <c>{pages}</c> (total page count)
-/// tokens, which are substituted at render time.
+/// tokens, which are substituted at render time. With <see cref="ChapterToken"/> set, a save
+/// also substitutes <c>{chapter}</c>, the title of the chapter the page is in.
 /// </summary>
 /// <remarks>
 /// A null template throws from <see cref="Resolve"/> / save (#531). Overlong text is
@@ -26,7 +27,53 @@ namespace VellumPdf.Layout.Elements;
 /// </remarks>
 public sealed class RunningBand
 {
-    /// <summary>Text template — may contain {page} and/or {pages}.</summary>
+    /// <summary>
+    /// Whether a save substitutes <c>{chapter}</c> in <see cref="Template"/>: the title of the
+    /// chapter the page is in. The default is <see langword="false"/>, which leaves the text
+    /// <c>{chapter}</c> as given, as a band has always done.
+    /// </summary>
+    /// <remarks>
+    /// <b>The save refuses two titles; the property itself refuses nothing.</b> A save of a band
+    /// with the property set and no <c>{chapter}</c> in the template saves the same bytes as with
+    /// it unset. The value is read when a save lays the document out.
+    /// <para>A chapter is a level-0 <see cref="Heading"/> added to the document. The page shows the
+    /// first one whose first line is on the page, and when none starts there, the last one drawn
+    /// on an earlier page. A heading that splits over a page break counts on the page it starts
+    /// on and is not a new chapter on the next. A page before the first level-0 heading shows no
+    /// text where the token stands, and the rest of the template is drawn as it is written. A
+    /// page that holds no band, such as the blank page a recto break inserts, shows no title, and
+    /// a page where a chapter starts partway down shows that chapter, although the one before it
+    /// holds the top of the page. The title is the heading's <see cref="Heading.BookmarkTitle"/>
+    /// when it has one and its text otherwise. A tab, a line break, a form feed or another control
+    /// white-space character in it is drawn as a space. Headings of other levels, and anything a
+    /// custom <see cref="IRenderer"/> draws, start no chapter.</para>
+    /// <para>The token is replaced by the title as it is, so a <c>{page}</c> or <c>{chapter}</c>
+    /// in the title prints as that text. The title is measured and cut with the rest of the band, so one
+    /// that does not fit is truncated and reported as <see cref="Template"/> says, and a character
+    /// its font lacks is reported as for any band text. The chapter does not change the page
+    /// count, because the band's height is fixed.</para>
+    /// <para><b>An unpaired surrogate in the title is refused.</b> A save throws
+    /// <see cref="ArgumentException"/> where the band is drawn, when the band's font is embedded
+    /// and the title it prints holds one, whatever font the heading is set in; see
+    /// <see cref="TextStyle.FontRef"/>.</para>
+    /// <para><b>A resolved text longer than <see cref="int.MaxValue"/> characters is refused.</b> A
+    /// template that repeats <c>{chapter}</c> so often that the titles it prints add up to more
+    /// than that makes the save throw <see cref="InvalidOperationException"/> where the band is
+    /// drawn, because no string could hold the text.</para>
+    /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, when the title holds an unpaired surrogate and the band's font is
+    /// embedded.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from the save, not from this property, when the resolved text passes
+    /// <see cref="int.MaxValue"/> characters.
+    /// </exception>
+    public bool ChapterToken { get; init; }
+
+    /// <summary>Text template — may contain {page} and/or {pages}, and {chapter} when
+    /// <see cref="ChapterToken"/> is set.</summary>
     /// <remarks>
     /// Not checked when it is set: the constructor stores a null template, and the save throws
     /// <see cref="ArgumentNullException"/> where the band is first drawn. A template that does not
@@ -60,6 +107,10 @@ public sealed class RunningBand
     /// characters costs a page about what one of 200 does when both are cut at the same width.
     /// Text that measures zero is drawn in full, as the attention above says, and so costs its
     /// whole length on every page.</para>
+    /// <para><b>A resolved text longer than <see cref="int.MaxValue"/> characters is refused.</b>
+    /// With <see cref="ChapterToken"/> set, a template that repeats <c>{chapter}</c> so often that
+    /// the titles it prints add up to more than that makes the save throw
+    /// <see cref="InvalidOperationException"/>; see <see cref="ChapterToken"/>.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
@@ -70,6 +121,7 @@ public sealed class RunningBand
     /// <exception cref="InvalidOperationException">
     /// Raised from the save, not from this property, when the template does not fit the content box
     /// and <see cref="Document.StrictDiagnostics"/> is <see langword="true"/>.
+    /// It is also raised when the resolved text passes <see cref="int.MaxValue"/> characters.
     /// </exception>
     public string Template { get; }
 
@@ -225,7 +277,9 @@ public sealed class RunningBand
     /// <c>{page}</c> becomes the number passed, as a decimal. A save prints the page's label in its
     /// place when the document defines a page-label range; this method is given no range, so it
     /// cannot.
-    /// Only the exact lower-case text <c>{page}</c> or <c>{pages}</c> is substituted. Any other
+    /// Only the exact lower-case text <c>{page}</c> or <c>{pages}</c> is substituted. The method
+    /// knows no headings, so <c>{chapter}</c> is left as given whether or not
+    /// <see cref="ChapterToken"/> is set; a save substitutes it. Any other
     /// brace text, <c>{Page}</c>, <c>{ page }</c> and a lone <c>{page</c> included, is left as
     /// given, and a substituted number is never scanned again. A null template is refused here with
     /// <see cref="ArgumentNullException"/>; the save refuses it the same way where the band is
@@ -251,5 +305,5 @@ public sealed class RunningBand
     /// is read-only, so the scan never goes stale. A null template is refused here, with the
     /// exception <see cref="Resolve"/> throws, at the point the band is first drawn.
     /// </summary>
-    internal BandTemplate Compiled => _compiled ??= BandTemplate.Compile(Template);
+    internal BandTemplate Compiled => _compiled ??= BandTemplate.Compile(Template, ChapterToken);
 }

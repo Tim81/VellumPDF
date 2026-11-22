@@ -37,7 +37,9 @@ public sealed class Heading
     /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
     /// from this property, when the text holds an unpaired surrogate and is measured in an embedded
     /// font; see <see cref="TextStyle.FontRef"/>. A pair split between two runs that share one
-    /// style instance is joined and does not throw.
+    /// style instance is joined and does not throw. It is also raised, whatever font the heading is
+    /// set in, when this is the title of a level-0 heading that a running band prints through
+    /// <see cref="RunningBand.ChapterToken"/> in an embedded font.
     /// </exception>
     public string Text { get; }
 
@@ -94,7 +96,23 @@ public sealed class Heading
     /// <summary>
     /// Override the bookmark title. When null the heading text is used.
     /// </summary>
-    /// <remarks>Null means use <see cref="Text"/>. Empty is an empty bookmark title.</remarks>
+    /// <remarks>
+    /// Null means use <see cref="Text"/>. Empty is an empty bookmark title.
+    /// <para><b>An unpaired surrogate is refused where a band prints the title.</b> When
+    /// the heading is level 0 and a band sets <see cref="RunningBand.ChapterToken"/> and holds
+    /// <c>{chapter}</c> in an embedded font, the save throws <see cref="ArgumentException"/>,
+    /// whatever font the heading is set in. A document without such a band saves it. The same
+    /// band throws <see cref="InvalidOperationException"/> when a template repeats
+    /// <c>{chapter}</c> so often that the titles it prints add up to more than
+    /// <see cref="int.MaxValue"/> characters; see <see cref="RunningBand.ChapterToken"/>.</para>
+    /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this property, as described above.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from the save, not from this property, as described above.
+    /// </exception>
     public string? BookmarkTitle { get; init; }
 
     /// <summary>Whether the heading's bookmark is shown open (the default) or closed in the outline.</summary>
