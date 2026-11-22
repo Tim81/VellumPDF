@@ -1239,13 +1239,12 @@ public sealed class DocumentRenderer
 
     // The verdict of a decision that ran probes, kept for the start it was made from: the element
     // the document placed, where on the page it starts, whether it starts at the retry after a
-    // Nothing, and the continuations already counted.
-    // Both passes and every simulation of the keep rules start the same element from the same
-    // place, so each asks once. The x position is not part of the key: mirrored margins move only
-    // x, so a reporting renderer's answer must not depend on x, only on the width. A measuring run of a plan-dependent document starts it
-    // from the same place too, but with a different text, so the verdicts are dropped whenever a
-    // resolve changes one. Y and Height are both kept: they determine each other only up to
-    // rounding.
+    // Nothing, and the continuations already counted. Both passes and every simulation of the keep
+    // rules start the same element from the same place, so each asks once. The x position is not
+    // part of the key: mirrored margins move only x, so a reporting renderer's answer must not
+    // depend on x, only on the width. A measuring run of a plan-dependent document starts it from
+    // the same place too, but with a different text, so the verdicts are dropped whenever a resolve
+    // changes one. Y and Height are both kept: they determine each other only up to rounding.
     private Dictionary<ContinuationKey, ContinuationMode>? _continuationVerdicts;
 
     // The session of the placement in progress, reused for each element. A placement never starts
