@@ -140,9 +140,9 @@ public sealed class LayoutImage
     /// from this property, when the fitted width or height is under 5e-6 points, or when no
     /// positive height is left for the scale, as described above. For a fitted extent the
     /// message names that extent; with no positive height left, it is the too-tall message,
-    /// which names the image's height and the content height. A size refused before the scale,
-    /// such as a <see cref="Width"/> of zero, is refused with the message it has without this
-    /// member.
+    /// which, for an image the document lays out, names the image's height and the content
+    /// height. A size refused before the scale, such as a <see cref="Width"/> of zero, is
+    /// refused with the message it has without this member.
     /// </exception>
     public bool FitToPage { get; init; }
 

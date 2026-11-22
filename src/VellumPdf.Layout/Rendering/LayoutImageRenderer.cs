@@ -57,9 +57,10 @@ public sealed class LayoutImageRenderer : IRenderer, IPageBreakSource, IKeepSour
     /// raises the image's size refusals itself. When the document calls this method, they reach you
     /// from the save.
     /// <para>With <see cref="LayoutImage.FitToPage"/> set, an image taller than the content height
-    /// of a fresh page is scaled down to it, and the document supplies that page. A context you
-    /// build with the public constructor carries none, so there the image is fitted to
-    /// <paramref name="ctx"/>'s own <see cref="LayoutContext.Area"/>, less the image's margins.
+    /// of a fresh page, less the image's margins, is scaled down to that height, and the document
+    /// supplies that page. A context you build with the public constructor carries none, so there
+    /// the image is fitted to <paramref name="ctx"/>'s own <see cref="LayoutContext.Area"/>, less
+    /// the image's margins.
     /// A context made by the context's <c>WithArea</c> method keeps the fresh page of the one it
     /// came from, so a renderer of yours that wraps this one and passes it a smaller area still
     /// gets the image fitted to the page. An image that fits the page and not that area then
@@ -178,11 +179,11 @@ public sealed class LayoutImageRenderer : IRenderer, IPageBreakSource, IKeepSour
             (_img.FitToPage ? "." : "; set FitToPage to scale it down.");
     }
 
-    // Whole points, trimmed to two decimals. Two heights that differ by less than that would print
-    // as one figure and the sentence would read "exceeds" over a tie, so those print with the
-    // shortest string that round-trips. So do a magnitude of 1e15 or more, where two decimals
-    // would print up to 309 digits (that form switches to exponent notation at 1e17), and a value
-    // that is not finite, which has no decimals to trim.
+    // Whole points, trimmed to two decimals and 15 significant digits. Two heights that differ by
+    // less than that would print as one figure and the sentence would read "exceeds" over a tie,
+    // so those print with the shortest string that round-trips. So do a magnitude of 1e15 or
+    // more, where two decimals would print up to 309 digits (the round-trip form switches to
+    // exponent notation at 1e17), and a value that is not finite, which has no decimals to trim.
     private static (string, string) Points(double height, double content)
     {
         var (h, c) = (Pt(height), Pt(content));
