@@ -224,20 +224,6 @@ public sealed class ContinuationLimitTests
     }
 
     [Fact]
-    public void Memo_isKeyedByTheCountAsWellAsTheStart()
-    {
-        // The same element starts twice at a page top: once after a Nothing, with one continuation
-        // counted, and once with none. What is left of the limit differs, so the decision does too.
-        var plan = PlanFor(Variant.RetrySite, 100, 100);
-        var log = new Log();
-        var scripted = new Scripted(plan, log);
-        var outcome = Run(new Setup(), log, new Block(5), scripted, new PageBreakRenderer(new PageBreak()), scripted);
-
-        Assert.Null(outcome.Error);
-        Assert.Equal(4, outcome.Probes);
-    }
-
-    [Fact]
     public void Probe_restoresTheCursorAndPageParity()
     {
         // The probes together take an odd number of pages (100 and 301). Left behind in the page
@@ -917,23 +903,27 @@ public sealed class ContinuationLimitTests
     // bottom margin of 10.1 and a page of 100 the retry is offered 56.6 and the loop's call after
     // it 56.60000000000001, one rounding step more.
     private static readonly Setup EdgeSetup = new() { Margins = new EdgeInsets(33.3, 10, 10.1, 10) };
+    private const double RetryBox = 56.6;
     private const double TallerBox = 56.60000000000001;
 
     /// <summary>
-    /// A renderer that needs a given height in each layout, and reports at the first page top it
-    /// is offered.
+    /// A renderer that needs a given height in each layout. It reports at the first page top it is
+    /// offered, or, when given heights, at the first call offered the next of those heights.
     /// </summary>
     private sealed class HeightGated : IRenderer, IContinuationTwin
     {
         private readonly double _needNew, _needTwin;
         private readonly bool _reports, _twin;
         private readonly long _bound;
+        private readonly double[]? _reportAt;
+        private int _reported;
         private readonly Log _log;
         private HeightGated? _twinInstance;
 
-        internal HeightGated(double needNew, double needTwin, bool reports, Log log, long bound, bool twin = false)
+        internal HeightGated(double needNew, double needTwin, bool reports, Log log, long bound, double[]? reportAt = null, bool twin = false)
         {
             _bound = bound;
+            _reportAt = reportAt;
             _needNew = needNew;
             _needTwin = needTwin;
             _reports = reports;
@@ -941,16 +931,23 @@ public sealed class ContinuationLimitTests
             _twin = twin;
         }
 
-        IRenderer IContinuationTwin.Twin() => _twinInstance ??= new HeightGated(_needNew, _needTwin, false, _log, _bound, twin: true);
+        IRenderer IContinuationTwin.Twin() => _twinInstance ??= new HeightGated(_needNew, _needTwin, false, _log, _bound, null, twin: true);
 
         public LayoutResult Layout(LayoutContext context)
         {
             var mode = context.ModeFor(this);
             if (!_twin && mode == ContinuationMode.Twin) return ((IContinuationTwin)this).Twin().Layout(context);
 
-            var reportsNow = !_twin && _reports && mode == ContinuationMode.Undecided && context.AtPageTop;
+            var offered = _reportAt is null
+                ? context.AtPageTop
+                : _reported < _reportAt.Length && context.Area.Height == _reportAt[_reported];
+            var reportsNow = !_twin && _reports && mode == ContinuationMode.Undecided && offered;
             var asNew = !_twin && (mode == ContinuationMode.New || reportsNow);
-            if (reportsNow) context.Session!.Report(this, _bound);
+            if (reportsNow)
+            {
+                _reported++;
+                context.Session!.Report(this, _bound);
+            }
 
             var need = asNew ? _needNew : _needTwin;
             return context.Area.Height >= need ? LayoutResult.Full(context.Area.WithHeight(need)) : LayoutResult.Nothing();
@@ -963,6 +960,34 @@ public sealed class ContinuationLimitTests
     {
         var log = new Log();
         return Run(EdgeSetup, log, new Block(50), new HeightGated(needNew, needTwin, reports, log, bound));
+    }
+
+    [Fact]
+    public void Memo_isKeyedByTheCountAsWellAsTheStart()
+    {
+        // The same element reports twice from the same box at a page top: once at the loop's call
+        // after a retry, with one continuation counted, and once at the first call, with none. What
+        // is left of the limit differs, so the decision does too.
+        var log = new Log();
+        var element = new HeightGated(10, 10, true, log, 1000, [TallerBox, TallerBox]);
+        var outcome = Run(EdgeSetup, log, new Block(50), element, new PageBreakRenderer(new PageBreak()), element);
+
+        Assert.Null(outcome.Error);
+        Assert.Equal(4, outcome.Probes);
+    }
+
+    [Fact]
+    public void Memo_isKeyedByTheRetrySiteAsWellAsTheStart()
+    {
+        // The same element reports from the same box and with the same count at the retry, and
+        // then at the loop's call after a retry. Only the first probe starts with the retry's own
+        // call, so the verdict of one is not the other's.
+        var log = new Log();
+        var element = new HeightGated(10, 10, true, log, 1000, [RetryBox, TallerBox]);
+        var outcome = Run(EdgeSetup, log, new Block(50), element, new PageBreakRenderer(new PageBreak()), new Block(50), element);
+
+        Assert.Null(outcome.Error);
+        Assert.Equal(4, outcome.Probes);
     }
 
     [Fact]
