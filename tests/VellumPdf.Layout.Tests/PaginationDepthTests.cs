@@ -74,13 +74,17 @@ public sealed class PaginationDepthTests
     /// </summary>
     private static void AssertFlat(IReadOnlyList<int> samples)
     {
-        // The count is of PlaceLoop frames on the stack at each Layout call. PlaceRenderer is a
-        // small method that starts the loop, and the JIT inlines it once it is hot (a table test
-        // that places 50,000 pages before this one runs is enough on net11.0), so counting its
-        // frames read 0. Both passes run PlaceLoop, so the count is 1 whichever pass is running; a
-        // recursion regression makes it grow with the continuation count. Bounds rather than
-        // Assert.All, because a recursion regression otherwise prints one near-identical failure
-        // block per sample — measured at 200 blocks and 34,670 characters for a single test.
+        // The count is of PlaceLoop frames on the stack at each Layout call. It is 1 for this
+        // renderer, which never reports, in either pass, and a recursion regression makes it grow
+        // with the continuation count. A renderer that reports has two on the stack during a
+        // continuation probe, because the probe calls PlaceLoop from inside PlaceLoop.
+        // PlaceRenderer, which only starts the loop, was counted before. Its count read 0 on
+        // net10.0 in a full run of the whole suite in sequence (-parallel none), and the same run
+        // on net11.0 did not. The likely cause is that the JIT inlined it into its caller, which
+        // was not confirmed with a JIT dump. PlaceLoop is marked NoInlining so that it keeps a
+        // frame of its own. Bounds rather than Assert.All, because a recursion regression
+        // otherwise prints one near-identical failure block per sample, measured at 200 blocks
+        // and 34,670 characters for a single test.
         Assert.Equal(1, samples.Min());
         Assert.Equal(1, samples.Max());
     }

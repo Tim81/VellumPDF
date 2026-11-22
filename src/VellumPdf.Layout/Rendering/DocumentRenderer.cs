@@ -1428,6 +1428,7 @@ public sealed class DocumentRenderer
         PlaceLoop(renderer, totalPages, keepTogether, lineCounts, session, 0);
     }
 
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
     private void PlaceLoop(IRenderer renderer, int totalPages, bool keepTogether, bool lineCounts, ContinuationSession session, int continuations)
     {
         var split = false;
