@@ -1148,9 +1148,9 @@ public sealed class TableCellBreakTests : IDisposable
         Assert.True(PageCount(bytes) > 2, "the row was not cut");
         Assert.Equal(1, cut.Count);
 
-        // The slices of the cut row are wrapped from the same unbroken text: the tab before the
-        // last "x" is left out, not a space.
-        Assert.Contains(Texts(Content(bytes)), x => x.EndsWith("wdx", StringComparison.Ordinal));
+        // The slices of the cut row are wrapped from the same unbroken text as the cell in row 3
+        // that is not cut: in both the tab before the last "x" is left out, not a space.
+        Assert.Equal(2, Texts(Content(bytes)).Count(x => x.EndsWith("wdx", StringComparison.Ordinal)));
     }
 
     /// <summary>

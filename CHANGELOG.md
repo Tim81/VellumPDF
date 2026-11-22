@@ -25,13 +25,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - A custom `IRenderer` is offered the content area of the page it lands on, so when `Left` and
     `Right` differ its `Area.X` differs between pages. One that keeps an X from an earlier `Layout`
     call must not reuse it.
-- **`LayoutDiagnosticCode.CellWhiteSpaceDropped` (301).** A table cell was laid out as one
-  unbroken line, and its tabs and line breaks were left out of what is drawn, because honouring the
-  line breaks of the cells around it would have made a header row or rows joined by a `RowSpan`
-  taller than a page. A warning, so `StrictDiagnostics` saves: the text stays, and the words those
-  characters separated run together in the drawing and in extracted text. `Count` is the number of
-  times the cell was drawn, so a repeated header row counts once per page. See the entry for #611
-  under Fixed.
+- **`LayoutDiagnosticCode.CellWhiteSpaceDropped` (301).** A table cell was wrapped at spaces alone
+  and sized from its whole text, and its tabs and line breaks were left out of what is drawn,
+  because honouring the line breaks of the cells around it would have made a header row or rows
+  joined by a `RowSpan` taller than a page. A warning, so `StrictDiagnostics` saves: the text stays,
+  and the words those characters separated run together in the drawing and in extracted text.
+  `Count` is the number of pages on which the cell was drawn from its first line, so a repeated
+  header row counts once per page and any other cell counts once, however many pages a cut row
+  spans. See the entry for #611 under Fixed.
 
 - **`Preformatted`, a block that keeps every space and tab (#591).** `Document.Add(Preformatted)`
   draws text whose spacing is its meaning: command blocks, configuration, ASCII tables. The default
@@ -544,63 +545,62 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   feed pair, a lone carriage return and a lone line feed each end a line. An empty line between two
   of them is a blank line, and so is the one after a trailing break: `a<LF>` is two lines in a cell
   where a paragraph draws one. Runs of spaces are kept as written, where a paragraph collapses them.
-  Every other white-space character except the no-break spaces U+00A0, U+202F and U+2007 is one
-  space, which is the word separation `ParagraphRenderer` applies: a tab, a form feed, a line
-  tabulation, a next-line character, U+2028, U+2029, and the Unicode space separators such as
-  U+2003, U+3000, U+2009 and U+1680. An automatically sized column takes its minimum width from the
-  widest word and its maximum from the widest line, each line measured by itself where 2.3.3
-  measured the whole text. The width the column is given is shared out as before, and can be more
-  than the maximum or less than the minimum.
-  A running band draws a tab, a line break or a form feed as one space, so the form feed of #613
-  item 34 is a space there too, and a band's text is measured and cut as drawn. A band reads only
-  those control characters: a Unicode space separator in a band is written as before.
+  Every other white-space control character (a tab, a form feed, a line tabulation, a next-line
+  character, U+2028 and U+2029) is one space. The no-break spaces and the other Unicode space
+  separators, such as U+2003, are written as before, where a paragraph reads the separators as
+  spaces. An automatically sized column takes its minimum width from the widest word and its
+  maximum from the widest line, each line measured by itself where 2.3.3 measured the whole text.
+  The width the column is given is shared out as before, and can be more than the maximum or less
+  than the minimum.
+  A running band draws a tab, a line break or a form feed as one space, in its template and in the
+  text a page label prints for `{page}`, so the form feed of #613 item 34 is a space there too, and
+  a band's text is measured and cut as drawn.
   **Deliberate output changes:**
-  - `A<TAB>B` in a cell is `(A B)` in Standard 14 and glyph 3 between the two letters in an
-    embedded font, with no `<0000>` entry in the ToUnicode map.
+  - `A<TAB>B` in a cell is `(A B)` in Standard 14 and a space glyph between the two letters in an
+    embedded font (glyph 3 in DejaVu Sans), with no `<0000>` entry in the ToUnicode map.
   - `line1<LF>line2` is two show strings, the second one leading lower, in a row 14.4 + 14.4 + 8 pt
     tall at 12 pt, where it was one. A table whose cell holds a line break gets taller rows and
-    different automatic column widths. A cell with none of the characters above, in a table with
-    none of them or of a Unicode space separator, saves to the same bytes as before.
-  - A Unicode space separator other than the no-break spaces in a cell, such as U+2003, is one
-    space. Standard 14 fonts drew `?` for it and listed `UnencodableCharacter`; an embedded font
-    drew whatever glyph its map held. Of 20,000 random tables whose texts hold no control
-    character, 9,408 change, and the pool's one text with a separator is the U+2003 one. Because
-    the character's width changes, so can the wrapping: of the 40,000 tables measured, two that
-    saved before (one in each pool) now throw the too-tall `InvalidOperationException`, and both
-    save again with the rule switched off.
+    different automatic column widths. A table that holds none of tab, carriage return, line feed,
+    form feed, line tabulation, next-line character, U+2028 and U+2029 saves to the same bytes as
+    before: 20,000 random tables whose texts include U+0001, U+007F, no-break spaces and U+2003
+    saved to identical bytes on the build before this change, and so did the first 3,331 of 4,000
+    set in DejaVu Sans.
   - A band template measured a tab, a line feed, a carriage return or a form feed at its font's
     width for that character, zero in Helvetica, and now measures each as one space. A band that
     fit can therefore be cut: `A` followed by 120 tabs and `B` in Helvetica 10 on a 300 pt page
     saved with no truncation, and now draws 1 of its 122 characters and reports `BandTruncated`,
     which `StrictDiagnostics` refuses.
-  - A table that 2.3.3 refused as too tall can now save: 13 of 40,000 random tables (ten of the
-    20,000 with control characters, three of the 20,000 without). All 13 are refusals that name a
-    `RowSpan` group. Columns are now measured per line and a space separator is measured as a
-    space, and both change the wrapping; I did not isolate which of the two shortens each group.
-    `qpdf --check` exits 0 for all 13.
+  - A table that 2.3.3 refused as too tall can now save: 6 of 20,000 random tables with control
+    characters (none of 20,000 without). Each is a refusal that names a `RowSpan` group, in a
+    table whose automatic columns are now measured per line. `qpdf --check` exits 0 for all six,
+    and no line crosses its cell border.
   - A cell with a very large number of lines can be refused where 2.3.3 saved it, because 2.3.3
     drew its line feeds inside one line. One cell of 2,500,000 two-letter words joined by LF, on a
     2000 x 600 pt page in a 1900 pt column, saved in 314 pages on 2.3.3 and now stops at the limit
     of 50,000 page continuations with the `InvalidOperationException` that names it. The same cell
-    of 2,300,000 words saves in 48,937 pages, and one of 2,400,000 is refused.
+    of 2,350,047 words saves, in 50,001 pages, and one of 2,350,048 is refused.
   - **A header row, or rows joined by a `RowSpan`, whose breaks would make them taller than a page
     keep the one-line layout.** Those rows are never cut between their lines, so honouring the
     breaks would turn a table that saved into a too-tall refusal. A cell of them is then wrapped at
     spaces alone and sized from its whole text, as 2.3.3 did, with each tab and break measured at
     the width its font gives it and then left out of what is drawn, so no line is wider than it was
     measured. A header of 60 two-letter lines stays inside its cell in a 100pt column and in
-    automatic columns on a 400pt page, and `pdftotext -raw` returns all 120 letters in order. The
-    words those characters separated run together, in the drawing and in extracted text. The save lists the cell as the new `LayoutDiagnosticCode.CellWhiteSpaceDropped`
-    (301, a warning, so `StrictDiagnostics` still saves). A header row of 46 two-letter lines,
-    560pt tall, keeps its lines on a 580pt page beside a 20pt row; one of 47 does not. Which cells
-    fall back is decided in steps, each taken only while the rows still do not fit a page, and
-    each ending its pass so the heights are taken again before the next step is judged: the cells
-    of the group that hold a carriage return or line feed; then those of the header rows; then
-    the cells that hold any control white-space character and sit in the group, in the header rows,
-    or in an automatically sized column that one of those cells is in. A cell that holds only a line
-    feed can fall back at any of the three steps. A cell no step reaches keeps its breaks and is cut
-    between its lines when its row is taller than a page. A renderer laid out through a context
-    built with the public constructor knows no page and keeps every break.
+    automatic columns on a 400pt page, and `pdftotext -raw` returns all 120 letters in order. A
+    glyph wider than its column still extends past it, as in any cell: a column 10pt wide draws a
+    `W` 5.44pt past its border. The words the dropped characters separated run together, in the
+    drawing and in extracted text. The save lists the cell as the new
+    `LayoutDiagnosticCode.CellWhiteSpaceDropped` (301, a warning, so `StrictDiagnostics` still
+    saves). A header row of 46 two-letter lines, 560pt tall, keeps its lines on a 580pt page above
+    a 20pt row; one of 47 does not. Which cells fall back is decided in steps, each taken only
+    while the rows still do not fit a page, and each ending its pass so the heights are taken
+    again before the next step is judged: the cells of the group that hold a carriage return or
+    line feed; then those of the header rows; then the cells that hold any control white-space
+    character and sit in the rows of the group or the header, or in an automatically sized column
+    that a cell of those rows is in. A cell that holds only a line feed can fall back at any of
+    the three steps. A cell no step reaches keeps its breaks. A row that can be cut is cut between
+    its lines when it is taller than a page; a header row or a span group is never cut, and is
+    refused when it does not fit. A renderer laid out through a context built with the public
+    constructor knows no page and keeps every break.
 - **`/FontBBox` of an embedded font is the font's own bounding box (#596).** The descriptor of every
   embedded TrueType and OpenType font held `[0, hhea descender, 1000 * 1000 / unitsPerEm, hhea
   ascender]`: a zero for xMin and a constant for xMax, so DejaVu Sans, Liberation Sans and Liberation
