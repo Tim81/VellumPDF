@@ -56,6 +56,12 @@ namespace VellumPdf.Layout.Elements.Table;
 /// row that began under the document's context keeps cutting in the overflow renderer when that
 /// is laid out under a plain context at the width the row was cut at. At another width the row is
 /// laid out again from its first line, and without the box it is not cut.</para>
+/// <para>A table is laid out with its cells' breaks read only when the document lays it out. A
+/// <see cref="Rendering.Table.TableRenderer"/> under a context you build with the public
+/// constructor of <see cref="LayoutContext"/> or narrow with
+/// <see cref="LayoutContext.WithArea"/>, or one that a renderer of yours holds and forwards
+/// <see cref="IRenderer.Layout"/> to, reads every cell unbroken, as it did before the breaks
+/// were read (#679). See <see cref="Rendering.Table.TableRenderer.Layout"/>.</para>
 /// </remarks>
 public sealed class TableElement
 {

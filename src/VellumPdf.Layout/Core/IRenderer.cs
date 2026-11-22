@@ -50,6 +50,13 @@ public interface IRenderer
     /// that returns <c>Nothing</c> for exactly the content area's height and fits the one step
     /// shorter was saved by an earlier build on a geometry where the shorter height was offered
     /// first; the save now throws <see cref="InvalidOperationException"/> for it.</para>
+    /// <para><b>A built-in renderer you call from yours lays out as it did before a fix that
+    /// would change the continuation limit's verdict.</b> A
+    /// <see cref="VellumPdf.Layout.Rendering.Table.TableRenderer"/> reads the breaks of its
+    /// cells only when the document called it, so one that your <see cref="Layout"/> forwards to
+    /// reads every cell unbroken (#679); see
+    /// <see cref="VellumPdf.Layout.Elements.Table.Cell.Content"/>. Your <see cref="Draw"/> must
+    /// forward to the same renderer.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other

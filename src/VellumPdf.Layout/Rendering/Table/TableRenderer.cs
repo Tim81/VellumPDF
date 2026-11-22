@@ -33,7 +33,7 @@ namespace VellumPdf.Layout.Rendering.Table;
 /// is tagged as a header cell. A table that has a row that is not a header after its leading
 /// header rows repeats those header rows on every page.
 /// </remarks>
-public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IPlacementSource, IContinuationGuard
+public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IPlacementSource, IContinuationTwin
 {
     private readonly TableElement _table;
     private readonly int _startRow;  // first data row index (0-based)
@@ -68,15 +68,33 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     // goes with it.
     private bool _allUnbroken;
 
-    // True for a renderer the document made because laying the table out with its breaks read
-    // would take more page continuations than one element may: it reads every cell unbroken from
-    // the start, as the table was measured before breaks were honoured, and says so in the
-    // diagnostics. Copies carry it.
+    // True for the table's twin (IContinuationTwin): it reads every cell unbroken from the start,
+    // as the table was laid out before breaks were honoured. The document chooses it when the
+    // layout with breaks would take more page continuations than one element may where this one
+    // would not, and a table laid out under a context the document did not address to it is the
+    // twin too. Copies carry it. A 2.x compatibility device, removed in 3.0 (#688).
     private bool _readsUnbrokenForTheLimit;
 
-    // An upper bound on the page continuations the decision's layout needs, set where the decision
-    // is made; see ContinuationBoundOf.
-    private long _continuationBound;
+    // The twin this renderer lays out as when it is not addressed (see Layout), made once so that
+    // every call reaches the same object and a later page reuses its decision. Removed in 3.0
+    // (#688).
+    private TableRenderer? _twin;
+
+    // Set while the last Layout call went to the twin, because Draw and ReportPlacements then
+    // belong to it: the document draws the instance it called, and only the twin holds what the
+    // layout decided. Removed in 3.0 (#688).
+    private TableRenderer? _laidOutBy;
+
+    // What the decision reports to the document: an upper bound on the continuations of the
+    // placement in either layout, over the grid that keeps the breaks and the grid that reads every
+    // cell unbroken, which is the twin's. Where the decision leaves no cell its breaks the two are
+    // one grid. Removed in 3.0 (#688).
+    private long _reportBound;
+
+    // True for a twin the document chose, and for the pieces it makes: only then is the fallback
+    // reported. A twin that a caller's renderer holds, or one laid out under a context the caller
+    // built, reports nothing, as the table did before breaks were honoured. Removed in 3.0 (#688).
+    private bool _placedAsTwin;
 
     // What the decision under way has measured of each cell; null outside it.
     private TableMeasureCache? _measured;
@@ -170,17 +188,24 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     // the top and reports nothing either.
     void IPlacementSource.ReportPlacements(PlacementSink sink)
     {
+        if (_laidOutBy is { } twin)
+        {
+            ((IPlacementSource)twin).ReportPlacements(sink);
+            return;
+        }
+
         if (!_continuation && _startRow == 0 && _table.Anchor is { } anchor)
             sink.ReportAnchor(_table, anchor, _occupied);
     }
 
     internal TableElement Element => _table;
 
-    // Explicit, as above.
-    long IContinuationGuard.ContinuationBound => _continuationBound;
-
-    IRenderer IContinuationGuard.WithoutBreaks() =>
-        new TableRenderer(_table, _startRow) { _continuation = _continuation, _readsUnbrokenForTheLimit = true };
+    // Explicit, as above. The twin reads every cell unbroken from this renderer's start row, which
+    // is what the table did before breaks were honoured. Removed in 3.0 (#688).
+    IRenderer IContinuationTwin.Twin() =>
+        _readsUnbrokenForTheLimit
+            ? this
+            : _twin ??= new TableRenderer(_table, _startRow) { _continuation = _continuation, _readsUnbrokenForTheLimit = true };
 
     /// <summary>Resolves column widths and row heights, fitting as many rows as possible and splitting at row boundaries on overflow, or between the lines of a row that fits no fresh page.</summary>
     /// <remarks>
@@ -204,8 +229,18 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     /// up their breaks, among them cells in rows that are neither header rows nor joined by a
     /// <see cref="Cell.RowSpan"/>, and the save reports each as
     /// <see cref="LayoutDiagnosticCode.CellWhiteSpaceDropped"/>;
-    /// <see cref="Cell.Content"/> says when and which. A context built with the public
-    /// constructor of <see cref="LayoutContext"/> keeps every break.</para>
+    /// <see cref="Cell.Content"/> says when and which.</para>
+    /// <para><b>A table that you lay out, and not the document, reads no cell's breaks.</b>
+    /// Under a context you build with the public constructor of <see cref="LayoutContext"/> or
+    /// narrow with <see cref="LayoutContext.WithArea"/>, and from a renderer of yours that holds a
+    /// <see cref="TableRenderer"/> and forwards <see cref="Layout"/> to it, every cell is wrapped
+    /// at spaces alone and measured with its control characters, and drawn without them, as the
+    /// table was laid out before the breaks were read (#679). Nothing is reported for it, and the
+    /// two layouts can take a different number of pages. <b>Do not pass</b> a table to a renderer
+    /// of yours in the expectation that its line breaks are drawn: add it with
+    /// <see cref="Document.Add(TableElement)"/>. A renderer of yours that forwards
+    /// <see cref="Layout"/> must forward <see cref="Draw"/> to the same table as well. 3.0 lays a
+    /// table out one way under every context.</para>
     /// <para>These are refused with the too-tall exception, extended with a sentence naming the
     /// rows or the cell, and are never cut: the repeated header rows when they do not fit a page;
     /// a row that declares a <see cref="Cell.RowSpan"/> above one, or lies under one; a row with a
@@ -241,6 +276,20 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     /// </exception>
     public LayoutResult Layout(LayoutContext context)
     {
+        // The new layout, which reads the breaks of the cells, runs only for the instance the
+        // document called, in a placement it has not decided for the twin. Under any other context
+        // (a caller's renderer that forwards here, WithArea, the public constructor) the table is
+        // laid out as it was before breaks were honoured, by its twin. Removed in 3.0 (#688).
+        var mode = context.ModeFor(this);
+        _laidOutBy = null;
+        if (mode == ContinuationMode.Twin && !_readsUnbrokenForTheLimit)
+        {
+            _laidOutBy = (TableRenderer)((IContinuationTwin)this).Twin();
+            return _laidOutBy.Layout(context);
+        }
+
+        if (_readsUnbrokenForTheLimit) _placedAsTwin = context.IsPlacedAsTwin(this);
+
         var area = context.Area.Deflate(_table.Margins);
         if (area.Width <= 0) return LayoutResult.Nothing();
 
@@ -293,6 +342,8 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             }
             else
             {
+                var oneLineBound = 0L;
+
                 // Before the grid resolves: a ColSpan of zero gives a column count of zero, so
                 // Resolve returns no widths and Layout gives up below, and the caller was told the
                 // table was too tall to fit (#481). Checking here names the cell instead.
@@ -342,8 +393,8 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
 
                     // A table that 2.3.3 refused stays refused: the decision above keeps the breaks
                     // of the cells that left every header and group room, and that can leave the
-                    // table fit where it measures every cell as one line and is refused. Cell.Content
-                    // says why.
+                    // table fit where it measures every cell as one line and is refused.
+                    // Cell.Content says why.
                     if (AnyControlSpaceKeepsItsBreaks(rows))
                     {
                         var (widths, heights) = (_colWidths, _rowHeights);
@@ -362,6 +413,11 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
                         }
                         if (!RefusedOnAFreshPage(fresh!, style))
                         {
+                            // The table keeps some breaks, so its layout differs from the twin's
+                            // and the bound must cover both: the grid read unbroken, which is the
+                            // twin's, and the grid that keeps the breaks, taken below. A table
+                            // that is refused here is laid out unbroken, which is the twin's.
+                            oneLineBound = ContinuationBoundOf(fresh!);
                             _allUnbroken = false;
                             (_colWidths, _rowHeights) = (widths, heights);
                         }
@@ -370,8 +426,16 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
                 _measured = null;
                 _content = null;
                 _decidedFor = key;
-                if (fresh is not null && !_readsUnbrokenForTheLimit) _continuationBound = ContinuationBoundOf(fresh);
+                if (fresh is not null && !_readsUnbrokenForTheLimit)
+                    _reportBound = Math.Max(oneLineBound, ContinuationBoundOf(fresh));
             }
+
+            // Every first call of a placement reports, not only the call that made the decision:
+            // the document places this instance again for each pass and each simulation of the
+            // keep rules, and a decision it carries would otherwise read as a call with no report,
+            // which fixes the twin.
+            if (fresh is not null && mode == ContinuationMode.Undecided)
+                context.Session!.Report(this, _reportBound);
         }
 
         // The repeatable header is the leading contiguous run of IsHeader rows — see
@@ -492,6 +556,8 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         next._oneLine = _oneLine;
         next._allUnbroken = _allUnbroken;
         next._readsUnbrokenForTheLimit = _readsUnbrokenForTheLimit;
+        next._placedAsTwin = _placedAsTwin;
+        next._reportBound = _reportBound;
         next._decidedFor = _decidedFor;
         return next;
     }
@@ -711,7 +777,9 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     /// </summary>
     private bool HonoursBreaks(int row, int cell) => !_allUnbroken && _oneLine?.Contains((row, cell)) != true;
 
-    /// <summary>True when some cell holds control white space and the table reads its breaks.</summary>
+    /// <summary>
+    /// True when some cell holds control white space and the table reads its breaks.
+    /// </summary>
     private bool AnyControlSpaceKeepsItsBreaks(IReadOnlyList<Row> rows)
     {
         for (var r = 0; r < rows.Count; r++)
@@ -1161,7 +1229,8 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
 
         if (headerReach < firstDataRow) return groups;
 
-        // The data rows under a header span that no group holds, each alone, in order with the rest.
+        // The data rows under a header span that no group holds, each alone, in order with the
+        // rest.
         var all = new List<(int First, int Last)>(groups.Count + headerReach - firstDataRow + 1);
         var next = 0;
         for (var r = firstDataRow; r <= headerReach; r++)
@@ -1569,6 +1638,13 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     /// </exception>
     public void Draw(DrawContext ctx)
     {
+        // Laid out by the twin, which holds what was decided.
+        if (_laidOutBy is { } twin)
+        {
+            twin.Draw(ctx);
+            return;
+        }
+
         // Layout already deflated context.Area by _table.Margins and stored the result in
         // _occupied; deflating again here took the table's own margin out of the box twice. The
         // vertical half was the one that lost content rather than merely shifting it: _occupied's
@@ -1838,7 +1914,8 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         // A cell the table laid out unbroken is reported where it is first drawn: once per page for
         // a repeated header row, and from its first slice for a cut row. Only a cell that holds a
         // control character loses anything by it, which is the separation its words had.
-        if (!HonoursBreaks(rowIndex, cellIndex) && LayoutText.HasControlSpace(cell.Content)
+        if ((!_readsUnbrokenForTheLimit || _placedAsTwin)
+            && !HonoursBreaks(rowIndex, cellIndex) && LayoutText.HasControlSpace(cell.Content)
             && (slice is null || slice.First[cellIndex] == 0))
         {
             ctx.Diagnostics?.Report(

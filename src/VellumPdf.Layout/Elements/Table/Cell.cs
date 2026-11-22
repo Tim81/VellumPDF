@@ -58,8 +58,9 @@ public sealed class Cell
     /// measured at the width its font gives it and left out of what is drawn. The words they
     /// separated run together in the drawing and in extracted text, and no line is wider than it
     /// was measured, though a glyph wider than its column can still extend past it, as in any
-    /// cell. The save lists the cell as <see cref="VellumPdf.Layout.LayoutDiagnosticCode.CellWhiteSpaceDropped"/>, a
-    /// warning that <see cref="Document.StrictDiagnostics"/> saves.</para>
+    /// cell. The save lists the cell as
+    /// <see cref="VellumPdf.Layout.LayoutDiagnosticCode.CellWhiteSpaceDropped"/>, a warning that
+    /// <see cref="Document.StrictDiagnostics"/> saves.</para>
     /// <para>Which cells give them up is decided in order: the header rows are judged first, then
     /// each group of rows joined by a <see cref="RowSpan"/>, each on the heights the decisions
     /// before it leave. A group is relieved in three steps, each taken only while the group still
@@ -106,8 +107,10 @@ public sealed class Cell
     /// fit; a table whose rows are all headers repeats none of them, so its rows are cut like any
     /// other. <b>Do not pass</b> a line break in a repeated header row or a span group that has no
     /// room and expect the lines to be drawn: move the text to a row that can be cut, or shorten
-    /// it. A renderer you lay out without the document, through a <see cref="LayoutContext"/> built
-    /// with the public constructor, knows no page and keeps every break.</para>
+    /// it. A table you lay out without the document, through a <see cref="LayoutContext"/> built
+    /// with the public constructor or narrowed with <see cref="LayoutContext.WithArea"/>, or from a
+    /// renderer of yours that forwards to its <see cref="Rendering.Table.TableRenderer"/>, reads no
+    /// cell's breaks; see <see cref="Rendering.Table.TableRenderer.Layout"/>.</para>
     /// </remarks>
     /// <inheritdoc cref="Heading.Text" path="/exception[@cref='T:System.ArgumentException']"/>
     public string Content { get; }

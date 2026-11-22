@@ -101,7 +101,9 @@ internal sealed class TableMeasureProbe
     /// <summary>Cells whose line count a measurement wrapped.</summary>
     public int WrapMisses { get; set; }
 
-    /// <summary>Cells whose longest word and widest line a resolution took from the cache.</summary>
+    /// <summary>
+    /// Cells whose longest word and widest line a resolution took from the cache.
+    /// </summary>
     public int WidthHits { get; set; }
 
     /// <summary>Cells whose longest word and widest line a resolution measured.</summary>

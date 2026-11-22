@@ -9,6 +9,7 @@ using VellumPdf.Fonts;
 using VellumPdf.Layout.Core;
 using VellumPdf.Layout.Elements;
 using VellumPdf.Layout.Elements.Table;
+using VellumPdf.Layout.Rendering;
 using VellumPdf.Layout.Rendering.Table;
 using VellumPdf.TestSupport;
 
@@ -870,11 +871,13 @@ public sealed class TableCellBreakTests : IDisposable
 
     /// <summary>
     /// A renderer laid out without the document, through a context built with the public
-    /// constructor, knows no page: it keeps every break, and a header that is then too tall is
-    /// the same refusal as before. The document supplies the page and lays the cell out unbroken.
+    /// constructor, is the table as it was laid out before the breaks were read: every cell is one
+    /// line, so the header of 60 lines is one line of 20pt and the table fits. The document, which
+    /// the table addresses, reads the breaks and lays the cell out unbroken only because the
+    /// header would leave no room.
     /// </summary>
     [Fact]
-    public void WithoutThePageTheBreaksAreKept()
+    public void WithoutTheDocumentEveryCellIsReadUnbroken()
     {
         var t = Wide10(1900);
         t.AddRow(isHeader: true).AddCell(Words(60));
@@ -882,8 +885,20 @@ public sealed class TableCellBreakTests : IDisposable
 
         var result = new TableRenderer(t).Layout(new LayoutContext(new LayoutBox(10, 10, 1980, 580)));
 
-        Assert.Equal(LayoutResult.Outcome.Nothing, result.Status);
+        Assert.Equal(LayoutResult.Outcome.Full, result.Status);
+        Assert.Equal(40.0, result.OccupiedArea!.Value.Height, 0.001);
     }
+
+    /// <summary>
+    /// The context the document makes for the renderer it calls, in the mode it decided for a
+    /// table that reports nothing: the page the caller names, and the new layout.
+    /// </summary>
+    private static LayoutContext FromTheDocument(IRenderer called, LayoutBox area, LayoutBox fresh) =>
+        new(area)
+        {
+            FreshPageArea = fresh,
+            Session = new ContinuationSession(ContinuationMode.New) { Called = called },
+        };
 
     /// <summary>
     /// Strict diagnostics saves a table whose cell is laid out unbroken: the report is a warning,
@@ -1392,8 +1407,9 @@ public sealed class TableCellBreakTests : IDisposable
         var small = new LayoutBox(10, 10, 1980, 580);
         var tall = new LayoutBox(10, 10, 1980, 700);
 
-        var first = new TableRenderer(t).Layout(new LayoutContext(new LayoutBox(10, 10, 1980, 60)) { FreshPageArea = small });
-        var second = first.OverflowRenderer!.Layout(new LayoutContext(tall) { FreshPageArea = tall });
+        var renderer = new TableRenderer(t);
+        var first = renderer.Layout(FromTheDocument(renderer, new LayoutBox(10, 10, 1980, 60), small));
+        var second = first.OverflowRenderer!.Layout(FromTheDocument(first.OverflowRenderer!, tall, tall));
 
         Assert.Equal(LayoutResult.Outcome.Partial, first.Status);
         Assert.Equal(60.0, first.OccupiedArea!.Value.Height, 0.001);
@@ -1413,8 +1429,9 @@ public sealed class TableCellBreakTests : IDisposable
         for (var i = 0; i < 3; i++) t.AddRow().AddCell("x");
         var small = new LayoutBox(10, 10, 1980, 580);
 
-        var first = new TableRenderer(t).Layout(new LayoutContext(new LayoutBox(10, 10, 1980, 60)) { FreshPageArea = small });
-        var second = first.OverflowRenderer!.Layout(new LayoutContext(small) { FreshPageArea = small });
+        var renderer = new TableRenderer(t);
+        var first = renderer.Layout(FromTheDocument(renderer, new LayoutBox(10, 10, 1980, 60), small));
+        var second = first.OverflowRenderer!.Layout(FromTheDocument(first.OverflowRenderer!, small, small));
 
         Assert.Equal(40.0, second.OccupiedArea!.Value.Height, 0.001);
     }

@@ -297,21 +297,31 @@ public sealed class TableMainRefusalTests
     /// </summary>
     private static (long Bound, long Continuations)? BoundAndContinuations(TableElement t, LayoutBox area)
     {
-        var ctx = new LayoutContext(area) { FreshPageArea = area };
+        // The context the document makes: addressed to the instance it calls, undecided for the
+        // first call, which is where the table reports, and decided for the new layout after it.
+        var session = new Rendering.ContinuationSession();
+        LayoutContext Context(IRenderer called)
+        {
+            session.Called = called;
+            return new LayoutContext(area) { FreshPageArea = area, Session = session };
+        }
+
         IRenderer renderer = new TableRenderer(t);
         var continuations = 0L;
         try
         {
-            var result = renderer.Layout(ctx);
-            var bound = ((Rendering.IContinuationGuard)renderer).ContinuationBound;
+            var result = renderer.Layout(Context(renderer));
+            var reported = session.Reported;
+            var bound = session.Bound;
+            session.Mode = Rendering.ContinuationMode.New;
             while (result.Status == LayoutResult.Outcome.Partial)
             {
                 continuations++;
                 renderer = result.OverflowRenderer!;
-                result = renderer.Layout(ctx);
+                result = renderer.Layout(Context(renderer));
             }
 
-            return result.Status == LayoutResult.Outcome.Nothing ? null : (bound, continuations);
+            return result.Status == LayoutResult.Outcome.Nothing || !reported ? null : (bound, continuations);
         }
         catch (InvalidOperationException)
         {

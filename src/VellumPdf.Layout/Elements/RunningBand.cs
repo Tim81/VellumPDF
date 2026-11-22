@@ -81,9 +81,9 @@ public sealed class RunningBand
     /// character reaches the font from it. The same holds for the text a
     /// <see cref="PageLabelRange"/> prints for <c>{page}</c>. A control character that is not white
     /// space, such as U+0001, is written as it is.
-    /// <para>Not checked when it is set: the constructor stores a null template, and the save throws
-    /// <see cref="ArgumentNullException"/> where the band is first drawn. A template that does not
-    /// fit the content box is truncated, and refused only in strict mode;
+    /// <para>Not checked when it is set: the constructor stores a null template, and the save
+    /// throws <see cref="ArgumentNullException"/> where the band is first drawn. A template that
+    /// does not fit the content box is truncated, and refused only in strict mode;
     /// <see cref="VellumPdf.Layout.Rendering.DocumentRenderer.BandTruncations"/> says when it
     /// counts as not fitting. The cut is reported through <c>Document.BandTruncations</c>,
     /// <c>DocumentRenderer.BandTruncations</c> and, with error severity, as
@@ -294,7 +294,8 @@ public sealed class RunningBand
     /// <para><b>The string returned is not always what a save draws.</b> A tab, a line break, a
     /// form feed or another white-space control character in the template, and in a page label, is
     /// returned as written, where a save draws each as one space; see <see cref="Template"/>.
-    /// A caller that compares this string with the text of a drawn band sees that difference.</para>
+    /// A caller that compares this string with the text of a drawn band sees that
+    /// difference.</para>
     /// <para>This builds the whole text, so its cost is the template's length. A save does not call
     /// it: the save resolves a template as it draws, and its cost per page follows the characters
     /// that fit the content width, as <see cref="Template"/> describes.</para>

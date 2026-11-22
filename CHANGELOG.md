@@ -690,13 +690,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - **A table whose breaks would take more than 50,000 page continuations is laid out with every
     cell unbroken.** One element may take at most 50,000 page continuations, and reading a cell's
     line feeds as breaks can take a table past that where measuring each cell as one line does
-    not. The table is placed once without drawing when a bound says it could reach the limit.
-    When it would, every cell that holds control white space is laid out unbroken from the first
-    page, as the table was measured before breaks were honoured, and the save lists each as
-    `CellWhiteSpaceDropped`. The table then saves in the pages that measurement takes, or is
-    refused with the limit's message when that takes more. One cell of 2,350,047 two-letter words
-    joined by LF, on a 2000 x 600 pt page in a 1900 pt column, keeps its breaks, in 50,001
-    pages; one of 2,350,048 is laid out unbroken, in 295, and one of 2,500,000 in 314.
+    not. The table reports an upper bound on its continuations to the document, over both ways of
+    laying it out: with its breaks read, and with every cell unbroken. When that bound could reach
+    the limit, the document places the table without drawing in each way, and the verdict is kept
+    for each place the table starts, so each start is tried once however many passes and keep
+    rules ask. When the unbroken layout reaches the limit the table is refused with the message
+    that layout gives, as it was in 2.3.3, though its breaks would take fewer pages; when the
+    layout that reads the breaks would, every cell that holds control white space is laid out
+    unbroken from the first page, as the table was measured before breaks were honoured, and the
+    save lists each as `CellWhiteSpaceDropped`. The table then saves in the pages that measurement
+    takes, or is refused with the limit's message when that takes more. One cell of 2,350,047
+    two-letter words joined by LF, on a 2000 x 600 pt page in a 1900 pt column, keeps its breaks,
+    in 50,001 pages; one of 2,350,048 is laid out unbroken, in 295, and one of 2,500,000 in 314.
+  - **A table is laid out with its breaks read only where the document lays it out.** A
+    `TableRenderer` that a renderer of yours holds and forwards `Layout` to, or that you lay out
+    with a `LayoutContext` you build or narrow with `WithArea`, reads every cell unbroken and
+    reports nothing, as the table did before breaks were honoured, so its pages and its refusals
+    are those of that layout and not of the document's, however many lines its cells hold. Such a
+    renderer's `Draw` must forward to the same table. `IRenderer.Layout`, `TableRenderer.Layout` and
+    `TableElement` say so.
   - **A repeated header row, or rows joined by a `RowSpan`, keep the one-line layout of their cells
     when reading the cells' breaks would leave them no room on a page.** Those rows are never cut
     between their lines, so reading the breaks would turn a table that saved into a too-tall
