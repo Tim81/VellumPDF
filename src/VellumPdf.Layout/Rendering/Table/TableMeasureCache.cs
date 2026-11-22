@@ -44,13 +44,6 @@ internal struct CellMeasure
     /// <summary>True when <see cref="Lines"/> and the interval that holds it are set.</summary>
     public bool HasLines;
 
-    /// <summary>
-    /// True when the count depends on the exact width, because a word wider than the width was
-    /// broken at its characters. <see cref="From"/> then holds that width and <see cref="Below"/>
-    /// is unused.
-    /// </summary>
-    public bool Pinned;
-
     /// <summary>The number of lines the cell wraps into.</summary>
     public int Lines;
 
@@ -68,7 +61,7 @@ internal struct CellMeasure
     /// True when the cell wraps into <see cref="Lines"/> lines at <paramref name="width"/>.
     /// </summary>
     public readonly bool Holds(double width) =>
-        HasLines && (Pinned ? width.Equals(From) : From <= width && width < Below);
+        HasLines && From <= width && width < Below;
 }
 
 /// <summary>
@@ -116,6 +109,18 @@ internal sealed class TableMeasureProbe
     /// was, so the pass went on.
     /// </summary>
     public int StepsKeptPassGoing { get; set; }
+
+    /// <summary>
+    /// Steps whose column widths came from raising the widths kept for the pass, without measuring
+    /// the table.
+    /// </summary>
+    public int WidthsRaised { get; set; }
+
+    /// <summary>
+    /// Steps that measured the whole table again, because a cell would contribute less to a column
+    /// read unbroken than it did as it was.
+    /// </summary>
+    public int WidthsMeasuredAgain { get; set; }
 
     /// <summary>
     /// Layouts that kept the grid and heights of the decision they were handed, and resolved

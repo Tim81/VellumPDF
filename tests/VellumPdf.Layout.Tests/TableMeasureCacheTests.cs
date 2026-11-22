@@ -94,6 +94,52 @@ public sealed class TableMeasureCacheTests
         Assert.True(probe.WidthHits > probe.WidthMisses, $"{probe.WidthHits} hits, {probe.WidthMisses} misses");
     }
 
+    /// <summary>
+    /// A step that moves no column takes the column widths from the ones kept for the pass, raised
+    /// by what its cells contribute unbroken, and measures no cell of the table. The probe checks
+    /// every such step against the table measured again and throws on a difference.
+    /// </summary>
+    [Fact]
+    public void AStepRaisesTheKeptColumnWidthsAndMeasuresNoOtherCell()
+    {
+        const int groups = 6;
+        using var doc = WidePage();
+        doc.Add(FillerTable(groups));
+
+        var probe = new TableMeasureProbe { Verify = true };
+        TableMeasureProbe.Current = probe;
+        try { Save(doc); }
+        finally { TableMeasureProbe.Current = null; }
+
+        Assert.Equal(groups, probe.WidthsRaised);
+        Assert.Equal(0, probe.WidthsMeasuredAgain);
+    }
+
+    /// <summary>
+    /// A cell that contributes less to a column read unbroken than it did as it was is not a raise:
+    /// the table is measured again. "ab", a tab, "ab" and a line feed is two words and a space wide
+    /// with its breaks and two words wide without, because the tab and the line feed measure zero
+    /// in Helvetica, so its column's maximum falls.
+    /// </summary>
+    [Fact]
+    public void AStepThatNarrowsAColumnMeasuresTheTableAgain()
+    {
+        using var doc = WidePage();
+        var t = new TableElement { DefaultCellStyle = Helvetica() }.SetColumnWidths(36, 0);
+        t.AddRow().AddCell(new Cell(Words(60)) { RowSpan = 2 }).AddCell("ab" + (char)9 + "ab" + (char)10);
+        t.AddRow().AddCell("c");
+        doc.Add(t);
+
+        var probe = new TableMeasureProbe { Verify = true };
+        TableMeasureProbe.Current = probe;
+        try { Save(doc); }
+        finally { TableMeasureProbe.Current = null; }
+
+        Assert.Equal(["row 0, cell 0", "row 0, cell 1"], Dropped(doc));
+        Assert.Equal(1, probe.WidthsMeasuredAgain);
+        Assert.Equal(0, probe.WidthsRaised);
+    }
+
     private static readonly string[] Alphabet =
         ["a", "i", "W", "ab", "word", "m", " ", " ", " ", "  ", "\n", "\t", "\r\n", "x\u00A0y", "\u0001", "WWWWWWWW"];
 
@@ -108,9 +154,9 @@ public sealed class TableMeasureCacheTests
     /// <summary>
     /// The count a certificate returns is the count of the wrap it stands for, and it holds across
     /// the interval it names: at the width it was made for, at the low end, and just under the
-    /// high end. A word wider than the width is broken at its characters, which pins the count to
-    /// that width. The texts include empty words, doubled spaces, line breaks and tabs, in both
-    /// modes, and widths down to one point.
+    /// high end. A word wider than the width is broken at its characters, and the comparisons that
+    /// decide where bound the interval as the others do. The texts include empty words, doubled
+    /// spaces, line breaks and tabs, in both modes, and widths down to one point.
     /// </summary>
     [Theory]
     [InlineData(false)]
@@ -119,23 +165,16 @@ public sealed class TableMeasureCacheTests
     {
         var style = Helvetica();
         var rng = new Random(honourBreaks ? 1 : 2);
-        var pinned = 0;
-        var intervals = 0;
+        var broken = 0;
         for (var n = 0; n < 4000; n++)
         {
             var text = RandomText(rng);
             var width = Math.Max(1, rng.NextDouble() * 120);
-            var lines = TableRenderer.CountLines(text, style, width, honourBreaks, out var from, out var below, out var isPinned);
+            var lines = TableRenderer.CountLines(text, style, width, honourBreaks, out var from, out var below);
 
             Assert.Equal(TableRenderer.WordWrapCount(text, style, width, honourBreaks), lines);
-            if (isPinned)
-            {
-                pinned++;
-                Assert.Equal(width, from);
-                continue;
-            }
-
-            intervals++;
+            if (text.Split([' ', '\n', '\r', '\t']).Any(w => style.MeasureString(w) > width))
+                broken++;
             Assert.True(from <= width && width < below, $"{from} <= {width} < {below}");
             if (double.IsFinite(from) && from >= 1)
                 Assert.Equal(lines, TableRenderer.WordWrapCount(text, style, from, honourBreaks));
@@ -143,27 +182,32 @@ public sealed class TableMeasureCacheTests
                 Assert.Equal(lines, TableRenderer.WordWrapCount(text, style, Math.BitDecrement(below), honourBreaks));
         }
 
-        Assert.True(pinned > 100 && intervals > 100, $"{pinned} pinned, {intervals} intervals");
+        Assert.True(broken > 100, $"{broken} texts broke a word");
     }
 
     /// <summary>
-    /// A wrap whose words all fit holds over a range of widths, and one that broke a word holds
-    /// at the width alone. One more point of width moves no break in "ab ab ab ab" at 36pt, and
-    /// moves the break of "abcdefghijklmnop" in a 20pt column.
+    /// A wrap that broke a word holds over a range of widths too: "abcdefghijklmnop" in a 20pt
+    /// column is cut at the character where the next one no longer fits, and every width that
+    /// leaves each cut where it is wraps into the same lines.
     /// </summary>
     [Fact]
-    public void ACertificateHoldsOverARangeUnlessAWordWasBroken()
+    public void ACertificateHoldsOverARangeWhenAWordWasBroken()
     {
         var style = Helvetica();
+        const string word = "abcdefghijklmnop";
 
-        var lines = TableRenderer.CountLines("ab ab ab ab", style, 36, true, out var from, out var below, out var pinned);
-        Assert.Equal(TableRenderer.WordWrapCount("ab ab ab ab", style, 36, true), lines);
-        Assert.False(pinned);
-        Assert.True(from < 36 && 37 < below, $"[{from}, {below})");
+        var lines = TableRenderer.CountLines(word, style, 20, true, out var from, out var below);
 
-        TableRenderer.CountLines("abcdefghijklmnop", style, 20, true, out from, out _, out pinned);
-        Assert.True(pinned);
-        Assert.Equal(20.0, from);
+        Assert.True(lines > 1);
+        Assert.True(double.IsFinite(from) && double.IsFinite(below) && from < below, $"[{from}, {below})");
+        Assert.True(from <= 20 && 20 < below, $"[{from}, {below})");
+        Assert.Equal(TableRenderer.WordWrapLines(word, style, 20, true), TableRenderer.WordWrapLines(word, style, from, true));
+        Assert.Equal(
+            TableRenderer.WordWrapLines(word, style, 20, true),
+            TableRenderer.WordWrapLines(word, style, Math.BitDecrement(below), true));
+        Assert.NotEqual(
+            TableRenderer.WordWrapLines(word, style, 20, true),
+            TableRenderer.WordWrapLines(word, style, below, true));
     }
 
     /// <summary>
@@ -176,8 +220,7 @@ public sealed class TableMeasureCacheTests
     {
         var style = Helvetica();
         var text = "ab ab ab ab";
-        var lines = TableRenderer.CountLines(text, style, 36, true, out var from, out var below, out var pinned);
-        Assert.False(pinned);
+        var lines = TableRenderer.CountLines(text, style, 36, true, out var from, out var below);
         Assert.True(double.IsFinite(from) && double.IsFinite(below), $"[{from}, {below})");
         var entry = new CellMeasure { HasLines = true, Lines = lines, From = from, Below = below };
 
@@ -187,8 +230,6 @@ public sealed class TableMeasureCacheTests
         Assert.False(entry.Holds(below));
         Assert.False(entry.Holds(Math.BitDecrement(from)));
         Assert.False(new CellMeasure().Holds(36));
-        Assert.False(new CellMeasure { HasLines = true, Pinned = true, Lines = 3, From = 20 }.Holds(Math.BitIncrement(20)));
-        Assert.True(new CellMeasure { HasLines = true, Pinned = true, Lines = 3, From = 20 }.Holds(20));
     }
 
     /// <summary>
@@ -393,56 +434,64 @@ public sealed class TableMeasureCacheTests
         return (bytes, doc.Diagnostics.Where(d => d.Code == LayoutDiagnosticCode.CellWhiteSpaceDropped).Sum(d => d.Count));
     }
 
+    private static Document FillerDocument(int groups, string separator)
+    {
+        var doc = WidePage();
+        var t = new TableElement { DefaultCellStyle = Helvetica() }.SetColumnWidths(36, 36, 0);
+        for (var i = 0; i < groups; i++)
+        {
+            t.AddRow().AddCell("x").AddCell("x").AddCell(new Cell(Words(60, separator)) { RowSpan = 2 });
+            t.AddRow().AddCell("y");
+        }
+        doc.Add(t);
+        return doc;
+    }
+
     /// <summary>
     /// Fillers in an automatic column: each group is a cell of 60 lines in the column other rows
-    /// share, beside two short cells in 36pt columns. The allocations of 400 of them stay under
-    /// a fixed multiple of those of the same table with the lines separated by spaces, which has
-    /// nothing to give up. Allocations are counted, not time, because the same run on a loaded
-    /// machine takes several times as long.
+    /// share, beside two short cells in 36pt columns. Every step keeps the column widths, so the
+    /// whole decision is one pass. The allocations of the table are a fixed multiple of those of
+    /// the same table with the lines separated by spaces, which has nothing to give up, at 400
+    /// groups and at 1,600: a cost that grew with the square of the groups would pass the
+    /// smaller table and fail the larger. Allocations are counted, not time, because the same
+    /// run on a loaded machine takes several times as long.
     /// </summary>
     [Fact]
-    public void TheCostOfGivingUpBreaksInASharedAutoColumnDoesNotGrowWithEachGroup()
+    public void TheCostOfGivingUpBreaksInASharedAutoColumnStaysAFixedMultipleOfNotGivingThemUp()
     {
-        static Document Build(int groups, string separator)
+        Allocated(() => FillerDocument(10, "\n"));
+        Allocated(() => FillerDocument(10, " "));
+        foreach (var groups in new[] { 400, 1600 })
         {
-            var doc = WidePage();
-            var t = new TableElement { DefaultCellStyle = Helvetica() }.SetColumnWidths(36, 36, 0);
-            for (var i = 0; i < groups; i++)
-            {
-                t.AddRow().AddCell("x").AddCell("x").AddCell(new Cell(Words(60, separator)) { RowSpan = 2 });
-                t.AddRow().AddCell("y");
-            }
-            doc.Add(t);
-            return doc;
+            var withBreaks = Allocated(() => FillerDocument(groups, "\n"));
+            var withSpaces = Allocated(() => FillerDocument(groups, " "));
+
+            Assert.Equal(Math.Min(groups, 1000), withBreaks.Reported);
+            Assert.Equal(0, withSpaces.Reported);
+            Assert.True(
+                withBreaks.Bytes < 1.5 * withSpaces.Bytes,
+                $"{groups} groups: {withBreaks.Bytes} bytes against {withSpaces.Bytes} without breaks");
         }
-
-        Allocated(() => Build(10, "\n"));
-        Allocated(() => Build(10, " "));
-        var withBreaks = Allocated(() => Build(400, "\n"));
-        var withSpaces = Allocated(() => Build(400, " "));
-
-        Assert.Equal(400, withBreaks.Reported);
-        Assert.Equal(0, withSpaces.Reported);
-        Assert.True(withBreaks.Bytes < 4.0 * withSpaces.Bytes, $"{withBreaks.Bytes} bytes against {withSpaces.Bytes} without breaks");
     }
 
     /// <summary>
     /// Groups that each widen the automatic column, and so change what the next group is judged
     /// by: the cell of group i has 48 + i lines. Every step moves a column width, so none keeps
     /// the pass going and every group is judged on the widths the one before it leaves. The
-    /// allocations of 300 of them stay under 35 times those of the same table with the lines
-    /// separated by spaces, which has nothing to give up.
+    /// save of 300 of them allocates under 60MB, which is a bound on the
+    /// cost itself and not on its ratio to a table with nothing to give up, because that table's
+    /// cost moves with the caches too.
     /// </summary>
     [Fact]
-    public void TheCostOfGroupsThatEachWidenTheColumnStaysUnderAFixedMultiple()
+    public void TheCostOfGroupsThatEachWidenTheColumnStaysUnderAFixedBound()
     {
-        static Document Build(int groups, bool breaks)
+        static Document Build(int groups)
         {
             var doc = WidePage();
             var t = new TableElement { DefaultCellStyle = Helvetica() }.SetColumnWidths(0, 0, 0);
             for (var i = 0; i < groups; i++)
             {
-                t.AddRow().AddCell("x").AddCell(new Cell(Words(48 + i, breaks ? "\n" : " ")) { RowSpan = 2 })
+                t.AddRow().AddCell("x").AddCell(new Cell(Words(48 + i)) { RowSpan = 2 })
                     .AddCell("lorem ipsum dolor sit amet " + i);
                 t.AddRow().AddCell("y");
             }
@@ -450,14 +499,11 @@ public sealed class TableMeasureCacheTests
             return doc;
         }
 
-        Allocated(() => Build(10, true));
-        Allocated(() => Build(10, false));
-        var withBreaks = Allocated(() => Build(300, true));
-        var withSpaces = Allocated(() => Build(300, false));
+        Allocated(() => Build(10));
+        var withBreaks = Allocated(() => Build(300));
 
         Assert.Equal(300, withBreaks.Reported);
-        Assert.Equal(0, withSpaces.Reported);
-        Assert.True(withBreaks.Bytes < 35.0 * withSpaces.Bytes, $"{withBreaks.Bytes} bytes against {withSpaces.Bytes} without breaks");
+        Assert.True(withBreaks.Bytes < 60_000_000L, $"{withBreaks.Bytes} bytes");
     }
 
     /// <summary>

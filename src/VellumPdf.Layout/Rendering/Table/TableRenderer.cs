@@ -65,6 +65,11 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     // What the decision under way has measured of each cell; null outside it.
     private TableMeasureCache? _measured;
 
+    // The per-column content widths the last resolution of the grid worked from, which the steps of
+    // one decision keep up to date as cells give up their breaks. Null outside a decision and when
+    // no column takes its width from its content.
+    private (double[] MinW, double[] MaxW)? _content;
+
     // What _oneLine was decided for: the table width and the vertical extent of the two fresh
     // boxes.
     // A renderer that carries the decision to the next page reuses it, with the grid and the
@@ -310,6 +315,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
                     }
                 }
                 _measured = null;
+                _content = null;
                 _decidedFor = key;
             }
         }
@@ -441,6 +447,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         var grid = new TableGridResolver { OneLineCells = _oneLine, Cache = cache };
         grid.Resolve(_table, areaWidth);
         _colWidths = grid.ColWidths;
+        _content = grid.ContentUsed;
 
         // #481's third refusal, and the one route to it that no span check covers: a table with no
         // rows, or rows holding no cells, resolves to no columns without any bad ColSpan, and
@@ -460,12 +467,17 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         var maxH = 0.0;
         var col = 0;
         var cellIndex = -1;
-        foreach (var cell in row.Cells)
+        var rowCells = row.Cells;
+        for (var k = 0; k < rowCells.Count; k++)
         {
+            var cell = rowCells[k];
             cellIndex++;
             if (col >= _colWidths.Length) break;
             var cs = cell.Style ?? style;
-            LayoutValidation.ValidateFontSize(cs, $"Table row {r}, cell {cellIndex}");
+
+            // The owner text is built only for the refusal: this runs for every cell on every pass.
+            if (!double.IsFinite(cs.FontSize))
+                LayoutValidation.ValidateFontSize(cs, $"Table row {r}, cell {cellIndex}");
             var colW = ColSpanWidth(col, cell.ColSpan);
             var innerW = colW - cell.Padding.Horizontal;
             var honourBreaks = HonoursBreaks(r, cellIndex);
@@ -504,38 +516,37 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         }
 
         if (probe is not null) probe.WrapMisses++;
-        entry.Lines = CountLines(text, style, width, honourBreaks, out entry.From, out entry.Below, out entry.Pinned);
+        entry.Lines = CountLines(text, style, width, honourBreaks, out entry.From, out entry.Below);
         entry.HasLines = true;
         return entry.Lines;
     }
 
     /// <summary>
     /// The number of lines <see cref="WordWrapLines"/> returns, without building them, and the
-    /// widths over which the count is the same. Each comparison of a width against a measurement
-    /// narrows <paramref name="from"/> and <paramref name="below"/>, so the count holds for every
-    /// width in [from, below), and for exactly the width given when a word wider than it was
-    /// broken at its characters (<paramref name="pinned"/>), because where that word breaks
-    /// follows the width. This method follows <see cref="WrapLine"/> step for step, an empty word
-    /// included, and takes the same measurements from the font in the same order.
+    /// widths over which the count is the same. Every comparison of a width against a measurement
+    /// that the wrap makes, including the ones that decide where a word wider than the width is
+    /// broken at its characters, narrows <paramref name="from"/> and <paramref name="below"/>:
+    /// the wrap takes the same path at every width in [from, below), and so returns the same
+    /// lines. This method follows <see cref="WrapLine"/> and <see cref="HardBreakWord"/> step for
+    /// step, an empty word included, and takes the same measurements from the font in the same
+    /// order.
     /// </summary>
     internal static int CountLines(
         string text, TextStyle style, double maxWidth, bool honourBreaks,
-        out double from, out double below, out bool pinned)
+        out double from, out double below)
     {
         from = double.NegativeInfinity;
         below = double.PositiveInfinity;
-        pinned = false;
         if (string.IsNullOrEmpty(text)) return 1;
 
         var total = 0;
         foreach (var line in CellLines(text, honourBreaks))
-            total += CountLine(line, style, maxWidth, ref from, ref below, ref pinned);
-        if (pinned) from = maxWidth;
+            total += CountLine(line, style, maxWidth, ref from, ref below);
         return total;
     }
 
     private static int CountLine(
-        string text, TextStyle style, double maxWidth, ref double from, ref double below, ref bool pinned)
+        string text, TextStyle style, double maxWidth, ref double from, ref double below)
     {
         if (string.IsNullOrEmpty(text)) return 1;
 
@@ -573,8 +584,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             if (ww > maxWidth)
             {
                 below = Math.Min(below, ww);
-                pinned = true;
-                lines += CountHardBreakFragments(word, style, maxWidth);
+                lines += CountHardBreakFragments(word, style, maxWidth, ref from, ref below);
                 continue;
             }
             from = Math.Max(from, ww);
@@ -585,20 +595,34 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         return lines == 0 ? 1 : lines;
     }
 
-    /// <summary>The number of lines <see cref="HardBreakWord"/> adds for a word.</summary>
-    private static int CountHardBreakFragments(string word, TextStyle style, double maxWidth)
+    /// <summary>
+    /// The number of lines <see cref="HardBreakWord"/> adds for a word. A fragment is cut where
+    /// the next character no longer fits, so each such comparison narrows the widths the count
+    /// holds over, like the ones in <see cref="CountLine"/>.
+    /// </summary>
+    private static int CountHardBreakFragments(
+        string word, TextStyle style, double maxWidth, ref double from, ref double below)
     {
         var fragments = 0;
         var open = false;
         var fragmentW = 0.0;
         foreach (var rune in word.EnumerateRunes())
         {
-            var charW = style.FontRef.MeasureString(rune.ToString(), style.FontSize);
-            if (open && fragmentW + charW > maxWidth)
+            var charW = style.FontRef.MeasureString(RuneString(rune), style.FontSize);
+            if (open)
             {
-                fragments++;
-                fragmentW = 0.0;
-                open = false;
+                var grown = fragmentW + charW;
+                if (grown > maxWidth)
+                {
+                    below = Math.Min(below, grown);
+                    fragments++;
+                    fragmentW = 0.0;
+                    open = false;
+                }
+                else
+                {
+                    from = Math.Max(from, grown);
+                }
             }
             open = true;
             fragmentW += charW;
@@ -606,6 +630,20 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         if (open) fragments++;
         return fragments;
     }
+
+    // The text of a rune, taken from a table for the characters below U+0100 so that measuring a
+    // long word one character at a time does not allocate a string per character.
+    private static readonly string[] s_latin1Strings = BuildLatin1Strings();
+
+    private static string[] BuildLatin1Strings()
+    {
+        var table = new string[256];
+        for (var i = 0; i < table.Length; i++) table[i] = ((char)i).ToString();
+        return table;
+    }
+
+    private static string RuneString(System.Text.Rune rune) =>
+        rune.Value < s_latin1Strings.Length ? s_latin1Strings[rune.Value] : rune.ToString();
 
     /// <summary>
     /// True when the cell's line breaks are kept; false when the table lays the cell out unbroken.
@@ -647,6 +685,9 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
 
         HashSet<(int Row, int Cell)>? found = null;
 
+        // The cells the step under way has added to found, in the order it added them.
+        var step = new List<(int Row, int Cell)>();
+
         // The rows of the group being judged, and whether a cell was added that another group's
         // height can depend on: one in a row outside the group, which is a header row, or one in an
         // automatically sized column, whose width every row that has a cell in an automatic column
@@ -667,20 +708,67 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         bool ColumnWidthsHold()
         {
             if (outside) return false;
-            var trial = new HashSet<(int Row, int Cell)>(_oneLine ?? []);
-            trial.UnionWith(found!);
-            var grid = new TableGridResolver { OneLineCells = trial, Cache = cache };
-            grid.Resolve(_table, areaWidth);
-            if (grid.ColWidths.Length != _colWidths.Length) return false;
+
+            // The widths the table would have with the cells of this step read unbroken. Each
+            // column's minimum and maximum is the greatest of what its cells contribute, and a
+            // cell read unbroken contributes at least what it did, so the step raises them to the
+            // greater of the two and nothing else needs to be measured. When a cell would
+            // contribute less, the table is measured again from scratch.
+            var widths = WidthsWithStep(step);
+            if (widths is null)
+            {
+                if (TableMeasureProbe.Current is { } again) again.WidthsMeasuredAgain++;
+                widths = WidthsMeasuredAgain();
+            }
+            else if (TableMeasureProbe.Current is { } raised)
+            {
+                raised.WidthsRaised++;
+                if (raised.Verify)
+                {
+                    var fresh = WidthsMeasuredAgain();
+                    for (var i = 0; i < fresh.Length; i++)
+                        if (fresh.Length != widths.Length || BitConverter.DoubleToInt64Bits(fresh[i]) != BitConverter.DoubleToInt64Bits(widths[i]))
+                            throw new InvalidOperationException("Column widths raised by a step differ from the table measured again.");
+                }
+            }
+            if (widths.Length != _colWidths.Length) return false;
             for (var i = 0; i < _colWidths.Length; i++)
-                if (BitConverter.DoubleToInt64Bits(grid.ColWidths[i]) != BitConverter.DoubleToInt64Bits(_colWidths[i]))
+                if (BitConverter.DoubleToInt64Bits(widths[i]) != BitConverter.DoubleToInt64Bits(_colWidths[i]))
                     return false;
             if (TableMeasureProbe.Current is { } probe) probe.StepsKeptPassGoing++;
             return true;
         }
 
-        void Note(int r, int col, int span)
+        // The column widths with every cell of the pass so far read unbroken, measuring the whole
+        // table. The step's cells are in neither _oneLine nor the measurements until the step is
+        // taken, so they come from the set found.
+        double[] WidthsMeasuredAgain()
         {
+            var trial = new HashSet<(int Row, int Cell)>(_oneLine ?? []);
+            trial.UnionWith(found!);
+            var grid = new TableGridResolver { OneLineCells = trial, Cache = cache };
+            grid.Resolve(_table, areaWidth);
+            _content = grid.ContentUsed;
+            return grid.ColWidths;
+        }
+
+        // The column widths with the cells of the step read unbroken, taken from the content widths
+        // kept for the pass, or null when a cell would contribute less than it did.
+        double[]? WidthsWithStep(List<(int Row, int Cell)> cells)
+        {
+            if (_content is not { } content) return null;
+            foreach (var (r, c) in cells)
+                if (!RaiseContentWidths(content, r, c, cache))
+                    return null;
+
+            var grid = new TableGridResolver { Content = content };
+            grid.Resolve(_table, areaWidth);
+            return grid.ColWidths;
+        }
+
+        void Note(int r, int c, int col, int span)
+        {
+            step.Add((r, c));
             if (r < own.First || r > own.Last) { shared = true; outside = true; return; }
             for (var k = 0; k < span && col + k < _colWidths.Length; k++)
                 if (IsAutoColumn(col + k)) { shared = true; return; }
@@ -701,7 +789,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
                     if (HonoursBreaks(r, c) && LayoutText.HasLineBreak(cells[c].Content) && (found ??= []).Add((r, c)))
                     {
                         added = true;
-                        Note(r, col, span);
+                        Note(r, c, col, span);
                     }
                     col += span;
                 }
@@ -743,7 +831,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
                         && (found ??= []).Add((r, c)))
                     {
                         added = true;
-                        Note(r, col, span);
+                        Note(r, c, col, span);
                     }
                     col += span;
                 }
@@ -783,6 +871,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
                 own = (first, last);
                 shared = false;
                 outside = false;
+                step.Clear();
                 if (CollectBreaks(first, last))
                 {
                     if (shared && !ColumnWidthsHold()) return found;
@@ -797,6 +886,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
                 own = (first, last);
                 shared = false;
                 outside = false;
+                step.Clear();
                 if (CollectControlSpace(first, last) && shared)
                 {
                     // The last step takes every cell it can reach, so the group is not judged
@@ -824,6 +914,52 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         // measured. The last step reads every such cell unbroken (see Cell.Content), which gives
         // the widths, and so the heights, 2.3.3 measured for the header and the groups.
         return found ?? (exhausted ? CollectAutoColumnControlSpace() : null);
+    }
+
+    /// <summary>
+    /// Raises the per-column content widths by what cell <paramref name="c"/> of row
+    /// <paramref name="r"/> contributes when it is read unbroken, as
+    /// <see cref="TableGridResolver"/> would take it, and returns false, leaving the widths
+    /// unusable, when the cell contributes less to some column than it did read as it is. A
+    /// column's width is the greatest contribution of its cells, so a contribution that does not
+    /// fall leaves that greatest equal to the one a measurement of the whole table finds, bit for
+    /// bit, and one that is not a number is left to that measurement.
+    /// </summary>
+    private bool RaiseContentWidths((double[] MinW, double[] MaxW) content, int r, int c, TableMeasureCache cache)
+    {
+        var cells = _table.Rows[r].Cells;
+        var cols = content.MinW.Length;
+        var col = 0;
+        for (var k = 0; k < c; k++) col += cells[k].ColSpan;
+        if (col >= cols) return true;
+
+        var cell = cells[c];
+        ref var before = ref cache.Of(r, c, cells.Count, honourBreaks: true);
+        if (!before.HasWidths) return false;
+
+        ref var after = ref cache.Of(r, c, cells.Count, honourBreaks: false);
+        if (!after.HasWidths)
+        {
+            var style = cell.Style ?? _table.DefaultCellStyle ?? TextStyle.Default;
+            (after.LongestWord, after.WidestLine) = TableGridResolver.MeasureCell(cell.Content, style, honourBreaks: false);
+            after.HasWidths = true;
+            if (TableMeasureProbe.Current is { } miss) miss.WidthMisses++;
+        }
+
+        var share = cell.ColSpan;
+        var padding = cell.Padding.Horizontal;
+        var minBefore = (before.LongestWord / share) + padding;
+        var minAfter = (after.LongestWord / share) + padding;
+        var maxBefore = (before.WidestLine + padding) / share;
+        var maxAfter = (after.WidestLine + padding) / share;
+        if (!(minAfter >= minBefore) || !(maxAfter >= maxBefore)) return false;
+
+        for (var s = 0; s < share && col + s < cols; s++)
+        {
+            content.MinW[col + s] = Math.Max(content.MinW[col + s], minAfter);
+            content.MaxW[col + s] = Math.Max(content.MaxW[col + s], maxAfter);
+        }
+        return true;
     }
 
     /// <summary>
@@ -903,7 +1039,8 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         for (var q = 0; q < rows.Count; q++)
         {
             var reach = 1;
-            foreach (var cell in rows[q].Cells) reach = Math.Max(reach, cell.RowSpan);
+            var qCells = rows[q].Cells;
+            for (var k = 0; k < qCells.Count; k++) reach = Math.Max(reach, qCells[k].RowSpan);
             if (reach <= 1) continue;
 
             var end = (int)Math.Min((long)q + reach - 1, rows.Count - 1);
@@ -1700,7 +1837,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     /// wrapped at spaces alone, measuring each control white-space character at its own width, and
     /// the lines are drawn without them, so a line is never wider than it was measured.
     /// </summary>
-    private static List<string> WordWrapLines(string text, TextStyle style, double maxWidth, bool honourBreaks)
+    internal static List<string> WordWrapLines(string text, TextStyle style, double maxWidth, bool honourBreaks)
     {
         if (string.IsNullOrEmpty(text)) return WrapLine(string.Empty, style, maxWidth);
 
