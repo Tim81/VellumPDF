@@ -396,7 +396,7 @@ public sealed class PdfDocument : IDisposable
     /// <see cref="RefuseUndefinedForeignFonts"/> makes at save: the handle is this document's own,
     /// or this document defines a font under its resource name. It reads the same two tests, so a
     /// caller that must know before it draws, without registering the usage, gets the save's
-    /// answer.
+    /// answer. Removed in 3.0 (#688) with the list's own check of what it can draw.
     /// </summary>
     internal bool CanDrawFont(EmbeddedFontHandle handle) =>
         ReferenceEquals(handle.Owner, this)

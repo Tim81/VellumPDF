@@ -1342,7 +1342,7 @@ public sealed class DocumentRenderer
     private ProbeOutcome ProbeContinuations(IRenderer renderer, ContinuationMode mode, bool keepTogether, bool lineCounts, int continuations, bool retryFirst)
     {
         ContinuationProbes++;
-        var probe = new ContinuationSession(mode, probing: true) { Pdf = _pdf };
+        var probe = new ContinuationSession(mode, probing: true);
         var saved = (_measuring, _measureArea, _measureY, _pageIndex, _placedOnPage, _simulating, _simFirstOnly, _simFirstPage);
         var cursor = Cursor;
         var fault = false;

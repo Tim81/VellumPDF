@@ -202,17 +202,17 @@ public enum LayoutDiagnosticCode
     /// </summary>
     /// <remarks>
     /// <b>A part of the entry is missing from the page.</b> A line that does not fit is not drawn,
-    /// while a marker or a text that wraps keeps the lines that fit. The list leaves an entry where
-    /// it falls in these cases, which are the three that report:
-    /// an entry no page holds, because a line of its marker, or a line of its text at the width
-    /// the clamp would give it, is taller than a page (the whole list is then laid out as it was
-    /// before the clamp and the moving of entries, so no other entry of it is clamped or moved);
-    /// an entry with a font the document cannot draw, which is not moved; and a list laid out as
-    /// it was before the clamp and the moving of entries, which a renderer of yours or
-    /// <see cref="ListIndentClampSkipped"/> causes. An entry whose text has no width is not
-    /// reported, and neither is one that moves to the next page whole. It is reported from the
-    /// piece of the list that holds the entry, once per list however many entries it counts. Strict
-    /// mode refuses this code. <b>Do not</b> give an entry a marker or a line of text taller than a
+    /// while a marker or a text that wraps keeps the lines that fit. An entry is left where it
+    /// falls, and reported, in three cases. No page holds it, because a line of its marker, or a
+    /// line of its text at the width the clamp would give it, is taller than a page: the whole
+    /// list is then laid out as it was before the clamp and the moving of entries, so no other
+    /// entry of it is clamped or moved. It has a font the document cannot draw, so it is not
+    /// moved. Or the list is laid out as it was before the clamp and the moving of entries,
+    /// because a renderer of yours lays it out, or because of
+    /// <see cref="ListIndentClampSkipped"/>. An entry whose text has no width is not reported, and
+    /// neither is one that moves to the next page whole. It is reported from the piece of the list
+    /// that holds the entry, once per list however many entries it counts. Strict mode refuses
+    /// this code. <b>Do not</b> give an entry a marker or a line of text taller than a
     /// page: the part that does not fit is not drawn. See <see cref="Elements.ListElement"/>.
     /// </remarks>
     ListEntryPartDropped = 208,

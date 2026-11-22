@@ -227,7 +227,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     // Where the last successful Layout left this renderer, which Draw reads when the Layout it
     // makes for itself answers Nothing. A caller that lays the paragraph out only to measure it,
     // and must not change what a later Draw does, reads this first and puts it back (ListRenderer,
-    // for the page of its own it lays each entry out on).
+    // for the page of its own it lays each entry out on). Removed in 3.0 (#688) with that analysis.
     internal (int EndLine, LayoutBox Occupied) Placement => (_endLine, _occupied);
 
     internal void RestorePlacement((int EndLine, LayoutBox Occupied) placement) =>

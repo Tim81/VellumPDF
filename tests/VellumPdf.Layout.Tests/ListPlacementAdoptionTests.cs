@@ -146,6 +146,37 @@ public sealed class ListPlacementAdoptionTests
         Assert.DoesNotContain(renderer.Diagnostics, d => d.Code == LayoutDiagnosticCode.ListIndentClamped);
     }
 
+    /// <summary>
+    /// One renderer that a caller laid out under a context of its own, and the document then lays
+    /// out itself, is the new layout for the document: what the first call left does not carry over.
+    /// </summary>
+    [Fact]
+    public void AListLaidOutUnderAContextOfTheCallers_isLaidOutNewForTheDocumentAfterwards()
+    {
+        var renderer = new ListRenderer(new ListElement(ListStyle.OrderedDecimal) { Indent = 1000 }
+            .Add(new ListItem("clamped text", H(10))));
+        renderer.Layout(new LayoutContext(new LayoutBox(0, 0, 200, 100)));
+        var pdf = new PdfDocument { Timestamp = Stamp, DocumentId = new byte[16] };
+        var documentRenderer = new DocumentRenderer(pdf, new PdfRectangle(0, 0, 200, 100), new EdgeInsets(10));
+        documentRenderer.Add(renderer);
+
+        using var ms = new MemoryStream();
+        documentRenderer.Render(ms);
+
+        Assert.Contains("clamped", string.Concat(Shows(ms.ToArray())), StringComparison.Ordinal);
+        Assert.Contains(documentRenderer.Diagnostics, d => d.Code == LayoutDiagnosticCode.ListIndentClamped);
+    }
+
+    /// <summary>The document places the same object in the measuring pass and the drawing pass.</summary>
+    [Fact]
+    public void TheTwin_isTheSameObjectOnEveryCall()
+    {
+        var renderer = new ListRenderer(new ListElement(ListStyle.OrderedDecimal).Add("a"));
+
+        Assert.Same(((IContinuationTwin)renderer).Twin(), ((IContinuationTwin)renderer).Twin());
+        Assert.Same(renderer.Unclamped(), ((IContinuationTwin)renderer).Twin());
+    }
+
     // ── A first box with no height ───────────────────────────────────────────
 
     /// <summary>
@@ -240,6 +271,26 @@ public sealed class ListPlacementAdoptionTests
         Assert.Equal(Sha(twin), Sha(bytes));
     }
 
+    /// <summary>The same two rules for a nested child, whose entry is its own.</summary>
+    [Theory]
+    [InlineData("clamp")]
+    [InlineData("move")]
+    public void AChildWithARunThatCannotBeDrawn_isNeitherClampedNorMoved(string rule)
+    {
+        var undefined = StyleOf((Standard14)99, rule == "move" ? 20 : 10);
+        var (bytes, doc, twin, _) = Both(
+            () => rule == "move" ? Page(200, 100, leadLines: 4) : Page(400, 400),
+            () =>
+            {
+                var parent = new ListItem("p", H(10));
+                parent.AddChild(new ListItem([new TextRun("abc", undefined)]) { Style = H(10) });
+                return new ListElement(ListStyle.OrderedDecimal) { Indent = rule == "move" ? 20 : 200 }.Add(parent);
+            });
+
+        Assert.Equal(Sha(twin), Sha(bytes));
+        Assert.DoesNotContain(LayoutDiagnosticCode.ListIndentClamped, Codes(doc));
+    }
+
     /// <summary>The control: a font this document defines is drawn, so the entry is clamped and moved.</summary>
     [Fact]
     public void AnEntryWithARunThisDocumentDefines_isStillClampedAndMoved()
@@ -253,6 +304,29 @@ public sealed class ListPlacementAdoptionTests
 
         Assert.Contains(LayoutDiagnosticCode.ListIndentClamped, Codes(doc));
         Assert.Contains("1.", Shows(bytes));
+    }
+
+    /// <summary>
+    /// An entry at a page top is never moved: moving it answers Nothing for the list, and the retry
+    /// offers the same top. Every entry fits a page of its own where the document lays the list out,
+    /// so the document never offers a top that is smaller than that page, but a context that does
+    /// leaves the entry where it falls.
+    /// </summary>
+    [Fact]
+    public void AnEntryAtAPageTopThatDoesNotFitItsBox_isNotMoved()
+    {
+        var renderer = new ListRenderer(new ListElement(ListStyle.OrderedDecimal)
+            .Add(new ListItem([new TextRun("dropped", H(20))]) { Style = H(10) }));
+        var context = new LayoutContext(new LayoutBox(0, 0, 200, 20))
+        {
+            FreshPageArea = new LayoutBox(0, 0, 200, 100),
+            AtPageTop = true,
+            Session = new ContinuationSession(ContinuationMode.New) { Called = renderer },
+        };
+
+        var result = renderer.Layout(context);
+
+        Assert.Equal(LayoutResult.Outcome.Full, result.Status);
     }
 
     // ── An entry no page holds ───────────────────────────────────────────────
@@ -286,15 +360,12 @@ public sealed class ListPlacementAdoptionTests
     [Fact]
     public void AListWithAnEntryNoPageHolds_keepsTheAnchorsItsTwinReports()
     {
+        // A list that comes back Full is asked for its placements on the instance the document
+        // called, which answers for the twin.
         var (bytes, _, twin, _) = Both(
-            () => Page(200, 100, leadLines: 5),
-            () =>
-            {
-                var list = MovesThenNoPageHolds();
-                return new ListElement(ListStyle.OrderedDecimal) { Anchor = "whole-list" }
-                    .Add(new ListItem([new TextRun("dropped", H(20))]) { Style = H(10), Anchor = "first-item" })
-                    .Add(new ListItem([new TextRun("abc", H(10))]) { Style = H(500) });
-            });
+            () => Page(400, 400),
+            () => new ListElement(ListStyle.OrderedDecimal) { Indent = 300, Anchor = "whole-list" }
+                .Add(new ListItem([new TextRun("big", H(500))]) { Style = H(10), Anchor = "first-item" }));
 
         Assert.Equal(Sha(twin), Sha(bytes));
         var text = System.Text.Encoding.Latin1.GetString(bytes);
@@ -304,18 +375,20 @@ public sealed class ListPlacementAdoptionTests
 
     /// <summary>
     /// A marker that wraps and gets only some of its lines on a page of its own is an entry no page
-    /// holds. The list is placed as before, and the marker shows the lines that fit.
+    /// holds, so an entry ahead of it that would move stays where it falls, and the list is placed as
+    /// before.
     /// </summary>
     [Fact]
     public void AMarkerTallerThanAPageThatWraps_isAnEntryNoPageHolds()
     {
         var (bytes, doc, twin, _) = Both(
-            () => new Document { PageSize = new PdfRectangle(0, 0, 60, 100), Margins = new EdgeInsets(10) },
+            () => Page(60, 100, leadLines: 5),
             () => new ListElement(ListStyle.OrderedDecimal)
+                .Add(new ListItem([new TextRun("a", H(20))]) { Style = H(10) })
                 .Add(new ListItem("x", H(10)) { Style = H(60) }));
 
         Assert.Equal(Sha(twin), Sha(bytes));
-        Assert.Equal([LayoutDiagnosticCode.ListEntryPartDropped], Codes(doc));
+        Assert.Contains(LayoutDiagnosticCode.ListEntryPartDropped, Codes(doc));
     }
 
     /// <summary>

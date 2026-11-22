@@ -115,6 +115,19 @@ public sealed class ListIndentContinuationTests
         Assert.Equal(words, Shows(run, "W"));
     }
 
+    /// <summary>
+    /// The bound counts the entries from the renderer's own start: a renderer built to start at
+    /// entry 100 of 150 holds 50 units, which a limit of 100 cannot be reached with.
+    /// </summary>
+    [Fact]
+    public void TheBound_countsFromTheStartItem()
+    {
+        var run = Place(new ListRenderer(FlatList(150, 1), startItem: 100), OneLinePage, limit: 100);
+
+        Assert.Null(run.Error);
+        Assert.Equal(0, run.Probes);
+    }
+
     [Fact]
     public void AListWithNoClampedEntry_isNeverProbed()
     {

@@ -238,7 +238,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
         // document did not address to this instance gets the twin, which is what the list was
         // before the fixes. The pieces a split of the twin returns are twins, so the rest of the
         // placement is as well.
-        if (!_unclamped && (_wholeAsMain || context.ModeFor(this) == ContinuationMode.Twin))
+        if (!_unclamped && context.ModeFor(this) == ContinuationMode.Twin)
             return LayOutAsTwin(context);
 
         _forward = false;
@@ -465,6 +465,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     // page, makes the whole list lay out as its twin: where such an entry falls is where it was
     // always placed, and moving the entries around it would show fewer of its lines than before.
     // A context the document built names the page a Nothing is retried on, which is that page.
+    // Removed in 3.0 (#688), with the twin that keeps such a list as it was.
     //
     // This reads every entry before the first is placed, and the layout reads them one at a time,
     // as the twin does. A refusal the layout raises for an entry it reaches late, and not for one
@@ -844,6 +845,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     // save throw IndexOutOfRangeException when the font dictionary reads its name
     // (PdfFontResource.BaseFontName). A non-finite size or colour is the other refusal the draw
     // adds, and the clamp checks it separately. An entry that fails keeps the layout it had.
+    // Removed in 3.0 (#688), which refuses such a font where the style is built.
     //
     // A run with no text draws nothing, so its style is not read. A white-space-only run is read
     // although it may yield no fragment, so this is stricter than the draw, in the safe direction.
