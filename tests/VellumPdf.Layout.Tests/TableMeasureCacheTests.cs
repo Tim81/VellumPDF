@@ -358,4 +358,156 @@ public sealed class TableMeasureCacheTests
 
         Assert.Contains("row 200, cell 1", ex.Message);
     }
+
+    private static (long Bytes, int Reported) Allocated(Func<Document> build)
+    {
+        using var doc = build();
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        Save(doc);
+        var bytes = GC.GetAllocatedBytesForCurrentThread() - before;
+        return (bytes, doc.Diagnostics.Where(d => d.Code == LayoutDiagnosticCode.CellWhiteSpaceDropped).Sum(d => d.Count));
+    }
+
+    /// <summary>
+    /// Fillers in an automatic column: each group is a cell of 60 lines in the column other rows
+    /// share, beside two short cells in 36pt columns. The allocations of 400 of them stay under
+    /// a fixed multiple of those of the same table with the lines separated by spaces, which has
+    /// nothing to give up. Allocations are counted, not time, because the same run on a loaded
+    /// machine takes several times as long.
+    /// </summary>
+    [Fact]
+    public void TheCostOfGivingUpBreaksInASharedAutoColumnDoesNotGrowWithEachGroup()
+    {
+        static Document Build(int groups, string separator)
+        {
+            var doc = WidePage();
+            var t = new TableElement { DefaultCellStyle = Helvetica() }.SetColumnWidths(36, 36, 0);
+            for (var i = 0; i < groups; i++)
+            {
+                t.AddRow().AddCell("x").AddCell("x").AddCell(new Cell(Words(60, separator)) { RowSpan = 2 });
+                t.AddRow().AddCell("y");
+            }
+            doc.Add(t);
+            return doc;
+        }
+
+        Allocated(() => Build(10, "\n"));
+        Allocated(() => Build(10, " "));
+        var withBreaks = Allocated(() => Build(400, "\n"));
+        var withSpaces = Allocated(() => Build(400, " "));
+
+        Assert.Equal(400, withBreaks.Reported);
+        Assert.Equal(0, withSpaces.Reported);
+        Assert.True(withBreaks.Bytes < 4.0 * withSpaces.Bytes, $"{withBreaks.Bytes} bytes against {withSpaces.Bytes} without breaks");
+    }
+
+    /// <summary>
+    /// Groups that each widen the automatic column, and so change what the next group is judged
+    /// by: the cell of group i has 48 + i lines. Every step moves a column width, so none keeps
+    /// the pass going and every group is judged on the widths the one before it leaves. The
+    /// allocations of 300 of them stay under 35 times those of the same table with the lines
+    /// separated by spaces, which has nothing to give up.
+    /// </summary>
+    [Fact]
+    public void TheCostOfGroupsThatEachWidenTheColumnStaysUnderAFixedMultiple()
+    {
+        static Document Build(int groups, bool breaks)
+        {
+            var doc = WidePage();
+            var t = new TableElement { DefaultCellStyle = Helvetica() }.SetColumnWidths(0, 0, 0);
+            for (var i = 0; i < groups; i++)
+            {
+                t.AddRow().AddCell("x").AddCell(new Cell(Words(48 + i, breaks ? "\n" : " ")) { RowSpan = 2 })
+                    .AddCell("lorem ipsum dolor sit amet " + i);
+                t.AddRow().AddCell("y");
+            }
+            doc.Add(t);
+            return doc;
+        }
+
+        Allocated(() => Build(10, true));
+        Allocated(() => Build(10, false));
+        var withBreaks = Allocated(() => Build(300, true));
+        var withSpaces = Allocated(() => Build(300, false));
+
+        Assert.Equal(300, withBreaks.Reported);
+        Assert.Equal(0, withSpaces.Reported);
+        Assert.True(withBreaks.Bytes < 35.0 * withSpaces.Bytes, $"{withBreaks.Bytes} bytes against {withSpaces.Bytes} without breaks");
+    }
+
+    /// <summary>
+    /// A chain of groups in which each one's cell is a little wider than the one before it, beside
+    /// a fixed column and an automatic one, and each has a wrapping cell under it sized to the
+    /// width the automatic column takes once the group before gave up its breaks. Every group is
+    /// reported, and the allocations of 60 of them stay under 30MB.
+    /// </summary>
+    [Fact]
+    public void TheCostOfAChainOfTippedGroupsStaysUnderAFixedBound()
+    {
+        const int groups = 60;
+        using var doc = WidePage();
+        doc.Add(CascadeTable(groups));
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        Save(doc);
+        var bytes = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(groups, Dropped(doc).Length);
+        Assert.True(bytes < 30_000_000L, $"{bytes} bytes");
+    }
+
+    private static TableElement CascadeTable(int n)
+    {
+        var font = new FontReference(Standard14.Helvetica);
+        var t = new TableElement { DefaultCellStyle = Helvetica() }.SetColumnWidths(1980, 0);
+        var hp = new Cell("x").Padding.Horizontal;
+
+        string Text(int k)
+        {
+            var lines = k == 1 ? 60 : 38;
+            var chars = 100 + k;
+            var sb = new System.Text.StringBuilder();
+            for (var l = 0; l < lines; l++)
+            {
+                if (l > 0) sb.Append('\n');
+                sb.Append('i', (chars / lines) + (l < chars % lines ? 1 : 0));
+            }
+            return sb.ToString();
+        }
+
+        var a = Enumerable.Range(1, n).Select(Text).ToArray();
+        var longestLine = a.Max(x => x.Split('\n').Max(l => font.MeasureString(l, 10)));
+        double Inner(double floorA) => 1980 - (floorA + hp) - hp;
+        var inner = new double[n + 1];
+        inner[0] = Inner(longestLine);
+        for (var j = 1; j <= n; j++) inner[j] = Inner(font.MeasureString(a[j - 1], 10));
+        var iw = font.MeasureString("i", 10);
+        var sp = font.MeasureString(" ", 10);
+        for (var k = 1; k <= n; k++)
+        {
+            string b;
+            if (k == 1)
+            {
+                b = "r";
+            }
+            else
+            {
+                var target = (inner[k - 2] + inner[k - 1]) / 2;
+                string? best = null;
+                var bestErr = double.MaxValue;
+                for (var y = 0; y < 6; y++)
+                {
+                    var fw = font.MeasureString(new string('f', y), 10);
+                    var x = (int)Math.Round((((target - sp) / 2) - fw) / iw);
+                    if (x < 0) continue;
+                    var w = new string('i', x) + new string('f', y);
+                    var err = Math.Abs(font.MeasureString(w + " " + w, 10) - target);
+                    if (err < bestErr) { bestErr = err; best = w; }
+                }
+                b = string.Join(" ", Enumerable.Repeat(best!, 14));
+            }
+            t.AddRow().AddCell("r").AddCell(new Cell(a[k - 1]) { RowSpan = 2 });
+            t.AddRow().AddCell(b);
+        }
+        return t;
+    }
 }
