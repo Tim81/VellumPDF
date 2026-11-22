@@ -534,6 +534,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **A list indent that leaves an entry no text width kept the marker and discarded the text
+  (#476).** `ParagraphRenderer` drops a paragraph whose width is zero or less, while the marker's own
+  paragraph has no margin and always fits. A flat list whose `Indent` reached the list's area
+  width therefore saved as a column of markers. The same happened to a nested child at half that width, because
+  the child gutter is twice the indent, and nothing reported it. An entry whose gutter would leave
+  its text no width now gets the width of its widest word, so the text is drawn. The content
+  starts at the area's right edge less that width, never left of its own marker's inset, and it can
+  overprint the marker, which is never moved.
+  - **Deliberate output change**, only where the text width was zero or less: a flat list with an
+    `Indent` at or above the area width (positive infinity included), and a nested child whose gutter
+    is at or above it, which on a 256 pt area is an indent from 128 pt. The marker and its position
+    are unchanged, and the item text is now in the content stream. A width that is positive but
+    short of the widest word, so that a word is broken a glyph a line, keeps its output, as does an
+    entry that holds only white space or is set at font size 0. A nested list whose indent
+    reaches the area width still throws `InvalidOperationException`, with the same message.
+  - A new `LayoutDiagnosticCode.ListIndentClamped` (203, severity `Error`) reports each list that had
+    an entry clamped, with the number of entries as `Count`. `StrictDiagnostics` refuses it, and the
+    default saves.
+  - `ListElement.Indent` carries a "Do not pass" paragraph for an indent that leaves an entry's text
+    no width: 3.0 will refuse it.
+
 - **An element exactly as tall as the content area is placed at the top of a page (#549).** At the
   top of a page the document offered the height from the cursor to the bottom of the content area,
   `(Y + H) - Y`, while the retry after a `Nothing` offered the content area's own height `H`. The

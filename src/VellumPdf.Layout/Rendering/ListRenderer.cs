@@ -33,6 +33,11 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
 
     private LayoutBox _occupied;
 
+    // The number of entries whose gutter BuildItems clamped, which Draw reports when it draws the
+    // list from its first entry. The pieces a split returns carry it, because the piece that
+    // starts the list is the one that is drawn.
+    private int _indentClamped;
+
     // The height Layout offered each item it visited, indexed by the item's offset from the start
     // item. Draw offers the same height: it lays the item out a second time, a paragraph's line
     // count is a floor of the height it is given, and Bottom - y can come out one rounding step
@@ -200,6 +205,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                 var split = new ListRenderer(_list, _startItem, _partialContentOverrideAtStart)
                 {
                     _items = _items,
+                    _indentClamped = _indentClamped,
                     _endItem = i,
                     _occupied = _occupied,
                     _offered = offered,
@@ -233,6 +239,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                 var split = new ListRenderer(_list, _startItem, _partialContentOverrideAtStart)
                 {
                     _items = _items,
+                    _indentClamped = _indentClamped,
                     _endItem = i + 1,
                     _occupied = _occupied,
                     _offered = offered,
@@ -272,7 +279,16 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
         // the walk, so a list that is measured and never drawn, or that starts at a later item,
         // leaves the items it did not report for the list that does.
         if (_startItem == 0 && _partialContentOverrideAtStart is null && ctx.Diagnostics is { } sink)
+        {
             ReportBelowSecondLevel(sink);
+            if (_indentClamped > 0)
+                sink.Report(
+                    LayoutDiagnosticCode.ListIndentClamped,
+                    0,
+                    "A list indent left an entry's text no width beside its gutter, so the text was given the width of its widest word and may overprint the marker.",
+                    _indentClamped,
+                    perElement: true);
+        }
 
         // _occupied is already the margin-deflated area from Layout; do not deflate again.
         var area = _occupied;
@@ -470,6 +486,43 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
         return widest;
     }
 
+    /// <summary>
+    /// Narrows a gutter that would leave an entry's text no width to the one that gives the text
+    /// exactly the width of its widest word.
+    /// </summary>
+    /// <remarks>
+    /// The gutter is changed only when <paramref name="areaWidth"/> minus it is zero or negative
+    /// (the text would be discarded), the entry's own marker starts inside the area, and the text
+    /// has a word to measure. In every other case it is returned as given, which is what keeps a
+    /// width that is positive but short of the widest word, a <c>NaN</c> gutter and an entry with
+    /// no measurable word on their earlier output. The new gutter is never left of
+    /// <paramref name="markerInset"/>, so the content does not start left of its own marker.
+    /// </remarks>
+    internal static bool TryClampGutter(
+        double areaWidth, double gutter, double markerInset, double widestWord, out double clamped)
+    {
+        clamped = gutter;
+
+        // Written so that a NaN in any operand makes a test false and leaves the gutter alone.
+        if (!(areaWidth - gutter <= 0)) return false;
+        var room = areaWidth - markerInset;
+        if (!(room > 0) || !(widestWord > 0)) return false;
+
+        // The paragraph deflates the area by the gutter, so it sees areaWidth - g, which is not
+        // always the widest word again once g = areaWidth - widest has been rounded: one step short
+        // makes WordWrap read the word as wider than the line and hard-break it.
+        if (widestWord >= room)
+        {
+            clamped = markerInset;
+            return true;
+        }
+
+        var g = areaWidth - widestWord;
+        while (g > markerInset && areaWidth - g < widestWord) g = Math.BitDecrement(g);
+        clamped = Math.Max(g, markerInset);
+        return true;
+    }
+
     private List<(ParagraphRenderer Marker, ParagraphRenderer Content, ListItem Item)> BuildItems(double areaWidth)
     {
         var result = new List<(ParagraphRenderer, ParagraphRenderer, ListItem)>();
@@ -506,9 +559,20 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             // widest word still fits keeps the fix from introducing a hard break that today's
             // indent does not have, and where it cannot, today's indent and the overprint it
             // carries are the lesser harm.
-            if (areaWidth - gutter < WidestWord(contentRuns))
+            var widest = WidestWord(contentRuns);
+            if (areaWidth - gutter < widest)
             {
                 gutter = indent;
+            }
+
+            // An indent that leaves the content no width at all discards the text and keeps the
+            // marker, because ParagraphRenderer.Layout returns Nothing for a non-positive width.
+            // Only that case is changed; a width that is positive but short of the widest word
+            // keeps the hard-breaking it has always had.
+            if (TryClampGutter(areaWidth, gutter, 0, widest, out var clampedGutter))
+            {
+                gutter = clampedGutter;
+                _indentClamped++;
             }
 
             // Marker paragraph: sits in the gutter (left portion of the line).
@@ -564,8 +628,17 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                     // parent rather than continuing the top-level sequence.
                     var childMarkerWidth = childStyle.MeasureString(childMarker);
                     var childGutter = Math.Max(indent * 2, indent + childMarkerWidth);
-                    if (areaWidth - childGutter < WidestWord(childRuns))
+                    var childWidest = WidestWord(childRuns);
+                    if (areaWidth - childGutter < childWidest)
                         childGutter = indent * 2;
+
+                    // The child's marker starts at `indent`, so that is the leftmost the clamped
+                    // content may start.
+                    if (TryClampGutter(areaWidth, childGutter, indent, childWidest, out var clampedChildGutter))
+                    {
+                        childGutter = clampedChildGutter;
+                        _indentClamped++;
+                    }
 
                     var childMarkerPara = new Paragraph(childMarker, childStyle)
                     {

@@ -22,7 +22,7 @@ namespace VellumPdf.Layout;
 public enum LayoutDiagnosticCode
 {
     // Reserved, not defined here, so that later members do not collide:
-    //   105 SymbolFontMeasuredAsZero (Error), 203 ListIndentClamped, 204 ListDepthCapped, 205
+    //   105 SymbolFontMeasuredAsZero (Error), 204 ListDepthCapped, 205
     //   ListEntriesCapped, 206 ListEntrySkipped (all Error), 301 ControlCharacterInCell
     //   (Warning), 302 SurplusCell (Error), 402 UnknownBandToken, and one 7xx member for a link
     //   dropped from a cell or band under a PDF/UA claim. The rest of the 8xx block stays free for
@@ -149,6 +149,22 @@ public enum LayoutDiagnosticCode
     /// for a list that does, as for <see cref="NullGrandchildText"/>.
     /// </remarks>
     NullGrandchild = 202,
+
+    /// <summary>
+    /// A list's <see cref="Elements.ListElement.Indent"/> left the text of one or more entries no
+    /// width beside its gutter, so the save gave the text the width of its widest word.
+    /// <see cref="LayoutDiagnostic.Count"/> is the number of entries whose gutter was narrowed.
+    /// </summary>
+    /// <remarks>
+    /// Without it the text would have been discarded and the marker drawn alone. The text is
+    /// drawn, and it may overprint its marker, so strict mode refuses it. It is reported for a list
+    /// the document draws from its first entry; a <see cref="Rendering.ListRenderer"/> you build to
+    /// start at a later entry reports nothing. An indent that leaves the text a width, however
+    /// narrow, is not clamped and not reported, and neither is an entry with no word to measure.
+    /// <b>Do not pass</b> an indent that leaves an entry's text no width: 3.0 will refuse it. See
+    /// <see cref="Elements.ListElement.Indent"/>.
+    /// </remarks>
+    ListIndentClamped = 203,
 
     /// <summary>
     /// A running band's resolved text was cut to fit the content box. It mirrors
