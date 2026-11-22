@@ -36,6 +36,11 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// <para><strong>FP-safety — null StandardType.</strong> Elements with an unknown/unmapped /S
 /// are skipped.</para>
 /// <para>Cross-validated against veraPDF 1.30.2 for each probe (violating + compliant fixture).</para>
+/// <para>Its behaviour was checked against veraPDF's PDF/UA-1 profile, and ISO 14289-1 was not
+/// held when it was written. The 2026-11-21 audit against the clause text (#428) found it
+/// narrower in a minor way: only Note elements enter the uniqueness set, so a Note that shares
+/// an ID with another kind of element passes, while ISO 32000-1 Table 323 makes the ID unique
+/// among all elements.</para>
 /// </remarks>
 internal sealed class UaNoteIdRule : IConformanceRule
 {

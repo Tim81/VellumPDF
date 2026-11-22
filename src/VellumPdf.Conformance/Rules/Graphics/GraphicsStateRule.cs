@@ -14,16 +14,22 @@ namespace VellumPdf.Conformance.Rules.Graphics;
 /// defined in ISO 32000-1 (§6.2.6).
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.2.5 and 6.2.6, and ISO 32000-1:2008, 8.6.5.8 (Table 70).
-/// Clean-room: derived from the specification text, not from any third-party validation profile.
+/// Cites ISO 19005-2:2011, 6.2.5 and 6.2.6, and ISO 32000-1:2008, 8.6.5.8 (Table 70). Its behaviour
+/// was checked against veraPDF's PDF/A-2 profile, and ISO 19005-2 was not held when it was written.
+/// The 2026-11-21 audit against the clause text (#418) found it narrower: 6.2.5 and 6.2.6 cover
+/// every <c>/ExtGState</c> and every rendering intent, including an image's <c>/Intent</c>, and
+/// this rule reads only the states page content applies. The branch requiring a transfer function
+/// for a spot colourant rests on the halftone tables of ISO 32000-1.
 /// <para>
 /// Like <see cref="Transparency.BlendModeRule"/>, the <c>/ExtGState</c> checks are scoped to the
 /// graphics states a page actually applies (via a <c>gs</c> operator, determined by
 /// <see cref="ContentStreamUsage"/>): an <c>/ExtGState</c> resource that is never applied is not the
 /// current state and is not a violation, matching veraPDF (issues #127, #128). The <c>ri</c> operator
 /// intents are read from the same content scan. The halftone-dictionary constraints (§6.2.5 t4–t6,
-/// the <c>/HT</c> subdictionary) need halftone parsing and are deferred; an image XObject's
-/// <c>/Intent</c> entry is a separate, deferred vector.
+/// the <c>/HT</c> subdictionary) are checked here too. An image XObject's <c>/Intent</c> entry is
+/// not checked. The content scan is the page's own, so a state or an <c>ri</c> operator that a
+/// form XObject applies is not read: a <c>/TR2</c>, <c>/HTP</c>, <c>/HT</c> or <c>/RI</c> there
+/// passes here and fails veraPDF 1.30.2 and 1.30.4 (#418).
 /// </para>
 /// </remarks>
 internal sealed class GraphicsStateRule : IConformanceRule

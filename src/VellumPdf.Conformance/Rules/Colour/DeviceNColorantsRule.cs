@@ -15,16 +15,19 @@ namespace VellumPdf.Conformance.Rules.Colour;
 /// a <c>/Colorants</c> sub-dictionary mapping each colourant name to a Separation colour-space
 /// array. The clause requires that for each non-exempt colourant an entry exists in <c>/Colorants</c>.
 /// <para>
-/// <b>Exemptions (determined empirically via veraPDF 1.30.2 probing):</b>
-/// The process colourant names <c>Cyan</c>, <c>Magenta</c>, <c>Yellow</c>, <c>Black</c> and the
-/// special name <c>None</c> are exempt — veraPDF does not flag a missing entry for these. All other
-/// names, including the special name <c>All</c>, require a <c>/Colorants</c> entry. A missing
-/// attributes dictionary (4-element DeviceN) when spot colourants are present also triggers the rule.
+/// <b>Exemptions (set by probing veraPDF 1.30.2, not by the clause):</b> The process colourant
+/// names <c>Cyan</c>, <c>Magenta</c>, <c>Yellow</c>, <c>Black</c> and the special name <c>None</c>
+/// are exempt — veraPDF does not flag a missing entry for these. All other names, including the
+/// special name <c>All</c>, require a <c>/Colorants</c> entry. A missing attributes dictionary
+/// (4-element DeviceN) when spot colourants are present also triggers the rule.
 /// </para>
 /// <para>
-/// Authored from ISO 19005-2:2011, §6.2.4.4 and ISO 32000-1:2008, §8.6.6.5 (DeviceN). Clean-room:
-/// derived from the specification text and empirical oracle probing, not from any third-party
-/// validation profile.
+/// Cites ISO 19005-2:2011, §6.2.4.4 and ISO 32000-1:2008, §8.6.6.5 (DeviceN). Its behaviour was
+/// checked against veraPDF's PDF/A-2 profile, and ISO 19005-2 was not held when it was written. The
+/// 2026-11-21 audit against the clause text (#418) found it narrower: 6.2.4.4 covers any spot
+/// colour used in DeviceN or NChannel, and this rule checks only spaces selected in page content.
+/// The exemption of the name <c>None</c> is a veraPDF observation; 6.2.4.4 does not define "spot
+/// colour".
 /// </para>
 /// <para>
 /// Scoped to colour spaces the page actually selects with the <c>cs</c>/<c>CS</c> operators:
@@ -38,6 +41,11 @@ namespace VellumPdf.Conformance.Rules.Colour;
 /// alternate space of another colour space, or a nested colour-space array is not yet detected (these
 /// under-detect rather than risk a false positive) — only spaces selected by a page-content
 /// <c>cs</c>/<c>CS</c> operator and resolved through <c>/Resources /ColorSpace</c> are checked.
+/// </para>
+/// <para>
+/// A form XObject is one of those edges: a DeviceN space with a spot colourant missing from
+/// <c>/Colorants</c>, selected inside a form that page content draws, passes here and fails
+/// veraPDF 1.30.2 and 1.30.4 (#418).
 /// </para>
 /// </remarks>
 internal sealed class DeviceNColorantsRule : IConformanceRule

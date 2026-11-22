@@ -17,15 +17,18 @@ namespace VellumPdf.Conformance.Rules.Structure;
 /// any other non-listed filter name are violations.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.1.7.1 and 6.1.7.2. Clean-room: derived from the specification
-/// text, not from any third-party validation profile. Applies to <em>every</em> stream object in
+/// Cites ISO 19005-2:2011, 6.1.7.1 and 6.1.7.2. Its behaviour was checked against veraPDF's PDF/A-2
+/// profile, and ISO 19005-2 was not held when it was written. The 2026-11-21 audit against the
+/// clause text (#418) found agreement. Refusing <c>/Crypt</c> unless its decode parameters name
+/// <c>Identity</c> follows the literal text of 6.1.7.2. Applies to <em>every</em> stream object in
 /// the file (walked through the indirect-object number space), not only those reachable from the
 /// rendered content — §6.1.7.1 and §6.1.7.2 are file-structure constraints, and veraPDF likewise
-/// flags both the external-stream keys and forbidden filter names on any parsed stream (cross-checked).
+/// flags both the external-stream keys and forbidden filter names on any parsed stream
+/// (cross-checked).
 /// <para>
-/// Deferred: the <c>/Length</c>-matches-body (§6.1.7.1-1) and stream-keyword EOL (§6.1.7.1-2)
-/// checks need byte-offset parsing; inline-image filters (§6.1.10) are a separate content-stream
-/// concern.
+/// The <c>/Length</c>-matches-body (§6.1.7.1-1) and stream-keyword EOL (§6.1.7.1-2) checks are
+/// implemented here too, from byte offsets. Inline-image filters (§6.1.10) are a separate
+/// content-stream concern.
 /// </para>
 /// </remarks>
 internal sealed class StreamRule : IConformanceRule

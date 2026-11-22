@@ -19,14 +19,22 @@ namespace VellumPdf.Conformance.Rules.Fonts;
 /// CIDFont <c>/CIDSystemInfo</c> and its CMap's <c>/CIDSystemInfo</c> must be compatible.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.2.11.2 / 6.2.11.3.1 / 6.2.11.3.2 / 6.2.11.6 and ISO 32000-1:2008,
-/// 9.6–9.7.
-/// Clean-room: derived from the specification text, not from any third-party validation profile.
-/// Every check is cross-validated against veraPDF on real embedded fonts — a hand-built compliant
-/// simple TrueType (full DejaVu, WinAnsi, correct widths) anchors the positive path, and single
-/// malformations of it (a Widths-length mismatch, a missing or non-WinAnsi/MacRoman Encoding, an
-/// Encoding on a symbolic font) reproduce clauses 6.2.11.2-6, 6.2.11.6-2, and 6.2.11.6-3; corrupting
-/// a composite font's descendant reproduces 6.2.11.2-2 and 6.2.11.3.2-1.
+/// Cites ISO 19005-2:2011, 6.2.11.2 / 6.2.11.3.1 / 6.2.11.3.2 / 6.2.11.6 and ISO 32000-1:2008,
+/// 9.6–9.7. Its behaviour was checked against veraPDF's PDF/A-2 profile, and ISO 19005-2 was not
+/// held when it was written. The 2026-11-21 audit against the clause text (#418) found it both
+/// broader and narrower. Broader: CIDSet bits beyond the glyph count are refused, which rests on
+/// ISO 32000-1 Table 124. Narrower: the CIDSystemInfo Supplement comparison is inverted (6.2.11.3.1
+/// requires the CIDFont's Supplement to be greater than or equal to the CMap's; the inverted test
+/// also accepts a CIDFont Supplement below the CMap's, as the PDF/UA-1 twin of this check does on a
+/// hand-built file, #428), an embedded
+/// CMap named Identity is exempt, predefined non-Identity CMaps are skipped, CharSet and CIDSet are
+/// checked for subset fonts only, <c>/CIDToGIDMap</c> is checked only for presence, and there is no
+/// <c>/Differences</c> check for non-symbolic TrueType. Several checks were cross-validated against
+/// veraPDF on real embedded fonts — a hand-built compliant simple TrueType (full DejaVu, WinAnsi,
+/// correct widths) anchors the positive path, and single malformations of it (a Widths-length
+/// mismatch, a missing or non-WinAnsi/MacRoman Encoding, an Encoding on a symbolic font) reproduce
+/// clauses 6.2.11.2-6, 6.2.11.6-2, and 6.2.11.6-3; corrupting a composite font's descendant
+/// reproduces 6.2.11.2-2 and 6.2.11.3.2-1.
 /// <para>
 /// Only fonts that a page actually selects via a <c>Tf</c> operator in its content stream are
 /// validated (matching veraPDF, which validates only the current graphics state — issue #118).
@@ -35,9 +43,9 @@ namespace VellumPdf.Conformance.Rules.Fonts;
 /// here at all, which is tracked as issue #450.
 /// </para>
 /// <para>
-/// Deferred to the font-<em>program</em> parser: glyph presence (§6.2.11.4.1), glyph-width
-/// consistency (§6.2.11.5), and the embedded-cmap requirements (§6.2.11.6 t1/t4). Embedding itself is
-/// enforced by <see cref="FontEmbeddingRule"/>.
+/// Glyph presence (§6.2.11.4.1) and glyph-width consistency (§6.2.11.5) are checked by <see
+/// cref="GlyphPresenceRule"/>; this rule covers the embedded-cmap requirements (§6.2.11.6 t1/t4).
+/// Embedding itself is enforced by <see cref="FontEmbeddingRule"/>.
 /// </para>
 /// </remarks>
 internal sealed class FontStructureRule : IConformanceRule

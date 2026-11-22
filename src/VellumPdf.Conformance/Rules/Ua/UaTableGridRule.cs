@@ -58,6 +58,11 @@ namespace VellumPdf.Conformance.Rules.Ua;
 ///
 /// <para>Cross-validated against veraPDF 1.30.2 for each clause (probe series). All probe results
 /// documented in the implementation file comments.</para>
+/// <para>Its behaviour was checked against veraPDF's PDF/UA-1 profile, and ISO 14289-1 was not
+/// held when it was written. The 2026-11-21 audit against the clause text (#428) found it
+/// unsure. Neither ISO 14289-1 nor ISO 32000-1 Table 337 states a regular-grid requirement in
+/// so many words, and an interpretation of "two-dimensional layout of rectangular data cells"
+/// would settle whether the rule's grid checks are required.</para>
 /// </remarks>
 internal sealed class UaTableGridRule : IConformanceRule
 {

@@ -9,14 +9,17 @@ namespace VellumPdf.Conformance.Rules.Structure;
 /// <c>0–9</c>, <c>A–F</c>, and <c>a–f</c> (§6.1.6-2).
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.1.6 and ISO 32000-1:2008, 7.3.4.3. Clean-room: derived from the
-/// specification text, not from any third-party validation profile. The parsed object graph does not
-/// preserve a hexadecimal string's raw token (the reader pads an odd-length string), so this rule
-/// scans the file bytes. To avoid misreading binary content, the scan masks out every stream body
-/// (located by <c>ParsedStream.BodyOffset</c> and its length — e.g. an XMP packet, full of
-/// <c>&lt;…&gt;</c> markup, is skipped), steps over literal strings <c>(…)</c> (so a <c>&lt;</c> inside
-/// one is not taken for a hex string), and treats <c>&lt;&lt;</c> as a dictionary delimiter rather than
-/// a hex string — so it inspects only genuine hexadecimal-string tokens.
+/// Cites ISO 19005-2:2011, 6.1.6 and ISO 32000-1:2008, 7.3.4.3. Its behaviour was checked against
+/// veraPDF's PDF/A-2 profile, and ISO 19005-2 was not held when it was written. The 2026-11-21
+/// audit against the clause text (#418) found agreement on the even-digit-count requirement. The
+/// hexadecimal-digits-only check rests on ISO 32000-1 §7.3.4.3 rather than on 6.1.6. The parsed
+/// object graph does not preserve a hexadecimal string's raw token (the reader pads an odd-length
+/// string), so this rule scans the file bytes. To avoid misreading binary content, the scan masks
+/// out every stream body (located by <c>ParsedStream.BodyOffset</c> and its length — e.g. an XMP
+/// packet, full of <c>&lt;…&gt;</c> markup, is skipped), steps over literal strings <c>(…)</c> (so
+/// a <c>&lt;</c> inside one is not taken for a hex string), and treats <c>&lt;&lt;</c> as a
+/// dictionary delimiter rather than a hex string — so it inspects only genuine hexadecimal-string
+/// tokens.
 /// </remarks>
 internal sealed class HexStringRule : IConformanceRule
 {

@@ -15,10 +15,10 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// <remarks>
 /// The veraPDF predicate (object PDFont, clause 7.21.4.1, testNumber 1) is:
 /// <c>Subtype == "Type3" || Subtype == "Type0" || renderingMode == 3 || containsFontFile == true</c>.
-/// Translated: a font is compliant when it is Type3 (embedded by construction), Type0 (composite,
-/// checked separately), drawn only with rendering mode 3 (invisible text), or has an embedded font
-/// program. This rule fires when NONE of those exemptions hold AND a positively-observed visible draw
-/// is present.
+/// Translated: a font is compliant when it is Type3 (embedded by construction), Type0 (composite;
+/// the predicate exempts it, and this rule does not check the descendant CIDFont), drawn only with
+/// rendering mode 3 (invisible text), or has an embedded font program. This rule fires when NONE of
+/// those exemptions hold AND a positively-observed visible draw is present.
 /// <para>
 /// False-positive safety: the rule fires only when ALL of:
 /// <list type="bullet">
@@ -38,11 +38,18 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// selected are not checked. Type0 and Type3 fonts are skipped unconditionally.
 /// </para>
 /// <para>
-/// Authored from ISO 14289-1:2014, 7.21.4.1 and cross-validated against veraPDF 1.30.2 (clause
-/// 7.21.4.1, testNumber 1). The visible/invisible probe results:
-/// (a) non-embedded Helvetica drawn visibly → veraPDF fires 7.21.4.1-1 (exit 1);
-/// (b) non-embedded Helvetica drawn only with 3 Tr → veraPDF does NOT fire 7.21.4.1-1 (3 Tr exemption);
-/// (c) embedded TrueType drawn visibly → veraPDF does not fire 7.21.4.1-1.
+/// Cites ISO 14289-1:2014, 7.21.4.1, and takes its predicate from veraPDF 1.30.2 (clause 7.21.4.1,
+/// testNumber 1). It was written from veraPDF's PDF/UA-1 profile and checked against veraPDF,
+/// before ISO 14289-1 was held. The 2026-11-21 audit against the clause text (#428) found it
+/// narrower: it skips every Type 0 font and never examines the descendant CIDFont, and it sees only
+/// fonts that page content selects with <c>Tf</c>. The visible/invisible probe results: (a)
+/// non-embedded Helvetica drawn visibly → veraPDF fires 7.21.4.1-1 (exit 1); (b) non-embedded
+/// Helvetica drawn only with 3 Tr → veraPDF does NOT fire 7.21.4.1-1 (3 Tr exemption); (c) embedded
+/// TrueType drawn visibly → veraPDF does not fire 7.21.4.1-1.
+/// </para>
+/// <para>
+/// A font shown only inside a form XObject is not examined, and veraPDF 1.30.2 and 1.30.4
+/// refuse a violating one there on a hand-built file (#428).
 /// </para>
 /// </remarks>
 internal sealed class UaFontEmbeddingRule : IConformanceRule

@@ -12,10 +12,13 @@ namespace VellumPdf.Conformance.Rules.Metadata;
 /// validated (part 2, conformance B/U/A).
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.6.4 and ISO 16684-1 (XMP). Clean-room: derived from the
-/// specification text, not from any third-party validation profile. The pdfaid properties are
-/// read tolerantly in either XML element (<c>&lt;pdfaid:part&gt;2&lt;/pdfaid:part&gt;</c>) or
-/// attribute (<c>pdfaid:part="2"</c>) serialisation.
+/// Cites ISO 19005-2:2011, 6.6.4 and ISO 16684-1 (XMP). Its behaviour was checked against veraPDF's
+/// PDF/A-2 profile, and ISO 19005-2 was not held when it was written. The 2026-11-21 audit against
+/// the clause text (#418) found agreement on the <c>pdfaid</c> checks. The requirement that the
+/// catalog carry a <c>/Metadata</c> stream is in 6.6.2.1, not 6.6.4. The <c>pdfaid:amd</c> and
+/// <c>pdfaid:corr</c> syntax is not checked. The pdfaid properties are read tolerantly in either
+/// XML element (<c>&lt;pdfaid:part&gt;2&lt;/pdfaid:part&gt;</c>) or attribute
+/// (<c>pdfaid:part="2"</c>) serialisation.
 /// </remarks>
 internal sealed class XmpConformanceRule : IConformanceRule
 {

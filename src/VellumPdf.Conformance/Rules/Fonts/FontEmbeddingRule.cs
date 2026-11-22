@@ -14,11 +14,13 @@ namespace VellumPdf.Conformance.Rules.Fonts;
 /// </summary>
 /// <remarks>
 /// Re-derived from ISO 19005-2:2011, 6.2.11.4.1 and ISO 32000-1:2008, 9.9, against the standard's
-/// own text (#418). Clean-room: derived from the specification text, not from any third-party
-/// validation profile. In this re-derivation veraPDF was consulted only to confirm that the
-/// corrected clause is the one it keys the same requirement to, which is oracle use and not a
-/// source. That is not true of the rule as a whole: the <c>Tf</c>-only scope below was adopted for
-/// parity with veraPDF under issue #118, and re-deriving it is part of #418 rather than done here.
+/// own text (#418). In this re-derivation veraPDF was consulted only to confirm that the corrected
+/// clause is the one it keys the same requirement to, which is oracle use and not a source. The
+/// <c>Tf</c>-only scope below is not from the text: it was adopted for parity with veraPDF under
+/// issue #118, and re-deriving it is part of #418 rather than done here. The 2026-11-21 audit found
+/// the rule broader than the clause for a font that <c>Tf</c> selects but no text shows with, and
+/// for a font shown only in rendering mode 3; and narrower for fonts used only in forms, patterns,
+/// Type 3 glyph procedures or annotation appearances.
 /// <para>
 /// The summary states the clause's obligation, and this rule is stricter than it in one direction. NOTE 2 exempts a
 /// font drawn only in text rendering mode 3, and nothing here implements that, so a font used

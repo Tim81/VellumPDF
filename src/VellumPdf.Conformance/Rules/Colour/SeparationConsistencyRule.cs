@@ -15,16 +15,18 @@ namespace VellumPdf.Conformance.Rules.Colour;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Authored from ISO 19005-2:2011, §6.2.4.4 and ISO 32000-1:2008, §8.6.6.4 (Separation).
-/// Clean-room: derived from the specification text and empirical oracle probing (veraPDF 1.30.2),
-/// not from any third-party validation profile.
+/// Cites ISO 19005-2:2011, §6.2.4.4 and ISO 32000-1:2008, §8.6.6.4 (Separation). The scope below
+/// was set by probing veraPDF 1.30.2. Its behaviour was checked against veraPDF's PDF/A-2 profile,
+/// and ISO 19005-2 was not held when it was written. The 2026-11-21 audit against the clause text
+/// (#418) found it narrower: 6.2.4.4 compares all Separation arrays in the file, and this rule
+/// compares only the ones page content uses; image colour spaces and alternates are not walked.
 /// </para>
 /// <para>
-/// <b>Scope (determined empirically via veraPDF 1.30.2):</b> veraPDF compares Separation colour
-/// spaces that are <em>used</em> by page content AND by non-page content streams reachable from
-/// the page (drawn Form XObjects, all CharProcs of Tf-selected Type 3 fonts, annotation /AP /N
-/// appearance streams). A Separation present in <c>/Resources /ColorSpace</c> but never selected
-/// by a <c>cs</c> or <c>CS</c> operator triggers no violation. A Separation is "used" when:
+/// <b>Scope (set by probing veraPDF 1.30.2, not by the clause):</b> veraPDF compares Separation
+/// colour spaces that are <em>used</em> by page content AND by non-page content streams reachable
+/// from the page (drawn Form XObjects, all CharProcs of Tf-selected Type 3 fonts, annotation /AP /N
+/// appearance streams). A Separation present in <c>/Resources /ColorSpace</c> but never selected by
+/// a <c>cs</c> or <c>CS</c> operator triggers no violation. A Separation is "used" when:
 /// <list type="bullet">
 /// <item>it is selected by a <c>cs</c> or <c>CS</c> operator via a named resource, or</item>
 /// <item>it appears in the <c>/Colorants</c> dictionary of a DeviceN colour space that is itself

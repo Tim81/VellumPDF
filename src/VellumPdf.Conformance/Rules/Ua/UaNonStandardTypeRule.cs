@@ -7,14 +7,14 @@ namespace VellumPdf.Conformance.Rules.Ua;
 
 /// <summary>
 /// ISO 14289-1 §7.1 testNumber 5 (PDF/UA-1: PDStructElem — non-standard structure type
-/// that is not role-mapped to a Table 333 standard type).
+/// that is not role-mapped to a standard type of ISO 32000-1 14.8.4).
 /// </summary>
 /// <remarks>
 /// The veraPDF predicate (object PDStructElem, clause 7.1, testNumber 5) is:
 /// <c>isNotMappedToStandardType == false</c>. Translated: every structure element whose
 /// <c>/S</c> is a NON-standard type must be role-mapped (via the StructTreeRoot
-/// <c>/RoleMap</c>, possibly multi-hop) to one of the ISO 32000-1 Table 333 standard
-/// structure types. We fire when a walked StructElem has a non-null <see cref="StructureTreeNode.RawType"/>
+/// <c>/RoleMap</c>, possibly multi-hop) to one of the ISO 32000-1 standard (14.8.4) structure
+/// types. We fire when a walked StructElem has a non-null <see cref="StructureTreeNode.RawType"/>
 /// that does not resolve to a standard type (<see cref="StructureTreeNode.StandardType"/> is null).
 ///
 /// <para>FP-safety — standard-type-set completeness:</para>
@@ -44,6 +44,11 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// pdfua1-non-standard-type-rolemapped: veraPDF exits 0 (compliant);
 /// pdfua1-tagged (standard type baseline): veraPDF exits 0 (compliant).
 /// </para>
+/// <para>Its behaviour was checked against veraPDF's PDF/UA-1 profile, and ISO 14289-1 was not
+/// held when it was written. The 2026-11-21 audit against the clause text (#428) found
+/// agreement with 7.1. "Nearest functionally equivalent" is a judgement the rule cannot make,
+/// so it checks only that a mapping reaches a standard type. The message cites Table 333 for
+/// the whole standard set, which Table 333 does not list.</para>
 /// </remarks>
 internal sealed class UaNonStandardTypeRule : IConformanceRule
 {

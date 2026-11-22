@@ -16,8 +16,8 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// ignore this bit and PDF writers shall always set this bit to 1 to ensure compatibility with PDF
 /// readers following earlier specifications." PDF/UA-1 (ISO 14289-1, based on ISO 32000-1) still
 /// requires the bit — it predates the PDF 2.0 deprecation — so a document can be simultaneously a
-/// spec-legal PDF 2.0 file and a §7.16-1 violation. Clean-room: derived from the specification
-/// text, not from any third-party validation profile.
+/// spec-legal PDF 2.0 file and a §7.16-1 violation. The 2026-11-21 audit against the clause text
+/// (#428) found the rule agrees with 7.16.
 /// <para>
 /// A document with no <c>/Encrypt</c> key draws no finding: §7.16-1 constrains the encryption
 /// dictionary, and an unencrypted file has none to constrain.

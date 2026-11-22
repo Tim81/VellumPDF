@@ -3,16 +3,16 @@
 [![NuGet](https://img.shields.io/nuget/v/VellumPdf.Conformance.svg)](https://www.nuget.org/packages/VellumPdf.Conformance)
 [![CI](https://github.com/Tim81/VellumPDF/actions/workflows/ci.yml/badge.svg)](https://github.com/Tim81/VellumPDF/actions/workflows/ci.yml)
 
-In-process PDF/A and PDF/UA preflight validation for **[VellumPdf](https://github.com/Tim81/VellumPDF)**, a dependency-free PDF library for .NET 10 and .NET 11. It opens a PDF through `VellumPdf.Reader` and runs a registry of clean-room conformance rules, with no external veraPDF Docker image required. Rules are written against the standard's text where a copy is held, which covers most of the rule set including everything citing ISO 14289-1 and ISO 32000-1. Where no copy is held, most consequentially ISO 19005-2 for PDF/A-2, veraPDF's bundled profiles are the source those rules were authored from rather than a cross-check on them. Every rule is cross-checked against veraPDF in CI regardless; [docs/pdf20-conformance.md](https://github.com/Tim81/VellumPDF/blob/main/docs/pdf20-conformance.md) records which ISO clause citations are checkable against a locally held copy of the standard and which are not.
+In-process PDF/A and PDF/UA preflight validation for **[VellumPdf](https://github.com/Tim81/VellumPDF)**, a dependency-free PDF library for .NET 10 and .NET 11. It opens a PDF through `VellumPdf.Reader` and runs a registry of conformance rules, with no external veraPDF Docker image required. Most PDF/A-2 and PDF/UA-1 rules were written before the text of ISO 19005-2 and ISO 14289-1 was available to the project, and were checked against veraPDF's bundled profiles rather than derived from the clause text; two PDF/A-2 rules (font embedding and actions) have since been re-derived from it, and the other exceptions say so in their remarks. A rule's XML documentation says which clause it cites and what it was checked against. On 2026-11-21 both rule sets were compared with the clause text: many rules are narrower than the clause, some are broader, and some cite the wrong clause. [#418](https://github.com/Tim81/VellumPDF/issues/418) and [#428](https://github.com/Tim81/VellumPDF/issues/428) track the corrections. [docs/pdf20-conformance.md](https://github.com/Tim81/VellumPDF/blob/main/docs/pdf20-conformance.md) records which ISO clause citations are checkable against a locally held copy of the standard and which are not.
 
 - Validates PDF/A-2b/2u/2a and PDF/UA-1.
 - Returns machine-readable assertions: rule id, ISO clause, severity, and object reference.
 - BCL-only, AOT- and trim-ready — rules are registered explicitly, with no reflection.
-- Build-verified veraPDF parity is about 99%; every rule's positive and negative paths are cross-checked against veraPDF in CI.
+- Coverage is catalogued per veraPDF check: `ConformanceCatalog` marks 77.9 to 78.0% of veraPDF's PDF/A-2b/2u/2a checks and 87.7% of its PDF/UA-1 checks Implemented, counting a Partial check as half and leaving out the one PDF/A-2 check marked OutOfScope. That measures which veraPDF checks a rule covers, not agreement with the text of the standards.
 
 > **Stable as of 2.0.** The public API is locked and analyzer-enforced. Rule coverage is
-> still growing: veraPDF parity is about 99%, and the remaining gaps are tracked as
-> issues rather than hidden behind a preview label.
+> still growing: the checks the catalog marks Partial or Deferred, and the rules found narrower
+> than the clause text, are tracked as issues rather than hidden behind a preview label.
 
 ## Install
 

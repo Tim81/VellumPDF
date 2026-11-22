@@ -28,11 +28,13 @@ namespace VellumPdf.Conformance.Rules.Actions;
 /// this rule checks agree. They diverge only for an action type ISO 32000-1 does not define, and
 /// rejecting one of those is still correct — §5.1 permits valid ISO 32000-1 features, and a vendor
 /// <c>/S</c> value is not one. (An earlier version of this rule took its allow-list shape from a
-/// third-party validation profile rather than from this derivation.) Inspects the document catalog's
-/// <c>/OpenAction</c>, each annotation's <c>/A</c>, and the additional-action (<c>/AA</c>)
-/// dictionaries on the catalog, pages, and annotations, following any <c>/Next</c> chain. Form-field
-/// <c>/A</c>/<c>/AA</c> reached through the AcroForm field tree is checked by <see
-/// cref="Forms.InteractiveFormRule"/> under §6.4.1, not by this rule.
+/// third-party validation profile rather than from this derivation.) The 2026-11-21 audit found it
+/// narrower than 6.5.1 in one place: the sources it walks leave out outline items, so a
+/// <c>Launch</c> action on an outline item passes here and fails veraPDF (#418). Inspects the
+/// document catalog's <c>/OpenAction</c>, each annotation's <c>/A</c>, and the additional-action
+/// (<c>/AA</c>) dictionaries on the catalog, pages, and annotations, following any <c>/Next</c>
+/// chain. Form-field <c>/A</c>/<c>/AA</c> reached through the AcroForm field tree is checked by
+/// <see cref="Forms.InteractiveFormRule"/> under §6.4.1, not by this rule.
 /// </remarks>
 internal sealed class ActionRule : IConformanceRule
 {

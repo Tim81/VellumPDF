@@ -16,7 +16,7 @@
     <RootNamespace>VellumPdf.Conformance</RootNamespace>
     <AssemblyName>VellumPdf.Conformance</AssemblyName>
     <PackageId>VellumPdf.Conformance</PackageId>
-    <Description>In-process PDF/A and PDF/UA preflight validation for VellumPdf: opens a PDF through VellumPdf.Reader and runs a registry of clean-room conformance rules authored from the ISO specifications, returning machine-readable assertions (rule id, ISO clause, severity, object reference). No external veraPDF Docker image required. BCL-only, AOT- and trim-ready; rules are registered explicitly with no reflection. Covers PDF/A-2b/2u/2a and PDF/UA-1, cross-validated against veraPDF in CI on both paths of every rule.</Description>
+    <Description>In-process PDF/A and PDF/UA preflight validation for VellumPdf: opens a PDF through VellumPdf.Reader and runs a registry of conformance rules, returning machine-readable assertions (rule id, ISO clause, severity, object reference). No external veraPDF Docker image required. BCL-only, AOT- and trim-ready; rules are registered explicitly with no reflection. Covers PDF/A-2b/2u/2a and PDF/UA-1. Most PDF/A-2 and PDF/UA-1 rules were written from veraPDF's published profiles, before the text of ISO 19005-2 and ISO 14289-1 was available to the project, and are checked against veraPDF in CI; the exceptions say so in their XML remarks. Many rules are narrower than the clause text, and the project's issues #418 and #428 track that.</Description>
     <PackageTags>pdf;pdfa;pdfua;preflight;conformance;validation;aot</PackageTags>
   </PropertyGroup>
 

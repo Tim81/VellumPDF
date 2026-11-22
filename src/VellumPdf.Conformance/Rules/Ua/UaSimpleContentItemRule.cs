@@ -52,6 +52,10 @@ namespace VellumPdf.Conformance.Rules.Ua;
 /// and annotation appearance streams are not walked — under-detection, FP-safe.</para>
 ///
 /// <para>Verified FP-free against veraPDF 1.30.2 across the FP battery (Batch C3).</para>
+/// <para>Its behaviour was checked against veraPDF's PDF/UA-1 profile, and ISO 14289-1 was not
+/// held when it was written. The 2026-11-21 audit against the clause text (#428) found it
+/// narrower: only page content streams are scanned, so untagged text drawn inside a form
+/// XObject passes here and fails veraPDF 1.30.4 on a hand-built file.</para>
 /// </remarks>
 internal sealed class UaSimpleContentItemRule : IConformanceRule
 {

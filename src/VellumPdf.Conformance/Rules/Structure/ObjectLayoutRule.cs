@@ -12,11 +12,14 @@ namespace VellumPdf.Conformance.Rules.Structure;
 /// (§6.1.9-1).
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.1.9 and ISO 32000-1:2008, 7.3.10. Clean-room: derived from the
-/// specification text, not from any third-party validation profile. Each object is located by its
-/// cross-reference byte offset (<see cref="PreflightContext.ObjectOffset"/>) and the few header bytes
-/// there are inspected directly, so the check never scans for <c>obj</c> (which also appears inside
-/// <c>endobj</c> and could occur in a binary body) and is safe across incremental updates.
+/// Cites ISO 19005-2:2011, 6.1.9 and ISO 32000-1:2008, 7.3.10. Its behaviour was checked against
+/// veraPDF's PDF/A-2 profile, and ISO 19005-2 was not held when it was written. The 2026-11-21
+/// audit against the clause text (#418) found it narrower: 6.1.9 covers every object a
+/// cross-reference table references, superseded revisions included, and the <c>endobj</c> checks
+/// here run on the newest revision only. Each object is located by its cross-reference byte offset
+/// (<see cref="PreflightContext.ObjectOffset"/>) and the few header bytes there are inspected
+/// directly, so the check never scans for <c>obj</c> (which also appears inside <c>endobj</c> and
+/// could occur in a binary body) and is safe across incremental updates.
 /// <para>
 /// The <c>endobj</c> EOL checks use <see cref="PreflightContext.ObjectEndOffset"/> and are scoped to
 /// objects in the newest revision only (using <see cref="PreflightContext.Revisions"/>), to avoid
