@@ -10,11 +10,11 @@ using static VellumPdf.Layout.Tests.ContinuationSupport;
 namespace VellumPdf.Layout.Tests;
 
 /// <summary>
-/// A table that keeps its cells' breaks is laid out the way the table was laid out before the breaks
-/// were read where the document, run at a limit of 300 page continuations, would otherwise refuse
-/// it (#679 through the shared mechanism of #686). A table that main refused stays refused, with
-/// the same exception, and a table that a caller's renderer holds, or that is laid out under any
-/// context the document did not address to it, is laid out as main does.
+/// A table that keeps its cells' breaks is laid out the way the table was laid out before the
+/// breaks were read where the document, run at a limit of 300 page continuations, would otherwise
+/// refuse it (#679 through the shared mechanism of #686). A table that main refused stays refused,
+/// with the same exception, and a table that a caller's renderer holds, or that is laid out under
+/// any context the document did not address to it, is laid out as main does.
 /// </summary>
 public sealed class TableContinuationLimitTests
 {
@@ -265,7 +265,8 @@ public sealed class TableContinuationLimitTests
     }
 
     /// <summary>
-    /// The same table with its unbroken layout one continuation short of the limit keeps its breaks.
+    /// The same table with its unbroken layout one continuation short of the limit keeps its
+    /// breaks.
     /// </summary>
     [Fact]
     public void ATableWhoseUnbrokenLayoutTakesTheLimitExactly_keepsItsBreaks()

@@ -49,7 +49,9 @@ public sealed class TableMeasureCacheTests
             .OrderBy(m => int.Parse(Regex.Match(m, @"\d+").Value, CultureInfo.InvariantCulture))
             .ThenBy(m => m, StringComparer.Ordinal)];
 
-    /// <summary>Runs <paramref name="save"/> with a probe on this thread, and returns the probe.</summary>
+    /// <summary>
+    /// Runs <paramref name="save"/> with a probe on this thread, and returns the probe.
+    /// </summary>
     private static TableMeasureProbe Probed(Action save)
     {
         var probe = new TableMeasureProbe();
@@ -284,7 +286,8 @@ public sealed class TableMeasureCacheTests
     /// <summary>
     /// A cell read unbroken and the same cell with its breaks kept are two entries: the count of
     /// one is not the count of the other. The header of 60 lines is 728pt and the page holds 580pt,
-    /// so it is read unbroken; the next table keeps its breaks at 60 lines in a row that can be cut.
+    /// so it is read unbroken; the next table keeps its breaks at 60 lines in a row that can be
+    /// cut.
     /// </summary>
     [Fact]
     public void TheModeOfACellIsPartOfItsEntry()

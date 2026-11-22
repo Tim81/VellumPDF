@@ -78,9 +78,9 @@ public sealed class PaginationDepthTests
         // small method that starts the loop, and the JIT inlines it once it is hot (a table test
         // that places 50,000 pages before this one runs is enough on net11.0), so counting its
         // frames read 0. Both passes run PlaceLoop, so the count is 1 whichever pass is running; a
-        // recursion regression makes it grow with the continuation count. Bounds rather than Assert.All, because a recursion
-        // regression otherwise prints one near-identical failure block per sample — measured at
-        // 200 blocks and 34,670 characters for a single test.
+        // recursion regression makes it grow with the continuation count. Bounds rather than
+        // Assert.All, because a recursion regression otherwise prints one near-identical failure
+        // block per sample — measured at 200 blocks and 34,670 characters for a single test.
         Assert.Equal(1, samples.Min());
         Assert.Equal(1, samples.Max());
     }

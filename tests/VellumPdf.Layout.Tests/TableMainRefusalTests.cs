@@ -443,7 +443,8 @@ public sealed class TableMainRefusalTests
             Assert.Equal(oneLine, RefusalOf(() => TableRandomDocuments.Long(s), measuredAsOneLine: false));
         }
 
-        // The property is not vacuous: each family has tables that are refused measured as one line.
+        // The property is not vacuous: each family has tables that are refused measured as one
+        // line.
         Assert.True(refusedShaped > 20, $"only {refusedShaped} shaped tables are refused measured as one line");
         Assert.True(refusedLong > 20, $"only {refusedLong} long tables are refused measured as one line");
     }

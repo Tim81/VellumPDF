@@ -150,7 +150,9 @@ public sealed class TableCellBreakTests : IDisposable
         AssertNoControlCharacter(placements);
     }
 
-    /// <summary>A carriage return and line feed pair is one break, and a lone carriage return is one.</summary>
+    /// <summary>
+    /// A carriage return and line feed pair is one break, and a lone carriage return is one.
+    /// </summary>
     [Theory]
     [InlineData("cr1\r\ncr2")]
     [InlineData("cr1\rcr2")]
@@ -328,7 +330,9 @@ public sealed class TableCellBreakTests : IDisposable
 
     // ── Null text ────────────────────────────────────────────────────────────
 
-    /// <summary>A null cell text with explicit widths still saves and draws nothing, as before.</summary>
+    /// <summary>
+    /// A null cell text with explicit widths still saves and draws nothing, as before.
+    /// </summary>
     [Fact]
     public void ANullText_withExplicitWidths_drawsNothing()
     {
@@ -342,7 +346,9 @@ public sealed class TableCellBreakTests : IDisposable
         Assert.Equal(["x"], Texts(content));
     }
 
-    /// <summary>A null cell text in an automatically sized column is still refused, naming <c>content</c>.</summary>
+    /// <summary>
+    /// A null cell text in an automatically sized column is still refused, naming <c>content</c>.
+    /// </summary>
     [Fact]
     public void ANullText_inAnAutoColumn_isStillRefused()
     {
@@ -569,9 +575,9 @@ public sealed class TableCellBreakTests : IDisposable
     }
 
     /// <summary>
-    /// The text a page label prints reaches a band's <c>{page}</c> as a value, not as template text,
-    /// so it is read the same way: a tab and a line break in the label prefix are spaces, in the
-    /// drawing and in the width the band is cut to.
+    /// The text a page label prints reaches a band's <c>{page}</c> as a value, not as template
+    /// text, so it is read the same way: a tab and a line break in the label prefix are spaces, in
+    /// the drawing and in the width the band is cut to.
     /// </summary>
     [Fact]
     public void ABandDrawsAControlSpaceInAPageLabelAsASpace()
@@ -619,11 +625,15 @@ public sealed class TableCellBreakTests : IDisposable
 
     // ── Rows that cannot be cut ──────────────────────────────────────────────
 
-    /// <summary>The diagnostic a cell that is laid out unbroken is reported with, or null.</summary>
+    /// <summary>
+    /// The diagnostic a cell that is laid out unbroken is reported with, or null.
+    /// </summary>
     private static LayoutDiagnostic? CellReport(Document doc) =>
         doc.Diagnostics.SingleOrDefault(d => d.Code == LayoutDiagnosticCode.CellWhiteSpaceDropped);
 
-    /// <summary>The cells reported as laid out unbroken, as "row r, cell c", in row order.</summary>
+    /// <summary>
+    /// The cells reported as laid out unbroken, as "row r, cell c", in row order.
+    /// </summary>
     private static string[] Dropped(Document doc) =>
     [
         .. doc.Diagnostics
@@ -635,9 +645,9 @@ public sealed class TableCellBreakTests : IDisposable
 
     /// <summary>
     /// A header row whose breaks, honoured, leave no room under it for the row below: 2.3.3 drew
-    /// the cell on one line. The cell is drawn as one line, without its breaks, and reported as a warning.
-    /// A header of 46 lines is 560pt and leaves 20pt, which holds the 20pt row below, so its
-    /// breaks are kept.
+    /// the cell on one line. The cell is drawn as one line, without its breaks, and reported as a
+    /// warning. A header of 46 lines is 560pt and leaves 20pt, which holds the 20pt row below, so
+    /// its breaks are kept.
     /// </summary>
     [Theory]
     [InlineData(46, false)]
@@ -693,9 +703,9 @@ public sealed class TableCellBreakTests : IDisposable
     }
 
     /// <summary>
-    /// Rows joined by a RowSpan are never cut, so when their breaks, honoured, make the group taller
-    /// than a page, the cells that hold them are laid out unbroken. A group of 46 lines plus a
-    /// 20pt row is 580pt, which fits; 47 lines does not.
+    /// Rows joined by a RowSpan are never cut, so when their breaks, honoured, make the group
+    /// taller than a page, the cells that hold them are laid out unbroken. A group of 46 lines plus
+    /// a 20pt row is 580pt, which fits; 47 lines does not.
     /// </summary>
     [Theory]
     [InlineData(46, false)]
