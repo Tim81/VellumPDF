@@ -707,6 +707,24 @@ public sealed class ContinuationLimitTests
     }
 
     [Fact]
+    public void IsPlacedAsTwin_doesNotCarryFromOneElementToTheNext()
+    {
+        // The first element reports and the decision chooses its twin. The second never reports, so
+        // none of its calls may say a decision chose its twin, though the session is the same one.
+        var log = new Log();
+        var first = new Scripted(new Plan { NewPages = 301, TwinPages = 5 }, log);
+        var second = new Scripted(new Plan { NewPages = 5, TwinPages = 5, Reports = false }, log);
+        var outcome = Run(new Setup(), log, first, second);
+        Assert.Null(outcome.Error);
+
+        var lastOfFirst = log.Calls.FindLastIndex(c => c.PlacedAsTwin);
+        Assert.True(lastOfFirst >= 5);
+        Assert.Equal(2, outcome.Probes);
+        Assert.DoesNotContain(log.Calls.Skip(lastOfFirst + 1), c => c.PlacedAsTwin);
+        Assert.True(log.Calls.Count - lastOfFirst > 6);
+    }
+
+    [Fact]
     public void IsPlacedAsTwin_tellsATwinTheDocumentChose_andNotOneAProbeOrAWrapperCalled()
     {
         var log = new Log();
