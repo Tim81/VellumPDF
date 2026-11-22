@@ -622,6 +622,16 @@ public sealed class TableCellBreakTests : IDisposable
     private static LayoutDiagnostic? CellReport(Document doc) =>
         doc.Diagnostics.SingleOrDefault(d => d.Code == LayoutDiagnosticCode.CellWhiteSpaceDropped);
 
+    /// <summary>The cells reported as laid out unbroken, as "row r, cell c", in row order.</summary>
+    private static string[] Dropped(Document doc) =>
+    [
+        .. doc.Diagnostics
+            .Where(d => d.Code == LayoutDiagnosticCode.CellWhiteSpaceDropped)
+            .Select(d => Regex.Match(d.Message, @"row \d+, cell \d+").Value)
+            .OrderBy(m => int.Parse(Regex.Match(m, @"\d+").Value, CultureInfo.InvariantCulture))
+            .ThenBy(m => m, StringComparer.Ordinal),
+    ];
+
     /// <summary>
     /// A header row whose breaks, honoured, leave no room under it for the row below: 2.3.3 drew
     /// the cell on one line. The cell is drawn as one line, without its breaks, and reported as a warning.
@@ -1256,6 +1266,160 @@ public sealed class TableCellBreakTests : IDisposable
     }
 
     /// <summary>
+    /// A group that gives up a cell in a fixed column is judged again before the next group, on
+    /// its own rows' new heights, and a step that then relieves the header changes what the next
+    /// group sees. The header is 30 lines, 368pt, and leaves 212pt; the first group is a two-line
+    /// span cell beside a cell too tall for 212pt, which no cell of the group can shorten, so the
+    /// header is relieved next. With the header on one line the second group, 20 lines and 248pt,
+    /// has room, so only the header and the first group's cell are reported.
+    /// </summary>
+    [Fact]
+    public void AGroupIsJudgedAgainAfterItsOwnStepBeforeTheNextOneIsJudged()
+    {
+        using var doc = WidePage();
+        var t = Wide10(950, 950);
+        t.AddRow(isHeader: true).AddCell(Words(30));
+        t.AddRow().AddCell(new Cell("p\nq") { RowSpan = 2 }).AddCell(Words(1300, " "));
+        t.AddRow().AddCell("y");
+        t.AddRow().AddCell(new Cell(Words(20)) { RowSpan = 2 });
+        t.AddRow().AddCell("y");
+        doc.Add(t);
+
+        var texts = Texts(Content(Save(doc)));
+
+        Assert.Equal(["row 0, cell 0", "row 1, cell 0"], Dropped(doc));
+        Assert.Equal(20, texts.Count(x => x == "ab"));
+    }
+
+    /// <summary>
+    /// A group cell that spans a fixed column and an automatically sized one changes the width of
+    /// the automatic column when it gives up its breaks, so the group after it is judged on heights
+    /// taken again: its own cell is not reported, because the column it shares is now wide enough.
+    /// </summary>
+    [Fact]
+    public void AGroupCellSpanningAnAutoColumnEndsThePassEvenWhenItStartsInAFixedOne()
+    {
+        using var doc = WidePage();
+        var t = Wide10(1500, 0);
+        t.AddRow().AddCell(new Cell(Words(100)) { RowSpan = 2, ColSpan = 2 });
+        t.AddRow().AddCell("y");
+        t.AddRow().AddCell(new Cell("k\nk") { RowSpan = 2 }).AddCell(Words(1600, " "));
+        t.AddRow().AddCell("z");
+        doc.Add(t);
+
+        Save(doc);
+
+        Assert.Equal(["row 0, cell 0"], Dropped(doc));
+    }
+
+    /// <summary>
+    /// A column past the end of the width array is sized automatically, so a group cell in it ends
+    /// the pass: the group after it is judged on the column it has now.
+    /// </summary>
+    [Fact]
+    public void AColumnPastTheWidthArrayIsAnAutoColumn()
+    {
+        using var doc = WidePage();
+        var t = Wide10(1500);
+        t.AddRow().AddCell(new Cell("x") { RowSpan = 2 }).AddCell(Words(60));
+        t.AddRow().AddCell("y");
+        t.AddRow().AddCell(new Cell("k\nk") { RowSpan = 2 }).AddCell(Words(1600, " "));
+        t.AddRow().AddCell("z");
+        doc.Add(t);
+
+        Save(doc);
+
+        Assert.Equal(["row 0, cell 1"], Dropped(doc));
+    }
+
+    /// <summary>
+    /// A RowSpan in a repeated header row does not make a group of the header rows, which are
+    /// judged by their own height. The two header rows are 376pt together and fit a page with the
+    /// 20pt row below, so nothing is given up; counted as a group on top of the header height they
+    /// would be 752pt.
+    /// </summary>
+    [Fact]
+    public void ARowSpanInsideTheHeaderIsNotAGroup()
+    {
+        using var doc = WidePage();
+        var t = Wide10(900, 900);
+        t.AddRow(isHeader: true).AddCell(new Cell("h") { RowSpan = 2 }).AddCell(Words(15));
+        t.AddRow(isHeader: true).AddCell(Words(15));
+        t.AddRow().AddCell("x");
+        doc.Add(t);
+
+        var texts = Texts(Content(Save(doc)));
+
+        Assert.Empty(Dropped(doc));
+        Assert.Equal(30, texts.Count(x => x == "ab"));
+    }
+
+    /// <summary>
+    /// The third step reaches an automatically sized column that only a header cell is in. The
+    /// header is one 20pt line, and the group is 20pt and 536pt, which fits a page under it until
+    /// the tab in "ab", tab, "ab" wraps the 36pt column one line taller. The tab in the last
+    /// column of the row after the group, a column no cell of the group is in and a header cell
+    /// is, goes unbroken with it.
+    /// </summary>
+    [Fact]
+    public void TheThirdStepReachesAnAutoColumnThatOnlyTheHeaderIsIn()
+    {
+        using var doc = WidePage();
+        var t = Wide10(36, 36, 0);
+        t.AddRow(isHeader: true).AddCell("h").AddCell("h").AddCell("h");
+        t.AddRow().AddCell(new Cell("a") { RowSpan = 2 }).AddCell("ab\tab");
+        t.AddRow().AddCell(Words(44, " "));
+        t.AddRow().AddCell("o").AddCell("o").AddCell("a\tb");
+        doc.Add(t);
+
+        Save(doc);
+
+        Assert.Equal(["row 1, cell 1", "row 3, cell 2"], Dropped(doc));
+    }
+
+    /// <summary>
+    /// A decision made for one fresh page does not stand for a taller one. The header, 47 lines,
+    /// leaves the row under it no room in a 580pt page and is laid out unbroken, and the renderer
+    /// that carries the table to the next page, laid out where a fresh page is 700pt tall, honours
+    /// its breaks: the header is 572pt.
+    /// </summary>
+    [Fact]
+    public void ADecisionIsNotReusedForAFreshPageOfAnotherHeight()
+    {
+        var t = Wide10(1900);
+        t.AddRow(isHeader: true).AddCell(Words(47));
+        for (var i = 0; i < 3; i++) t.AddRow().AddCell("x");
+        var small = new LayoutBox(10, 10, 1980, 580);
+        var tall = new LayoutBox(10, 10, 1980, 700);
+
+        var first = new TableRenderer(t).Layout(new LayoutContext(new LayoutBox(10, 10, 1980, 60)) { FreshPageArea = small });
+        var second = first.OverflowRenderer!.Layout(new LayoutContext(tall) { FreshPageArea = tall });
+
+        Assert.Equal(LayoutResult.Outcome.Partial, first.Status);
+        Assert.Equal(60.0, first.OccupiedArea!.Value.Height, 0.001);
+        Assert.Equal(LayoutResult.Outcome.Full, second.Status);
+        Assert.Equal(592.0, second.OccupiedArea!.Value.Height, 0.001);
+    }
+
+    /// <summary>
+    /// The same decision is reused when the next page is the same size: the overflow renderer
+    /// draws the header it was handed, a line of 20pt, without deciding again.
+    /// </summary>
+    [Fact]
+    public void ADecisionIsReusedForAFreshPageOfTheSameHeight()
+    {
+        var t = Wide10(1900);
+        t.AddRow(isHeader: true).AddCell(Words(47));
+        for (var i = 0; i < 3; i++) t.AddRow().AddCell("x");
+        var small = new LayoutBox(10, 10, 1980, 580);
+
+        var first = new TableRenderer(t).Layout(new LayoutContext(new LayoutBox(10, 10, 1980, 60)) { FreshPageArea = small });
+        var second = first.OverflowRenderer!.Layout(new LayoutContext(small) { FreshPageArea = small });
+
+        Assert.Equal(40.0, second.OccupiedArea!.Value.Height, 0.001);
+    }
+
+    /// <summary>
     /// Giving up the breaks of the groups in fixed columns costs a fixed number of measurements
     /// of the table, not one per group. The allocations of a table of 400 groups that each give up
     /// their breaks stay under one and a half times those of the same table with the lines
@@ -1289,6 +1453,77 @@ public sealed class TableCellBreakTests : IDisposable
         Assert.Equal(400, withBreaks.Reported);
         Assert.Equal(0, withSpaces.Reported);
         Assert.True(withBreaks.Bytes < 1.5 * withSpaces.Bytes, $"{withBreaks.Bytes} bytes against {withSpaces.Bytes} without breaks");
+    }
+
+    /// <summary>
+    /// A group that gives up a cell in an automatically sized column measures the whole table again,
+    /// so the measurements of such groups are bounded: after eight, the groups not yet judged are
+    /// judged together. The allocations of 400 such groups stay under a fixed multiple of those of
+    /// the same table with the lines separated by spaces, which has nothing to give up. Without the
+    /// bound the multiple grows with the number of groups. Allocations are counted, not time.
+    /// </summary>
+    [Fact]
+    public void TheCostOfGivingUpBreaksInAutoColumnsIsBounded()
+    {
+        static (long Bytes, int Reported) Allocated(int groups, string separator)
+        {
+            using var doc = WidePage();
+            var t = new TableElement { DefaultCellStyle = Helvetica(10) };
+            for (var i = 0; i < groups; i++)
+            {
+                t.AddRow().AddCell(new Cell(Words(60, separator)) { RowSpan = 2 }).AddCell("x");
+                t.AddRow().AddCell("y");
+            }
+            doc.Add(t);
+            var before = GC.GetAllocatedBytesForCurrentThread();
+            Save(doc);
+            var bytes = GC.GetAllocatedBytesForCurrentThread() - before;
+            return (bytes, doc.Diagnostics.Where(d => d.Code == LayoutDiagnosticCode.CellWhiteSpaceDropped).Sum(d => d.Count));
+        }
+
+        Allocated(10, "\n");
+        Allocated(10, " ");
+        var withBreaks = Allocated(400, "\n");
+        var withSpaces = Allocated(400, " ");
+
+        Assert.Equal(400, withBreaks.Reported);
+        Assert.Equal(0, withSpaces.Reported);
+        Assert.True(withBreaks.Bytes < 2.0 * withSpaces.Bytes, $"{withBreaks.Bytes} bytes against {withSpaces.Bytes} without breaks");
+    }
+
+    /// <summary>
+    /// The bound on measurements is eight, and what it changes is what the documentation says. Each
+    /// filler group gives up a cell in an automatic column and so ends a pass. The groups after the
+    /// fillers are one that gives up its cell, and one that keeps its breaks when it is judged on
+    /// the heights the first one leaves. With seven fillers before them that holds; with eight the
+    /// two are judged together, on the heights before the first was relieved, and the second gives up
+    /// its cell too.
+    /// </summary>
+    [Theory]
+    [InlineData(7, false)]
+    [InlineData(8, true)]
+    public void AfterEightMeasurementsLaterGroupsAreJudgedTogether(int fillers, bool laterGroupGivesUp)
+    {
+        using var doc = new Document { PageSize = new PdfRectangle(0, 0, 600, 300), Margins = new EdgeInsets(10) };
+        var t = new TableElement { DefaultCellStyle = Helvetica(10) };
+        for (var i = 0; i < fillers; i++)
+        {
+            t.AddRow().AddCell("x").AddCell("x").AddCell(new Cell(string.Join("\n", Enumerable.Repeat("i", 40))) { RowSpan = 2 });
+            t.AddRow().AddCell("y");
+        }
+        t.AddRow().AddCell(new Cell(Words(30)) { RowSpan = 2 }).AddCell("x");
+        t.AddRow().AddCell("y");
+        t.AddRow().AddCell(new Cell(Words(12).Replace("ab", "word word word")) { RowSpan = 2 }).AddCell("z");
+        t.AddRow().AddCell("y");
+        t.AddRow().AddCell("o").AddCell(string.Join(" ", Enumerable.Repeat("lorem ipsum dolor sit amet", 16)));
+        doc.Add(t);
+
+        Save(doc);
+
+        var dropped = Dropped(doc);
+        Assert.Equal(fillers + 1 + (laterGroupGivesUp ? 1 : 0), dropped.Length);
+        Assert.Contains($"row {2 * fillers}, cell 0", dropped);
+        Assert.Equal(laterGroupGivesUp, dropped.Contains($"row {2 * fillers + 2}, cell 0"));
     }
 
     /// <summary>
