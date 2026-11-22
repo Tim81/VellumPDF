@@ -74,7 +74,7 @@ internal sealed class ContinuationSession
     /// session as <see cref="Strays"/>, so a parent that forgot to report is found.
     /// </summary>
     internal static ContinuationSession ViewFor(IRenderer child, ContinuationMode mode, ContinuationSession? from) =>
-        new(mode, from?.Probing ?? false, view: true) { Called = child, _root = from?._root ?? from };
+        new(mode, from?.Probing ?? false, view: true) { Called = child, _root = from?._root ?? from, Pdf = from?.Pdf };
 
     /// <summary>
     /// Undecided until the first call that reports, or the first piece placed without a report,
@@ -89,6 +89,12 @@ internal sealed class ContinuationSession
     /// report.
     /// </summary>
     internal bool TwinChosen { get; set; }
+
+    /// <summary>
+    /// The document the placement is for, so a renderer can ask whether what it would draw is
+    /// drawable in it before it lays out text it used to discard. Null for a session a test built.
+    /// </summary>
+    internal VellumPdf.Document.PdfDocument? Pdf { get; init; }
 
     /// <summary>True for a layout-only placement that measures one mode.</summary>
     internal bool Probing { get; }

@@ -224,6 +224,15 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
         return LayoutResult.Partial(_occupied, split, overflow);
     }
 
+    // Where the last successful Layout left this renderer, which Draw reads when the Layout it
+    // makes for itself answers Nothing. A caller that lays the paragraph out only to measure it,
+    // and must not change what a later Draw does, reads this first and puts it back (ListRenderer,
+    // for the page of its own it lays each entry out on).
+    internal (int EndLine, LayoutBox Occupied) Placement => (_endLine, _occupied);
+
+    internal void RestorePlacement((int EndLine, LayoutBox Occupied) placement) =>
+        (_endLine, _occupied) = placement;
+
     // Wraps once, at the width of the first Layout call, and keeps the lines for every later call
     // and for the pieces a split returns.
     [System.Diagnostics.CodeAnalysis.MemberNotNull(nameof(_lines), nameof(_lineEnds))]

@@ -1342,7 +1342,7 @@ public sealed class DocumentRenderer
     private ProbeOutcome ProbeContinuations(IRenderer renderer, ContinuationMode mode, bool keepTogether, bool lineCounts, int continuations, bool retryFirst)
     {
         ContinuationProbes++;
-        var probe = new ContinuationSession(mode, probing: true);
+        var probe = new ContinuationSession(mode, probing: true) { Pdf = _pdf };
         var saved = (_measuring, _measureArea, _measureY, _pageIndex, _placedOnPage, _simulating, _simFirstOnly, _simFirstPage);
         var cursor = Cursor;
         var fault = false;
@@ -1423,7 +1423,7 @@ public sealed class DocumentRenderer
         // holds the same element and must not ask again.
         var keepTogether = renderer is IKeepSource { KeepTogether: true };
         var lineCounts = renderer is ParagraphRenderer;
-        var session = _session ??= new ContinuationSession();
+        var session = _session ??= new ContinuationSession { Pdf = _pdf };
         session.Reset();
         PlaceLoop(renderer, totalPages, keepTogether, lineCounts, session, 0);
     }

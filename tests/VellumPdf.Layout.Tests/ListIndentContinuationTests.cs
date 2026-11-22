@@ -98,12 +98,13 @@ public sealed class ListIndentContinuationTests
 
     /// <summary>
     /// The bound is the number of wrapped lines. At the limit it cannot be exceeded, so no probe
-    /// runs; one line above it a probe runs and, when the page holds two lines, finds room.
+    /// runs; one line above it the document lays the list out twice without drawing, as its twin
+    /// and its new layout, and, when the page holds two lines, finds room.
     /// </summary>
     [Theory]
     [InlineData(100, 0)]
-    [InlineData(101, 1)]
-    [InlineData(200, 1)]
+    [InlineData(101, 2)]
+    [InlineData(200, 2)]
     public void TheBound_keepsTheProbeForListsThatCouldReachTheLimit(int words, int probes)
     {
         var run = Place(new ListRenderer(FlatList(1, words)), TwoLinePage, limit: 100);
@@ -170,26 +171,9 @@ public sealed class ListIndentContinuationTests
         renderer.Render(ms);
 
         var content = PdfTestUtil.DecompressAllFlatStreams(ms.ToArray());
-        Assert.Equal(1, renderer.ContinuationProbes);
+        Assert.Equal(2, renderer.ContinuationProbes);
         Assert.Single(Regex.Matches(content, @"1 0 0 1 10 \S+ Tm\s+\(1\.\)"));
         Assert.Single(Regex.Matches(content, @"1 0 0 1 30 \S+ Tm\s+\(para\)"));
-    }
-
-    [Fact]
-    public void AnAnswerIsKeptForTheCursorItWasMadeAt_andForNoOther()
-    {
-        var list = new ListRenderer(FlatList(1, 3));
-
-        Assert.False(list.TryGetProbe(10, 20, out _));
-        list.RememberProbe(10, 20, true);
-        Assert.True(list.TryGetProbe(10, 20, out var reaches));
-        Assert.True(reaches);
-        Assert.False(list.TryGetProbe(11, 20, out _));
-        Assert.False(list.TryGetProbe(10, 21, out _));
-        list.RememberProbe(11, 20, false);
-        Assert.True(list.TryGetProbe(11, 20, out reaches));
-        Assert.False(reaches);
-        Assert.False(list.TryGetProbe(10, 20, out _));
     }
 
     /// <summary>
@@ -308,15 +292,16 @@ public sealed class ListIndentContinuationTests
 
     /// <summary>
     /// 50,001 lines on a page that holds one line is 50,000 continuations, the most one element may
-    /// take: the bound cannot rule it out, so the list is probed once, and it keeps its clamp.
+    /// take: the bound cannot rule it out, so the list is probed in both layouts, and it keeps its
+    /// clamp.
     /// </summary>
     [Fact]
-    public void AListOneLineAboveTheBound_isProbedAndKeepsItsClampAtTheLimitExactly()
+    public void AListOneLineAboveTheBound_isProbedInBothLayoutsAndKeepsItsClampAtTheLimitExactly()
     {
         var run = Place(new ListRenderer(AroundTheLimit(1)), OneLinePage);
 
         Assert.Null(run.Error);
-        Assert.Equal(1, run.Probes);
+        Assert.Equal(2, run.Probes);
         Assert.Equal(50_001, Shows(run, "W"));
         Assert.Equal(50_001, run.Pages);
         Assert.False(Skipped(run));
@@ -332,7 +317,7 @@ public sealed class ListIndentContinuationTests
         var run = Place(new ListRenderer(AroundTheLimit(2)), OneLinePage);
 
         Assert.Null(run.Error);
-        Assert.Equal(1, run.Probes);
+        Assert.Equal(2, run.Probes);
         Assert.Equal(0, Shows(run, "W"));
         Assert.Equal(1001, run.Pages);
         Assert.True(Skipped(run));
@@ -351,16 +336,16 @@ public sealed class ListIndentContinuationTests
     }
 
     /// <summary>
-    /// 60,000 lines is above the bound, two to a page is 30,000 pages: the probe runs once, finds
-    /// the room, and the text is kept.
+    /// 60,000 lines is above the bound, two to a page is 30,000 pages: the probes run once in each
+    /// layout, find the room, and the text is kept.
     /// </summary>
     [Fact]
-    public void AListAboveTheBoundThatFits_isProbedOnceAndKeepsItsClamp()
+    public void AListAboveTheBoundThatFits_isProbedInBothLayoutsAndKeepsItsClamp()
     {
         var run = Place(new ListRenderer(FlatList(1000, 60)), TwoLinePage);
 
         Assert.Null(run.Error);
-        Assert.Equal(1, run.Probes);
+        Assert.Equal(2, run.Probes);
         Assert.Equal(60_000, Shows(run, "W"));
         Assert.Equal(30_000, run.Pages);
         Assert.Equal(1000, Assert.Single(run.Diagnostics).Count);

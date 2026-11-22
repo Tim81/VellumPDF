@@ -160,9 +160,11 @@ internal static class LayoutValidation
     /// <remarks>
     /// For a caller that must know, before it lets text be laid out, whether the layout would raise
     /// a refusal it has not raised so far. It reads the same two tests as
-    /// <see cref="ValidateStyle"/> (a finite font size, a finite colour channel), so the two stay
-    /// one rule. A run with no text yields no fragment, so its style is never walked and is not
-    /// read here.
+    /// <see cref="ValidateStyle"/> (a finite font size, a finite colour channel) on the runs that
+    /// hold text. It is stricter than the walk: a run of only white space holds text and is read
+    /// here, although the wrap yields no fragment for it and the walk never reads its style. A
+    /// caller that tests with it keeps the layout it had for such a run, which is the safe side. A
+    /// run with no text at all is not read.
     /// </remarks>
     internal static bool AreRunStylesAccepted(IReadOnlyList<TextRun> runs)
     {

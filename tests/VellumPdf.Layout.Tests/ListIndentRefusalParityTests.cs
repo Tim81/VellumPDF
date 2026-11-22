@@ -157,12 +157,12 @@ public sealed class ListIndentRefusalParityTests
     }
 
     /// <summary>
-    /// An entry whose line is taller than the area is clamped, as any other, and its line is not
-    /// drawn: the file is the one the base commit wrote, without the empty text object a drawn but
-    /// empty paragraph would add. The report still counts the entry, whose gutter was narrowed.
+    /// An entry whose clamped line would be taller than a page is not clamped, because no page
+    /// holds it: the list is placed as the base commit placed it, and written as it wrote it. The
+    /// entry is reported as one that fits no page, and no gutter is reported as narrowed.
     /// </summary>
     [Fact]
-    public void AnEntry_whoseLineIsTallerThanTheArea_isWrittenAsItWas()
+    public void AnEntry_whoseLineWouldBeTallerThanAPage_isWrittenAsItWas()
     {
         var list = new ListElement(ListStyle.OrderedDecimal) { Indent = 300 }
             .Add(new ListItem([new TextRun("big", H(500))]) { Style = H(10) });
@@ -172,7 +172,7 @@ public sealed class ListIndentRefusalParityTests
 
         Assert.Equal("60DC9BDAB5A29371", Sha(doc));
         Assert.Equal(
-            [LayoutDiagnosticCode.ListIndentClamped, LayoutDiagnosticCode.ListEntryPartDropped],
+            [LayoutDiagnosticCode.ListEntryPartDropped],
             doc.Diagnostics.Select(d => d.Code).ToArray());
     }
 

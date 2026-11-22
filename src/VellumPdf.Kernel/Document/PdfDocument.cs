@@ -391,6 +391,18 @@ public sealed class PdfDocument : IDisposable
     /// It runs at save, once every <c>UseTrueTypeFont</c> call has been made, so the order of those
     /// calls and the registration does not matter.
     /// </summary>
+    /// <summary>
+    /// Whether a page that draws <paramref name="handle"/> passes the check
+    /// <see cref="RefuseUndefinedForeignFonts"/> makes at save: the handle is this document's own,
+    /// or this document defines a font under its resource name. It reads the same two tests, so a
+    /// caller that must know before it draws, without registering the usage, gets the save's
+    /// answer.
+    /// </summary>
+    internal bool CanDrawFont(EmbeddedFontHandle handle) =>
+        ReferenceEquals(handle.Owner, this)
+        || OwnEmbeddingOf(handle) is not null
+        || _embeddedFonts.Exists(f => f.ResourceName == handle.ResourceName);
+
     private void RefuseUndefinedForeignFonts()
     {
         foreach (var foreign in _foreignFontHandles)

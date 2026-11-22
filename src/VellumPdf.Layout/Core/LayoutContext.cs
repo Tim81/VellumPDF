@@ -150,7 +150,12 @@ public sealed class LayoutContext
     public double ContentTop { get; }
 
     /// <summary>Creates a context for the given available area and optional content top.</summary>
-    /// <remarks>Nothing is refused. Both arguments are stored as passed.</remarks>
+    /// <remarks>
+    /// Nothing is refused. Both arguments are stored as passed.
+    /// <para>A context you build is not one the document built for the renderer you lay out with
+    /// it, so a <see cref="VellumPdf.Layout.Rendering.ListRenderer"/> then lays out as it did
+    /// before the fixes of #476 and #685; see <see cref="IRenderer.Layout"/>.</para>
+    /// </remarks>
     public LayoutContext(LayoutBox area, double contentTop = 0)
     {
         Area = area;
@@ -165,6 +170,9 @@ public sealed class LayoutContext
     /// is a page top and that a paragraph reads its line counts, are not copied: a smaller area is
     /// not known to be a page top, and a renderer that wraps a paragraph renderer places as many
     /// lines as fit.
+    /// <para>The copy is not a context the document built for the renderer you lay out with it, so
+    /// a <see cref="VellumPdf.Layout.Rendering.ListRenderer"/> then lays out as it did before the
+    /// fixes of #476 and #685; see <see cref="IRenderer.Layout"/>.</para>
     /// </remarks>
     public LayoutContext WithArea(LayoutBox area) => new(area, ContentTop) { FreshPageArea = FreshPageArea };
 }

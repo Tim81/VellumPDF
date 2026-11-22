@@ -163,8 +163,11 @@ public enum LayoutDiagnosticCode
     /// and reports nothing. An indent that leaves the text a width, however narrow, is not clamped
     /// and not reported. Neither is an entry with no word that measures wider than zero, or one
     /// with a run whose font size or colour channel is not finite, whose text is still discarded.
-    /// An entry whose text line is taller than a page is counted, and the line is not drawn; see
-    /// <see cref="ListEntryPartDropped"/>. <b>Do not pass</b> an indent that leaves an entry's
+    /// An entry whose marker or text uses a font the document cannot draw, which is a handle
+    /// another document returned or a <see cref="VellumPdf.Fonts.Standard14"/> value the
+    /// enumeration does not name, is not clamped either. Nor is any entry of a list that holds an
+    /// entry no page holds; see <see cref="ListEntryPartDropped"/>. A list that a renderer of
+    /// yours lays out is not clamped, and reports nothing. <b>Do not pass</b> an indent that leaves an entry's
     /// text no width: 3.0 will refuse it. See <see cref="Elements.ListElement.Indent"/>.
     /// </remarks>
     ListIndentClamped = 203,
@@ -180,31 +183,37 @@ public enum LayoutDiagnosticCode
     /// <remarks>
     /// <b>The text of the entries the clamp would have narrowed is discarded, and only their
     /// markers are drawn.</b> An entry that does not fit what is left of a page is placed there
-    /// with the part that fits, as it was. The list then saves, or throws
-    /// <see cref="InvalidOperationException"/> for the continuation limit, as a list with every
-    /// gutter left as <see cref="Elements.ListElement.Indent"/> and the marker widths give it would
-    /// and every entry kept where it falls. Strict mode refuses it. It is reported for a list the
-    /// document draws from its first entry. <b>Do not pass</b> an indent that leaves an entry's
-    /// text no width: 3.0 will refuse it. See <see cref="Elements.ListElement.Indent"/>.
+    /// with the part that fits, as it was, and <see cref="ListEntryPartDropped"/> reports it. The
+    /// list then saves, or throws <see cref="InvalidOperationException"/> for the continuation
+    /// limit, as a list with every gutter left as <see cref="Elements.ListElement.Indent"/> and the
+    /// marker widths give it would and every entry kept where it falls. Strict mode refuses it. It
+    /// is reported for a list the document draws from its first entry, and for a list the document
+    /// chose to lay out that way: a list that a renderer of yours holds is laid out as before
+    /// whatever its length, and reports nothing here. <b>Do not pass</b> an indent that leaves an
+    /// entry's text no width: 3.0 will refuse it. See <see cref="Elements.ListElement.Indent"/>.
     /// </remarks>
     ListIndentClampSkipped = 207,
 
     /// <summary>
-    /// A list entry's marker or its text is taller than the room the page gives it, even at the top
-    /// of an empty page, so the entry was placed with the part that fits and the other part is not
-    /// drawn. <see cref="LayoutDiagnostic.Count"/> is the number of such entries in the pieces the
+    /// A list entry was placed with its marker or its text not drawn, because it does not fit where
+    /// it falls and the list did not move it to the next page.
+    /// <see cref="LayoutDiagnostic.Count"/> is the number of such entries in the pieces the
     /// document drew.
     /// </summary>
     /// <remarks>
-    /// <b>One of the entry's two parts is missing from the page.</b> A
-    /// line of text taller than a page is not drawn and its marker is; a marker taller than a page
-    /// is not drawn and its text is. An entry that fits on a page, but not in what is left of the
-    /// current one, is not reported: it moves to the next page whole. Strict mode refuses this
-    /// code. It is reported from the piece of the list that holds the entry, once per list however
-    /// many entries it counts. A list laid out as it was before its entries could move, which
-    /// <see cref="ListIndentClampSkipped"/> reports, also reports an entry placed this way
-    /// mid-page. <b>Do not</b> give an entry a marker or a line of text taller than a page: the
-    /// part that does not fit is not drawn. See <see cref="Elements.ListElement"/>.
+    /// <b>A part of the entry is missing from the page.</b> A line that does not fit is not drawn,
+    /// while a marker or a text that wraps keeps the lines that fit. The list leaves an entry where
+    /// it falls in these cases, which are the three that report:
+    /// an entry no page holds, because a line of its marker, or a line of its text at the width
+    /// the clamp would give it, is taller than a page (the whole list is then laid out as it was
+    /// before the clamp and the moving of entries, so no other entry of it is clamped or moved);
+    /// an entry with a font the document cannot draw, which is not moved; and a list laid out as
+    /// it was before the clamp and the moving of entries, which a renderer of yours or
+    /// <see cref="ListIndentClampSkipped"/> causes. An entry whose text has no width is not
+    /// reported, and neither is one that moves to the next page whole. It is reported from the
+    /// piece of the list that holds the entry, once per list however many entries it counts. Strict
+    /// mode refuses this code. <b>Do not</b> give an entry a marker or a line of text taller than a
+    /// page: the part that does not fit is not drawn. See <see cref="Elements.ListElement"/>.
     /// </remarks>
     ListEntryPartDropped = 208,
 
