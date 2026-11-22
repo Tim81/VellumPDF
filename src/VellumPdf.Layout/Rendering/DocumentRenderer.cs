@@ -1456,9 +1456,6 @@ public sealed class DocumentRenderer
             switch (result.Status)
             {
                 case LayoutResult.Outcome.Full:
-                    // A piece placed with no report is the twin's, so the rest of the placement is.
-                    // Removed in 3.0 (#688), with the decision.
-                    if (session.Mode == ContinuationMode.Undecided) session.Mode = ContinuationMode.Twin;
                     _placedOnPage = true;
                     NoteFirstPiece();
                     ReportPendingKeepWithNext();
@@ -1468,7 +1465,9 @@ public sealed class DocumentRenderer
                     return;
 
                 case LayoutResult.Outcome.Partial:
-                    // The same first-piece rule; removed in 3.0 (#688).
+                    // A piece placed with no report is the twin's, so the rest of the placement is.
+                    // A Full piece ends the placement, so only this case needs the rule. Removed in
+                    // 3.0 (#688), with the decision.
                     if (session.Mode == ContinuationMode.Undecided) session.Mode = ContinuationMode.Twin;
                     split = true;
                     _placedOnPage = true;
