@@ -607,8 +607,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - An entry whose marker has no room at the top of a page is still refused: the save throws the
     same "An element is too tall" `InvalidOperationException`. That entry fits no page, so its list
     is placed as it was before (#685 below). The page-continuation limit is refused with its own
-    message, which begins "A single element needed more than 50000 page continuations"; the
-    documentation of `ListElement.Indent` gives each refusal its message.
+    message, which begins "A single element needed more than 50000 page continuations".
   - A list whose layout, with clamped text or with moved entries (see #685 below), would pass the
     50,000 page continuations one element may take is placed as it was before both, so a list that
     saved still saves, and a list refused at that limit is still refused with the same message.
@@ -635,23 +634,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   as not placed. Text that has no width, which `ListElement.Indent` describes, is not a part that
   did not fit.
   - **Deliberate output change**, for a document with such an entry that is not at the top of a
-    page. In the 13,000 generated documents compared with the previous commit, 201 changed this
-    way with no 203, 207 or 208 report. In 197 of them every piece of text the document had is
-    still there and the missing text is added, and 4 draw the same text at other positions. In 45
-    of the 201 another report changes, because a moved entry changes where a keep run ends and
-    what is drawn: 6 gain or move a `KeepWithNextRelaxed` or `KeepTogetherRelaxed` report, and 39
-    count more unencodable characters, the characters of the text that is now drawn.
+    page. In 70,000 generated documents (67,192 without `StrictDiagnostics`) compared with the
+    previous commit, 1,186 changed with no 203, 207 or 208 report and with no text lost. In 1,130
+    of them every piece of text the document had is still there and the missing text is added, and
+    56 draw the same text at other positions. In 45 of the 1,186 another report changes, because a
+    moved entry changes where a keep run ends and what is drawn: 12 gain or lose a
+    `KeepWithNextRelaxed` report (801), 25 a `KeepTogetherRelaxed` report (802), and 10 the count
+    of 601 (`UnembeddedFont`).
   - **A list that holds an entry no page holds is placed as it was before, whole.** An entry no
     page holds is one whose marker has a line taller than a page, or whose text, at the width the
     clamp of #476 would give it, has one. No entry of such a list is clamped or moved, so each is
     where it fell and shows the lines that fit, and the new
     `LayoutDiagnosticCode.ListEntryPartDropped` (208, severity `Error`) reports each of them, with
     `Count` the number of such entries in the pieces drawn. `StrictDiagnostics` refuses it, and the
-    default saves. Other lists in the document keep both fixes. Where the list starts can differ
-    from where it started when something before it moved or was clamped, and an entry that no page
-    holds shows the lines its start allows, so such a document can show fewer lines of that entry
-    than before. Of the 13,000 documents, 26 show fewer of an entry's lines, every one of them with a 208.
-    With every list started at the top of a page, in 12,000 other documents, none does.
+    default saves. Other lists in the document keep both fixes.
+  - **Deliberate output change, text a list laid out as it was no longer shows after something
+    ahead of it moved.** A list laid out as it was before the clamp and the moving of entries
+    starts where the lists ahead of it, which keep both fixes, leave the cursor, and that can
+    differ from where it started. An entry it places at a page bottom then shows the lines its new
+    start allows, so a document can show fewer lines than before. It happens to a list that holds
+    an entry no page holds, to a list that a renderer of yours lays out, and to a list the
+    continuation limit sends back. In the 67,192 generated documents without `StrictDiagnostics`,
+    119 lose text: 26 in documents with no list that a renderer of yours holds, each reporting
+    208, and 93 in documents with one, 17 of which report a 208 for another list and 76 report
+    neither 207 nor 208, because the document did not place the list. With the continuation limit
+    set to 300 entries and 3,000 documents of 100 to 330 entries a list, 134 report 207 and 2 of
+    those lose text.
   - **A document that holds an entry in a font it cannot draw lays every list out as it was before
     the clamp and the moving of entries.** A handle that another document returned, or a
     `Standard14` value the enumeration does not name, makes the save throw where an entry's text or
