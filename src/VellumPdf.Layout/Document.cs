@@ -120,7 +120,12 @@ public sealed class Document : IDisposable
     /// <see cref="LayoutDiagnosticCode.PreformattedLineWrapped"/> (a preformatted line split with
     /// a marker; a warning, which <see cref="StrictDiagnostics"/> saves),
     /// <see cref="LayoutDiagnosticCode.CellWhiteSpaceDropped"/> (a table cell's tab or line break
-    /// left out of what is drawn; also a warning)
+    /// left out of what is drawn; also a warning),
+    /// <see cref="LayoutDiagnosticCode.KeepWithNextRelaxed"/>,
+    /// <see cref="LayoutDiagnosticCode.KeepTogetherRelaxed"/> and
+    /// <see cref="LayoutDiagnosticCode.MinLinesRelaxed"/> (a request to keep elements together or
+    /// to keep a number of lines that the pages could not hold; warnings, which
+    /// <see cref="StrictDiagnostics"/> saves)
     /// and <see cref="LayoutDiagnosticCode.DiagnosticsDropped"/>. Every other one saves by
     /// default; only <see cref="StrictDiagnostics"/> refuses it, and a later major version refuses
     /// them all.</para>

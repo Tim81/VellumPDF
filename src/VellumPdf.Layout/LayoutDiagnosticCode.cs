@@ -24,8 +24,8 @@ public enum LayoutDiagnosticCode
     // Reserved, not defined here, so that later members do not collide:
     //   105 SymbolFontMeasuredAsZero (Error), 203 ListIndentClamped, 204 ListDepthCapped, 205
     //   ListEntriesCapped, 206 ListEntrySkipped (all Error), 302 SurplusCell (Error), 402
-    //   UnknownBandToken, one 7xx member for a link
-    //   dropped from a cell or band under a PDF/UA claim, and the 8xx block for pagination reports.
+    //   UnknownBandToken, and one 7xx member for a link dropped from a cell or band under a PDF/UA
+    //   claim. The rest of the 8xx block stays free for later pagination reports.
 
     /// <summary>
     /// A <see cref="Elements.TextRun"/> with a null style that yields no word, so it saved without
@@ -211,6 +211,46 @@ public enum LayoutDiagnosticCode
     /// running bands yourself.</para>
     /// </remarks>
     UnembeddedFont = 601,
+
+    /// <summary>
+    /// A run of elements that asked to stay with the element after it, by
+    /// <c>KeepWithNext</c>, was placed without that request, because the group of elements did not
+    /// hold together on a page of its own, or the run already started at the top of a page, where
+    /// moving it would leave that page empty. The element is the first of the run, and
+    /// <see cref="LayoutDiagnostic.PageNumber"/> the page that element's first piece is placed
+    /// on, after its own keep-together or line count has moved it.
+    /// </summary>
+    /// <remarks>
+    /// Nothing the caller wrote is lost, so this is a warning and strict mode saves. When this
+    /// request conflicts with a keep-together or a line count, this one is dropped and the other
+    /// holds. The drawing pass reports it, and a pass that only measures reports nothing.
+    /// </remarks>
+    KeepWithNextRelaxed = 801,
+
+    /// <summary>
+    /// An element that asked to stay whole, by <c>KeepTogether</c>, was split across pages because
+    /// it did not fit on an empty page, or because it already started at the top of one, where
+    /// moving it gains nothing. <see cref="LayoutDiagnostic.PageNumber"/> is the page the element
+    /// starts on.
+    /// </summary>
+    /// <remarks>
+    /// Nothing the caller wrote is lost, so this is a warning and strict mode saves. An element
+    /// that was moved to the next page, or that fitted where it stood, reports nothing.
+    /// </remarks>
+    KeepTogetherRelaxed = 802,
+
+    /// <summary>
+    /// A paragraph that set <c>MinLinesBeforeBreak</c> or <c>MinLinesAfterBreak</c> was split where
+    /// the page ended, because no break inside it leaves that many lines on both sides, and it
+    /// already started at the top of a page. <see cref="LayoutDiagnostic.PageNumber"/> is the page
+    /// of the first such split. Each further split of the same paragraph adds to
+    /// <see cref="LayoutDiagnostic.Count"/>.
+    /// </summary>
+    /// <remarks>
+    /// Nothing the caller wrote is lost, so this is a warning and strict mode saves. A paragraph
+    /// that was moved to the next page to meet the counts reports nothing.
+    /// </remarks>
+    MinLinesRelaxed = 803,
 
     /// <summary>
     /// The save dropped reports because the channel holds at most 1,000 distinct items.
