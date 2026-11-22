@@ -140,6 +140,22 @@ public sealed class ParagraphLineHeightTests
         Assert.Equal(FragmentsOf(Words(400)), renderer.LeadingVisits);
     }
 
+    // The piece a split keeps for this page is built with the height, so laying it out again, as a
+    // keep-together probe does, does not walk the wrap.
+    [Fact]
+    public void ThePieceASplitKeeps_doesNotWalkTheWrapWhenLaidOutAgain()
+    {
+        var renderer = new ParagraphRenderer(new Paragraph(Words(400), Plain));
+        var result = renderer.Layout(Context(100));
+        Assert.Equal(LayoutResult.Outcome.Partial, result.Status);
+        var split = (ParagraphRenderer)result.SplitRenderer!;
+
+        split.Layout(Context(100));
+        split.Layout(Context(100));
+
+        Assert.Equal(0, split.LeadingVisits);
+    }
+
     // The wrap is fixed at the width of the first call, so a later call at another width reads the
     // same lines and the same height. The height must follow the wrap, not the area.
     [Fact]
