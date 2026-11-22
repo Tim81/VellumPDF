@@ -946,7 +946,8 @@ public sealed class Document : IDisposable
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="Save(System.IO.Stream)"/> and the other save overloads, not from this
-    /// call, when a drawn width or height is refused, or when the image is too tall for a page; see
+    /// call, when a drawn width or height is refused, or when the image is too tall for a page and
+    /// <see cref="LayoutImage.FitToPage"/> does not scale it down; see
     /// <see cref="LayoutImage.Width"/> and <see cref="LayoutImage.Height"/>.
     /// </exception>
     /// <exception cref="ArgumentException">

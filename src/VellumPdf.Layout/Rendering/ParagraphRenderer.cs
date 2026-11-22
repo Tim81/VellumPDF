@@ -36,7 +36,13 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
 
     /// <summary>How many times this instance wrapped its text; the cache keeps it at one.</summary>
     internal int WrapCalls { get; private set; }
+
+    /// <summary>
+    /// How many fragments this instance visited taking the line height; the wrap makes it one pass.
+    /// </summary>
+    internal int LeadingVisits { get; private set; }
     private double _lineHeight;      // max EffectiveLeading across the paragraph
+    private bool _lineHeightTaken;   // _lineHeight is taken: max over all of _lines, or the default
     private LayoutBox _occupied;
 
     // How many runs with a null style yielded no word, found where the wrap is made and cached with
@@ -148,19 +154,16 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
             WrapCalls++;
         }
 
-        // Line height = max EffectiveLeading across every fragment in every line.
-        _lineHeight = 0;
-        foreach (var line in _lines)
-            foreach (var frag in line)
-            {
-                // A non-finite size makes every height derived from it non-finite, every height
-                // comparison false, and the paragraph reports that it placed nothing -- which the
-                // document renderer reads as "too tall" (#481).
-                LayoutValidation.ValidateStyle(frag.Style, RunOwner);
-                _lineHeight = Math.Max(_lineHeight, frag.Style.EffectiveLeading);
-            }
-        if (_lineHeight <= 0)
-            _lineHeight = TextStyle.Default.EffectiveLeading;
+        // The line height is a property of the wrap, so it is taken once per wrap: every later
+        // Layout on this renderer, and every piece a split hands on, reads the same _lines.
+        // Walking the whole wrap on each call cost O(lines) per page the paragraph crossed. The
+        // flag is set only after the walk completes, so a style the walk refuses is refused again
+        // on the next call, as it was when the walk ran every time.
+        if (!_lineHeightTaken)
+        {
+            TakeLineHeight();
+            _lineHeightTaken = true;
+        }
 
         var maxLines = (int)Math.Floor(area.Height / _lineHeight);
         if (maxLines <= 0)
@@ -202,6 +205,8 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
         {
             _lines = _lines,
             _lineEnds = _lineEnds,
+            _lineHeight = _lineHeight,
+            _lineHeightTaken = true,
             _nullStyleRuns = _nullStyleRuns,
             _tabStopsBeyond = _tabStopsBeyond,
             StructType = StructType,
@@ -215,6 +220,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
             _lineEnds = _lineEnds,
             _endLine = _endLine,
             _lineHeight = _lineHeight,
+            _lineHeightTaken = true,
             _occupied = _occupied,
             _nullStyleRuns = _nullStyleRuns,
             _tabStopsBeyond = _tabStopsBeyond,
@@ -225,6 +231,25 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
             RunOwner = RunOwner,
         };
         return LayoutResult.Partial(_occupied, split, overflow);
+    }
+
+    // Line height = max EffectiveLeading across every fragment in every line. _lineHeight is
+    // written as the walk goes, so a walk that throws leaves what it had reached.
+    private void TakeLineHeight()
+    {
+        _lineHeight = 0;
+        foreach (var line in _lines!)
+            foreach (var frag in line)
+            {
+                // A non-finite size makes every height derived from it non-finite, every height
+                // comparison false, and the paragraph reports that it placed nothing -- which the
+                // document renderer reads as "too tall" (#481).
+                LayoutValidation.ValidateStyle(frag.Style, RunOwner);
+                _lineHeight = Math.Max(_lineHeight, frag.Style.EffectiveLeading);
+                LeadingVisits++;
+            }
+        if (_lineHeight <= 0)
+            _lineHeight = TextStyle.Default.EffectiveLeading;
     }
 
     // ── Phase 2: Draw ─────────────────────────────────────────────────────────
