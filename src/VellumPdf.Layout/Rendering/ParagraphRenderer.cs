@@ -37,7 +37,9 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     /// <summary>How many times this instance wrapped its text; the cache keeps it at one.</summary>
     internal int WrapCalls { get; private set; }
 
-    /// <summary>How many fragments this instance visited taking the line height; the wrap makes it one pass.</summary>
+    /// <summary>
+    /// How many fragments this instance visited taking the line height; the wrap makes it one pass.
+    /// </summary>
     internal int LeadingVisits { get; private set; }
     private double _lineHeight;      // max EffectiveLeading across the paragraph, set with _lines
     private LayoutBox _occupied;
