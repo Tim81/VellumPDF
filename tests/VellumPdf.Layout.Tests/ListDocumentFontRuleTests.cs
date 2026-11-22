@@ -536,6 +536,26 @@ public sealed class ListDocumentFontRuleTests
     }
 
     /// <summary>
+    /// A list builds its entries once for each layout, however many pages it spans: the pieces of a
+    /// list that starts over carry the generation, and do not build the entries again for each page.
+    /// Four builds are two lists in two passes, the extra layout and the drawing layout.
+    /// </summary>
+    [Fact]
+    public void AListThatSpansManyPages_buildsItsEntriesOncePerLayout()
+    {
+        var many = new ListElement(ListStyle.OrderedDecimal);
+        for (var i = 0; i < 200; i++) many.Add(new ListItem("w", H(10)));
+        var doc = Page(200, 40, 0, header: false);
+        doc.Add(many);
+        doc.Add(new Holder(new ListRenderer(OneEntry("b", H(10))), 0));
+        ListRenderer.BuildCalls = 0;
+
+        Assert.StartsWith("OK ", Outcome(doc));
+
+        Assert.Equal(4, ListRenderer.BuildCalls);
+    }
+
+    /// <summary>
     /// A header's page-counting pass is the one the document reports, whether or not the extra
     /// layout found the font: that layout runs first, as a pass of its own, and is not counted.
     /// </summary>

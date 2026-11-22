@@ -426,6 +426,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                     _items = _items,
                     _unclamped = _unclamped,
                     _placement = _placement,
+                    _generation = _generation,
                     _placeabilityKnown = _placeabilityKnown,
                     _unplaceable = _unplaceable,
                 };
@@ -434,6 +435,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                     _items = _items,
                     _unclamped = _unclamped,
                     _placement = _placement,
+                    _generation = _generation,
                     _placeabilityKnown = _placeabilityKnown,
                     _unplaceable = _unplaceable,
                     _indentClamped = _indentClamped,
@@ -468,6 +470,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                     _items = _items,
                     _unclamped = _unclamped,
                     _placement = _placement,
+                    _generation = _generation,
                     _placeabilityKnown = _placeabilityKnown,
                     _unplaceable = _unplaceable,
                 };
@@ -477,6 +480,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                     _items = _items,
                     _unclamped = _unclamped,
                     _placement = _placement,
+                    _generation = _generation,
                     _placeabilityKnown = _placeabilityKnown,
                     _unplaceable = _unplaceable,
                     _indentClamped = _indentClamped,
@@ -954,8 +958,16 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
         return false;
     }
 
+    /// <summary>
+    /// The times this thread built the entries of a list, which a test reads to see that a piece of
+    /// a list does not build them again. Removed in 3.0 (#688), with the twin.
+    /// </summary>
+    [ThreadStatic]
+    internal static int BuildCalls;
+
     private List<Entry> BuildItems(double areaWidth, ListLayoutRun? run)
     {
+        BuildCalls++;
         var result = new List<Entry>();
         var indent = _list.Indent;
         var defaultStyle = _list.DefaultStyle ?? TextStyle.Default;
