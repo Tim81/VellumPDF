@@ -277,7 +277,9 @@ public sealed class ListPlacementAdoptionTests
     [InlineData("move")]
     public void AChildWithARunThatCannotBeDrawn_isNeitherClampedNorMoved(string rule)
     {
-        var undefined = StyleOf((Standard14)99, rule == "move" ? 20 : 10);
+        // An undefined Standard 14 value measures zero, which the clamp never narrows, so the clamp row
+        // uses a handle another document returned, which measures.
+        var undefined = rule == "move" ? StyleOf((Standard14)99, 20) : StyleOf(ForeignHandle());
         var (bytes, doc, twin, _) = Both(
             () => rule == "move" ? Page(200, 100, leadLines: 4) : Page(400, 400),
             () =>
