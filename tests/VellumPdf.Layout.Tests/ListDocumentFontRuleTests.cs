@@ -930,6 +930,33 @@ public sealed class ListDocumentFontRuleTests
         }
     }
 
+    /// <summary>
+    /// Runs that alternate between two embedded fonts ask the document once for each font, not once
+    /// for each change of font.
+    /// </summary>
+    [Fact]
+    public void RunsThatAlternateTwoFonts_askTheDocumentOncePerFont()
+    {
+        var pdf = new PdfDocument();
+        var mono = pdf.UseTrueTypeFont(FontReportSupport.LiberationMonoBytes);
+        var sans = pdf.UseTrueTypeFont(FontReportSupport.DejaVuBytes);
+        var run = ListLayoutRun.Begin(pdf, out var previous);
+        try
+        {
+            for (var i = 0; i < 50; i++)
+            {
+                Assert.True(ListLayoutRun.CanDraw(run, new TextStyle { FontRef = mono }));
+                Assert.True(ListLayoutRun.CanDraw(run, new TextStyle { FontRef = sans }));
+            }
+
+            Assert.Equal(2, run.DocumentQuestions);
+        }
+        finally
+        {
+            ListLayoutRun.End(previous);
+        }
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     /// <summary>

@@ -38,10 +38,14 @@ internal sealed class ListLayoutRun
     // what that list holds. A layout started inside another one restores the outer run in End.
     private static readonly AsyncLocal<ListLayoutRun?> s_current = new();
 
-    // The font whose answer was asked for last. A list asks about the same few fonts for every run
-    // of every entry, so the answer is read once per font and not once per run.
-    private EmbeddedFontHandle? _lastHandle;
-    private bool _lastHandleDrawable;
+    // The embedded fonts the document was found able to draw. A list asks about the same few fonts
+    // for every run of every entry, so a font is asked about once, however the runs alternate. Only
+    // a yes is kept: a font cannot be taken away from a document, and a renderer of a caller's may
+    // embed one while the layout runs, so a no is asked again. Read from every thread a renderer
+    // lays its list out on.
+    private System.Collections.Concurrent.ConcurrentDictionary<EmbeddedFontHandle, bool>? _drawable;
+
+    // The Standard 14 value whose answer was asked for last, which costs one comparison.
     private Standard14 _lastStandard;
     private bool _lastStandardDefined;
     private bool _hasLastStandard;
@@ -139,12 +143,21 @@ internal sealed class ListLayoutRun
         return run is null ? Enum.IsDefined(font.Standard14) : run.IsStandardDefined(font.Standard14);
     }
 
+    // How many times the document was asked whether an embedded font can be drawn, for a test to
+    // pin that a font it answered yes for is not asked about again.
+    private int _documentQuestions;
+
+    internal int DocumentQuestions => Volatile.Read(ref _documentQuestions);
+
     private bool CanDrawEmbedded(EmbeddedFontHandle handle)
     {
-        if (ReferenceEquals(handle, _lastHandle)) return _lastHandleDrawable;
-        _lastHandleDrawable = Pdf.CanDrawFont(handle);
-        _lastHandle = handle;
-        return _lastHandleDrawable;
+        if (_drawable is { } known && known.ContainsKey(handle)) return true;
+        Interlocked.Increment(ref _documentQuestions);
+        if (!Pdf.CanDrawFont(handle)) return false;
+
+        var created = _drawable ?? Interlocked.CompareExchange(ref _drawable, new(), null) ?? _drawable;
+        created[handle] = true;
+        return true;
     }
 
     private bool IsStandardDefined(Standard14 font)

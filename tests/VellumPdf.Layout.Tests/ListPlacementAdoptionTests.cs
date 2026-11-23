@@ -239,6 +239,95 @@ public sealed class ListPlacementAdoptionTests
         Assert.Equal(30, Shows(fresh).Count(t => t == "word"));
     }
 
+    // An indent that leaves the first document's 180-point area no text, so the clamp narrows it,
+    // and leaves the second document's 380-point area 130 points.
+    private static ListElement ClampedAtTheFirstWidth() => new ListElement(ListStyle.OrderedDecimal) { Indent = 250 }
+        .Add(new ListItem(ClampedText, H(10)));
+
+    private const string ClampedText = "reused text that wraps over several lines";
+
+    // An indent that clamps nothing, and a text that wraps differently at 160 and at 360 points.
+    private static ListElement WrapsAtTheFirstWidth()
+    {
+        var list = new ListElement(ListStyle.OrderedDecimal) { Indent = 20 };
+        for (var i = 0; i < 3; i++) list.Add(new ListItem(string.Join(" ", Enumerable.Repeat("reused", 14)), H(10)));
+        return list;
+    }
+
+    private static Document Narrow(double width) =>
+        new() { PageSize = new PdfRectangle(0, 0, width, 300), Margins = new EdgeInsets(10) };
+
+    // The second document's bytes after one renderer served a first document of 200 points.
+    private static byte[] SecondDocument(Func<ListElement> make, string shape, bool twin)
+    {
+        var renderer = new ListRenderer(make());
+        IRenderer Use(bool held) => held ? new Passes(twin ? renderer.Unclamped() : renderer) : twin ? renderer.Unclamped() : renderer;
+
+        var first = Narrow(200);
+        first.Add(Use(shape.StartsWith("held", StringComparison.Ordinal)));
+        Save(first);
+        var second = Narrow(400);
+        second.Add(Use(shape.EndsWith("held", StringComparison.Ordinal)));
+        return Save(second);
+    }
+
+    private static byte[] FreshSecondDocument(Func<ListElement> make)
+    {
+        var second = Narrow(400);
+        second.Add(new ListRenderer(make()));
+        return Save(second);
+    }
+
+    /// <summary>
+    /// A renderer that served one document keeps the entries it built there, at the width of that
+    /// document, when it serves another, as 2.3.3 kept them, whether it was added to each
+    /// document or held by a renderer of a caller's in either. The reference is the twin, which
+    /// holds the entries as 2.3.3 built them, and a list built again at the second document's
+    /// width differs from it.
+    /// </summary>
+    [Theory]
+    [InlineData("direct-direct", false)]
+    [InlineData("held-direct", true)]
+    [InlineData("direct-held", true)]
+    [InlineData("direct-direct", true)]
+    public void AListRendererReusedForASecondDocument_keepsTheEntriesTheFirstBuilt(string shape, bool wraps)
+    {
+        Func<ListElement> make = wraps ? WrapsAtTheFirstWidth : ClampedAtTheFirstWidth;
+
+        var kept = SecondDocument(make, shape, twin: false);
+
+        Assert.Equal(Sha(SecondDocument(make, shape, twin: true)), Sha(kept));
+        if (wraps)
+            Assert.NotEqual(Sha(FreshSecondDocument(make)), Sha(kept));
+
+        // The clamp narrowed the first document's gutter to the widest word, which would have put
+        // the text on one line in the second. 2.3.3 kept the indent, so the text wraps at 130
+        // points.
+        else
+            Assert.DoesNotContain(ClampedText, Shows(kept));
+    }
+
+    /// <summary>
+    /// A list renderer reused for a second document reports nothing there, as one that a caller
+    /// laid out before the save: the document did not place the list the way it placed it first.
+    /// </summary>
+    [Fact]
+    public void AListRendererReusedForASecondDocument_reportsNothingThere()
+    {
+        var renderer = new ListRenderer(ClampedAtTheFirstWidth());
+        var first = Narrow(200);
+        first.Add(renderer);
+        Save(first);
+        Assert.Contains(LayoutDiagnosticCode.ListIndentClamped, Codes(first));
+
+        var second = Narrow(400);
+        second.Add(renderer);
+        Save(second);
+
+        Assert.DoesNotContain(second.Diagnostics, d => d.Code is LayoutDiagnosticCode.ListIndentClamped
+            or LayoutDiagnosticCode.ListIndentClampSkipped or LayoutDiagnosticCode.ListEntryPartDropped);
+    }
+
     /// <summary>
     /// The document places the same object in the measuring pass and the drawing pass.
     /// </summary>

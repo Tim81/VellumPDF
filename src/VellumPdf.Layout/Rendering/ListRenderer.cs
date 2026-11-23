@@ -121,10 +121,24 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     // Draw reads when the layout it makes for itself answers Nothing. Let go when the pass ends.
     private ListRenderer? _probeTwin;
 
-    // True when the entries were built while no document laid out, which is a caller laying the
-    // list out before the save. 2.3.3 keeps those entries, at the width that call used, for every
-    // later layout, so the document lays the list out as its twin, which holds them.
-    private bool _builtBeforeTheSave;
+    // Which layout built the entries, and at what width. 2.3.3 builds a list's entries at its
+    // first layout and keeps them, at that width, for every later one, whatever document or call
+    // that is: a caller who laid the list out before the save, another document, or a save before
+    // this one. This list builds its own entries new and its twin builds the ones 2.3.3 builds, so
+    // a layout under another run than the one that built them (or none) is the twin's, which
+    // holds or builds the entries 2.3.3 keeps. Carried by splits, which share the items. Removed in
+    // 3.0 (#688).
+    private ListLayoutRun? _builtUnder;
+    private double _builtWidth;
+
+    // On a twin, the entries an earlier layout of the list it answers for built, and the width it
+    // built them at, when that was not under the current run. The twin has built none of its own
+    // then. It builds them at that width and keeps the earlier layout's entries that the clamp did
+    // not touch, which are the ones 2.3.3 built, with the wrap each paragraph cached. An entry the
+    // clamp narrowed was never wrapped on 2.3.3, because its text had no width, so the twin builds
+    // that one anew. Both are let go once the twin has built its own.
+    private double? _earlierWidth;
+    private List<Entry>? _earlier;
 
     // Whether the entries have been tried on an empty page, and what that found. When any entry
     // fits no page the list lays out as its twin (_wholeAsMain). _unplaceable marks the entries
@@ -241,9 +255,10 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     /// or an element after a list that can need about as many continuations as the limit allows;
     /// see <see cref="ListElement"/>, <see cref="LayoutDiagnosticCode.ListEntryPartDropped"/> and
     /// <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/>. A list that your renderer holds
-    /// reports neither: the document did not place it. A list you laid out yourself before the
-    /// save keeps the entries that call built, at the width it used, as it did; the save lays it
-    /// out as it was before the fixes and reports nothing.</para>
+    /// reports neither: the document did not place it. A list that an earlier layout built
+    /// entries for keeps them, at the width that layout used, as it did, whether you laid it out
+    /// before the save or another document or an earlier save did; the save lays it out as it was
+    /// before the fixes and reports nothing.</para>
     /// <para><b>A list your renderer lays out is found only on the execution context of the
     /// layout.</b> One laid out on the thread of the call, on a task, or on a thread your renderer
     /// starts is found. One laid out on work queued with the context suppressed, such as
@@ -291,10 +306,9 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             if (context.ModeFor(this) == ContinuationMode.Twin)
                 return LayOutAsTwin(context, TwinPlacement.Document);
 
-            // 2.3.3 keeps the entries a caller built before the save. This list's own are built
-            // new, so a caller's call can only have built the twin's.
-            if (_twin is { _builtBeforeTheSave: true } || _builtBeforeTheSave)
-                return LayOutAsTwin(context, TwinPlacement.Held);
+            // 2.3.3 keeps the entries an earlier layout built, at the width it used. This list's
+            // own are built new, so for an earlier layout the twin holds the ones to keep.
+            if (BuiltByAnEarlierLayout(run)) return LayOutAsTwin(context, TwinPlacement.Held);
         }
 
         _delegate = null;
@@ -310,9 +324,22 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     {
         var twin = Unclamped();
         _delegate = twin;
+        if (_items is not null && twin._items is null && !ReferenceEquals(_builtUnder, ListLayoutRun.Current))
+        {
+            twin._earlierWidth = _builtWidth;
+            twin._earlier = _items;
+        }
+
         twin._handoff = context.IsAddressedByDocument(this) ? placement : TwinPlacement.Held;
         return twin.Layout(context);
     }
+
+    // True when this list or its twin holds entries that a layout under another run than this one
+    // built. A run is one save's layout, so that is another document, an earlier save, or no
+    // document at all.
+    private bool BuiltByAnEarlierLayout(ListLayoutRun? run) =>
+        (_items is not null && !ReferenceEquals(_builtUnder, run))
+        || (_twin is { _items: not null } twin && !ReferenceEquals(twin._builtUnder, run));
 
     // The probing pass lays every list out as a twin, on a copy of its own: the pass is not kept,
     // and a layout that is kept must start from the list as the caller left it. Removed in 3.0
@@ -356,8 +383,19 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
         if (_items is null)
         {
             var run = ListLayoutRun.Current;
-            _items = BuildItems(area.Width, run);
-            _builtBeforeTheSave = run is null;
+            _builtWidth = _earlierWidth ?? area.Width;
+            _items = BuildItems(_builtWidth, run);
+            _builtUnder = run;
+            if (_earlier is { } earlier)
+            {
+                // The same list builds the same entries in the same order. A list changed since
+                // then has none to keep.
+                if (earlier.Count == _items.Count)
+                    for (var i = 0; i < earlier.Count; i++)
+                        if (!earlier[i].Clamped) _items[i] = earlier[i];
+                _earlier = null;
+                _earlierWidth = null;
+            }
         }
 
         if (_items.Count == 0)
@@ -446,6 +484,8 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                 var overflow = new ListRenderer(_list, i)
                 {
                     _items = _items,
+                    _builtUnder = _builtUnder,
+                    _builtWidth = _builtWidth,
                     _unclamped = _unclamped,
                     _placement = _placement,
                     _placeabilityKnown = _placeabilityKnown,
@@ -454,6 +494,8 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                 var split = new ListRenderer(_list, _startItem, _partialContentOverrideAtStart)
                 {
                     _items = _items,
+                    _builtUnder = _builtUnder,
+                    _builtWidth = _builtWidth,
                     _unclamped = _unclamped,
                     _placement = _placement,
                     _placeabilityKnown = _placeabilityKnown,
@@ -488,6 +530,8 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                 var overflowList = new ListRenderer(_list, i, contentOverflow)
                 {
                     _items = _items,
+                    _builtUnder = _builtUnder,
+                    _builtWidth = _builtWidth,
                     _unclamped = _unclamped,
                     _placement = _placement,
                     _placeabilityKnown = _placeabilityKnown,
@@ -497,6 +541,8 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                 var split = new ListRenderer(_list, _startItem, _partialContentOverrideAtStart)
                 {
                     _items = _items,
+                    _builtUnder = _builtUnder,
+                    _builtWidth = _builtWidth,
                     _unclamped = _unclamped,
                     _placement = _placement,
                     _placeabilityKnown = _placeabilityKnown,
