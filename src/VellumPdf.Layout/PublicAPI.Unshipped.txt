@@ -93,6 +93,8 @@ VellumPdf.Layout.LayoutDiagnosticCode.NotdefGlyph = 102 -> VellumPdf.Layout.Layo
 VellumPdf.Layout.LayoutDiagnosticCode.UnembeddedFont = 601 -> VellumPdf.Layout.LayoutDiagnosticCode
 VellumPdf.Layout.Document.Add(VellumPdf.Layout.Elements.Preformatted! preformatted) -> VellumPdf.Layout.Document!
 VellumPdf.Layout.Elements.Preformatted
+VellumPdf.Layout.Elements.Preformatted.Anchor.get -> string?
+VellumPdf.Layout.Elements.Preformatted.Anchor.init -> void
 VellumPdf.Layout.Elements.Preformatted.BreakBefore.get -> VellumPdf.Layout.Core.PageBreakMode
 VellumPdf.Layout.Elements.Preformatted.BreakBefore.init -> void
 VellumPdf.Layout.Elements.Preformatted.Margins.get -> VellumPdf.Layout.Core.EdgeInsets

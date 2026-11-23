@@ -19,7 +19,7 @@ namespace VellumPdf.Layout.Rendering;
 /// Both passes lay out the same cached lines and read no pagination plan, so the measuring pass and
 /// the drawing pass agree by construction.
 /// </remarks>
-internal sealed class PreformattedRenderer : IRenderer, IPageBreakSource
+internal sealed class PreformattedRenderer : IRenderer, IPageBreakSource, IPlacementSource
 {
     // The continuation marker is a hook drawn with two open subpaths inside one column, 0.6 em wide
     // (the width the wrap reserves, PreformattedText.MarkerUnits), between the baseline and the cap
@@ -68,6 +68,16 @@ internal sealed class PreformattedRenderer : IRenderer, IPageBreakSource
     }
 
     PageBreakMode IPageBreakSource.BreakBefore => _element.BreakBefore;
+
+    // Explicit, as in the other renderers. The anchor lands where the first line does, so only the
+    // piece that starts at line 0 reports it; the overflow of a split block starts later and
+    // reports nothing, which keeps the destination on the page the first line is on. The box is
+    // the occupied area, whose top is the top of the first line.
+    void IPlacementSource.ReportPlacements(PlacementSink sink)
+    {
+        if (_startLine == 0 && _element.Anchor is { } anchor)
+            sink.ReportAnchor(_element, anchor, _occupied);
+    }
 
     public LayoutResult Layout(LayoutContext context)
     {

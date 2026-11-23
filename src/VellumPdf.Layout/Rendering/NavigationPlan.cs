@@ -63,6 +63,9 @@ internal sealed class NavigationPlan
                 case LayoutImageRenderer image:
                     plan.Add(image.Element.Anchor, LayoutElementKind.Image, i);
                     break;
+                case PreformattedRenderer block:
+                    plan.Add(block.Element.Anchor, LayoutElementKind.Preformatted, i);
+                    break;
                 case ListRenderer list:
                     plan.WalkList(list.Element, i, ref deep);
                     break;
