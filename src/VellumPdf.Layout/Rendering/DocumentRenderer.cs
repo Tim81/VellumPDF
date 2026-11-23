@@ -795,14 +795,24 @@ public sealed class DocumentRenderer
             ? new LayoutBox(_margins.Right, area.Y, area.Width, area.Height)
             : area;
 
-    // Finds, before anything is laid out, what a list's rule for fonts the document cannot draw
-    // needs to know (ListLayoutRun). Every list the document holds itself is read here, and every
-    // list sits at the top level: no built-in renderer builds one. A renderer from outside this
-    // assembly can lay a ListRenderer out from its own Layout, and that list is found only when it
-    // is laid out. Returns whether a pass must find it first: a list laid out the new way ahead of
-    // such a renderer has already moved what follows it by the time the renderer's list turns out
-    // to hold an entry the document cannot draw, and a pass that has drawn cannot be undone. A
-    // renderer ahead of every list needs no pass, because no list was laid out before it.
+    // Finds, before anything is laid out, what a list's two document-wide rules need to know
+    // (ListLayoutRun). Every element the document holds itself is read here, and every list sits
+    // at the top level: no built-in renderer builds one.
+    //
+    // The first rule is the font: a list that holds an entry the document cannot draw turns every
+    // list into its twin. A renderer from outside this assembly can lay a ListRenderer out from its
+    // own Layout, and that list is found only when it is laid out. The method returns whether a
+    // pass must find it first: a list laid out the new way ahead of such a renderer has already
+    // moved what follows it by the time the renderer's list turns out to hold such an entry, and a
+    // pass that has drawn cannot be undone. A renderer ahead of every list needs no pass, because
+    // no list was laid out before it. A renderer the library ships that holds no list does not
+    // count as such a renderer (IListFreeRenderer).
+    //
+    // The second rule is the limit: a built-in element after a list whose continuations can come
+    // near the limit starts where the lists before it put it, and the limit's verdict for it
+    // depends on where that is. 2.3.3 saved or refused it according to where the twin lists put
+    // it, so the lists are the twins. The bound is ContinuationBoundOf's, which holds for either
+    // placement, and an element whose bound is within the limit cannot reach it from any start.
     // Removed in 3.0 (#688).
     private bool ScanLists(ListLayoutRun listRun)
     {
@@ -812,29 +822,96 @@ public sealed class DocumentRenderer
         {
             if (renderer is ListRenderer list)
             {
+                if (listBefore && !listRun.AllAsTwin && ContinuationBoundOf(renderer) > ContinuationLimit)
+                    listRun.NoteNearTheLimit();
                 listBefore = true;
                 if (ListRenderer.HoldsUndrawableEntry(list.Element, listRun)) listRun.NoteUndrawable();
             }
-            else if (listBefore && renderer.GetType().Assembly != typeof(ListRenderer).Assembly)
+            else if (listBefore)
             {
-                opaqueAfterList = true;
+                if (renderer.GetType().Assembly != typeof(ListRenderer).Assembly)
+                {
+                    if (renderer is not IListFreeRenderer) opaqueAfterList = true;
+                }
+                else if (!listRun.AllAsTwin && ContinuationBoundOf(renderer) > ContinuationLimit)
+                {
+                    listRun.NoteNearTheLimit();
+                }
             }
         }
 
         return opaqueAfterList && !listRun.AllAsTwin;
     }
 
+    // An upper bound on the page continuations a built-in renderer's placement can take from any
+    // start, so that a bound within the limit says the element cannot reach it however far a list
+    // before it moved its start. Every Partial a renderer returns consumes at least one line, entry
+    // or row, a Nothing the loop retries can only come first, and a line holds a character, so the
+    // count of characters, entries and rows, plus the retry and the piece that ends, holds for
+    // every such renderer. Elements that never return a Partial take at most a retry and a
+    // piece. The count is capped as it is summed: a bound past the limit is all the caller asks.
+    // A renderer built with a negative start, which the constructors ask callers not to pass, is
+    // the exception. A built-in renderer this does not name is taken to be near the limit.
+    // Removed in 3.0 (#688).
+    private long ContinuationBoundOf(IRenderer renderer)
+    {
+        var cap = (long)ContinuationLimit + 1;
+        long total = 2;
+        switch (renderer)
+        {
+            case ParagraphRenderer paragraph:
+                var runs = paragraph.Paragraph.Runs;
+                for (var i = 0; i < runs.Count && total <= cap; i++) total += runs[i].Text.Length;
+                return total;
+
+            case HeadingRenderer heading:
+                return total + heading.Element.Text.Length;
+
+            case PreformattedRenderer preformatted:
+                return total + preformatted.Element.Text.Length;
+
+            case ListRenderer list:
+                var items = list.Element.Items;
+                for (var i = 0; i < items.Count && total <= cap; i++)
+                {
+                    total += Math.Max(1, items[i].Text.Length);
+                    if (items[i].Children is not { } children) continue;
+                    for (var c = 0; c < children.Count && total <= cap; c++)
+                        total += Math.Max(1, children[c].Text.Length);
+                }
+
+                return total;
+
+            case TableRenderer table:
+                var rows = table.Element.Rows;
+                for (var r = 0; r < rows.Count && total <= cap; r++)
+                {
+                    total++;
+                    var cells = rows[r].Cells;
+                    for (var c = 0; c < cells.Count && total <= cap; c++) total += cells[c].Content.Length;
+                }
+
+                return total;
+
+            case LayoutImageRenderer or LineSeparatorRenderer or PieChartRenderer or PageBreakRenderer:
+                return total;
+
+            default:
+                return long.MaxValue;
+        }
+    }
+
     // A measuring pass, run only to let the lists a renderer of a caller's lays out say whether the
-    // document can draw them. Every list lays out as its twin in it, because the font does not
-    // depend on where an entry falls and because a list laid out the new way measures text that
-    // 2.3.3 never measured, which adds glyphs to the subset of an embedded font that the saved
-    // document would then hold. Its result is not kept, so a document that measured nothing before
-    // still reports that it did not, and a refusal it raises is left to the passes that follow,
-    // which reach it in the order they always did: the drawing pass draws each element before it
-    // lays the next out. The lists forget what the pass built: a paragraph keeps where its last
-    // layout placed it, and a list's Draw reads that when the layout it makes for itself answers
-    // Nothing, so an entry whose text this pass placed on a page where it fits would be drawn
-    // there by the pass that follows, where 2.3.3 dropped it.
+    // document can draw them. Every list lays out as its twin in it, on a copy of its own, because
+    // the font does not depend on where an entry falls and because a list laid out the new way
+    // measures text that 2.3.3 never measured, which adds glyphs to the subset of an embedded font
+    // that the saved document would then hold. Its result is not kept, so a document that measured
+    // nothing before still reports that it did not, and a refusal it raises is left to the passes
+    // that follow, which reach it in the order they always did: the drawing pass draws each element
+    // before it lays the next out. The copies are let go afterwards, so the lists themselves are as
+    // the caller left them: 2.3.3 keeps the entries a caller built before the save, and a
+    // paragraph keeps where its last layout placed it, which a list's Draw reads when the layout
+    // it makes for itself answers Nothing.
     // Removed in 3.0 (#688).
     private void ProbeForUndrawableLists(ListLayoutRun listRun)
     {
@@ -853,7 +930,7 @@ public sealed class DocumentRenderer
             MeasureRuns = 0;
             _measureSink = null;
             _measurePages = 0;
-            listRun.StartOver();
+            listRun.EndProbe();
         }
     }
 

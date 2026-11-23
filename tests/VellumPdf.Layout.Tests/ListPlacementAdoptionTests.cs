@@ -149,12 +149,13 @@ public sealed class ListPlacementAdoptionTests
     }
 
     /// <summary>
-    /// One renderer that a caller laid out under a context of its own, and the document then lays
-    /// out itself, is the new layout for the document: what the first call left does not carry
-    /// over.
+    /// A renderer that a caller laid out before the save keeps the entries that call built, as it
+    /// did on 2.3.3: the document does not build them again at its own width, and does not clamp
+    /// them. The list here has an indent no width is left beyond, so a clamp would give the text a
+    /// width and draw it.
     /// </summary>
     [Fact]
-    public void AListLaidOutUnderAContextOfTheCallers_isLaidOutNewForTheDocumentAfterwards()
+    public void AListLaidOutBeforeTheSave_keepsTheEntriesThatCallBuilt()
     {
         var renderer = new ListRenderer(new ListElement(ListStyle.OrderedDecimal) { Indent = 1000 }
             .Add(new ListItem("clamped text", H(10))));
@@ -166,8 +167,76 @@ public sealed class ListPlacementAdoptionTests
         using var ms = new MemoryStream();
         documentRenderer.Render(ms);
 
-        Assert.Contains("clamped", string.Concat(Shows(ms.ToArray())), StringComparison.Ordinal);
-        Assert.Contains(documentRenderer.Diagnostics, d => d.Code == LayoutDiagnosticCode.ListIndentClamped);
+        Assert.DoesNotContain("clamped", string.Concat(Shows(ms.ToArray())), StringComparison.Ordinal);
+        Assert.DoesNotContain(documentRenderer.Diagnostics, d => d.Code == LayoutDiagnosticCode.ListIndentClamped);
+    }
+
+    // Thirty entries whose gutter leaves the text five points at a width of 25, so a layout at that
+    // width wraps each word to a letter a line, and the paragraphs keep that wrap.
+    private static ListElement NarrowList()
+    {
+        var list = new ListElement(ListStyle.OrderedRoman) { Indent = 20 };
+        for (var i = 0; i < 30; i++) list.Add(new ListItem("word", H(10)));
+        return list;
+    }
+
+    private static Document NarrowPage() =>
+        new() { PageSize = new PdfRectangle(0, 0, 200, 2000), Margins = new EdgeInsets(10) };
+
+    /// <summary>Lays the list out through the context it is given, as a caller does.</summary>
+    private sealed class Passes(IRenderer inner) : IRenderer
+    {
+        public LayoutResult Layout(LayoutContext context) => inner.Layout(context);
+
+        public void Draw(DrawContext ctx) => inner.Draw(ctx);
+    }
+
+    /// <summary>A caller's renderer after the list, which makes the document lay out once more.</summary>
+    private sealed class Counts : IRenderer
+    {
+        public LayoutResult Layout(LayoutContext context) =>
+            LayoutResult.Full(new LayoutBox(context.Area.X, context.Area.Y, 1, 1));
+
+        public void Draw(DrawContext ctx)
+        {
+        }
+    }
+
+    /// <summary>
+    /// The entries a caller built at another width are the ones the save draws, whether the list is
+    /// added to the document or held by a renderer of the caller's, and whether or not the document
+    /// lays out once more before it draws. Each row has the same document with the twin, which
+    /// holds those entries as 2.3.3 did, as its reference.
+    /// </summary>
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void AListLaidOutBeforeTheSaveAtAnotherWidth_isDrawnFromTheEntriesThatCallBuilt(bool held, bool afterAList)
+    {
+        Document Build(bool twin, bool laidOutBefore)
+        {
+            var doc = NarrowPage();
+            if (afterAList) doc.Add(new ListElement().Add(new ListItem("first", H(10))));
+            var renderer = new ListRenderer(NarrowList());
+            IRenderer added = twin ? renderer.Unclamped() : renderer;
+            if (laidOutBefore) added.Layout(new LayoutContext(new LayoutBox(0, 0, 25, 1000)));
+            doc.Add(held ? new Passes(added) : added);
+            doc.Add(new Counts());
+            return doc;
+        }
+
+        var kept = Save(Build(twin: false, laidOutBefore: true));
+        var reference = Save(Build(twin: true, laidOutBefore: true));
+        var fresh = Save(Build(twin: false, laidOutBefore: false));
+
+        // The call laid out the entries that fit its 1000 points, and each of those is wrapped at
+        // five points of text; the entries after them were wrapped when the document drew them.
+        Assert.Equal(Sha(reference), Sha(kept));
+        Assert.Contains("w", Shows(kept));
+        Assert.True(Shows(kept).Count(t => t == "word") < 30);
+        Assert.Equal(30, Shows(fresh).Count(t => t == "word"));
     }
 
     /// <summary>

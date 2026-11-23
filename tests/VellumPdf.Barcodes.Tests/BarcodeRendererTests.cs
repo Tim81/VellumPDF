@@ -15,6 +15,23 @@ public sealed class BarcodeRendererTests
     public void Constructor_nullBarcode_throws() =>
         Assert.Throws<ArgumentNullException>(() => new BarcodeRenderer(null!));
 
+    /// <summary>
+    /// The layout library lays a document out once more when a list is ahead of a renderer from
+    /// outside it, unless that renderer is marked as one that holds no list. The mark is an
+    /// internal interface, which only this package can implement through the layout library's
+    /// friend assembly; the document reads it, and nothing in the public surface shows it.
+    /// </summary>
+    [Fact]
+    public void TheRenderer_carriesTheMarkThatItHoldsNoList()
+    {
+        var marks = typeof(BarcodeRenderer).GetInterfaces()
+            .Where(i => i.FullName == "VellumPdf.Layout.Rendering.IListFreeRenderer").ToArray();
+
+        var mark = Assert.Single(marks);
+        Assert.False(mark.IsPublic);
+        Assert.Empty(mark.GetMembers());
+    }
+
     [Fact]
     public void TooTallForRemainingSpace_overflowsToPage2()
     {

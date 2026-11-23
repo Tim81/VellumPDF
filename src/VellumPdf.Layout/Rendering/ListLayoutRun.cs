@@ -8,28 +8,35 @@ using VellumPdf.Layout.Core;
 namespace VellumPdf.Layout.Rendering;
 
 /// <summary>
-/// What every list of one document layout shares: the document, and whether any list of it holds
-/// an entry the document cannot draw.
+/// What every list of one document layout shares: the document, and whether the document keeps
+/// every list as its twin.
 /// </summary>
 /// <remarks>
 /// A 2.x compatibility device, removed in 3.0 (#688), which refuses such a font where the style is
-/// built.
-/// <para>On 2.3.3 a list entry whose font the document cannot draw saved when its text fell where
-/// it does not fit and was dropped there, and threw when the text was drawn. Clamping or moving an
-/// entry changes where everything after it falls, so one document could flip from one outcome to
-/// the other without any list having touched the entry itself. The document keeps its 2.3.3
-/// outcome only if no list moves anything, so a document that holds such an entry lays every list
-/// out as its twin. The run is how a list that the document did not address, one a renderer of a
-/// caller's holds, reaches that decision: <see cref="Current"/> is the run of the layout in
-/// progress on this thread, whatever context the list was handed.</para>
+/// built and lays a list out one way.
+/// <para>Clamping or moving an entry changes where everything after it falls, and two things on
+/// 2.3.3 depend on where that is. A list entry whose font the document cannot draw saved when its
+/// text fell where it does not fit and was dropped there, and threw when the text was drawn. An
+/// element that needs about as many continuations as the limit allows (#459) saved or threw
+/// according to where it started. One document could flip from one outcome to the other without
+/// any list having touched the element itself. The document keeps its 2.3.3 outcome only if no
+/// list moves anything, so a document that holds either lays every list out as its twin. The run
+/// is how a list that the document did not address, one a renderer of a caller's holds, reaches
+/// that decision: <see cref="Current"/> is the run of the layout in progress, whatever context the
+/// list was handed and whatever thread it is laid out on.</para>
 /// <para>A layout that finds such an entry after another list has been laid out the new way must
 /// lay out again from the start; <see cref="DocumentRenderer"/> does that for the measuring
 /// passes, and a pass that draws cannot be redone.</para>
+/// <para>The run flows with the execution context, so a renderer that lays its list out on a task
+/// or a thread pool thread is seen. Work queued with the context suppressed
+/// (<c>ThreadPool.UnsafeQueueUserWorkItem</c>, <c>ExecutionContext.SuppressFlow</c>) is not.</para>
 /// </remarks>
 internal sealed class ListLayoutRun
 {
-    [ThreadStatic]
-    private static ListLayoutRun? s_current;
+    // Not ThreadStatic: a renderer of a caller's that lays its list out through Task.Run, Parallel
+    // or a new thread would otherwise lay it out under no run, and the document would not learn
+    // what that list holds. A layout started inside another one restores the outer run in End.
+    private static readonly AsyncLocal<ListLayoutRun?> s_current = new();
 
     // The font whose answer was asked for last. A list asks about the same few fonts for every run
     // of every entry, so the answer is read once per font and not once per run.
@@ -39,35 +46,34 @@ internal sealed class ListLayoutRun
     private bool _lastStandardDefined;
     private bool _hasLastStandard;
 
+    // Read from every thread a renderer lays its list out on, and only ever set to true.
+    private volatile bool _allAsTwin;
+
+    // The lists that laid out as a twin of their own during the probing pass, which let go of it
+    // when the pass ends.
+    private List<ListRenderer>? _probed;
+
     private ListLayoutRun(PdfDocument pdf) => Pdf = pdf;
 
-    /// <summary>The run of the layout in progress on this thread, or null outside one.</summary>
-    internal static ListLayoutRun? Current => s_current;
+    /// <summary>The run of the layout in progress, or null outside one.</summary>
+    internal static ListLayoutRun? Current => s_current.Value;
 
     /// <summary>The document the layout is for.</summary>
     internal PdfDocument Pdf { get; }
 
     /// <summary>
-    /// True once any list of the document was found to hold an entry the document cannot draw. It
-    /// never goes back: every list of the document is then laid out as its twin.
+    /// True once any list of the document was found to hold an entry the document cannot draw, or
+    /// an element after a list was found that can need about as many continuations as the limit
+    /// allows. It never goes back: every list of the document is then laid out as its twin.
     /// </summary>
-    internal bool AllAsTwin { get; private set; }
+    internal bool AllAsTwin => _allAsTwin;
 
     /// <summary>
     /// True while the document lays out only to find <see cref="AllAsTwin"/>. Every list lays out
-    /// as its twin then, whether or not the document turns out to hold such an entry.
+    /// as its twin then, on a copy of its own that <see cref="EndProbe"/> lets go of, whether or
+    /// not the document turns out to hold such an entry.
     /// </summary>
     internal bool Probing { get; set; }
-
-    /// <summary>
-    /// Counts the times the layout's lists were told to start over, by <see cref="StartOver"/>.
-    /// A list that was laid out before keeps the paragraphs it laid out, and a paragraph that is
-    /// later laid out where its text does not fit is drawn from where it was placed last. A pass
-    /// that placed a list differently would make a later pass draw text where 2.3.3 dropped it, so
-    /// a list that sees a new generation forgets what it built, and from then on keeps what it
-    /// builds, as a list does across the passes of a document with a header.
-    /// </summary>
-    internal int Generation { get; private set; }
 
     /// <summary>
     /// Starts the run of a layout. <paramref name="previous"/> is what <see cref="End"/> restores,
@@ -76,22 +82,40 @@ internal sealed class ListLayoutRun
     /// </summary>
     internal static ListLayoutRun Begin(PdfDocument pdf, out ListLayoutRun? previous)
     {
-        previous = s_current;
+        previous = s_current.Value;
         var run = new ListLayoutRun(pdf);
-        s_current = run;
+        s_current.Value = run;
         return run;
     }
 
-    internal static void End(ListLayoutRun? previous) => s_current = previous;
+    internal static void End(ListLayoutRun? previous) => s_current.Value = previous;
 
     /// <summary>Records that a list holds an entry the document cannot draw.</summary>
-    internal void NoteUndrawable() => AllAsTwin = true;
+    internal void NoteUndrawable() => _allAsTwin = true;
 
     /// <summary>
-    /// Tells every list to forget the layout it holds, after a pass whose result is not kept. What
-    /// it left behind is not what a first layout would have.
+    /// Records that an element after a list can need about as many continuations as the limit
+    /// allows, so where it starts decides whether the document saves.
     /// </summary>
-    internal void StartOver() => Generation++;
+    internal void NoteNearTheLimit() => _allAsTwin = true;
+
+    /// <summary>
+    /// Remembers that <paramref name="list"/> laid out as a twin of its own during the probing
+    /// pass. The pass leaves the list itself as it was, which is what a list that a caller laid
+    /// out before the save needs: 2.3.3 keeps the entries that call built.
+    /// </summary>
+    internal void NoteProbed(ListRenderer list) => (_probed ??= []).Add(list);
+
+    /// <summary>
+    /// Lets go of what the probing pass built, so a document with a long list does not hold a
+    /// second copy of its entries through the pass that draws.
+    /// </summary>
+    internal void EndProbe()
+    {
+        if (_probed is null) return;
+        foreach (var list in _probed) list.ReleaseProbe();
+        _probed = null;
+    }
 
     /// <summary>
     /// Whether text in <paramref name="style"/> can be drawn in the document, which is the question

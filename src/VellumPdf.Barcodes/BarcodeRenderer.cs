@@ -4,6 +4,7 @@
 using VellumPdf.Barcodes.Internal;
 using VellumPdf.Document;
 using VellumPdf.Layout.Core;
+using VellumPdf.Layout.Rendering;
 
 namespace VellumPdf.Barcodes;
 
@@ -12,7 +13,7 @@ namespace VellumPdf.Barcodes;
 /// <see cref="DocumentBarcodeExtensions.Add"/>, or directly through the generic
 /// <c>Document.Add(IRenderer)</c> overload.
 /// </summary>
-public sealed class BarcodeRenderer : IRenderer
+public sealed class BarcodeRenderer : IRenderer, IListFreeRenderer
 {
     private readonly Barcode _barcode;
     private LayoutBox _occupied;

@@ -230,6 +230,11 @@ public sealed class ListDocumentFontRuleTests
     [InlineData("foreign", 0, true)]
     [InlineData("foreign", 1, false)]
     [InlineData("foreign", 2, false)]
+    [InlineData("undefined", 4, false)]
+    [InlineData("undefined", 4, true)]
+    [InlineData("undefined", 5, false)]
+    [InlineData("foreign", 4, false)]
+    [InlineData("foreign", 5, true)]
     public void AnUndrawableListAfterAMovingList_keepsTheOutcomeItHad(string kind, int how, bool header)
     {
         var twin = Outcome(ShiftedByAMove(kind, how, header, twin: true, badFirst: false));
@@ -280,6 +285,8 @@ public sealed class ListDocumentFontRuleTests
     [InlineData("foreign", 2, false)]
     [InlineData("foreign", 3, false)]
     [InlineData("foreign", 1, true)]
+    [InlineData("undefined", 4, false)]
+    [InlineData("foreign", 5, false)]
     public void AHeldListThatSavesWithItsTextDropped_turnsTheListsAfterItIntoTheirTwins(string kind, int how, bool header)
     {
         var twin = Outcome(BadListFirst(kind, how, header, twin: true));
@@ -702,6 +709,85 @@ public sealed class ListDocumentFontRuleTests
         Assert.Null(ListLayoutRun.Current);
     }
 
+    /// <summary>
+    /// The run flows with the execution context: a list laid out through a task or on a thread
+    /// started from the layout sees it. The rows with modes 4 and 5 above compare the outcomes.
+    /// This one reads the run where those lists are laid out.
+    /// </summary>
+    [Fact]
+    public void TheRun_isSeenOnAPoolThreadAndOnANewThread()
+    {
+        var seenOnPool = new Capture();
+        var seenOnThread = new Capture();
+        var (renderer, _) = Render(r =>
+        {
+            r.Add(new ListRenderer(OneEntry("a", H(10))));
+            r.Add(new Holder(seenOnPool, 4));
+            r.Add(new Holder(seenOnThread, 5));
+        });
+
+        Assert.NotNull(seenOnPool.Run);
+        Assert.NotNull(seenOnThread.Run);
+        Assert.Same(seenOnPool.Run, seenOnThread.Run);
+        Assert.Equal(0, renderer.MeasureRuns);
+        Assert.Null(ListLayoutRun.Current);
+    }
+
+    /// <summary>
+    /// Work queued with the execution context suppressed does not see the run, so a list laid out
+    /// there is not found by the document. The documentation names this limit.
+    /// </summary>
+    [Fact]
+    public void WorkQueuedWithoutTheExecutionContext_doesNotSeeTheRun()
+    {
+        var seen = new Capture();
+        var queued = new QueuedWithoutContext(seen);
+
+        Render(r =>
+        {
+            r.Add(new ListRenderer(OneEntry("a", H(10))));
+            r.Add(queued);
+        });
+
+        Assert.True(queued.Ran);
+        Assert.Null(seen.Run);
+    }
+
+    /// <summary>
+    /// Saves that run side by side, each on its own thread, keep the run of their own layout:
+    /// every outcome is the one the same document gives alone, and no run is left behind.
+    /// </summary>
+    [Fact]
+    public void SavesThatRunInParallel_eachKeepTheirOwnRun()
+    {
+        Document Build(int i) => ShiftedByAMove(i % 2 == 0 ? "undefined" : "ok", Visible, header: i % 3 == 0, twin: false, badFirst: false);
+        var expected = Enumerable.Range(0, 12).Select(i => Outcome(Build(i))).ToArray();
+        Assert.Contains(expected, o => o.StartsWith("EX ", StringComparison.Ordinal) || o.StartsWith("OK ", StringComparison.Ordinal));
+
+        var actual = new string[expected.Length * 8];
+        Parallel.For(0, actual.Length, new ParallelOptions { MaxDegreeOfParallelism = 4 },
+            k => actual[k] = Outcome(Build(k % expected.Length)));
+
+        for (var k = 0; k < actual.Length; k++) Assert.Equal(expected[k % expected.Length], actual[k]);
+        Assert.Null(ListLayoutRun.Current);
+    }
+
+    /// <summary>The run is set in the task SaveAsync starts, and none is left on the caller.</summary>
+    [Fact]
+    public async Task SaveAsync_givesTheOutcomeSaveGives()
+    {
+        var expected = Outcome(ShiftedByAMove("undefined", 4, header: false, twin: false, badFirst: false));
+        var doc = ShiftedByAMove("undefined", 4, header: false, twin: false, badFirst: false);
+        doc.Timestamp = Stamp;
+        doc.DocumentId = Enumerable.Range(1, 16).Select(i => (byte)i).ToArray();
+        using var ms = new MemoryStream();
+
+        await doc.SaveAsync(ms, TestContext.Current.CancellationToken);
+
+        Assert.Equal(expected, "OK " + Convert.ToHexString(SHA256.HashData(ms.ToArray()))[..16]);
+        Assert.Null(ListLayoutRun.Current);
+    }
+
     // ── What the document is asked about ─────────────────────────────────────
 
     private static bool Holds(ListElement list, PdfDocument? pdf = null)
@@ -830,6 +916,11 @@ public sealed class ListDocumentFontRuleTests
     {
         public LayoutResult Layout(LayoutContext context)
         {
+            // Modes 4 and 5 lay the list out on a pool thread and on a thread of its own, through
+            // the context, while this thread waits.
+            if (how == 4) return Task.Run(() => inner.Layout(context)).GetAwaiter().GetResult();
+            if (how == 5) return OnNewThread(() => inner.Layout(context));
+
             // Mode 3 measures the list at a narrower width first and lays it out through the
             // context afterwards, so the list sees two calls in a row at two widths.
             if (how == 3)
@@ -848,6 +939,27 @@ public sealed class ListDocumentFontRuleTests
         }
 
         public void Draw(DrawContext ctx) => inner.Draw(ctx);
+
+        private static LayoutResult OnNewThread(Func<LayoutResult> layout)
+        {
+            LayoutResult result = default!;
+            Exception? error = null;
+            var thread = new Thread(() =>
+            {
+                try
+                {
+                    result = layout();
+                }
+                catch (Exception ex)
+                {
+                    error = ex;
+                }
+            });
+            thread.Start();
+            thread.Join();
+            if (error is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error).Throw();
+            return result;
+        }
     }
 
     /// <summary>A renderer whose text depends on the plan and never changes.</summary>
@@ -873,6 +985,32 @@ public sealed class ListDocumentFontRuleTests
 
         public LayoutResult Layout(LayoutContext context) =>
             throw new InvalidOperationException("layout " + ++_calls);
+
+        public void Draw(DrawContext ctx)
+        {
+        }
+    }
+
+    /// <summary>Runs its work on a pool thread the execution context does not flow to.</summary>
+    private sealed class QueuedWithoutContext(Capture inner) : IRenderer
+    {
+        public bool Ran { get; private set; }
+
+        public LayoutResult Layout(LayoutContext context)
+        {
+            using var done = new ManualResetEventSlim();
+            LayoutResult result = default!;
+            ThreadPool.UnsafeQueueUserWorkItem(
+                _ =>
+                {
+                    result = inner.Layout(context);
+                    Ran = true;
+                    done.Set();
+                },
+                null);
+            done.Wait();
+            return result;
+        }
 
         public void Draw(DrawContext ctx)
         {

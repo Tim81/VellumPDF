@@ -81,19 +81,20 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     private int _clampSkipped;
 
     // Why a list is the twin, as far as the document is concerned. A twin that a caller's renderer
-    // holds, and one a probe lays out, were not placed by the document and report nothing.
+    // holds, one that the caller laid out before the save, and one a probe lays out were not placed
+    // by the document and report nothing.
     private enum TwinPlacement : byte
     {
         Held = 0,
         Document,
         Limit,
-        Fonts,
+        AllLists,
     }
 
     // How the document placed this twin, read from the context of the last Layout and carried by
     // the pieces a split hands on. Document is a list the document placed as its twin without
     // deciding it: a list that holds an entry no page holds, which reports its dropped entries.
-    // Limit is the continuation limit's decision, and Fonts the document-wide rule of
+    // Limit is the continuation limit's decision, and AllLists the document-wide rule of
     // ListLayoutRun; both also report ListIndentClampSkipped.
     private TwinPlacement _placement;
 
@@ -105,11 +106,24 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     // object.
     private ListRenderer? _twin;
 
-    // True when the last Layout call was answered by the twin, because the context was not one the
-    // document addressed to this list, because an entry of the list fits no page, or because the
-    // document holds an entry whose font it cannot draw. The document draws and asks for placements
-    // on the instance it called, so Draw and ReportPlacements hand the call on to the twin.
-    private bool _forward;
+    // Set when the last Layout call was answered by a twin: because the context was not one the
+    // document addressed to this list, because an entry of the list fits no page, because the
+    // document keeps every list as its twin, or because the entries were built before the save. The
+    // document draws and asks for placements on the instance it called, so Draw and
+    // ReportPlacements hand the call on to it. It is the twin Unclamped returns, or the copy the
+    // probing pass lays out on (_probeTwin).
+    private ListRenderer? _delegate;
+
+    // The copy of this list that lays out for the probing pass, so that the pass leaves this
+    // instance as it was: a caller that laid the list out before the save has its entries built at
+    // that width, which 2.3.3 keeps, and a paragraph keeps where its last layout placed it, which
+    // Draw reads when the layout it makes for itself answers Nothing. Let go when the pass ends.
+    private ListRenderer? _probeTwin;
+
+    // True when the entries were built while no document laid out, which is a caller laying the
+    // list out before the save. 2.3.3 keeps those entries, at the width that call used, for every
+    // later layout, so the document lays the list out as its twin, which holds them.
+    private bool _builtBeforeTheSave;
 
     // Whether the entries have been tried on an empty page, and what that found. When any entry
     // fits no page the list lays out as its twin (_wholeAsMain). _unplaceable marks the entries
@@ -128,11 +142,6 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
 
     // The y each visited item starts at, indexed like _offered. It is where an item's anchor lands.
     private List<double>? _tops;
-
-    // The ListLayoutRun.Generation this instance last laid out under. A document that finds an
-    // entry it cannot draw after other lists were laid out turns every list into its twin and lays
-    // them out again, and the paragraphs of the earlier layout remember where they were placed.
-    private int _generation;
 
     /// <summary>Creates a renderer for the list, optionally starting at <paramref name="startItem"/> for pagination.</summary>
     /// <remarks>
@@ -182,9 +191,9 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     {
         // The document asks the instance it called, and a list the twin laid out is that twin's.
         // Removed in 3.0 (#688).
-        if (_forward)
+        if (_delegate is { } delegated)
         {
-            ((IPlacementSource)_twin!).ReportPlacements(sink);
+            ((IPlacementSource)delegated).ReportPlacements(sink);
             return;
         }
 
@@ -227,14 +236,23 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     /// from its own <see cref="IRenderer.Layout"/>. It keeps the verdict of the page-continuation
     /// limit on such a list: 2.3.3 saved it or refused it, and it does so again. A list that holds
     /// an entry no page holds is laid out that way too, so is a list the document would otherwise
-    /// take past that limit, and so is every list of a document in which any list holds an entry
-    /// whose font the document cannot draw; see
-    /// <see cref="LayoutDiagnosticCode.ListEntryPartDropped"/> and
+    /// take past that limit, and so is every list of a document that holds a font it cannot draw
+    /// or an element after a list that can need about as many continuations as the limit allows;
+    /// see <see cref="ListElement"/>, <see cref="LayoutDiagnosticCode.ListEntryPartDropped"/> and
     /// <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/>. A list that your renderer holds
-    /// reports neither: the document did not place it. <b>Do not</b> rely on where a list lands
-    /// through a renderer of yours: 3.0 lays a list out one way, whatever called it. A renderer of
-    /// yours that draws text in such a font itself, and not through a list, can still be moved
-    /// by a list ahead of it.</para>
+    /// reports neither: the document did not place it. A list you laid out yourself before the
+    /// save keeps the entries that call built, at the width it used, as it did; the save lays it
+    /// out as it was before the fixes and reports nothing.</para>
+    /// <para><b>A list your renderer lays out is found only on the execution context of the
+    /// layout.</b> One laid out on the thread of the call, on a task, or on a thread your renderer
+    /// starts is found. One laid out on work queued with the context suppressed, such as
+    /// <c>ThreadPool.UnsafeQueueUserWorkItem</c> or after <c>ExecutionContext.SuppressFlow</c>, is
+    /// not, and the lists ahead of it are then laid out the new way, so a document that holds a
+    /// font it cannot draw there can save where it was refused, or be refused where it saved.
+    /// <b>Do not</b> lay a list out there, and do not rely on where a list lands through a
+    /// renderer of yours: 3.0 lays a list out one way, whatever called it. A renderer of yours that
+    /// draws text in such a font itself, and not through a list, can still be moved by a list
+    /// ahead of it.</para>
     /// <para>When the document calls this method, the exceptions it lists reach you from the
     /// save. A list added with <see cref="Document.Add(ListElement)"/> never starts at a negative
     /// item, so <see cref="ArgumentOutOfRangeException"/> reaches the save only from a renderer
@@ -266,39 +284,20 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
         // as well.
         if (!_unclamped)
         {
-            if (ListLayoutRun.Current is { } run && run.Generation != _generation) ForgetEarlierLayout(run.Generation);
-            if (ListLayoutRun.Current is { AllAsTwin: true } or { Probing: true })
-                return LayOutAsTwin(context, TwinPlacement.Fonts);
+            var run = ListLayoutRun.Current;
+            if (run is { Probing: true }) return LayOutForProbe(run, context);
+            if (run is { AllAsTwin: true }) return LayOutAsTwin(context, TwinPlacement.AllLists);
             if (context.ModeFor(this) == ContinuationMode.Twin)
                 return LayOutAsTwin(context, TwinPlacement.Document);
+
+            // 2.3.3 keeps the entries a caller built before the save. This list's own are built
+            // new, so a caller's call can only have built the twin's.
+            if (_twin is { _builtBeforeTheSave: true } || _builtBeforeTheSave)
+                return LayOutAsTwin(context, TwinPlacement.Held);
         }
 
-        _forward = false;
+        _delegate = null;
         return LayOut(context);
-    }
-
-    // Everything a layout under an earlier generation left behind, so that this list is laid out
-    // from nothing, as it was the first time. A paragraph keeps where its last layout placed it and
-    // Draw reads that when the layout it makes for itself answers Nothing, so a paragraph that the
-    // earlier layout placed on a page where its text fits would be drawn where 2.3.3 dropped it.
-    // Removed in 3.0 (#688).
-    private void ForgetEarlierLayout(int generation)
-    {
-        _generation = generation;
-        _items = null;
-        _twin = null;
-        _forward = false;
-        _placeabilityKnown = false;
-        _wholeAsMain = false;
-        _unplaceable = null;
-        _indentClamped = 0;
-        _clampSkipped = 0;
-        _endItem = 0;
-        _occupied = default;
-        _offered = null;
-        _tops = null;
-        _placement = TwinPlacement.Held;
-        _handoff = TwinPlacement.Held;
     }
 
     // The twin lays the list out and this instance answers for it afterwards: the document draws
@@ -308,10 +307,32 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     // Removed in 3.0 (#688).
     private LayoutResult LayOutAsTwin(LayoutContext context, TwinPlacement placement)
     {
-        _forward = true;
         var twin = Unclamped();
+        _delegate = twin;
         twin._handoff = context.IsAddressedByDocument(this) ? placement : TwinPlacement.Held;
         return twin.Layout(context);
+    }
+
+    // The probing pass lays every list out as a twin, on a copy of its own: the pass is not kept,
+    // and a layout that is kept must start from the list as the caller left it. Removed in 3.0
+    // (#688).
+    private LayoutResult LayOutForProbe(ListLayoutRun run, LayoutContext context)
+    {
+        if (_probeTwin is null)
+        {
+            _probeTwin = new ListRenderer(_list, _startItem, _partialContentOverrideAtStart) { _unclamped = true };
+            run.NoteProbed(this);
+        }
+
+        _delegate = _probeTwin;
+        return _probeTwin.Layout(context);
+    }
+
+    // Called when the probing pass ends, whether or not it finished.
+    internal void ReleaseProbe()
+    {
+        if (ReferenceEquals(_delegate, _probeTwin)) _delegate = null;
+        _probeTwin = null;
     }
 
     // The context of a child that this list lays out in its own mode: the new layout hands a child
@@ -336,7 +357,12 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                 : TwinPlacement.Held;
         }
 
-        _items ??= BuildItems(area.Width, ListLayoutRun.Current);
+        if (_items is null)
+        {
+            var run = ListLayoutRun.Current;
+            _items = BuildItems(area.Width, run);
+            _builtBeforeTheSave = run is null;
+        }
 
         if (_items.Count == 0)
         {
@@ -426,7 +452,6 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                     _items = _items,
                     _unclamped = _unclamped,
                     _placement = _placement,
-                    _generation = _generation,
                     _placeabilityKnown = _placeabilityKnown,
                     _unplaceable = _unplaceable,
                 };
@@ -435,7 +460,6 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                     _items = _items,
                     _unclamped = _unclamped,
                     _placement = _placement,
-                    _generation = _generation,
                     _placeabilityKnown = _placeabilityKnown,
                     _unplaceable = _unplaceable,
                     _indentClamped = _indentClamped,
@@ -470,7 +494,6 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                     _items = _items,
                     _unclamped = _unclamped,
                     _placement = _placement,
-                    _generation = _generation,
                     _placeabilityKnown = _placeabilityKnown,
                     _unplaceable = _unplaceable,
                 };
@@ -480,7 +503,6 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                     _items = _items,
                     _unclamped = _unclamped,
                     _placement = _placement,
-                    _generation = _generation,
                     _placeabilityKnown = _placeabilityKnown,
                     _unplaceable = _unplaceable,
                     _indentClamped = _indentClamped,
@@ -613,9 +635,9 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     {
         // The document draws the instance it called. When the twin laid the list out, this
         // instance answers with the twin's drawing. Removed in 3.0 (#688).
-        if (_forward)
+        if (_delegate is { } delegated)
         {
-            _twin!.Draw(ctx);
+            delegated.Draw(ctx);
             return;
         }
 
@@ -634,7 +656,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                     "A list indent left an entry's text no width beside its gutter, so the text was given a width, that of its widest word or the room right of its marker, and may overprint the marker.",
                     _indentClamped,
                     perElement: true);
-            if ((_placement is TwinPlacement.Limit or TwinPlacement.Fonts) && _items.Count > 0)
+            if ((_placement is TwinPlacement.Limit or TwinPlacement.AllLists) && _items.Count > 0)
                 sink.Report(
                     LayoutDiagnosticCode.ListIndentClampSkipped,
                     0,
