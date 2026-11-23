@@ -117,7 +117,9 @@ public sealed class Document : IDisposable
     /// width),
     /// <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/> (a list laid out without that
     /// clamp, and without moving entries to the next page, because that would have taken it past
-    /// the continuation limit or because the document holds an entry in a font it cannot draw),
+    /// the continuation limit, because the document holds an entry in a font it cannot draw, or
+    /// because it holds an element after a list that can need about as many continuations as the
+    /// limit allows),
     /// <see cref="LayoutDiagnosticCode.ListEntryPartDropped"/> (a list entry placed with its marker
     /// or its text not drawn),
     /// <see cref="LayoutDiagnosticCode.NotdefGlyph"/> (a character an embedded font has no glyph

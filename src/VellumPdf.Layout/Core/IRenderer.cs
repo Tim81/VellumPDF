@@ -58,13 +58,24 @@ public interface IRenderer
     /// document applies those fixes only to a list it lays out itself, where it can see the limit.
     /// <b>Do not</b> rely on where such a list lands: 3.0 lays a list out one way, whatever called
     /// it.</para>
-    /// <para><b>A document that holds a list ahead of a renderer of yours is laid out once more
-    /// before it is drawn.</b> The extra layout finds out whether your renderer lays out a
-    /// <see cref="VellumPdf.Layout.Rendering.ListRenderer"/> whose items use a font the document
-    /// cannot draw, in which case every list of the document is laid out as it was before the
-    /// fixes above; see <see cref="VellumPdf.Layout.Elements.ListElement"/>. A header or footer
-    /// already adds a layout, and that one serves. An exception the extra layout raises is not
-    /// raised from it: the drawing layout reaches the same element and raises it there.</para>
+    /// <para><b>A document that holds a list ahead of a renderer of yours lays out once more
+    /// before it draws.</b> That extra pass lays every list out as it was before the fixes above,
+    /// calls your renderer on the areas it gets, and keeps nothing. It finds out whether your
+    /// renderer lays out a <see cref="VellumPdf.Layout.Rendering.ListRenderer"/> whose items use a
+    /// font the document cannot draw, in which case every list of the document stays as it was
+    /// before the fixes; see <see cref="VellumPdf.Layout.Elements.ListElement"/>. It comes before
+    /// a header or footer's page-counting pass and apart from it, so a document with one calls your
+    /// renderer one pass more than it otherwise would. The library's own renderers that hold no
+    /// list, such as the barcode renderer, do not cause it. <b>An exception the extra pass meets is
+    /// not raised from it</b>: the drawing pass raises what it meets itself, so an exception that
+    /// only the extra pass met, because your renderer refuses an area only that pass offered, is
+    /// lost.</para>
+    /// <para><b>A renderer that breaks the rules at the top of these remarks can give other output
+    /// than before.</b> One that changes its result from one call to the next, counts its calls,
+    /// or throws on its first, sees the extra pass as one more call. A list ahead of your renderer
+    /// that moves an entry (#685) also moves where your renderer starts, so a renderer that
+    /// refuses some areas can save where it was refused, or be refused where it saved. <b>Do
+    /// not</b> write a renderer whose result depends on anything but the area it is offered.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other

@@ -601,9 +601,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - The clamp applies to a list the document lays out itself. A list that a renderer of yours lays
     out through the context it was given, through `LayoutContext.WithArea` or through the public
     `LayoutContext` constructor is laid out as it was: no gutter is narrowed and no entry moves
-    (#685), so it saves, or is refused for the continuation limit, with the bytes and the message it
-    had. `ListRenderer.Layout`, `IRenderer.Layout` and the `LayoutContext` constructor and
-    `WithArea` say so, with a "Do not rely on" paragraph: 3.0 lays a list out one way.
+    (#685), so the list itself saves, or is refused for the continuation limit, with the bytes and
+    the message it had. A list you laid out before the save keeps the entries that call built, at
+    the width it used, as it did, and the save lays it out as it was. `ListRenderer.Layout`,
+    `IRenderer.Layout` and the `LayoutContext` constructor and `WithArea` say so, with a "Do not
+    rely on" paragraph: 3.0 lays a list out one way.
   - An entry whose marker has no room at the top of a page is still refused: the save throws the
     same "An element is too tall" `InvalidOperationException`. That entry fits no page, so its list
     is placed as it was before (#685 below). The page-continuation limit is refused with its own
@@ -634,13 +636,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   as not placed. Text that has no width, which `ListElement.Indent` describes, is not a part that
   did not fit.
   - **Deliberate output change**, for a document with such an entry that is not at the top of a
-    page. In 70,000 generated documents (67,192 without `StrictDiagnostics`) compared with the
-    previous commit, 1,186 changed with no 203, 207 or 208 report and with no text lost. In 1,130
-    of them every piece of text the document had is still there and the missing text is added, and
-    56 draw the same text at other positions. In 45 of the 1,186 another report changes, because a
-    moved entry changes where a keep run ends and what is drawn: 12 gain or lose a
-    `KeepWithNextRelaxed` report (801), 25 a `KeepTogetherRelaxed` report (802), and 10 the count
-    of 601 (`UnembeddedFont`).
+    page. In 70,000 generated documents (67,192 without `StrictDiagnostics`) compared with the base
+    of this branch, 1,186 changed with no 203, 207 or 208 report and with no text lost. In 1,130 of
+    them every piece of text the document had is still there and the missing text is added, and 56
+    draw the same text at other positions. In 75 of the 1,186 a report changes, because a
+    moved entry changes where a keep run ends and what is drawn: 41 change the `Count` of
+    `UnembeddedFont` (601), and 10 the number of its items, 12 gain or lose a
+    `KeepWithNextRelaxed` report (801) and 25 a `KeepTogetherRelaxed` report (802).
   - **A list that holds an entry no page holds is placed as it was before, whole.** An entry no
     page holds is one whose marker has a line taller than a page, or whose text, at the width the
     clamp of #476 would give it, has one. No entry of such a list is clamped or moved, so each is
@@ -666,19 +668,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     marker is drawn, and 2.3.3 saved when that text fell where it did not fit and was dropped.
     Clamping or moving an entry changes where everything after it falls, so a document could flip
     from saving to throwing, or the reverse, without any list touching the entry. The rule is
-    therefore per document: when any list holds such an entry, at any depth and under any context
-    (a list added to the document, or one that a renderer of yours lays out through the context,
-    through `LayoutContext.WithArea` or through the public constructor), no list of the document is
-    clamped or moved, and the save gives what 2.3.3 gave: the same bytes, or the same exception
-    and message. `ListIndentClampSkipped` (207) reports each list the document placed this way, with
+    therefore per document: when any list holds such an entry, at any depth, in a list added to the
+    document or in one that a renderer of yours lays out through the context, through
+    `LayoutContext.WithArea` or through the public constructor, no list of the document is clamped
+    or moved, and the save gives what 2.3.3 gave: the same bytes, or the same exception and
+    message. `ListIndentClampSkipped` (207) reports each list the document placed this way, with
     the number of entries the clamp would have narrowed as `Count`, or 1, and
     `ListEntryPartDropped` (208) reports an entry left with a part missing.
   - A list that a renderer of yours holds is found when it is laid out, after the lists ahead of
     it were laid out the new way. A document with a list ahead of a renderer from outside the
-    library is therefore laid out once more, before it is drawn, unless it has a header or footer,
-    whose page-counting pass serves; a document with a header measures twice when that pass finds
-    the font. A renderer of yours that draws text in such a font itself, and not through a list,
-    can still be moved by a list ahead of it, as `ListRenderer.Layout` says.
+    library is therefore laid out once more before it is drawn, whether or not it has a header or
+    footer: the page-counting pass of a header follows it, and the renderer sees one more pass. The
+    library's own renderers that hold no list, such as the barcode renderer, do not cause it. The
+    list is found on the execution context of the layout, so one laid out on a task or on a
+    thread your renderer starts is found, and one laid out on work queued with the context
+    suppressed, such as `ThreadPool.UnsafeQueueUserWorkItem`, is not. A renderer of yours that
+    draws text in such a font itself, and not through a list, can still be moved by a list ahead
+    of it, as `ListRenderer.Layout` says.
+  - **A document with an element after a list that can need about as many page continuations as
+    the limit allows lays every list out as it was before the clamp and the moving of entries.**
+    An element that needs that many saves or is refused according to where it starts, and a moved
+    entry changes where, so on a 200 x 80 pt page a paragraph of 100,001 five-letter words after a
+    list whose entry moves was refused where 2.3.3 saved it, and with another entry height saved
+    where 2.3.3 refused it. The document reads the element's size, and not its layout: a
+    paragraph, heading, preformatted text, table or list counts when its characters, with one for
+    each table row and each list item that holds none, come to 49,999 or more. A page break, an
+    image, a separator and a chart never count. The same report applies as for the font: 207 for
+    each list the document placed. A renderer of yours after a list whose result depends on where
+    it starts, and an element such a renderer holds, are not read, so a moved entry can still
+    change what the save does with them.
+  - **Deliberate output change: a renderer of yours after a list whose entry moves starts where
+    that list now ends.** A renderer that refuses some areas, as `IRenderer.Layout` allows, can
+    then save where it was refused, and the reverse, as can an element it holds. `IRenderer.Layout`
+    says so. A renderer that breaks that contract by changing its result between calls can also
+    give other output than before, because the document lays out once more before it draws (above).
   - A list that a renderer of yours holds reports nothing: neither 207 nor 208, because the
     document did not place it. The bytes are those of the list laid out as it was.
   - Moving entries adds pages, so the continuation bound now covers every list, not only a list

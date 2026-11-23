@@ -290,7 +290,7 @@ public sealed class ListItem
     /// <summary>
     /// The runs the item was built from, or null for an item built from a string. It is the list
     /// itself, not a copy, so a caller must not change it; it exists so that a walk over every
-    /// run allocates nothing.
+    /// run allocates nothing. Removed in 3.0 (#688), with the check of what a list can draw.
     /// </summary>
     internal IReadOnlyList<TextRun>? OwnRuns => _runs;
 

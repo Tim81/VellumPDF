@@ -52,21 +52,29 @@ public enum ListStyle
 /// whole to the next page, as it does when neither fits. Text that has no width is not a line that
 /// did not fit: it is discarded, as <see cref="Indent"/> describes, and is not reported.</para>
 /// <para><b>A list is laid out as it was before the clamp of <see cref="Indent"/> (#476) and this
-/// moving of items (#685) in four cases, and then none of its items is clamped or moved.</b> Each
+/// moving of items (#685) in five cases, and then none of its items is clamped or moved.</b> Each
 /// item stays where it falls, with the part that fits drawn and the other part not.
-/// <see cref="LayoutDiagnosticCode.ListEntryPartDropped"/> reports each such item, and
-/// <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/> reports the list in the last two
-/// cases. First, a renderer of yours lays the list out, whatever context it passes on; see
-/// <see cref="Rendering.ListRenderer.Layout"/>. Second, no page holds one of its items, because a
-/// line of its marker, or of its text at the width the clamp would give it, is taller than a page.
-/// Third, laying it out the new way would take it past the continuation limit, as
+/// <see cref="LayoutDiagnosticCode.ListEntryPartDropped"/> reports each such item the document
+/// placed, and <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/> reports the list in the
+/// last three cases. A list a renderer of yours holds reports neither. First, a renderer of yours
+/// lays the list out, whatever context it passes on, or you laid it out yourself before the save;
+/// see <see cref="Rendering.ListRenderer.Layout"/>. Second, no page holds one of its items,
+/// because a line of its marker, or of its text at the width the clamp would give it, is taller
+/// than a page. Third, laying it out the new way would take it past the continuation limit, as
 /// <see cref="Indent"/> describes. Fourth, any list of the document holds an item whose marker or
 /// text is in a font the document cannot draw, which is a handle another document returned or a
-/// <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name. Every list of
-/// that document is then laid out that way. The save throws where such text is drawn and saves
-/// where it is dropped at the bottom of a page, so widening or moving anything ahead of the item
-/// can turn one outcome into the other, and a document keeps the outcome it had only while
-/// nothing ahead of the item moves.</para>
+/// <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name. The save throws
+/// where such text is drawn and saves where it is dropped at the bottom of a page, so widening or
+/// moving anything ahead of the item can turn one outcome into the other. Fifth, the document
+/// holds, after one of its lists, an element that can need about as many page continuations as
+/// the limit allows. That element is refused or saved according to where it starts, so moving an
+/// item ahead of it can turn one outcome into the other. The document reads the element's size,
+/// not its layout: it counts the characters of a paragraph, heading, preformatted text, list item
+/// or table cell, one for an item that holds none and one more for each table row, and the element
+/// counts when two more than that is over the limit. A page break, an image, a separator and a
+/// chart never count, and neither does an element a renderer of yours holds. In the last two
+/// cases every list of the document is laid out that way, so the document keeps the outcome it
+/// had while nothing ahead of the font or the element moves.</para>
 /// <para><b>Attention</b>: an item whose text holds only white space is laid out at the leading of
 /// <see cref="TextStyle.Default"/>, as on <see cref="Paragraph"/>, while its marker is laid out in
 /// the item's own style, so the marker's line can be the one that does not fit where the item
@@ -124,7 +132,7 @@ public sealed class ListElement
     /// non-finite colour channel, whose text is discarded and which does not make the save throw,
     /// because a width would have let the layout read that style and refuse it. So does every
     /// entry of a list that is laid out as it was before the clamp, which
-    /// <see cref="ListElement"/> lists in four cases. An entry whose marker has no room at the top
+    /// <see cref="ListElement"/> lists in five cases. An entry whose marker has no room at the top
     /// of a page is refused as before. A nested list throws at the area width, as the exception
     /// records. Below that, from half the area width, a child's text is clamped in the same way,
     /// because the nested gutter reaches the area width at half the indent a top-level gutter

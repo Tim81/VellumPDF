@@ -26,10 +26,11 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     // one (#685). The twin is the layout it had before both: no gutter narrowed, no entry moved.
     // The document uses the new layout only for a call it addresses to this instance, once it has
     // decided the continuation limit (#686). Under any other context, for a list that holds an
-    // entry no page holds, and for every list of a document that holds an entry whose font it
-    // cannot draw (ListLayoutRun), the list lays out as its twin. The twin, the delegation below
-    // and everything that exists for them are 2.x compatibility devices, removed in 3.0 (#688),
-    // which lays a list out one way.
+    // entry no page holds, for a list a caller laid out before the save, and for every list of a
+    // document that holds an entry whose font it cannot draw or an element after a list near the
+    // limit (ListLayoutRun), the list lays out as its twin. The twin, the delegation below and
+    // everything that exists for them are 2.x compatibility devices, removed in 3.0 (#688), which
+    // lays a list out one way.
     /// <summary>
     /// The list laid out as it was before the clamp and the moving of entries: no gutter is
     /// narrowed, so an entry whose text has no width keeps its marker and loses its text, and no
