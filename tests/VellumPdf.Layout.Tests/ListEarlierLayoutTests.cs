@@ -267,17 +267,24 @@ public sealed class ListEarlierLayoutTests
 
     // Six entries of a 30 pt marker beside 10 pt text on a page that holds two of them, so the
     // list splits into three pieces and the document calls the second and third itself.
-    private static ListRenderer SplitList(bool twin)
+    private static ListRenderer SplitList(bool twin, bool midItem)
     {
+        // The mid-item list holds two entries whose text runs over several pages, so the document
+        // calls a piece that resumes inside the entry.
         var list = new ListElement(ListStyle.OrderedDecimal) { Indent = 10 };
-        for (var i = 0; i < 6; i++) list.Add(new ListItem([new TextRun("WWWWW ab", H(10))]) { Style = H(30) });
+        for (var i = 0; i < (midItem ? 2 : 6); i++)
+        {
+            list.Add(new ListItem([new TextRun(midItem ? string.Join(' ', Enumerable.Repeat("WWWWW", 40)) : "WWWWW ab", H(10))])
+            { Style = H(30) });
+        }
+
         var renderer = new ListRenderer(list);
         return twin ? renderer.Unclamped() : renderer;
     }
 
     private static Document SplitDocument(string shape, bool twin)
     {
-        var renderer = SplitList(twin);
+        var renderer = SplitList(twin, shape.EndsWith("Mid"));
         var doc = new Document
         {
             PageSize = new PdfRectangle(0, 0, 200, 80),
@@ -286,7 +293,7 @@ public sealed class ListEarlierLayoutTests
             StrictDiagnostics = !twin,
         };
 
-        if (shape == "passThrough")
+        if (shape.StartsWith("passThrough"))
         {
             doc.Add(new PassThrough(renderer));
         }
@@ -312,6 +319,8 @@ public sealed class ListEarlierLayoutTests
     [Theory]
     [InlineData("passThrough")]
     [InlineData("heldThenDirect")]
+    [InlineData("passThroughMid")]
+    [InlineData("heldThenDirectMid")]
     public void ThePiecesOfAHeldList_reportNothingWhenTheDocumentCallsThemItself(string shape)
     {
         var reference = Save(SplitDocument(shape, twin: true));
