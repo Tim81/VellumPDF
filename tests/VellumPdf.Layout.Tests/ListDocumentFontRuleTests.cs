@@ -932,7 +932,7 @@ public sealed class ListDocumentFontRuleTests
 
     /// <summary>
     /// Runs that alternate between two embedded fonts ask the document once for each font, not once
-    /// for each change of font.
+    /// for each change of font, and a font the document cannot draw is asked about again.
     /// </summary>
     [Fact]
     public void RunsThatAlternateTwoFonts_askTheDocumentOncePerFont()
@@ -950,6 +950,21 @@ public sealed class ListDocumentFontRuleTests
             }
 
             Assert.Equal(2, run.DocumentQuestions);
+
+            // A font the document cannot draw is asked about each time: a renderer of a caller's
+            // may embed it while the layout runs, which turns the answer.
+            var empty = ListLayoutRun.Begin(new PdfDocument(), out var outer);
+            try
+            {
+                var foreign = new TextStyle { FontRef = ForeignHandle() };
+                Assert.False(ListLayoutRun.CanDraw(empty, foreign));
+                Assert.False(ListLayoutRun.CanDraw(empty, foreign));
+                Assert.Equal(2, empty.DocumentQuestions);
+            }
+            finally
+            {
+                ListLayoutRun.End(outer);
+            }
         }
         finally
         {
