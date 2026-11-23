@@ -50,9 +50,13 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     IRenderer IContinuationTwin.Twin() => Unclamped();
 
     // One entry of the flattened list: the marker and the text paragraph of an item or a child.
-    // Clamped is set when BuildItems narrowed the gutter.
+    // Clamped is set when BuildItems narrowed the gutter. WouldClamp is set when the clamp
+    // narrowed it or would have, and UnclampedGutter is the gutter the entry has without the clamp.
+    // A twin that keeps the entries an earlier layout built rebuilds the text of an entry the clamp
+    // narrowed from these, and not from the list, which may have changed since.
     private readonly record struct Entry(
-        ParagraphRenderer Marker, ParagraphRenderer Content, ListItem Item, bool Clamped);
+        ParagraphRenderer Marker, ParagraphRenderer Content, ListItem Item, bool Clamped,
+        bool WouldClamp, double UnclampedGutter);
 
     private List<Entry>? _items;
 
@@ -133,11 +137,11 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
 
     // On a twin, the entries an earlier layout of the list it answers for built, and the width it
     // built them at, when that was not under the current run. The twin has built none of its own
-    // then. It builds them at that width and keeps the earlier layout's entries that the clamp did
-    // not touch, which are the ones 2.3.3 built, with the wrap each paragraph cached. For an entry
-    // the clamp narrowed it keeps the marker, which the clamp does not change, and builds the text
-    // anew, because on 2.3.3 that text had no width and was never wrapped. Both are let go once the
-    // twin has built its own.
+    // then, and does not build any: it takes the earlier layout's entries whole, whatever the list
+    // holds now, as 2.3.3 keeps them, with the wrap each paragraph cached. For an entry the clamp
+    // narrowed it keeps the marker, which the clamp does not change, and rebuilds the text as 2.3.3
+    // built it, without the clamp, because on 2.3.3 that text had no width and was never wrapped.
+    // Both are let go once the twin holds the entries.
     private double? _earlierWidth;
     private List<Entry>? _earlier;
 
@@ -257,9 +261,11 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     /// see <see cref="ListElement"/>, <see cref="LayoutDiagnosticCode.ListEntryPartDropped"/> and
     /// <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/>. A list that your renderer holds
     /// reports neither: the document did not place it. A list that an earlier layout built
-    /// entries for keeps them, at the width that layout used, as it did, whether you laid it out
-    /// before the save or another document or an earlier save did; the save lays it out as it was
-    /// before the fixes and reports nothing.</para>
+    /// entries for keeps them whole, at the width that layout used, as it did, whether you laid it
+    /// out before the save or another document did. The save lays it out as it was before the
+    /// fixes and reports nothing. That holds for a list changed since: an item or a child added
+    /// after that layout is not laid out or drawn, and an entry the clamp narrowed is laid out
+    /// without the clamp, from the text it had then.</para>
     /// <para><b>A list your renderer lays out is found only on the execution context of the
     /// layout.</b> One laid out on the thread of the call, on a task, or on a thread your renderer
     /// starts is found. One laid out on work queued with the context suppressed, such as
@@ -336,8 +342,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     }
 
     // True when this list or its twin holds entries that a layout under another run than this one
-    // built. A run is one save's layout, so that is another document, an earlier save, or no
-    // document at all.
+    // built. A run is one save's layout, so that is another document or no document at all.
     private bool BuiltByAnEarlierLayout(ListLayoutRun? run) =>
         (_items is not null && !ReferenceEquals(_builtUnder, run))
         || (_twin is { _items: not null } twin && !ReferenceEquals(twin._builtUnder, run));
@@ -384,20 +389,20 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
         if (_items is null)
         {
             var run = ListLayoutRun.Current;
-            _builtWidth = _earlierWidth ?? area.Width;
-            _items = BuildItems(_builtWidth, run);
             _builtUnder = run;
             if (_earlier is { } earlier)
             {
-                // The same list builds the same entries in the same order. A list changed since
-                // then has none to keep.
-                if (earlier.Count == _items.Count)
-                    for (var i = 0; i < earlier.Count; i++)
-                        _items[i] = earlier[i].Clamped
-                            ? _items[i] with { Marker = earlier[i].Marker }
-                            : earlier[i];
+                // 2.3.3 never reads the list again once it has built its entries, so a list that
+                // was changed since has none of its new items here, whatever it holds now.
+                _builtWidth = _earlierWidth ?? area.Width;
+                _items = AdoptEarlier(earlier, run);
                 _earlier = null;
                 _earlierWidth = null;
+            }
+            else
+            {
+                _builtWidth = area.Width;
+                _items = BuildItems(_builtWidth, run);
             }
         }
 
@@ -1025,6 +1030,56 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
         return false;
     }
 
+    // The entries an earlier layout of the list built, as 2.3.3 keeps them: the whole list as that
+    // layout saw it, whatever the list holds now. An entry the clamp narrowed is not one 2.3.3
+    // built. It built that entry's text with the gutter the entry has without the clamp, at the
+    // width the earlier layout used, and so does this, from the text and the gutter the entry
+    // recorded. The marker is the same either way. Removed in 3.0 (#688), with the twin.
+    private List<Entry> AdoptEarlier(List<Entry> earlier, ListLayoutRun? run)
+    {
+        var items = new List<Entry>(earlier.Count);
+        for (var i = 0; i < earlier.Count; i++)
+        {
+            var entry = earlier[i];
+            if (entry.WouldClamp) _clampSkipped++;
+            if (!CanDrawEntry(run, entry.Marker, entry.Content)) run?.NoteUndrawable();
+            items.Add(entry.Clamped ? entry with { Content = WithoutClamp(entry), Clamped = false } : entry);
+        }
+
+        return items;
+    }
+
+    private static ParagraphRenderer WithoutClamp(Entry entry)
+    {
+        var narrowed = entry.Content.Paragraph;
+        var paragraph = new Paragraph(narrowed.Runs)
+        {
+            Margins = narrowed.Margins with { Left = entry.UnclampedGutter },
+            Alignment = narrowed.Alignment,
+        };
+        return new ParagraphRenderer(paragraph)
+        {
+            ElementLanguage = entry.Content.ElementLanguage,
+            RunOwner = entry.Content.RunOwner,
+        };
+    }
+
+    // The same question for an entry already built: its marker is set in the style the entry
+    // inherits and each run of its text that holds any is read, which is what the other overload
+    // reads from the item.
+    private static bool CanDrawEntry(ListLayoutRun? run, ParagraphRenderer marker, ParagraphRenderer content)
+    {
+        if (!ListLayoutRun.CanDraw(run, marker.Paragraph.Runs[0].Style)) return false;
+        var runs = content.Paragraph.Runs;
+        for (var i = 0; i < runs.Count; i++)
+        {
+            if (runs[i].Text.Length == 0) continue;
+            if (!ListLayoutRun.CanDraw(run, runs[i].Style)) return false;
+        }
+
+        return true;
+    }
+
     /// <summary>
     /// The times this thread built the entries of a list, which a test reads to see that a piece of
     /// a list does not build them again. Removed in 3.0 (#688), with the twin.
@@ -1089,6 +1144,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             // when the document chose it. The gutter test comes first because it is the one that
             // fails for almost every entry.
             if (!CanDrawEntry(run, itemStyle, item)) run?.NoteUndrawable();
+            var unclampedGutter = gutter;
             var wouldClamp = TryClampGutter(areaWidth, gutter, 0, widest, out var clampedGutter)
                 && LayoutValidation.AreRunStylesAccepted(contentRuns);
             var clamped = !_unclamped && wouldClamp;
@@ -1118,7 +1174,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             };
             var contentRenderer = new ParagraphRenderer(contentPara) { ElementLanguage = item.Language, RunOwner = "A list item" };
 
-            result.Add(new Entry(markerRenderer, contentRenderer, item, clamped));
+            result.Add(new Entry(markerRenderer, contentRenderer, item, clamped, wouldClamp, unclampedGutter));
 
             // A null child of a top-level item is refused here, where the position is known. The
             // same null on a grandchild is counted when the list is drawn instead, because
@@ -1162,6 +1218,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                     // The child's marker starts at `indent`, so that is the leftmost the clamped
                     // content may start.
                     if (!CanDrawEntry(run, childStyle, child)) run?.NoteUndrawable();
+                    var unclampedChildGutter = childGutter;
                     var childWouldClamp = TryClampGutter(
                             areaWidth, childGutter, indent, childWidest, out var clampedChildGutter)
                         && LayoutValidation.AreRunStylesAccepted(childRuns);
@@ -1189,7 +1246,9 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                         new ParagraphRenderer(childMarkerPara) { RunOwner = "A list item" },
                         new ParagraphRenderer(childContentPara) { ElementLanguage = child.Language, RunOwner = "A list item" },
                         child,
-                        childClamped));
+                        childClamped,
+                        childWouldClamp,
+                        unclampedChildGutter));
                 }
             }
         }

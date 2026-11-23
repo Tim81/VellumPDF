@@ -602,9 +602,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     out through the context it was given, through `LayoutContext.WithArea` or through the public
     `LayoutContext` constructor is laid out as it was: no gutter is narrowed and no entry moves
     (#685), so the list itself saves, or is refused for the continuation limit, with the bytes and
-    the message it had. A list keeps the entries an earlier layout built, at the width that layout
-    used, as it did, whether you laid it out before the save or another document or an earlier
-    save did, and the save lays it out as it was. `ListRenderer.Layout`,
+    the message it had. A list keeps the entries an earlier layout built, whole and at the width
+    that layout used, as it did, whether you laid it out before the save or another document did,
+    and the save lays it out as it was. That holds for a list changed since: an item or a child
+    added after that layout is not laid out or drawn. `ListRenderer.Layout`,
     `IRenderer.Layout` and the `LayoutContext` constructor and `WithArea` say so, with a "Do not
     rely on" paragraph: 3.0 lays a list out one way.
   - An entry whose marker has no room at the top of a page is still refused: the save throws the
@@ -663,6 +664,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     neither 207 nor 208, because the document did not place the list. With the continuation limit
     set to 300 entries and 3,000 documents of 100 to 330 entries a list, 134 report 207 and 2 of
     those lose text.
+  - **Deliberate output change, a `ListRenderer` that serves a second document draws the placement
+    the first gave an entry.** A renderer reused for a second document keeps the entries it built
+    for the first (#476 above), and a paragraph draws the lines of its last layout when its layout
+    in the second document places nothing. 2.3.3 draws the first document's lines at that stale
+    position too, for an entry that fitted in the first document and does not in the second
+    (#691, which this change does not close). The first document now moves an entry that did not
+    fit what was left of a page, so the second draws the lines that placement gave it, where
+    2.3.3 drew only the part that fitted.
   - **A document that holds an entry in a font it cannot draw lays every list out as it was before
     the clamp and the moving of entries.** A handle that another document returned, or a
     `Standard14` value the enumeration does not name, makes the save throw where an entry's text or
@@ -700,11 +709,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     page break, an image, a separator and a chart never count. The same report applies as for the
     font: 207 for each list the document placed. A renderer of yours after a list whose result
     depends on where it starts, and an element such a renderer holds, are not read, so a moved
-    entry can still change what the save does with them.
+    entry can still change what the save does with them. That is a known 2.x residual, which 3.0
+    removes (#688).
   - **Deliberate output change: a renderer of yours after a list whose entry moves starts where
     that list now ends.** A renderer that refuses some areas, as `IRenderer.Layout` allows, can
     then save where it was refused, and the reverse, as can an element it holds. `IRenderer.Layout`
-    says so. A renderer that breaks that contract by changing its result between calls can also
+    says so, and calls it a known 2.x residual that 3.0 removes (#688). A renderer that breaks that contract by changing its result between calls can also
     give other output than before, because the document can lay out once more before it draws
     (above).
   - A list that a renderer of yours holds reports nothing: neither 207 nor 208, because the

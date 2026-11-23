@@ -351,6 +351,134 @@ public sealed class ListPlacementAdoptionTests
         Assert.NotEqual(Sha(FreshSecondDocument(make)), Sha(kept));
     }
 
+    private static ListElement TwoItems() => new ListElement(ListStyle.OrderedDecimal)
+        .Add(new ListItem("one", H(10)))
+        .Add(new ListItem("two", H(10)));
+
+    // The list is changed after the first document; the second must not read what changed.
+    private static void Change(ListElement list, string kind)
+    {
+        switch (kind)
+        {
+            case "plain": list.Add(new ListItem("added", H(10))); break;
+            case "child": list.Items[0].AddChild("child", H(10)); break;
+            case "undefined":
+                list.Add(new ListItem("added", new TextStyle { FontRef = new FontReference((Standard14)99), FontSize = 10 }));
+                break;
+            case "nan":
+                list.Add(new ListItem("added", new TextStyle
+                {
+                    FontRef = new FontReference(Standard14.Helvetica),
+                    FontSize = 10,
+                    Color = new ColorRgb(double.NaN, 0, 0),
+                }));
+                break;
+            default: throw new ArgumentOutOfRangeException(nameof(kind));
+        }
+    }
+
+    // The second document's bytes after one renderer served a first document of 200 points and the
+    // list was changed, or was not, before the second.
+    private static byte[] SecondDocumentAfterChange(
+        Func<ListElement> make, string? kind, bool firstHeld, bool secondHeld, bool twin, double secondWidth = 200)
+    {
+        var list = make();
+        var renderer = new ListRenderer(list);
+        IRenderer Use(bool held) => held ? new Passes(twin ? renderer.Unclamped() : renderer) : twin ? renderer.Unclamped() : renderer;
+
+        var first = Page(200, 100, 1);
+        first.Add(Use(firstHeld));
+        Save(first);
+        if (kind is not null) Change(list, kind);
+        var second = Page(secondWidth, 100, 1);
+        second.Add(Use(secondHeld));
+        return Save(second);
+    }
+
+    /// <summary>
+    /// A renderer whose list changed after the first document keeps the entries that document built
+    /// and never reads the change, as 2.3.3 did: an added item, an added child, an item in a font
+    /// the document cannot draw and an item with a colour that cannot be written leave the second
+    /// document the one an unchanged list gives. The references are the twin, which keeps the
+    /// entries it built, and the unchanged list.
+    /// </summary>
+    [Theory]
+    [InlineData("plain", false, false)]
+    [InlineData("plain", true, false)]
+    [InlineData("plain", false, true)]
+    [InlineData("child", false, false)]
+    [InlineData("child", true, false)]
+    [InlineData("undefined", false, false)]
+    [InlineData("undefined", true, false)]
+    [InlineData("undefined", false, true)]
+    [InlineData("nan", false, false)]
+    [InlineData("nan", true, false)]
+    [InlineData("nan", false, true)]
+    public void AListChangedBetweenTwoDocuments_isDrawnFromTheEntriesTheFirstBuilt(
+        string kind, bool firstHeld, bool secondHeld)
+    {
+        var kept = SecondDocumentAfterChange(TwoItems, kind, firstHeld, secondHeld, twin: false);
+
+        Assert.Equal(["lead0", "1.", "one", "2.", "two"], Shows(kept));
+        Assert.Equal(Sha(SecondDocumentAfterChange(TwoItems, null, firstHeld, secondHeld, twin: false)), Sha(kept));
+        Assert.Equal(Sha(SecondDocumentAfterChange(TwoItems, kind, firstHeld, secondHeld, twin: true)), Sha(kept));
+    }
+
+    /// <summary>
+    /// An entry the first document's clamp narrowed is not an entry 2.3.3 built. The second document
+    /// lays it out as 2.3.3 built it in the first, from the text it had then and without the clamp,
+    /// and not from the list as it is now: a child added to the narrowed item moves every entry
+    /// after it, and an item added after it is not there.
+    /// </summary>
+    [Theory]
+    [InlineData("plain")]
+    [InlineData("child")]
+    public void AListChangedAfterTheClampNarrowedAnEntry_keepsTheEntryAsTheFirstDocumentBuiltItWithoutTheClamp(string kind)
+    {
+        ListElement Make() => ClampedAtTheFirstWidth().Add(new ListItem("second entry", H(10)));
+
+        var kept = SecondDocumentAfterChange(Make, kind, false, false, twin: false, secondWidth: 400);
+
+        Assert.Equal(Sha(SecondDocumentAfterChange(Make, null, false, false, twin: false, secondWidth: 400)), Sha(kept));
+        Assert.Equal(Sha(SecondDocumentAfterChange(Make, kind, false, false, twin: true, secondWidth: 400)), Sha(kept));
+        Assert.DoesNotContain(ClampedText, Shows(kept));
+        Assert.DoesNotContain("added", Shows(kept));
+        Assert.DoesNotContain("child", Shows(kept));
+    }
+
+    // An entry whose text is 20 points in a 10-point style: it fits a page top, and not what is left
+    // of a short page after a few lines.
+    private static ListElement TallTextEntry() => new ListElement(ListStyle.OrderedDecimal)
+        .Add(new ListItem([new TextRun("dropped", H(20))]) { Style = H(10) })
+        .Add(new ListItem("next", H(10)));
+
+    /// <summary>
+    /// A renderer added to a document and then held by a renderer of the caller's, in the same
+    /// document, lays the second placement out from entries of its own. It does not take the ones
+    /// the first placement built and laid out under this save, whose paragraphs keep where that
+    /// placement put them. Here the second placement falls where the entry's text does not fit, so
+    /// it draws what a renderer that placed nothing before draws there: the text is dropped.
+    /// </summary>
+    [Fact]
+    public void ARendererAddedAndThenHeldInOneDocument_laysTheHeldOneOutFromEntriesOfItsOwn()
+    {
+        Document Build(bool reused)
+        {
+            var renderer = new ListRenderer(TallTextEntry());
+            var doc = Page(200, 100);
+            doc.Add(renderer);
+            doc.Add(new Paragraph("between0", H(10)) { Margins = EdgeInsets.Zero });
+            doc.Add(new Paragraph("between1", H(10)) { Margins = EdgeInsets.Zero });
+            doc.Add(new Passes(reused ? renderer : new ListRenderer(TallTextEntry())));
+            return doc;
+        }
+
+        var reused = Save(Build(reused: true));
+
+        Assert.Equal(Sha(Save(Build(reused: false))), Sha(reused));
+        Assert.Equal(1, Shows(reused).Count(t => t == "dropped"));
+    }
+
     /// <summary>
     /// A list renderer reused for a second document reports nothing there, as one that a caller
     /// laid out before the save: the document did not place the list the way it placed it first.

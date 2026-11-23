@@ -77,8 +77,10 @@ public interface IRenderer
     /// than before.</b> One that changes its result from one call to the next, counts its calls,
     /// or throws on its first, sees the extra pass as one more call. A list ahead of your renderer
     /// that moves an entry (#685) also moves where your renderer starts, so a renderer that
-    /// refuses some areas can save where it was refused, or be refused where it saved. <b>Do
-    /// not</b> write a renderer whose result depends on anything but the area it is offered.</para>
+    /// refuses some areas can save where it was refused, or be refused where it saved, and so can
+    /// an element your renderer holds. That is a known 2.x residual, which 3.0 removes (#688).
+    /// <b>Do not</b> write a renderer whose result depends on anything but the area it is
+    /// offered.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other
