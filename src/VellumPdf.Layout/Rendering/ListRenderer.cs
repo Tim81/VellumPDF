@@ -93,14 +93,18 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
         Held = 0,
         Document,
         Limit,
-        AllLists,
+        AllListsFont,
+        AllListsNearLimit,
+        AllListsBoth,
     }
 
     // How the document placed this twin, read from the context of the last Layout and carried by
     // the pieces a split hands on. Document is a list the document placed as its twin without
     // deciding it: a list that holds an entry no page holds, which reports its dropped entries.
-    // Limit is the continuation limit's decision, and AllLists the document-wide rule of
-    // ListLayoutRun; both also report ListIndentClampSkipped.
+    // Limit is the continuation limit's decision, and the three AllLists values the document-wide
+    // rules of ListLayoutRun, named for the rule that applied (an entry in a font the document
+    // cannot draw, an element after a list near the limit, or both); all of them also report
+    // ListIndentClampSkipped.
     private TwinPlacement _placement;
 
     // What the list that built this twin tells it before each call: how that list was called. Set
@@ -335,7 +339,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
         {
             var run = ListLayoutRun.Current;
             if (run is { Probing: true }) return LayOutForProbe(run, context);
-            if (run is { AllAsTwin: true }) return LayOutAsTwin(context, TwinPlacement.AllLists);
+            if (run is { AllAsTwin: true }) return LayOutAsTwin(context, AllListsFor(run));
             if (context.ModeFor(this) == ContinuationMode.Twin)
                 return LayOutAsTwin(context, TwinPlacement.Document);
 
@@ -347,6 +351,11 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
         _delegate = null;
         return LayOut(context);
     }
+
+    private static TwinPlacement AllListsFor(ListLayoutRun run) =>
+        run is { FoundUndrawable: true, FoundNearTheLimit: true } ? TwinPlacement.AllListsBoth
+        : run.FoundNearTheLimit ? TwinPlacement.AllListsNearLimit
+        : TwinPlacement.AllListsFont;
 
     // The twin lays the list out and this instance answers for it afterwards: the document draws
     // and asks for placements on the instance it called, and a Full result names no renderer. The
@@ -760,13 +769,17 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                     "A list indent left an entry's text no width beside its gutter, so the text was given a width, that of its widest word or the room right of its marker, and may overprint the marker.",
                     _indentClamped,
                     perElement: true);
-            if ((_placement is TwinPlacement.Limit or TwinPlacement.AllLists) && _items.Count > 0)
+            if (_placement is not (TwinPlacement.Held or TwinPlacement.Document) && _items.Count > 0)
                 sink.Report(
                     LayoutDiagnosticCode.ListIndentClampSkipped,
                     0,
-                    _placement == TwinPlacement.Limit
-                        ? "Laying the list out with the text of its entries given a width, or with the entries that do not fit moved to the next page, would have taken more page continuations than one element may use, so the list was laid out as it was before both."
-                        : "The document holds a list entry in a font it cannot draw, so this list was laid out as it was before the text of its entries was given a width and the entries that do not fit were moved to the next page.",
+                    _placement switch
+                    {
+                        TwinPlacement.Limit => "Laying the list out with the text of its entries given a width, or with the entries that do not fit moved to the next page, would have taken more page continuations than one element may use, so the list was laid out as it was before both.",
+                        TwinPlacement.AllListsFont => "The document holds a list entry in a font it cannot draw, so this list was laid out as it was before the text of its entries was given a width and the entries that do not fit were moved to the next page.",
+                        TwinPlacement.AllListsNearLimit => "The document holds an element after a list that can need about as many page continuations as one element may use, so this list was laid out as it was before the text of its entries was given a width and the entries that do not fit were moved to the next page.",
+                        _ => "The document holds a list entry in a font it cannot draw and an element after a list that can need about as many page continuations as one element may use, so this list was laid out as it was before the text of its entries was given a width and the entries that do not fit were moved to the next page.",
+                    },
                     Math.Max(1, _clampSkipped),
                     perElement: true);
         }

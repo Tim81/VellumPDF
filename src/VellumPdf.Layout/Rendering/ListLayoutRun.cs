@@ -52,8 +52,11 @@ internal sealed class ListLayoutRun
     // value. Zero is no answer yet.
     private long _lastStandard;
 
-    // Read from every thread a renderer lays its list out on, and only ever set to true.
+    // Read from every thread a renderer lays its list out on, and only ever set to true. The two
+    // causes are kept apart because the report of a list names the one that applied.
     private volatile bool _allAsTwin;
+    private volatile bool _undrawable;
+    private volatile bool _nearTheLimit;
 
     // The lists that laid out as a twin of their own during the probing pass, which let go of it
     // when the pass ends.
@@ -73,6 +76,15 @@ internal sealed class ListLayoutRun
     /// allows. It never goes back: every list of the document is then laid out as its twin.
     /// </summary>
     internal bool AllAsTwin => _allAsTwin;
+
+    /// <summary>Whether a list was found to hold an entry the document cannot draw.</summary>
+    internal bool FoundUndrawable => _undrawable;
+
+    /// <summary>
+    /// Whether an element after a list was found that can need about as many continuations as the
+    /// limit allows.
+    /// </summary>
+    internal bool FoundNearTheLimit => _nearTheLimit;
 
     /// <summary>
     /// True while the document lays out only to find <see cref="AllAsTwin"/>. Every list lays out
@@ -97,13 +109,21 @@ internal sealed class ListLayoutRun
     internal static void End(ListLayoutRun? previous) => s_current.Value = previous;
 
     /// <summary>Records that a list holds an entry the document cannot draw.</summary>
-    internal void NoteUndrawable() => _allAsTwin = true;
+    internal void NoteUndrawable()
+    {
+        _undrawable = true;
+        _allAsTwin = true;
+    }
 
     /// <summary>
     /// Records that an element after a list can need about as many continuations as the limit
     /// allows, so where it starts decides whether the document saves.
     /// </summary>
-    internal void NoteNearTheLimit() => _allAsTwin = true;
+    internal void NoteNearTheLimit()
+    {
+        _nearTheLimit = true;
+        _allAsTwin = true;
+    }
 
     /// <summary>
     /// Remembers that <paramref name="list"/> laid out as a twin of its own during the probing

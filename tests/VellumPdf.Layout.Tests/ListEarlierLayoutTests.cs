@@ -375,6 +375,33 @@ public sealed class ListEarlierLayoutTests
     }
 
     /// <summary>
+    /// The 207 of a list the document lays out as it was names the rule that applied: the font the
+    /// document cannot draw or the element after a list near the limit.
+    /// </summary>
+    [Theory]
+    [InlineData("font", true, false)]
+    [InlineData("limit", false, true)]
+    public void TheFallbackOfADocumentWideRule_namesTheRuleThatApplied(string rule, bool namesFont, bool namesLimit)
+    {
+        var doc = Page(PageWidth);
+        doc.Add(new ListRenderer(Make("clamp")));
+        if (rule != "limit")
+        {
+            doc.Add(new ListElement(ListStyle.Unordered) { Indent = 1000 }
+                .Add(new ListItem([new TextRun("bad", new TextStyle { FontRef = new FontReference((Standard14)99), FontSize = 10 })])
+                { Style = H(10) }));
+        }
+
+        if (rule == "limit") doc.Add(new Preformatted(new string('\t', 1_700), H(1)) { TabWidth = 32 });
+        Save(doc);
+
+        var message = Assert.Single(
+            doc.Diagnostics, d => d.Code == LayoutDiagnosticCode.ListIndentClampSkipped && d.ElementIndex == 0).Message;
+        Assert.Equal(namesFont, message.Contains("font it cannot draw", StringComparison.Ordinal));
+        Assert.Equal(namesLimit, message.Contains("page continuations", StringComparison.Ordinal));
+    }
+
+    /// <summary>
     /// The answer for a Standard 14 value is its own, whichever value was asked about before it:
     /// the memo packs the value and its answer in one word, and no two values can share it.
     /// </summary>

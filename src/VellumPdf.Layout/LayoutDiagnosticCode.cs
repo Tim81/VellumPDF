@@ -211,7 +211,9 @@ public enum LayoutDiagnosticCode
     /// causes exist because a font the document cannot draw makes the save throw where its text is
     /// drawn, and an element near the limit is refused or saved according to where it starts, and
     /// the clamp or a moved entry ahead of either can change where that is; the document then
-    /// saves or throws as it did, for every list it holds. Strict mode refuses this code. It is
+    /// saves or throws as it did, for every list it holds. The message names the cause that
+    /// applied: the continuation limit for the list, or the font, or the element near the limit,
+    /// or both of the last two when the document found both. Strict mode refuses this code. It is
     /// reported once for each list the document placed this way and draws from its first entry; a
     /// list that a renderer of yours holds is laid out as before and reports nothing. <b>Do not
     /// pass</b> an indent that leaves an entry's text no width, or a font the document cannot draw:

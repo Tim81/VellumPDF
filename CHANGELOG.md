@@ -632,7 +632,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     drawing, as it was and as it is now, and the new layout is kept only where neither reaches the
     limit. The new `LayoutDiagnosticCode.ListIndentClampSkipped` (207, severity `Error`) reports
     it, with the number of entries the clamp would have narrowed as `Count`, or 1 when it would
-    have narrowed none. The text of the entries the clamp would have narrowed is not drawn.
+    have narrowed none. The text of the entries the clamp would have narrowed is not drawn. The
+    message of a 207 names the cause that applied: the continuation limit, a font the document
+    cannot draw, or an element after a list that comes near the limit.
   - A new `LayoutDiagnosticCode.ListIndentClamped` (203, severity `Error`) reports a clamped list
     once, with the number of clamped entries as `Count`. `StrictDiagnostics` refuses it, and the
     default saves. A list is reported when the document draws it from its first entry; a
