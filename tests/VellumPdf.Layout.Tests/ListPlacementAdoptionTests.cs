@@ -730,14 +730,18 @@ public sealed class ListPlacementAdoptionTests
     /// that when its own layout answers nothing, so a pass that placed the paragraphs the
     /// renderer holds, where the lists ahead of it do not move an entry, would change what the
     /// second document draws. A renderer that takes no room is the whole of the difference
-    /// between the two documents.
+    /// between the two documents. The entries were built by the first document's save or by a
+    /// layout the caller made before it.
     /// </summary>
     [Theory]
-    [InlineData("tall text", 60, 4, 1)]
-    [InlineData("tall text", 72, 5, 2)]
-    [InlineData("tall marker", 64, 4, 1)]
-    [InlineData("tall marker", 76, 5, 2)]
-    public void TheExtraPass_leavesAReusedRenderersEntriesAsItFoundThem(string kind, double height, int leads, int mid)
+    [InlineData("tall text", 60, 4, 1, false)]
+    [InlineData("tall text", 72, 5, 2, false)]
+    [InlineData("tall marker", 64, 4, 1, false)]
+    [InlineData("tall marker", 76, 5, 2, false)]
+    [InlineData("tall text", 60, 4, 1, true)]
+    [InlineData("tall marker", 76, 5, 2, true)]
+    public void TheExtraPass_leavesAReusedRenderersEntriesAsItFoundThem(
+        string kind, double height, int leads, int mid, bool laidOut)
     {
         ListElement List() => kind == "tall text"
             ? TallTextEntry()
@@ -749,8 +753,15 @@ public sealed class ListPlacementAdoptionTests
         {
             var renderer = new ListRenderer(List());
             var first = Page(200, height + 20);
-            first.Add(renderer);
-            Save(first);
+            if (laidOut)
+            {
+                renderer.Layout(new LayoutContext(new LayoutBox(10, 10, 180, height)));
+            }
+            else
+            {
+                first.Add(renderer);
+                Save(first);
+            }
 
             var second = Page(200, height + 20, leads);
             second.Add(List());
