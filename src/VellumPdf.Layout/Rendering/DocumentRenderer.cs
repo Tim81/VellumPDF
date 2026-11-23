@@ -888,7 +888,7 @@ public sealed class DocumentRenderer
                 {
                     total++;
                     var cells = rows[r].Cells;
-                    for (var c = 0; c < cells.Count && total <= cap; c++) total += cells[c].Content.Length;
+                    for (var c = 0; c < cells.Count && total <= cap; c++) total += cells[c].Content?.Length ?? 0;
                 }
 
                 return total;

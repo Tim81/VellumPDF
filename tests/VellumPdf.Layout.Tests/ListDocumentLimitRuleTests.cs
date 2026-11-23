@@ -160,6 +160,26 @@ public sealed class ListDocumentLimitRuleTests
     }
 
     /// <summary>
+    /// The size is read before anything is laid out, so a cell with no text, which a table with
+    /// column widths saves, is read as empty and does not raise an exception of its own.
+    /// </summary>
+    [Fact]
+    public void ATableCellWithNoText_isReadAsEmpty()
+    {
+        string Build(bool twin) => Save(r =>
+        {
+            for (var i = 0; i < 4; i++) r.Add(new ParagraphRenderer(Lead()));
+            r.Add(ListOf(Mover(30), twin));
+            var table = new TableElement().SetColumnWidths(100);
+            table.AddRow().AddCell(new Cell(null!));
+            r.Add(new TableRenderer(table));
+        }, pageHeight: 100);
+
+        Assert.StartsWith("OK ", Build(twin: true));
+        Assert.StartsWith("OK ", Build(twin: false));
+    }
+
+    /// <summary>
     /// The line is the limit: a bound equal to it needs no fallback, and one more does.
     /// </summary>
     [Fact]
