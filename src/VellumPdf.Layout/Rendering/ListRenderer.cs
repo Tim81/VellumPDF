@@ -325,16 +325,11 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             run.NoteProbed(this);
         }
 
-        _delegate = _probeTwin;
         return _probeTwin.Layout(context);
     }
 
     // Called when the probing pass ends, whether or not it finished.
-    internal void ReleaseProbe()
-    {
-        if (ReferenceEquals(_delegate, _probeTwin)) _delegate = null;
-        _probeTwin = null;
-    }
+    internal void ReleaseProbe() => _probeTwin = null;
 
     // The context of a child that this list lays out in its own mode: the new layout hands a child
     // a context addressed to it, and the twin hands it the one a narrowed area gives, which is what

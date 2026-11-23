@@ -128,6 +128,11 @@ public sealed class ListDocumentLimitRuleTests
                 var parent = new ListItem("p", H(10));
                 parent.AddChild(new ListItem(text, H(10)));
                 return new ListRenderer(new ListElement(ListStyle.Unordered).Add(parent));
+            case "tablerows":
+                // One row for each character asked for, each holding an empty cell.
+                var rows = new TableElement().SetColumnWidths(100);
+                for (var i = 0; i < characters; i++) rows.AddRow().AddCell(new Cell(""));
+                return new TableRenderer(rows);
             case "listempty":
                 // One entry for each character asked for, each holding no text.
                 var empty = new ListElement(ListStyle.Unordered);
@@ -161,6 +166,7 @@ public sealed class ListDocumentLimitRuleTests
     [InlineData("list")]
     [InlineData("listchild")]
     [InlineData("listempty")]
+    [InlineData("tablerows")]
     public void AnElementWhoseBoundPassesTheLimit_keepsTheListsAsTheirTwins(string kind)
     {
         // The bound is two plus the characters, and the table adds a row.

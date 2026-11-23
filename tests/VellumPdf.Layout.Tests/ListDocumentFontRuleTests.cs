@@ -734,6 +734,30 @@ public sealed class ListDocumentFontRuleTests
     }
 
     /// <summary>
+    /// The copy a list lays out on for the extra pass is let go when the pass ends, so a document with
+    /// a long list does not hold a second copy of its entries through the pass that draws.
+    /// </summary>
+    [Fact]
+    public void TheCopyForTheExtraLayout_isLetGoWhenThePassEnds()
+    {
+        var field = typeof(ListRenderer).GetField(
+            "_probeTwin", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        var ahead = new ListRenderer(OneEntry("a", H(10)));
+        var held = new ListRenderer(OneEntry("b", H(10)));
+
+        var (renderer, _) = Render(r =>
+        {
+            r.Add(ahead);
+            r.Add(new Holder(held, 0));
+        });
+
+        // Four layout calls are two lists in the extra pass and in the drawing pass.
+        Assert.Equal(4, renderer.LayoutCalls);
+        Assert.Null(field.GetValue(ahead));
+        Assert.Null(field.GetValue(held));
+    }
+
+    /// <summary>
     /// Work queued with the execution context suppressed does not see the run, so a list laid out
     /// there is not found by the document. The documentation names this limit.
     /// </summary>
