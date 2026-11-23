@@ -720,8 +720,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     white-space character out of what it draws, where a table laid out before wrote glyph 0, a raw
     control byte, `?` or the font's own glyph for it. `A<TAB>B` is `(AB)`, a DejaVu Sans cell
     holds no glyph 0 and no `<0000>` entry in the ToUnicode map, and the save lists no
-    `NotdefGlyph` or `UnencodableCharacter` for it. The table does not read the character as a space, because that
-    would draw it wider than the layout measured it.
+    `NotdefGlyph` or `UnencodableCharacter` for it. The table does not read the character as a
+    space, because that would draw it wider than the layout measured it.
   - **`StrictDiagnostics` does not refuse a control white-space character in a cell or in a
     running band.** A tab, a line break or another control white-space character there reaches
     no font, so the save lists no `NotdefGlyph` (102) or `UnencodableCharacter` (103) for it, in
