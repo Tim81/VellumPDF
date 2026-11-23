@@ -612,11 +612,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     out through the context it was given, through `LayoutContext.WithArea` or through the public
     `LayoutContext` constructor is laid out as it was: no gutter is narrowed and no entry moves
     (#685), so the list itself saves, or is refused for the continuation limit, with the bytes and
-    the message it had. A list keeps the entries an earlier layout built, whole and at the width
-    that layout used, as it did, whether you laid it out before the save, another document did, or
-    the list's own placement did earlier in the same document, and the save lays it out as it was.
-    That holds for a list changed since: an item or a child added after that layout is not laid out
-    or drawn. `ListRenderer.Layout`, `IRenderer.Layout` and the `LayoutContext` constructor and
+    the message it had. A list builds its entries at its first layout and keeps them, whole and at
+    the width that layout used, as it did. Where that layout was not the document's own call in this
+    save (you laid the list out before the save, another document did, or a renderer of yours that
+    holds the list did), the document lays the list out as it was, with those entries, and it
+    reports nothing unless it lays every list out as it was (below). That holds for a list changed
+    since: an item or a child added after that layout is not laid out or drawn.
+    `ListRenderer.Layout`, `IRenderer.Layout` and the `LayoutContext` constructor and
     `WithArea` say so, with a "Do not rely on" paragraph: 3.0 lays a list out one way.
   - An entry whose marker has no room at the top of a page is still refused: the save throws the
     same "An element is too tall" `InvalidOperationException`. That entry fits no page, so its list

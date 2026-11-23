@@ -67,14 +67,15 @@ public interface IRenderer
     /// it.</para>
     /// <para><b>A document that holds a list ahead of a renderer of yours lays out once more
     /// before it draws, unless it already lays every list out as it was before the fixes
-    /// above.</b> The document does so when one of its lists holds an entry in a font it cannot
-    /// draw, or when an element after a list can need about as many continuations as the limit
-    /// allows. The extra pass lays every list out as it was before the fixes above, calls your
-    /// renderer on the areas it gets, and keeps nothing. It finds out whether your
-    /// renderer lays out a <see cref="VellumPdf.Layout.Rendering.ListRenderer"/> whose items use a
-    /// font the document cannot draw, in which case every list of the document stays as it was
-    /// before the fixes; see <see cref="VellumPdf.Layout.Elements.ListElement"/>. It comes before
-    /// a header or footer's page-counting pass and apart from it, so a document with one calls your
+    /// above.</b> It lays every list out that way when one of its lists holds an entry in a font it
+    /// cannot draw, or when an element after a list can need about as many continuations as the
+    /// limit allows, and then needs no extra pass. The extra pass lays every list out as it was
+    /// before the fixes above, calls your renderer on the areas it gets, and keeps nothing. It
+    /// finds out whether your renderer lays out a
+    /// <see cref="VellumPdf.Layout.Rendering.ListRenderer"/> whose items use a font the document
+    /// cannot draw, in which case every list of the document stays as it was before the fixes; see
+    /// <see cref="VellumPdf.Layout.Elements.ListElement"/>. It comes before a header or footer's
+    /// page-counting pass and apart from it, so a document with one calls your
     /// renderer one pass more than it otherwise would. The library's own renderers that hold no
     /// list, such as the barcode renderer, do not cause it. <b>An exception the extra pass meets is
     /// not raised from it, except an <see cref="OutOfMemoryException"/></b>: the drawing pass
