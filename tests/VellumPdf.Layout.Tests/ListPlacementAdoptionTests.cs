@@ -307,6 +307,32 @@ public sealed class ListPlacementAdoptionTests
             Assert.DoesNotContain(ClampedText, Shows(kept));
     }
 
+    // The twenty-seventh roman marker, "xxvii.", is wider than the indent, so the gutter widens to it
+    // when the entry's longest word still fits beside it, and stays at the indent when it does not.
+    // The word is wider than the first document's area and fits the second's.
+    private static ListElement GutterThatDependsOnTheWidth()
+    {
+        var list = new ListElement(ListStyle.OrderedRoman) { Indent = 20 };
+        for (var i = 0; i < 26; i++) list.Add(new ListItem("a", H(10)));
+        return list.Add(new ListItem(new string('w', 30), H(10)));
+    }
+
+    /// <summary>
+    /// The entries the second document keeps are built at the first document's width: a gutter the
+    /// first width left at the indent stays there, though the second width would widen it.
+    /// </summary>
+    [Theory]
+    [InlineData("direct-direct")]
+    [InlineData("held-direct")]
+    [InlineData("direct-held")]
+    public void AListRendererReusedForASecondDocument_keepsTheGutterTheFirstWidthGave(string shape)
+    {
+        var kept = SecondDocument(GutterThatDependsOnTheWidth, shape, twin: false);
+
+        Assert.Equal(Sha(SecondDocument(GutterThatDependsOnTheWidth, shape, twin: true)), Sha(kept));
+        Assert.NotEqual(Sha(FreshSecondDocument(GutterThatDependsOnTheWidth)), Sha(kept));
+    }
+
     /// <summary>
     /// A list renderer reused for a second document reports nothing there, as one that a caller
     /// laid out before the save: the document did not place the list the way it placed it first.
