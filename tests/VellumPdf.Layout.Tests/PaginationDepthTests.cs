@@ -74,10 +74,17 @@ public sealed class PaginationDepthTests
     /// </summary>
     private static void AssertFlat(IReadOnlyList<int> samples)
     {
-        // The count is of PlaceRenderer frames on the stack at each Layout call. Both passes run
-        // that one method, so it is 1 whichever pass is running; a recursion regression makes it
-        // grow with the continuation count. Bounds rather than Assert.All, because a recursion
-        // regression otherwise prints one near-identical failure block per sample — measured at
+        // The count is of PlaceLoop frames on the stack at each Layout call. It is 1 for this
+        // renderer, which never reports, in either pass, and a recursion regression makes it grow
+        // with the continuation count. A renderer that reports has two on the stack during a
+        // continuation probe, because the probe calls PlaceLoop from inside PlaceLoop.
+        // PlaceRenderer, which only starts the loop, was counted before. Its count read 0 when
+        // the whole suite ran in sequence (-parallel none): on main at c44a516, both probes
+        // failed in four such runs, two on net10.0 and two on net11.0, and a fifth run, on
+        // net11.0, passed. The likely cause is that the JIT inlined PlaceRenderer into its
+        // caller; that was not confirmed with a JIT dump. PlaceLoop is marked NoInlining so that
+        // it keeps a frame of its own. Bounds rather than Assert.All, because a recursion
+        // regression otherwise prints one near-identical failure block per sample, measured at
         // 200 blocks and 34,670 characters for a single test.
         Assert.Equal(1, samples.Min());
         Assert.Equal(1, samples.Max());
@@ -97,7 +104,7 @@ public sealed class PaginationDepthTests
     }
 
     /// <summary>
-    /// Splits a fixed number of times, recording how many PlaceRenderer frames are on the stack at
+    /// Splits a fixed number of times, recording how many PlaceLoop frames are on the stack at
     /// each Layout call. Each overflow is a fresh instance sharing the
     /// same recording list, as the library's renderers do, so a second pass repeats the walk from
     /// the start instead of resuming a spent counter.
@@ -120,7 +127,7 @@ public sealed class PaginationDepthTests
         public LayoutResult Layout(LayoutContext context)
         {
             var frames = new StackTrace(false).GetFrames() ?? [];
-            _samples.Add(frames.Count(f => f.GetMethod()?.Name == "PlaceRenderer"));
+            _samples.Add(frames.Count(f => f.GetMethod()?.Name == "PlaceLoop"));
 
             var occupied = context.Area.WithHeight(0);
             return _remaining > 0

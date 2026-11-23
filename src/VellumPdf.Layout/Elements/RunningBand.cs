@@ -75,9 +75,19 @@ public sealed class RunningBand
     /// <summary>Text template — may contain {page} and/or {pages}, and {chapter} when
     /// <see cref="ChapterToken"/> is set.</summary>
     /// <remarks>
-    /// Not checked when it is set: the constructor stores a null template, and the save throws
-    /// <see cref="ArgumentNullException"/> where the band is first drawn. A template that does not
-    /// fit the content box is truncated, and refused only in strict mode;
+    /// A band is one line: a tab, a line feed, a carriage return, a form feed or any other
+    /// white-space control character in the template is drawn as one space and measured as one,
+    /// so a carriage return and line feed pair is two spaces, and no white-space control
+    /// character reaches the font from it. The same holds for the text a
+    /// <see cref="PageLabelRange"/> prints for <c>{page}</c>. None of these characters is reported
+    /// as <see cref="LayoutDiagnosticCode.NotdefGlyph"/> or
+    /// <see cref="LayoutDiagnosticCode.UnencodableCharacter"/>, so
+    /// <see cref="Document.StrictDiagnostics"/> does not refuse a band for one. A control
+    /// character that is not white space, such as U+0001, is written as it is;
+    /// <see cref="LayoutDiagnosticCode.NotdefGlyph"/> says when it is reported.
+    /// <para>Not checked when it is set: the constructor stores a null template, and the save
+    /// throws <see cref="ArgumentNullException"/> where the band is first drawn. A template that
+    /// does not fit the content box is truncated, and refused only in strict mode;
     /// <see cref="VellumPdf.Layout.Rendering.DocumentRenderer.BandTruncations"/> says when it
     /// counts as not fitting. The cut is reported through <c>Document.BandTruncations</c>,
     /// <c>DocumentRenderer.BandTruncations</c> and, with error severity, as
@@ -85,17 +95,18 @@ public sealed class RunningBand
     /// <see cref="Document.StrictDiagnostics"/> set, the save throws
     /// <see cref="InvalidOperationException"/> from the save, not from this property, and 3.0 will
     /// refuse it always. Pass an empty string for a band that draws no text, never
-    /// <see langword="null"/>.
+    /// <see langword="null"/>.</para>
     /// <para>The cut bounds the advance width, <b>not</b> the ink. Side bearings and italic
     /// overhang can still paint a little past it. Nothing in this package sets a clip path.</para>
     /// <para><b>Attention</b>: truncation does nothing for text whose glyphs measure zero, because
     /// each character is measured at the advance of the glyph the font gives it. Every glyph of
     /// <see cref="VellumPdf.Fonts.Standard14.Symbol"/> and
     /// <see cref="VellumPdf.Fonts.Standard14.ZapfDingbats"/> measures zero, and so do the control
-    /// characters U+0000 to U+001F in every standard-14 font. Any length of such text fits and is
+    /// characters U+0000 to U+001F in every standard-14 font, except U+0009 to U+000D, which the
+    /// band draws as spaces. Any length of such text fits and is
     /// drawn in full. Courier measures U+007F at 600 units where Helvetica measures it at zero. In
-    /// an embedded font the control characters take the font's own widths: Calibri measures U+0000
-    /// and U+000D at zero, and Arial measures every C0 control at 750 units.</para>
+    /// an embedded font the other control characters take the font's own widths: Calibri measures
+    /// U+0000 at zero, and Arial measures every C0 control at 750 units.</para>
     /// <para>You get one report per band per render, naming the page that lost the most rather
     /// than the first page cut. A <c>{page}</c> or <c>{pages}</c> token lengthens the resolved
     /// text as the number gains digits, so the worst page is the one that tells you how much
@@ -284,6 +295,11 @@ public sealed class RunningBand
     /// given, and a substituted number is never scanned again. A null template is refused here with
     /// <see cref="ArgumentNullException"/>; the save refuses it the same way where the band is
     /// first drawn.
+    /// <para><b>The string returned is not always what a save draws.</b> A tab, a line break, a
+    /// form feed or another white-space control character in the template, and in a page label, is
+    /// returned as written, where a save draws each as one space; see <see cref="Template"/>.
+    /// A caller that compares this string with the text of a drawn band sees that
+    /// difference.</para>
     /// <para>This builds the whole text, so its cost is the template's length. A save does not call
     /// it: the save resolves a template as it draws, and its cost per page follows the characters
     /// that fit the content width, as <see cref="Template"/> describes.</para>

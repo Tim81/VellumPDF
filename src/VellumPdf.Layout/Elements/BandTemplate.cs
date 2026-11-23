@@ -1,6 +1,8 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using VellumPdf.Layout.Core;
+
 namespace VellumPdf.Layout.Elements;
 
 /// <summary>
@@ -184,12 +186,16 @@ internal sealed class BandText
     /// <param name="chapter">
     /// What <c>{chapter}</c> prints, or null for no text. Copied as it is and never scanned for a
     /// token. The caller has already read its control white space as spaces; see
-    /// <see cref="ControlSpacesToSpaces"/>.
+    /// <see cref="LayoutText.ControlSpacesToSpaces"/>.
     /// </param>
     internal void Reset(int pageNumber, int totalPages, string? pageLabel = null, string? chapter = null)
     {
-        _values[(int)BandToken.Page] =
-            pageLabel ?? pageNumber.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        // The label is caller text, so a tab, a line break or a form feed in it is a space, as it
+        // is in the template's own text; the replacement keeps the length, so what is measured is
+        // what is drawn.
+        _values[(int)BandToken.Page] = pageLabel is null
+            ? pageNumber.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            : LayoutText.ControlSpacesToSpaces(pageLabel);
         _values[(int)BandToken.Pages] = totalPages.ToString(System.Globalization.CultureInfo.InvariantCulture);
         _values[(int)BandToken.Chapter] = chapter ?? "";
 
@@ -211,33 +217,6 @@ internal sealed class BandText
         _segment = 0;
         _offset = 0;
     }
-
-    /// <summary>
-    /// Returns <paramref name="text"/> with every tab, line break, form feed and other control
-    /// white space replaced by U+0020, or the same instance when it holds none. A band draws one
-    /// line, and no font draws these characters, so left as written they reach glyph lookup. The
-    /// Unicode space separators, the no-break spaces among them, are left as they are, because a
-    /// font draws them.
-    /// </summary>
-    internal static string ControlSpacesToSpaces(string text)
-    {
-        var at = -1;
-        for (var i = 0; i < text.Length; i++)
-        {
-            if (IsControlSpace(text[i])) { at = i; break; }
-        }
-        if (at < 0) return text;
-
-        return string.Create(text.Length, (text, at), static (span, state) =>
-        {
-            state.text.AsSpan().CopyTo(span);
-            for (var i = state.at; i < span.Length; i++)
-                if (IsControlSpace(span[i])) span[i] = ' ';
-        });
-    }
-
-    private static bool IsControlSpace(char c) =>
-        char.IsWhiteSpace(c) && char.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.SpaceSeparator;
 
     internal char this[int index]
     {
@@ -275,7 +254,14 @@ internal sealed class BandText
             var take = Math.Min(runLength - _offset, count - _produced);
 
             if (kind < 0)
+            {
                 template.Source.CopyTo(template.Starts[_segment] + _offset, _buffer, _produced, take);
+
+                // A band draws one line, so a tab, a line break or a form feed in the template is a
+                // space: left as written it would reach the font as a control character.
+                for (var i = _produced; i < _produced + take; i++)
+                    if (LayoutText.IsControlSpace(_buffer[i])) _buffer[i] = ' ';
+            }
             else
                 _values[kind].CopyTo(_offset, _buffer, _produced, take);
 

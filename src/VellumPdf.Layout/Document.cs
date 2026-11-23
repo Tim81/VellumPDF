@@ -119,6 +119,8 @@ public sealed class Document : IDisposable
     /// <see cref="LayoutDiagnosticCode.BandTruncated"/> (mirroring <see cref="BandTruncations"/>),
     /// <see cref="LayoutDiagnosticCode.PreformattedLineWrapped"/> (a preformatted line split with
     /// a marker; a warning, which <see cref="StrictDiagnostics"/> saves),
+    /// <see cref="LayoutDiagnosticCode.CellWhiteSpaceDropped"/> (a table cell's tab, line break or
+    /// other control white space left out of what is drawn; also a warning),
     /// <see cref="LayoutDiagnosticCode.KeepWithNextRelaxed"/>,
     /// <see cref="LayoutDiagnosticCode.KeepTogetherRelaxed"/> and
     /// <see cref="LayoutDiagnosticCode.MinLinesRelaxed"/> (a request to keep elements together or

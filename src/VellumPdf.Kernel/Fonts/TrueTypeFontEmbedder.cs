@@ -267,6 +267,20 @@ public sealed class TrueTypeFontEmbedder
         return total / 1000.0 * pointSize;
     }
 
+    /// <summary>
+    /// The width <see cref="MeasureString"/> returns, found without registering any character: the
+    /// subset, the ToUnicode map and the report of characters the font has no glyph for are left
+    /// as they were. A caller that measures text it may never draw uses this, so a measurement
+    /// that is dropped leaves nothing in the file.
+    /// </summary>
+    internal double MeasureStringWithoutRegistering(string text, double pointSize)
+    {
+        var total = 0.0;
+        foreach (var cp in EnumerateCodePoints(text))
+            total += GetAdvanceWidth(PeekGlyphId(cp));
+        return total / 1000.0 * pointSize;
+    }
+
     // The name without the subset tag, as a glyph-0 report names the font.
     internal string PostScriptName =>
         _name.PostScriptName ?? _name.FamilyName ?? "Unknown";

@@ -577,7 +577,7 @@ public sealed class DocumentRenderer
         ChapterNotes++;
         if (renderer is not HeadingRenderer { Element: { Level: 0 } heading }) return;
 
-        var title = BandText.ControlSpacesToSpaces(heading.ResolvedBookmarkTitle);
+        var title = LayoutText.ControlSpacesToSpaces(heading.ResolvedBookmarkTitle);
         _chapterFirst ??= title;
         _chapterLatest = title;
     }
@@ -1428,6 +1428,7 @@ public sealed class DocumentRenderer
         PlaceLoop(renderer, totalPages, keepTogether, lineCounts, session, 0);
     }
 
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
     private void PlaceLoop(IRenderer renderer, int totalPages, bool keepTogether, bool lineCounts, ContinuationSession session, int continuations)
     {
         var split = false;

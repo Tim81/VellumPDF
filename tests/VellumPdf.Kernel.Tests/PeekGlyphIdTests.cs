@@ -77,4 +77,25 @@ public sealed class PeekGlyphIdTests
         Assert.Equal(gid, handle.GetGlyphId('A'));
         Assert.NotEqual(before, Written(handle.Embedder));
     }
+
+    /// <summary>
+    /// The width measured without registering equals <c>MeasureString</c>'s on another embedder,
+    /// for text with no glyph in the font, a tab, a line feed and the two spaces the font
+    /// synthesizes, and leaves what the embedder writes as it was.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(Fonts))]
+    public void MeasureStringWithoutRegistering_equalsMeasureString_andRegistersNothing(string file)
+    {
+        string[] texts = ["Hello", "a\tb\nc", "x\u202Fy\u2007z", "\u4E00 and \u0000", "\U0001F600", ""];
+        var measurer = Embed(file);
+        var before = Written(measurer);
+        var widths = texts.Select(t => measurer.MeasureStringWithoutRegistering(t, 12)).ToArray();
+
+        Assert.Equal(before, Written(measurer));
+
+        var registering = Embed(file);
+        Assert.Equal(texts.Select(t => registering.MeasureString(t, 12)), widths);
+        Assert.NotEqual(before, Written(registering));
+    }
 }

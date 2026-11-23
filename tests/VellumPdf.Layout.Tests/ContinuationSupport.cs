@@ -431,6 +431,7 @@ internal static class ContinuationSupport
 
     internal sealed record Setup
     {
+        internal double PageWidth { get; init; } = 200;
         internal double PageHeight { get; init; } = 100;
         internal bool Footer { get; init; }
         internal bool Mirror { get; init; }
@@ -457,7 +458,7 @@ internal static class ContinuationSupport
     {
         var pdf = PlacementLoopSupport.NewPdf();
         var margins = setup.Margins ?? (setup.Mirror ? new EdgeInsets(10, 5, 10, 25) : new EdgeInsets(10));
-        var renderer = new DocumentRenderer(pdf, new PdfRectangle(0, 0, 200, setup.PageHeight), margins)
+        var renderer = new DocumentRenderer(pdf, new PdfRectangle(0, 0, setup.PageWidth, setup.PageHeight), margins)
         {
             ContinuationLimit = setup.Limit,
             MirrorMargins = setup.Mirror,
