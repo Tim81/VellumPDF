@@ -712,6 +712,57 @@ public sealed class ListPlacementAdoptionTests
         Assert.Equal(Sha(Second(twin: false, changed: false)), Sha(kept));
     }
 
+    /// <summary>A caller's renderer that takes no room and draws nothing.</summary>
+    private sealed class TakesNoRoom : IRenderer
+    {
+        public LayoutResult Layout(LayoutContext context) =>
+            LayoutResult.Full(new LayoutBox(context.Area.X, context.Area.Y, 1, 0));
+
+        public void Draw(DrawContext ctx)
+        {
+        }
+    }
+
+    /// <summary>
+    /// The extra pass that a renderer of the caller's after a list asks for leaves a reused
+    /// renderer's entries as it found them. The pass lays the list out on a copy with paragraphs
+    /// of its own: a paragraph keeps where its last layout placed it, and the drawing pass reads
+    /// that when its own layout answers nothing, so a pass that placed the paragraphs the
+    /// renderer holds, where the lists ahead of it do not move an entry, would change what the
+    /// second document draws. A renderer that takes no room is the whole of the difference
+    /// between the two documents.
+    /// </summary>
+    [Theory]
+    [InlineData("tall text", 60, 4, 1)]
+    [InlineData("tall text", 72, 5, 2)]
+    [InlineData("tall marker", 64, 4, 1)]
+    [InlineData("tall marker", 76, 5, 2)]
+    public void TheExtraPass_leavesAReusedRenderersEntriesAsItFoundThem(string kind, double height, int leads, int mid)
+    {
+        ListElement List() => kind == "tall text"
+            ? TallTextEntry()
+            : new ListElement(ListStyle.OrderedDecimal)
+                .Add(new ListItem([new TextRun("small text", H(10))]) { Style = H(20) })
+                .Add(new ListItem("next", H(10)));
+
+        byte[] Second(bool withCaller)
+        {
+            var renderer = new ListRenderer(List());
+            var first = Page(200, height + 20);
+            first.Add(renderer);
+            Save(first);
+
+            var second = Page(200, height + 20, leads);
+            second.Add(List());
+            for (var i = 0; i < mid; i++) second.Add(new Paragraph("mid" + i, H(10)) { Margins = EdgeInsets.Zero });
+            second.Add(renderer);
+            if (withCaller) second.Add(new TakesNoRoom());
+            return Save(second);
+        }
+
+        Assert.Equal(Sha(Second(withCaller: false)), Sha(Second(withCaller: true)));
+    }
+
     /// <summary>
     /// The document places the same object in the measuring pass and the drawing pass.
     /// </summary>

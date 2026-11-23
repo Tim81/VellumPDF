@@ -361,16 +361,8 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
         if (_probeTwin is null)
         {
             _probeTwin = new ListRenderer(_list, _startItem, _partialContentOverrideAtStart) { _unclamped = true };
-            if (_twin is { _items: { } twinItems } built)
-            {
-                _probeTwin._earlierWidth = built._builtWidth;
-                _probeTwin._earlier = CopiesOf(twinItems);
-            }
-            else if (_items is not null)
-            {
-                _probeTwin._earlierWidth = _builtWidth;
-                _probeTwin._earlier = CopiesOf(_items);
-            }
+            if (_twin is { _items: { } twinItems }) _probeTwin._earlier = CopiesOf(twinItems);
+            else if (_items is not null) _probeTwin._earlier = CopiesOf(_items);
 
             run.NoteProbed(this);
         }
