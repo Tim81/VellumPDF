@@ -886,7 +886,7 @@ public sealed class DocumentRenderer
 
             case PreformattedRenderer preformatted:
                 var pre = preformatted.Element;
-                return total + pre.Text.Length + (long)pre.Text.AsSpan().Count('	') * (pre.TabWidth - 1);
+                return total + pre.Text.Length + (long)pre.Text.AsSpan().Count('\t') * (pre.TabWidth - 1);
 
             case ListRenderer list:
                 var items = list.Element.Items;
