@@ -50,13 +50,13 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     IRenderer IContinuationTwin.Twin() => Unclamped();
 
     // One entry of the flattened list: the marker and the text paragraph of an item or a child.
-    // Clamped is set when BuildItems narrowed the gutter. WouldClamp is set when the clamp
-    // narrowed it or would have, and UnclampedGutter is the gutter the entry has without the clamp.
-    // A twin that keeps the entries an earlier layout built rebuilds the text of an entry the clamp
-    // narrowed from these, and not from the list, which may have changed since.
+    // Clamped is set when BuildItems narrowed the gutter, and UnclampedGutter is the gutter the
+    // entry has without the clamp. A twin that keeps the entries an earlier layout built rebuilds
+    // the text of an entry the clamp narrowed from the paragraph and that gutter, and not from the
+    // list, which may have changed since.
     private readonly record struct Entry(
         ParagraphRenderer Marker, ParagraphRenderer Content, ListItem Item, bool Clamped,
-        bool WouldClamp, double UnclampedGutter);
+        double UnclampedGutter);
 
     private List<Entry>? _items;
 
@@ -1041,7 +1041,9 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
         for (var i = 0; i < earlier.Count; i++)
         {
             var entry = earlier[i];
-            if (entry.WouldClamp) _clampSkipped++;
+            // The entries here are the list's own, so Clamped says the clamp would narrow the entry,
+            // which is what the twin counts.
+            if (entry.Clamped) _clampSkipped++;
             if (!CanDrawEntry(run, entry.Marker, entry.Content)) run?.NoteUndrawable();
             items.Add(entry.Clamped ? entry with { Content = WithoutClamp(entry), Clamped = false } : entry);
         }
@@ -1173,7 +1175,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             };
             var contentRenderer = new ParagraphRenderer(contentPara) { ElementLanguage = item.Language, RunOwner = "A list item" };
 
-            result.Add(new Entry(markerRenderer, contentRenderer, item, clamped, wouldClamp, unclampedGutter));
+            result.Add(new Entry(markerRenderer, contentRenderer, item, clamped, unclampedGutter));
 
             // A null child of a top-level item is refused here, where the position is known. The
             // same null on a grandchild is counted when the list is drawn instead, because
@@ -1246,7 +1248,6 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                         new ParagraphRenderer(childContentPara) { ElementLanguage = child.Language, RunOwner = "A list item" },
                         child,
                         childClamped,
-                        childWouldClamp,
                         unclampedChildGutter));
                 }
             }
