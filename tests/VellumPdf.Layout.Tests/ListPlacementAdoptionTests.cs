@@ -482,9 +482,9 @@ public sealed class ListPlacementAdoptionTests
     [Fact]
     public void AnEntryTheFirstDocumentsClampNarrowed_isNotHeldToTheClampsRuleInTheSecond()
     {
-        var kept = SecondDocumentWithLeads(ClampedWithATallMarker, twin: false, leads: 6);
+        var kept = SecondDocumentWithLeads(ClampedWithATallMarker, twin: false, leads: 5);
 
-        Assert.Equal(Sha(SecondDocumentWithLeads(ClampedWithATallMarker, twin: true, leads: 6)), Sha(kept));
+        Assert.Equal(Sha(SecondDocumentWithLeads(ClampedWithATallMarker, twin: true, leads: 5)), Sha(kept));
         Assert.Contains("small text", Shows(kept));
     }
 
