@@ -128,6 +128,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - In a tagged document each drawn piece is one `P` structure element. Nothing in the character
     stream separates two lines. Documents without the element save to the same bytes as before.
 
+- **`Preformatted.Anchor`, a code block can be a link target (#693).** The property has the name
+  rule, the refusals and the named destination of `Paragraph.Anchor`: a name of 1 to 127
+  characters from `A-Z a-z 0-9 . _ - :` throws `ArgumentException` from the `init` accessor
+  otherwise, and the save adds `[page /XYZ 0 top null]` to the `/Names` `/Dests` tree at the top of
+  the block's first line, below its top margin. A block that splits across pages reports the anchor
+  from its first piece only, so the destination is on the page the first line is on.
+  - A name held by a `Preformatted` and by another element of any kind is refused like a name held
+    by two paragraphs: the save throws `InvalidOperationException` before any layout, naming both
+    elements, and the document stays saveable.
+  - A block with no anchor saves to the same bytes as before.
+
 - **Page labels and anchors (#262, Layout).** A document can set the page numbers a viewer shows,
   and name places that other documents and links can open it at.
   - `PageLabelRange(style, prefix, firstNumber)` describes a run of pages: decimal, upper or lower
