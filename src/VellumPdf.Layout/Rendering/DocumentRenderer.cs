@@ -846,14 +846,31 @@ public sealed class DocumentRenderer
     // An upper bound on the page continuations a built-in renderer's placement can take from any
     // start, so that a bound within the limit says the element cannot reach it however far a list
     // before it moved its start. Every Partial a renderer returns consumes at least one line, entry
-    // or row, a Nothing the loop retries can only come first, and a line holds a character, so the
-    // count of characters, entries and rows, plus the retry and the piece that ends, holds for
-    // every such renderer. Elements that never return a Partial take at most a retry and a
-    // piece. The count is capped as it is summed: a bound past the limit is all the caller asks.
-    // A renderer built with a negative start, which the constructors ask callers not to pass, is
-    // the exception. A built-in renderer this does not name is taken to be near the limit.
+    // or row, a Nothing the loop retries can only come first, and the piece that ends adds one, so
+    // the continuations are at most 2 plus the lines, entries and rows. The count is capped as it
+    // is summed: a bound past the limit is all the caller asks. Elements that never return a
+    // Partial take at most a retry and a piece. A renderer built with a negative start, which the
+    // constructors ask callers not to pass, is the exception. A built-in renderer this does not
+    // name is taken to be near the limit.
+    //
+    // What a line holds, for each kind that wraps text, read from the renderer:
+    //  - A paragraph, and a heading, which wraps through one: no step rewrites the text. A hard
+    //    break ends a line and is a character, and a word wider than the line is cut at one scalar
+    //    at least per line, so the lines are at most the characters plus one. A tab stop only
+    //    places text; a line is committed only before a word or a break, which are characters.
+    //  - A list: each entry is its text's lines in a paragraph of that kind, and a marker that
+    //    wraps moves the entry whole, so an entry adds at most max(1, its characters).
+    //  - A table: a cell is not rewritten. It wraps at spaces and cuts a word at one scalar at
+    //    least per line, so it holds at most max(1, its characters) lines, and every piece of a
+    //    cut row takes at least one line of some cell. A row counts one more than the characters
+    //    of its cells.
+    //  - Preformatted text rewrites the text before it wraps: PreformattedText.Expand replaces
+    //    each tab by 1 to TabWidth spaces, and that is the only rewrite. A line end is a
+    //    character and ends one line, and the wrap cuts an expanded line after at least one
+    //    cluster, which is at least one character. So the lines are at most 1 plus the
+    //    characters with a tab counted as TabWidth, which is what the count below is.
     // Removed in 3.0 (#688).
-    private long ContinuationBoundOf(IRenderer renderer)
+    internal long ContinuationBoundOf(IRenderer renderer)
     {
         var cap = (long)ContinuationLimit + 1;
         long total = 2;
@@ -868,7 +885,8 @@ public sealed class DocumentRenderer
                 return total + heading.Element.Text.Length;
 
             case PreformattedRenderer preformatted:
-                return total + preformatted.Element.Text.Length;
+                var pre = preformatted.Element;
+                return total + pre.Text.Length + (long)pre.Text.AsSpan().Count('	') * (pre.TabWidth - 1);
 
             case ListRenderer list:
                 var items = list.Element.Items;
