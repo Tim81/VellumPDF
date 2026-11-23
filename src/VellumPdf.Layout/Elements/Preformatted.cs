@@ -56,8 +56,8 @@ namespace VellumPdf.Layout.Elements;
 /// <see cref="Document.StrictDiagnostics"/> refuses that save.</para>
 /// <para><b>What is ignored.</b> <see cref="Document.SetDefaultFont"/> does not apply, as for lists
 /// and tables. Alignment, justification and hyphenation do not exist on this element. A paragraph
-/// tab stop does not apply: a tab is a number of spaces. No language is written for the block. The
-/// element is not a target of an anchor.</para>
+/// tab stop does not apply: a tab is a number of spaces. No language is written for the
+/// block.</para>
 /// <para>In a tagged document each drawn piece, the part of the block on one page, is one <c>P</c>
 /// structure element. Nothing in the character stream separates two lines, so a reader that follows
 /// the structure order alone sees the lines run together.</para>
@@ -175,6 +175,53 @@ public sealed class Preformatted
         get => _breakBefore;
         init => _breakBefore = PageBreakModes.Validate(value);
     }
+
+    /// <summary>
+    /// A name that a link or an outside reference can jump to: the save adds a named destination at
+    /// the first line of this block. <see langword="null"/>, the default, adds none.
+    /// </summary>
+    /// <remarks>
+    /// <b>A name outside the rule is refused by this <c>init</c> accessor.</b> It throws
+    /// <see cref="ArgumentException"/> for an empty name, one longer than 127 characters, or one
+    /// with a character outside <c>A-Z a-z 0-9 . _ - :</c>, as <see cref="Paragraph.Anchor"/> does,
+    /// and for the same reason.
+    /// <para><b>A repeated anchor is refused by the save, before any layout.</b> The save throws
+    /// <see cref="InvalidOperationException"/> naming the anchor and the kind and zero-based
+    /// position of both elements that hold it, whatever their kinds: a paragraph and a block
+    /// holding one name are refused as two paragraphs are. Nothing has been laid out then, so the
+    /// document can be saved once the elements are replaced. The same instance added twice holds
+    /// its anchor twice.</para>
+    /// <para>The destination is written whether or not a link refers to it, so a reader can open
+    /// the file at it by name (<c>file.pdf#nameddest=name</c>). Its position is the top edge of the
+    /// block's first line, below <see cref="Margins"/>, at the left edge of the page, with the
+    /// viewer's zoom unchanged. When the block splits across pages, that is the page its first
+    /// line is on, and no later piece reports the anchor. The destinations are written in the
+    /// order of their names, so the order the elements were added in does not change a key.</para>
+    /// <para>Names are compared byte by byte, so <c>Code</c> and <c>code</c> are two destinations,
+    /// as they are on <see cref="Paragraph.Anchor"/>.</para>
+    /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// Raised from this <c>init</c> accessor when the name breaks the rule above.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Raised from the save, not from this property, naming <c>top</c>, when the page is taller
+    /// than 3.403 × 10^38 points: the destination's top is then beyond the range of a PDF real
+    /// (ISO 32000-1, Table C.1). <see cref="Margins"/> cannot cause it, because it refuses a
+    /// negative or non-finite edge. A page of exactly 3.403 × 10^38 saves, and the same block with
+    /// no anchor saves on a taller page. The layout had started, so the document cannot be saved
+    /// again.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from the save, not from this property, before any layout, when another element in
+    /// the document holds the same anchor.
+    /// </exception>
+    public string? Anchor
+    {
+        get => _anchor;
+        init => _anchor = AnchorNames.Validate(value);
+    }
+
+    private string? _anchor;
 
     /// <summary>Creates a block from a string, in the given style or in Courier at 10 pt.</summary>
     /// <remarks>

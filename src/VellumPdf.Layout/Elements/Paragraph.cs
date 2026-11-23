@@ -309,9 +309,10 @@ public sealed class Paragraph
     /// raised from the save, not from this property, as <see cref="ArgumentOutOfRangeException"/>
     /// naming <c>top</c>, when the destination's top is not finite or lies beyond ±3.403 × 10^38,
     /// the range of a PDF real (ISO 32000-1, Table C.1): a top margin below -3.403 × 10^38 or equal
-    /// to negative infinity on a paragraph or heading, and also NaN on an image. A paragraph with a
-    /// NaN top margin never gets that far: it is refused as too tall to fit, anchored or not. The
-    /// layout had started, so the document cannot be saved again.
+    /// to negative infinity on a paragraph or heading, and also NaN on an image. A page taller than
+    /// 3.403 × 10^38 points raises it as well. A paragraph with a NaN top margin never gets that
+    /// far: it is refused as too tall to fit, anchored or not. The layout had started, so the
+    /// document cannot be saved again.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Raised from the save, not from this property, when another element in the document holds the
