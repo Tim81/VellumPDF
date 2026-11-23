@@ -138,14 +138,20 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     // renderer. _builtUnder is carried by splits, which share the items. Removed in 3.0 (#688).
     private ListLayoutRun? _builtUnder;
 
-    // On a twin, whether it built its entries under a call the document did not address to the
-    // list: a renderer of the caller's holds the list and laid it out. Only such entries make a
-    // later call the document does address count as laying out entries an earlier layout built.
+    // On a twin, whether it built its entries under a context that did not name the twin: a
+    // renderer of the caller's holds the list and laid it out, or the document called the list and
+    // the twin built them for it. Within one run only the first kind can make a later call the
+    // document does address count as laying out entries an earlier layout built, because the
+    // document's calls on an empty list go to the twin from then on (AllAsTwin, ModeFor). Entries
+    // built under another run count whatever this holds (_builtUnder).
     private bool _builtForCaller;
 
-    // On a twin, whether the call it was handed was addressed to the list it answers for. Set by
-    // LayOutAsTwin before each call and read when the twin builds its entries.
-    private bool _calledByDocument;
+    // On a piece a split hands on, set when the piece takes the placement of the call that made it
+    // (_placement) and does not read it again from the context. A piece the document calls itself
+    // is addressed to the document whether or not the list it came from was, so reading the
+    // context turns a piece of a held list into a placed one. Held then stays what the call that
+    // made the piece said, and is not confused with a twin nobody handed a placement.
+    private bool _placementInherited;
 
     // On a twin, the entries the list it answers for built before the twin's first layout,
     // whichever run that was: another document's, or this one's, when a list added to the document
@@ -272,7 +278,8 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     /// or an element after a list that can need about as many continuations as the limit allows;
     /// see <see cref="ListElement"/>, <see cref="LayoutDiagnosticCode.ListEntryPartDropped"/> and
     /// <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/>. A list that your renderer holds
-    /// reports neither: the document did not place it.</para>
+    /// reports neither: the document did not place it. That holds for the pieces of the list too,
+    /// when your renderer returns the list's own result and the document calls a piece itself.</para>
     /// <para><b>A list builds its entries at its first layout and keeps them, whole and at the
     /// width that layout used, as it did.</b> The calls the document makes in one save do not
     /// count as an earlier layout of each other. When the first layout was another one, which is a
@@ -352,7 +359,6 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
         _delegate = twin;
         if (_items is not null && twin._items is null) twin._earlier = _items;
 
-        twin._calledByDocument = IsCalledByDocument(context);
         twin._handoff = context.IsAddressedByDocument(this) ? placement : TwinPlacement.Held;
         return twin.Layout(context);
     }
@@ -431,6 +437,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
         {
             _placement = context.IsPlacedAsTwin(this) ? TwinPlacement.Limit
                 : _handoff != TwinPlacement.Held ? _handoff
+                : _placementInherited ? _placement
                 : context.IsAddressedByDocument(this) ? TwinPlacement.Document
                 : TwinPlacement.Held;
         }
@@ -448,7 +455,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             }
             else
             {
-                _builtForCaller = _unclamped && !_calledByDocument && !IsCalledByDocument(context);
+                _builtForCaller = _unclamped && !IsCalledByDocument(context);
                 _items = BuildItems(area.Width, run);
             }
         }
@@ -542,6 +549,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                     _builtUnder = _builtUnder,
                     _unclamped = _unclamped,
                     _placement = _placement,
+                    _placementInherited = _unclamped,
                     _placeabilityKnown = _placeabilityKnown,
                     _unplaceable = _unplaceable,
                 };
@@ -551,6 +559,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                     _builtUnder = _builtUnder,
                     _unclamped = _unclamped,
                     _placement = _placement,
+                    _placementInherited = _unclamped,
                     _placeabilityKnown = _placeabilityKnown,
                     _unplaceable = _unplaceable,
                     _indentClamped = _indentClamped,
@@ -586,6 +595,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                     _builtUnder = _builtUnder,
                     _unclamped = _unclamped,
                     _placement = _placement,
+                    _placementInherited = _unclamped,
                     _placeabilityKnown = _placeabilityKnown,
                     _unplaceable = _unplaceable,
                 };
@@ -596,6 +606,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                     _builtUnder = _builtUnder,
                     _unclamped = _unclamped,
                     _placement = _placement,
+                    _placementInherited = _unclamped,
                     _placeabilityKnown = _placeabilityKnown,
                     _unplaceable = _unplaceable,
                     _indentClamped = _indentClamped,

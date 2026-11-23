@@ -69,8 +69,9 @@ public interface IRenderer
     /// before it draws, unless it already lays every list out as it was before the fixes
     /// above.</b> It lays every list out that way when one of its lists holds an entry in a font it
     /// cannot draw, or when an element after a list can need about as many continuations as the
-    /// limit allows, and then needs no extra pass. The extra pass lays every list out as it was
-    /// before the fixes above, calls your renderer on the areas it gets, and keeps nothing. It
+    /// limit allows, and the elements added to it show that, so it needs no extra pass then. The
+    /// extra pass lays every list out as it was before the fixes above, calls your renderer on the
+    /// areas it gets, and keeps nothing. It
     /// finds out whether your renderer lays out a
     /// <see cref="VellumPdf.Layout.Rendering.ListRenderer"/> whose items use a font the document
     /// cannot draw, in which case every list of the document stays as it was before the fixes; see

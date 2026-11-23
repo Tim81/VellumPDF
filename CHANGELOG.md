@@ -732,7 +732,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     that contract by changing its result between calls can also give other output than before,
     because the document can lay out once more before it draws (above).
   - A list that a renderer of yours holds reports nothing: neither 207 nor 208, because the
-    document did not place it. The bytes are those of the list laid out as it was.
+    document did not place it, and nor do its pieces, including a piece the document calls itself
+    when your renderer returns the list's own result. A list the document places over entries a
+    renderer of yours built first is held the same way. The bytes are those of the list laid out
+    as it was.
   - Moving entries adds pages, so the continuation bound now covers every list, not only a list
     with a clamped entry, and a list that would pass the limit because of moved entries is placed
     as it was before, with `ListIndentClampSkipped` (207).

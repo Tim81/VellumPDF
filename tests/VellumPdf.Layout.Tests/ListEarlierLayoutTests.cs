@@ -256,6 +256,74 @@ public sealed class ListEarlierLayoutTests
                 .Select(d => d.ElementIndex).Order().ToArray());
     }
 
+    // A renderer of the caller's that returns the list's own result, so the document calls the
+    // pieces of the list itself.
+    private sealed class PassThrough(IRenderer inner) : IRenderer
+    {
+        public LayoutResult Layout(LayoutContext context) => inner.Layout(context);
+
+        public void Draw(DrawContext ctx) => inner.Draw(ctx);
+    }
+
+    // Six entries of a 30 pt marker beside 10 pt text on a page that holds two of them, so the
+    // list splits into three pieces and the document calls the second and third itself.
+    private static ListRenderer SplitList(bool twin)
+    {
+        var list = new ListElement(ListStyle.OrderedDecimal) { Indent = 10 };
+        for (var i = 0; i < 6; i++) list.Add(new ListItem([new TextRun("WWWWW ab", H(10))]) { Style = H(30) });
+        var renderer = new ListRenderer(list);
+        return twin ? renderer.Unclamped() : renderer;
+    }
+
+    private static Document SplitDocument(string shape, bool twin)
+    {
+        var renderer = SplitList(twin);
+        var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, 200, 80),
+            Margins = new EdgeInsets(10),
+            // The reference is the list as it was, which the document placing it directly reports.
+            StrictDiagnostics = !twin,
+        };
+
+        if (shape == "passThrough")
+        {
+            doc.Add(new PassThrough(renderer));
+        }
+        else
+        {
+            // Held by a caller's renderer first, which builds the entries, and then placed by the
+            // document over them.
+            doc.Add(Held("ctx", renderer));
+            doc.Add(new PageBreak());
+            doc.Add(renderer);
+        }
+
+        return doc;
+    }
+
+    /// <summary>
+    /// The pieces of a list a renderer of the caller's holds take that placement, so the document
+    /// calling a piece itself does not make the piece one it placed. A caller that returns the
+    /// list's own result, and a list placed over entries a caller's renderer built, save with the
+    /// bytes of the list as it was and report neither 207 nor 208, with
+    /// <see cref="Document.StrictDiagnostics"/> set.
+    /// </summary>
+    [Theory]
+    [InlineData("passThrough")]
+    [InlineData("heldThenDirect")]
+    public void ThePiecesOfAHeldList_reportNothingWhenTheDocumentCallsThemItself(string shape)
+    {
+        var reference = Save(SplitDocument(shape, twin: true));
+        var doc = SplitDocument(shape, twin: false);
+        var bytes = Save(doc);
+
+        Assert.Equal(Sha(reference), Sha(bytes));
+        Assert.DoesNotContain(
+            doc.Diagnostics,
+            d => d.Code is LayoutDiagnosticCode.ListEntryPartDropped or LayoutDiagnosticCode.ListIndentClampSkipped);
+    }
+
     private static ListElement OneEntry(string text) =>
         new ListElement(ListStyle.OrderedDecimal).Add(new ListItem(text, H(10)));
 

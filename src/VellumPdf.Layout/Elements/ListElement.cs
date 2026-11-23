@@ -56,9 +56,10 @@ public enum ListStyle
 /// item stays where it falls, with the part that fits drawn and the other part not.
 /// <see cref="LayoutDiagnosticCode.ListEntryPartDropped"/> reports each such item the document
 /// placed, and <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/> reports the list in the
-/// last three cases. A list a renderer of yours holds reports neither. First, a renderer of yours
-/// lays the list out, whatever context it passes on, or its entries were built first by something
-/// other than the document's own call (you laid it out before the save, or another document did);
+/// last three cases. A list a renderer of yours holds reports neither, nor do its pieces. First, a
+/// renderer of yours lays the list out, whatever context it passes on, or its entries were built
+/// first by something other than the document's own call (you laid it out before the save,
+/// another document did, or a renderer of yours that holds the list laid it out first);
 /// see <see cref="Rendering.ListRenderer.Layout"/>. Second, no page holds one of its items,
 /// because a line of its marker, or of its text at the width the clamp would give it, is taller
 /// than a page. Third, laying it out the new way would take it past the continuation limit, as
