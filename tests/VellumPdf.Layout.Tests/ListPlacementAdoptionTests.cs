@@ -446,6 +446,174 @@ public sealed class ListPlacementAdoptionTests
         Assert.DoesNotContain("child", Shows(kept));
     }
 
+    // A flat indent of 250 leaves the first document's 180-point area no text, so the clamp narrows
+    // the entry there, and the marker is 20 points where the text is 10.
+    private static ListElement ClampedWithATallMarker() => new ListElement(ListStyle.OrderedDecimal) { Indent = 250 }
+        .Add(new ListItem([new TextRun("small text", H(10))]) { Style = H(20) });
+
+    // The child's gutter is twice the indent, 200, which leaves the first document's 180-point area no
+    // text for the child, and 200 points in the second document's 400.
+    private static ListElement ClampedChild()
+    {
+        var list = new ListElement(ListStyle.OrderedDecimal) { Indent = 100 };
+        list.Add(new ListItem("parent", H(10)).AddChild(string.Join(" ", Enumerable.Repeat("reused", 14)), H(10)));
+        return list;
+    }
+
+    private static byte[] SecondDocumentWithLeads(Func<ListElement> make, bool twin, int leads)
+    {
+        var renderer = new ListRenderer(make());
+        IRenderer Use() => twin ? renderer.Unclamped() : renderer;
+
+        var first = Narrow(200);
+        first.Add(Use());
+        Save(first);
+        var second = leads == 0 ? Narrow(400) : Page(400, 100, leads);
+        second.Add(Use());
+        return Save(second);
+    }
+
+    /// <summary>
+    /// The second document lays out an entry the first document's clamp narrowed as an entry no clamp
+    /// touched. A marker that does not fit what is left of a page and text that does are drawn as
+    /// the twin draws them, the text without the marker, and the clamp's rule that the text of an
+    /// entry whose marker is refused is refused too does not apply to it.
+    /// </summary>
+    [Fact]
+    public void AnEntryTheFirstDocumentsClampNarrowed_isNotHeldToTheClampsRuleInTheSecond()
+    {
+        var kept = SecondDocumentWithLeads(ClampedWithATallMarker, twin: false, leads: 6);
+
+        Assert.Equal(Sha(SecondDocumentWithLeads(ClampedWithATallMarker, twin: true, leads: 6)), Sha(kept));
+        Assert.Contains("small text", Shows(kept));
+    }
+
+    /// <summary>
+    /// The text the second document lays out for an entry the first document's clamp narrowed
+    /// carries the item's language into the structure tree, as the entry's text does where no clamp
+    /// narrowed it.
+    /// </summary>
+    [Fact]
+    public void AnEntryTheFirstDocumentsClampNarrowed_keepsItsLanguageInTheSecond()
+    {
+        byte[] Second(bool twin, string? language)
+        {
+            var renderer = new ListRenderer(new ListElement(ListStyle.OrderedDecimal) { Indent = 250 }
+                .Add(new ListItem(ClampedText, H(10)) { Language = language }));
+            IRenderer Use() => twin ? renderer.Unclamped() : renderer;
+
+            var first = Narrow(200);
+            first.Add(Use());
+            Save(first);
+            var second = new Document { Tagged = true, PageSize = new PdfRectangle(0, 0, 400, 300), Margins = new EdgeInsets(10) };
+            second.Add(Use());
+            return Save(second);
+        }
+
+        var kept = Second(twin: false, "fr-FR");
+
+        Assert.Equal(Sha(Second(twin: true, "fr-FR")), Sha(kept));
+        Assert.NotEqual(Sha(Second(twin: false, null)), Sha(kept));
+    }
+
+    /// <summary>
+    /// A reused list that the second document lays out as its twin because the document holds an
+    /// entry it cannot draw reports the entries the first document's clamp narrowed: they are the
+    /// entries the clamp would have narrowed, which the fallback reports as its count.
+    /// </summary>
+    [Fact]
+    public void AReusedListInADocumentThatHoldsAnUndrawableEntry_reportsTheEntriesTheFirstClampNarrowed()
+    {
+        var renderer = new ListRenderer(new ListElement(ListStyle.OrderedDecimal) { Indent = 250 }
+            .Add(new ListItem("first clamped entry", H(10)))
+            .Add(new ListItem("second clamped entry", H(10))));
+        var first = Narrow(200);
+        first.Add(renderer);
+        Save(first);
+        Assert.Equal(2, first.Diagnostics.Single(d => d.Code == LayoutDiagnosticCode.ListIndentClamped).Count);
+
+        var second = Narrow(400);
+        second.Add(renderer);
+        second.Add(new ListElement(ListStyle.Unordered) { Indent = 1000 }
+            .Add(new ListItem([new TextRun("bad", new TextStyle { FontRef = new FontReference((Standard14)99), FontSize = 10 })])
+            { Style = H(10) }));
+        Save(second);
+
+        var skipped = second.Diagnostics.Where(d => d.Code == LayoutDiagnosticCode.ListIndentClampSkipped).ToArray();
+        Assert.Equal(2, skipped.Length);
+        Assert.Equal(2, skipped[0].Count);
+    }
+
+    private static TextStyle Undefined() => new() { FontRef = new FontReference((Standard14)99), FontSize = 10 };
+
+    /// <summary>
+    /// A list reused for a second document keeps an entry in a font only the first document defines.
+    /// The second document finds that in the entries it keeps, so every list of the second document
+    /// is laid out as its twin, as 2.3.3 laid them out: a later list that would move an entry is not
+    /// moved.
+    /// </summary>
+    [Fact]
+    public void AReusedListWhoseKeptEntryUsesTheFirstDocumentsFont_makesEveryListOfTheSecondDocumentItsTwin()
+    {
+        byte[] Second(bool twinForTheSecondList)
+        {
+            var first = Page(200, 100, 4);
+            var style = new TextStyle { FontRef = first.UseTrueTypeFont(FontReportSupport.DejaVuBytes), FontSize = 10 };
+            var renderer = new ListRenderer(new ListElement(ListStyle.Unordered) { Indent = 1000 }
+                .Add(new ListItem([new TextRun("embedded", style)]) { Style = H(10) }));
+            first.Add(renderer);
+            Save(first);
+            var second = Page(200, 100, 4);
+            second.Add(new Passes(renderer));
+            var tall = new ListRenderer(TallTextEntry());
+            second.Add(twinForTheSecondList ? tall.Unclamped() : tall);
+            return Save(second);
+        }
+
+        var kept = Second(twinForTheSecondList: false);
+
+        Assert.Equal(Sha(Second(twinForTheSecondList: true)), Sha(kept));
+        Assert.DoesNotContain("dropped", Shows(kept));
+    }
+
+    /// <summary>
+    /// What an entry already built can draw is read from its two paragraphs: its marker's style, and
+    /// each run of its text that holds any. A run with no text is not read.
+    /// </summary>
+    [Fact]
+    public void WhatAnEntryAlreadyBuiltCanDraw_isReadFromItsMarkerAndItsRunsThatHoldText()
+    {
+        ParagraphRenderer Para(params TextRun[] runs) => new(new Paragraph(runs));
+        var ok = H(10);
+        var run = ListLayoutRun.Begin(new PdfDocument(), out var previous);
+        try
+        {
+            Assert.True(ListRenderer.CanDrawEntry(run, Para(new TextRun("1.", ok)), Para(new TextRun("text", ok))));
+            Assert.False(ListRenderer.CanDrawEntry(run, Para(new TextRun("1.", Undefined())), Para(new TextRun("text", ok))));
+            Assert.False(ListRenderer.CanDrawEntry(run, Para(new TextRun("1.", ok)), Para(new TextRun("text", Undefined()))));
+            Assert.False(ListRenderer.CanDrawEntry(
+                run, Para(new TextRun("1.", ok)), Para(new TextRun("a", ok), new TextRun("b", Undefined()))));
+            Assert.True(ListRenderer.CanDrawEntry(
+                run, Para(new TextRun("1.", ok)), Para(new TextRun("a", ok), new TextRun(string.Empty, Undefined()))));
+        }
+        finally
+        {
+            ListLayoutRun.End(previous);
+        }
+    }
+
+    /// <summary>
+    /// A child the first document's clamp narrowed keeps the gutter it has without the clamp, twice
+    /// the indent, in the second document, where that gutter leaves it text.
+    /// </summary>
+    [Fact]
+    public void AChildTheFirstDocumentsClampNarrowed_keepsItsGutterInTheSecond()
+    {
+        var kept = SecondDocumentWithLeads(ClampedChild, twin: false, leads: 0);
+
+        Assert.Equal(Sha(SecondDocumentWithLeads(ClampedChild, twin: true, leads: 0)), Sha(kept));
+    }
+
     // An entry whose text is 20 points in a 10-point style: it fits a page top, and not what is left
     // of a short page after a few lines.
     private static ListElement TallTextEntry() => new ListElement(ListStyle.OrderedDecimal)

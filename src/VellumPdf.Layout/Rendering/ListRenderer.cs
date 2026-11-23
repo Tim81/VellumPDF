@@ -1055,7 +1055,6 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
         var paragraph = new Paragraph(narrowed.Runs)
         {
             Margins = narrowed.Margins with { Left = entry.UnclampedGutter },
-            Alignment = narrowed.Alignment,
         };
         return new ParagraphRenderer(paragraph)
         {
@@ -1067,7 +1066,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     // The same question for an entry already built: its marker is set in the style the entry
     // inherits and each run of its text that holds any is read, which is what the other overload
     // reads from the item.
-    private static bool CanDrawEntry(ListLayoutRun? run, ParagraphRenderer marker, ParagraphRenderer content)
+    internal static bool CanDrawEntry(ListLayoutRun? run, ParagraphRenderer marker, ParagraphRenderer content)
     {
         if (!ListLayoutRun.CanDraw(run, marker.Paragraph.Runs[0].Style)) return false;
         var runs = content.Paragraph.Runs;
