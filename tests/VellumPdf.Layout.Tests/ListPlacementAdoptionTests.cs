@@ -191,7 +191,9 @@ public sealed class ListPlacementAdoptionTests
         public void Draw(DrawContext ctx) => inner.Draw(ctx);
     }
 
-    /// <summary>A caller's renderer after the list, which makes the document lay out once more.</summary>
+    /// <summary>
+    /// A caller's renderer after the list, which makes the document lay out once more.
+    /// </summary>
     private sealed class Counts : IRenderer
     {
         public LayoutResult Layout(LayoutContext context) =>

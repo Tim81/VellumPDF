@@ -734,8 +734,8 @@ public sealed class ListDocumentFontRuleTests
     }
 
     /// <summary>
-    /// The copy a list lays out on for the extra pass is let go when the pass ends, so a document with
-    /// a long list does not hold a second copy of its entries through the pass that draws.
+    /// The copy a list lays out on for the extra pass is let go when the pass ends, so a document
+    /// with a long list does not hold a second copy of its entries through the pass that draws.
     /// </summary>
     [Fact]
     public void TheCopyForTheExtraLayout_isLetGoWhenThePassEnds()
@@ -796,7 +796,9 @@ public sealed class ListDocumentFontRuleTests
         Assert.Null(ListLayoutRun.Current);
     }
 
-    /// <summary>The run is set in the task SaveAsync starts, and none is left on the caller.</summary>
+    /// <summary>
+    /// The run is set in the task SaveAsync starts, and none is left on the caller.
+    /// </summary>
     [Fact]
     public async Task SaveAsync_givesTheOutcomeSaveGives()
     {

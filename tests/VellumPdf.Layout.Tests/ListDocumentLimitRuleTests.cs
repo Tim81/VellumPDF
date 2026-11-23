@@ -225,7 +225,9 @@ public sealed class ListDocumentLimitRuleTests
         Assert.Contains(Enumerable.Range(0, 7), leads => Build(leads, twin: true) != Build(leads, twin: false));
     }
 
-    /// <summary>Each list the document places reports the fallback, as with the font rule.</summary>
+    /// <summary>
+    /// Each list the document places reports the fallback, as with the font rule.
+    /// </summary>
     [Fact]
     public void TheFallback_isReportedOncePerList()
     {
