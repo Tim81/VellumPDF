@@ -22,11 +22,10 @@ namespace VellumPdf.Layout;
 public enum LayoutDiagnosticCode
 {
     // Reserved, not defined here, so that later members do not collide:
-    //   105 SymbolFontMeasuredAsZero (Error), 204 ListDepthCapped, 205
-    //   ListEntriesCapped, 206 ListEntrySkipped (all Error), 301 ControlCharacterInCell
-    //   (Warning), 302 SurplusCell (Error), 402 UnknownBandToken, and one 7xx member for a link
-    //   dropped from a cell or band under a PDF/UA claim. The rest of the 8xx block stays free for
-    //   later pagination reports.
+    //   105 SymbolFontMeasuredAsZero (Error), 204 ListDepthCapped, 205 ListEntriesCapped, 206
+    //   ListEntrySkipped (all Error), 302 SurplusCell (Error), 402 UnknownBandToken, and one 7xx
+    //   member for a link dropped from a cell or band under a PDF/UA claim. The rest of the 8xx
+    //   block stays free for later pagination reports.
 
     /// <summary>
     /// A <see cref="Elements.TextRun"/> with a null style that yields no word, so it saved without
@@ -64,7 +63,7 @@ public enum LayoutDiagnosticCode
     /// renderer's own bytes on the page, is not seen. Text a font draws through a stand-in glyph,
     /// such as U+202F in a font without it, is not glyph 0 and is not reported. A Standard 14
     /// font has no glyph ids here: a character it cannot encode is
-    /// <see cref="UnencodableCharacter"/>, and a control character such as a tab is written as
+    /// <see cref="UnencodableCharacter"/>, and a control character such as U+0001 is written as
     /// its WinAnsi code, which the font has no glyph for and which is not reported.</para>
     /// <para>What is drawn is whatever the font's <c>.notdef</c> glyph holds. <b>Do not pass</b>
     /// text the font cannot draw to a PDF/A or PDF/UA document; give the element a font that covers
@@ -116,6 +115,27 @@ public enum LayoutDiagnosticCode
     /// from its first line, so a renderer you build to start at a later line reports nothing.
     /// </remarks>
     TabStopBeyondWidth = 106,
+
+    /// <summary>
+    /// A table cell holds a tab, a line break or another control white-space character, and the
+    /// save left it out of what it drew, because reading it would have left a row that cannot be
+    /// cut no room on a page, or would have taken the table more page continuations than one
+    /// element may take.
+    /// <see cref="LayoutDiagnostic.Count"/> is the number of pages on which the cell was drawn from
+    /// its first line, so a header row that repeats on every page counts once per page, and any
+    /// other cell counts once, however many pages a cut row spans. The message names the row and
+    /// the cell, counted from zero in the order they were added.
+    /// </summary>
+    /// <remarks>
+    /// <b>The words such a character separated run together in the cell, in drawing and in
+    /// extracted text, and nothing else is lost, so this is a warning and strict mode saves.</b>
+    /// A cell that keeps its breaks is not reported. <see cref="Elements.Table.Cell.Content"/>
+    /// says which rows, when, and which cells. <b>Do not pass</b> a repeated header row or a span
+    /// group that has no room on a page: put the breaks in rows that can be cut, or shorten the
+    /// text. A cell with more lines than a document can hold is the other case: shorten the text
+    /// or split the table.
+    /// </remarks>
+    CellWhiteSpaceDropped = 301,
 
     /// <summary>
     /// A list item that is a child of a child, or deeper, holds a null text, and the save drew

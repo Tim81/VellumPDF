@@ -88,6 +88,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - A custom `IRenderer` is offered the content area of the page it lands on, so when `Left` and
     `Right` differ its `Area.X` differs between pages. One that keeps an X from an earlier `Layout`
     call must not reuse it.
+- **`LayoutDiagnosticCode.CellWhiteSpaceDropped` (301).** A table cell was wrapped at spaces alone
+  and sized from its whole text, and its tabs and line breaks were left out of what is drawn,
+  because reading its line breaks, or its other control white space as spaces, would have left a
+  repeated header row or rows joined by a `RowSpan` no room on a page, or would have taken the table
+  more page continuations than one element may take. A warning, so `StrictDiagnostics` saves: the
+  text stays, and the words those characters separated run together in the drawing and in
+  extracted text.
+  `Count` is the number of pages on which the cell was drawn from its first line, so a repeated
+  header row counts once per page and any other cell counts once, however many pages a cut row
+  spans. See the entry for #611 under Fixed.
 
 - **`Preformatted`, a block that keeps every space and tab (#591).** `Document.Add(Preformatted)`
   draws text whose spacing is its meaning: command blocks, configuration, ASCII tables. The default
@@ -391,8 +401,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     a null `PageBreak` throws `ArgumentNullException` from `Document.Add`.
   - A document that uses no break saves byte for byte as before. A form feed (U+000C) in text does
     not start a page: a paragraph, a heading and a list item draw it as a space, and a table cell
-    and a running band write it to the font as it is, as before. A custom renderer that returns a
-    zero-height `Partial` still forces a page.
+    and a running band wrote it to the font as it was until #611 made them draw it as a space too.
+    A custom renderer that returns a zero-height `Partial` still forces a page.
 
 - **Tab stops with leaders (#298).** `Paragraph.TabStops` takes a list of `TabStop` values, and a
   tab character in the text then places the text after it at the first stop to the right of the end
@@ -781,6 +791,133 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   start of a line. **Deliberate output change:** a justified embedded-font line that holds a leading
   space, or two spaces in a row (reachable through tab stops), is drawn with those spaces and a
   different spread. Every other document keeps its bytes.
+- **A tab, a line break or a form feed in a table cell or a running band no longer reaches glyph
+  lookup (#611, #613).** A cell split its text on spaces only, so a tab was written as glyph 0
+  in an embedded font (the ToUnicode map held `<0000> <0009>`, and veraPDF failed PDF/A-2u clause
+  6.2.11.8) and as a raw 0x09 byte in a Standard 14 font, and a line feed was one line holding glyph
+  0, or a string-escaped `\n`. A cell now reads its text by one rule. A carriage return and line
+  feed pair, a lone carriage return and a lone line feed each end a line. An empty line between two
+  of them is a blank line, and so is the one after a trailing break: `a<LF>` is two lines in a cell
+  where a paragraph draws one. Runs of spaces are kept as written, where a paragraph collapses them.
+  Every other white-space control character (a tab, a form feed, a line tabulation, a next-line
+  character, U+2028 and U+2029) is one space. The no-break spaces and the other Unicode space
+  separators, such as U+2003, are written as before, where a paragraph reads the separators as
+  spaces. An automatically sized column takes its minimum width from the widest word and its
+  maximum from the widest line, each line measured by itself where 2.3.3 measured the whole text.
+  The width the column is given is shared out as before, and can be more than the maximum or less
+  than the minimum.
+  A running band draws each tab, line feed, carriage return and form feed as one space, in its
+  template and in the text a page label prints for `{page}`, so a CR LF pair is two spaces, the
+  form feed of #613 item 34 is a space there too, and a band's text is measured and cut as drawn.
+  **Deliberate output changes:**
+  - `A<TAB>B` in a cell of a table the document lays out is `(A B)` in Standard 14 and a space
+    glyph between the two letters in an embedded font (glyph 3 in DejaVu Sans), with no `<0000>`
+    entry in the ToUnicode map. A table that a renderer of yours holds is the next item.
+  - `line1<LF>line2` is two show strings, the second one leading lower, in a row 14.4 + 14.4 + 8 pt
+    tall at 12 pt, where it was one. A table whose cell holds a line break gets taller rows and
+    different automatic column widths. A table that holds none of tab, carriage return, line feed,
+    form feed, line tabulation, next-line character, U+2028 and U+2029 saves to the same bytes as
+    before, and is refused where it was refused. Random tables whose texts include U+0001,
+    U+007F, no-break spaces and U+2003 matched the build before this change in both, 20,000 in
+    Helvetica and 4,000 in DejaVu Sans.
+  - A band template measured a tab, a line feed, a carriage return or a form feed at its font's
+    width for that character, zero in Helvetica, and now measures each as one space. A band that
+    fit can therefore be cut: `A` followed by 120 tabs and `B` in Helvetica 10 on a 300 pt page
+    saved with no truncation, and now draws 1 of its 122 characters and reports `BandTruncated`,
+    which `StrictDiagnostics` refuses. A centred band that holds a tab is placed by that width
+    too: it moves by half the difference between the width its font gave the tab and the width of
+    a space, and a right-aligned one by the whole difference. `Page {page}<TAB>of {total}` at 8 pt
+    in Helvetica, where the tab measured 0, starts 1.112 pt further left centred and 2.224 pt
+    further left right-aligned. In DejaVu Sans, where the glyph 0 the tab was written as is wider
+    than a space, it starts 1.128 pt and 2.256 pt further right. A left-aligned band does not
+    move.
+  - **A table that is refused when every cell is measured as one line stays refused.** That is how
+    2.3.3 measured a table. Reading a cell's line breaks can leave a column wider or narrower
+    than that measurement does, and so tip a `RowSpan` group the other way. Such a table is
+    refused here with the message of the one-line measurement, though every header and group has
+    room with its breaks read. The cells give up their breaks only to save a table that
+    measurement saves. A release that measures the columns a `RowSpan` occupies as they are
+    drawn can save some of these tables.
+  - **A table whose breaks would take more than 50,000 page continuations is laid out with every
+    cell unbroken.** One element may take at most 50,000 page continuations, and reading a cell's
+    line feeds as breaks can take a table past that where measuring each cell as one line does
+    not. The table reports an upper bound on its continuations to the document, over both ways of
+    laying it out: with its breaks read, and with every cell unbroken. When that bound could reach
+    the limit, the document places the table without drawing in each way, and the verdict is kept
+    for each place the table starts, so each start is tried once however many passes and keep
+    rules ask. When the unbroken layout reaches the limit the table is refused with the message
+    that layout gives, as it was in 2.3.3, though its breaks would take fewer pages; when the
+    layout that reads the breaks would, every cell that holds control white space is laid out
+    unbroken from the first page, as the table was measured before breaks were honoured, and the
+    save lists each as `CellWhiteSpaceDropped`. The table then saves in the pages that measurement
+    takes, or is refused with the limit's message when that takes more. One cell of 2,350,047
+    two-letter words joined by LF, on a 2000 x 600 pt page in a 1900 pt column, keeps its breaks,
+    in 50,001 pages; one of 2,350,048 is laid out unbroken, in 295, and one of 2,500,000 in 314.
+  - **A table is laid out with its breaks read only where the document lays it out.** A
+    `TableRenderer` that a renderer of yours holds and forwards `Layout` to, or that you lay out
+    with a `LayoutContext` you build or narrow with `WithArea`, reads every cell unbroken and
+    reports nothing, as the table did before breaks were honoured, so its pages and what it refuses
+    for room or for the continuation limit are those of that layout and not of the document's,
+    however many lines its cells hold. Such a renderer's `Draw` must forward to the same table.
+    `IRenderer.Layout`, `TableRenderer.Layout` and `TableElement` say so.
+    **Deliberate output change:** that table leaves each tab, line break and other control
+    white-space character out of what it draws, where a table laid out before wrote glyph 0, a raw
+    control byte, `?` or the font's own glyph for it. `A<TAB>B` is `(AB)`, a DejaVu Sans cell
+    holds no glyph 0 and no `<0000>` entry in the ToUnicode map, and the save lists no
+    `NotdefGlyph` or `UnencodableCharacter` for it. The table does not read the character as a
+    space, because that would draw it wider than the layout measured it.
+  - **`StrictDiagnostics` does not refuse a control white-space character in a cell or in a
+    running band.** A tab, a line break or another control white-space character there reaches
+    no font, so the save lists no `NotdefGlyph` (102) or `UnencodableCharacter` (103) for it, in
+    a table the document lays out, in one a renderer of yours holds, in a band template and in
+    the text a page label prints. A document whose only error items were those reports saves
+    with the switch on. A control character that is not white space, such as U+0001, is reported
+    as before. Any other error item still refuses the document, and with the switch off nothing
+    a table refuses changes.
+  - **A repeated header row, or rows joined by a `RowSpan`, keep the one-line layout of their cells
+    when reading the cells' breaks would leave them no room on a page.** Those rows are never cut
+    between their lines, so reading the breaks would turn a table that saved into a too-tall
+    refusal. The cause is a line break, or any other control white space, which a cell reads as a
+    space where 2.3.3 measured the character at its own width: a tab can tip a table that has no
+    line break in it. A cell of such rows is then wrapped at spaces alone and sized from its whole
+    text, as 2.3.3 did, with each tab and break measured at the width its font gives it and then
+    left out of what is drawn, so no line is wider than it was measured. The words they separated
+    run together, in the drawing and in extracted text. The save lists the cell as the new
+    `LayoutDiagnosticCode.CellWhiteSpaceDropped` (301, a warning, so `StrictDiagnostics` still
+    saves). A header of 60 two-letter lines stays inside its cell in a 100pt column, and
+    `pdftotext -raw` returns all 120 letters in order. A header row of 46 two-letter lines, 560pt
+    tall, keeps its lines on a 580pt page above a 20pt row, where a line fits in the 20pt left;
+    one of 47 is 572pt, fits the page alone, but leaves the row 8pt, so it falls back. The XML
+    documentation of `Cell.Content` states when a header or a group has no room, which cells
+    fall back and in what order, and what a renderer laid out without the document does. A header
+    or a group that still has no room once those cells have given up their breaks makes every
+    cell in an automatic column that holds control white space give up its breaks as well, because
+    the width of every column follows from those cells. With those cells unbroken the columns are
+    as wide as 2.3.3 made them, and each header or group that still had no room is as tall as
+    2.3.3 made it; a group that fits keeps its breaks. In a table with two 100pt
+    columns and an automatic one, a group of two rows is 424pt tall on a page that leaves 280pt
+    while a cell of the automatic column in a third row keeps its line break, and 100pt without it.
+    A span declared in a header row makes no group of the data rows under it, because a page may
+    end between them, so each of those rows is judged by its own height; a span declared in a data
+    row is a group.
+  - **Every group is judged in order, and the decision keeps what each cell measures.** A table
+    that gives up cells in several groups keeps each cell's widest word and widest line per mode
+    and its line count with the interval of column widths it holds over, a word broken at its
+    characters included. To decide whether a step that gives up cells in an automatic column
+    moves a column, it raises the widths kept for the pass by what the step's cells contribute,
+    and measures the table again when a cell would contribute less. A step that gives up only
+    cells in the group's own rows, and leaves every column width as it was, does not end the
+    pass. A step that does move a column, or reaches a row outside the group, ends it, and the
+    next pass measures the whole table from what the cells measured. A table resolves its grid
+    once for all its pages. No limit on the number of measurements applies, so a group is judged
+    on the heights the groups before it leave whatever their number. Measured in Release on
+    net10.0, one run each, against 2.3.3 on the same tables: 400 groups that each change the
+    width the next is judged by took 1.2s and 68MB, where 2.3.3 took 6.3s and 3,022MB; 1,000
+    groups that each widen an automatic column took 2.0s and 378MB, where 2.3.3 took 49.2s and
+    48,489MB; 6,400 groups that give up a cell in a shared automatic column took 1.9s and 498MB,
+    where 2.3.3 took 12.4s and 9,319MB. The cost of groups that each widen an automatic column
+    still grows with the square of their number: each such step ends the pass and the next pass
+    visits every cell again (1,000 groups allocate 6.5 times what 400 do).
 - **`/FontBBox` of an embedded font is the font's own bounding box (#596).** The descriptor of every
   embedded TrueType and OpenType font held `[0, hhea descender, 1000 * 1000 / unitsPerEm, hhea
   ascender]`: a zero for xMin and a constant for xMax, so DejaVu Sans, Liberation Sans and Liberation

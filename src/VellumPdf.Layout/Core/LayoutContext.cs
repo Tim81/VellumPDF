@@ -178,10 +178,11 @@ public sealed class LayoutContext
     /// the public constructor. The two flags the document sets for its own paragraphs, that the area
     /// is a page top and that a paragraph reads its line counts, are not copied: a smaller area is
     /// not known to be a page top, and a renderer that wraps a paragraph renderer places as many
-    /// lines as fit.
-    /// <para>The copy is not a context the document built for the renderer you lay out with it, so
-    /// a <see cref="VellumPdf.Layout.Rendering.ListRenderer"/> then lays out as it did before the
-    /// fixes of #476 and #685; see <see cref="IRenderer.Layout"/>.</para>
+    /// lines as fit. A built-in renderer that lays out differently when the document lays it out
+    /// lays out as it did before that change under the copy: a
+    /// <see cref="VellumPdf.Layout.Rendering.Table.TableRenderer"/> reads every cell unbroken
+    /// (#679), and a <see cref="VellumPdf.Layout.Rendering.ListRenderer"/> narrows no entry's
+    /// gutter and moves no entry to the next page (#476, #685); see <see cref="IRenderer.Layout"/>.
     /// </remarks>
     public LayoutContext WithArea(LayoutBox area) => new(area, ContentTop) { FreshPageArea = FreshPageArea };
 }

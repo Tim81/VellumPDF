@@ -20,12 +20,100 @@ public sealed class Cell
     /// the cell then draws no text, and the save refuses it only where a column is sized
     /// automatically, as the constructor describes.
     /// Spaces are the only break points between words, and a word wider than the cell is broken
-    /// between characters. A line feed, carriage return or tab is not a break. In a standard-14
-    /// font each is written into the cell as it is; in an embedded font each is drawn as whatever
-    /// glyph the font's character map gives it, which is .notdef (glyph 0) when the map has no
-    /// entry. The save lists each such character as
-    /// <see cref="VellumPdf.Layout.LayoutDiagnosticCode.NotdefGlyph"/>, and
-    /// <see cref="Document.StrictDiagnostics"/> refuses it; see <see cref="TextStyle.FontRef"/>.
+    /// between characters.
+    /// <para><b>A carriage return and line feed pair, a lone carriage return and a lone line feed
+    /// each end a line.</b> An empty line between two of them is a blank line one leading tall, and
+    /// so is the one after a trailing break: the text <c>a</c> followed by a line feed is two lines
+    /// here, where a <see cref="Elements.Paragraph"/> draws one. Runs of spaces are kept as
+    /// written, where a paragraph collapses them. Every other white-space control character, which
+    /// is a tab, a form feed, a line tabulation, a next-line character, U+2028 and U+2029, is one
+    /// space, so it reaches no font as a control character. None of these characters is reported
+    /// as <see cref="VellumPdf.Layout.LayoutDiagnosticCode.NotdefGlyph"/> or
+    /// <see cref="VellumPdf.Layout.LayoutDiagnosticCode.UnencodableCharacter"/>, so
+    /// <see cref="Document.StrictDiagnostics"/> does not refuse a cell for one. The no-break
+    /// spaces are written as they are, as in a paragraph. The other space separators, such as
+    /// U+2003, are written as they are too, where a paragraph reads them as spaces. A column sized
+    /// automatically takes its minimum from the widest word and its maximum from the widest line,
+    /// each line of the cell measured on its own, where 2.3.3 measured the whole text as one line.
+    /// The width the column is then given is shared out among the columns as it was, and can be
+    /// more than the maximum or less than the minimum.</para>
+    /// <para>A control character that is not white space, such as U+0001, is written as it is: in a
+    /// standard-14 font as its WinAnsi code, and in an embedded font as whatever glyph the font's
+    /// character map gives it, which is .notdef (glyph 0) when the map has no entry. The save lists
+    /// each such character as <see cref="VellumPdf.Layout.LayoutDiagnosticCode.NotdefGlyph"/>, and
+    /// <see cref="Document.StrictDiagnostics"/> refuses it; see
+    /// <see cref="TextStyle.FontRef"/>.</para>
+    /// <para>A cell has no tab stops, so a tab is one space.</para>
+    /// <para><b>A cell is laid out unbroken, with its tabs and line breaks left out of what is
+    /// drawn, when reading them would leave a row that cannot be cut no room on a page, or would
+    /// take the table more page continuations than one element may take.</b> This is the one
+    /// place that states the rule; the other members that mention it point here. The
+    /// rows that are never cut between their lines are the repeated header rows and the rows
+    /// joined by a <see cref="RowSpan"/>. The header rows have no room when they do not fit a
+    /// page, or when they leave a row below them less than one line of one of its cells. A span
+    /// group has no room when it is taller than what a page leaves under the repeated header
+    /// rows. A span declared in a header row makes no group of the data rows under it, because a
+    /// page may end between them; each of those rows is judged by its own height, and a span
+    /// declared in a data row is a group. The cause is a line break, which adds a line, or any
+    /// other control white space, because a tab is one space wide where the font measures the tab
+    /// character at its own width: a tab can tip a table that holds no line break. Such a cell is
+    /// wrapped at spaces alone and sized from its whole text, each tab and line break in it
+    /// measured at the width its font gives it and left out of what is drawn. The words they
+    /// separated run together in the drawing and in extracted text, and no line is wider than it
+    /// was measured, though a glyph wider than its column can still extend past it, as in any
+    /// cell. The save lists the cell as
+    /// <see cref="VellumPdf.Layout.LayoutDiagnosticCode.CellWhiteSpaceDropped"/>, a warning that
+    /// <see cref="Document.StrictDiagnostics"/> saves.</para>
+    /// <para>Which cells give them up is decided in order: the header rows are judged first, then
+    /// each group of rows joined by a <see cref="RowSpan"/>, each on the heights the decisions
+    /// before it leave. A group is relieved in three steps, each taken only while the group still
+    /// has no room: the cells of the group that hold a carriage return or a line feed; then those
+    /// of the header rows; then every cell that holds any control white space and sits in the
+    /// group's rows, in the header rows, or in an automatically sized column that a cell of
+    /// those rows is in. The header rows are relieved in the same way: by their own cells that
+    /// hold a carriage return or a line feed, and then by every cell that holds any control white
+    /// space and sits in them or in an automatically sized column that a cell of them is in. A
+    /// cell that holds only a line feed can be reached by any step.</para>
+    /// <para><b>When those steps leave a header or a group with no room, a fourth step lays out
+    /// unbroken every cell that holds control white space and spans a column that is sized
+    /// automatically, wherever its row is.</b> The width of every column follows from the
+    /// cells of the automatic columns, whichever rows they are in, so a cell in a column that no
+    /// cell of the group is in can still have narrowed the group's columns by the width its
+    /// breaks leave. With all of those cells unbroken every column is as wide as when the table
+    /// measured each cell as one line, and each header or group that still had no room is as tall
+    /// as that measured it, so one of them is refused only if it was too tall measured so. A
+    /// group that fits keeps its breaks, and so does a cell no step reaches.</para>
+    /// <para>A header row, or a group in an automatically sized column, that gives up a cell can
+    /// change other rows: the column's width is shared with every row that has a cell in it. The
+    /// groups after it are judged on the heights that result, so every group is judged on the
+    /// heights the decisions before it leave, however many groups the table has.</para>
+    /// <para>The limit is the 50,000 page continuations of <see cref="IRenderer.Layout"/>. A table
+    /// whose line breaks, read, would take more lays every cell out unbroken from its first page,
+    /// as it was measured before breaks were honoured. It is saved in the pages that measurement
+    /// takes, and refused with the limit's message when that takes more than the limit too. The
+    /// save lists each cell that holds control white space as
+    /// <see cref="VellumPdf.Layout.LayoutDiagnosticCode.CellWhiteSpaceDropped"/>. The count
+    /// depends on where the table starts: a table that keeps its breaks at the top of a page can
+    /// give them up when it starts lower and first moves to the next page. <b>Do not pass</b> a
+    /// cell with more lines than a document can hold and expect them drawn: shorten the text or
+    /// split the table.</para>
+    /// <para><b>A table that is refused when every cell is measured as one line is refused, with
+    /// the message that measurement gives.</b> <see cref="Document.Save(System.IO.Stream)"/>
+    /// throws <see cref="InvalidOperationException"/>, the too-tall exception, though every header
+    /// and group has room with its breaks read: reading the breaks can leave a column wider or
+    /// narrower than the one-line measurement does and so tip a group the other way, and the
+    /// cells above give up their breaks only to save a table that measurement saves. <b>Do not
+    /// pass</b> a table in the expectation that it stays refused: a release that measures the
+    /// columns a <see cref="RowSpan"/> occupies as they are drawn can save some of them.</para>
+    /// <para>A row that can be cut between its lines is cut when it is taller than a page. A
+    /// repeated header row or a span group is never cut, and the save refuses it when it does not
+    /// fit; a table whose rows are all headers repeats none of them, so its rows are cut like any
+    /// other. <b>Do not pass</b> a line break in a repeated header row or a span group that has no
+    /// room and expect the lines to be drawn: move the text to a row that can be cut, or shorten
+    /// it. A table you lay out without the document, through a <see cref="LayoutContext"/> built
+    /// with the public constructor or narrowed with <see cref="LayoutContext.WithArea"/>, or from a
+    /// renderer of yours that forwards to its <see cref="Rendering.Table.TableRenderer"/>, reads no
+    /// cell's breaks; see <see cref="Rendering.Table.TableRenderer.Layout"/>.</para>
     /// </remarks>
     /// <inheritdoc cref="Heading.Text" path="/exception[@cref='T:System.ArgumentException']"/>
     public string Content { get; }

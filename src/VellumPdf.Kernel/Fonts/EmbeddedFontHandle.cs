@@ -51,6 +51,13 @@ public sealed class EmbeddedFontHandle
         Embedder.MeasureString(text, pointSize);
 
     /// <summary>
+    /// The width <see cref="MeasureString"/> returns, without registering any character for the
+    /// subset.
+    /// </summary>
+    internal double MeasureStringWithoutRegistering(string text, double pointSize) =>
+        Embedder.MeasureStringWithoutRegistering(text, pointSize);
+
+    /// <summary>
     /// Maps a Unicode code point to a glyph id, registering it for font subsetting.
     /// Safe to call from the layout/draw phase; all registered code points are included
     /// in the subset written during <c>Save</c>.

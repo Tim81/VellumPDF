@@ -133,6 +133,23 @@ public readonly struct FontReference
     /// font measures such text without an exception.
     /// </exception>
     public double MeasureString(string text, double pointSize) => IsEmbedded
-        ? _embedded!.MeasureString(text, pointSize)
+        ? (s_measuringWithoutRegistering
+            ? _embedded!.MeasureStringWithoutRegistering(text, pointSize)
+            : _embedded!.MeasureString(text, pointSize))
         : Standard14Metrics.MeasureString(_standard14, text, pointSize);
+
+    // Set by a layout that measures text it may never draw, such as the table decision's trial of a
+    // measurement it can drop: the width is the same, and nothing is added to the subset.
+    [ThreadStatic]
+    private static bool s_measuringWithoutRegistering;
+
+    /// <summary>
+    /// True while the calling thread measures embedded text without adding any of it to the
+    /// subset.
+    /// </summary>
+    internal static bool MeasuringWithoutRegistering
+    {
+        get => s_measuringWithoutRegistering;
+        set => s_measuringWithoutRegistering = value;
+    }
 }

@@ -18,7 +18,9 @@ namespace VellumPdf.Layout.Elements.Table;
 /// rows are all headers has no repeatable header and draws each row once; see
 /// <see cref="AddRow(bool)"/>.
 /// The table is one element for the page limit described on <see cref="IRenderer.Layout"/>: a
-/// table that needs more than <b>50,000</b> page continuations makes the save throw.
+/// table that needs more than <b>50,000</b> page continuations makes the save throw. A table whose
+/// line breaks, read, would need more is laid out with every cell unbroken instead, as
+/// <see cref="Cell.Content"/> says, and the save throws only when it then needs more.
 /// <para>A row that does not fit the room left on a page, and fits neither box a fresh page
 /// offers, is cut between its lines and continues on the next page. Those boxes are the page's
 /// content area under the repeated header rows and inside <see cref="Margins"/>, so a row that
@@ -30,6 +32,15 @@ namespace VellumPdf.Layout.Elements.Table;
 /// page, so the cells of a cut row appear on each page it spans: a cell that holds a line on the
 /// page is a <c>TD</c>, or a <c>TH</c> in a header row, and a cell with no line on the page is an
 /// empty <c>TD</c>, also in a header row.</para>
+/// <para>A carriage return or line feed in a cell ends a line, so it makes the row taller. A
+/// table can make some cells give up their breaks and tabs, among them cells in rows that are
+/// neither header rows nor joined by a <see cref="Cell.RowSpan"/>, and the save lists each as
+/// <see cref="LayoutDiagnosticCode.CellWhiteSpaceDropped"/>; <see cref="Cell.Content"/> says when
+/// and which.</para>
+/// <para><b>Every group is judged on the heights the groups before it leave.</b> A header row, or
+/// a group in an automatically sized column, that gives up a cell can change the width of a
+/// column the next group is judged by, so the next group is judged on the widths that result,
+/// however many groups there are. <see cref="Cell.Content"/> says which cells are given up.</para>
 /// <para><b>These are refused, and never cut.</b> <see cref="Document.Save(System.IO.Stream)"/>
 /// throws <see cref="InvalidOperationException"/> whose message starts with the standard
 /// too-tall text and ends with a sentence naming the rows, for: header rows that together do not
@@ -45,6 +56,12 @@ namespace VellumPdf.Layout.Elements.Table;
 /// row that began under the document's context keeps cutting in the overflow renderer when that
 /// is laid out under a plain context at the width the row was cut at. At another width the row is
 /// laid out again from its first line, and without the box it is not cut.</para>
+/// <para>A table is laid out with its cells' breaks read only when the document lays it out. A
+/// <see cref="Rendering.Table.TableRenderer"/> under a context you build with the public
+/// constructor of <see cref="LayoutContext"/> or narrow with
+/// <see cref="LayoutContext.WithArea"/>, or one that a renderer of yours holds and forwards
+/// <see cref="IRenderer.Layout"/> to, reads every cell unbroken, as it did before the breaks
+/// were read (#679). See <see cref="Rendering.Table.TableRenderer.Layout"/>.</para>
 /// </remarks>
 public sealed class TableElement
 {

@@ -595,7 +595,7 @@ public sealed class DocumentRenderer
         ChapterNotes++;
         if (renderer is not HeadingRenderer { Element: { Level: 0 } heading }) return;
 
-        var title = BandText.ControlSpacesToSpaces(heading.ResolvedBookmarkTitle);
+        var title = LayoutText.ControlSpacesToSpaces(heading.ResolvedBookmarkTitle);
         _chapterFirst ??= title;
         _chapterLatest = title;
     }
