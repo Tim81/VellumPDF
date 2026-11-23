@@ -4,6 +4,7 @@
 using VellumPdf.Document;
 using VellumPdf.Fonts;
 using VellumPdf.Layout.Core;
+using VellumPdf.Layout.Elements;
 using VellumPdf.Layout.Elements.Table;
 using VellumPdf.Layout.Rendering.Table;
 using VellumPdf.TestSupport;
@@ -16,8 +17,9 @@ namespace VellumPdf.Layout.Tests;
 /// so the save lists no <c>NotdefGlyph</c> or <c>UnencodableCharacter</c> for it and
 /// <see cref="Document.StrictDiagnostics"/> does not refuse the cell (#611). That holds for a
 /// table the document lays out and for one that a caller's renderer holds, which draws the
-/// character as nothing. A control character that is not white space is still reported and
-/// refused.
+/// character as nothing. A running band reads the same characters as spaces, in its template and
+/// in a page label, so <see cref="Document.StrictDiagnostics"/> does not refuse a band for one
+/// either. A control character that is not white space is still reported and refused.
 /// </summary>
 public sealed class TableStrictDiagnosticsTests : IDisposable
 {
@@ -168,5 +170,74 @@ public sealed class TableStrictDiagnosticsTests : IDisposable
         Assert.False(timedOut);
         Assert.True(exit is 0 or 1, $"veraPDF exited {exit}\n{report}\n{err}");
         Assert.True(report.Contains("isCompliant=\"true\"", StringComparison.Ordinal), report);
+    }
+
+    /// <summary>
+    /// A band draws a tab, a line feed, a form feed or a line separator as a space, so a
+    /// Standard 14 band that holds them saves under the switch with nothing reported. The page
+    /// label's prefix is read the same way.
+    /// </summary>
+    [Fact]
+    public void AStandard14BandWithControlWhiteSpace_saves_underStrictDiagnostics()
+    {
+        using var doc = StrictDocument();
+        var style = new TextStyle { FontRef = new FontReference(Standard14.Helvetica), FontSize = 10 };
+        doc.PageLabel = new PageLabelRange(PdfPageLabelStyle.Decimal, "A\tB\u2028", 1);
+        doc.SetHeader("head\tline\nbreak\u2028", style);
+        doc.SetFooter("p\f{page}", style);
+        doc.Add(new Paragraph("body", style));
+
+        var bytes = Save(doc);
+
+        Assert.NotEmpty(bytes);
+        Assert.Empty(Reported(doc));
+    }
+
+    /// <summary>
+    /// The band's output the switch lets through is correct, which the oracle says: a PDF/A-2u
+    /// document whose header, footer and page label hold a tab, a line break and a form feed passes
+    /// veraPDF. Glyph 0 in the file would fail clause 6.2.11.8.
+    /// </summary>
+    [Fact]
+    public void AStrictPdfA2uDocumentWithControlWhiteSpaceInABand_passesVeraPdf()
+    {
+        RequireDejaVu();
+        using var doc = StrictDocument(PdfConformance.PdfA2u);
+        doc.Info.Title = "Strict bands";
+        var font = doc.UseTrueTypeFont(File.ReadAllBytes(DejaVu));
+        var style = new TextStyle { FontRef = font, FontSize = 10 };
+        doc.PageLabel = new PageLabelRange(PdfPageLabelStyle.Decimal, "A\tB\n", 1);
+        doc.SetHeader("head\tline\nbreak", style);
+        doc.SetFooter("p\f{page}\tof {pages}", style);
+        doc.Add(new Paragraph("body", style));
+        var path = Path.Combine(_tempDir, "band.pdf");
+        File.WriteAllBytes(path, Save(doc));
+
+        Assert.Empty(Reported(doc));
+        ExternalTool.TryRun("verapdf", ["--flavour", "2u", path],
+            out var exit, out var report, out var err, out var timedOut, timeoutMs: 120_000);
+
+        Assert.False(timedOut);
+        Assert.True(exit is 0 or 1, $"veraPDF exited {exit}\n{report}\n{err}");
+        Assert.True(report.Contains("isCompliant=\"true\"", StringComparison.Ordinal), report);
+    }
+
+    /// <summary>
+    /// A control character that is not white space still reaches the font from a band, so the
+    /// switch refuses it: the band rule reads white space only.
+    /// </summary>
+    [Fact]
+    public void ABandWithAControlCharacterThatIsNotWhiteSpace_isStillRefused_underStrictDiagnostics()
+    {
+        RequireDejaVu();
+        using var doc = StrictDocument();
+        var font = doc.UseTrueTypeFont(File.ReadAllBytes(DejaVu));
+        doc.SetHeader("a\u0001b", new TextStyle { FontRef = font, FontSize = 10 });
+        doc.Add(new Paragraph("body", new TextStyle { FontRef = font, FontSize = 10 }));
+
+        var ex = Assert.Throws<InvalidOperationException>(() => Save(doc));
+
+        Assert.Contains("NotdefGlyph", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("U+0001", ex.Message, StringComparison.Ordinal);
     }
 }
