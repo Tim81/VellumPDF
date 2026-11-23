@@ -613,11 +613,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     `LayoutContext` constructor is laid out as it was: no gutter is narrowed and no entry moves
     (#685), so the list itself saves, or is refused for the continuation limit, with the bytes and
     the message it had. A list keeps the entries an earlier layout built, whole and at the width
-    that layout used, as it did, whether you laid it out before the save or another document did,
-    and the save lays it out as it was. That holds for a list changed since: an item or a child
-    added after that layout is not laid out or drawn. `ListRenderer.Layout`,
-    `IRenderer.Layout` and the `LayoutContext` constructor and `WithArea` say so, with a "Do not
-    rely on" paragraph: 3.0 lays a list out one way.
+    that layout used, as it did, whether you laid it out before the save, another document did, or
+    the list's own placement did earlier in the same document, and the save lays it out as it was.
+    That holds for a list changed since: an item or a child added after that layout is not laid out
+    or drawn. `ListRenderer.Layout`, `IRenderer.Layout` and the `LayoutContext` constructor and
+    `WithArea` say so, with a "Do not rely on" paragraph: 3.0 lays a list out one way.
   - An entry whose marker has no room at the top of a page is still refused: the save throws the
     same "An element is too tall" `InvalidOperationException`. That entry fits no page, so its list
     is placed as it was before (#685 below). The page-continuation limit is refused with its own
@@ -681,7 +681,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     position too, for an entry that fitted in the first document and does not in the second
     (#691, which this change does not close). The first document now moves an entry that did not
     fit what was left of a page, so the second draws the lines that placement gave it, where
-    2.3.3 drew only the part that fitted.
+    2.3.3 drew only the part that fitted. A renderer you add to the document and a renderer
+    of yours also holds draws the first placement's lines at the second the same way, as 2.3.3
+    does.
   - **A document that holds an entry in a font it cannot draw lays every list out as it was before
     the clamp and the moving of entries.** A handle that another document returned, or a
     `Standard14` value the enumeration does not name, makes the save throw where an entry's text or

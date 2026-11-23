@@ -622,29 +622,29 @@ public sealed class ListPlacementAdoptionTests
 
     /// <summary>
     /// A renderer added to a document and then held by a renderer of the caller's, in the same
-    /// document, lays the second placement out from entries of its own. It does not take the ones
-    /// the first placement built and laid out under this save, whose paragraphs keep where that
-    /// placement put them. Here the second placement falls where the entry's text does not fit, so
-    /// it draws what a renderer that placed nothing before draws there: the text is dropped.
+    /// document, lays the second placement out from the entries the first one built, as a list laid
+    /// out as it was before the fixes does. Here the second placement falls where the entry's text
+    /// does not fit, and the paragraph draws the lines of its last layout there: the entry's text
+    /// shows twice, once at each place. That is a stale placement the list had before the fixes
+    /// (#691), and this change leaves it as it was.
     /// </summary>
     [Fact]
-    public void ARendererAddedAndThenHeldInOneDocument_laysTheHeldOneOutFromEntriesOfItsOwn()
+    public void ARendererAddedAndThenHeldInOneDocument_laysTheHeldOneOutFromTheEntriesItBuilt()
     {
-        Document Build(bool reused)
+        Document Build(ListRenderer renderer)
         {
-            var renderer = new ListRenderer(TallTextEntry());
             var doc = Page(200, 100);
             doc.Add(renderer);
             doc.Add(new Paragraph("between0", H(10)) { Margins = EdgeInsets.Zero });
             doc.Add(new Paragraph("between1", H(10)) { Margins = EdgeInsets.Zero });
-            doc.Add(new Passes(reused ? renderer : new ListRenderer(TallTextEntry())));
+            doc.Add(new Passes(renderer));
             return doc;
         }
 
-        var reused = Save(Build(reused: true));
+        var reused = Save(Build(new ListRenderer(TallTextEntry())));
 
-        Assert.Equal(Sha(Save(Build(reused: false))), Sha(reused));
-        Assert.Equal(1, Shows(reused).Count(t => t == "dropped"));
+        Assert.Equal(Sha(Save(Build(new ListRenderer(TallTextEntry()).Unclamped()))), Sha(reused));
+        Assert.Equal(2, Shows(reused).Count(t => t == "dropped"));
     }
 
     /// <summary>
@@ -666,6 +666,47 @@ public sealed class ListPlacementAdoptionTests
 
         Assert.DoesNotContain(second.Diagnostics, d => d.Code is LayoutDiagnosticCode.ListIndentClamped
             or LayoutDiagnosticCode.ListIndentClampSkipped or LayoutDiagnosticCode.ListEntryPartDropped);
+    }
+
+    /// <summary>
+    /// A list changed after the first document that holds it saved is not measured again for the
+    /// second. The extra pass that a renderer of the caller's after the list asks for lays the list
+    /// out on a copy of its own, and that copy holds the entries the first document built, as the
+    /// save does. Measuring an item added since would add its glyphs to the font subset, which the
+    /// document that never reads that item must not hold.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AListChangedAfterTheFirstDocument_addsNoGlyphToTheSecondDocumentsSubset(bool child)
+    {
+        byte[] Second(bool twin, bool changed)
+        {
+            var first = new Document { PageSize = new PdfRectangle(0, 0, 300, 200), Margins = new EdgeInsets(10) };
+            var firstStyle = new TextStyle { FontRef = first.UseTrueTypeFont(FontReportSupport.DejaVuBytes), FontSize = 10 };
+            var list = new ListElement(ListStyle.OrderedDecimal)
+                .Add(new ListItem("abc", firstStyle))
+                .Add(new ListItem("abc", firstStyle));
+            var renderer = new ListRenderer(list);
+            IRenderer Use() => twin ? renderer.Unclamped() : renderer;
+            first.Add(Use());
+            Save(first);
+
+            if (changed && child) list.Items[0].AddChild(new ListItem("QJKXYZ", firstStyle));
+            else if (changed) list.Add(new ListItem("QJKXYZ", firstStyle));
+
+            var second = new Document { PageSize = new PdfRectangle(0, 0, 300, 200), Margins = new EdgeInsets(10) };
+            var secondStyle = new TextStyle { FontRef = second.UseTrueTypeFont(FontReportSupport.DejaVuBytes), FontSize = 10 };
+            second.Add(Use());
+            second.Add(new Counts());
+            second.Add(new Paragraph("after", secondStyle));
+            return Save(second);
+        }
+
+        var kept = Second(twin: false, changed: true);
+
+        Assert.Equal(Sha(Second(twin: true, changed: true)), Sha(kept));
+        Assert.Equal(Sha(Second(twin: false, changed: false)), Sha(kept));
     }
 
     /// <summary>

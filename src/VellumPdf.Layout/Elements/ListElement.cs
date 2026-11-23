@@ -58,7 +58,8 @@ public enum ListStyle
 /// placed, and <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/> reports the list in the
 /// last three cases. A list a renderer of yours holds reports neither. First, a renderer of yours
 /// lays the list out, whatever context it passes on, or an earlier layout built its entries
-/// (you laid it out before the save, or another document did); see
+/// (you laid it out before the save, another document did, or the list's own placement did earlier
+/// in the same document); see
 /// <see cref="Rendering.ListRenderer.Layout"/>. Second, no page holds one of its items,
 /// because a line of its marker, or of its text at the width the clamp would give it, is taller
 /// than a page. Third, laying it out the new way would take it past the continuation limit, as

@@ -135,9 +135,10 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     private ListLayoutRun? _builtUnder;
     private double _builtWidth;
 
-    // On a twin, the entries an earlier layout of the list it answers for built, and the width it
-    // built them at, when that was not under the current run. The twin has built none of its own
-    // then, and does not build any: it takes the earlier layout's entries whole, whatever the list
+    // On a twin, the entries the list it answers for built before the twin's first layout, and the
+    // width it built them at, whichever run that was: another document's, or this one's, when a
+    // list added to the document is also held by a renderer of the caller's. The twin has built
+    // none of its own then, and does not build any: it takes those entries whole, whatever the list
     // holds now, as 2.3.3 keeps them, with the wrap each paragraph cached. For an entry the clamp
     // narrowed it keeps the marker, which the clamp does not change, and rebuilds the text as 2.3.3
     // built it, without the clamp, because on 2.3.3 that text had no width and was never wrapped.
@@ -262,10 +263,12 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     /// <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/>. A list that your renderer holds
     /// reports neither: the document did not place it. A list that an earlier layout built
     /// entries for keeps them whole, at the width that layout used, as it did, whether you laid it
-    /// out before the save or another document did. The save lays it out as it was before the
-    /// fixes and reports nothing. That holds for a list changed since: an item or a child added
-    /// after that layout is not laid out or drawn, and an entry the clamp narrowed is laid out
-    /// without the clamp, from the text it had then.</para>
+    /// out before the save, another document did, or the list's own placement did earlier in the
+    /// same document, as when you add a renderer to the document and a renderer of yours holds it
+    /// too. The save lays it out as it was before the fixes and reports nothing. That holds for a
+    /// list changed since: an item or a child added after that layout is not laid out or drawn,
+    /// and an entry the clamp narrowed is laid out without the clamp, from the text it had
+    /// then.</para>
     /// <para><b>A list your renderer lays out is found only on the execution context of the
     /// layout.</b> One laid out on the thread of the call, on a task, or on a thread your renderer
     /// starts is found. One laid out on work queued with the context suppressed, such as
@@ -331,7 +334,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     {
         var twin = Unclamped();
         _delegate = twin;
-        if (_items is not null && twin._items is null && !ReferenceEquals(_builtUnder, ListLayoutRun.Current))
+        if (_items is not null && twin._items is null)
         {
             twin._earlierWidth = _builtWidth;
             twin._earlier = _items;
@@ -348,18 +351,50 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
         || (_twin is { _items: not null } twin && !ReferenceEquals(twin._builtUnder, run));
 
     // The probing pass lays every list out as a twin, on a copy of its own: the pass is not kept,
-    // and a layout that is kept must start from the list as the caller left it. Removed in 3.0
-    // (#688).
+    // and a layout that is kept must start from the list as the caller left it. The copy takes the
+    // entries a layout built before, as the twin the save lays out does, and not the list as it is
+    // now: the text of an item added since is never laid out or drawn, and measuring it here would
+    // add its glyphs to the subset of an embedded font. The copy lays out paragraphs of its own,
+    // because a paragraph keeps where its last layout placed it. Removed in 3.0 (#688).
     private LayoutResult LayOutForProbe(ListLayoutRun run, LayoutContext context)
     {
         if (_probeTwin is null)
         {
             _probeTwin = new ListRenderer(_list, _startItem, _partialContentOverrideAtStart) { _unclamped = true };
+            if (_twin is { _items: { } twinItems } built)
+            {
+                _probeTwin._earlierWidth = built._builtWidth;
+                _probeTwin._earlier = CopiesOf(twinItems);
+            }
+            else if (_items is not null)
+            {
+                _probeTwin._earlierWidth = _builtWidth;
+                _probeTwin._earlier = CopiesOf(_items);
+            }
+
             run.NoteProbed(this);
         }
 
         return _probeTwin.Layout(context);
     }
+
+    private static List<Entry> CopiesOf(List<Entry> entries)
+    {
+        var copies = new List<Entry>(entries.Count);
+        for (var i = 0; i < entries.Count; i++)
+        {
+            copies.Add(entries[i] with
+            {
+                Marker = CopyOf(entries[i].Marker),
+                Content = CopyOf(entries[i].Content),
+            });
+        }
+
+        return copies;
+    }
+
+    private static ParagraphRenderer CopyOf(ParagraphRenderer renderer) =>
+        new(renderer.Paragraph) { ElementLanguage = renderer.ElementLanguage, RunOwner = renderer.RunOwner };
 
     // Called when the probing pass ends, whether or not it finished.
     internal void ReleaseProbe() => _probeTwin = null;
