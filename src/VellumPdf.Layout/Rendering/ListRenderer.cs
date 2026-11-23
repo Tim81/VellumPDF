@@ -134,9 +134,10 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     // On a twin, the entries an earlier layout of the list it answers for built, and the width it
     // built them at, when that was not under the current run. The twin has built none of its own
     // then. It builds them at that width and keeps the earlier layout's entries that the clamp did
-    // not touch, which are the ones 2.3.3 built, with the wrap each paragraph cached. An entry the
-    // clamp narrowed was never wrapped on 2.3.3, because its text had no width, so the twin builds
-    // that one anew. Both are let go once the twin has built its own.
+    // not touch, which are the ones 2.3.3 built, with the wrap each paragraph cached. For an entry
+    // the clamp narrowed it keeps the marker, which the clamp does not change, and builds the text
+    // anew, because on 2.3.3 that text had no width and was never wrapped. Both are let go once the
+    // twin has built its own.
     private double? _earlierWidth;
     private List<Entry>? _earlier;
 
@@ -392,7 +393,9 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                 // then has none to keep.
                 if (earlier.Count == _items.Count)
                     for (var i = 0; i < earlier.Count; i++)
-                        if (!earlier[i].Clamped) _items[i] = earlier[i];
+                        _items[i] = earlier[i].Clamped
+                            ? _items[i] with { Marker = earlier[i].Marker }
+                            : earlier[i];
                 _earlier = null;
                 _earlierWidth = null;
             }

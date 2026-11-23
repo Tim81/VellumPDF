@@ -317,20 +317,36 @@ public sealed class ListPlacementAdoptionTests
         return list.Add(new ListItem(new string('w', 30), H(10)));
     }
 
+    // The same with an indent that leaves the first document's area no text, so the clamp narrows
+    // the entries there, and a marker of 85 points that is wider than the indent. The twin builds
+    // the entries the clamp narrowed anew, and the width it builds them at decides their gutter.
+    private static ListElement ClampedGutterThatDependsOnTheWidth()
+    {
+        var list = new ListElement(ListStyle.OrderedRoman) { Indent = 185 };
+        for (var i = 0; i < 26; i++) list.Add(new ListItem("a", H(10)));
+        return list.Add(new ListItem("w", H(85)));
+    }
+
     /// <summary>
     /// The entries the second document keeps are built at the first document's width: a gutter the
-    /// first width left at the indent stays there, though the second width would widen it.
+    /// first width left at the indent stays there, though the second width would widen it, for an
+    /// entry the clamp narrowed as for one it left alone.
     /// </summary>
     [Theory]
-    [InlineData("direct-direct")]
-    [InlineData("held-direct")]
-    [InlineData("direct-held")]
-    public void AListRendererReusedForASecondDocument_keepsTheGutterTheFirstWidthGave(string shape)
+    [InlineData("direct-direct", false)]
+    [InlineData("held-direct", false)]
+    [InlineData("direct-held", false)]
+    [InlineData("direct-direct", true)]
+    [InlineData("held-direct", true)]
+    [InlineData("direct-held", true)]
+    public void AListRendererReusedForASecondDocument_keepsTheGutterTheFirstWidthGave(string shape, bool clamped)
     {
-        var kept = SecondDocument(GutterThatDependsOnTheWidth, shape, twin: false);
+        Func<ListElement> make = clamped ? ClampedGutterThatDependsOnTheWidth : GutterThatDependsOnTheWidth;
 
-        Assert.Equal(Sha(SecondDocument(GutterThatDependsOnTheWidth, shape, twin: true)), Sha(kept));
-        Assert.NotEqual(Sha(FreshSecondDocument(GutterThatDependsOnTheWidth)), Sha(kept));
+        var kept = SecondDocument(make, shape, twin: false);
+
+        Assert.Equal(Sha(SecondDocument(make, shape, twin: true)), Sha(kept));
+        Assert.NotEqual(Sha(FreshSecondDocument(make)), Sha(kept));
     }
 
     /// <summary>
