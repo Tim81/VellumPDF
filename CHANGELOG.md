@@ -717,17 +717,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     however many lines its cells hold. Such a renderer's `Draw` must forward to the same table.
     `IRenderer.Layout`, `TableRenderer.Layout` and `TableElement` say so.
     **Deliberate output change:** that table leaves each tab, line break and other control
-    white-space character out of what it draws, where a table laid out before wrote glyph 0 or a
-    raw control byte for it. `A<TAB>B` is `(AB)`, a DejaVu Sans cell holds no glyph 0 and no
-    `<0000>` entry in the ToUnicode map, and the save lists no `NotdefGlyph` or
-    `UnencodableCharacter` for it. The table does not read the character as a space, because that
+    white-space character out of what it draws, where a table laid out before wrote glyph 0, a raw
+    control byte, `?` or the font's own glyph for it. `A<TAB>B` is `(AB)`, a DejaVu Sans cell
+    holds no glyph 0 and no `<0000>` entry in the ToUnicode map, and the save lists no
+    `NotdefGlyph` or `UnencodableCharacter` for it. The table does not read the character as a space, because that
     would draw it wider than the layout measured it.
-  - **`StrictDiagnostics` does not refuse a control character in a cell.** A tab, a line break
-    or another control white-space character in a cell reaches no font, so the save lists no
-    `NotdefGlyph` (102) or `UnencodableCharacter` (103) for it, in a table the document lays out
-    and in one a renderer of yours holds. A document whose only error items were those reports
-    saves with the switch on. Any other error item still refuses it, and with the switch off
-    nothing a table refuses changes.
+  - **`StrictDiagnostics` does not refuse a control white-space character in a cell or in a
+    running band.** A tab, a line break or another control white-space character there reaches
+    no font, so the save lists no `NotdefGlyph` (102) or `UnencodableCharacter` (103) for it, in
+    a table the document lays out, in one a renderer of yours holds, in a band template and in
+    the text a page label prints. A document whose only error items were those reports saves
+    with the switch on. A control character that is not white space, such as U+0001, is reported
+    as before. Any other error item still refuses the document, and with the switch off nothing
+    a table refuses changes.
   - **A repeated header row, or rows joined by a `RowSpan`, keep the one-line layout of their cells
     when reading the cells' breaks would leave them no room on a page.** Those rows are never cut
     between their lines, so reading the breaks would turn a table that saved into a too-tall

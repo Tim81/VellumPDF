@@ -79,8 +79,12 @@ public sealed class RunningBand
     /// white-space control character in the template is drawn as one space and measured as one,
     /// so a carriage return and line feed pair is two spaces, and no white-space control
     /// character reaches the font from it. The same holds for the text a
-    /// <see cref="PageLabelRange"/> prints for <c>{page}</c>. A control character that is not white
-    /// space, such as U+0001, is written as it is.
+    /// <see cref="PageLabelRange"/> prints for <c>{page}</c>. None of these characters is reported
+    /// as <see cref="LayoutDiagnosticCode.NotdefGlyph"/> or
+    /// <see cref="LayoutDiagnosticCode.UnencodableCharacter"/>, so
+    /// <see cref="Document.StrictDiagnostics"/> does not refuse a band for one. A control
+    /// character that is not white space, such as U+0001, is written as it is;
+    /// <see cref="LayoutDiagnosticCode.NotdefGlyph"/> says when it is reported.
     /// <para>Not checked when it is set: the constructor stores a null template, and the save
     /// throws <see cref="ArgumentNullException"/> where the band is first drawn. A template that
     /// does not fit the content box is truncated, and refused only in strict mode;
