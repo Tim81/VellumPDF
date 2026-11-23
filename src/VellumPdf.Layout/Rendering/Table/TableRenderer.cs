@@ -1961,11 +1961,12 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         {
             var line = wrappedLines[firstLine + lineIdx];
 
-            // A line that is empty because of control white space writes no text: an empty string
-            // would only be a show operator that draws nothing. That is the line of control
-            // characters a cell laid out unbroken leaves out, and the blank line between two line
-            // breaks. A cell that holds none of them is not touched, so a table without control
-            // white space keeps its bytes, an empty cell and one of spaces alone included.
+            // Every empty line of a cell that holds control white space writes no text: an empty
+            // string would only be a show operator that draws nothing. Those are the line of
+            // control characters a cell laid out unbroken leaves out, the blank line between two
+            // line breaks, and a line of spaces alone in such a cell, which the wrap empties. A
+            // cell that holds no control white space is not touched, so a table without any keeps
+            // its bytes, an empty cell and one of spaces alone included.
             if (line.Length == 0 && holdsControlSpace) continue;
 
             var lineW = cs.FontRef.MeasureString(line, cs.FontSize);
