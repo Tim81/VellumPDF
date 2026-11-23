@@ -125,7 +125,7 @@ public sealed class ListEarlierLayoutTests
     /// Runs one scenario and returns the last document's bytes. <paramref name="earlier"/> is the
     /// layout that comes first and is not the document's own call: a renderer of the caller's that
     /// holds the list in the same document, a layout before the save, or another document's save.
-    /// <paramref name="current"/> is the placement that follows, in the document that is saved last.
+    /// <paramref name="current"/> is the placement that follows, in the document saved last.
     /// </summary>
     private static byte[] Scenario(string earlier, string current, string kind, bool twin)
     {
@@ -143,6 +143,10 @@ public sealed class ListEarlierLayoutTests
             var factor = earlier.EndsWith("75") ? 0.75 : 1.5;
             var first = Page(width * factor);
             first.Add(earlier.StartsWith("doc-held") ? Held("ctx", renderer) : renderer);
+
+            // An element near the continuation limit makes that document lay every list out as its
+            // twin, so the entries the list keeps are built by the twin and not by the list.
+            if (earlier.StartsWith("doc-near")) first.Add(new Preformatted(new string('\t', 1_700), H(1)) { TabWidth = 32 });
             Save(first);
         }
         else
@@ -172,6 +176,9 @@ public sealed class ListEarlierLayoutTests
     [InlineData("doc-held75", "direct")]
     [InlineData("doc-direct75", "direct")]
     [InlineData("doc-direct150", "direct")]
+    [InlineData("doc-near75", "direct")]
+    [InlineData("doc-near150", "direct")]
+    [InlineData("doc-near75", "wa150")]
     [InlineData("ctx", "wa150")]
     [InlineData("wa75", "wa150")]
     [InlineData("measure", "wa150")]
@@ -188,10 +195,11 @@ public sealed class ListEarlierLayoutTests
     }
 
     /// <summary>
-    /// A renderer of the caller's lays the list out at three quarters of the width, and the document
-    /// then places the same renderer itself: the document draws that placement from the entries the
-    /// first layout built, at the width that layout had, so the text wraps where it did there. Built
-    /// at the page's own width the gutter would be the marker's, and the text would wrap once.
+    /// A renderer of the caller's lays the list out at three quarters of the width, and the
+    /// document then places the same renderer itself: the document draws that placement from the
+    /// entries the first layout built, at the width that layout had, so the text wraps where it did
+    /// there. Built at the page's own width the gutter would be the marker's, and the text would
+    /// wrap once.
     /// </summary>
     [Fact]
     public void AListHeldByACallersRendererAndThenAddedToTheDocument_isDrawnFromTheEntriesTheHeldLayoutBuilt()
@@ -223,6 +231,29 @@ public sealed class ListEarlierLayoutTests
         Save(doc);
 
         Assert.Contains(doc.Diagnostics, d => d.Code == LayoutDiagnosticCode.ListIndentClamped);
+    }
+
+    /// <summary>
+    /// A list with an entry no page holds is placed as it was whole, and the document reports it
+    /// each time it places the list. The entries the twin built for the first placement are the
+    /// document's own, so they do not turn the second placement into a held one that reports
+    /// nothing.
+    /// </summary>
+    [Fact]
+    public void AListWithAnEntryNoPageHolds_isReportedAtEachPlacementOfTheSameRenderer()
+    {
+        var renderer = new ListRenderer(new ListElement(ListStyle.OrderedDecimal)
+            .Add(new ListItem([new TextRun("abc", H(10))]) { Style = H(500) }));
+        var doc = Page(200);
+        doc.Add(renderer);
+        doc.Add(new Paragraph("between", H(10)) { Margins = EdgeInsets.Zero });
+        doc.Add(renderer);
+        Save(doc);
+
+        Assert.Equal(
+            [0, 2],
+            doc.Diagnostics.Where(d => d.Code == LayoutDiagnosticCode.ListEntryPartDropped)
+                .Select(d => d.ElementIndex).Order().ToArray());
     }
 
     private static ListElement OneEntry(string text) =>
@@ -279,9 +310,11 @@ public sealed class ListEarlierLayoutTests
             var values = Enumerable.Range(-40, 100).Append(int.MinValue).Append(int.MaxValue).ToArray();
             foreach (var first in values)
             {
-                ListLayoutRun.CanDraw(run, new TextStyle { FontRef = (Standard14)first });
                 foreach (var second in values)
                 {
+                    // The memo holds the last value asked, so the first is asked again before each
+                    // second: no other question may sit between the two.
+                    ListLayoutRun.CanDraw(run, new TextStyle { FontRef = (Standard14)first });
                     var style = new TextStyle { FontRef = (Standard14)second };
                     Assert.True(
                         Enum.IsDefined((Standard14)second) == ListLayoutRun.CanDraw(run, style),
