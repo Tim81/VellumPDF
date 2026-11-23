@@ -78,13 +78,14 @@ public sealed class PaginationDepthTests
         // renderer, which never reports, in either pass, and a recursion regression makes it grow
         // with the continuation count. A renderer that reports has two on the stack during a
         // continuation probe, because the probe calls PlaceLoop from inside PlaceLoop.
-        // PlaceRenderer, which only starts the loop, was counted before. Its count read 0 on
-        // net10.0 in a full run of the whole suite in sequence (-parallel none), and the same run
-        // on net11.0 did not. The likely cause is that the JIT inlined it into its caller, which
-        // was not confirmed with a JIT dump. PlaceLoop is marked NoInlining so that it keeps a
-        // frame of its own. Bounds rather than Assert.All, because a recursion regression
-        // otherwise prints one near-identical failure block per sample, measured at 200 blocks
-        // and 34,670 characters for a single test.
+        // PlaceRenderer, which only starts the loop, was counted before. Its count read 0 when
+        // the whole suite ran in sequence (-parallel none): on main at c44a516, both probes
+        // failed in four such runs, two on net10.0 and two on net11.0, and a fifth run, on
+        // net11.0, passed. The likely cause is that the JIT inlined PlaceRenderer into its
+        // caller; that was not confirmed with a JIT dump. PlaceLoop is marked NoInlining so that
+        // it keeps a frame of its own. Bounds rather than Assert.All, because a recursion
+        // regression otherwise prints one near-identical failure block per sample, measured at
+        // 200 blocks and 34,670 characters for a single test.
         Assert.Equal(1, samples.Min());
         Assert.Equal(1, samples.Max());
     }
