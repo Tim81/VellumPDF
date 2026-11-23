@@ -669,16 +669,18 @@ public sealed class ListPlacementAdoptionTests
     }
 
     /// <summary>
-    /// A list changed after the first document that holds it saved is not measured again for the
-    /// second. The extra pass that a renderer of the caller's after the list asks for lays the list
-    /// out on a copy of its own, and that copy holds the entries the first document built, as the
-    /// save does. Measuring an item added since would add its glyphs to the font subset, which the
-    /// document that never reads that item must not hold.
+    /// A list changed after the first document that holds it saved, or after a caller laid it out
+    /// before the save, is not measured again for the second. The extra pass that a renderer of the
+    /// caller's after the list asks for lays the list out on a copy of its own, and that copy holds
+    /// the entries built before, as the save does. Measuring an item added since would add its
+    /// glyphs to the font subset, which a document that never reads that item must not hold.
     /// </summary>
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void AListChangedAfterTheFirstDocument_addsNoGlyphToTheSecondDocumentsSubset(bool child)
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public void AListChangedAfterTheFirstDocument_addsNoGlyphToTheSecondDocumentsSubset(bool child, bool laidOut)
     {
         byte[] Second(bool twin, bool changed)
         {
@@ -690,7 +692,8 @@ public sealed class ListPlacementAdoptionTests
             var renderer = new ListRenderer(list);
             IRenderer Use() => twin ? renderer.Unclamped() : renderer;
             first.Add(Use());
-            Save(first);
+            if (laidOut) Use().Layout(new LayoutContext(new LayoutBox(10, 10, 280, 180)));
+            else Save(first);
 
             if (changed && child) list.Items[0].AddChild(new ListItem("QJKXYZ", firstStyle));
             else if (changed) list.Add(new ListItem("QJKXYZ", firstStyle));

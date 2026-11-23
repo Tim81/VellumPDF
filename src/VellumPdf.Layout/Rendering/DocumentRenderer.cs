@@ -860,10 +860,17 @@ public sealed class DocumentRenderer
     //    places text; a line is committed only before a word or a break, which are characters.
     //  - A list: each entry is its text's lines in a paragraph of that kind, and a marker that
     //    wraps moves the entry whole, so an entry adds at most max(1, its characters).
-    //  - A table: a cell is not rewritten. It wraps at spaces and cuts a word at one scalar at
-    //    least per line, so it holds at most max(1, its characters) lines, and every piece of a
-    //    cut row takes at least one line of some cell. A row counts one more than the characters
-    //    of its cells.
+    //  - A table: a cell reads its line ends (#679) and wraps each line at spaces, cutting a word
+    //    at one scalar at least per line. A line end is a character and ends one line, so the
+    //    cell holds at most one line more than its characters. Any other control white-space
+    //    character reads as one space, and a cell read unbroken, as the table's twin reads every
+    //    cell, holds at most max(1, its characters) lines. A row is cut only where every cell
+    //    holds a line on a fresh page, so each piece after the first takes at least one line from
+    //    every cell that has lines left, and a cut row ends in at most one call more than its
+    //    characters. The first piece can leave the cell with the most lines untouched, when the
+    //    room left holds the shorter lines of the others. That happens in a call that also
+    //    finishes the row before it, which then needs no call of its own, or in the table's first
+    //    call, which the 2 covers. A row counts one more than the characters of its cells.
     //  - Preformatted text rewrites the text before it wraps: PreformattedText.Expand replaces
     //    each tab by 1 to TabWidth spaces, and that is the only rewrite. A line end is a
     //    character and ends one line, and the wrap cuts an expanded line after at least one
