@@ -124,6 +124,15 @@ public sealed class ListDocumentLimitRuleTests
                 var table = new TableElement();
                 table.AddRow().AddCell(new Cell(text) { Style = H(10) });
                 return new TableRenderer(table);
+            case "listchild":
+                var parent = new ListItem("p", H(10));
+                parent.AddChild(new ListItem(text, H(10)));
+                return new ListRenderer(new ListElement(ListStyle.Unordered).Add(parent));
+            case "listempty":
+                // One entry for each character asked for, each holding no text.
+                var empty = new ListElement(ListStyle.Unordered);
+                for (var i = 0; i < characters; i++) empty.Add(new ListItem("", H(10)));
+                return new ListRenderer(empty);
             default:
                 var list = new ListElement(ListStyle.Unordered);
                 list.Add(new ListItem(text, H(10)));
@@ -140,8 +149,9 @@ public sealed class ListDocumentLimitRuleTests
 
     /// <summary>
     /// Every built-in element after a list counts, a paragraph, a heading, a preformatted text, a
-    /// table and another list, by its characters, entries and rows. One whose bound is within the
-    /// limit cannot reach it from any start, and the lists are laid out new.
+    /// table and another list, by its characters, entries and rows. A child of an item counts, and
+    /// an item with no text counts one. One whose bound is within the limit cannot reach it from
+    /// any start, and the lists are laid out new.
     /// </summary>
     [Theory]
     [InlineData("paragraph")]
@@ -149,6 +159,8 @@ public sealed class ListDocumentLimitRuleTests
     [InlineData("preformatted")]
     [InlineData("table")]
     [InlineData("list")]
+    [InlineData("listchild")]
+    [InlineData("listempty")]
     public void AnElementWhoseBoundPassesTheLimit_keepsTheListsAsTheirTwins(string kind)
     {
         // The bound is two plus the characters, and the table adds a row.
