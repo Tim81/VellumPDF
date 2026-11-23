@@ -131,8 +131,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`Preformatted.Anchor`, a code block can be a link target (#693).** The property has the name
   rule, the refusals and the named destination of `Paragraph.Anchor`: a name of 1 to 127
   characters from `A-Z a-z 0-9 . _ - :` is accepted, any other name throws `ArgumentException` from
-  the `init` accessor, and the save adds `[page /XYZ 0 top null]` to the `/Names` `/Dests` tree at the top of
-  the block's first line, below its top margin. A block that splits across pages reports the anchor
+  the `init` accessor, and the save adds `[page /XYZ 0 top null]` to the `/Names` `/Dests` tree at
+  the top of the block's first line, below its top margin. A block that splits across pages reports the anchor
   from its first piece only, so the destination is on the page the first line is on.
   - A name held by a `Preformatted` and by another element of any kind is refused like a name held
     by two paragraphs: the save throws `InvalidOperationException` before any layout, naming both
