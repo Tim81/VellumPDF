@@ -197,11 +197,24 @@ public sealed class Preformatted
     /// viewer's zoom unchanged. When the block splits across pages, that is the page its first
     /// line is on, and no later piece reports the anchor. The destinations are written in the
     /// order of their names, so the order the elements were added in does not change a key.</para>
-    /// <para><b>Do not pass</b> two names that differ only in case and expect a reader to treat
-    /// them as one: names are compared byte by byte, so <c>Code</c> and <c>code</c> are two
-    /// destinations.</para>
+    /// <para>Names are compared byte by byte, so <c>Code</c> and <c>code</c> are two destinations,
+    /// as they are on <see cref="Paragraph.Anchor"/>.</para>
     /// </remarks>
-    /// <inheritdoc cref="Paragraph.Anchor" path="/exception"/>
+    /// <exception cref="ArgumentException">
+    /// Raised from this <c>init</c> accessor when the name breaks the rule above.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Raised from the save, not from this property, naming <c>top</c>, when the page is taller
+    /// than 3.403 × 10^38 points: the destination's top is then beyond the range of a PDF real
+    /// (ISO 32000-1, Table C.1). <see cref="Margins"/> cannot cause it, because it refuses a
+    /// negative or non-finite edge. A page of exactly 3.403 × 10^38 saves, and the same block with
+    /// no anchor saves on a taller page. The layout had started, so the document cannot be saved
+    /// again.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from the save, not from this property, before any layout, when another element in
+    /// the document holds the same anchor.
+    /// </exception>
     public string? Anchor
     {
         get => _anchor;
