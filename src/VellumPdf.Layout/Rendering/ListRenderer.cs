@@ -1041,8 +1041,8 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
         for (var i = 0; i < earlier.Count; i++)
         {
             var entry = earlier[i];
-            // The entries here are the list's own, so Clamped says the clamp would narrow the entry,
-            // which is what the twin counts.
+            // The entries here are the list's own, so Clamped says the clamp would narrow the
+            // entry, which is what the twin counts.
             if (entry.Clamped) _clampSkipped++;
             if (!CanDrawEntry(run, entry.Marker, entry.Content)) run?.NoteUndrawable();
             items.Add(entry.Clamped ? entry with { Content = WithoutClamp(entry), Clamped = false } : entry);

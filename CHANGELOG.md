@@ -714,9 +714,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - **Deliberate output change: a renderer of yours after a list whose entry moves starts where
     that list now ends.** A renderer that refuses some areas, as `IRenderer.Layout` allows, can
     then save where it was refused, and the reverse, as can an element it holds. `IRenderer.Layout`
-    says so, and calls it a known 2.x residual that 3.0 removes (#688). A renderer that breaks that contract by changing its result between calls can also
-    give other output than before, because the document can lay out once more before it draws
-    (above).
+    says so, and calls it a known 2.x residual that 3.0 removes (#688). A renderer that breaks
+    that contract by changing its result between calls can also give other output than before,
+    because the document can lay out once more before it draws (above).
   - A list that a renderer of yours holds reports nothing: neither 207 nor 208, because the
     document did not place it. The bytes are those of the list laid out as it was.
   - Moving entries adds pages, so the continuation bound now covers every list, not only a list

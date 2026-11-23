@@ -425,10 +425,10 @@ public sealed class ListPlacementAdoptionTests
     }
 
     /// <summary>
-    /// An entry the first document's clamp narrowed is not an entry 2.3.3 built. The second document
-    /// lays it out as 2.3.3 built it in the first, from the text it had then and without the clamp,
-    /// and not from the list as it is now: a child added to the narrowed item moves every entry
-    /// after it, and an item added after it is not there.
+    /// An entry the first document's clamp narrowed is not an entry 2.3.3 built. The second
+    /// document lays it out as 2.3.3 built it in the first, from the text it had then and without
+    /// the clamp, and not from the list as it is now: a child added to the narrowed item moves
+    /// every entry after it, and an item added after it is not there.
     /// </summary>
     [Theory]
     [InlineData("plain")]
@@ -451,8 +451,8 @@ public sealed class ListPlacementAdoptionTests
     private static ListElement ClampedWithATallMarker() => new ListElement(ListStyle.OrderedDecimal) { Indent = 250 }
         .Add(new ListItem([new TextRun("small text", H(10))]) { Style = H(20) });
 
-    // The child's gutter is twice the indent, 200, which leaves the first document's 180-point area no
-    // text for the child, and 200 points in the second document's 400.
+    // The child's gutter is twice the indent, 200, which leaves the first document's 180-point
+    // area no text for the child, and 200 points in the second document's 400.
     private static ListElement ClampedChild()
     {
         var list = new ListElement(ListStyle.OrderedDecimal) { Indent = 100 };
@@ -474,10 +474,10 @@ public sealed class ListPlacementAdoptionTests
     }
 
     /// <summary>
-    /// The second document lays out an entry the first document's clamp narrowed as an entry no clamp
-    /// touched. A marker that does not fit what is left of a page and text that does are drawn as
-    /// the twin draws them, the text without the marker, and the clamp's rule that the text of an
-    /// entry whose marker is refused is refused too does not apply to it.
+    /// The second document lays out an entry the first document's clamp narrowed as an entry no
+    /// clamp touched. A marker that does not fit what is left of a page and text that does are
+    /// drawn as the twin draws them, the text without the marker, and the clamp's rule that the
+    /// text of an entry whose marker is refused is refused too does not apply to it.
     /// </summary>
     [Fact]
     public void AnEntryTheFirstDocumentsClampNarrowed_isNotHeldToTheClampsRuleInTheSecond()
@@ -547,10 +547,10 @@ public sealed class ListPlacementAdoptionTests
     private static TextStyle Undefined() => new() { FontRef = new FontReference((Standard14)99), FontSize = 10 };
 
     /// <summary>
-    /// A list reused for a second document keeps an entry in a font only the first document defines.
-    /// The second document finds that in the entries it keeps, so every list of the second document
-    /// is laid out as its twin, as 2.3.3 laid them out: a later list that would move an entry is not
-    /// moved.
+    /// A list reused for a second document keeps an entry in a font only the first document
+    /// defines. The second document finds that in the entries it keeps, so every list of the
+    /// second document is laid out as its twin, as 2.3.3 laid them out: a later list that would
+    /// move an entry is not moved.
     /// </summary>
     [Fact]
     public void AReusedListWhoseKeptEntryUsesTheFirstDocumentsFont_makesEveryListOfTheSecondDocumentItsTwin()
@@ -577,8 +577,8 @@ public sealed class ListPlacementAdoptionTests
     }
 
     /// <summary>
-    /// What an entry already built can draw is read from its two paragraphs: its marker's style, and
-    /// each run of its text that holds any. A run with no text is not read.
+    /// What an entry already built can draw is read from its two paragraphs: its marker's style,
+    /// and each run of its text that holds any. A run with no text is not read.
     /// </summary>
     [Fact]
     public void WhatAnEntryAlreadyBuiltCanDraw_isReadFromItsMarkerAndItsRunsThatHoldText()
@@ -614,8 +614,8 @@ public sealed class ListPlacementAdoptionTests
         Assert.Equal(Sha(SecondDocumentWithLeads(ClampedChild, twin: true, leads: 0)), Sha(kept));
     }
 
-    // An entry whose text is 20 points in a 10-point style: it fits a page top, and not what is left
-    // of a short page after a few lines.
+    // An entry whose text is 20 points in a 10-point style: it fits a page top, and not what is
+    // left of a short page after a few lines.
     private static ListElement TallTextEntry() => new ListElement(ListStyle.OrderedDecimal)
         .Add(new ListItem([new TextRun("dropped", H(20))]) { Style = H(10) })
         .Add(new ListItem("next", H(10)));
