@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Text.RegularExpressions;
+using VellumPdf.Document;
 using VellumPdf.Layout.Core;
 using VellumPdf.Layout.Elements;
 using VellumPdf.Reader;
@@ -158,6 +159,39 @@ public sealed class PreformattedAnchorTests
         var dests = Dests(pdf);
         Assert.Equal(["long"], dests.Keys);
         Assert.Equal(new Dest(0, 0, TopOfPage - (Filler * Leading)), dests["long"]);
+    }
+
+    [Fact]
+    public void BlockAnchor_isReportedUnderTheElement_soAPlanTargetFindsIt()
+    {
+        // A page reference resolves a target by the element it was given, so a report keyed by
+        // anything else, the renderer for one, would leave the element without a page.
+        var block = new Preformatted(Lines(50)) { Anchor = "long" };
+        using var doc = NewDocument();
+        doc.Add(new Preformatted(Lines(3)));
+        doc.Add(block);
+
+        var renderer = doc.CreateRenderer();
+        renderer.RunLayout();
+
+        var reported = Assert.Single(renderer.DrawPlan!.Placements, p => p.Anchor == "long");
+        Assert.Same(block, reported.Key);
+        Assert.True(renderer.DrawPlan.TryGetTarget(block, out var page, out var y));
+        Assert.Equal(0, page);
+        Assert.Equal(Margins.Top + (3 * Leading), y, 4);
+    }
+
+    [Fact]
+    public void LabelledPageBreak_followedOnlyByABlock_saves()
+    {
+        using var doc = NewDocument();
+        doc.Add(new Paragraph("front", Body));
+        doc.Add(new PageBreak { PageLabel = new PageLabelRange(PdfPageLabelStyle.LowerRoman) });
+        doc.Add(new Preformatted("code") { Anchor = "code" });
+
+        var pdf = Save(doc);
+
+        Assert.Equal(new Dest(1, 0, TopOfPage), Dests(pdf)["code"]);
     }
 
     [Fact]
