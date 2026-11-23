@@ -59,17 +59,20 @@ public interface IRenderer
     /// <b>Do not</b> rely on where such a list lands: 3.0 lays a list out one way, whatever called
     /// it.</para>
     /// <para><b>A document that holds a list ahead of a renderer of yours lays out once more
-    /// before it draws.</b> That extra pass lays every list out as it was before the fixes above,
-    /// calls your renderer on the areas it gets, and keeps nothing. It finds out whether your
+    /// before it draws, unless it already lays every list out as it was before the fixes
+    /// above.</b> The document does so when one of its lists holds an entry in a font it cannot
+    /// draw, or when an element after a list can need about as many continuations as the limit
+    /// allows. The extra pass lays every list out as it was before the fixes above, calls your
+    /// renderer on the areas it gets, and keeps nothing. It finds out whether your
     /// renderer lays out a <see cref="VellumPdf.Layout.Rendering.ListRenderer"/> whose items use a
     /// font the document cannot draw, in which case every list of the document stays as it was
     /// before the fixes; see <see cref="VellumPdf.Layout.Elements.ListElement"/>. It comes before
     /// a header or footer's page-counting pass and apart from it, so a document with one calls your
     /// renderer one pass more than it otherwise would. The library's own renderers that hold no
     /// list, such as the barcode renderer, do not cause it. <b>An exception the extra pass meets is
-    /// not raised from it</b>: the drawing pass raises what it meets itself, so an exception that
-    /// only the extra pass met, because your renderer refuses an area only that pass offered, is
-    /// lost.</para>
+    /// not raised from it, except an <see cref="OutOfMemoryException"/></b>: the drawing pass
+    /// raises what it meets itself, so an exception that only the extra pass met, because your
+    /// renderer refuses an area only that pass offered, is lost.</para>
     /// <para><b>A renderer that breaks the rules at the top of these remarks can give other output
     /// than before.</b> One that changes its result from one call to the next, counts its calls,
     /// or throws on its first, sees the extra pass as one more call. A list ahead of your renderer

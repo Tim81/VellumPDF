@@ -602,8 +602,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     out through the context it was given, through `LayoutContext.WithArea` or through the public
     `LayoutContext` constructor is laid out as it was: no gutter is narrowed and no entry moves
     (#685), so the list itself saves, or is refused for the continuation limit, with the bytes and
-    the message it had. A list you laid out before the save keeps the entries that call built, at
-    the width it used, as it did, and the save lays it out as it was. `ListRenderer.Layout`,
+    the message it had. A list keeps the entries an earlier layout built, at the width that layout
+    used, as it did, whether you laid it out before the save or another document or an earlier
+    save did, and the save lays it out as it was. `ListRenderer.Layout`,
     `IRenderer.Layout` and the `LayoutContext` constructor and `WithArea` say so, with a "Do not
     rely on" paragraph: 3.0 lays a list out one way.
   - An entry whose marker has no room at the top of a page is still refused: the save throws the
@@ -678,8 +679,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - A list that a renderer of yours holds is found when it is laid out, after the lists ahead of
     it were laid out the new way. A document with a list ahead of a renderer from outside the
     library is therefore laid out once more before it is drawn, whether or not it has a header or
-    footer: the page-counting pass of a header follows it, and the renderer sees one more pass. The
-    library's own renderers that hold no list, such as the barcode renderer, do not cause it. The
+    footer, unless it already lays every list out as it was (an entry in a font it cannot draw, or
+    an element near the limit, below): the page-counting pass of a header follows it, and the
+    renderer sees one more pass. The library's own renderers that hold no list, such as the barcode
+    renderer, do not cause it. The
     list is found on the execution context of the layout, so one laid out on a task or on a
     thread your renderer starts is found, and one laid out on work queued with the context
     suppressed, such as `ThreadPool.UnsafeQueueUserWorkItem`, is not. A renderer of yours that
@@ -691,17 +694,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     entry changes where, so on a 200 x 80 pt page a paragraph of 100,001 five-letter words after a
     list whose entry moves was refused where 2.3.3 saved it, and with another entry height saved
     where 2.3.3 refused it. The document reads the element's size, and not its layout: a
-    paragraph, heading, preformatted text, table or list counts when its characters, with one for
-    each table row and each list item that holds none, come to 49,999 or more. A page break, an
-    image, a separator and a chart never count. The same report applies as for the font: 207 for
-    each list the document placed. A renderer of yours after a list whose result depends on where
-    it starts, and an element such a renderer holds, are not read, so a moved entry can still
-    change what the save does with them.
+    paragraph, heading, table or list counts when its characters, with one for each table row and
+    each list item that holds none, come to 49,999 or more, and so does preformatted text, with
+    each tab counted as its `TabWidth` because a tab can become that many columns and lines. A
+    page break, an image, a separator and a chart never count. The same report applies as for the
+    font: 207 for each list the document placed. A renderer of yours after a list whose result
+    depends on where it starts, and an element such a renderer holds, are not read, so a moved
+    entry can still change what the save does with them.
   - **Deliberate output change: a renderer of yours after a list whose entry moves starts where
     that list now ends.** A renderer that refuses some areas, as `IRenderer.Layout` allows, can
     then save where it was refused, and the reverse, as can an element it holds. `IRenderer.Layout`
     says so. A renderer that breaks that contract by changing its result between calls can also
-    give other output than before, because the document lays out once more before it draws (above).
+    give other output than before, because the document can lay out once more before it draws
+    (above).
   - A list that a renderer of yours holds reports nothing: neither 207 nor 208, because the
     document did not place it. The bytes are those of the list laid out as it was.
   - Moving entries adds pages, so the continuation bound now covers every list, not only a list

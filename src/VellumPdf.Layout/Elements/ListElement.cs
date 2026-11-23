@@ -57,8 +57,9 @@ public enum ListStyle
 /// <see cref="LayoutDiagnosticCode.ListEntryPartDropped"/> reports each such item the document
 /// placed, and <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/> reports the list in the
 /// last three cases. A list a renderer of yours holds reports neither. First, a renderer of yours
-/// lays the list out, whatever context it passes on, or you laid it out yourself before the save;
-/// see <see cref="Rendering.ListRenderer.Layout"/>. Second, no page holds one of its items,
+/// lays the list out, whatever context it passes on, or an earlier layout built its entries
+/// (you laid it out before the save, or another document or an earlier save did); see
+/// <see cref="Rendering.ListRenderer.Layout"/>. Second, no page holds one of its items,
 /// because a line of its marker, or of its text at the width the clamp would give it, is taller
 /// than a page. Third, laying it out the new way would take it past the continuation limit, as
 /// <see cref="Indent"/> describes. Fourth, any list of the document holds an item whose marker or
@@ -69,9 +70,11 @@ public enum ListStyle
 /// holds, after one of its lists, an element that can need about as many page continuations as
 /// the limit allows. That element is refused or saved according to where it starts, so moving an
 /// item ahead of it can turn one outcome into the other. The document reads the element's size,
-/// not its layout: it counts the characters of a paragraph, heading, preformatted text, list item
-/// or table cell, one for an item that holds none and one more for each table row, and the element
-/// counts when two more than that is over the limit. A page break, an image, a separator and a
+/// not its layout: it counts the characters of a paragraph, heading, list item or table cell, and
+/// of preformatted text with each tab counted as its <see cref="Preformatted.TabWidth"/>, because
+/// a tab can become that many columns and so that many lines. It adds one for an item that holds
+/// no characters and one more for each table row, and the element counts when two more than that
+/// is over the limit. A page break, an image, a separator and a
 /// chart never count, and neither does an element a renderer of yours holds. In the last two
 /// cases every list of the document is laid out that way, so the document keeps the outcome it
 /// had while nothing ahead of the font or the element moves.</para>
