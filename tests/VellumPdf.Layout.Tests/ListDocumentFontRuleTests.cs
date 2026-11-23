@@ -933,6 +933,57 @@ public sealed class ListDocumentFontRuleTests
     }
 
     /// <summary>
+    /// Threads that ask about two Standard 14 values at once each get their own value's answer. The
+    /// memo holds one value and its answer as a unit, so no thread reads one value with the
+    /// other's answer. A race needs the threads to interleave a write, so the loop cannot force
+    /// it; it fails on a memo that pairs a value with another's answer only when that happens.
+    /// </summary>
+    [Fact]
+    public void TheMemoOfTheLastStandard14Value_answersEachThreadForItsOwnValue()
+    {
+        var run = ListLayoutRun.Begin(new PdfDocument(), out var previous);
+        try
+        {
+            var defined = H(10);
+            var undefined = new TextStyle { FontRef = (Standard14)99 };
+            var wrong = 0;
+
+            Parallel.For(0, 4, new ParallelOptions { MaxDegreeOfParallelism = 4 }, worker =>
+            {
+                for (var i = 0; i < 200_000; i++)
+                {
+                    var useDefined = ((i + worker) & 1) == 0;
+                    if (ListLayoutRun.CanDraw(run, useDefined ? defined : undefined) != useDefined)
+                        Interlocked.Increment(ref wrong);
+                }
+            });
+
+            Assert.Equal(0, wrong);
+        }
+        finally
+        {
+            ListLayoutRun.End(previous);
+        }
+    }
+
+    /// <summary>
+    /// A document that holds an entry it cannot draw already lays every list out as its twin, so
+    /// a caller's renderer after the list needs no extra layout to find one. The two layouts are
+    /// one for each renderer, and the extra pass would add two more.
+    /// </summary>
+    [Fact]
+    public void AnUndrawableEntryAheadOfACallersRenderer_needsNoExtraLayout()
+    {
+        var (renderer, _) = Render(r =>
+        {
+            r.Add(new ListRenderer(OneEntry("a", Bad("undefined", 10), indent: 1000)));
+            r.Add(new Holder(new ListRenderer(OneEntry("b", H(10))), 0));
+        });
+
+        Assert.Equal(2, renderer.LayoutCalls);
+    }
+
+    /// <summary>
     /// Runs that alternate between two embedded fonts ask the document once for each font, not once
     /// for each change of font, and a font the document cannot draw is asked about again.
     /// </summary>

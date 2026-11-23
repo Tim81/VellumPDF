@@ -45,10 +45,12 @@ internal sealed class ListLayoutRun
     // lays its list out on.
     private System.Collections.Concurrent.ConcurrentDictionary<EmbeddedFontHandle, bool>? _drawable;
 
-    // The Standard 14 value whose answer was asked for last, which costs one comparison.
-    private Standard14 _lastStandard;
-    private bool _lastStandardDefined;
-    private bool _hasLastStandard;
+    // The Standard 14 value whose answer was asked for last, which costs one comparison. The value
+    // and its answer are packed in one long, written and read whole, because the run is read from
+    // every thread a renderer lays its list out on and three separate fields can pair one value
+    // with another's answer. Bit 0 says an answer is held, bit 1 is the answer, the rest the
+    // value. Zero is no answer yet.
+    private long _lastStandard;
 
     // Read from every thread a renderer lays its list out on, and only ever set to true.
     private volatile bool _allAsTwin;
@@ -162,10 +164,10 @@ internal sealed class ListLayoutRun
 
     private bool IsStandardDefined(Standard14 font)
     {
-        if (_hasLastStandard && _lastStandard == font) return _lastStandardDefined;
-        _lastStandardDefined = Enum.IsDefined(font);
-        _lastStandard = font;
-        _hasLastStandard = true;
-        return _lastStandardDefined;
+        var last = Volatile.Read(ref _lastStandard);
+        if (last != 0 && (last >> 2) == (long)font) return (last & 2) != 0;
+        var defined = Enum.IsDefined(font);
+        Volatile.Write(ref _lastStandard, ((long)font << 2) | (defined ? 2L : 0L) | 1L);
+        return defined;
     }
 }
