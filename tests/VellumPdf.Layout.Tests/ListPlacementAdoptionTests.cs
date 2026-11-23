@@ -307,9 +307,9 @@ public sealed class ListPlacementAdoptionTests
             Assert.DoesNotContain(ClampedText, Shows(kept));
     }
 
-    // The twenty-seventh roman marker, "xxvii.", is wider than the indent, so the gutter widens to it
-    // when the entry's longest word still fits beside it, and stays at the indent when it does not.
-    // The word is wider than the first document's area and fits the second's.
+    // The twenty-seventh roman marker, "xxvii.", is wider than the indent, so the gutter widens to
+    // it when the entry's longest word still fits beside it, and stays at the indent when it does
+    // not. The word is wider than the first document's area and fits the second's.
     private static ListElement GutterThatDependsOnTheWidth()
     {
         var list = new ListElement(ListStyle.OrderedRoman) { Indent = 20 };
