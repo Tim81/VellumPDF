@@ -272,15 +272,19 @@ public sealed class TextStyle
 
     /// <summary>
     /// When non-null, text rendered with this style will be wrapped in a /Link annotation pointing
-    /// to this URI, except in table cells and running bands. Use a full URI string (e.g.
+    /// to this URI, except in running bands and as the style of a table cell. Use a full URI string (e.g.
     /// "https://example.com").
     /// </summary>
     /// <remarks>
     /// <b>Attention</b>: the string is not validated. Empty and <c>not a uri</c> are written into a
     /// <c>/URI</c> action as given, and so is an absolute URI of any scheme, such as
     /// <c>javascript:alert(1)</c>. Non-ASCII characters are percent-encoded as UTF-8, and an
-    /// unpaired surrogate becomes U+FFFD first. Table cells and running bands silently drop the
-    /// link (#475). In a list item the marker is linked as well as the text. The link is written
+    /// unpaired surrogate becomes U+FFFD first. Running bands silently drop the link (#475), and so
+    /// does a table cell given this style through <see cref="VellumPdf.Layout.Elements.Table.Cell.Style"/>
+    /// or <see cref="VellumPdf.Layout.Elements.Table.TableElement.DefaultCellStyle"/>. A run of a
+    /// cell built from runs is a link over its own text; see
+    /// <see cref="VellumPdf.Layout.Elements.Table.Cell(IEnumerable{VellumPdf.Layout.Elements.TextRun})"/>.
+    /// In a list item the marker is linked as well as the text. The link is written
     /// untagged and without an alternate description, whatever the conformance, and no exception
     /// reports it. In a document whose <c>Conformance</c> is PDF/UA-1, the link breaks ISO
     /// 14289-1, 7.18.5 (#550). A link whose rectangle lies wholly outside the page's crop box is

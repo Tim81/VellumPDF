@@ -603,16 +603,24 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             var cs = cell.Style ?? style;
 
             // The owner text is built only for the refusal: this runs for every cell on every pass.
-            if (!double.IsFinite(cs.FontSize))
+            if (cell.RunText is { } runText)
+            {
+                foreach (var runStyle in runText.Relevant)
+                    if (!double.IsFinite(runStyle.FontSize))
+                        LayoutValidation.ValidateFontSize(runStyle, $"Table row {r}, cell {cellIndex}");
+            }
+            else if (!double.IsFinite(cs.FontSize))
+            {
                 LayoutValidation.ValidateFontSize(cs, $"Table row {r}, cell {cellIndex}");
+            }
             var colW = ColSpanWidth(col, cell.ColSpan);
             var innerW = colW - cell.Padding.Horizontal;
             var honourBreaks = HonoursBreaks(r, cellIndex);
             var wrapWidth = Math.Max(1, innerW);
             var lines = _measured is null
-                ? WordWrapCount(cell.Content, cs, wrapWidth, honourBreaks)
-                : CachedLineCount(_measured, (r, cellIndex, row.Cells.Count), cell.Content, cs, wrapWidth, honourBreaks);
-            var cellH = lines * cs.EffectiveLeading + cell.Padding.Vertical;
+                ? CellLineCount(cell, cs, wrapWidth, honourBreaks)
+                : CachedLineCount(_measured, (r, cellIndex, row.Cells.Count), cell, cs, wrapWidth, honourBreaks);
+            var cellH = lines * LeadingOf(cell, cs) + cell.Padding.Vertical;
             maxH = Math.Max(maxH, cellH);
             col += cell.ColSpan;
         }
@@ -625,11 +633,35 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     /// cached count was found for.
     /// </summary>
     private static int CachedLineCount(
-        TableMeasureCache cache, (int Row, int Cell, int CellCount) at, string text, TextStyle style,
+        TableMeasureCache cache, (int Row, int Cell, int CellCount) at, Cell cell, TextStyle style,
         double width, bool honourBreaks)
     {
         ref var entry = ref cache.Of(at.Row, at.Cell, at.CellCount, honourBreaks);
         var probe = TableMeasureProbe.Current;
+        var text = cell.Content;
+
+        // A cell of runs is counted by its own wrap, which finds the same interval of widths as the
+        // string's, so the cache answers it as it answers a string.
+        if (cell.RunText is { } runText)
+        {
+            if (entry.Holds(width))
+            {
+                if (probe is not null)
+                {
+                    probe.WrapHits++;
+                    if (probe.Verify && runText.CountLines(width, honourBreaks) != entry.Lines)
+                        throw new InvalidOperationException(
+                            $"A cached line count of {entry.Lines} does not hold at width {width:R}.");
+                }
+                return entry.Lines;
+            }
+
+            if (probe is not null) probe.WrapMisses++;
+            entry.Lines = runText.CountLines(width, honourBreaks, out entry.From, out entry.Below);
+            entry.HasLines = true;
+            return entry.Lines;
+        }
+
         if (entry.Holds(width))
         {
             if (probe is not null)
@@ -1100,7 +1132,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         if (!after.HasWidths)
         {
             var style = cell.Style ?? _table.DefaultCellStyle ?? TextStyle.Default;
-            (after.LongestWord, after.WidestLine) = TableGridResolver.MeasureCell(cell.Content, style, honourBreaks: false);
+            (after.LongestWord, after.WidestLine) = TableGridResolver.MeasureCell(cell, style, honourBreaks: false);
             after.HasWidths = true;
             if (TableMeasureProbe.Current is { } miss) miss.WidthMisses++;
         }
@@ -1323,7 +1355,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             {
                 var cell = cells[c];
                 var innerW = ColSpanWidth(col, cell.ColSpan) - cell.Padding.Horizontal;
-                lines += WordWrapCount(cell.Content, cell.Style ?? style, Math.Max(1, innerW), HonoursBreaks(r, c));
+                lines += CellLineCount(cell, cell.Style ?? style, Math.Max(1, innerW), HonoursBreaks(r, c));
                 col += cell.ColSpan;
             }
             units += Math.Max(1, lines);
@@ -1443,7 +1475,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             if (col >= _colWidths.Length) break;
             var cell = cells[c];
             var cs = cell.Style ?? style;
-            var needed = 1 * cs.EffectiveLeading + cell.Padding.Vertical;
+            var needed = 1 * LeadingOf(cell, cs) + cell.Padding.Vertical;
             foreach (var box in fresh)
                 if (box.Y + headerHeight + needed > box.Bottom + 0.001)
                     return (c, needed, Math.Min(fresh[0].Bottom, fresh[1].Bottom) - fresh[0].Y - headerHeight);
@@ -1466,7 +1498,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             var cell = row.Cells[c];
             var cs = cell.Style ?? style;
             var innerW = ColSpanWidth(col, cell.ColSpan) - cell.Padding.Horizontal;
-            cells[c] = WordWrapLines(cell.Content, cs, Math.Max(1, innerW), HonoursBreaks(rowIndex, c));
+            cells[c] = WrapCell(cell, cs, Math.Max(1, innerW), HonoursBreaks(rowIndex, c));
             col += cell.ColSpan;
         }
         return new RowLines(rowIndex, width, cells);
@@ -1488,10 +1520,11 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             var cell = row.Cells[c];
             var cs = cell.Style ?? style;
             var remaining = cellLines.Count - from[c];
-            var n = LinesThatFit(top, bottom, cs.EffectiveLeading, cell.Padding.Vertical, remaining);
+            var leading = LeadingOf(cell, cs);
+            var n = LinesThatFit(top, bottom, leading, cell.Padding.Vertical, remaining);
             count[c] = n;
             if (n < remaining) complete = false;
-            if (n > 0) height = Math.Max(height, n * cs.EffectiveLeading + cell.Padding.Vertical);
+            if (n > 0) height = Math.Max(height, n * leading + cell.Padding.Vertical);
         }
         return new RowSlice(lines, from, count, height, complete);
     }
@@ -1856,6 +1889,8 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         return span;
     }
 
+    private static bool SameColor(ColorRgb a, ColorRgb b) => a.R == b.R && a.G == b.G && a.B == b.B;
+
     private void DrawCell(DrawContext ctx, Cell cell, Row row, int colIdx,
         double cellX, double cellY, double colW, double h,
         TextStyle style, PdfStructElem? trElem, int rowSpan, int colSpan,
@@ -1909,7 +1944,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         }
         else
         {
-            wrappedLines = WordWrapLines(cell.Content, cs, Math.Max(1, innerBox.Width), HonoursBreaks(rowIndex, cellIndex));
+            wrappedLines = WrapCell(cell, cs, Math.Max(1, innerBox.Width), HonoursBreaks(rowIndex, cellIndex));
             lineCount = wrappedLines.Count;
         }
 
@@ -1947,16 +1982,23 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
 
         var canvas = ctx.Canvas.BeginText();
 
+        // A cell of runs opens with the style of its first text; the string cell's own style
+        // otherwise.
+        var openStyle = cell.RunText?.FirstStyle ?? cs;
+
         // A fresh reference, so the font operator is written for every cell.
         TextEmitter.SelectedFont? cellFont = null;
-        TextEmitter.SelectFont(ctx, canvas, cs, ref cellFont);
+        TextEmitter.SelectFont(ctx, canvas, openStyle, ref cellFont);
 
         // Where the text colour is written, so a cell that is never drawn is not refused for it.
         // The font size is checked in Layout.
-        LayoutValidation.ValidateColor(cs.Color, $"Table row {rowIndex}, cell {cellIndex}", "text colour");
-        canvas.SetFillColorRgb(cs.Color.R, cs.Color.G, cs.Color.B);
+        LayoutValidation.ValidateColor(openStyle.Color, $"Table row {rowIndex}, cell {cellIndex}", "text colour");
+        canvas.SetFillColorRgb(openStyle.Color.R, openStyle.Color.G, openStyle.Color.B);
+        var currentColor = openStyle.Color;
 
-        var lineHeight = cs.EffectiveLeading;
+        var runLines = wrappedLines as CellRunLines;
+        var lineHeight = LeadingOf(cell, cs);
+        var baselineSize = cell.RunText?.FontSize ?? cs.FontSize;
         for (var lineIdx = 0; lineIdx < lineCount; lineIdx++)
         {
             var line = wrappedLines[firstLine + lineIdx];
@@ -1969,7 +2011,17 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             // its bytes, an empty cell and one of spaces alone included.
             if (line.Length == 0 && holdsControlSpace) continue;
 
-            var lineW = cs.FontRef.MeasureString(line, cs.FontSize);
+            var fragments = runLines is null ? null : runLines.Fragments[firstLine + lineIdx];
+            var lineW = 0.0;
+            if (fragments is null)
+            {
+                lineW = cs.FontRef.MeasureString(line, cs.FontSize);
+            }
+            else
+            {
+                foreach (var fragment in fragments)
+                    lineW += fragment.Style.FontRef.MeasureString(fragment.Text, fragment.Style.FontSize);
+            }
 
             // Floored at the cell's own left edge (#473), the same clamp #472 applied to a
             // paragraph line for the same reason. Unlike the paragraph, this does not transfer as
@@ -1990,10 +2042,48 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
                 _ => 0
             };
 
-            var pdfTextY = ctx.ToPdfY(innerBox.Y + cs.FontSize + lineIdx * lineHeight);
-            canvas.SetTextMatrix(1, 0, 0, 1, innerBox.X + txOffset, pdfTextY);
+            var pdfTextY = ctx.ToPdfY(innerBox.Y + baselineSize + lineIdx * lineHeight);
+            if (fragments is null || fragments.Length == 0)
+            {
+                canvas.SetTextMatrix(1, 0, 0, 1, innerBox.X + txOffset, pdfTextY);
+                TextEmitter.Show(canvas, openStyle, line);
+                continue;
+            }
 
-            TextEmitter.Show(canvas, cs, line);
+            // A fragment is placed by its own text matrix, one after the other along the line, and
+            // the link of a run covers the width its text is drawn at on this line (#659 draws a
+            // paragraph's the same way), as tall as the line and cut to the cell.
+            var x = innerBox.X + txOffset;
+            var lineTop = innerBox.Y + lineIdx * lineHeight;
+            foreach (var fragment in fragments)
+            {
+                TextEmitter.SelectFont(ctx, canvas, fragment.Style, ref cellFont);
+                if (!SameColor(currentColor, fragment.Style.Color))
+                {
+                    LayoutValidation.ValidateColor(
+                        fragment.Style.Color, $"Table row {rowIndex}, cell {cellIndex}", "text colour");
+                    canvas.SetFillColorRgb(fragment.Style.Color.R, fragment.Style.Color.G, fragment.Style.Color.B);
+                    currentColor = fragment.Style.Color;
+                }
+
+                canvas.SetTextMatrix(1, 0, 0, 1, x, pdfTextY);
+                TextEmitter.Show(canvas, fragment.Style, fragment.Text);
+
+                var fragmentW = fragment.Style.FontRef.MeasureString(fragment.Text, fragment.Style.FontSize);
+                if (fragment.Style.LinkUri is { } uri)
+                {
+                    var left = Math.Max(x, cellX);
+                    var right = Math.Min(x + fragmentW, cellX + colW);
+                    var top = Math.Max(lineTop, cellY);
+                    var bottom = Math.Min(lineTop + lineHeight, cellY + h);
+
+                    // A box with no area is skipped; a NaN edge is not, so the save refuses it as
+                    // it refuses any non-finite link rectangle.
+                    if (!(right <= left) && !(bottom <= top))
+                        ctx.AddUriLinkAnnotation(new LayoutBox(left, top, right - left, bottom - top), uri);
+                }
+                x += fragmentW;
+            }
         }
 
         canvas.EndText();
@@ -2071,6 +2161,25 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             w += _colWidths[startCol + i];
         return w;
     }
+
+    /// <summary>The lines a cell wraps into: its string, or its runs.</summary>
+    private static List<string> WrapCell(Cell cell, TextStyle style, double maxWidth, bool honourBreaks) =>
+        cell.RunText is { } runText
+            ? runText.Lines(maxWidth, honourBreaks)
+            : WordWrapLines(cell.Content, style, maxWidth, honourBreaks);
+
+    /// <summary>The number of lines <see cref="WrapCell"/> returns.</summary>
+    private static int CellLineCount(Cell cell, TextStyle style, double maxWidth, bool honourBreaks) =>
+        cell.RunText is { } runText
+            ? runText.CountLines(maxWidth, honourBreaks)
+            : WordWrapCount(cell.Content, style, maxWidth, honourBreaks);
+
+    /// <summary>
+    /// The height of one line of the cell: its style's, or for a cell of runs the largest of the
+    /// runs that hold text.
+    /// </summary>
+    private static double LeadingOf(Cell cell, TextStyle style) =>
+        cell.RunText?.Leading ?? style.EffectiveLeading;
 
     /// <summary>
     /// Delegates to <see cref="WordWrapLines"/> rather than carrying its own line-counting walk.

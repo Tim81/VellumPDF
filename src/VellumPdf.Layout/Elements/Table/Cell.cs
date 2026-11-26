@@ -1,12 +1,16 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Runtime.CompilerServices;
 using VellumPdf.Layout.Core;
+using VellumPdf.Layout.Rendering.Table;
 
 namespace VellumPdf.Layout.Elements.Table;
 
 /// <summary>A single table cell, optionally spanning multiple columns or rows.</summary>
 /// <remarks>
+/// A cell holds one string, or a sequence of runs that each have their own style; see
+/// <see cref="Cell(IEnumerable{TextRun})"/>.
 /// A <see cref="ColSpan"/> below 1 is refused at save, and a <see cref="RowSpan"/> below 1 is
 /// drawn as 1. A null text given to the constructor is stored, and refused where a column is
 /// sized automatically; see the constructor.
@@ -16,6 +20,8 @@ public sealed class Cell
 {
     /// <summary>The text content rendered in the cell.</summary>
     /// <remarks>
+    /// For a cell built from runs this is the text of every run, joined without a separator. It is
+    /// what the rules below read, so a line break, a tab or a space in any run is one in the cell.
     /// An empty string draws no text. The value is null when the constructor was given a null;
     /// the cell then draws no text, and the save refuses it only where a column is sized
     /// automatically, as the constructor describes.
@@ -192,6 +198,9 @@ public sealed class Cell
     /// <see cref="TextStyle.Default"/>. Refusals on size, leading, font and text colour are on
     /// <see cref="TextStyle"/> and are raised from the save. A <see cref="TextStyle.LinkUri"/> in
     /// it is ignored (#475).
+    /// <para><b>A cell built from runs does not read this style.</b> Each run is drawn in its own
+    /// style, and neither this property nor <see cref="TableElement.DefaultCellStyle"/> styles a
+    /// run. Setting it on such a cell is not refused and has no effect.</para>
     /// <para>A cell with no style, in a table with no <see cref="TableElement.DefaultCellStyle"/>,
     /// does not take <see cref="Document.SetDefaultFont"/>; it takes
     /// <see cref="TextStyle.Default"/>. An empty cell reaches this too. The font is then Helvetica,
@@ -286,6 +295,16 @@ public sealed class Cell
     /// </remarks>
     public string? Language { get; init; }
 
+    /// <summary>The runs the cell was built from, or null for a cell built from a string.</summary>
+    /// <remarks>
+    /// The list is a copy of the sequence given to <see cref="Cell(IEnumerable{TextRun})"/>, so
+    /// changing that sequence afterwards changes nothing here. An empty sequence reads as one empty
+    /// run in <see cref="TextStyle.Default"/>.
+    /// </remarks>
+    public IReadOnlyList<TextRun>? Runs { get; }
+
+    internal CellRunText? RunText { get; }
+
     /// <summary>Creates a cell with the given text content.</summary>
     /// <remarks>
     /// A null <paramref name="content"/> is stored, and the cell draws no text. The save refuses it with
@@ -304,5 +323,79 @@ public sealed class Cell
     public Cell(string content)
     {
         Content = content;
+    }
+
+    /// <summary>Creates a cell from a sequence of runs, each with its own style.</summary>
+    /// <remarks>
+    /// <b>A null sequence, a null run and a run with a null style are refused here.</b> The first
+    /// two throw <see cref="ArgumentNullException"/> and the third <see cref="ArgumentException"/>;
+    /// <c>ParamName</c> is <c>runs</c> and the message of the last two names the index of the run.
+    /// <see cref="TextRun"/> stores a null style, and a paragraph saves one on a run that draws no
+    /// text; this constructor refuses it whatever the run's text, so an empty run needs a style
+    /// too. An empty sequence is accepted and builds a cell with one empty run in
+    /// <see cref="TextStyle.Default"/>, which draws no text. The sequence is copied. A
+    /// <see langword="null"/> literal binds to the string constructor, not to this one.
+    /// <para>The text of every run is read as one string, by the rules <see cref="Content"/> gives:
+    /// a carriage return and line feed pair, a lone carriage return and a lone line feed each end a
+    /// line, any other white-space control character is a space, and a space is the only break point
+    /// between words. A run boundary inside a word draws no space, so a run <c>astro</c> followed by
+    /// a run <c>logie</c> is one word, and the word is measured in pieces, each in the style of its
+    /// run. A space is measured in the style of the run that holds it. Adjacent runs that share one
+    /// <see cref="TextStyle"/> instance are one piece of text, drawn in one show operator, so a cell
+    /// of such runs is drawn as the string cell of the text they hold in that style.</para>
+    /// <para>Every line of the cell is as tall as the largest <see cref="TextStyle.EffectiveLeading"/>
+    /// among the runs that hold text, and the first baseline lies one largest font size below the
+    /// top of the cell's content, so a line holding only small text is as tall as its neighbours.
+    /// A paragraph sizes each line from the runs on it instead. When no run holds text those are all
+    /// the runs.</para>
+    /// <para>A run is a link through its own <see cref="TextStyle.LinkUri"/>. The annotation covers
+    /// the width the run's text is drawn at on each line it is on, as tall as the line, and is cut
+    /// to the cell's box. A run that draws no glyph gets none. <b>The links of a cell are not
+    /// tagged</b>, whatever the document's conformance, as in a paragraph, and no exception reports
+    /// it. A <see cref="TextStyle.LinkUri"/> on <see cref="Style"/> is still ignored (#475).</para>
+    /// <para>The style of a run that holds no text is not checked by the save. The style of a run
+    /// that does must have a finite font size, and each channel of its colour must be finite where
+    /// the text is drawn. In a PDF/A or PDF/UA document give every run a style with an embedded
+    /// font; see <see cref="Style"/>.</para>
+    /// <para>A cell laid out unbroken, as <see cref="Content"/> describes, reads its runs as it
+    /// reads a string: wrapped at spaces alone and measured with its control characters, which are
+    /// left out of what is drawn. The limit <see cref="Content"/> states counts the characters of
+    /// every run. <b>Do not pass</b> a cell with more lines than a document can hold and expect
+    /// them drawn.</para>
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="runs"/> is <see langword="null"/> or contains <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// A run's <see cref="TextRun.Style"/> is <see langword="null"/>. It is also raised from
+    /// <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not from this
+    /// constructor, when a run's text holds an unpaired surrogate and is measured in an embedded
+    /// font; see <see cref="TextStyle.FontRef"/>. A pair split between two runs that share one style
+    /// instance is joined and does not throw; split between runs of different instances, each half
+    /// is unpaired and it throws.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this constructor, when the style of a run that holds text has a font size that is not
+    /// finite, or a channel of its text colour is not finite where it is drawn; see
+    /// <see cref="TextStyle.FontSize"/> and <see cref="TextStyle.Color"/>. The message names the row
+    /// and the cell. It is also raised when <see cref="Document.StrictDiagnostics"/> is set and text
+    /// of the cell is written as glyph 0, or the document has a conformance claim and the cell
+    /// writes Helvetica or another Standard 14 font.
+    /// </exception>
+    /// <exception cref="IndexOutOfRangeException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this constructor, when a run's style holds a <see cref="VellumPdf.Fonts.Standard14"/>
+    /// value the enumeration does not name and the font is selected on a page; see
+    /// <see cref="TextStyle.FontRef"/>.
+    /// </exception>
+    [OverloadResolutionPriority(-1)]
+    public Cell(IEnumerable<TextRun> runs)
+    {
+        ArgumentNullException.ThrowIfNull(runs);
+        var copy = TextRunList.Copy(runs, nameof(runs), TextStyle.Default);
+        Runs = copy;
+        Content = TextRunList.Concat(copy);
+        RunText = new CellRunText(copy);
     }
 }
