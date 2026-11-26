@@ -283,7 +283,8 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     /// see <see cref="ListElement"/>, <see cref="LayoutDiagnosticCode.ListEntryPartDropped"/> and
     /// <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/>. A list that your renderer holds
     /// reports neither: the document did not place it. That holds for the pieces of the list too,
-    /// when your renderer returns the list's own result and the document calls a piece itself.</para>
+    /// when your renderer returns the list's own result and the document calls a piece
+    /// itself.</para>
     /// <para><b>A list builds its entries at its first layout and keeps them, whole and at the
     /// width that layout used, as it did.</b> The calls the document makes in one save do not
     /// count as an earlier layout of each other. When the first layout was another one, which is a
@@ -301,8 +302,11 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     /// starts is found. One laid out on work queued with the context suppressed, such as
     /// <c>ThreadPool.UnsafeQueueUserWorkItem</c> or after <c>ExecutionContext.SuppressFlow</c>, is
     /// not, and the lists ahead of it are then laid out the new way, so a document that holds a
-    /// font it cannot draw there can save where it was refused, or be refused where it saved.
-    /// <b>Do not</b> lay a list out there, and do not rely on where a list lands through a
+    /// font it cannot draw there can save where it was refused, or be refused where it saved. A
+    /// list your renderer lays out only from its <see cref="IRenderer.Draw"/> is found when it is
+    /// drawn, because the extra pass measures and never draws: the lists placed before it were
+    /// laid out the new way, and the lists after it are laid out as they were. <b>Do not</b> lay a
+    /// list out there or from <c>Draw</c>, and do not rely on where a list lands through a
     /// renderer of yours: 3.0 lays a list out one way, whatever called it. A renderer of yours that
     /// draws text in such a font itself, and not through a list, can still be moved by a list
     /// ahead of it.</para>

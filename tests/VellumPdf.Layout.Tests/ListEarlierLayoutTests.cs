@@ -282,20 +282,53 @@ public sealed class ListEarlierLayoutTests
         return twin ? renderer.Unclamped() : renderer;
     }
 
-    private static Document SplitDocument(string shape, bool twin)
+    // Draws nothing and takes no height.
+    private sealed class Empty : IRenderer
+    {
+        public LayoutResult Layout(LayoutContext context) => LayoutResult.Full(context.Area.WithHeight(0));
+
+        public void Draw(DrawContext ctx)
+        {
+        }
+    }
+
+    // A renderer of the caller's that hands the document the first piece of the list as the
+    // overflow, with nothing of its own in front of it, so the document lays that first piece out
+    // itself on the next page. It is the one way a first piece reaches the document without a
+    // downcast.
+    private sealed class Defer(IRenderer inner) : IRenderer
+    {
+        public LayoutResult Layout(LayoutContext context)
+        {
+            var result = inner.Layout(context);
+            return result.Status == LayoutResult.Outcome.Partial
+                ? LayoutResult.Partial(context.Area.WithHeight(0), new Empty(), result.SplitRenderer!)
+                : result;
+        }
+
+        public void Draw(DrawContext ctx) => inner.Draw(ctx);
+    }
+
+    private static Document SplitDocument(string shape, bool twin, double height = 80, int leads = 0)
     {
         var renderer = SplitList(twin, shape.EndsWith("Mid"));
         var doc = new Document
         {
-            PageSize = new PdfRectangle(0, 0, 200, 80),
+            PageSize = new PdfRectangle(0, 0, 200, height),
             Margins = new EdgeInsets(10),
             // The reference is the list as it was, which the document placing it directly reports.
             StrictDiagnostics = !twin,
         };
 
+        for (var i = 0; i < leads; i++) doc.Add(new Paragraph("lead" + i, H(10)) { Margins = EdgeInsets.Zero });
+
         if (shape.StartsWith("passThrough"))
         {
             doc.Add(new PassThrough(renderer));
+        }
+        else if (shape.StartsWith("deferred"))
+        {
+            doc.Add(new Defer(renderer));
         }
         else
         {
@@ -314,23 +347,35 @@ public sealed class ListEarlierLayoutTests
     /// calling a piece itself does not make the piece one it placed. A caller that returns the
     /// list's own result, and a list placed over entries a caller's renderer built, save with the
     /// bytes of the list as it was and report neither 207 nor 208, with
-    /// <see cref="Document.StrictDiagnostics"/> set.
+    /// <see cref="Document.StrictDiagnostics"/> set. So does a caller that hands the document the
+    /// first piece as its overflow, so that the document lays the first piece out itself, for a
+    /// list that splits between entries and for one that splits inside an entry, on several page
+    /// heights and with lines ahead of the list.
     /// </summary>
     [Theory]
     [InlineData("passThrough")]
     [InlineData("heldThenDirect")]
     [InlineData("passThroughMid")]
     [InlineData("heldThenDirectMid")]
+    [InlineData("deferred")]
+    [InlineData("deferredMid")]
     public void ThePiecesOfAHeldList_reportNothingWhenTheDocumentCallsThemItself(string shape)
     {
-        var reference = Save(SplitDocument(shape, twin: true));
-        var doc = SplitDocument(shape, twin: false);
-        var bytes = Save(doc);
+        var deferred = shape.StartsWith("deferred", StringComparison.Ordinal);
+        foreach (var height in deferred ? new[] { 60.0, 70, 80, 90, 100, 110, 120 } : [80.0])
+        {
+            foreach (var leads in deferred ? new[] { 0, 1, 2 } : [0])
+            {
+                var reference = Save(SplitDocument(shape, twin: true, height, leads));
+                var doc = SplitDocument(shape, twin: false, height, leads);
+                var bytes = Save(doc);
 
-        Assert.Equal(Sha(reference), Sha(bytes));
-        Assert.DoesNotContain(
-            doc.Diagnostics,
-            d => d.Code is LayoutDiagnosticCode.ListEntryPartDropped or LayoutDiagnosticCode.ListIndentClampSkipped);
+                Assert.True(Sha(reference) == Sha(bytes), $"{shape} height {height} leads {leads}");
+                Assert.DoesNotContain(
+                    doc.Diagnostics,
+                    d => d.Code is LayoutDiagnosticCode.ListEntryPartDropped or LayoutDiagnosticCode.ListIndentClampSkipped);
+            }
+        }
     }
 
     private static ListElement OneEntry(string text) =>
@@ -374,31 +419,97 @@ public sealed class ListEarlierLayoutTests
         if (reports) Assert.Contains(skipped, d => d.ElementIndex == 0);
     }
 
+    private static ListElement UndrawableList() =>
+        new ListElement(ListStyle.Unordered) { Indent = 1000 }
+            .Add(new ListItem([new TextRun("bad", new TextStyle { FontRef = new FontReference((Standard14)99), FontSize = 10 })])
+            { Style = H(10) });
+
+    private static Preformatted NearTheLimit() => new(new string('	', 1_700), H(1)) { TabWidth = 32 };
+
+    // What each cause says that the other causes' messages do not.
+    private const string FontCause = "font it cannot draw";
+    private const string NearCause = "element after a list";
+
     /// <summary>
     /// The 207 of a list the document lays out as it was names the rule that applied: the font the
-    /// document cannot draw or the element after a list near the limit.
+    /// document cannot draw, the element after a list near the limit, or both. Each message holds
+    /// the words of its causes and not the words of the other, and the order of the elements does
+    /// not change what the document found: a near-limit element ahead of the list in the font gives
+    /// the same message as one after it, whether that element is preformatted text or a list.
     /// </summary>
     [Theory]
     [InlineData("font", true, false)]
-    [InlineData("limit", false, true)]
-    public void TheFallbackOfADocumentWideRule_namesTheRuleThatApplied(string rule, bool namesFont, bool namesLimit)
+    [InlineData("near", false, true)]
+    [InlineData("font, near", true, true)]
+    [InlineData("near, font", true, true)]
+    [InlineData("font, nearlist", true, true)]
+    public void TheFallbackOfADocumentWideRule_namesTheRuleThatApplied(string order, bool namesFont, bool namesNear)
     {
         var doc = Page(PageWidth);
         doc.Add(new ListRenderer(Make("clamp")));
-        if (rule != "limit")
+        foreach (var cause in order.Split(", "))
         {
-            doc.Add(new ListElement(ListStyle.Unordered) { Indent = 1000 }
-                .Add(new ListItem([new TextRun("bad", new TextStyle { FontRef = new FontReference((Standard14)99), FontSize = 10 })])
-                { Style = H(10) }));
+            if (cause == "font") doc.Add(UndrawableList());
+            else if (cause == "nearlist") doc.Add(new ListElement(ListStyle.Unordered).Add(new ListItem(new string('a', 50_000), H(1))));
+            else doc.Add(NearTheLimit());
         }
 
-        if (rule == "limit") doc.Add(new Preformatted(new string('\t', 1_700), H(1)) { TabWidth = 32 });
+        doc.Add(new ListRenderer(Make("clamp")));
         Save(doc);
 
-        var message = Assert.Single(
-            doc.Diagnostics, d => d.Code == LayoutDiagnosticCode.ListIndentClampSkipped && d.ElementIndex == 0).Message;
-        Assert.Equal(namesFont, message.Contains("font it cannot draw", StringComparison.Ordinal));
-        Assert.Equal(namesLimit, message.Contains("page continuations", StringComparison.Ordinal));
+        var skipped = doc.Diagnostics.Where(d => d.Code == LayoutDiagnosticCode.ListIndentClampSkipped).ToArray();
+        Assert.Contains(skipped, d => d.ElementIndex == 0);
+        Assert.All(skipped, d =>
+        {
+            Assert.Equal(namesFont, d.Message.Contains(FontCause, StringComparison.Ordinal));
+            Assert.Equal(namesNear, d.Message.Contains(NearCause, StringComparison.Ordinal));
+        });
+    }
+
+    // Lays a list out only from its Draw, at the area Layout reserved, and draws it.
+    private sealed class LaysOutFromDraw(IRenderer inner) : IRenderer
+    {
+        private LayoutBox _box;
+
+        public LayoutResult Layout(LayoutContext context)
+        {
+            _box = context.Area.WithHeight(Math.Min(20, context.Area.Height));
+            return LayoutResult.Full(_box);
+        }
+
+        public void Draw(DrawContext ctx)
+        {
+            inner.Layout(new LayoutContext(_box));
+            inner.Draw(ctx);
+        }
+    }
+
+    /// <summary>
+    /// A list a renderer of the caller's lays out only from its <c>Draw</c> is found when it is
+    /// drawn, because the extra pass measures and never draws. This is a documented boundary of
+    /// the font rule, not a defect to fix here: the list ahead of it is clamped (203), so the file
+    /// differs from the one before the fixes of #476 and #685, and the list after it is laid out as
+    /// it was and names the font (207). Both save. A renderer that lays the same list out from
+    /// <c>Layout</c> is found by the extra pass and keeps every list as it was.
+    /// </summary>
+    [Fact]
+    public void AListLaidOutOnlyFromDraw_isFoundWhenItIsDrawn_soTheListAheadOfItIsClamped()
+    {
+        var doc = new Document { PageSize = new PdfRectangle(0, 0, 300, 300), Margins = new EdgeInsets(10) };
+        ListElement Clamp() => new ListElement(ListStyle.OrderedDecimal) { Indent = 300 }
+            .Add(new ListItem("clamped text", H(10)));
+
+        doc.Add(Clamp());
+        doc.Add(new LaysOutFromDraw(new ListRenderer(UndrawableList())));
+        doc.Add(Clamp());
+        var bytes = Save(doc);
+
+        // The same document before the fixes of #476 and #685 saves as 6D5D02C94C0F2E65.
+        Assert.Equal("76013E0383A3C56F", Sha(bytes));
+        Assert.Equal(
+            ["203x1@List0p1", "207x1@List2p1"],
+            doc.Diagnostics.Select(d => $"{(int)d.Code}x{d.Count}@{d.ElementKind}{d.ElementIndex}p{d.PageNumber}").ToArray());
+        Assert.Contains(FontCause, doc.Diagnostics.Single(d => d.Code == LayoutDiagnosticCode.ListIndentClampSkipped).Message, StringComparison.Ordinal);
     }
 
     /// <summary>

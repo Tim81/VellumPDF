@@ -813,6 +813,8 @@ public sealed class DocumentRenderer
     // depends on where that is. 2.3.3 saved or refused it according to where the twin lists put
     // it, so the lists are the twins. The bound is ContinuationBoundOf's, which holds for either
     // placement, and an element whose bound is within the limit cannot reach it from any start.
+    // Each rule is tested whatever the other has found, so the causes the scan records do not
+    // depend on the order of the elements, and the 207 of a list names every cause the scan found.
     // Removed in 3.0 (#688).
     private bool ScanLists(ListLayoutRun listRun)
     {
@@ -822,7 +824,7 @@ public sealed class DocumentRenderer
         {
             if (renderer is ListRenderer list)
             {
-                if (listBefore && !listRun.AllAsTwin && ContinuationBoundOf(renderer) > ContinuationLimit)
+                if (listBefore && ContinuationBoundOf(renderer) > ContinuationLimit)
                     listRun.NoteNearTheLimit();
                 listBefore = true;
                 if (ListRenderer.HoldsUndrawableEntry(list.Element, listRun)) listRun.NoteUndrawable();
@@ -833,7 +835,7 @@ public sealed class DocumentRenderer
                 {
                     if (renderer is not IListFreeRenderer) opaqueAfterList = true;
                 }
-                else if (!listRun.AllAsTwin && ContinuationBoundOf(renderer) > ContinuationLimit)
+                else if (ContinuationBoundOf(renderer) > ContinuationLimit)
                 {
                     listRun.NoteNearTheLimit();
                 }

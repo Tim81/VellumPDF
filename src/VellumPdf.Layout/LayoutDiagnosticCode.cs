@@ -211,13 +211,18 @@ public enum LayoutDiagnosticCode
     /// causes exist because a font the document cannot draw makes the save throw where its text is
     /// drawn, and an element near the limit is refused or saved according to where it starts, and
     /// the clamp or a moved entry ahead of either can change where that is; the document then
-    /// saves or throws as it did, for every list it holds. The message names the cause that
-    /// applied: the continuation limit for the list, or the font, or the element near the limit,
-    /// or both of the last two when the document found both. Strict mode refuses this code. It is
-    /// reported once for each list the document placed this way and draws from its first entry; a
-    /// list that a renderer of yours holds is laid out as before and reports nothing. <b>Do not
-    /// pass</b> an indent that leaves an entry's text no width, or a font the document cannot draw:
-    /// 3.0 will refuse both. See <see cref="Elements.ListElement"/>.
+    /// saves or throws as it did, for every list it places once it has found the cause. The
+    /// message names the cause that applied: the continuation limit for the list, or the font, or
+    /// the element near the limit, or both of the last two. Each list's message names the causes
+    /// the document had found when it placed that list. A font in a list that a renderer of yours
+    /// lays out only from its <c>Draw</c> is found when it is drawn, so the lists placed before it
+    /// are clamped or moved and report no 207, and a list placed after it names the font. Strict
+    /// mode refuses this code. It is reported once for each list the document placed this way and
+    /// draws from its first entry; a list that a renderer of yours holds is laid out as before and
+    /// reports nothing. A list the document places itself over entries a renderer of yours built
+    /// first is reported when the document lays every list out as it was. <b>Do not pass</b> an
+    /// indent that leaves an entry's text no width, or a font the document cannot draw: 3.0 will
+    /// refuse both. See <see cref="Elements.ListElement"/>.
     /// </remarks>
     ListIndentClampSkipped = 207,
 

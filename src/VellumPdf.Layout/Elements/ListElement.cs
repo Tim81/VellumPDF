@@ -78,7 +78,9 @@ public enum ListStyle
 /// is over the limit. A page break, an image, a separator and a
 /// chart never count, and neither does an element a renderer of yours holds. In the last two
 /// cases every list of the document is laid out that way, so the document keeps the outcome it
-/// had while nothing ahead of the font or the element moves.</para>
+/// had while nothing ahead of the font or the element moves. A list that a renderer of yours lays
+/// out only from its <see cref="IRenderer.Draw"/> is found, for the fourth case, when it is drawn,
+/// so the lists placed before it were laid out the new way.</para>
 /// <para><b>Attention</b>: an item whose text holds only white space is laid out at the leading of
 /// <see cref="TextStyle.Default"/>, as on <see cref="Paragraph"/>, while its marker is laid out in
 /// the item's own style, so the marker's line can be the one that does not fit where the item

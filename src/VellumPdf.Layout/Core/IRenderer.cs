@@ -71,17 +71,20 @@ public interface IRenderer
     /// cannot draw, or when an element after a list can need about as many continuations as the
     /// limit allows, and the elements added to it show that, so it needs no extra pass then. The
     /// extra pass lays every list out as it was before the fixes above, calls your renderer on the
-    /// areas it gets, and keeps nothing. It
-    /// finds out whether your renderer lays out a
+    /// areas it gets, and keeps nothing. It finds out whether your renderer lays out a
     /// <see cref="VellumPdf.Layout.Rendering.ListRenderer"/> whose items use a font the document
     /// cannot draw, in which case every list of the document stays as it was before the fixes; see
-    /// <see cref="VellumPdf.Layout.Elements.ListElement"/>. It comes before a header or footer's
-    /// page-counting pass and apart from it, so a document with one calls your
-    /// renderer one pass more than it otherwise would. The library's own renderers that hold no
-    /// list, such as the barcode renderer, do not cause it. <b>An exception the extra pass meets is
-    /// not raised from it, except an <see cref="OutOfMemoryException"/></b>: the drawing pass
-    /// raises what it meets itself, so an exception that only the extra pass met, because your
-    /// renderer refuses an area only that pass offered, is lost.</para>
+    /// <see cref="VellumPdf.Layout.Elements.ListElement"/>. It measures and never calls
+    /// <see cref="Draw"/>, so a list your renderer lays out only from <see cref="Draw"/> is found
+    /// when it is drawn: the lists placed before it were laid out the new way, and the lists after
+    /// it are laid out as they were. <b>Do not</b> lay a list out from <see cref="Draw"/>. The
+    /// extra pass comes before a header or footer's page-counting pass and apart from it, so a
+    /// document with one calls your renderer one pass more than it otherwise would. The library's
+    /// own renderers that hold no list, such as the barcode renderer, do not cause it. <b>An
+    /// exception the extra pass meets is not raised from it, except an
+    /// <see cref="OutOfMemoryException"/></b>: the drawing pass raises what it meets itself, so an
+    /// exception that only the extra pass met, because your renderer refuses an area only that
+    /// pass offered, is lost.</para>
     /// <para><b>A renderer that breaks the rules at the top of these remarks can give other output
     /// than before.</b> One that changes its result from one call to the next, counts its calls,
     /// or throws on its first, sees the extra pass as one more call. A list ahead of your renderer

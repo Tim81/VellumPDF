@@ -645,7 +645,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     it, with the number of entries the clamp would have narrowed as `Count`, or 1 when it would
     have narrowed none. The text of the entries the clamp would have narrowed is not drawn. The
     message of a 207 names the cause that applied: the continuation limit, a font the document
-    cannot draw, or an element after a list that comes near the limit.
+    cannot draw, an element after a list that comes near the limit, or both of the last two. Each
+    list's message names the causes the document had found when it placed that list.
   - A new `LayoutDiagnosticCode.ListIndentClamped` (203, severity `Error`) reports a clamped list
     once, with the number of clamped entries as `Count`. `StrictDiagnostics` refuses it, and the
     default saves. A list is reported when the document draws it from its first entry; a
@@ -709,9 +710,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     document or in one that a renderer of yours lays out through the context, through
     `LayoutContext.WithArea` or through the public constructor, no list of the document is clamped
     or moved, and the save gives what 2.3.3 gave: the same bytes, or the same exception and
-    message. `ListIndentClampSkipped` (207) reports each list the document placed this way, with
-    the number of entries the clamp would have narrowed as `Count`, or 1, and
-    `ListEntryPartDropped` (208) reports an entry left with a part missing.
+    message. A list that a renderer of yours lays out only from its `Draw` is the exception, below.
+    `ListIndentClampSkipped` (207) reports each list the document placed this way, with the number
+    of entries the clamp would have narrowed as `Count`, or 1, and `ListEntryPartDropped` (208)
+    reports an entry left with a part missing.
   - A list that a renderer of yours holds is found when it is laid out, after the lists ahead of
     it were laid out the new way. A document with a list ahead of a renderer from outside the
     library is therefore laid out once more before it is drawn, whether or not it has a header or
@@ -721,9 +723,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     renderer, do not cause it. The
     list is found on the execution context of the layout, so one laid out on a task or on a
     thread your renderer starts is found, and one laid out on work queued with the context
-    suppressed, such as `ThreadPool.UnsafeQueueUserWorkItem`, is not. A renderer of yours that
-    draws text in such a font itself, and not through a list, can still be moved by a list ahead
-    of it, as `ListRenderer.Layout` says.
+    suppressed, such as `ThreadPool.UnsafeQueueUserWorkItem`, is not. A list that your renderer
+    lays out only from its `Draw` is found when it is drawn, because the extra pass measures and
+    never draws: the lists placed before it were laid out the new way, and the lists after it are
+    laid out as they were. Do not lay a list out from `Draw`. A renderer of yours that draws text
+    in such a font itself, and not through a list, can still be moved by a list ahead of it, as
+    `ListRenderer.Layout` says.
   - **A document with an element after a list that can need about as many page continuations as
     the limit allows lays every list out as it was before the clamp and the moving of entries.**
     An element that needs that many saves or is refused according to where it starts, and a moved
@@ -747,8 +752,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - A list that a renderer of yours holds reports nothing: neither 207 nor 208, because the
     document did not place it, and nor do its pieces, including a piece the document calls itself
     when your renderer returns the list's own result. A list the document places over entries a
-    renderer of yours built first is held the same way. The bytes are those of the list laid out
-    as it was.
+    renderer of yours built first is held the same way, unless the document lays every list out as
+    it was (above), which reports it as any list the document places. The bytes are those of the
+    list laid out as it was.
   - Moving entries adds pages, so the continuation bound now covers every list, not only a list
     with a clamped entry, and a list that would pass the limit because of moved entries is placed
     as it was before, with `ListIndentClampSkipped` (207).
