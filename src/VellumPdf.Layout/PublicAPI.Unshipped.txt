@@ -163,3 +163,5 @@ VellumPdf.Layout.Elements.RunningBand.ChapterToken.get -> bool
 VellumPdf.Layout.Elements.RunningBand.ChapterToken.init -> void
 VellumPdf.Layout.Elements.LayoutImage.FitToPage.get -> bool
 VellumPdf.Layout.Elements.LayoutImage.FitToPage.init -> void
+VellumPdf.Layout.Elements.Table.Cell.Cell(System.Collections.Generic.IEnumerable<VellumPdf.Layout.Elements.TextRun!>! runs) -> void
+VellumPdf.Layout.Elements.Table.Cell.Runs.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Layout.Elements.TextRun!>?

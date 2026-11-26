@@ -348,14 +348,14 @@ internal sealed class TableGridResolver
                 double longest, widest;
                 if (Cache is null)
                 {
-                    (longest, widest) = MeasureCell(cell.Content, cellStyle, honourBreaks);
+                    (longest, widest) = MeasureCell(cell, cellStyle, honourBreaks);
                 }
                 else
                 {
                     ref var entry = ref Cache.Of(r, c, cells.Count, honourBreaks);
                     if (!entry.HasWidths)
                     {
-                        (entry.LongestWord, entry.WidestLine) = MeasureCell(cell.Content, cellStyle, honourBreaks);
+                        (entry.LongestWord, entry.WidestLine) = MeasureCell(cell, cellStyle, honourBreaks);
                         entry.HasWidths = true;
                         if (TableMeasureProbe.Current is { } miss) miss.WidthMisses++;
                     }
@@ -382,6 +382,9 @@ internal sealed class TableGridResolver
     /// <summary>
     /// The widest word and the widest line of a cell's text, each line measured on its own.
     /// </summary>
+    internal static (double Longest, double Widest) MeasureCell(Cell cell, TextStyle style, bool honourBreaks) =>
+        cell.RunText is { } runText ? runText.Measure(honourBreaks) : MeasureCell(cell.Content, style, honourBreaks);
+
     internal static (double Longest, double Widest) MeasureCell(string content, TextStyle style, bool honourBreaks)
     {
         var lines = TableRenderer.CellLines(content, honourBreaks);

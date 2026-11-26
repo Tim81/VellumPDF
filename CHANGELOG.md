@@ -195,6 +195,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     the whole element.
   - The string constructors are unchanged, and a document built with them saves to the same bytes.
 
+- **A table cell takes runs (#692).** `new Cell(IEnumerable<TextRun>)` builds a cell from runs in
+  their own styles, next to `new Cell(string)`, so one word of a cell can be bold and one run can
+  be a link. `Cell.Runs` returns the runs, or null for a cell built from a string, and
+  `Cell.Content` is their text joined.
+  - The runs are read as one string. Line ends, other white-space control characters and the
+    break points between words are those of a string cell, and a run boundary inside a word draws
+    no space. A cell of runs that share one `TextStyle` instance and hold text draws the text,
+    positions and operators of the string cell of the same text and style, unless that style has
+    a `LinkUri`: the run cell links the text and the string cell drops the link.
+  - Each line is as tall as the largest leading among the runs that hold text, and the first
+    baseline lies one largest font size of those runs below the top of the cell's content,
+    padding included. A run that holds only a line end or white space counts. `Cell.Style` and
+    `TableElement.DefaultCellStyle` do not style a run; when no run holds text the cell takes
+    them, as the string cell of the empty string.
+  - A run is a link through its own `LinkUri`, over the width its text is drawn at on each line
+    it is on and cut to the cell. The cell's own `Style.LinkUri` is still dropped. Links in a cell
+    are not tagged.
+  - A null sequence and a null run throw `ArgumentNullException`, and a run with a null style
+    throws `ArgumentException`, from the constructor. So does a run that holds text and has a
+    colour channel that is not finite or lies outside 0 to 1, with `ArgumentOutOfRangeException`
+    (ISO 32000-2, 8.6.4.3). An empty sequence builds an empty cell. `Cell.Runs` is read-only.
+  - The continuation limit counts the characters of every run, and a cell that would reach it is
+    read unbroken from its runs as a string cell is.
+  - The string constructor and a table of string cells are unchanged, and save to the same bytes.
+
 - **`Document.Timestamp` and `Document.DocumentId` (#597).** The Layout `Document` now forwards the
   two pins that `PdfDocument` already had. `Timestamp` sets the instant written as the XMP creation
   and modification date and mixed into the derived file identifier; with it pinned, two documents

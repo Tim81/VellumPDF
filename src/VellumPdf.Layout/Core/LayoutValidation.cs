@@ -388,6 +388,29 @@ internal static class LayoutValidation
     }
 
     /// <summary>
+    /// Rejects the text colour of a table cell's run when a channel is not a number from 0 to 1,
+    /// the DeviceRGB component range of ISO 32000-2:2020, 8.6.4.3. NaN and the infinities are
+    /// outside it. The value is tested as given, not as the token <c>PdfCanvas</c> would write.
+    /// </summary>
+    internal static void ValidateRunColor(ColorRgb color, int index, string paramName)
+    {
+        var channel = !IsUnit(color.R) ? ("red", color.R)
+            : !IsUnit(color.G) ? ("green", color.G)
+            : !IsUnit(color.B) ? ("blue", color.B)
+            : default;
+        if (channel.Item1 is null) return;
+
+        throw new ArgumentOutOfRangeException(
+            paramName,
+            channel.Item2,
+            $"The style of the run at index {index} has a {channel.Item1} channel of " +
+            $"{FormatExact(channel.Item2)}. ISO 32000-2:2020, 8.6.4.3 says each DeviceRGB component " +
+            "is a number from 0.0 to 1.0.");
+
+        static bool IsUnit(double value) => value is >= 0 and <= 1;
+    }
+
+    /// <summary>
     /// Renders a rejected number for a message. <c>NaN</c> and the infinities are the values this
     /// exists for and they have no useful "0.##" form, so they are named rather than formatted.
     /// </summary>

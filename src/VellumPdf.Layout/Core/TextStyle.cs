@@ -236,23 +236,33 @@ public sealed class TextStyle
 
     /// <summary>The text colour. Defaults to <see cref="ColorRgb.Black"/>.</summary>
     /// <remarks>
-    /// Stored as given. Channels are not clamped. A channel that is not finite is refused where it is
-    /// written; see <see cref="Document"/> and <see cref="ColorRgb"/>. In a paragraph run, a heading, a
-    /// list item or a table cell that draws text, the element's own check names it. On a running band,
-    /// and on a band that draws nothing, <see cref="VellumPdf.Canvas.PdfCanvas"/> decides: it refuses
-    /// the value when the band is drawn, and an empty template writes no colour. <b>Do not pass</b> a
-    /// non-finite channel: 3.0 refuses it. A <see cref="VellumPdf.Layout.Elements.Preformatted"/>
-    /// refuses a channel that is not a number from 0 to 1 from its constructor, with
-    /// <see cref="ArgumentException"/>.
+    /// Stored as given. Channels are not clamped. A channel that is not finite is refused
+    /// where it is written; see <see cref="Document"/> and <see cref="ColorRgb"/>. In a paragraph
+    /// run, a heading, a list item or a table cell's own style that draws text, the element's own
+    /// check names it. On a running band, and on a band that draws nothing, <see
+    /// cref="VellumPdf.Canvas.PdfCanvas"/> decides: it refuses the value when the band is drawn,
+    /// and an empty template writes no colour. <b>Do not pass</b> a non-finite channel: 3.0 refuses
+    /// it. A <see cref="VellumPdf.Layout.Elements.Preformatted"/> refuses a channel that is not a
+    /// number from 0 to 1 from its constructor, with <see cref="ArgumentException"/>. A table cell
+    /// built from runs has its own colour check in its constructor; see the constructor of
+    /// <see cref="VellumPdf.Layout.Elements.Table.Cell"/> that takes runs.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from a save, when a channel is <c>NaN</c> or infinite on a paragraph run, heading, list
-    /// item or table cell that draws text. The message names the element and the channel. A finite
-    /// channel outside 0 to 1 is not refused.
+    /// item or table cell style that draws text. The message names the element and the channel. A
+    /// finite channel outside 0 to 1 is not refused there. A table cell built from runs has its
+    /// own colour check in its constructor; see the constructor of
+    /// <see cref="VellumPdf.Layout.Elements.Table.Cell"/> that takes runs.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from a save, when a channel is <c>NaN</c> or infinite on a running band that is drawn.
-    /// The message says PDF does not support NaN or Infinity as a real number.
+    /// The message says PDF does not support NaN or Infinity as a real number. It is also raised
+    /// from the constructor of <see cref="VellumPdf.Layout.Elements.Preformatted"/>, for a channel
+    /// that is not a number from 0 to 1.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Raised from the constructor of <see cref="VellumPdf.Layout.Elements.Table.Cell"/> that takes
+    /// runs, not from this accessor, for the runs that constructor checks; see it.
     /// </exception>
     public ColorRgb Color { get; init; } = ColorRgb.Black;
 
@@ -272,30 +282,34 @@ public sealed class TextStyle
 
     /// <summary>
     /// When non-null, text rendered with this style will be wrapped in a /Link annotation pointing
-    /// to this URI, except in table cells and running bands. Use a full URI string (e.g.
-    /// "https://example.com").
+    /// to this URI, except in running bands and as the style of a table cell. Use a full URI string
+    /// (e.g. "https://example.com").
     /// </summary>
     /// <remarks>
-    /// <b>Attention</b>: the string is not validated. Empty and <c>not a uri</c> are written into a
-    /// <c>/URI</c> action as given, and so is an absolute URI of any scheme, such as
+    /// <b>Attention</b>: the string is not validated. Empty and <c>not a uri</c> are
+    /// written into a <c>/URI</c> action as given, and so is an absolute URI of any scheme, such as
     /// <c>javascript:alert(1)</c>. Non-ASCII characters are percent-encoded as UTF-8, and an
-    /// unpaired surrogate becomes U+FFFD first. Table cells and running bands silently drop the
-    /// link (#475). In a list item the marker is linked as well as the text. The link is written
-    /// untagged and without an alternate description, whatever the conformance, and no exception
-    /// reports it. In a document whose <c>Conformance</c> is PDF/UA-1, the link breaks ISO
-    /// 14289-1, 7.18.5 (#550). A link whose rectangle lies wholly outside the page's crop box is
-    /// exempt: clause 7.18.1 lifts the requirements of clause 7.18 for it. On a justified line,
-    /// in a standard-14 or an embedded face, the link's rectangle starts where the linked text's
-    /// first glyph is drawn and ends where the text that follows it on the line starts, spaces
-    /// stretched included, or, when the linked text closes the line, where its last glyph ends.
-    /// A space that closes the linked run is inside the rectangle, and so is the stretch after it.
-    /// A run that draws no glyph gets no annotation. A link run that opens the line at a tab stop
-    /// covers the space the tab is drawn as, in a standard-14 or an embedded face. A link on a run
-    /// of only spaces or tabs that does not open a line takes no rectangle, because those spaces
-    /// are drawn in the style of the run before them; a link on a leading tab with no stop to its
-    /// right takes none either, because the space is dropped at the start of a line. A line that is
-    /// not justified, and the last line of a justified paragraph, use the unstretched widths they
-    /// are drawn with.
+    /// unpaired surrogate becomes U+FFFD first. Running bands silently drop the link (#475), and so
+    /// does a table cell given this style through <see
+    /// cref="VellumPdf.Layout.Elements.Table.Cell.Style"/> or <see
+    /// cref="VellumPdf.Layout.Elements.Table.TableElement.DefaultCellStyle"/>. A run of a cell
+    /// built from runs is a link over its own text; the constructor of <see
+    /// cref="VellumPdf.Layout.Elements.Table.Cell"/> that takes runs states the rule. In a list
+    /// item the marker is linked as well as the text. The link is written untagged and without an
+    /// alternate description, whatever the conformance, and no exception reports it. In a document
+    /// whose <c>Conformance</c> is PDF/UA-1, the link breaks ISO 14289-1, 7.18.5 (#550). A link
+    /// whose rectangle lies wholly outside the page's crop box is exempt: clause 7.18.1 lifts the
+    /// requirements of clause 7.18 for it. On a justified line, in a standard-14 or an embedded
+    /// face, the link's rectangle starts where the linked text's first glyph is drawn and ends
+    /// where the text that follows it on the line starts, spaces stretched included, or, when the
+    /// linked text closes the line, where its last glyph ends. A space that closes the linked run
+    /// is inside the rectangle, and so is the stretch after it. A run that draws no glyph gets no
+    /// annotation. A link run that opens the line at a tab stop covers the space the tab is drawn
+    /// as, in a standard-14 or an embedded face. A link on a run of only spaces or tabs that does
+    /// not open a line takes no rectangle, because those spaces are drawn in the style of the run
+    /// before them; a link on a leading tab with no stop to its right takes none either, because
+    /// the space is dropped at the start of a line. A line that is not justified, and the last line
+    /// of a justified paragraph, use the unstretched widths they are drawn with.
     /// <para>Do not pass a value that is not an absolute URI. A later major version will refuse
     /// one.</para>
     /// <para>A <see cref="VellumPdf.Layout.Elements.Preformatted"/> refuses any value from its
