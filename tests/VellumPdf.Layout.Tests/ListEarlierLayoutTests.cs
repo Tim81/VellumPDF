@@ -217,11 +217,12 @@ public sealed class ListEarlierLayoutTests
 
     /// <summary>
     /// A list the document placed first and a renderer of the caller's holds afterwards keeps the
-    /// entries the document built: the held placement is laid out from them as the list was, and
-    /// the document's own placement after it is not turned into a placement of the list as it was.
+    /// entries the document built. The renderer makes the document lay every list out as it was, so
+    /// the two placements the document makes report that, naming the renderer, and the placement
+    /// the renderer holds reports nothing.
     /// </summary>
     [Fact]
-    public void AListThePlacementBuiltAndACallersRendererThenHolds_isStillPlacedTheNewWayByTheDocument()
+    public void AListThePlacementBuiltAndACallersRendererThenHolds_isReportedAtEachPlacementTheDocumentMakes()
     {
         var renderer = new ListRenderer(Make("clamp"));
         var doc = Page(PageWidth);
@@ -230,7 +231,10 @@ public sealed class ListEarlierLayoutTests
         doc.Add(renderer);
         Save(doc);
 
-        Assert.Contains(doc.Diagnostics, d => d.Code == LayoutDiagnosticCode.ListIndentClamped);
+        var skipped = doc.Diagnostics.Where(d => d.Code == LayoutDiagnosticCode.ListIndentClampSkipped).ToArray();
+        Assert.Equal([0, 2], skipped.Select(d => d.ElementIndex).Order().ToArray());
+        Assert.All(skipped, d => Assert.Contains("a renderer of yours", d.Message, StringComparison.Ordinal));
+        Assert.DoesNotContain(doc.Diagnostics, d => d.Code == LayoutDiagnosticCode.ListIndentClamped);
     }
 
     /// <summary>
@@ -294,8 +298,8 @@ public sealed class ListEarlierLayoutTests
 
     // A renderer of the caller's that hands the document the first piece of the list as the
     // overflow, with nothing of its own in front of it, so the document lays that first piece out
-    // itself on the next page. It is the one way a first piece reaches the document without a
-    // downcast.
+    // itself on the next page. It is one way a first piece reaches the document without a
+    // downcast; the other is a piece the caller adds itself (SplitDocument, "addPiece").
     private sealed class Defer(IRenderer inner) : IRenderer
     {
         public LayoutResult Layout(LayoutContext context)
@@ -317,7 +321,9 @@ public sealed class ListEarlierLayoutTests
             PageSize = new PdfRectangle(0, 0, 200, height),
             Margins = new EdgeInsets(10),
             // The reference is the list as it was, which the document placing it directly reports.
-            StrictDiagnostics = !twin,
+            // A document that holds a renderer of the caller's reports every list it places, the
+            // one over the entries that renderer built included, and the rows check that report.
+            StrictDiagnostics = !twin && !shape.StartsWith("heldThenDirect"),
         };
 
         for (var i = 0; i < leads; i++) doc.Add(new Paragraph("lead" + i, H(10)) { Margins = EdgeInsets.Zero });
@@ -329,6 +335,13 @@ public sealed class ListEarlierLayoutTests
         else if (shape.StartsWith("deferred"))
         {
             doc.Add(new Defer(renderer));
+        }
+        else if (shape.StartsWith("addPiece"))
+        {
+            // The caller lays the list out before the save through the public constructor and adds
+            // the first piece, a renderer of the library's own, to the document.
+            var result = renderer.Layout(new LayoutContext(new LayoutBox(10, 10, 180, height - 20)));
+            doc.Add(result.Status == LayoutResult.Outcome.Partial ? result.SplitRenderer! : renderer);
         }
         else
         {
@@ -345,12 +358,14 @@ public sealed class ListEarlierLayoutTests
     /// <summary>
     /// The pieces of a list a renderer of the caller's holds take that placement, so the document
     /// calling a piece itself does not make the piece one it placed. A caller that returns the
-    /// list's own result, and a list placed over entries a caller's renderer built, save with the
-    /// bytes of the list as it was and report neither 207 nor 208, with
-    /// <see cref="Document.StrictDiagnostics"/> set. So does a caller that hands the document the
-    /// first piece as its overflow, so that the document lays the first piece out itself, for a
-    /// list that splits between entries and for one that splits inside an entry, on several page
-    /// heights and with lines ahead of the list.
+    /// list's own result save with the bytes of the list as it was and report neither 207 nor
+    /// 208, with <see cref="Document.StrictDiagnostics"/> set. So does a caller that hands the
+    /// document the first piece as its overflow, so that the document lays the first piece out
+    /// itself, and a caller that adds the first piece to the document itself after laying the list
+    /// out, for a list that splits between entries and for one that splits inside an entry, on
+    /// several page heights and with lines ahead of the list. A list the document places over
+    /// entries a caller's renderer built has the bytes of the list as it was too, and reports the
+    /// fallback naming that renderer, because the document then holds a renderer of the caller's.
     /// </summary>
     [Theory]
     [InlineData("passThrough")]
@@ -359,9 +374,12 @@ public sealed class ListEarlierLayoutTests
     [InlineData("heldThenDirectMid")]
     [InlineData("deferred")]
     [InlineData("deferredMid")]
+    [InlineData("addPiece")]
+    [InlineData("addPieceMid")]
     public void ThePiecesOfAHeldList_reportNothingWhenTheDocumentCallsThemItself(string shape)
     {
-        var deferred = shape.StartsWith("deferred", StringComparison.Ordinal);
+        var deferred = shape.StartsWith("deferred", StringComparison.Ordinal)
+            || shape.StartsWith("addPiece", StringComparison.Ordinal);
         foreach (var height in deferred ? new[] { 60.0, 70, 80, 90, 100, 110, 120 } : [80.0])
         {
             foreach (var leads in deferred ? new[] { 0, 1, 2 } : [0])
@@ -371,9 +389,21 @@ public sealed class ListEarlierLayoutTests
                 var bytes = Save(doc);
 
                 Assert.True(Sha(reference) == Sha(bytes), $"{shape} height {height} leads {leads}");
-                Assert.DoesNotContain(
-                    doc.Diagnostics,
-                    d => d.Code is LayoutDiagnosticCode.ListEntryPartDropped or LayoutDiagnosticCode.ListIndentClampSkipped);
+                // A document that holds a renderer of the caller's reports the list it places over
+                // the entries that renderer built, and says why, and 208 where the twin drops a
+                // part; any other reports nothing.
+                if (!shape.StartsWith("heldThenDirect", StringComparison.Ordinal))
+                    Assert.DoesNotContain(doc.Diagnostics, d => d.Code == LayoutDiagnosticCode.ListEntryPartDropped);
+                var skipped = doc.Diagnostics.Where(d => d.Code == LayoutDiagnosticCode.ListIndentClampSkipped).ToArray();
+                if (shape.StartsWith("heldThenDirect", StringComparison.Ordinal))
+                {
+                    var one = Assert.Single(skipped);
+                    Assert.Contains("a renderer of yours", one.Message, StringComparison.Ordinal);
+                }
+                else
+                {
+                    Assert.Empty(skipped);
+                }
             }
         }
     }
@@ -424,7 +454,7 @@ public sealed class ListEarlierLayoutTests
             .Add(new ListItem([new TextRun("bad", new TextStyle { FontRef = new FontReference((Standard14)99), FontSize = 10 })])
             { Style = H(10) });
 
-    private static Preformatted NearTheLimit() => new(new string('	', 1_700), H(1)) { TabWidth = 32 };
+    private static Preformatted NearTheLimit() => new(new string('\t', 1_700), H(1)) { TabWidth = 32 };
 
     // What each cause says that the other causes' messages do not.
     private const string FontCause = "font it cannot draw";
@@ -485,15 +515,13 @@ public sealed class ListEarlierLayoutTests
     }
 
     /// <summary>
-    /// A list a renderer of the caller's lays out only from its <c>Draw</c> is found when it is
-    /// drawn, because the extra pass measures and never draws. This is a documented boundary of
-    /// the font rule, not a defect to fix here: the list ahead of it is clamped (203), so the file
-    /// differs from the one before the fixes of #476 and #685, and the list after it is laid out as
-    /// it was and names the font (207). Both save. A renderer that lays the same list out from
-    /// <c>Layout</c> is found by the extra pass and keeps every list as it was.
+    /// A document that holds a renderer of the caller's lays every list out as it was before the
+    /// fixes of #476 and #685, whether that renderer lays its list out from <c>Layout</c> or only
+    /// from <c>Draw</c>: the document decides from the elements added, before any pass, so the
+    /// list ahead of it is not clamped. Both lists report why, naming the renderer.
     /// </summary>
     [Fact]
-    public void AListLaidOutOnlyFromDraw_isFoundWhenItIsDrawn_soTheListAheadOfItIsClamped()
+    public void AListLaidOutOnlyFromDraw_isLaidOutAsItWas_likeEveryListOfTheDocument()
     {
         var doc = new Document { PageSize = new PdfRectangle(0, 0, 300, 300), Margins = new EdgeInsets(10) };
         ListElement Clamp() => new ListElement(ListStyle.OrderedDecimal) { Indent = 300 }
@@ -505,11 +533,13 @@ public sealed class ListEarlierLayoutTests
         var bytes = Save(doc);
 
         // The same document before the fixes of #476 and #685 saves as 6D5D02C94C0F2E65.
-        Assert.Equal("76013E0383A3C56F", Sha(bytes));
+        Assert.Equal("6D5D02C94C0F2E65", Sha(bytes));
         Assert.Equal(
-            ["203x1@List0p1", "207x1@List2p1"],
+            ["207x1@List0p1", "207x1@List2p1"],
             doc.Diagnostics.Select(d => $"{(int)d.Code}x{d.Count}@{d.ElementKind}{d.ElementIndex}p{d.PageNumber}").ToArray());
-        Assert.Contains(FontCause, doc.Diagnostics.Single(d => d.Code == LayoutDiagnosticCode.ListIndentClampSkipped).Message, StringComparison.Ordinal);
+        Assert.All(
+            doc.Diagnostics,
+            d => Assert.Contains("a renderer of yours", d.Message, StringComparison.Ordinal));
     }
 
     /// <summary>

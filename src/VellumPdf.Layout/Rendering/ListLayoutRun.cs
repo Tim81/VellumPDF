@@ -14,22 +14,22 @@ namespace VellumPdf.Layout.Rendering;
 /// <remarks>
 /// A 2.x compatibility device, removed in 3.0 (#688), which refuses such a font where the style is
 /// built and lays a list out one way.
-/// <para>Clamping or moving an entry changes where everything after it falls, and two things on
+/// <para>Clamping or moving an entry changes where everything after it falls, and three things on
 /// 2.3.3 depend on where that is. A list entry whose font the document cannot draw saved when its
 /// text fell where it does not fit and was dropped there, and threw when the text was drawn. An
 /// element that needs about as many continuations as the limit allows (#459) saved or threw
-/// according to where it started. One document could flip from one outcome to the other without
-/// any list having touched the element itself. The document keeps its 2.3.3 outcome only if no
-/// list moves anything, so a document that holds either lays every list out as its twin. The run
-/// is how a list that the document did not address, one a renderer of a caller's holds, reaches
-/// that decision: <see cref="Current"/> is the run of the layout in progress, whatever context the
-/// list was handed and whatever thread it is laid out on.</para>
-/// <para>A layout that finds such an entry after another list has been laid out the new way must
-/// lay out again from the start; <see cref="DocumentRenderer"/> does that for the measuring
-/// passes, and a pass that draws cannot be redone.</para>
-/// <para>The run flows with the execution context, so a renderer that lays its list out on a task
-/// or a thread pool thread is seen. Work queued with the context suppressed
-/// (<c>ThreadPool.UnsafeQueueUserWorkItem</c>, <c>ExecutionContext.SuppressFlow</c>) is not.</para>
+/// according to where it started. A renderer of a caller's reads where it starts, and nothing the
+/// library can read says how. One document could flip from one outcome to the other without any
+/// list having touched the element itself. The document keeps its 2.3.3 outcome only if no list
+/// moves anything, so a document that holds any of the three lays every list out as its twin.
+/// <see cref="DocumentRenderer"/> reads what the document holds before it lays anything out, so
+/// the decision is the same in every pass.</para>
+/// <para>The run is the one place a list reads that decision, and the document it lays out for:
+/// <see cref="Current"/> is the run of the layout in progress, whatever context the list was
+/// handed and whatever thread it is laid out on. It flows with the execution context, so a
+/// renderer that lays its list out on a task or a thread pool thread is seen. Work queued with the
+/// context suppressed (<c>ThreadPool.UnsafeQueueUserWorkItem</c>,
+/// <c>ExecutionContext.SuppressFlow</c>) is not.</para>
 /// </remarks>
 internal sealed class ListLayoutRun
 {
@@ -52,15 +52,12 @@ internal sealed class ListLayoutRun
     // value. Zero is no answer yet.
     private long _lastStandard;
 
-    // Read from every thread a renderer lays its list out on, and only ever set to true. The two
-    // causes are kept apart because the report of a list names the one that applied.
+    // Read from every thread a renderer lays its list out on, and only ever set to true. The
+    // causes are kept apart because the report of a list names the ones that applied.
     private volatile bool _allAsTwin;
     private volatile bool _undrawable;
     private volatile bool _nearTheLimit;
-
-    // The lists that laid out as a twin of their own during the probing pass, which let go of it
-    // when the pass ends.
-    private List<ListRenderer>? _probed;
+    private volatile bool _callerRenderer;
 
     private ListLayoutRun(PdfDocument pdf) => Pdf = pdf;
 
@@ -71,9 +68,10 @@ internal sealed class ListLayoutRun
     internal PdfDocument Pdf { get; }
 
     /// <summary>
-    /// True once any list of the document was found to hold an entry the document cannot draw, or
-    /// an element after a list was found that can need about as many continuations as the limit
-    /// allows. It never goes back: every list of the document is then laid out as its twin.
+    /// True once the document was found to hold a renderer that is not one of the library's own,
+    /// a list entry it cannot draw, or an element after a list that can need about as many
+    /// continuations as the limit allows. It never goes back: every list of the document is then
+    /// laid out as its twin.
     /// </summary>
     internal bool AllAsTwin => _allAsTwin;
 
@@ -87,11 +85,9 @@ internal sealed class ListLayoutRun
     internal bool FoundNearTheLimit => _nearTheLimit;
 
     /// <summary>
-    /// True while the document lays out only to find <see cref="AllAsTwin"/>. Every list lays out
-    /// as its twin then, on a copy of its own that <see cref="EndProbe"/> lets go of, whether or
-    /// not the document turns out to hold such an entry.
+    /// Whether the document holds a renderer that is not one of the library's own.
     /// </summary>
-    internal bool Probing { get; set; }
+    internal bool FoundCallerRenderer => _callerRenderer;
 
     /// <summary>
     /// Starts the run of a layout. <paramref name="previous"/> is what <see cref="End"/> restores,
@@ -126,21 +122,14 @@ internal sealed class ListLayoutRun
     }
 
     /// <summary>
-    /// Remembers that <paramref name="list"/> laid out as a twin of its own during the probing
-    /// pass. The pass leaves the list itself as it was, which is what a list that a caller laid
-    /// out before the save needs: 2.3.3 keeps the entries that call built.
+    /// Records that the document holds a renderer that is not one of the library's own, wherever
+    /// it sits among the elements, so where the lists before it put it is read by code the library
+    /// cannot see.
     /// </summary>
-    internal void NoteProbed(ListRenderer list) => (_probed ??= []).Add(list);
-
-    /// <summary>
-    /// Lets go of what the probing pass built, so a document with a long list does not hold a
-    /// second copy of its entries through the pass that draws.
-    /// </summary>
-    internal void EndProbe()
+    internal void NoteCallerRenderer()
     {
-        if (_probed is null) return;
-        foreach (var list in _probed) list.ReleaseProbe();
-        _probed = null;
+        _callerRenderer = true;
+        _allAsTwin = true;
     }
 
     /// <summary>

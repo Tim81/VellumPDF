@@ -670,10 +670,9 @@ public sealed class ListPlacementAdoptionTests
 
     /// <summary>
     /// A list changed after the first document that holds it saved, or after a caller laid it out
-    /// before the save, is not measured again for the second. The extra pass that a renderer of the
-    /// caller's after the list asks for lays the list out on a copy of its own, and that copy holds
-    /// the entries built before, as the save does. Measuring an item added since would add its
-    /// glyphs to the font subset, which a document that never reads that item must not hold.
+    /// before the save, is not measured again for the second. The list lays out as its twin, which
+    /// holds the entries built before, as the save does. Measuring an item added since would add
+    /// its glyphs to the font subset, which a document that never reads that item must not hold.
     /// </summary>
     [Theory]
     [InlineData(false, false)]
@@ -724,14 +723,11 @@ public sealed class ListPlacementAdoptionTests
     }
 
     /// <summary>
-    /// The extra pass that a renderer of the caller's after a list asks for leaves a reused
-    /// renderer's entries as it found them. The pass lays the list out on a copy with paragraphs
-    /// of its own: a paragraph keeps where its last layout placed it, and the drawing pass reads
-    /// that when its own layout answers nothing, so a pass that placed the paragraphs the
-    /// renderer holds, where the lists ahead of it do not move an entry, would change what the
-    /// second document draws. A renderer that takes no room is the whole of the difference
-    /// between the two documents. The entries were built by the first document's save or by a
-    /// layout the caller made before it.
+    /// A renderer of the caller's after a list makes the second document lay every list out as its
+    /// twin, a reused renderer's among them, and the entries of that renderer are the ones the
+    /// first document's save, or a layout the caller made before it, built. A renderer that takes
+    /// no room is the whole of the difference between the two documents, so the document that
+    /// holds it equals the one whose lists are all replaced by their twins.
     /// </summary>
     [Theory]
     [InlineData("tall text", 60, 4, 1, false)]
@@ -740,7 +736,7 @@ public sealed class ListPlacementAdoptionTests
     [InlineData("tall marker", 76, 5, 2, false)]
     [InlineData("tall text", 60, 4, 1, true)]
     [InlineData("tall marker", 76, 5, 2, true)]
-    public void TheExtraPass_leavesAReusedRenderersEntriesAsItFoundThem(
+    public void ACallersRenderer_laysAReusedRenderersEntriesOutAsItsTwin(
         string kind, double height, int leads, int mid, bool laidOut)
     {
         ListElement List() => kind == "tall text"
@@ -752,6 +748,7 @@ public sealed class ListPlacementAdoptionTests
         byte[] Second(bool withCaller)
         {
             var renderer = new ListRenderer(List());
+            IRenderer Use() => withCaller ? renderer : renderer.Unclamped();
             var first = Page(200, height + 20);
             if (laidOut)
             {
@@ -764,9 +761,10 @@ public sealed class ListPlacementAdoptionTests
             }
 
             var second = Page(200, height + 20, leads);
-            second.Add(List());
+            if (withCaller) second.Add(List());
+            else second.Add(new ListRenderer(List()).Unclamped());
             for (var i = 0; i < mid; i++) second.Add(new Paragraph("mid" + i, H(10)) { Margins = EdgeInsets.Zero });
-            second.Add(renderer);
+            second.Add(Use());
             if (withCaller) second.Add(new TakesNoRoom());
             return Save(second);
         }

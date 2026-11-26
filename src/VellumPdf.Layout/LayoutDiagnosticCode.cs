@@ -184,7 +184,7 @@ public enum LayoutDiagnosticCode
     /// and not reported. Neither is an entry with no word that measures wider than zero, or one
     /// with a run whose font size or colour channel is not finite, whose text is still discarded.
     /// No entry of a list that is laid out as it was before the clamp is clamped;
-    /// <see cref="Elements.ListElement"/> lists the five cases, and
+    /// <see cref="Elements.ListElement"/> lists the six cases, and
     /// <see cref="ListIndentClampSkipped"/> and <see cref="ListEntryPartDropped"/> report them.
     /// <b>Do not pass</b> an indent that leaves an entry's text no width: 3.0 will refuse it. See
     /// <see cref="Elements.ListElement.Indent"/>.
@@ -195,9 +195,9 @@ public enum LayoutDiagnosticCode
     /// A list was laid out as it was before the clamp described at <see cref="ListIndentClamped"/>
     /// and before entries that do not fit what is left of a page were moved to the next one: no
     /// gutter narrowed and no entry moved. Either it would have needed more page continuations
-    /// than one element may take with them, or the document holds a list entry in a font it cannot
-    /// draw, or an element after a list that can need about as many continuations as the limit
-    /// allows, which turns every list of the document back.
+    /// than one element may take with them, or the document holds a renderer of yours, a list entry
+    /// in a font it cannot draw, or an element after a list that can need about as many
+    /// continuations as the limit allows, which turns every list of the document back.
     /// <see cref="LayoutDiagnostic.Count"/> is the number of entries the clamp would have narrowed,
     /// and 1 when it would have narrowed none.
     /// </summary>
@@ -207,19 +207,16 @@ public enum LayoutDiagnosticCode
     /// with the part that fits, as it was, and <see cref="ListEntryPartDropped"/> reports it. The
     /// list then saves, or throws <see cref="InvalidOperationException"/> for the continuation
     /// limit, as a list with every gutter left as <see cref="Elements.ListElement.Indent"/> and the
-    /// marker widths give it would and every entry kept where it falls. The two document-wide
+    /// marker widths give it would and every entry kept where it falls. The three document-wide
     /// causes exist because a font the document cannot draw makes the save throw where its text is
-    /// drawn, and an element near the limit is refused or saved according to where it starts, and
-    /// the clamp or a moved entry ahead of either can change where that is; the document then
-    /// saves or throws as it did, for every list it places once it has found the cause. The
-    /// message names the cause that applied: the continuation limit for the list, or the font, or
-    /// the element near the limit, or both of the last two. Each list's message names the causes
-    /// the document had found when it placed that list. A font in a list that a renderer of yours
-    /// lays out only from its <c>Draw</c> is found when it is drawn, so the lists placed before it
-    /// are clamped or moved and report no 207, and a list placed after it names the font. Strict
-    /// mode refuses this code. It is reported once for each list the document placed this way and
-    /// draws from its first entry; a list that a renderer of yours holds is laid out as before and
-    /// reports nothing. A list the document places itself over entries a renderer of yours built
+    /// drawn, an element near the limit is refused or saved according to where it starts, and a
+    /// renderer of yours reads where it starts, and the clamp or a moved entry ahead of any of them
+    /// can change where that is; the document then saves or throws as it did. It decides this once,
+    /// before it lays anything out, from the elements added to it. The message names every cause
+    /// it read there: the continuation limit for the list, or any of the font, the element near
+    /// the limit and the renderer of yours. Strict mode refuses this code. It is reported once for
+    /// each list the document placed this way and draws from its first entry; a list that a
+    /// renderer of yours holds is laid out as before and reports nothing. A list the document places itself over entries a renderer of yours built
     /// first is reported when the document lays every list out as it was. <b>Do not pass</b> an
     /// indent that leaves an entry's text no width, or a font the document cannot draw: 3.0 will
     /// refuse both. See <see cref="Elements.ListElement"/>.
@@ -237,7 +234,7 @@ public enum LayoutDiagnosticCode
     /// while a marker or a text that wraps keeps the lines that fit. An entry is left where it
     /// falls, and reported, when its list is laid out as it was before the clamp and the moving of
     /// entries and the document placed the list; <see cref="Elements.ListElement"/> lists the
-    /// five cases. In one of them no page holds the entry, because a line of its marker, or a line
+    /// six cases. In one of them no page holds the entry, because a line of its marker, or a line
     /// of its text at the width the clamp would give it, is taller than a page. A list that a
     /// renderer of yours lays out is laid out that way too, and reports nothing: the document did
     /// not place it. An entry whose text has no width is not reported, and neither is one that

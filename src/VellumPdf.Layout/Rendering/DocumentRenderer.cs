@@ -511,7 +511,7 @@ public sealed class DocumentRenderer
         // and the guard compares the drawing pass with them. Tests set RecordPlacements.
         _collect = dependents is not null || RecordPlacements || _navigation.HasAnchors || _navigation.HasBreakLabels;
 
-        if (ScanLists(listRun)) ProbeForUndrawableLists(listRun);
+        ScanLists(listRun);
 
         int totalPages;
         if (dependents is not null)
@@ -795,31 +795,33 @@ public sealed class DocumentRenderer
             ? new LayoutBox(_margins.Right, area.Y, area.Width, area.Height)
             : area;
 
-    // Finds, before anything is laid out, what a list's two document-wide rules need to know
-    // (ListLayoutRun). Every element the document holds itself is read here, and every list sits
-    // at the top level: no built-in renderer builds one.
+    // Decides, before anything is laid out, whether every list of the document is its twin
+    // (ListLayoutRun), and records which of the three document-wide rules said so. Every element the
+    // document holds itself is read here, and every list sits at the top level: no built-in
+    // renderer builds one. The decision is taken once, from what was added, so the measuring pass
+    // that counts pages and the pass that draws lay every list out the same way.
     //
-    // The first rule is the font: a list that holds an entry the document cannot draw turns every
-    // list into its twin. A renderer from outside this assembly can lay a ListRenderer out from its
-    // own Layout, and that list is found only when it is laid out. The method returns whether a
-    // pass must find it first: a list laid out the new way ahead of such a renderer has already
-    // moved what follows it by the time the renderer's list turns out to hold such an entry, and a
-    // pass that has drawn cannot be undone. A renderer ahead of every list needs no pass, because
-    // no list was laid out before it. A renderer the library ships that holds no list does not
-    // count as such a renderer (IListFreeRenderer).
+    // The first rule is the renderer: a renderer the library does not ship reads where it starts
+    // and lays out whatever it holds, a list among it, through a context of its own making, and
+    // nothing here can read what it will do. Where the lists before it put it can decide whether the
+    // document saves, and a document whose passes disagreed about where a list fell would count
+    // pages the saved file does not have. A renderer of this library that is not in this assembly
+    // and holds no list does not count (IListFreeRenderer).
     //
-    // The second rule is the limit: a built-in element after a list whose continuations can come
+    // The second rule is the font: a list that holds an entry the document cannot draw turns every
+    // list into its twin.
+    //
+    // The third rule is the limit: a built-in element after a list whose continuations can come
     // near the limit starts where the lists before it put it, and the limit's verdict for it
     // depends on where that is. 2.3.3 saved or refused it according to where the twin lists put
     // it, so the lists are the twins. The bound is ContinuationBoundOf's, which holds for either
     // placement, and an element whose bound is within the limit cannot reach it from any start.
-    // Each rule is tested whatever the other has found, so the causes the scan records do not
+    // Each rule is tested whatever the others have found, so the causes the scan records do not
     // depend on the order of the elements, and the 207 of a list names every cause the scan found.
     // Removed in 3.0 (#688).
-    private bool ScanLists(ListLayoutRun listRun)
+    private void ScanLists(ListLayoutRun listRun)
     {
         var listBefore = false;
-        var opaqueAfterList = false;
         foreach (var renderer in _renderers)
         {
             if (renderer is ListRenderer list)
@@ -829,20 +831,15 @@ public sealed class DocumentRenderer
                 listBefore = true;
                 if (ListRenderer.HoldsUndrawableEntry(list.Element, listRun)) listRun.NoteUndrawable();
             }
-            else if (listBefore)
+            else if (renderer.GetType().Assembly != typeof(ListRenderer).Assembly)
             {
-                if (renderer.GetType().Assembly != typeof(ListRenderer).Assembly)
-                {
-                    if (renderer is not IListFreeRenderer) opaqueAfterList = true;
-                }
-                else if (ContinuationBoundOf(renderer) > ContinuationLimit)
-                {
-                    listRun.NoteNearTheLimit();
-                }
+                if (renderer is not IListFreeRenderer) listRun.NoteCallerRenderer();
+            }
+            else if (listBefore && ContinuationBoundOf(renderer) > ContinuationLimit)
+            {
+                listRun.NoteNearTheLimit();
             }
         }
-
-        return opaqueAfterList && !listRun.AllAsTwin;
     }
 
     // An upper bound on the page continuations a built-in renderer's placement can take from any
@@ -925,39 +922,6 @@ public sealed class DocumentRenderer
 
             default:
                 return long.MaxValue;
-        }
-    }
-
-    // A measuring pass, run only to let the lists a renderer of a caller's lays out say whether the
-    // document can draw them. Every list lays out as its twin in it, on a copy of its own, because
-    // the font does not depend on where an entry falls and because a list laid out the new way
-    // measures text that 2.3.3 never measured, which adds glyphs to the subset of an embedded font
-    // that the saved document would then hold. Its result is not kept, so a document that measured
-    // nothing before still reports that it did not, and a refusal it raises is left to the passes
-    // that follow, which reach it in the order they always did: the drawing pass draws each element
-    // before it lays the next out. The copies are let go afterwards, so the lists themselves are as
-    // the caller left them: 2.3.3 keeps the entries a caller built before the save, and a
-    // paragraph keeps where its last layout placed it, which a list's Draw reads when the layout
-    // it makes for itself answers Nothing.
-    // Removed in 3.0 (#688).
-    private void ProbeForUndrawableLists(ListLayoutRun listRun)
-    {
-        listRun.Probing = true;
-        try
-        {
-            RunPass(measure: true, totalPages: 0);
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            // Left for the drawing pass, as above.
-        }
-        finally
-        {
-            listRun.Probing = false;
-            MeasureRuns = 0;
-            _measureSink = null;
-            _measurePages = 0;
-            listRun.EndProbe();
         }
     }
 

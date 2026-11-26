@@ -52,11 +52,11 @@ public enum ListStyle
 /// whole to the next page, as it does when neither fits. Text that has no width is not a line that
 /// did not fit: it is discarded, as <see cref="Indent"/> describes, and is not reported.</para>
 /// <para><b>A list is laid out as it was before the clamp of <see cref="Indent"/> (#476) and this
-/// moving of items (#685) in five cases, and then none of its items is clamped or moved.</b> Each
+/// moving of items (#685) in six cases, and then none of its items is clamped or moved.</b> Each
 /// item stays where it falls, with the part that fits drawn and the other part not.
 /// <see cref="LayoutDiagnosticCode.ListEntryPartDropped"/> reports each such item the document
 /// placed, and <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/> reports the list in the
-/// last three cases. A list a renderer of yours holds reports neither, nor do its pieces. First, a
+/// last four cases. A list a renderer of yours holds reports neither, nor do its pieces. First, a
 /// renderer of yours lays the list out, whatever context it passes on, or its entries were built
 /// first by something other than the document's own call (you laid it out before the save,
 /// another document did, or a renderer of yours that holds the list laid it out first);
@@ -76,11 +76,11 @@ public enum ListStyle
 /// a tab can become that many columns and so that many lines. It adds one for an item that holds
 /// no characters and one more for each table row, and the element counts when two more than that
 /// is over the limit. A page break, an image, a separator and a
-/// chart never count, and neither does an element a renderer of yours holds. In the last two
-/// cases every list of the document is laid out that way, so the document keeps the outcome it
-/// had while nothing ahead of the font or the element moves. A list that a renderer of yours lays
-/// out only from its <see cref="IRenderer.Draw"/> is found, for the fourth case, when it is drawn,
-/// so the lists placed before it were laid out the new way.</para>
+/// chart never count, and neither does an element a renderer of yours holds. Sixth, the document
+/// holds a renderer that is not one of this library's own, wherever it sits; see
+/// <see cref="Rendering.ListRenderer.Layout"/>. In the last three cases every list of the document
+/// is laid out that way, so the document keeps the outcome it had while nothing ahead of the font,
+/// the element or the renderer moves.</para>
 /// <para><b>Attention</b>: an item whose text holds only white space is laid out at the leading of
 /// <see cref="TextStyle.Default"/>, as on <see cref="Paragraph"/>, while its marker is laid out in
 /// the item's own style, so the marker's line can be the one that does not fit where the item
@@ -138,7 +138,7 @@ public sealed class ListElement
     /// non-finite colour channel, whose text is discarded and which does not make the save throw,
     /// because a width would have let the layout read that style and refuse it. So does every
     /// entry of a list that is laid out as it was before the clamp, which
-    /// <see cref="ListElement"/> lists in five cases. An entry whose marker has no room at the top
+    /// <see cref="ListElement"/> lists in six cases. An entry whose marker has no room at the top
     /// of a page is refused as before. A nested list throws at the area width, as the exception
     /// records. Below that, from half the area width, a child's text is clamped in the same way,
     /// because the nested gutter reaches the area width at half the indent a top-level gutter

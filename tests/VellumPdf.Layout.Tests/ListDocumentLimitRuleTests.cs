@@ -267,25 +267,35 @@ public sealed class ListDocumentLimitRuleTests
     }
 
     /// <summary>
-    /// A renderer that says it holds no list does not make the document lay out once more, and one
-    /// that does not say so does. The mark is internal, so a caller's renderer cannot carry it.
+    /// A renderer that carries the mark is one of the library's own, so the lists of a document
+    /// that holds it are laid out the new way; one that does not carry it is a renderer of the
+    /// caller's, and every list is its twin and reports why. The mark is internal, so a caller's
+    /// renderer cannot carry it.
     /// </summary>
-    [Fact]
-    public void AMarkedRendererAfterAList_isNotLaidOutOnceMore_andAnUnmarkedOneIs()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AMarkedRenderer_isTheLibrarysOwn_andAnUnmarkedOneIsNot(bool before)
     {
-        int Calls(IRenderer after)
+        IReadOnlyList<LayoutDiagnostic> Diagnostics(IRenderer other)
         {
             var pdf = new PdfDocument { Timestamp = Stamp, DocumentId = new byte[16] };
             var renderer = new DocumentRenderer(pdf, new PdfRectangle(0, 0, 200, 100), new EdgeInsets(10));
-            renderer.Add(new ListRenderer(new ListElement().Add(new ListItem("a", H(10)))));
-            renderer.Add(after);
+            var list = new ListRenderer(new ListElement { Indent = 1000 }.Add(new ListItem("a b", H(10))));
+            if (before) renderer.Add(other);
+            renderer.Add(list);
+            if (!before) renderer.Add(other);
             using var ms = new MemoryStream();
             renderer.Render(ms);
-            return renderer.LayoutCalls;
+            return renderer.Diagnostics;
         }
 
-        Assert.Equal(2, Calls(new Marked()));
-        Assert.Equal(4, Calls(new Unmarked()));
+        Assert.Contains(Diagnostics(new Marked()), d => d.Code == LayoutDiagnosticCode.ListIndentClamped);
+        Assert.DoesNotContain(Diagnostics(new Marked()), d => d.Code == LayoutDiagnosticCode.ListIndentClampSkipped);
+        var skipped = Assert.Single(
+            Diagnostics(new Unmarked()), d => d.Code == LayoutDiagnosticCode.ListIndentClampSkipped);
+        Assert.Contains("a renderer of yours", skipped.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(Diagnostics(new Unmarked()), d => d.Code == LayoutDiagnosticCode.ListIndentClamped);
         Assert.False(typeof(IListFreeRenderer).IsPublic);
     }
 }

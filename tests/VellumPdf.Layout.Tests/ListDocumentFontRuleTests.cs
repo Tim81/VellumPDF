@@ -268,13 +268,23 @@ public sealed class ListDocumentFontRuleTests
 
         Assert.StartsWith("OK ", twin);
         Assert.Equal(twin, Outcome(BadListFirst(kind, how, header: false, twin: false, where)));
-        Assert.NotEqual(twin, Outcome(BadListFirst("ok", how, header: false, twin: false, where)));
+        AssertControl(how, header: false, twin: false, ok => BadListFirst("ok", how, false, ok, where));
+    }
+
+    // The control, with a font the document draws. A list the document holds itself is laid out the
+    // new way and so is not its twin; a document that holds a renderer of the caller's lays every
+    // list out as its twin whatever the font, which is the rule these rows depend on.
+    private static void AssertControl(int how, bool header, bool twin, Func<bool, Document> build)
+    {
+        var control = Outcome(build(false));
+        if (how == Visible) Assert.NotEqual(Outcome(build(true)), control);
+        else Assert.Equal(Outcome(build(true)), control);
     }
 
     /// <summary>
-    /// A list that a renderer of the caller's holds is found when it is laid out, and the list
-    /// after it, which the document holds, is then laid out as its twin. Here the first list saves,
-    /// with its text dropped, so only the lists after it tell the two layouts apart.
+    /// A document that holds a renderer of the caller's lays the list after it out as its twin,
+    /// whether or not the font in the held list can be drawn. Here the first list saves, with its
+    /// text dropped, so only the lists after it tell the two layouts apart.
     /// </summary>
     [Theory]
     [InlineData("undefined", 0, false)]
@@ -293,7 +303,7 @@ public sealed class ListDocumentFontRuleTests
 
         Assert.StartsWith("OK ", twin);
         Assert.Equal(twin, Outcome(BadListFirst(kind, how, header, twin: false)));
-        Assert.NotEqual(twin, Outcome(BadListFirst("ok", how, header, twin: false)));
+        AssertControl(how, header, twin: false, ok => BadListFirst("ok", how, header, ok));
     }
 
     /// <summary>
@@ -322,8 +332,10 @@ public sealed class ListDocumentFontRuleTests
     }
 
     /// <summary>
-    /// The fixture holds the change: with a font the document draws, the same documents are not
-    /// their twins, so the rows above compare two layouts that differ where the font allows it.
+    /// The fixture holds the change: with a font the document draws and no renderer of the
+    /// caller's, the same documents are not their twins, so the rows above compare two layouts that
+    /// differ where the font allows it. With a renderer of the caller's holding the second list,
+    /// they are their twins, which is the rule that renderer brings.
     /// </summary>
     [Theory]
     [InlineData(Visible, false)]
@@ -331,12 +343,9 @@ public sealed class ListDocumentFontRuleTests
     [InlineData(1, false)]
     [InlineData(2, false)]
     [InlineData(3, false)]
-    public void AControlWithAFontTheDocumentDraws_isNotLaidOutAsItsTwin(int how, bool header)
+    public void AControlWithAFontTheDocumentDraws_isItsTwinOnlyWhenARendererOfTheCallersIsHeld(int how, bool header)
     {
-        var doc = ShiftedByAMove("ok", how, header, twin: false, badFirst: false);
-        var twin = Outcome(ShiftedByAMove("ok", how, header, twin: true, badFirst: false));
-
-        Assert.NotEqual(twin, Outcome(doc));
+        AssertControl(how, header, twin: false, twin => ShiftedByAMove("ok", how, header, twin, badFirst: false));
     }
 
     [Fact]
@@ -456,7 +465,7 @@ public sealed class ListDocumentFontRuleTests
         Assert.Equal([LayoutDiagnosticCode.ListEntryPartDropped], Codes(doc));
     }
 
-    // ── The extra layout ─────────────────────────────────────────────────────
+    // ── The passes ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
     private static (DocumentRenderer Renderer, byte[] Bytes) Render(
         Action<DocumentRenderer> add, bool header = false, PdfDocument? pdf = null)
@@ -477,12 +486,13 @@ public sealed class ListDocumentFontRuleTests
             .Add(new ListItem([new TextRun(text, style)]) { Style = H(10) });
 
     /// <summary>
-    /// A list ahead of a renderer of the caller's is laid out once more before it is drawn, to see
-    /// whether that renderer holds a list the document cannot draw. The pass is not kept: the
-    /// document still reports that it measured nothing, as one with no header or dependent does.
+    /// A list ahead of a renderer of the caller's is laid out once, in the pass that draws, as the
+    /// renderer is: the document decides before any pass whether the lists are their twins, so no
+    /// pass lays out to find out. It still reports that it measured nothing, as one with no header
+    /// or dependent does.
     /// </summary>
     [Fact]
-    public void AListAheadOfACallersRenderer_isMeasuredOnceMore_andTheMeasureIsNotKept()
+    public void AListAheadOfACallersRenderer_isLaidOutOncePerPass()
     {
         var (renderer, _) = Render(r =>
         {
@@ -492,11 +502,11 @@ public sealed class ListDocumentFontRuleTests
 
         Assert.Equal(0, renderer.MeasureRuns);
         Assert.Null(renderer.MeasurePlan);
-        Assert.Equal(4, renderer.LayoutCalls);
+        Assert.Equal(2, renderer.LayoutCalls);
     }
 
     [Fact]
-    public void ADocumentWithOnlyBuiltInRenderers_isNotMeasuredOnceMore()
+    public void ADocumentWithOnlyBuiltInRenderers_isLaidOutOncePerPass()
     {
         var (renderer, _) = Render(r =>
         {
@@ -508,7 +518,7 @@ public sealed class ListDocumentFontRuleTests
     }
 
     [Fact]
-    public void ACallersRendererAheadOfTheLists_isNotMeasuredOnceMore()
+    public void ACallersRendererAheadOfTheLists_isLaidOutOncePerPass()
     {
         var (renderer, _) = Render(r =>
         {
@@ -520,13 +530,14 @@ public sealed class ListDocumentFontRuleTests
     }
 
     /// <summary>
-    /// The extra layout lays lists out as their twins. A list laid out the new way measures text
-    /// that 2.3.3 never measured, here the space between two words that the clamp gives a width,
-    /// which adds a glyph to the subset of an embedded font, so the saved file would differ from
-    /// the one 2.3.3 wrote. The document compared here holds the font, so it is that file.
+    /// A document that holds a renderer of the caller's lays its lists out as their twins from the
+    /// first pass. A list laid out the new way measures text that 2.3.3 never measured, here the
+    /// space between two words that the clamp gives a width, which adds a glyph to the subset of an
+    /// embedded font, so the saved file would differ from the one 2.3.3 wrote. The document
+    /// compared here holds the renderer, so it is that file.
     /// </summary>
     [Fact]
-    public void TheExtraLayout_addsNoGlyphToAFontSubset()
+    public void ADocumentThatHoldsACallersRenderer_addsNoGlyphToAFontSubset()
     {
         Document Build(bool twin)
         {
@@ -545,7 +556,7 @@ public sealed class ListDocumentFontRuleTests
     /// <summary>
     /// A list builds its entries once for each layout, however many pages it spans: the pieces of
     /// a list that starts over carry the generation, and do not build the entries again for each
-    /// page. Four builds are two lists in two passes, the extra layout and the drawing layout.
+    /// page. Two builds are two lists in the one layout that draws.
     /// </summary>
     [Fact]
     public void AListThatSpansManyPages_buildsItsEntriesOncePerLayout()
@@ -559,12 +570,12 @@ public sealed class ListDocumentFontRuleTests
 
         Assert.StartsWith("OK ", Outcome(doc));
 
-        Assert.Equal(4, ListRenderer.BuildCalls);
+        Assert.Equal(2, ListRenderer.BuildCalls);
     }
 
     /// <summary>
-    /// A header's page-counting pass is the one the document reports, whether or not the extra
-    /// layout found the font: that layout runs first, as a pass of its own, and is not counted.
+    /// A header's page-counting pass is the one the document reports, whether or not a list holds
+    /// the font.
     /// </summary>
     [Theory]
     [InlineData(false, 1)]
@@ -583,16 +594,16 @@ public sealed class ListDocumentFontRuleTests
     }
 
     /// <summary>
-    /// The extra layout leaves nothing behind. A paragraph keeps where its last layout placed it,
-    /// and a list's Draw reads that when its own layout answers Nothing, so a held list whose
-    /// entry text the extra layout placed on a page where it fits, and the drawing layout drops,
-    /// would show the text. The reference has five paragraphs as tall as the entries of the list
-    /// ahead of it and so needs no extra layout; what the held list shows is the same.
+    /// A list ahead of a held list leaves nothing behind. A paragraph keeps where its last layout
+    /// placed it, and a list's Draw reads that when its own layout answers Nothing, so a held list
+    /// whose entry text was placed on a page where it fits, and the drawing layout drops, would
+    /// show the text. The reference has five paragraphs as tall as the entries of the list ahead
+    /// of it; what the held list shows is the same.
     /// </summary>
     [Theory]
     [InlineData(0)]
     [InlineData(2)]
-    public void TheExtraLayout_doesNotChangeWhatAHeldListShows(int how)
+    public void AListAheadOfAHeldList_doesNotChangeWhatTheHeldListShows(int how)
     {
         Document Build(bool listAhead)
         {
@@ -628,7 +639,7 @@ public sealed class ListDocumentFontRuleTests
 
     /// <summary>
     /// A document whose text depends on the plan measures until it settles, in two passes here,
-    /// whether or not the extra layout found the font.
+    /// whether or not a list holds the font.
     /// </summary>
     [Theory]
     [InlineData(false, 2)]
@@ -643,28 +654,6 @@ public sealed class ListDocumentFontRuleTests
         });
 
         Assert.Equal(measureRuns, renderer.MeasureRuns);
-    }
-
-    /// <summary>
-    /// What the extra layout would raise is left for the drawing layout, which reaches the element
-    /// in the order it always did: a defect the drawing layout meets first is the one reported.
-    /// </summary>
-    [Fact]
-    public void AnExceptionTheExtraLayoutRaises_isLeftForTheDrawingLayout()
-    {
-        var pdf = new PdfDocument { Timestamp = Stamp, DocumentId = new byte[16] };
-        var renderer = new DocumentRenderer(pdf, new PdfRectangle(0, 0, 200, 100), new EdgeInsets(10));
-        renderer.Add(new ListRenderer(OneEntry("a", H(10))));
-        renderer.Add(new Throws());
-        renderer.Add(new Holder(new ListRenderer(OneEntry("b", H(10))), 0));
-
-        using var ms = new MemoryStream();
-        var ex = Assert.Throws<InvalidOperationException>(() => renderer.Render(ms));
-
-        // The extra layout was the first call and raised "layout 1"; the drawing layout made the
-        // second and is the one that reports.
-        Assert.Equal("layout 2", ex.Message);
-        Assert.Equal(0, renderer.MeasureRuns);
     }
 
     /// <summary>
@@ -690,8 +679,8 @@ public sealed class ListDocumentFontRuleTests
         Assert.Same(probe.Outer, probe.AfterInner);
         Assert.NotNull(seen.Run);
         Assert.NotSame(probe.Outer, seen.Run);
-        Assert.False(probe.Outer.AllAsTwin);
-        Assert.True(seen.Run.AllAsTwin);
+        Assert.False(probe.Outer.FoundUndrawable);
+        Assert.True(seen.Run.FoundUndrawable);
         Assert.Null(ListLayoutRun.Current);
         Assert.Equal(0, renderer.MeasureRuns);
     }
@@ -734,32 +723,9 @@ public sealed class ListDocumentFontRuleTests
     }
 
     /// <summary>
-    /// The copy a list lays out on for the extra pass is let go when the pass ends, so a document
-    /// with a long list does not hold a second copy of its entries through the pass that draws.
-    /// </summary>
-    [Fact]
-    public void TheCopyForTheExtraLayout_isLetGoWhenThePassEnds()
-    {
-        var field = typeof(ListRenderer).GetField(
-            "_probeTwin", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
-        var ahead = new ListRenderer(OneEntry("a", H(10)));
-        var held = new ListRenderer(OneEntry("b", H(10)));
-
-        var (renderer, _) = Render(r =>
-        {
-            r.Add(ahead);
-            r.Add(new Holder(held, 0));
-        });
-
-        // Four layout calls are two lists in the extra pass and in the drawing pass.
-        Assert.Equal(4, renderer.LayoutCalls);
-        Assert.Null(field.GetValue(ahead));
-        Assert.Null(field.GetValue(held));
-    }
-
-    /// <summary>
     /// Work queued with the execution context suppressed does not see the run, so a list laid out
-    /// there is not found by the document. The documentation names this limit.
+    /// there reads none. The document's decision does not depend on it: it is taken from the
+    /// elements added, before anything is laid out.
     /// </summary>
     [Fact]
     public void WorkQueuedWithoutTheExecutionContext_doesNotSeeTheRun()
@@ -967,12 +933,12 @@ public sealed class ListDocumentFontRuleTests
     }
 
     /// <summary>
-    /// A document that holds an entry it cannot draw already lays every list out as its twin, so
-    /// a caller's renderer after the list needs no extra layout to find one. The two layouts are
-    /// one for each renderer, and the extra pass would add two more.
+    /// A document that holds an entry it cannot draw lays every list out as its twin, and a
+    /// caller's renderer after the list adds nothing to that. The two layouts are one for each
+    /// renderer.
     /// </summary>
     [Fact]
-    public void AnUndrawableEntryAheadOfACallersRenderer_needsNoExtraLayout()
+    public void AnUndrawableEntryAheadOfACallersRenderer_isLaidOutOncePerPass()
     {
         var (renderer, _) = Render(r =>
         {

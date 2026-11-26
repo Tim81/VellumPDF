@@ -86,17 +86,21 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     private int _clampSkipped;
 
     // Why a list is the twin, as far as the document is concerned. A twin that a caller's renderer
-    // holds, one that the caller laid out before the save, and one a probe lays out were not placed
-    // by the document and report nothing.
+    // holds, one that the caller laid out before the save, and one a continuation probe lays out
+    // were not placed by the document and report nothing. AllLists is the document-wide rule of
+    // ListLayoutRun with the causes that applied added as bits: the document held an entry it
+    // cannot draw, an element after a list near the limit, or a renderer of the caller's.
     private enum TwinPlacement : byte
     {
         Held = 0,
         Document,
         Limit,
-        AllListsFont,
-        AllListsNearLimit,
-        AllListsBoth,
+        AllLists = 8,
     }
+
+    private const byte AllListsFont = 1;
+    private const byte AllListsNearLimit = 2;
+    private const byte AllListsRenderer = 4;
 
     // How the document placed this twin, read from the context of the last Layout and carried by
     // the pieces a split hands on. Document is a list the document placed as its twin without
@@ -119,15 +123,8 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     // document addressed to this list, because an entry of the list fits no page, because the
     // document keeps every list as its twin, or because the entries were built before the save. The
     // document draws and asks for placements on the instance it called, so Draw and
-    // ReportPlacements hand the call on to it. It is the twin Unclamped returns, or the copy the
-    // probing pass lays out on (_probeTwin).
+    // ReportPlacements hand the call on to it. It is the twin Unclamped returns.
     private ListRenderer? _delegate;
-
-    // The copy of this list that lays out for the probing pass, so that the pass leaves this
-    // instance as it was: a caller that laid the list out before the save has its entries built at
-    // that width, which 2.3.3 keeps, and a paragraph keeps where its last layout placed it, which
-    // Draw reads when the layout it makes for itself answers Nothing. Let go when the pass ends.
-    private ListRenderer? _probeTwin;
 
     // Which layout built the entries. 2.3.3 builds a list's entries at its first layout, at that
     // layout's width, and keeps them for every later one, whatever document or call that is: a
@@ -137,9 +134,9 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     // list out as its twin, which holds or builds the entries 2.3.3 keeps. Those are entries built
     // under another run than the one in progress (or none), and entries the twin built under a
     // call the document did not address to this list (_builtForCaller). Every call the document
-    // makes within one run counts as one layout: the measuring and the drawing pass, the extra
-    // pass, the continuation probes, the pieces of a split, a second placement of the same
-    // renderer. _builtUnder is carried by splits, which share the items. Removed in 3.0 (#688).
+    // makes within one run counts as one layout: the measuring and the drawing pass, the
+    // continuation probes, the pieces of a split, a second placement of the same renderer.
+    // _builtUnder is carried by splits, which share the items. Removed in 3.0 (#688).
     private ListLayoutRun? _builtUnder;
 
     // On a twin, whether it built its entries under a context that did not name the twin: a
@@ -278,9 +275,10 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     /// from its own <see cref="IRenderer.Layout"/>. It keeps the verdict of the page-continuation
     /// limit on such a list: 2.3.3 saved it or refused it, and it does so again. A list that holds
     /// an entry no page holds is laid out that way too, so is a list the document would otherwise
-    /// take past that limit, and so is every list of a document that holds a font it cannot draw
-    /// or an element after a list that can need about as many continuations as the limit allows;
-    /// see <see cref="ListElement"/>, <see cref="LayoutDiagnosticCode.ListEntryPartDropped"/> and
+    /// take past that limit, and so is every list of a document that holds a renderer of yours, a
+    /// font it cannot draw, or an element after a list that can need about as many continuations
+    /// as the limit allows; see <see cref="ListElement"/>,
+    /// <see cref="LayoutDiagnosticCode.ListEntryPartDropped"/> and
     /// <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/>. A list that your renderer holds
     /// reports neither: the document did not place it. That holds for the pieces of the list too,
     /// when your renderer returns the list's own result and the document calls a piece
@@ -293,23 +291,23 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     /// holds for a list changed since: an item or a child added after that layout is not laid out
     /// or drawn, and an entry the clamp narrowed is laid out without the clamp, from the text it
     /// had then. Such a list reports nothing, unless the document lays every list out as it was
-    /// before the fixes (a font it cannot draw, an element near the limit): it then reports
+    /// before the fixes (a renderer of yours, a font it cannot draw, an element near the limit): it
+    /// then reports
     /// <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/>, and
     /// <see cref="LayoutDiagnosticCode.ListEntryPartDropped"/> for an entry placed with a part not
     /// drawn, as any list does.</para>
-    /// <para><b>A list your renderer lays out is found only on the execution context of the
-    /// layout.</b> One laid out on the thread of the call, on a task, or on a thread your renderer
-    /// starts is found. One laid out on work queued with the context suppressed, such as
-    /// <c>ThreadPool.UnsafeQueueUserWorkItem</c> or after <c>ExecutionContext.SuppressFlow</c>, is
-    /// not, and the lists ahead of it are then laid out the new way, so a document that holds a
-    /// font it cannot draw there can save where it was refused, or be refused where it saved. A
-    /// list your renderer lays out only from its <see cref="IRenderer.Draw"/> is found when it is
-    /// drawn, because the extra pass measures and never draws: the lists placed before it were
-    /// laid out the new way, and the lists after it are laid out as they were. <b>Do not</b> lay a
-    /// list out there or from <c>Draw</c>, and do not rely on where a list lands through a
-    /// renderer of yours: 3.0 lays a list out one way, whatever called it. A renderer of yours that
-    /// draws text in such a font itself, and not through a list, can still be moved by a list
-    /// ahead of it.</para>
+    /// <para><b>A document that holds a renderer of yours lays every list out as it was before the
+    /// fixes.</b> That is any renderer that is not one of this library's own, added with
+    /// <see cref="Document.Add(IRenderer)"/>, wherever it sits and whether or not it holds a list.
+    /// A <see cref="ListRenderer"/>, a <see cref="ParagraphRenderer"/> or another renderer
+    /// this library ships is the library's own, and so is the barcode renderer. The document decides
+    /// this once, from what was added, before it lays anything out, so the pass that counts pages
+    /// for a header or footer and the pass that draws lay each list out the same way. The library
+    /// cannot read where your renderer starts or what it lays out, and a list that moved ahead of
+    /// it can change whether the document saves. A list the document places this way reports
+    /// <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/> and names this cause. <b>Do
+    /// not</b> rely on where a list lands in such a document: 3.0 lays a list out one way, whatever
+    /// called it (#688).</para>
     /// <para>When the document calls this method, the exceptions it lists reach you from the
     /// save. A list added with <see cref="Document.Add(ListElement)"/> never starts at a negative
     /// item, so <see cref="ArgumentOutOfRangeException"/> reaches the save only from a renderer
@@ -342,7 +340,6 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
         if (!_unclamped)
         {
             var run = ListLayoutRun.Current;
-            if (run is { Probing: true }) return LayOutForProbe(run, context);
             if (run is { AllAsTwin: true }) return LayOutAsTwin(context, AllListsFor(run));
             if (context.ModeFor(this) == ContinuationMode.Twin)
                 return LayOutAsTwin(context, TwinPlacement.Document);
@@ -357,9 +354,26 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     }
 
     private static TwinPlacement AllListsFor(ListLayoutRun run) =>
-        run is { FoundUndrawable: true, FoundNearTheLimit: true } ? TwinPlacement.AllListsBoth
-        : run.FoundNearTheLimit ? TwinPlacement.AllListsNearLimit
-        : TwinPlacement.AllListsFont;
+        (TwinPlacement)((byte)TwinPlacement.AllLists
+            | (run.FoundUndrawable ? AllListsFont : 0)
+            | (run.FoundNearTheLimit ? AllListsNearLimit : 0)
+            | (run.FoundCallerRenderer ? AllListsRenderer : 0));
+
+    // The 207 of a list the document-wide rule turned into its twin names every cause that applied.
+    private static string AllListsMessage(TwinPlacement placement)
+    {
+        var causes = new List<string>(3);
+        var bits = (byte)placement & ~(byte)TwinPlacement.AllLists;
+        if ((bits & AllListsFont) != 0) causes.Add("a list entry in a font it cannot draw");
+        if ((bits & AllListsNearLimit) != 0)
+            causes.Add("an element after a list that can need about as many page continuations as one element may use");
+        if ((bits & AllListsRenderer) != 0) causes.Add("a renderer of yours");
+        var named = causes.Count == 1
+            ? causes[0]
+            : string.Join(", ", causes.GetRange(0, causes.Count - 1)) + " and " + causes[^1];
+        return "The document holds " + named + ", so this list was laid out as it was before the text of its "
+            + "entries was given a width and the entries that do not fit were moved to the next page.";
+    }
 
     // The twin lays the list out and this instance answers for it afterwards: the document draws
     // and asks for placements on the instance it called, and a Full result names no renderer. The
@@ -390,47 +404,6 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     // the document called, in probes as well.
     private bool IsCalledByDocument(LayoutContext context) =>
         context.Session is { } session && ReferenceEquals(session.Called, this);
-
-    // The probing pass lays every list out as a twin, on a copy of its own: the pass is not kept,
-    // and a layout that is kept must start from the list as the caller left it. The copy takes the
-    // entries a layout built before, as the twin the save lays out does, and not the list as it is
-    // now: the text of an item added since is never laid out or drawn, and measuring it here would
-    // add its glyphs to the subset of an embedded font. The copy lays out paragraphs of its own,
-    // because a paragraph keeps where its last layout placed it. Removed in 3.0 (#688).
-    private LayoutResult LayOutForProbe(ListLayoutRun run, LayoutContext context)
-    {
-        if (_probeTwin is null)
-        {
-            _probeTwin = new ListRenderer(_list, _startItem, _partialContentOverrideAtStart) { _unclamped = true };
-            if (_twin is { _items: { } twinItems }) _probeTwin._earlier = CopiesOf(twinItems);
-            else if (_items is not null) _probeTwin._earlier = CopiesOf(_items);
-
-            run.NoteProbed(this);
-        }
-
-        return _probeTwin.Layout(context);
-    }
-
-    private static List<Entry> CopiesOf(List<Entry> entries)
-    {
-        var copies = new List<Entry>(entries.Count);
-        for (var i = 0; i < entries.Count; i++)
-        {
-            copies.Add(entries[i] with
-            {
-                Marker = CopyOf(entries[i].Marker),
-                Content = CopyOf(entries[i].Content),
-            });
-        }
-
-        return copies;
-    }
-
-    private static ParagraphRenderer CopyOf(ParagraphRenderer renderer) =>
-        new(renderer.Paragraph) { ElementLanguage = renderer.ElementLanguage, RunOwner = renderer.RunOwner };
-
-    // Called when the probing pass ends, whether or not it finished.
-    internal void ReleaseProbe() => _probeTwin = null;
 
     // The context of a child that this list lays out in its own mode: the new layout hands a child
     // a context addressed to it, and the twin hands it the one a narrowed area gives, which is what
@@ -777,13 +750,9 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                 sink.Report(
                     LayoutDiagnosticCode.ListIndentClampSkipped,
                     0,
-                    _placement switch
-                    {
-                        TwinPlacement.Limit => "Laying the list out with the text of its entries given a width, or with the entries that do not fit moved to the next page, would have taken more page continuations than one element may use, so the list was laid out as it was before both.",
-                        TwinPlacement.AllListsFont => "The document holds a list entry in a font it cannot draw, so this list was laid out as it was before the text of its entries was given a width and the entries that do not fit were moved to the next page.",
-                        TwinPlacement.AllListsNearLimit => "The document holds an element after a list that can need about as many page continuations as one element may use, so this list was laid out as it was before the text of its entries was given a width and the entries that do not fit were moved to the next page.",
-                        _ => "The document holds a list entry in a font it cannot draw and an element after a list that can need about as many page continuations as one element may use, so this list was laid out as it was before the text of its entries was given a width and the entries that do not fit were moved to the next page.",
-                    },
+                    _placement == TwinPlacement.Limit
+                        ? "Laying the list out with the text of its entries given a width, or with the entries that do not fit moved to the next page, would have taken more page continuations than one element may use, so the list was laid out as it was before both."
+                        : AllListsMessage(_placement),
                     Math.Max(1, _clampSkipped),
                     perElement: true);
         }
