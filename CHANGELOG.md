@@ -734,7 +734,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   now built for each save and each kind of call, from the items the list holds then. The kinds are
   the document's own calls and the calls a renderer of yours makes. A piece a split returned is the
   one exception: it keeps the entries of the layout that made it. `ListRenderer.Layout` states the
-  rule, and `IRenderer.Layout`, `ListElement` and `LayoutDiagnosticCode` point to it.
+  rule, and `IRenderer.Layout` and `ListElement` point to it.
   - **Deliberate output change.** A renderer reused for another save, laid out by you before the
     save, or holding a list that changed since draws what a new renderer for the same list draws:
     the item or child added since, the width of this save, the clamp and the moved entries of
@@ -753,8 +753,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     a `Standard14` value the enumeration does not name was refused with `IndexOutOfRangeException`
     when a paragraph that placed nothing drew an earlier layout's lines in that font. It saves now,
     and the file writes no font resource for that value. 3.0 refuses such a value where it is set
-    (#696). A font handle another document returned is not in this class: drawing its text still
-    throws `ArgumentException`.
+    (#696). The same holds for any document refused only because a reused renderer drew an earlier
+    layout's lines: it saves as a new renderer's save does.
   - A context that a renderer of yours kept from an earlier save is a renderer's call in the next
     one, not the document's: the list reads the entries of the renderer's kind.
   - **A child whose layout answers `Nothing` draws nothing.** `ListRenderer.Draw` lays each
@@ -763,11 +763,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     document drew at a place where the layout placed nothing, and the substitution reports (601)
     of those lines. A paragraph, a table or a wrapper of yours that a renderer reuses drew the same
     bytes as a new one in the cases measured.
-  - Residual cost: a list is built once for each save and each kind of call, so a list that the
-    document places and a renderer of yours also holds, a renderer reused for several saves, and a
-    list placed as its twin after the list built its entries (an entry fits no page, or the
-    continuation limit chose the twin) each build its entries more than once. The cost is linear
-    in the builds and has no other effect on the output.
+  - Residual cost: a list builds its entries for each save and each kind of call, and once more in
+    a save that places it as its twin after it built them (an entry fits no page, or the
+    continuation limit chose the twin). A list that the document places and a renderer of yours
+    also holds, and a renderer reused for several saves, therefore build more than once. The cost
+    is linear in the builds and has no other effect on the output.
 
 - **An element exactly as tall as the content area is placed at the top of a page (#549).** At the
   top of a page the document offered the height from the cursor to the bottom of the content area,

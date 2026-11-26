@@ -712,7 +712,7 @@ public sealed class ListReuseTests
         Assert.Equal(Outcome(Second(new ListRenderer(list), 120)), Outcome(Second(reused, 120)));
     }
 
-    // Twelve one-line entries, of which a page of the document here holds seven or eight.
+    // Twelve one-line entries; how many a page holds depends on the page each test uses.
     private static ListElement TwelveEntries()
     {
         var list = new ListElement(ListStyle.Unordered);
@@ -742,7 +742,7 @@ public sealed class ListReuseTests
         Assert.DoesNotContain("e1", shown);
     }
 
-    // Keeps the overflow piece of the list's first layout and draws nothing.
+    // Keeps the overflow piece of the list's last layout and draws nothing.
     private sealed class KeepsOverflow(IRenderer inner) : IRenderer
     {
         internal IRenderer? Piece { get; private set; }
