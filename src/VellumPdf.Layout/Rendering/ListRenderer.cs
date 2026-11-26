@@ -327,6 +327,11 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     /// save. A list added with <see cref="Document.Add(ListElement)"/> never starts at a negative
     /// item, so <see cref="ArgumentOutOfRangeException"/> reaches the save only from a renderer
     /// you construct with a negative start and add yourself.</para>
+    /// <para><b>A page reference in an item is read when the entries are built, and the entries are
+    /// built again when a label they read has changed.</b> The gutter, the wrap and the position
+    /// of the text are then those of the label the list now holds, as for the same text written as
+    /// a literal. A reference laid out outside a save is refused with
+    /// <see cref="InvalidOperationException"/> naming the anchor.</para>
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// The start item is negative, the list has items, and the area is not empty. The parameter
@@ -341,6 +346,9 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     /// <see cref="TextStyle.FontRef"/>. It is also raised, by <see cref="VellumPdf.Canvas.PdfCanvas"/>,
     /// when a <c>NaN</c> or negative-infinity <see cref="ListElement.Indent"/> or a non-finite edge of
     /// <see cref="ListElement.Margins"/> would be written; see <see cref="Document"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// An item holds a page reference and this method runs outside a save; see the remarks.
     /// </exception>
     /// <exception cref="ArgumentNullException">
     /// An item has a null child or a null text where it is drawn; see <see cref="ListItem"/>.

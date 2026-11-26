@@ -1667,7 +1667,18 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     /// A repeatable header is a leading run of header rows followed by a row that is not a header.
     /// A table with no header row, or whose every row is a header, has none, and no area was laid
     /// out for it to draw into.</para>
+    /// <para><b>A link in a cell is registered here.</b> A string cell whose style sets
+    /// <see cref="TextStyle.LinkUri"/> or <see cref="TextStyle.LinkAnchor"/> links each line it
+    /// draws, and a cell built from runs links the runs whose style sets one. A string cell's link
+    /// writes nothing through a <see cref="DrawContext"/> built with no page and nothing for a
+    /// rectangle that would be written with a value that is not finite, and reports neither; a
+    /// run's link throws <see cref="ArgumentNullException"/> without a page, as a paragraph's
+    /// does. <b>Do not pass</b> a context with no page or a box that large; 3.0 refuses both.</para>
     /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// A run of a cell built from runs links, and this method is drawn through a
+    /// <see cref="DrawContext"/> built with a null page; <c>ParamName</c> is <c>key</c>.
+    /// </exception>
     /// <exception cref="IndexOutOfRangeException">
     /// This method is called before <see cref="Layout"/> on a table with a repeatable header, that
     /// is, leading header rows followed by a row that is not a header; see

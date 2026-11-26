@@ -73,6 +73,15 @@ public interface IRenderer
     /// <see cref="VellumPdf.Layout.Rendering.ListRenderer.Layout"/> for which renderers count and
     /// what is reported. <b>Do not</b> write a renderer whose result depends on anything but the
     /// area it is offered.</para>
+    /// <para><b>In a document that holds a page reference, a renderer that answers differently the
+    /// later time is refused.</b> Such a document resolves the labels against measuring runs and
+    /// then compares each placement the drawing pass reports with the last run's: the page it is
+    /// on, the key it is reported under and the count. A renderer that returns another result in the
+    /// drawing pass than in the measuring runs makes the save throw
+    /// <see cref="InvalidOperationException"/> naming a change of pagination, and the document
+    /// cannot be saved again. The placements compared are those of headings, anchored elements and
+    /// applied page breaks, so a difference elsewhere is not seen. <b>Do not pass</b> a renderer
+    /// whose result depends on how often it was called; 3.0 lays the passes out alike.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from <see cref="VellumPdf.Layout.Document.Save(System.IO.Stream)"/> and the other

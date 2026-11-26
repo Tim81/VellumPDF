@@ -197,8 +197,17 @@ public sealed class Cell
     /// <remarks>
     /// Null means <see cref="TableElement.DefaultCellStyle"/>, then
     /// <see cref="TextStyle.Default"/>. Refusals on size, leading, font and text colour are on
-    /// <see cref="TextStyle"/> and are raised from the save. A <see cref="TextStyle.LinkUri"/> in
-    /// it is ignored (#475).
+    /// <see cref="TextStyle"/> and are raised from the save.
+    /// <para><b>A <see cref="TextStyle.LinkUri"/> or <see cref="TextStyle.LinkAnchor"/> in it links
+    /// a string cell, line by line, and is ignored by a cell built from runs.</b> The annotation of
+    /// a string cell covers each drawn line over the width its text measures, cut to the cell, and
+    /// a style that is the cell's by default (<see cref="TableElement.DefaultCellStyle"/>) and is
+    /// replaced by this one gives none. Under a PDF/UA-1 claim a <see cref="TextStyle.LinkUri"/> is
+    /// not written and the save reports <see cref="LayoutDiagnosticCode.LinkNotWritten"/>; a
+    /// <see cref="TextStyle.LinkAnchor"/> is refused from the save before any layout, with
+    /// <see cref="InvalidOperationException"/>. A context with no page, or a rectangle the file
+    /// cannot hold, writes no link and reports nothing. <b>Do not pass</b> a link style to a cell of
+    /// a PDF/UA-1 document; 3.0 refuses it here.</para>
     /// <para><b>A cell built from runs does not read this style for its text.</b> Each run is drawn
     /// in its own style, and neither this property nor <see cref="TableElement.DefaultCellStyle"/>
     /// styles a run. Setting it on such a cell is not refused. When no run holds text, the cell is
@@ -371,7 +380,8 @@ public sealed class Cell
     /// that share one <see cref="TextStyle"/> instance and hold text are one piece of text, drawn
     /// in one show operator, so a cell of such runs draws the string cell of the text they hold in
     /// that style, except that the run cell links the text when that style has a
-    /// <see cref="TextStyle.LinkUri"/> and the string cell drops the link.</para>
+    /// <see cref="TextStyle"/> link. The string cell links the text through the style of the cell
+    /// itself and the run cell through the style of its runs.</para>
     /// <para>Every line of the cell is as tall as the largest <see
     /// cref="TextStyle.EffectiveLeading"/> among the runs that hold text, and the first baseline
     /// lies one largest font size of those runs below the top of the cell's content, padding
@@ -382,8 +392,11 @@ public sealed class Cell
     /// the width the run's text is drawn at on each line it is on, as tall as the line, and is cut
     /// to the cell's box. A run that draws no glyph, or whose text measures zero wide, as Symbol
     /// text does, gets none. <b>The links of a cell are not tagged</b>, whatever the document's
-    /// conformance, and no exception reports it. A <see cref="TextStyle.LinkUri"/> on
-    /// <see cref="Style"/> is still ignored (#475).</para>
+    /// conformance, and no exception reports it. A <see cref="TextStyle.LinkUri"/> or
+    /// <see cref="TextStyle.LinkAnchor"/> on <see cref="Style"/> does not link a cell built from
+    /// runs: that style styles none of its runs, as <see cref="Style"/> says. A run's link
+    /// reaches the file through a context with a page, and throws <see cref="ArgumentNullException"/>
+    /// through one with none, as a paragraph's does.</para>
     /// <para><b>A run that holds text is refused when its colour has a channel that is not finite
     /// or lies outside 0 to 1.</b> The constructor throws
     /// <see cref="ArgumentOutOfRangeException"/>, because ISO 32000-2:2020, 8.6.4.3 says each

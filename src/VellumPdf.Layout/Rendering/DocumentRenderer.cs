@@ -334,6 +334,16 @@ public sealed class DocumentRenderer
     /// <para>This method has no strict switch and exposes no <c>Diagnostics</c>: it never applies
     /// <see cref="Document.StrictDiagnostics"/>, so none of that refusal reaches you from
     /// here.</para>
+    /// <para><b>A page reference or a link to an anchor can refuse this call.</b> A name no element
+    /// holds, a style that sets two links, and a link under a PDF/UA-1 claim throw
+    /// <see cref="InvalidOperationException"/> before any layout, naming the element, so a retry
+    /// after the fix saves. A label that prints nothing, a reference held by a renderer this
+    /// instance was not given as an element, a link a renderer registers for a name no element holds,
+    /// and pagination that does not settle throw it after the layout started. In a renderer that
+    /// holds a page reference, an element that answers differently the later time, or a
+    /// <see cref="Header"/> or <see cref="Footer"/> replaced while it renders, makes the call throw
+    /// "Pagination changed between the measuring and the drawing pass". <b>Do not replace</b>
+    /// <see cref="Header"/> or <see cref="Footer"/> while this call runs; 3.0 reads them once.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// An element needs more than <b>50,000</b> page continuations or is too tall for one page, or

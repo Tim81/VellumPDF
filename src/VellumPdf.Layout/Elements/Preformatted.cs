@@ -235,6 +235,13 @@ public sealed class Preformatted
     /// order of their names, so the order the elements were added in does not change a key.</para>
     /// <para>Names are compared byte by byte, so <c>Code</c> and <c>code</c> are two destinations,
     /// as they are on <see cref="Paragraph.Anchor"/>.</para>
+    /// <para><b>A link or a page reference to a name no element holds is refused.</b>
+    /// <see cref="TextStyle.LinkAnchor"/> and <see cref="TextRun.PageReference(string, TextStyle)"/>
+    /// name an anchor, and the save throws <see cref="InvalidOperationException"/> before any
+    /// layout when no element holds the name, or when only an item below the second level of a list
+    /// does, so the document can still be saved once that is fixed. The page a reference prints is
+    /// the page this element's first line, row or entry lands on, however many pages it goes on to
+    /// fill.</para>
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// Raised from this <c>init</c> accessor when the name breaks the rule above.

@@ -126,9 +126,17 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     /// throw by setting them.</para>
     /// <para>When the document calls this method, the exceptions it lists reach you from the
     /// save.</para>
+    /// <para><b>A page reference laid out outside a save is refused.</b> The wrap reads the label
+    /// of each <see cref="TextRun.PageReference(string, TextStyle)"/> from the pagination of the
+    /// layout in progress, and makes the wrap again when a label it read has changed. Called
+    /// from anywhere else, this method throws <see cref="InvalidOperationException"/> naming the
+    /// anchor, because there is no pagination to read. Called from a renderer of yours inside a
+    /// save, it reads the placeholder label, and the save refuses the reference after the layout.
+    /// <b>Do not pass</b> a paragraph that holds a page reference to a renderer you lay out yourself.
+    /// </para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
-    /// A run that yields text has a <see cref="TextStyle.FontSize"/> or <see cref="TextStyle.Color"/>
+    /// A page reference is laid out outside a save. A run that yields text has a <see cref="TextStyle.FontSize"/> or <see cref="TextStyle.Color"/>
     /// that is refused; see those members. It is also raised when the paragraph has a tab stop with
     /// a leader and a run has a font size the leader cannot be drawn at; see
     /// <see cref="Paragraph.TabStops"/>.
@@ -342,6 +350,16 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     /// <remarks>See <see cref="IRenderer.Draw"/>.</remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// The renderer was constructed with a negative start line.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// A run's style sets <see cref="TextStyle.LinkAnchor"/>, and the document is PDF/UA-1, or the
+    /// layout in progress for it holds no element with that anchor. <b>A link to an anchor is
+    /// checked where it is registered</b>, so a renderer of yours that the walk over the added
+    /// elements cannot see is refused here, after the layout started.
+    /// </exception>
+    /// <exception cref="ArgumentNullException">
+    /// A linked run is drawn through a <see cref="DrawContext"/> built with a null page;
+    /// <c>ParamName</c> is <c>key</c>, whether the link is to a URI or to an anchor.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// A position written here is <c>NaN</c> or infinite, which

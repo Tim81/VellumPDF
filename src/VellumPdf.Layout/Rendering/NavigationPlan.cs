@@ -129,11 +129,19 @@ internal sealed class NavigationPlan
         (_uses ??= []).Add((name, site));
     }
 
+    /// <summary>
+    /// The runs and cell styles this thread's walks have read, so a test can see that each is read
+    /// once. Not a count of anything the library reports.
+    /// </summary>
+    [ThreadStatic]
+    internal static int StylesRead;
+
     private void NoteRuns(IReadOnlyList<TextRun>? runs, ElementSite site)
     {
         if (runs is null) return;
         for (var i = 0; i < runs.Count; i++)
         {
+            StylesRead++;
             var run = runs[i];
             if (run is null || run.Style is null) continue;
             if (run.IsReference) NoteReference(run, site);
@@ -173,8 +181,15 @@ internal sealed class NavigationPlan
                 var site = new ElementSite(LayoutElementKind.Table, index, Row: r, Cell: c);
 
                 // A cell built from runs links through its runs; its own style is not drawn there.
-                if (cell.Runs is { } runs) NoteRuns(runs, site);
-                else NoteStyle(cell.Style ?? table.DefaultCellStyle, site);
+                if (cell.Runs is { } runs)
+                {
+                    NoteRuns(runs, site);
+                }
+                else
+                {
+                    StylesRead++;
+                    NoteStyle(cell.Style ?? table.DefaultCellStyle, site);
+                }
             }
         }
     }

@@ -197,6 +197,13 @@ public sealed class Heading
     /// <remarks>
     /// The rule, the refusals and the position are those of <see cref="Paragraph.Anchor"/>. A
     /// heading that splits across pages is anchored on the page its first line is on.
+    /// <para><b>A link or a page reference to a name no element holds is refused.</b>
+    /// <see cref="TextStyle.LinkAnchor"/> and <see cref="TextRun.PageReference(string, TextStyle)"/>
+    /// name an anchor, and the save throws <see cref="InvalidOperationException"/> before any
+    /// layout when no element holds the name, or when only an item below the second level of a list
+    /// does, so the document can still be saved once that is fixed. The page a reference prints is
+    /// the page this element's first line, row or entry lands on, however many pages it goes on to
+    /// fill.</para>
     /// </remarks>
     /// <inheritdoc cref="Paragraph.Anchor" path="/exception"/>
     public string? Anchor
