@@ -300,11 +300,10 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     /// renderer for the same list draws: an item or a child added since is laid out and drawn, text
     /// that wraps differently at the new width wraps there, and an item that a new renderer's save
     /// refuses, such as one with a null text or a size or colour the layout refuses, makes this
-    /// save throw as well. Layouts made outside any save share one build, so an item added between
-    /// two of them is not in the second. A piece reads the entries of the layout that made it,
-    /// whichever save lays it out, so an item added since is not in it. <b>Do not</b> keep a piece
-    /// across saves, add one to a document after the list changed, or lay a list out outside a save
-    /// after changing it: 3.0 keeps no layout state between calls (#696). A child whose layout for
+    /// save throw as well. A piece reads the entries of the layout that made it, whichever save
+    /// lays it out, so an item added since is not in it. <b>Do not</b> keep a piece across saves,
+    /// add one to a document after the list changed, or rely on what a layout made outside any
+    /// save reads: 3.0 keeps no layout state between calls (#696). A child whose layout for
     /// a placement answers <see cref="LayoutResult.Outcome.Nothing"/> draws nothing there.</para>
     /// <para><b>A document that holds a renderer of yours lays every list out as it was before the
     /// fixes.</b> That is any renderer that is not one of this library's own, added with

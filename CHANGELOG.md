@@ -753,8 +753,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     a `Standard14` value the enumeration does not name was refused with `IndexOutOfRangeException`
     when a paragraph that placed nothing drew an earlier layout's lines in that font. It saves now,
     and the file writes no font resource for that value. 3.0 refuses such a value where it is set
-    (#696). The same holds for any document refused only because a reused renderer drew an earlier
-    layout's lines: it saves as a new renderer's save does.
+    (#696). More generally, a document refused only because a reused list renderer drew an earlier
+    layout's lines saves as a new renderer's save does.
   - A context that a renderer of yours kept from an earlier save is a renderer's call in the next
     one, not the document's: the list reads the entries of the renderer's kind.
   - **A child whose layout answers `Nothing` draws nothing.** `ListRenderer.Draw` lays each
