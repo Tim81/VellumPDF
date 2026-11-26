@@ -862,10 +862,10 @@ public sealed class DocumentRenderer
     //  - A table: a cell reads its line ends (#679) and wraps each line at spaces, cutting a word
     //    at one scalar at least per line. A line end is a character and ends one line, so the
     //    cell holds at most one line more than its characters, and a cell built from runs is its
-    //    runs' text joined, wrapped at the same points, so it holds no more. Any other control white-space
-    //    character reads as one space, and a cell read unbroken, as the table's twin reads every
-    //    cell, holds at most max(1, its characters) lines. A row is cut only where every cell
-    //    holds a line on a fresh page, so each piece after the first takes at least one line from
+    //    runs' text joined, wrapped at the same points, so it holds no more. Any other control
+    //    white-space character reads as one space, and a cell read unbroken, as the table's twin
+    //    reads every cell, holds at most max(1, its characters) lines. A row is cut only where
+    //    every cell holds a line on a fresh page, so each piece after the first takes at least one line from
     //    every cell that has lines left, and a cut row ends in at most one call more than its
     //    characters. The first piece can leave the cell with the most lines untouched, when the
     //    room left holds the shorter lines of the others. That happens in a call that also

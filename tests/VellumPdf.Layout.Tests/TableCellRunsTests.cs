@@ -318,6 +318,30 @@ public sealed class TableCellRunsTests
         Assert.Equal(56.0, double.Parse(borders, CultureInfo.InvariantCulture), 4);
     }
 
+    /// <summary>
+    /// What a paragraph does with the same runs, measured: one line height for the paragraph, the
+    /// largest leading among its runs, and a baseline per line from the largest size on that line.
+    /// The cell keeps the first baseline's rule for every line.
+    /// </summary>
+    [Fact]
+    public void AParagraphPlacesEachBaselineFromItsLine_aCellFromTheLargestRun()
+    {
+        TextRun[] runs = [Run("big\n", Plain(30)), Run("small", Plain(10))];
+
+        using var paragraphDoc = ShortPage();
+        paragraphDoc.Add(new Paragraph(runs));
+        var paragraph = Placements(Content(Save(paragraphDoc)));
+
+        var cell = Placements(DrawnCell(new Cell(runs)));
+
+        // Page top 390 (margin 10). The paragraph: the baseline of line 1 is one 30pt size down, and
+        // line 2 is one line height (36) further, less the 20pt its smaller size saves.
+        Assert.Equal([360.0, 344.0], paragraph.Select(p => Math.Round(p.Y, 4)));
+
+        // The cell: 4pt of padding, a 30pt baseline, then one 36pt line height per line.
+        Assert.Equal([356.0, 320.0], cell.Take(2).Select(p => Math.Round(p.Y, 4)));
+    }
+
     [Fact]
     public void ARunWithNoText_doesNotSetTheHeightOrTheBaseline()
     {
@@ -355,6 +379,23 @@ public sealed class TableCellRunsTests
         Assert.Equal(["a ", " b ", " c d", "x"], Texts(content));
         Assert.DoesNotContain('\t', content);
         Assert.DoesNotContain('\f', content);
+    }
+
+    /// <summary>
+    /// The line is placed by the width of all its fragments: centre and right alignment start the
+    /// first fragment at the offset of the whole line, not of the first fragment.
+    /// </summary>
+    [Theory]
+    [InlineData(HorizontalAlignment.Center)]
+    [InlineData(HorizontalAlignment.Right)]
+    public void AlignmentOfAMixedStyleLine_usesTheWidthOfTheWholeLine(HorizontalAlignment alignment)
+    {
+        var shown = Placements(DrawnCell(new Cell([Run("ab ", Plain()), Run("cd", Bold(20))]) { Alignment = alignment }));
+
+        var total = Width(Helv, "ab ") + Width(HelvBold, "cd", 20);
+        var offset = alignment == HorizontalAlignment.Center ? (88 - total) / 2 : 88 - total;
+        Assert.Equal(16.0 + offset, shown[0].X, 4);
+        Assert.Equal(16.0 + offset + Width(Helv, "ab "), shown[1].X, 4);
     }
 
     // ── Links ────────────────────────────────────────────────────────────────
@@ -447,6 +488,44 @@ public sealed class TableCellRunsTests
         doc.Add(t);
 
         Assert.Empty(Links(Save(doc)));
+    }
+
+    /// <summary>A run in a font that measures zero wide has no area to link, so it gets no annotation.</summary>
+    [Fact]
+    public void ALinkedRunThatMeasuresZeroWide_getsNoAnnotation_andSaves()
+    {
+        using var doc = ShortPage();
+        var t = Table12();
+        var symbol = new TextStyle { FontRef = new FontReference(Standard14.Symbol), FontSize = 12, LinkUri = "https://g.example/" };
+        t.AddRow().AddCell(new Cell([Run("abc", symbol)])).AddCell("b");
+        doc.Add(t);
+
+        Assert.Empty(Links(Save(doc)));
+    }
+
+    /// <summary>
+    /// A style with a link is the one case where a cell of runs sharing a style instance is not the
+    /// string cell of its text: the run cell links the text and the string cell drops the link.
+    /// </summary>
+    [Fact]
+    public void ASharedStyleWithALink_linksTheRunCell_andNotTheStringCell()
+    {
+        var link = new TextStyle { FontRef = Helv, FontSize = 12, LinkUri = "https://h.example/" };
+        byte[] Build(Cell cell)
+        {
+            using var doc = ShortPage();
+            var t = Table12();
+            t.AddRow().AddCell(cell);
+            doc.Add(t);
+            return Save(doc);
+        }
+
+        var run = Build(new Cell([Run("ab ", link), Run("cd", link)]));
+        var text = Build(new Cell("ab cd") { Style = link });
+
+        Assert.Single(Links(run));
+        Assert.Empty(Links(text));
+        Assert.Equal(Content(text), Content(run));
     }
 
     [Fact]
@@ -560,17 +639,85 @@ public sealed class TableCellRunsTests
         Assert.Equal(["ok", "b"], Texts(Content(Save(doc))));
     }
 
-    [Fact]
-    public void ANonFiniteColour_inARunThatIsDrawn_isRefusedNamingTheCell()
+    [Theory]
+    [InlineData(double.NaN, 0, 0, "red")]
+    [InlineData(0, double.PositiveInfinity, 0, "green")]
+    [InlineData(0, 0, -0.5, "blue")]
+    [InlineData(1.0000001, 0, 0, "red")]
+    public void ARunThatHoldsText_withAColourOutsideZeroToOne_isRefusedByTheConstructor(
+        double r, double g, double b, string channel)
     {
+        var bad = new TextStyle { FontRef = Helv, FontSize = 12, Color = new ColorRgb(r, g, b) };
+
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => new Cell([Run("ok", Plain()), Run("bad", bad)]));
+
+        Assert.Equal("runs", ex.ParamName);
+        Assert.Contains("index 1", ex.Message, StringComparison.Ordinal);
+        Assert.Contains(channel, ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The colour is read from every run that holds text, drawn or not: a run of a line end alone
+    /// is refused wherever it sits, and a run with no text is not read.
+    /// </summary>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public void ARunOfALineEnd_isRefusedForItsColour_whereverItSits(int position)
+    {
+        var bad = new TextStyle { FontRef = Helv, FontSize = 12, Color = new ColorRgb(double.NaN, 0, 0) };
+        TextRun[] runs = position == 0
+            ? [Run("\n", bad), Run("abc", Plain())]
+            : [Run("abc", Plain()), Run("\n", bad)];
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => new Cell(runs));
+        _ = new Cell([Run("abc", Plain()), Run("", bad)]);
+    }
+
+    [Fact]
+    public void ACellWithNoText_readsNoRunStyle_andSaves()
+    {
+        var bad = new TextStyle { FontRef = Helv, FontSize = double.NaN, Color = new ColorRgb(double.NaN, 0, 0) };
         using var doc = ShortPage();
         var t = Table12();
-        var bad = new TextStyle { FontRef = Helv, FontSize = 12, Color = new ColorRgb(double.NaN, 0, 0) };
-        t.AddRow().AddCell(new Cell([Run("ok", Plain()), Run("bad", bad)])).AddCell("b");
+        t.AddRow().AddCell(new Cell([Run("", bad)])).AddCell("b");
         doc.Add(t);
 
-        var ex = Assert.Throws<InvalidOperationException>(() => Save(doc));
-        Assert.Contains("Table row 0, cell 0", ex.Message, StringComparison.Ordinal);
+        Assert.Equal(["b"], Texts(Content(Save(doc))));
+    }
+
+    /// <summary>
+    /// A cell with no text is the string cell of the empty string: it takes the cell's style, then
+    /// the table's default, for its font, colour and height.
+    /// </summary>
+    [Fact]
+    public void ACellWithNoText_takesTheCellStyleThenTheTableDefault()
+    {
+        double Height(Cell cell)
+        {
+            using var doc = ShortPage();
+            var t = Table12();
+            t.AddRow().AddCell(cell);
+            doc.Add(t);
+            return double.Parse(Regex.Match(Content(Save(doc)), @"\S+ \S+ \S+ (?<h>\S+) re\s+S\b").Groups["h"].Value,
+                CultureInfo.InvariantCulture);
+        }
+
+        Assert.Equal(Height(new Cell("")), Height(new Cell([])), 4);
+        Assert.Equal(Height(new Cell("") { Style = Plain(20) }), Height(new Cell([]) { Style = Plain(20) }), 4);
+        Assert.Equal(22.4, Height(new Cell([Run("", Plain(40))])), 4);
+        Assert.Equal(32.0, Height(new Cell([Run("", Plain(40))]) { Style = Plain(20) }), 4);
+    }
+
+    [Fact]
+    public void Runs_isReadOnly_andACopy()
+    {
+        var source = new List<TextRun> { Run("ab", Plain()) };
+        var cell = new Cell(source);
+
+        Assert.Throws<NotSupportedException>(() => ((IList<TextRun>)cell.Runs!).Add(Run("cd", Plain())));
+        source.Add(Run("cd", Plain()));
+        Assert.Single(cell.Runs!);
     }
 
     [Fact]
@@ -752,12 +899,67 @@ public sealed class TableCellRunsTests
         Assert.True(probe.WrapHits > 0, "a later pass of the decision reads the cache");
     }
 
+    /// <summary>
+    /// With an embedded font, a cell of runs sharing one style instance saves the bytes of the
+    /// string cell, the font subset included: the string wrap measures a space before every line
+    /// it wraps, so the run wrap does as well, even when no second word joins the line.
+    /// </summary>
+    [Theory]
+    [InlineData("word")]
+    [InlineData("two words")]
+    [InlineData("supercalifragilistic-no-spaces-at-all-supercalifragilistic")]
+    [InlineData("a\nb")]
+    [InlineData("")]
+    public void SharedStyleRuns_saveTheBytesOfTheStringCell_inAnEmbeddedFont(string text)
+    {
+        byte[] Build(Func<TextStyle, Cell> make)
+        {
+            using var doc = FontReportSupport.NewDocument(PdfConformance.None);
+            var font = doc.UseTrueTypeFont(FontReportSupport.DejaVuBytes);
+            var style = new TextStyle { FontRef = font, FontSize = 11 };
+            var t = new TableElement { DefaultCellStyle = style }.SetColumnWidths(60, 60);
+            t.AddRow().AddCell(make(style)).AddCell("x");
+            doc.Add(t);
+            return FontReportSupport.Save(doc);
+        }
+
+        var expected = Build(style => new Cell(text));
+        var half = text.Length / 2;
+
+        Assert.Equal(expected, Build(style => new Cell([Run(text, style)])));
+        Assert.Equal(expected, Build(style => new Cell([Run(text[..half], style), Run(text[half..], style)])));
+    }
+
     // ── PDF/A-2u ─────────────────────────────────────────────────────────────
 
     /// <summary>
     /// A document of run cells in an embedded font, with links, passes veraPDF's PDF/A-2u profile
     /// and shows the cells' own text, so the verdict is about the feature.
     /// </summary>
+    /// <summary>
+    /// A cell with no text opens in the table's style, so under a PDF/A claim with an embedded
+    /// default font it names no Helvetica and veraPDF 2u passes it, as it passes the empty string.
+    /// </summary>
+    [Fact]
+    public void PdfA2u_aCellWithNoText_takesTheEmbeddedDefaultStyle_andPassesVeraPdf()
+    {
+        using var doc = FontReportSupport.NewDocument(PdfConformance.PdfA2u);
+        var font = doc.UseTrueTypeFont(FontReportSupport.DejaVuBytes);
+        var body = new TextStyle { FontRef = font, FontSize = 11 };
+        var t = new TableElement { DefaultCellStyle = body }.SetColumnWidths(200, 200);
+        t.AddRow().AddCell(new Cell([])).AddCell(new Cell([Run("", body)]));
+        t.AddRow().AddCell(new Cell("")).AddCell("text");
+        doc.Add(t);
+
+        var pdf = FontReportSupport.Save(doc);
+
+        Assert.DoesNotContain(doc.Diagnostics, d => d.Code == LayoutDiagnosticCode.UnembeddedFont);
+        Assert.DoesNotContain("Helvetica", Encoding.Latin1.GetString(pdf), StringComparison.Ordinal);
+        var report = FontReportSupport.VeraPdf("2u", pdf);
+        Assert.Contains("isCompliant=\"true\"", report, StringComparison.Ordinal);
+        Assert.Empty(FontReportSupport.FailedRules(report));
+    }
+
     [Fact]
     public void PdfA2u_aRunCellInAnEmbeddedFont_withLinks_passesVeraPdf()
     {

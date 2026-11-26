@@ -192,16 +192,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `Cell.Content` is their text joined.
   - The runs are read as one string. Line ends, other white-space control characters and the
     break points between words are those of a string cell, and a run boundary inside a word draws
-    no space. A cell of runs that share one `TextStyle` instance saves to the bytes of the string
-    cell of the same text and style.
+    no space. A cell of runs that share one `TextStyle` instance is the string cell of the same
+    text and style, and saves to its bytes, unless that style has a `LinkUri`: the run cell links
+    the text and the string cell drops the link.
   - Each line is as tall as the largest leading among the runs that hold text, and the first
-    baseline lies one largest font size below the top of the cell, where a paragraph sizes each
-    line from the runs on it. `Cell.Style` and `TableElement.DefaultCellStyle` do not style a run.
+    baseline lies one largest font size of those runs below the top of the cell's content,
+    padding included. A paragraph also has one line height, but places each line's baseline from
+    the largest size on that line. `Cell.Style` and `TableElement.DefaultCellStyle` do not style
+    a run; when no run holds text the cell takes them, as the string cell of the empty string.
   - A run is a link through its own `LinkUri`, over the width its text is drawn at on each line
     it is on and cut to the cell. The cell's own `Style.LinkUri` is still dropped. Links in a cell
     are not tagged, as in a paragraph.
   - A null sequence and a null run throw `ArgumentNullException`, and a run with a null style
-    throws `ArgumentException`, from the constructor. An empty sequence builds an empty cell.
+    throws `ArgumentException`, from the constructor. So does a run that holds text and has a
+    colour channel that is not finite or lies outside 0 to 1, with `ArgumentOutOfRangeException`
+    (ISO 32000-2, 8.6.4.3). A paragraph's runs still write such a colour as given. An empty
+    sequence builds an empty cell. `Cell.Runs` is read-only.
   - The continuation limit counts the characters of every run, and a cell that would reach it is
     read unbroken from its runs as a string cell is.
   - The string constructor and a table of string cells are unchanged, and save to the same bytes.

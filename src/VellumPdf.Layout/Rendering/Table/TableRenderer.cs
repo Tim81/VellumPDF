@@ -603,7 +603,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             var cs = cell.Style ?? style;
 
             // The owner text is built only for the refusal: this runs for every cell on every pass.
-            if (cell.RunText is { } runText)
+            if (cell.RunText is { HasText: true } runText)
             {
                 foreach (var runStyle in runText.Relevant)
                     if (!double.IsFinite(runStyle.FontSize))
@@ -1998,7 +1998,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
 
         var runLines = wrappedLines as CellRunLines;
         var lineHeight = LeadingOf(cell, cs);
-        var baselineSize = cell.RunText?.FontSize ?? cs.FontSize;
+        var baselineSize = cell.RunText is { HasText: true } baseline ? baseline.FontSize : cs.FontSize;
         for (var lineIdx = 0; lineIdx < lineCount; lineIdx++)
         {
             var line = wrappedLines[firstLine + lineIdx];
@@ -2060,8 +2060,6 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
                 TextEmitter.SelectFont(ctx, canvas, fragment.Style, ref cellFont);
                 if (!SameColor(currentColor, fragment.Style.Color))
                 {
-                    LayoutValidation.ValidateColor(
-                        fragment.Style.Color, $"Table row {rowIndex}, cell {cellIndex}", "text colour");
                     canvas.SetFillColorRgb(fragment.Style.Color.R, fragment.Style.Color.G, fragment.Style.Color.B);
                     currentColor = fragment.Style.Color;
                 }
@@ -2179,7 +2177,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     /// runs that hold text.
     /// </summary>
     private static double LeadingOf(Cell cell, TextStyle style) =>
-        cell.RunText?.Leading ?? style.EffectiveLeading;
+        cell.RunText is { HasText: true } runText ? runText.Leading : style.EffectiveLeading;
 
     /// <summary>
     /// Delegates to <see cref="WordWrapLines"/> rather than carrying its own line-counting walk.

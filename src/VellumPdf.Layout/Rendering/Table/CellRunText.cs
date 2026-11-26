@@ -18,7 +18,7 @@ internal readonly record struct CellFragment(string Text, TextStyle Style);
 /// </summary>
 internal sealed class CellRunLines : List<string>
 {
-    /// <summary>The stretches of each line, in drawing order, parallel to the list itself.</summary>
+    /// <summary>The stretches of each line, in drawing order, parallel to the list.</summary>
     internal List<CellFragment[]> Fragments { get; } = [];
 
     internal void AddLine(CellFragment[] fragments)
@@ -77,24 +77,36 @@ internal sealed class CellRunText
         _spaceWidths = new double[_styles.Length];
         Array.Fill(_spaceWidths, double.NaN);
 
-        // The styles that draw something, or every style when no run holds text, so that an empty
-        // cell is as tall as the string cell of the same style.
-        Relevant = _styles.Length > 0 ? _styles : [.. runs.Select(r => r.Style).Distinct()];
-        FirstStyle = Relevant[0];
-        Leading = Relevant.Max(s => s.EffectiveLeading);
-        FontSize = Relevant.Max(s => s.FontSize);
+        // A cell with no text reads the style the string cell of that text reads, so these are
+        // set only for a cell that holds some.
+        Relevant = _styles;
+        if (HasText)
+        {
+            FirstStyle = _styles[0];
+            Leading = _styles.Max(s => s.EffectiveLeading);
+            FontSize = _styles.Max(s => s.FontSize);
+        }
     }
+
+    /// <summary>
+    /// True when some run holds text. A cell with none is the string cell of the empty string: its
+    /// style is the cell's, and the styles of its runs are not read.
+    /// </summary>
+    internal bool HasText => _styles.Length > 0;
 
     /// <summary>The text of every run, joined.</summary>
     internal string Text { get; }
 
-    /// <summary>The styles of the runs that hold text, or of every run when none does.</summary>
+    /// <summary>The styles of the runs that hold text.</summary>
     internal IReadOnlyList<TextStyle> Relevant { get; }
 
-    /// <summary>The style the first stretch of text is drawn in, for the first font and colour.</summary>
-    internal TextStyle FirstStyle { get; }
+    /// <summary>
+    /// The style the first stretch of text is drawn in, for the first font and colour; null when
+    /// no run holds text.
+    /// </summary>
+    internal TextStyle? FirstStyle { get; }
 
-    /// <summary>The height of every line of the cell.</summary>
+    /// <summary>The height of every line of the cell; not read when no run holds text.</summary>
     internal double Leading { get; }
 
     /// <summary>The font size that places the first baseline below the top of the cell.</summary>
@@ -219,6 +231,11 @@ internal sealed class CellRunText
     {
         if (hs == he) { result.Add((hs, hs)); return; }
 
+        // The string wrap measures a space before its first word, which adds the space glyph to an
+        // embedded font's subset whether or not a second word joins a line. Measured here too, so
+        // that a cell of one style saves the same font.
+        SpaceWidth(hs);
+
         var has = false;
         var ls = 0;
         var le = 0;
@@ -281,7 +298,7 @@ internal sealed class CellRunText
         lineW = ww;
     }
 
-    /// <summary>Breaks a word wider than <paramref name="maxWidth"/> at character granularity.</summary>
+    /// <summary>Breaks a word wider than <paramref name="maxWidth"/> at its characters.</summary>
     private void HardBreakWord(
         string d, int ws, int we, double maxWidth, List<(int, int)> lines, ref double from, ref double below)
     {
