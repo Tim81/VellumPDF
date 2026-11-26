@@ -61,7 +61,8 @@ public interface IRenderer
     /// is laid out as it was before the fixes of #476 and #685.</b> Through the context you were
     /// given, through <see cref="LayoutContext.WithArea"/> or through the public
     /// <see cref="LayoutContext"/> constructor, it narrows no entry's gutter and moves no entry to
-    /// the next page, so the list saves, or is refused for the continuation limit, as it did. The
+    /// the next page, so the list saves, or is refused for the continuation limit, as it did, over
+    /// the entries <see cref="VellumPdf.Layout.Rendering.ListRenderer.Layout"/> says it reads. The
     /// document applies those fixes only to a list it lays out itself, where it can see the limit.
     /// <b>Do not</b> rely on where such a list lands: 3.0 lays a list out one way, whatever called
     /// it.</para>

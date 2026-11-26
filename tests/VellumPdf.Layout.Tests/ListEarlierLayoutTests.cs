@@ -12,11 +12,11 @@ using VellumPdf.Layout.Rendering;
 namespace VellumPdf.Layout.Tests;
 
 /// <summary>
-/// A list builds its entries at its first layout and keeps them, as it did. When something other
-/// than the document's own call in this save laid it out first, the document lays the list out as
-/// it was before the fixes of #476 and #685, whatever comes later: the document placing it, a
-/// renderer of the caller's holding it, a second document. The reference for every row is the
-/// same document built over <see cref="ListRenderer.Unclamped"/>, the list as it was.
+/// A list builds its entries from the items it holds in the save that lays it out, once for the
+/// document's own calls and once for the calls a renderer of the caller's makes (#691). A layout
+/// that came first in another save, before the save, or from a renderer of the caller's that holds
+/// the list leaves nothing the document reads. The reference for every row is the same document
+/// built over a renderer for each kind of call, none of which was laid out before.
 /// </summary>
 public sealed class ListEarlierLayoutTests
 {
@@ -112,58 +112,61 @@ public sealed class ListEarlierLayoutTests
         _ => new Caller(renderer, 3, 1),
     };
 
-    // The renderer a scenario places: the list's own renderer, or the list as it was before the
-    // fixes, which is what 2.3.3 did with every list.
-    private static ListRenderer Renderer(string kind, bool twin, out ListElement list)
+    private static ListRenderer Renderer(string kind, out ListElement list)
     {
         list = Make(kind);
-        var renderer = new ListRenderer(list);
-        return twin ? renderer.Unclamped() : renderer;
+        return new ListRenderer(list);
     }
 
     /// <summary>
     /// Runs one scenario and returns the last document's bytes. <paramref name="earlier"/> is the
     /// layout that comes first and is not the document's own call: a renderer of the caller's that
     /// holds the list in the same document, a layout before the save, or another document's save.
-    /// <paramref name="current"/> is the placement that follows, in the document saved last.
+    /// <paramref name="current"/> is the placement that follows, in the document saved last. With
+    /// <paramref name="fresh"/>, each layout reads a renderer of its own kind: the layouts before
+    /// the save a renderer that nothing reads again, a held layout in the document the renderer
+    /// for the caller's calls, and the document's own placement the renderer for its calls.
     /// </summary>
-    private static byte[] Scenario(string earlier, string current, string kind, bool twin)
+    private static byte[] Scenario(string earlier, string current, string kind, bool fresh)
     {
-        var renderer = Renderer(kind, twin, out _);
+        var renderer = Renderer(kind, out var list);
+        var other = new ListRenderer(list);
+        var callers = fresh ? new ListRenderer(list) : renderer;
         var width = PageWidth;
         var doc = Page(width);
 
         if (earlier.StartsWith("pre"))
         {
             var factor = earlier == "pre75" ? 0.75 : 1.5;
-            renderer.Layout(new LayoutContext(new LayoutBox(10, 10, width * factor - 20, PageHeight - 20)));
+            (fresh ? other : renderer).Layout(new LayoutContext(new LayoutBox(10, 10, width * factor - 20, PageHeight - 20)));
         }
         else if (earlier.StartsWith("doc"))
         {
             var factor = earlier.EndsWith("75") ? 0.75 : 1.5;
             var first = Page(width * factor);
-            first.Add(earlier.StartsWith("doc-held") ? Held("ctx", renderer) : renderer);
+            var served = fresh ? other : renderer;
+            first.Add(earlier.StartsWith("doc-held") ? Held("ctx", served) : served);
 
             // An element near the continuation limit makes that document lay every list out as its
-            // twin, so the entries the list keeps are built by the twin and not by the list.
-            if (earlier.StartsWith("doc-near")) first.Add(new Preformatted(new string('\t', 1_700), H(1)) { TabWidth = 32 });
+            // twin, so the entries the list kept are built by the twin and not by the list.
+            if (earlier.StartsWith("doc-near")) first.Add(new Preformatted(new string('	', 1_700), H(1)) { TabWidth = 32 });
             Save(first);
         }
         else
         {
-            doc.Add(Held(earlier, renderer));
+            doc.Add(Held(earlier, callers));
             doc.Add(new Paragraph("between", H(10)) { Margins = EdgeInsets.Zero });
         }
 
-        doc.Add(current == "direct" ? renderer : Held(current, renderer));
+        doc.Add(current == "direct" ? renderer : Held(current, callers));
         return Save(doc);
     }
 
     /// <summary>
-    /// Whichever shape of layout built the entries first, and whichever shape comes after it, the
-    /// document lays the list out from those entries as it was before the fixes: the bytes are the
-    /// list's own as it was, for a list that wraps, one that clamps and one whose gutter depends on
-    /// the width, at an equal, a narrower and a wider first width.
+    /// Whichever shape of layout came first, and whichever shape comes after it, the document lays
+    /// the list out from the items it holds in this save: the bytes are those of a renderer for each
+    /// kind of call that was never laid out before, for a list that wraps, one that clamps and one
+    /// whose gutter depends on the width, at an equal, a narrower and a wider first width.
     /// </summary>
     [Theory]
     [InlineData("ctx", "direct")]
@@ -185,34 +188,34 @@ public sealed class ListEarlierLayoutTests
     [InlineData("pre75", "wa150")]
     [InlineData("doc-direct75", "wa150")]
     [InlineData("doc-direct150", "ctx")]
-    public void WhateverLaidTheListOutFirst_theDocumentKeepsTheEntriesThatLayoutBuilt(string earlier, string current)
+    public void WhateverLaidTheListOutFirst_theDocumentLaysItOutFromWhatTheListHoldsNow(string earlier, string current)
     {
         foreach (var kind in new[] { "wrap", "clamp", "gutter" })
         {
-            var reference = Sha(Scenario(earlier, current, kind, twin: true));
-            Assert.True(reference == Sha(Scenario(earlier, current, kind, twin: false)), $"{kind}: {earlier} then {current}");
+            var reference = Sha(Scenario(earlier, current, kind, fresh: true));
+            Assert.True(reference == Sha(Scenario(earlier, current, kind, fresh: false)), $"{kind}: {earlier} then {current}");
         }
     }
 
     /// <summary>
     /// A renderer of the caller's lays the list out at three quarters of the width, and the
-    /// document then places the same renderer itself: the document draws that placement from the
-    /// entries the first layout built, at the width that layout had, so the text wraps where it did
-    /// there. Built at the page's own width the gutter would be the marker's, and the text would
-    /// wrap once.
+    /// document then places the same renderer itself: the document draws that placement from
+    /// entries built at the page's own width, where the gutter is the marker's and the text wraps
+    /// once, and the caller's entries at three quarters of the width are not read.
     /// </summary>
     [Fact]
-    public void AListHeldByACallersRendererAndThenAddedToTheDocument_isDrawnFromTheEntriesTheHeldLayoutBuilt()
+    public void AListHeldByACallersRendererAndThenAddedToTheDocument_isDrawnFromEntriesBuiltAtThePagesWidth()
     {
-        var shown = Shows(Scenario("measure", "direct", "gutter", twin: false));
-        var asBefore = Shows(Scenario("measure", "direct", "gutter", twin: true));
+        var shown = Shows(Scenario("measure", "direct", "gutter", fresh: false));
 
-        Assert.Equal(asBefore, shown);
+        Assert.Equal(Shows(Scenario("measure", "direct", "gutter", fresh: true)), shown);
 
-        // The first placement, the paragraph and the second placement: the second wraps "WWWWW"
-        // and "ab" apart, as the entries built at three quarters of the width do.
+        // The first placement, the paragraph and the second placement: the second keeps "WWWWW ab"
+        // on one line, as the entries built at the page's own width do. The held renderer makes the
+        // document lay every list out as it was, so the second entry falls where its 30 pt marker
+        // does not fit and keeps the text that does.
         var second = shown.Skip(shown.ToList().IndexOf("between")).ToArray();
-        Assert.Equal(["between", "1.", "WWWWW", "ab", "2.", "WWWWW", "cd"], second);
+        Assert.Equal(["between", "1.", "WWWWW ab", "WWWWW cd"], second);
     }
 
     /// <summary>
@@ -414,7 +417,7 @@ public sealed class ListEarlierLayoutTests
     /// <summary>
     /// A reused list in a document that lays every list out as it was reports what any list does
     /// there: the fallback, once, whichever of the two rules made the document do so. A reused list
-    /// in a document that does not reports nothing.
+    /// in a document that does not reports the clamp, as a new renderer does.
     /// </summary>
     [Theory]
     [InlineData("font", true)]
@@ -445,7 +448,10 @@ public sealed class ListEarlierLayoutTests
 
         var skipped = second.Diagnostics.Where(d => d.Code == LayoutDiagnosticCode.ListIndentClampSkipped).ToArray();
         Assert.Equal(reports, skipped.Length > 0);
-        Assert.DoesNotContain(second.Diagnostics, d => d.Code == LayoutDiagnosticCode.ListIndentClamped);
+
+        // A document that keeps every list as it was clamps none. Any other lays the reused list
+        // out as a new renderer, and reports the clamp.
+        Assert.Equal(!reports, second.Diagnostics.Any(d => d.Code == LayoutDiagnosticCode.ListIndentClamped));
         if (reports) Assert.Contains(skipped, d => d.ElementIndex == 0);
     }
 

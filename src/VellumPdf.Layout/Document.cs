@@ -1607,10 +1607,11 @@ public sealed class Document : IDisposable
         throw new InvalidOperationException(text.ToString());
     }
 
-    // A renderer caches its wrap at the first width it is laid out at (ParagraphRenderer._lines,
-    // ListRenderer._items), so a document whose layout started cannot be laid out again even when
-    // no page was added yet, as when the counting pass throws: a retry after a PageSize or margin
-    // change would reuse the wrap measured for the old width. HasStartedLayout covers that case.
+    // A paragraph renderer caches its wrap at the first width it is laid out at
+    // (ParagraphRenderer._lines), so a document whose layout started cannot be laid out again even
+    // when no page was added yet, as when the counting pass throws: a retry after a PageSize or
+    // margin change would reuse the wrap measured for the old width. HasStartedLayout covers that
+    // case. A list builds its entries again for each save, so it does not add to this.
     private void MarkFailedIfLaidOut(int pagesBefore, DocumentRenderer renderer)
     {
         if (_pdf.Pages.Count != pagesBefore || renderer.HasStartedLayout) _layoutFailed = true;

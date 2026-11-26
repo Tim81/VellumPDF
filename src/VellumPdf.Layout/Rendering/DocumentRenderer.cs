@@ -1113,6 +1113,7 @@ public sealed class DocumentRenderer
     {
         LayoutCalls++;
         session.Called = renderer;
+        session.Save = ListLayoutRun.CurrentSave;
         var fresh = AreaOnPage(_measuring ? _measureArea : ContentArea, _pageIndex + pagesAhead + (retry ? 0 : 1));
 
         // The line counts are read for a paragraph renderer the caller added, and for the pieces

@@ -26,11 +26,15 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     // one (#685). The twin is the layout it had before both: no gutter narrowed, no entry moved.
     // The document uses the new layout only for a call it addresses to this instance, once it has
     // decided the continuation limit (#686). Under any other context, for a list that holds an
-    // entry no page holds, for a list a caller laid out before the save, and for every list of a
-    // document that holds an entry whose font it cannot draw or an element after a list near the
-    // limit (ListLayoutRun), the list lays out as its twin. The twin, the delegation below and
+    // entry no page holds, and for every list of a document that holds a renderer of the caller's,
+    // an entry whose font it cannot draw or an element after a list near the limit
+    // (ListLayoutRun), the list lays out as its twin. The twin, the delegation below and
     // everything that exists for them are 2.x compatibility devices, removed in 3.0 (#688), which
     // lays a list out one way.
+    //
+    // Which entries a layout reads is the rule on Layout (#691), for the list and for its twins.
+    // The document's own calls lay out the list or the twin Unclamped returns, and the calls a
+    // renderer of the caller's makes lay out the held twin.
     /// <summary>
     /// The list laid out as it was before the clamp and the moving of entries: no gutter is
     /// narrowed, so an entry whose text has no width keeps its marker and loses its text, and no
@@ -40,25 +44,67 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     {
         _twin ??= new ListRenderer(_list, _startItem, _partialContentOverrideAtStart) { _unclamped = true };
 
-        // The entries that fit no page are known once this list has built its items, which the
-        // twin is asked for only after. The entries the clamp would have narrowed the twin counts
-        // itself, from the same gutters.
-        _twin._unplaceable = _unplaceable;
+        // The entries that fit no page are known once this list has built its entries in this
+        // save, which the twin is asked for only after. The entries the clamp would have narrowed
+        // the twin counts itself, from the same gutters.
+        _twin._unplaceable = UnplaceableThisSave();
         return _twin;
     }
+
+    // The twin for a call the document did not make, which a renderer of the caller's holds. It is
+    // a separate instance so that its entries and its placement are the ones a list that the
+    // document never called would have, and so that nothing the document placed reaches it.
+    // Removed in 3.0 (#688), with the twin.
+    private ListRenderer HeldTwin() =>
+        _heldTwin ??= new ListRenderer(_list, _startItem, _partialContentOverrideAtStart) { _unclamped = true };
+
+    private bool[]? UnplaceableThisSave() =>
+        _built is { } built && built.Save == ListLayoutRun.CurrentSave ? built.Unplaceable : null;
 
     IRenderer IContinuationTwin.Twin() => Unclamped();
 
     // One entry of the flattened list: the marker and the text paragraph of an item or a child.
-    // Clamped is set when BuildItems narrowed the gutter, and UnclampedGutter is the gutter the
-    // entry has without the clamp. A twin that keeps the entries an earlier layout built rebuilds
-    // the text of an entry the clamp narrowed from the paragraph and that gutter, and not from the
-    // list, which may have changed since.
+    // Clamped is set when BuildItems narrowed the gutter.
     private readonly record struct Entry(
-        ParagraphRenderer Marker, ParagraphRenderer Content, ListItem Item, bool Clamped,
-        double UnclampedGutter);
+        ParagraphRenderer Marker, ParagraphRenderer Content, ListItem Item, bool Clamped);
 
-    private List<Entry>? _items;
+    // One build of the entries, with every count and verdict that is read from them. A layout that
+    // finds the entries built in another save replaces the whole object, and never changes the
+    // one it replaces, because the pieces an earlier layout returned still hold it.
+    private sealed class Built(long save, List<Entry> items, int indentClamped, int clampSkipped)
+    {
+        // The save that built the entries, as a number and not the run, so that a renderer a caller
+        // keeps does not keep the document of that save alive.
+        internal long Save { get; } = save;
+
+        internal List<Entry> Items { get; } = items;
+
+        // The number of entries whose gutter BuildItems clamped, which Draw reports when it draws
+        // the list from its first entry.
+        internal int IndentClamped { get; } = indentClamped;
+
+        // On the twin, the number of entries the clamp would have narrowed, counted from the same
+        // gutters, which Draw reports as ListIndentClampSkipped when the document chose the twin
+        // for that reason.
+        internal int ClampSkipped { get; } = clampSkipped;
+
+        // Whether the entries have been tried on an empty page, and what that found. When any
+        // entry fits no page the list lays out as its twin (WholeAsMain). Unplaceable marks the
+        // entries that fit none, by index, and the twin reports them from Draw.
+        internal bool PlaceabilityKnown { get; set; }
+
+        internal bool WholeAsMain { get; set; }
+
+        internal bool[]? Unplaceable { get; set; }
+    }
+
+    // The entries of the list as the save in progress built them. Shared by the pieces a split
+    // returns, which carry the entries they continue.
+    private Built? _built;
+
+    // True on a piece a split returns. A piece continues the entries of the layout that made it, so
+    // it never builds its own.
+    private bool _isPiece;
 
     // Pagination window
     private readonly int _startItem;
@@ -70,20 +116,10 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
 
     private LayoutBox _occupied;
 
-    // The number of entries whose gutter BuildItems clamped, which Draw reports when it draws the
-    // list from its first entry. The pieces a split returns carry it, because the piece that
-    // starts the list is the one that is drawn.
-    private int _indentClamped;
-
     // True on the twin Unclamped returns, and on every piece a split of it hands on: BuildItems
     // then leaves every gutter as it was before the clamp existed and Layout moves no entry, so the
     // twin lays the list out as it was laid out without either.
     private bool _unclamped;
-
-    // On the twin, the number of entries the clamp would have narrowed, counted from the same
-    // gutters, which Draw reports as ListIndentClampSkipped when the document chose the twin for
-    // that reason. Carried by splits like _indentClamped.
-    private int _clampSkipped;
 
     // Why a list is the twin, as far as the document is concerned. A twin that a caller's renderer
     // holds, one that the caller laid out before the save, and one a continuation probe lays out
@@ -120,32 +156,11 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     private ListRenderer? _twin;
 
     // Set when the last Layout call was answered by a twin: because the context was not one the
-    // document addressed to this list, because an entry of the list fits no page, because the
-    // document keeps every list as its twin, or because the entries were built before the save. The
-    // document draws and asks for placements on the instance it called, so Draw and
-    // ReportPlacements hand the call on to it. It is the twin Unclamped returns.
+    // document addressed to this list, because an entry of the list fits no page, or because the
+    // document keeps every list as its twin. The document draws and asks for placements on the
+    // instance it called, so Draw and ReportPlacements hand the call on to it. It is the twin
+    // Unclamped returns for a call the document made, and the held twin for any other.
     private ListRenderer? _delegate;
-
-    // Which layout built the entries. 2.3.3 builds a list's entries at its first layout, at that
-    // layout's width, and keeps them for every later one, whatever document or call that is: a
-    // caller who laid the list out before the save, another document, or a save before this one.
-    // This list builds its own entries new and its twin builds the ones 2.3.3 builds, so a layout
-    // that finds entries built by another layout than the document's own call in this run lays the
-    // list out as its twin, which holds or builds the entries 2.3.3 keeps. Those are entries built
-    // under another run than the one in progress (or none), and entries the twin built under a
-    // call the document did not address to this list (_builtForCaller). Every call the document
-    // makes within one run counts as one layout: the measuring and the drawing pass, the
-    // continuation probes, the pieces of a split, a second placement of the same renderer.
-    // _builtUnder is carried by splits, which share the items. Removed in 3.0 (#688).
-    private ListLayoutRun? _builtUnder;
-
-    // On a twin, whether it built its entries under a context that did not name the twin: a
-    // renderer of the caller's holds the list and laid it out, or the document called the list and
-    // the twin built them for it. Within one run only the first kind can make a later call the
-    // document does address count as laying out entries an earlier layout built, because the
-    // document's calls on an empty list go to the twin from then on (AllAsTwin, ModeFor). Entries
-    // built under another run count whatever this holds (_builtUnder).
-    private bool _builtForCaller;
 
     // On a piece a split hands on, set when the piece takes the placement of the call that made it
     // (_placement) and does not read it again from the context. A piece the document calls itself
@@ -154,23 +169,14 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     // made the piece said, and is not confused with a twin nobody handed a placement.
     private bool _placementInherited;
 
-    // On a twin, the entries the list it answers for built before the twin's first layout,
-    // whichever run that was: another document's, or this one's, when a list added to the document
-    // is also held by a renderer of the caller's. The twin has built none of its own then, and
-    // does not build any: it takes those entries whole, whatever the list holds now, as 2.3.3
-    // keeps them, with the wrap each paragraph cached. For an entry the clamp narrowed it keeps the
-    // marker, which the clamp does not change, and rebuilds the text as 2.3.3 built it, without
-    // the clamp, because on 2.3.3 that text had no width and was never wrapped. Let go once the
-    // twin holds the entries.
-    private List<Entry>? _earlier;
-
-    // Whether the entries have been tried on an empty page, and what that found. When any entry
-    // fits no page the list lays out as its twin (_wholeAsMain). _unplaceable marks the entries
-    // that fit none, by index, and the twin reports them from Draw. Carried by splits, which share
-    // the items.
-    private bool _placeabilityKnown;
-    private bool _wholeAsMain;
+    // The entries of this list that fit no page, by index, as the list that handed the call to
+    // this twin found them in this save. Carried by splits, which share the entries. Null when
+    // that list has not found any, which includes a twin the document placed with no such list.
     private bool[]? _unplaceable;
+
+    // The twin for a call the document did not address to this list, where a renderer of the
+    // caller's holds it. Built once, like _twin.
+    private ListRenderer? _heldTwin;
 
     // The height Layout offered each item it visited, indexed by the item's offset from the start
     // item. Draw offers the same height: it lays the item out a second time, a paragraph's line
@@ -236,7 +242,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             return;
         }
 
-        if (_items is null) return;
+        if (_built is not { } built) return;
 
         if (_startItem == 0 && _partialContentOverrideAtStart is null && _list.Anchor is { } listAnchor)
             sink.ReportAnchor(_list, listAnchor, _occupied);
@@ -244,9 +250,9 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
         for (var i = _startItem; i < _endItem; i++)
         {
             if (i == _startItem && _partialContentOverrideAtStart is not null) continue;
-            if (_items[i].Item.Anchor is not { } anchor) continue;
+            if (built.Items[i].Item.Anchor is not { } anchor) continue;
             sink.ReportAnchor(
-                _items[i].Item, anchor, new LayoutBox(_occupied.X, _tops![i - _startItem], _occupied.Width, 0));
+                built.Items[i].Item, anchor, new LayoutBox(_occupied.X, _tops![i - _startItem], _occupied.Width, 0));
         }
     }
 
@@ -273,7 +279,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     /// <see cref="LayoutContext"/> constructor, one from <see cref="LayoutContext.WithArea"/>, and
     /// the one a renderer of yours passes on or makes when it lays a <see cref="ListRenderer"/> out
     /// from its own <see cref="IRenderer.Layout"/>. It keeps the verdict of the page-continuation
-    /// limit on such a list: 2.3.3 saved it or refused it, and it does so again. A list that holds
+    /// limit on the entries it reads, which the rule below names. A list that holds
     /// an entry no page holds is laid out that way too, so is a list the document would otherwise
     /// take past that limit, and so is every list of a document that holds a renderer of yours, a
     /// font it cannot draw, or an element after a list that can need about as many continuations
@@ -283,19 +289,22 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     /// reports neither: the document did not place it. That holds for the pieces of the list too,
     /// when your renderer returns the list's own result and the document calls a piece
     /// itself.</para>
-    /// <para><b>A list builds its entries at its first layout and keeps them, whole and at the
-    /// width that layout used, as it did.</b> The calls the document makes in one save do not
-    /// count as an earlier layout of each other. When the first layout was another one, which is a
-    /// layout of yours before the save, another document's, or a renderer of yours that holds the
-    /// list, the document lays the list out as it was before the fixes, with those entries. That
-    /// holds for a list changed since: an item or a child added after that layout is not laid out
-    /// or drawn, and an entry the clamp narrowed is laid out without the clamp, from the text it
-    /// had then. Such a list reports nothing, unless the document lays every list out as it was
-    /// before the fixes (a renderer of yours, a font it cannot draw, an element near the limit): it
-    /// then reports
-    /// <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/>, and
-    /// <see cref="LayoutDiagnosticCode.ListEntryPartDropped"/> for an entry placed with a part not
-    /// drawn, as any list does.</para>
+    /// <para><b>A list is laid out from the items it holds in the save that lays it out, except a
+    /// piece a split returned, which keeps the entries of the layout that made it.</b> The entries
+    /// are built for a save and for each kind of call, from the items the list holds then, at the
+    /// width of the first layout of that kind in that save, and every later layout of that kind in
+    /// the save uses them: the measuring pass, the drawing pass and a second placement of the same
+    /// renderer. The kinds are the document's own calls, and the calls a renderer of yours makes
+    /// through a context the document did not build for the list. Another call to <c>Save</c>, on
+    /// this document or another, builds them again, so a renderer you reuse draws what a new
+    /// renderer for the same list draws: an item or a child added since is laid out and drawn, text
+    /// that wraps differently at the new width wraps there, and an item that a new renderer's save
+    /// refuses, such as one with a null text or a size or colour the layout refuses, makes this
+    /// save throw as well. A piece reads the entries of the layout that made it, whichever save
+    /// lays it out, so an item added since is not in it. <b>Do not</b> keep a piece across saves,
+    /// add one to a document after the list changed, or rely on what a layout made outside any
+    /// save reads: 3.0 keeps no layout state between calls (#696). A child whose layout for
+    /// a placement answers <see cref="LayoutResult.Outcome.Nothing"/> draws nothing there.</para>
     /// <para><b>A document that holds a renderer of yours lays every list out as it was before the
     /// fixes.</b> That is any renderer that is not one of this library's own, added with
     /// <see cref="Document.Add(IRenderer)"/>, wherever it sits and whether or not it holds a list.
@@ -342,12 +351,8 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
         {
             var run = ListLayoutRun.Current;
             if (run is { AllAsTwin: true }) return LayOutAsTwin(context, AllListsFor(run));
-            if (context.ModeFor(this) == ContinuationMode.Twin)
+            if (context.ModeFor(this) == ContinuationMode.Twin || !IsCalledByDocument(context))
                 return LayOutAsTwin(context, TwinPlacement.Document);
-
-            // 2.3.3 keeps the entries an earlier layout built, at the width it used. This list's
-            // own are built new, so for an earlier layout the twin holds the ones to keep.
-            if (BuiltByAnEarlierLayout(run)) return LayOutAsTwin(context, TwinPlacement.Held);
         }
 
         _delegate = null;
@@ -384,28 +389,25 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     // Removed in 3.0 (#688).
     private LayoutResult LayOutAsTwin(LayoutContext context, TwinPlacement placement)
     {
-        var twin = Unclamped();
+        // A call the document makes and a call a renderer of the caller's makes lay out two
+        // instances, so each builds the entries for its own kind of call and neither reads what
+        // the other placed.
+        var twin = IsCalledByDocument(context) ? Unclamped() : HeldTwin();
         _delegate = twin;
-        if (_items is not null && twin._items is null) twin._earlier = _items;
-
-        twin._handoff = context.IsAddressedByDocument(this) ? placement : TwinPlacement.Held;
+        twin._handoff = IsCalledByDocument(context) && context.IsAddressedByDocument(this)
+            ? placement
+            : TwinPlacement.Held;
         return twin.Layout(context);
     }
 
-    // True when this list or its twin holds entries that a layout built other than the document's
-    // own calls in this run: under another run than this one, which is another document or no
-    // document at all, or by the twin under a call the document did not address to the list, which
-    // is a renderer of the caller's. A call of the document's own is one the document addressed to
-    // this list or to its twin, in any pass or probe, and the list's own entries are built only
-    // by such a call.
-    private bool BuiltByAnEarlierLayout(ListLayoutRun? run) =>
-        (_items is not null && !ReferenceEquals(_builtUnder, run))
-        || (_twin is { _items: not null } twin && (!ReferenceEquals(twin._builtUnder, run) || twin._builtForCaller));
-
-    // Whether the document called this instance with the context. The session names the instance
-    // the document called, in probes as well.
+    // Whether the document called this instance with the context in the save in progress, which is
+    // the one thing that tells the document's own call from a renderer of the caller's that holds
+    // the list. The session names the instance the document called, in probes as well. A context
+    // that a renderer of the caller's kept from an earlier save still names the instance, and its
+    // save is not this one, so it is not the document's call.
     private bool IsCalledByDocument(LayoutContext context) =>
-        context.Session is { } session && ReferenceEquals(session.Called, this);
+        context.Session is { } session && ReferenceEquals(session.Called, this)
+            && session.Save == ListLayoutRun.CurrentSave;
 
     // The context of a child that this list lays out in its own mode: the new layout hands a child
     // a context addressed to it, and the twin hands it the one a narrowed area gives, which is what
@@ -430,32 +432,23 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                 : TwinPlacement.Held;
         }
 
-        if (_items is null)
-        {
-            var run = ListLayoutRun.Current;
-            _builtUnder = run;
-            if (_earlier is { } earlier)
-            {
-                // 2.3.3 never reads the list again once it has built its entries, so a list that
-                // was changed since has none of its new items here, whatever it holds now.
-                _items = AdoptEarlier(earlier);
-                _earlier = null;
-            }
-            else
-            {
-                _builtForCaller = _unclamped && !IsCalledByDocument(context);
-                _items = BuildItems(area.Width);
-            }
-        }
+        // The entries are built from the items the list holds now, at the width of the first layout
+        // of this save, and kept for the rest of it. A layout in another save builds them again
+        // and replaces them, so nothing an earlier save placed is drawn. A piece continues the
+        // entries of the layout that made it.
+        if (!_isPiece && (_built is null || _built.Save != ListLayoutRun.CurrentSave))
+            _built = BuildItems(area.Width);
 
-        if (_items.Count == 0)
+        var built = _built!;
+        var items = built.Items;
+        if (items.Count == 0)
         {
             _endItem = 0;
             _occupied = area.WithHeight(0);
             return LayoutResult.Full(_occupied);
         }
 
-        // Before anything indexes by the start. A negative start would also throw from _items[i], an
+        // Before anything indexes by the start. A negative start would also throw from items[i], an
         // ArgumentOutOfRangeException with ParamName "index"; this check documents the start item
         // as the cause (#556).
         ArgumentOutOfRangeException.ThrowIfNegative(_startItem, "startItem");
@@ -465,13 +458,13 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             // An entry no page holds is placed where it falls, as it always was, and moving the
             // entries around it would change what is drawn of it. So the whole list keeps that
             // layout, and the twin reports the entry.
-            if (!_placeabilityKnown) TryEntriesOnAnEmptyPage(context, area);
-            if (_wholeAsMain) return LayOutAsTwin(context, TwinPlacement.Document);
+            if (!built.PlaceabilityKnown) TryEntriesOnAnEmptyPage(context, area, built);
+            if (built.WholeAsMain) return LayOutAsTwin(context, TwinPlacement.Document);
 
             // The list lays out its new way, which can differ from its twin's, so the document
             // decides before it uses this result (#686). The bound covers both layouts.
             if (context.Session is { Mode: ContinuationMode.Undecided, Probing: false } session)
-                session.Report(this, UnitBound(area.Width));
+                session.Report(this, UnitBound(area.Width, items));
         }
 
         // Walk items and accumulate height, handling overflow.
@@ -482,12 +475,12 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
         var offered = new List<double>();
         var tops = new List<double>();
 
-        for (var i = _startItem; i < _items.Count; i++)
+        for (var i = _startItem; i < items.Count; i++)
         {
             offered.Add(remaining);
             tops.Add(y);
             var itemArea = new LayoutBox(area.X, y, area.Width, remaining);
-            var entry = _items[i];
+            var entry = items[i];
 
             // For the first item, use the partial content override if present.
             var contentRenderer = (i == _startItem && _partialContentOverrideAtStart is not null)
@@ -533,25 +526,21 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                 _tops = tops;
                 var overflow = new ListRenderer(_list, i)
                 {
-                    _items = _items,
-                    _builtUnder = _builtUnder,
+                    _built = built,
+                    _isPiece = true,
                     _unclamped = _unclamped,
                     _placement = _placement,
                     _placementInherited = _unclamped,
-                    _placeabilityKnown = _placeabilityKnown,
                     _unplaceable = _unplaceable,
                 };
                 var split = new ListRenderer(_list, _startItem, _partialContentOverrideAtStart)
                 {
-                    _items = _items,
-                    _builtUnder = _builtUnder,
+                    _built = built,
+                    _isPiece = true,
                     _unclamped = _unclamped,
                     _placement = _placement,
                     _placementInherited = _unclamped,
-                    _placeabilityKnown = _placeabilityKnown,
                     _unplaceable = _unplaceable,
-                    _indentClamped = _indentClamped,
-                    _clampSkipped = _clampSkipped,
                     _endItem = i,
                     _occupied = _occupied,
                     _offered = offered,
@@ -579,26 +568,22 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                 var contentOverflow = (ParagraphRenderer)contentResult.OverflowRenderer!;
                 var overflowList = new ListRenderer(_list, i, contentOverflow)
                 {
-                    _items = _items,
-                    _builtUnder = _builtUnder,
+                    _built = built,
+                    _isPiece = true,
                     _unclamped = _unclamped,
                     _placement = _placement,
                     _placementInherited = _unclamped,
-                    _placeabilityKnown = _placeabilityKnown,
                     _unplaceable = _unplaceable,
                 };
 
                 var split = new ListRenderer(_list, _startItem, _partialContentOverrideAtStart)
                 {
-                    _items = _items,
-                    _builtUnder = _builtUnder,
+                    _built = built,
+                    _isPiece = true,
                     _unclamped = _unclamped,
                     _placement = _placement,
                     _placementInherited = _unclamped,
-                    _placeabilityKnown = _placeabilityKnown,
                     _unplaceable = _unplaceable,
-                    _indentClamped = _indentClamped,
-                    _clampSkipped = _clampSkipped,
                     _endItem = i + 1,
                     _occupied = _occupied,
                     _offered = offered,
@@ -611,7 +596,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             remaining -= itemH;
         }
 
-        _endItem = _items.Count;
+        _endItem = items.Count;
         _occupied = area.WithHeight(area.Height - remaining);
         _offered = offered;
         _tops = tops;
@@ -633,14 +618,14 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     // the Partial count is at most the units less one. The twin's entries hold no more units than
     // these: an entry whose text the clamp widened has a line or more here and none there, and an
     // entry the clamp left alone is the same in both.
-    private long UnitBound(double areaWidth)
+    private long UnitBound(double areaWidth, List<Entry> items)
     {
         // Wrapping an entry here is what its layout does first, at the width it would use, and the
         // wrap refuses nothing that BuildItems has not already refused, so it cannot raise a
         // refusal the layout would not.
         long units = 0;
-        for (var i = _startItem; i < _items!.Count; i++)
-            units += Math.Max(1, _items[i].Content.LineCountAt(areaWidth));
+        for (var i = _startItem; i < items.Count; i++)
+            units += Math.Max(1, items[i].Content.LineCountAt(areaWidth));
         return units;
     }
 
@@ -656,18 +641,18 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     // before it (a style, a surrogate), would then come first here and replace the refusal the
     // twin raises where it raised it. So a refusal in this walk makes the list lay out as the
     // twin, whose own walk raises it where it always did.
-    private void TryEntriesOnAnEmptyPage(LayoutContext context, LayoutBox area)
+    private void TryEntriesOnAnEmptyPage(LayoutContext context, LayoutBox area, Built built)
     {
-        _placeabilityKnown = true;
+        built.PlaceabilityKnown = true;
         if (context.FreshPageArea is not { } fresh) return;
 
         var page = fresh.Deflate(_list.Margins);
         var freshArea = new LayoutBox(area.X, page.Y, area.Width, page.Height);
         try
         {
-            for (var i = _startItem; i < _items!.Count; i++)
+            for (var i = _startItem; i < built.Items.Count; i++)
             {
-                var entry = _items[i];
+                var entry = built.Items[i];
 
                 // A paragraph keeps where its last layout put it, and Draw reads that when the
                 // layout it makes for itself answers Nothing. An entry that is not placed where
@@ -686,14 +671,14 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                 entry.Content.RestorePlacement(contentWas);
                 if (markerFits && contentFits) continue;
 
-                (_unplaceable ??= new bool[_items.Count])[i] = true;
-                _wholeAsMain = true;
+                (built.Unplaceable ??= new bool[built.Items.Count])[i] = true;
+                built.WholeAsMain = true;
             }
         }
         catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
         {
-            _unplaceable = null;
-            _wholeAsMain = true;
+            built.Unplaceable = null;
+            built.WholeAsMain = true;
         }
     }
 
@@ -733,7 +718,8 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             return;
         }
 
-        if (_items is null) return;
+        if (_built is not { } built) return;
+        var items = built.Items;
 
         // Only the piece that starts the list, drawn through the document's context, takes part in
         // the walk, so a list that is measured and never drawn, or that starts at a later item,
@@ -741,21 +727,21 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
         if (_startItem == 0 && _partialContentOverrideAtStart is null && ctx.Diagnostics is { } sink)
         {
             ReportBelowSecondLevel(sink);
-            if (_indentClamped > 0)
+            if (built.IndentClamped > 0)
                 sink.Report(
                     LayoutDiagnosticCode.ListIndentClamped,
                     0,
                     "A list indent left an entry's text no width beside its gutter, so the text was given a width, that of its widest word or the room right of its marker, and may overprint the marker.",
-                    _indentClamped,
+                    built.IndentClamped,
                     perElement: true);
-            if (_placement is not (TwinPlacement.Held or TwinPlacement.Document) && _items.Count > 0)
+            if (_placement is not (TwinPlacement.Held or TwinPlacement.Document) && items.Count > 0)
                 sink.Report(
                     LayoutDiagnosticCode.ListIndentClampSkipped,
                     0,
                     _placement == TwinPlacement.Limit
                         ? "Laying the list out with the text of its entries given a width, or with the entries that do not fit moved to the next page, would have taken more page continuations than one element may use, so the list was laid out as it was before both."
                         : AllListsMessage(_placement),
-                    Math.Max(1, _clampSkipped),
+                    Math.Max(1, built.ClampSkipped),
                     perElement: true);
         }
 
@@ -777,8 +763,8 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
         var childMode = _unclamped ? ContinuationMode.Twin : ContinuationMode.New;
         for (var i = _startItem; i < _endItem; i++)
         {
-            var marker = _items[i].Marker;
-            var baseContent = _items[i].Content;
+            var marker = items[i].Marker;
+            var baseContent = items[i].Content;
 
             // On a continuation page the start item resumes mid-content; its marker
             // was already drawn on the page where the item began, so suppress it here
@@ -794,6 +780,12 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             var markerResult = isContinuation ? null : marker.Layout(LayoutContext.Addressed(itemArea, marker, childMode));
             var markerH = markerResult?.OccupiedArea?.Height ?? 0;
             var contentResult = content.Layout(LayoutContext.Addressed(itemArea, content, childMode));
+
+            // A paragraph that answers Nothing keeps where its last layout that placed lines put
+            // them, and Draw reads that. The lines of a layout that did not place anything for
+            // this entry are not drawn, whatever an earlier layout of the paragraph placed.
+            if (markerResult is { Status: LayoutResult.Outcome.Nothing }) marker.ClearPlacement();
+            if (contentResult.Status == LayoutResult.Outcome.Nothing) content.ClearPlacement();
             if (markerResult is not null
                 && (PartUnplaced(markerResult, contentResult, content, area.Width)
                     || (_unplaceable is { } unplaceable && unplaceable[i])))
@@ -804,7 +796,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             // A clamped entry whose line does not fit where it is placed has its text dropped, as
             // it was when the text had no width. Its paragraph has been wrapped, so drawing it
             // would write an empty text object where that left none (#685).
-            var placedWithoutText = _items[i].Clamped && contentResult.Status == LayoutResult.Outcome.Nothing;
+            var placedWithoutText = items[i].Clamped && contentResult.Status == LayoutResult.Outcome.Nothing;
 
             if (ctx.Tagged && listElem is not null)
             {
@@ -1072,40 +1064,6 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
         return false;
     }
 
-    // The entries an earlier layout of the list built, as 2.3.3 keeps them: the whole list as that
-    // layout saw it, whatever the list holds now. An entry the clamp narrowed is not one 2.3.3
-    // built. It built that entry's text with the gutter the entry has without the clamp, at the
-    // width the earlier layout used, and so does this, from the text and the gutter the entry
-    // recorded. The marker is the same either way. Removed in 3.0 (#688), with the twin.
-    private List<Entry> AdoptEarlier(List<Entry> earlier)
-    {
-        var items = new List<Entry>(earlier.Count);
-        for (var i = 0; i < earlier.Count; i++)
-        {
-            var entry = earlier[i];
-            // The entries here are the list's own, so Clamped says the clamp would narrow the
-            // entry, which is what the twin counts.
-            if (entry.Clamped) _clampSkipped++;
-            items.Add(entry.Clamped ? entry with { Content = WithoutClamp(entry), Clamped = false } : entry);
-        }
-
-        return items;
-    }
-
-    private static ParagraphRenderer WithoutClamp(Entry entry)
-    {
-        var narrowed = entry.Content.Paragraph;
-        var paragraph = new Paragraph(narrowed.Runs)
-        {
-            Margins = narrowed.Margins with { Left = entry.UnclampedGutter },
-        };
-        return new ParagraphRenderer(paragraph)
-        {
-            ElementLanguage = entry.Content.ElementLanguage,
-            RunOwner = entry.Content.RunOwner,
-        };
-    }
-
     /// <summary>
     /// The times this thread built the entries of a list, which a test reads to see that a piece of
     /// a list does not build them again. Removed in 3.0 (#688), with the twin.
@@ -1113,10 +1071,11 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     [ThreadStatic]
     internal static int BuildCalls;
 
-    private List<Entry> BuildItems(double areaWidth)
+    private Built BuildItems(double areaWidth)
     {
         BuildCalls++;
         var result = new List<Entry>();
+        int indentClamped = 0, clampSkipped = 0;
         var indent = _list.Indent;
         var defaultStyle = _list.DefaultStyle ?? TextStyle.Default;
 
@@ -1169,18 +1128,17 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             // The twin asks the same question and only counts the answer, which is what it reports
             // when the document chose it. The gutter test comes first because it is the one that
             // fails for almost every entry.
-            var unclampedGutter = gutter;
             var wouldClamp = TryClampGutter(areaWidth, gutter, 0, widest, out var clampedGutter)
                 && LayoutValidation.AreRunStylesAccepted(contentRuns);
             var clamped = !_unclamped && wouldClamp;
             if (clamped)
             {
                 gutter = clampedGutter;
-                _indentClamped++;
+                indentClamped++;
             }
             else if (wouldClamp)
             {
-                _clampSkipped++;
+                clampSkipped++;
             }
 
             // Marker paragraph: sits in the gutter (left portion of the line).
@@ -1199,7 +1157,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             };
             var contentRenderer = new ParagraphRenderer(contentPara) { ElementLanguage = item.Language, RunOwner = "A list item" };
 
-            result.Add(new Entry(markerRenderer, contentRenderer, item, clamped, unclampedGutter));
+            result.Add(new Entry(markerRenderer, contentRenderer, item, clamped));
 
             // A null child of a top-level item is refused here, where the position is known. The
             // same null on a grandchild is counted when the list is drawn instead, because
@@ -1242,7 +1200,6 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
 
                     // The child's marker starts at `indent`, so that is the leftmost the clamped
                     // content may start.
-                    var unclampedChildGutter = childGutter;
                     var childWouldClamp = TryClampGutter(
                             areaWidth, childGutter, indent, childWidest, out var clampedChildGutter)
                         && LayoutValidation.AreRunStylesAccepted(childRuns);
@@ -1250,11 +1207,11 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                     if (childClamped)
                     {
                         childGutter = clampedChildGutter;
-                        _indentClamped++;
+                        indentClamped++;
                     }
                     else if (childWouldClamp)
                     {
-                        _clampSkipped++;
+                        clampSkipped++;
                     }
 
                     var childMarkerPara = new Paragraph(childMarker, childStyle)
@@ -1270,12 +1227,11 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                         new ParagraphRenderer(childMarkerPara) { RunOwner = "A list item" },
                         new ParagraphRenderer(childContentPara) { ElementLanguage = child.Language, RunOwner = "A list item" },
                         child,
-                        childClamped,
-                        unclampedChildGutter));
+                        childClamped));
                 }
             }
         }
 
-        return result;
+        return new Built(ListLayoutRun.CurrentSave, result, indentClamped, clampSkipped);
     }
 }

@@ -623,12 +623,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     out through the context it was given, through `LayoutContext.WithArea` or through the public
     `LayoutContext` constructor is laid out as it was: no gutter is narrowed and no entry moves
     (#685), so the list itself saves, or is refused for the continuation limit, with the bytes and
-    the message it had. A list builds its entries at its first layout and keeps them, whole and at
-    the width that layout used, as it did. Where that layout was not the document's own call in this
-    save (you laid the list out before the save, another document did, or a renderer of yours that
-    holds the list did), the document lays the list out as it was, with those entries, and it
-    reports nothing unless it lays every list out as it was (below). That holds for a list changed
-    since: an item or a child added after that layout is not laid out or drawn.
+    the message it had, and it reports nothing unless the document lays every list out as it was
+    (below). Which items that layout reads is the rule of #691 below.
     `ListRenderer.Layout`, `IRenderer.Layout` and the `LayoutContext` constructor and
     `WithArea` say so, with a "Do not rely on" paragraph: 3.0 lays a list out one way.
   - An entry whose marker has no room at the top of a page is still refused: the save throws the
@@ -683,16 +679,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     an entry no page holds, which reports 208, and to a list the continuation limit sends back,
     which reports 207. A document that holds a renderer of yours lays every list out as it was
     (below), so no list ahead of one keeps the fixes.
-  - **Deliberate output change, a `ListRenderer` that serves a second document draws the placement
-    the first gave an entry.** A renderer reused for a second document keeps the entries it built
-    for the first (#476 above), and a paragraph draws the lines of its last layout when its layout
-    in the second document places nothing. 2.3.3 draws the first document's lines at that stale
-    position too, for an entry that fitted in the first document and does not in the second
-    (#691, which this change does not close). The first document now moves an entry that did not
-    fit what was left of a page, so the second draws the lines that placement gave it, where
-    2.3.3 drew only the part that fitted. A renderer you add to the document and a renderer
-    of yours also holds draws the first placement's lines at the second the same way, as 2.3.3
-    does.
   - **A document that holds an entry in a font it cannot draw lays every list out as it was before
     the clamp and the moving of entries.** A handle that another document returned, or a
     `Standard14` value the enumeration does not name, makes the save throw where an entry's text or
@@ -716,8 +702,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     to it and before it lays anything out. Every pass of one save, a header or footer's
     page-counting pass included, therefore lays each list out the same way. Without
     `StrictDiagnostics` these documents save as they did before this change: the same bytes, or
-    the same exception and message; with it, a 207 refuses the save. A renderer reused from a
-    first document that moved an entry still draws that placement (#691).
+    the same exception and message; with it, a 207 refuses the save.
     `ListIndentClampSkipped` (207) is reported as for the font (above), and names the renderer.
     `ListRenderer.Layout` says so, with a "Do not rely on" sentence: 3.0 lays a list out one way.
   - **A document with an element after a list that can need about as many page continuations as
@@ -733,13 +718,56 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     makes the document lay every list out as it was (above).
   - A list that a renderer of yours holds reports nothing: neither 207 nor 208, because the
     document did not place it, and nor do its pieces, including a piece the document calls itself
-    when your renderer returns the list's own result. A list the document places over entries a
-    renderer of yours built first is held the same way, unless the document lays every list out as
-    it was (above), which reports it as any list the document places. The bytes are those of the
-    list laid out as it was.
+    when your renderer returns the list's own result. The bytes are those of the list laid out as
+    it was.
   - Moving entries adds pages, so the continuation bound now covers every list, not only a list
     with a clamped entry, and a list that would pass the limit because of moved entries is placed
     as it was before, with `ListIndentClampSkipped` (207).
+
+- **A `ListRenderer` lays a list out from the items it holds in the save that lays it out
+  (#691).** 2.3.3 built a list's entries once, at the first layout a renderer made and at that
+  layout's width, and kept them for every later one: another save, another document, a layout of
+  yours before the save, a renderer of yours that held the list. A paragraph that answers `Nothing`
+  keeps where its last layout put its lines, and its `Draw` reads that. A renderer reused for a
+  second document therefore drew an entry's lines from the first document at a place where its
+  layout in the second placed nothing, and an item added since was never laid out. The entries are
+  now built for each save and each kind of call, from the items the list holds then. The kinds are
+  the document's own calls and the calls a renderer of yours makes. A piece a split returned is the
+  one exception: it keeps the entries of the layout that made it. `ListRenderer.Layout` states the
+  rule, and `IRenderer.Layout` and `ListElement` point to it.
+  - **Deliberate output change.** A renderer reused for another save, laid out by you before the
+    save, or holding a list that changed since draws what a new renderer for the same list draws:
+    the item or child added since, the width of this save, the clamp and the moved entries of
+    #476 and #685, and the reports of 203, 207 and 208 that go with them. A renderer that the
+    document places and a renderer of yours also holds reads two sets of entries, each at its first
+    width, where 2.3.3 read one.
+  - **Deliberate refusal change.** A reused renderer is refused for what its list holds now, as a
+    new one is: an item added since with a null text or child, or a size or colour the layout
+    refuses, makes the save throw, where 2.3.3 saved without ever reading it. So does an item in a
+    `Standard14` value the enumeration does not name, and a child added to an item of a list whose
+    indent leaves its text no width ("An element is too tall to fit on a single page", which a new
+    list of that shape is refused with on 2.3.3 too). With `StrictDiagnostics` a reused list is
+    refused for 207 and 208 as a new one is.
+  - **A save that was refused now saves.** An item with an `Anchor` added since was never in the
+    entries, so the save threw "never placed". The anchor is placed now. A document with an item in
+    a `Standard14` value the enumeration does not name was refused with `IndexOutOfRangeException`
+    when a paragraph that placed nothing drew an earlier layout's lines in that font. It saves now,
+    and the file writes no font resource for that value. 3.0 refuses such a value where it is set
+    (#696). More generally, a document refused only because a reused list renderer drew an earlier
+    layout's lines saves as a new renderer's save does.
+  - A context that a renderer of yours kept from an earlier save is a renderer's call in the next
+    one, not the document's: the list reads the entries of the renderer's kind.
+  - **A child whose layout answers `Nothing` draws nothing.** `ListRenderer.Draw` lays each
+    marker and text out again, and a paragraph that places nothing there no longer draws the
+    lines of an earlier layout, in the same save as well as in a later one. That removes lines a
+    document drew at a place where the layout placed nothing, and the substitution reports (601)
+    of those lines. A paragraph, a table or a wrapper of yours that a renderer reuses drew the same
+    bytes as a new one in the cases measured.
+  - Residual cost: a list builds its entries for each save and each kind of call, and once more in
+    a save that places it as its twin after it built them (an entry fits no page, or the
+    continuation limit chose the twin). A list that the document places and a renderer of yours
+    also holds, and a renderer reused for several saves, therefore build more than once. The cost
+    is linear in the builds and has no other effect on the output.
 
 - **An element exactly as tall as the content area is placed at the top of a page (#549).** At the
   top of a page the document offered the height from the cursor to the bottom of the content area,
