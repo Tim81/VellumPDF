@@ -9,7 +9,7 @@ namespace VellumPdf.Layout.Rendering;
 /// <summary>Renders a <see cref="PieChart"/> as a set of filled Bézier-approximated wedges.</summary>
 /// <remarks>Does not split. The chart's refusals are raised from <see cref="Layout"/>; see
 /// <see cref="PieChart"/>.</remarks>
-public sealed class PieChartRenderer : IRenderer
+public sealed class PieChartRenderer : IRenderer, ISpaceAfterSource
 {
     // See Draw: the magnitude of a start angle from which it is reduced to a full turn.
     private const double NormaliseStartAngleFrom = 1e12;
@@ -35,6 +35,10 @@ public sealed class PieChartRenderer : IRenderer
         ArgumentNullException.ThrowIfNull(chart);
         _chart = chart;
     }
+
+    // Explicit, because a public renderer would otherwise gain a public member. The gap belongs to
+    // the element, so a renderer added through Document.Add(IRenderer) honours it as well.
+    double ISpaceAfterSource.SpaceAfter => _chart.SpaceAfter;
 
     /// <summary>Validates the slices, reserves the chart diameter plus margins, and reports the occupied region.</summary>
     /// <remarks>

@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`SpaceAfter` sets the gap after a block element (#700).** `Paragraph`, `Heading`,
+  `ListElement`, `Preformatted`, `TableElement`, `LayoutImage`, `LineSeparator` and `PieChart` take
+  a `SpaceAfter` in points, so a caller sets the gap between two elements once, on the first,
+  instead of putting a top margin on whatever follows. `Margins.Bottom` still adds no space. The
+  gap is dropped where a page ends: the next element starts at the top of its page when it asks
+  for a page of its own, when the gap does not fit in what is left of the page, and after a split
+  element whose last piece ends the page. The gap after the last element adds no space and no
+  page. Under `KeepWithNext` the gap lies between the kept elements and counts when the document
+  decides whether they hold. A value that is not finite or is negative throws
+  `ArgumentOutOfRangeException` from the setter. A document that sets none saves to the same bytes
+  as before. 3.0 honours `Margins.Bottom` and removes this property.
 - **`Standard14Substitutes.GetFontProgram` returns a bundled Liberation font (#702).** A Layout
   `Document` exposes no `PdfDocument` for `EmbedStandard14Font` to extend, so a program built on
   one could not call it.

@@ -86,7 +86,8 @@ public sealed class Paragraph
     /// element is given, and the element is laid out in whatever box is left, even when that box is
     /// empty or inverted. A negative edge, or edges wider than the area, can therefore make the save throw an exception
     /// about something else, re-wrap, move or mirror the content, or leave the element off the page. The bottom edge
-    /// only limits that box: it adds no space before the next element. A negative top edge can also move the elements
+    /// only limits that box: it adds no space before the next element; <see cref="SpaceAfter"/>
+    /// adds that. A negative top edge can also move the elements
     /// placed after this one.</para>
     /// <para>Do not pass a negative edge. 3.0 will refuse it.</para>
     /// </remarks>
@@ -607,5 +608,51 @@ public sealed class Paragraph
         ArgumentNullException.ThrowIfNull(text);
         _runs.Add(new TextRun(text, style ?? Style));
         return this;
+    }
+
+    private double _spaceAfter;
+
+    /// <summary>
+    /// The gap, in points, between this paragraph and the element the document places after it. The
+    /// default, 0, leaves none.
+    /// </summary>
+    /// <remarks>
+    /// <b>A value that is not finite or is negative is refused.</b> This <c>init</c> accessor
+    /// throws <see cref="ArgumentOutOfRangeException"/>, so the error names the line that wrote the
+    /// value. There is no upper bound: a gap that does not fit in what is left of a page is dropped,
+    /// so no value reaches the content stream. A bottom edge of <see cref="Margins"/> adds no space
+    /// after the element, so this is the way to put a gap there.
+    /// <para><b>The rule, which every element's <c>SpaceAfter</c> follows.</b> The gap is space
+    /// between two elements and not part of this one. It moves the next element down by its size,
+    /// and does not change this element's box, its keep-together measurement, its background or
+    /// border, the position of its bookmark or anchor, or its tagging. It is dropped, and the next
+    /// element starts at the top of the page it lands on, in three cases: this element's last piece
+    /// ends a page or the gap does not fit in what is left of the page, the next element asks for a
+    /// page of its own with <c>BreakBefore</c> or follows a <see cref="PageBreak"/>, and there is
+    /// no next element, where the gap adds no space and no page.</para>
+    /// <para><b>Keep requests.</b> With <see cref="KeepWithNext"/> the gap lies between the kept
+    /// elements, and it takes part in deciding whether the run holds: a gap that does not fit puts
+    /// the next element on a later page than this one ends on, which is a break between them, so
+    /// the run moves, or the request is relaxed, as for any other. <see cref="KeepTogether"/>
+    /// measures the element alone, so an element's own gap never moves it. The gap of the element
+    /// before it is spent first, and the element starts below it.</para>
+    /// <para><b>Where it is read.</b> From an element added to the document with its
+    /// <c>Add</c> overload, and from the renderer of one of this library's elements added with
+    /// <see cref="Document.Add(IRenderer)"/> or
+    /// <see cref="Rendering.DocumentRenderer.Add(IRenderer)"/>. It has no effect on an element a
+    /// caller's renderer holds, because the document sees only that renderer, nor on the pieces a
+    /// split element continues in. A table cell and a list item hold text, not elements, so no
+    /// element inside them reads it.</para>
+    /// <para><b>Do not rely on</b> this property in code meant for 3.0. 3.0 honours the bottom edge
+    /// of <see cref="Margins"/> as the space after an element and removes this property
+    /// (#704).</para>
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Raised from this <c>init</c> accessor when the value is <c>NaN</c>, infinite or negative.
+    /// </exception>
+    public double SpaceAfter
+    {
+        get => _spaceAfter;
+        init => _spaceAfter = LayoutValidation.SpaceAfter(value);
     }
 }

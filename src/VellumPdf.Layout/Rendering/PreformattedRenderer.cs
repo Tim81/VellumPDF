@@ -19,7 +19,7 @@ namespace VellumPdf.Layout.Rendering;
 /// Both passes lay out the same cached lines and read no pagination plan, so the measuring pass and
 /// the drawing pass agree by construction.
 /// </remarks>
-internal sealed class PreformattedRenderer : IRenderer, IPageBreakSource, IPlacementSource, IKeepSource
+internal sealed class PreformattedRenderer : IRenderer, IPageBreakSource, IPlacementSource, IKeepSource, ISpaceAfterSource
 {
     // The continuation marker is a hook drawn with two open subpaths inside one column, 0.6 em wide
     // (the width the wrap reserves, PreformattedText.MarkerUnits), between the baseline and the cap
@@ -68,6 +68,10 @@ internal sealed class PreformattedRenderer : IRenderer, IPageBreakSource, IPlace
     }
 
     PageBreakMode IPageBreakSource.BreakBefore => _element.BreakBefore;
+
+    // Explicit, because a public renderer would otherwise gain a public member. The gap belongs to
+    // the element, so a renderer added through Document.Add(IRenderer) honours it as well.
+    double ISpaceAfterSource.SpaceAfter => _element.SpaceAfter;
 
     bool IKeepSource.KeepWithNext => _element.KeepWithNext;
 

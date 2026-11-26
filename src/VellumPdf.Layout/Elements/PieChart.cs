@@ -285,4 +285,26 @@ public sealed class PieChart
     /// No effect on untagged output. True omits the figure from the structure tree.
     /// </remarks>
     public bool Decorative { get; init; }
+
+    private double _spaceAfter;
+
+    /// <summary>
+    /// The gap, in points, between this chart and the element the document places after it. The
+    /// default, 0, leaves none.
+    /// </summary>
+    /// <remarks>
+    /// <b>A value that is not finite or is negative is refused.</b> This <c>init</c> accessor
+    /// throws <see cref="ArgumentOutOfRangeException"/>, so the error names the line that wrote the
+    /// value. The rule, what it does at a page break and under the keep requests, and where it is
+    /// read are those of <see cref="Paragraph.SpaceAfter"/>. The gap follows the
+    /// slot, which already holds the vertical <see cref="Margins"/>, so the two add.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Raised from this <c>init</c> accessor when the value is <c>NaN</c>, infinite or negative.
+    /// </exception>
+    public double SpaceAfter
+    {
+        get => _spaceAfter;
+        init => _spaceAfter = LayoutValidation.SpaceAfter(value);
+    }
 }
