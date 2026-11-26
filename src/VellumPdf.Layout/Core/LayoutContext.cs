@@ -110,6 +110,15 @@ public sealed class LayoutContext
 
     // Removed in 3.0 (#688).
     /// <summary>
+    /// Whether the document called <paramref name="renderer"/> itself, outside a probe. False for a
+    /// renderer a caller's renderer holds, and for one a probe lays out, because neither was placed
+    /// by the document: the document is not the one that reads where such a renderer falls.
+    /// </summary>
+    internal bool IsAddressedByDocument(IRenderer renderer) =>
+        Session is { Probing: false } session && ReferenceEquals(session.Called, renderer);
+
+    // Removed in 3.0 (#688).
+    /// <summary>
     /// A context for a built-in renderer that <paramref name="parent"/>, itself called under this
     /// context, lays out as part of its own layout: addressed to <paramref name="child"/> and in
     /// the parent's own mode, with the fresh-page area carried as <see cref="WithArea"/> carries
@@ -150,7 +159,12 @@ public sealed class LayoutContext
     public double ContentTop { get; }
 
     /// <summary>Creates a context for the given available area and optional content top.</summary>
-    /// <remarks>Nothing is refused. Both arguments are stored as passed.</remarks>
+    /// <remarks>
+    /// Nothing is refused. Both arguments are stored as passed.
+    /// <para>A context you build is not one the document built for the renderer you lay out with
+    /// it, so a <see cref="VellumPdf.Layout.Rendering.ListRenderer"/> then lays out as it did
+    /// before the fixes of #476 and #685; see <see cref="IRenderer.Layout"/>.</para>
+    /// </remarks>
     public LayoutContext(LayoutBox area, double contentTop = 0)
     {
         Area = area;
@@ -164,9 +178,11 @@ public sealed class LayoutContext
     /// the public constructor. The two flags the document sets for its own paragraphs, that the area
     /// is a page top and that a paragraph reads its line counts, are not copied: a smaller area is
     /// not known to be a page top, and a renderer that wraps a paragraph renderer places as many
-    /// lines as fit. A built-in renderer that lays out differently when the document lays it out,
-    /// such as <see cref="VellumPdf.Layout.Rendering.Table.TableRenderer"/>, lays out as it did
-    /// before that fix under the copy; see <see cref="IRenderer.Layout"/>.
+    /// lines as fit. A built-in renderer that lays out differently when the document lays it out
+    /// lays out as it did before that change under the copy: a
+    /// <see cref="VellumPdf.Layout.Rendering.Table.TableRenderer"/> reads every cell unbroken
+    /// (#679), and a <see cref="VellumPdf.Layout.Rendering.ListRenderer"/> narrows no entry's
+    /// gutter and moves no entry to the next page (#476, #685); see <see cref="IRenderer.Layout"/>.
     /// </remarks>
     public LayoutContext WithArea(LayoutBox area) => new(area, ContentTop) { FreshPageArea = FreshPageArea };
 }

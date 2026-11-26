@@ -47,10 +47,44 @@ public enum ListStyle
 /// negative indices is on <see cref="FormatMarker"/>.
 /// <para>The last item a list draws on a page keeps all of its lines: the draw pass offers each
 /// item the height the layout pass did.</para>
+/// <para>An item is placed when its marker and its text are both placed. When only one of them
+/// fits what is left of a page, or a marker that wraps gets only some of its lines, the item moves
+/// whole to the next page, as it does when neither fits. Text that has no width is not a line that
+/// did not fit: it is discarded, as <see cref="Indent"/> describes, and is not reported.</para>
+/// <para><b>A list is laid out as it was before the clamp of <see cref="Indent"/> (#476) and this
+/// moving of items (#685) in six cases, and then none of its items is clamped or moved.</b> Each
+/// item stays where it falls, with the part that fits drawn and the other part not.
+/// <see cref="LayoutDiagnosticCode.ListEntryPartDropped"/> reports each such item the document
+/// placed, and <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/> reports the list in the
+/// last four cases. A list a renderer of yours holds reports neither, nor do its pieces. First, a
+/// renderer of yours lays the list out, whatever context it passes on; see
+/// <see cref="Rendering.ListRenderer.Layout"/>, which also says which items a layout of a
+/// reused renderer reads. Second, no page holds one of its items,
+/// because a line of its marker, or of its text at the width the clamp would give it, is taller
+/// than a page. Third, laying it out the new way would take it past the continuation limit, as
+/// <see cref="Indent"/> describes. Fourth, any list of the document holds an item whose marker or
+/// text is in a font the document cannot draw, which is a handle another document returned or a
+/// <see cref="VellumPdf.Fonts.Standard14"/> value the enumeration does not name. The save throws
+/// where such text is drawn and saves where it is dropped at the bottom of a page, so widening or
+/// moving anything ahead of the item can turn one outcome into the other. Fifth, the document
+/// holds, after one of its lists, an element that can need about as many page continuations as
+/// the limit allows. That element is refused or saved according to where it starts, so moving an
+/// item ahead of it can turn one outcome into the other. The document reads the element's size,
+/// not its layout: it counts the characters of a paragraph, heading, list item or table cell, and
+/// of preformatted text with each tab counted as its <see cref="Preformatted.TabWidth"/>, because
+/// a tab can become that many columns and so that many lines. It adds one for an item that holds
+/// no characters and one more for each table row, and the element counts when two more than that
+/// is over the limit. A page break, an image, a separator and a
+/// chart never count, and neither does an element a renderer of yours holds. Sixth, the document
+/// holds a renderer that is not one of this library's own, wherever it sits; see
+/// <see cref="Rendering.ListRenderer.Layout"/>. In the last three cases every list of the document
+/// is laid out that way, so without <see cref="Document.StrictDiagnostics"/> the document keeps
+/// the outcome it had while nothing ahead of the font, the element or the renderer moves; with
+/// it, a <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/> report refuses the save.</para>
 /// <para><b>Attention</b>: an item whose text holds only white space is laid out at the leading of
 /// <see cref="TextStyle.Default"/>, as on <see cref="Paragraph"/>, while its marker is laid out in
-/// the item's own style. When the marker's line does not fit where the item lands, the item is
-/// placed without its marker, and nothing reports it.</para>
+/// the item's own style, so the marker's line can be the one that does not fit where the item
+/// lands. The rules above then apply to it.</para>
 /// </remarks>
 public sealed class ListElement
 {
@@ -76,21 +110,49 @@ public sealed class ListElement
     /// own left edge. At the top level that gutter is the larger of this value and that item's own
     /// marker width. One level in, the marker itself starts at this value, so what has to be
     /// cleared is a position rather than a width, and the gutter is the larger of twice this value
-    /// and this value plus the child's marker width. One case overrides both: where the widened
+    /// and this value plus the child's marker width. Two cases override both. Where the widened
     /// gutter would leave less room than the item's longest word, the gutter reverts to the
-    /// unwidened figure. That is this value at the top level and twice it when nested. The
-    /// override rewrites a gutter and never a marker's own inset, so no marker moves with it.
+    /// unwidened figure, which is this value at the top level and twice it when nested. Where that
+    /// gutter leaves the text no width at all, the clamp described below replaces it. Neither
+    /// rewrites a marker's own inset, so no marker moves with them.
     /// <para>Every boundary below is measured against the list's own area width, which is the
     /// page's content width narrowed by the left and right edges of <see cref="Margins"/>. The top
     /// and bottom edges do not enter into it. A left or right inset narrows that area, so every
     /// boundary below moves in with it, each in proportion to where it sits.</para>
-    /// <para>An indent reaching that area width is <b>not</b> refused on a flat list. The marker is
-    /// drawn, the item text is discarded, and nothing reports the loss, so the list renders as a
-    /// column of markers with no content. A nested list throws at the area width, as the exception
-    /// records, but from <b>half</b> that width its child text is already being discarded the same
-    /// silent way, because the nested gutter reaches the area width at half the indent a top-level
-    /// gutter needs. The child marker, inset by this value alone, is not refused and is still
-    /// drawn. Keep this value well below half the area width (#476).</para>
+    /// <para>An indent reaching that area width is <b>not</b> refused on a flat list. An entry
+    /// whose gutter would leave its text no width at all, which is a gutter at or beyond the area
+    /// width, gets one instead: the width of its widest word, or all the room right of its
+    /// marker's inset when the word is wider, where the word is broken. The content then starts at
+    /// the area's right edge less that width, and never left of the marker's inset. A marker is
+    /// never moved, so the text can overprint it. The entry is then placed as at any indent: when
+    /// its marker or its text does not fit what is left of a page it moves to the next page. A
+    /// clamped line taller than a page leaves the whole list unclamped; see
+    /// <see cref="ListElement"/>. A list the document
+    /// draws from its first entry reports its clamped entries as one
+    /// <see cref="LayoutDiagnosticCode.ListIndentClamped"/> item.</para>
+    /// <para>These keep their earlier output, and are not reported by
+    /// <see cref="LayoutDiagnosticCode.ListIndentClamped"/>: a gutter that leaves the text a width,
+    /// however narrow; an entry with no word that measures wider than zero, such as one holding
+    /// only white space, set at font size 0 or set in Symbol or ZapfDingbats, whose text is
+    /// discarded; and an entry with a run that holds text and has a non-finite font size or a
+    /// non-finite colour channel, whose text is discarded and which does not make the save throw,
+    /// because a width would have let the layout read that style and refuse it. So does every
+    /// entry of a list that is laid out as it was before the clamp, which
+    /// <see cref="ListElement"/> lists in six cases. An entry whose marker has no room at the top
+    /// of a page is refused as before. A nested list throws at the area width, as the exception
+    /// records. Below that, from half the area width, a child's text is clamped in the same way,
+    /// because the nested gutter reaches the area width at half the indent a top-level gutter
+    /// needs.</para>
+    /// <para>One element may take at most 50,000 page continuations; see
+    /// <see cref="Rendering.DocumentRenderer"/>. Drawing the text of a clamped entry adds lines,
+    /// and moving an entry adds pages, so a list the document lays out, and whose layout could
+    /// pass that limit, is laid out twice without drawing first: as it was before the clamp and the
+    /// moving of entries, and as it is now. It is placed the new way only when neither reaches the
+    /// limit. Otherwise it is placed as it was before both: no gutter is narrowed, an entry the
+    /// clamp would have changed keeps its marker and loses its text, no entry moves, and
+    /// <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/> reports it. That list then saves,
+    /// or throws the limit's <see cref="InvalidOperationException"/>, as a list with no clamp does.
+    /// </para>
     /// <para>Do <b>not</b> pass a negative value. It can carry content left of the margin and off
     /// the page, and a finite negative value is not reported. 3.0 will reject it.</para>
     /// <para>A non-finite indent is not checked before the layout; see <see cref="Document"/>. A
@@ -101,8 +163,14 @@ public sealed class ListElement
     /// negative-infinity indent, because the gutter widens to the marker's own width, and a list with
     /// no items saves with any. <b>Do not pass</b> a non-finite indent: 3.0 refuses it.</para>
     /// <para>Positive infinity is not refused here, because it writes no invalid token. A nested list
-    /// throws at the area width as described above, and a flat list discards the item text. A
-    /// finite negative value is not refused either.</para>
+    /// throws at the area width as described above, and a flat list clamps each entry whose text
+    /// has no width, as for any indent at or beyond that width. A finite negative value is not
+    /// refused either.</para>
+    /// <para><b>Do not pass</b> an indent that leaves an entry's text no width beside its gutter:
+    /// the text is given a width and reported as
+    /// <see cref="LayoutDiagnosticCode.ListIndentClamped"/>, or left out and reported as
+    /// <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/> when that would take the list past
+    /// the continuation limit, as above. 3.0 will refuse the input.</para>
     /// <para>A finite negative value can put linked item text, or a linked nested marker, at a
     /// non-finite position when the gutter taken from it, added to the list's left edge, overflows,
     /// as a nested list with an indent of -1e308 and a left margin of -1e308 does. The save then
@@ -120,9 +188,12 @@ public sealed class ListElement
     /// <exception cref="InvalidOperationException">
     /// Raised from a save rather than from this property, when a list with nested children has an
     /// indent that reaches the list's own area width, which is the page's content width narrowed by
-    /// the left and right edges of <see cref="Margins"/>, positive infinity included; a flat list at
-    /// any such indent is not refused. The message reports an element too tall to fit and names
-    /// neither this property nor the list.
+    /// the left and right edges of <see cref="Margins"/>, positive infinity included. A flat list
+    /// at such an indent is not refused for the indent. It is refused for two other reasons, as at
+    /// any indent. An entry's marker has no room at the top of a page: the message begins "An
+    /// element is too tall to fit on a single page". Or the list would pass the page-continuation
+    /// limit: the message begins "A single element needed more than 50000 page continuations".
+    /// Neither message names this property or the list.
     /// </exception>
     public double Indent { get; init; } = 20;
 
@@ -267,7 +338,9 @@ public sealed class ListElement
 
     /// <summary>Appends an item to the list and returns this instance for chaining.</summary>
     /// <remarks>
-    /// A null <paramref name="item"/> is refused here.
+    /// A null <paramref name="item"/> is refused here. A save that refuses an item added later
+    /// throws from that save, not from this call. Which saves read the item is on
+    /// <see cref="Rendering.ListRenderer.Layout"/>.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="item"/> is <see langword="null"/>.

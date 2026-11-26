@@ -407,6 +407,18 @@ public sealed class PdfDocument : IDisposable
         }
     }
 
+    /// <summary>
+    /// Whether a page that draws <paramref name="handle"/> passes the check
+    /// <see cref="RefuseUndefinedForeignFonts"/> makes at save: the handle is this document's own,
+    /// or this document defines a font under its resource name. It reads the same two tests, so a
+    /// caller that must know before it draws, without registering the usage, gets the save's
+    /// answer. Removed in 3.0 (#688) with the list's own check of what it can draw.
+    /// </summary>
+    internal bool CanDrawFont(EmbeddedFontHandle handle) =>
+        ReferenceEquals(handle.Owner, this)
+        || OwnEmbeddingOf(handle) is not null
+        || _embeddedFonts.Exists(f => f.ResourceName == handle.ResourceName);
+
     // The same font program embedded here under the same resource name: the content stream names the
     // foreign handle's resource, and this document's own embedding defines that name, so the glyphs
     // the foreign embedder registered are added to this subset. Where the name is defined here for a

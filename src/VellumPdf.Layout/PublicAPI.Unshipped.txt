@@ -16,6 +16,9 @@ VellumPdf.Layout.LayoutDiagnosticCode
 VellumPdf.Layout.LayoutDiagnosticCode.BandTruncated = 401 -> VellumPdf.Layout.LayoutDiagnosticCode
 VellumPdf.Layout.LayoutDiagnosticCode.DiagnosticsDropped = 901 -> VellumPdf.Layout.LayoutDiagnosticCode
 VellumPdf.Layout.LayoutDiagnosticCode.NullGrandchild = 202 -> VellumPdf.Layout.LayoutDiagnosticCode
+VellumPdf.Layout.LayoutDiagnosticCode.ListIndentClamped = 203 -> VellumPdf.Layout.LayoutDiagnosticCode
+VellumPdf.Layout.LayoutDiagnosticCode.ListIndentClampSkipped = 207 -> VellumPdf.Layout.LayoutDiagnosticCode
+VellumPdf.Layout.LayoutDiagnosticCode.ListEntryPartDropped = 208 -> VellumPdf.Layout.LayoutDiagnosticCode
 VellumPdf.Layout.LayoutDiagnosticCode.NullGrandchildText = 201 -> VellumPdf.Layout.LayoutDiagnosticCode
 VellumPdf.Layout.LayoutDiagnosticCode.NullTextRunStyle = 101 -> VellumPdf.Layout.LayoutDiagnosticCode
 VellumPdf.Layout.LayoutDiagnosticCode.UnencodableCharacter = 103 -> VellumPdf.Layout.LayoutDiagnosticCode
@@ -94,6 +97,10 @@ VellumPdf.Layout.Elements.Preformatted.Anchor.get -> string?
 VellumPdf.Layout.Elements.Preformatted.Anchor.init -> void
 VellumPdf.Layout.Elements.Preformatted.BreakBefore.get -> VellumPdf.Layout.Core.PageBreakMode
 VellumPdf.Layout.Elements.Preformatted.BreakBefore.init -> void
+VellumPdf.Layout.Elements.Preformatted.KeepTogether.get -> bool
+VellumPdf.Layout.Elements.Preformatted.KeepTogether.init -> void
+VellumPdf.Layout.Elements.Preformatted.KeepWithNext.get -> bool
+VellumPdf.Layout.Elements.Preformatted.KeepWithNext.init -> void
 VellumPdf.Layout.Elements.Preformatted.Margins.get -> VellumPdf.Layout.Core.EdgeInsets
 VellumPdf.Layout.Elements.Preformatted.Margins.init -> void
 VellumPdf.Layout.Elements.Preformatted.Preformatted(string! text, VellumPdf.Layout.Core.TextStyle? style = null) -> void
