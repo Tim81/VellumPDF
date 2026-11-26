@@ -14,7 +14,8 @@ using VellumPdf.TestSupport;
 namespace VellumPdf.Layout.Tests;
 
 /// <summary>
-/// The sample manual under <c>samples/VellumPdf.Samples.Manual</c>: it saves, it conforms to PDF/A-2u,
+/// The sample manual under <c>samples/VellumPdf.Samples.Manual</c>: it saves, it conforms to
+/// PDF/A-2u,
 /// qpdf finds nothing wrong with it, its named destinations and bookmarks resolve, its page labels
 /// are the ones built, the Dutch passage and the colophon read back, the same inputs give the same
 /// bytes, and the sample reaches VellumPdf only through the Layout API.
@@ -90,7 +91,8 @@ public sealed class SampleManualTests : IClassFixture<SampleManualTests.Built>
     private static JsonElement RootDictionary(JsonElement objects) =>
         Value(objects, objects.GetProperty("trailer").GetProperty("value").GetProperty("/Root").GetString()!);
 
-    // Walks a name tree of the shape the library writes, a flat /Names array or /Kids of such arrays,
+    // Walks a name tree of the shape the library writes, a flat /Names array or /Kids of such
+    // arrays,
     // and returns each name with the reference its destination is stored under.
     private static Dictionary<string, string> NamedDestinations(JsonElement objects)
     {
@@ -174,7 +176,11 @@ public sealed class SampleManualTests : IClassFixture<SampleManualTests.Built>
         foreach (var (name, reference) in dests)
             Assert.InRange(PageIndexOfDestination(json, objects, reference), 0, 40);
 
-        // A value-level check: the page a chapter anchor names holds that chapter's heading.
+        // A value-level check: the page a chapter anchor names holds that chapter's heading. The
+        // running header repeats the title on every page of the chapter, so the heading's own line
+        // is
+        // told apart by counting: the first page of a chapter shows the title twice, the header and
+        // the heading, and every later page once.
         var titles = new Dictionary<string, string>
         {
             ["ch1"] = "1  Introduction",
@@ -189,7 +195,9 @@ public sealed class SampleManualTests : IClassFixture<SampleManualTests.Built>
         foreach (var (anchor, title) in titles)
         {
             var index = PageIndexOfDestination(json, objects, dests[anchor]);
-            Assert.Contains(Squash(title), Squash(Text(index + 1)), StringComparison.Ordinal);
+            var squashed = Squash(title);
+            var onPage = Text(index + 1).ReplaceLineEndings("\n").Split('\n').Count(l => Squash(l) == squashed);
+            Assert.True(onPage == 2, $"{anchor} lands on page {index + 1}, where the title \"{title}\" is the whole of {onPage} lines.");
         }
     }
 
@@ -247,10 +255,11 @@ public sealed class SampleManualTests : IClassFixture<SampleManualTests.Built>
         // The footer prints the label: "Page i" on the title page, "Page 1" on chapter 1.
         Assert.Matches(@"Page i of \d+", Squash(Text(1)));
         Assert.Matches(@"Page 1 of \d+", Squash(Text(chapterOne + 1)));
-        // The header prints the chapter the page is in: the page after chapter 3 starts is still in it.
+        // The header prints the chapter the page is in: the page after chapter 3 starts is still in
+        // it.
         var chapterThree = PageIndexOfDestination(json, objects, NamedDestinations(objects)["ch3"]);
         Assert.Contains("3 Installation", Squash(Text(chapterThree + 2)), StringComparison.Ordinal);
-        Assert.DoesNotContain("3 Installation", Squash(Text(chapterOne + 1)).Replace("3  Installation", ""), StringComparison.Ordinal);
+        Assert.DoesNotContain("3 Installation", Squash(Text(chapterOne + 1)), StringComparison.Ordinal);
     }
 
     // ── The text ─────────────────────────────────────────────────────────────
@@ -262,14 +271,24 @@ public sealed class SampleManualTests : IClassFixture<SampleManualTests.Built>
         Assert.Contains(Safety.FirstSentence, all, StringComparison.Ordinal);
         Assert.Contains("Veiligheidsinstructies", all, StringComparison.Ordinal);
 
-        // The Dutch elements are tagged nl-NL, and the document as a whole stays en-US.
+        // The language is on the elements, not only somewhere in the file: the elements that carry
+        // nl-NL, by structure type, are every Dutch heading, paragraph, list item (its paragraph),
+        // table header and table cell, the contents entries for the chapter included. The counts
+        // are
+        // those of chapter 2 and its seven contents entries; a Dutch element left untagged lowers
+        // one.
         using var json = QpdfJson();
         var objects = Objects(json);
         Assert.Equal("u:en-US", RootDictionary(objects).GetProperty("/Lang").GetString());
-        var dutch = objects.EnumerateObject()
-            .Count(o => o.Value.TryGetProperty("value", out var v) && v.ValueKind == JsonValueKind.Object
-                && v.TryGetProperty("/Lang", out var l) && l.GetString() == "u:nl-NL");
-        Assert.True(dutch >= 20, $"Only {dutch} structure elements carry nl-NL.");
+        var byType = objects.EnumerateObject()
+            .Select(o => o.Value.TryGetProperty("value", out var v) && v.ValueKind == JsonValueKind.Object ? v : default)
+            .Where(v => v.ValueKind == JsonValueKind.Object && v.TryGetProperty("/Lang", out var l)
+                && l.GetString() == "u:nl-NL" && v.TryGetProperty("/S", out _))
+            .GroupBy(v => v.GetProperty("/S").GetString()!)
+            .ToDictionary(g => g.Key, g => g.Count());
+        Assert.Equal(
+            new Dictionary<string, int> { ["/H1"] = 1, ["/H2"] = 7, ["/P"] = 27, ["/TD"] = 21, ["/TH"] = 5 },
+            byType);
     }
 
     [Fact]
@@ -277,7 +296,8 @@ public sealed class SampleManualTests : IClassFixture<SampleManualTests.Built>
     {
         Assert.Contains(Squash(ManualDocument.ColophonLine), Squash(Text(2)), StringComparison.Ordinal);
 
-        // The name the colophon credits is read from the colophon line, so it is written in one place.
+        // The name the colophon credits is read from the colophon line, so it is written in one
+        // place.
         var name = Regex.Match(ManualDocument.ColophonLine, @"courtesy of the (\w+) team").Groups[1].Value;
         Assert.NotEmpty(name);
         Assert.DoesNotContain(name, Squash(Text(1)), StringComparison.Ordinal);
@@ -362,17 +382,89 @@ public sealed class SampleManualTests : IClassFixture<SampleManualTests.Built>
         var two = Make(stamp, id);
         Assert.Equal(Convert.ToHexString(SHA256.HashData(one)), Convert.ToHexString(SHA256.HashData(two)));
 
-        // The pinned values are in the file, so the comparison is not between two empty shells; and a
+        // The pinned values are in the file, so the comparison is not between two empty shells; and
+        // a
         // different identifier gives different bytes.
         Assert.Contains("00112233445566778899AABBCCDDEEFF", Encoding.ASCII.GetString(one), StringComparison.OrdinalIgnoreCase);
         var other = Make(stamp, Convert.FromHexString("FFEEDDCCBBAA99887766554433221100"));
         Assert.NotEqual(Convert.ToHexString(SHA256.HashData(one)), Convert.ToHexString(SHA256.HashData(other)));
     }
 
+    [Fact]
+    public void TwoSeparateProcesses_writeTheBytesOfTheInProcessBuild()
+    {
+        // The sample's own program, run twice as separate processes, so that a value that differs
+        // per
+        // process (a randomised string hash, the clock, a process-wide counter) shows. Both files
+        // must
+        // equal the in-process build with the same default date and identifier.
+        var location = typeof(ManualDocument).Assembly.Location;
+        var apphost = Path.ChangeExtension(location, OperatingSystem.IsWindows() ? ".exe" : null);
+        Assert.True(File.Exists(apphost), $"The sample's launcher {apphost} is not beside its assembly.");
+
+        using var dir = new FontReportSupport.TempDir();
+        var hashes = new List<string>();
+        for (var i = 0; i < 2; i++)
+        {
+            var output = dir.Path($"run{i}.pdf");
+            using var process = System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo(apphost, [output])
+                {
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false,
+                })!;
+            process.StandardOutput.ReadToEnd();
+            Assert.True(process.WaitForExit(60_000), "The sample did not finish.");
+            Assert.Equal(0, process.ExitCode);
+            hashes.Add(Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(output))));
+        }
+
+        Assert.Equal(hashes[0], hashes[1]);
+        Assert.Equal(Convert.ToHexString(SHA256.HashData(_built.Pdf)), hashes[0]);
+    }
+
+    [Fact]
+    public void TheMargins_mirror_theInsideIsWiderOnARightHandPage()
+    {
+        using var json = QpdfJson();
+        var objects = Objects(json);
+        var chapterOne = PageIndexOfDestination(json, objects, NamedDestinations(objects)["ch1"]) + 1;
+
+        // The left edge of the text on a recto page (odd) is the inner margin and on the verso page
+        // after it the outer margin.
+        double LeftEdge(int page) => Regex.Matches(
+                Run("pdftotext", "-bbox", "-f", page.ToString(CultureInfo.InvariantCulture), "-l",
+                    page.ToString(CultureInfo.InvariantCulture), _built.Path, "-"),
+                "xMin=\"([0-9.]+)\"")
+            .Min(m => double.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture));
+
+        Assert.Equal(PageGeometry.Inner, LeftEdge(chapterOne), 1);
+        Assert.Equal(PageGeometry.Outer, LeftEdge(chapterOne + 1), 1);
+    }
+
+    [Fact]
+    public void EveryWorkaround_isMarkedOnThePage_withAPlaceholderNote()
+    {
+        var all = Squash(Text());
+        // One note for each workaround the README lists.
+        foreach (var fragment in new[]
+        {
+            "one-cell tables, because the Layout API has no shaded paragraph",
+            "button names in this table should be bold",
+            "Figure 1 has no caption",
+            "fonts are read by name from resources of the Standard14 package",
+            "Heading numbers are typed by hand",
+            "a bottom margin adds no space",
+        })
+            Assert.Contains(fragment, all, StringComparison.OrdinalIgnoreCase);
+        Assert.True(Regex.Matches(all, "Placeholder:").Count >= 6);
+    }
+
     // ── The sample reaches VellumPdf through the Layout API only ─────────────
 
     // Read from the compiled assembly, not the source. A using alias, a global using, a type named
-    // through var and code that a source generator wrote all leave a type reference in the metadata,
+    // through var and code that a source generator wrote all leave a type reference in the
+    // metadata,
     // where a search of the source for a name would miss them or match a comment.
     private static HashSet<(string Assembly, string Type)> VellumReferences()
     {
@@ -401,8 +493,10 @@ public sealed class SampleManualTests : IClassFixture<SampleManualTests.Built>
         Assert.NotEmpty(refs);
 
         // Those three are how the sample would leave the Layout API. IRenderer is how it would add
-        // an element Layout does not have, PdfCanvas how it would draw one, PdfDocument how it would
-        // build the file without Layout. Nothing in the Rendering namespace is a type to name either:
+        // an element Layout does not have, PdfCanvas how it would draw one, PdfDocument how it
+        // would
+        // build the file without Layout. Nothing in the Rendering namespace is a type to name
+        // either:
         // those are the renderers behind the elements.
         var forbidden = refs.Where(r =>
             r.Type is "VellumPdf.Layout.Core.IRenderer" or "VellumPdf.Canvas.PdfCanvas"
@@ -411,19 +505,21 @@ public sealed class SampleManualTests : IClassFixture<SampleManualTests.Built>
             || r.Type.StartsWith("VellumPdf.Layout.Rendering.", StringComparison.Ordinal)).ToArray();
         Assert.Empty(forbidden);
 
-        // The sample does not declare a type that implements an interface of the Layout.Core namespace.
+        // The sample does not declare a type that implements an interface of the Layout.Core
+        // namespace.
         var sample = typeof(ManualDocument).Assembly;
         Assert.DoesNotContain(sample.GetTypes(), t => t.GetInterfaces()
             .Any(i => i.Namespace == "VellumPdf.Layout.Core"));
     }
 
     [Fact]
-    public void TheKernelTypesTheSampleTouches_areTheOnesLayoutsOwnSignaturesAsk()
+    public void TheKernelTypesTheSampleTouches_arePinned()
     {
-        // Layout's public members take a few Kernel types: a page size, a conformance level, a page
-        // label style, an image object and an embedded font handle. The sample touches nothing else
-        // of the Kernel. The loader and the colour profile are how two of those arguments are made;
-        // a change to this list is a change to what a Layout-only program has to reach for.
+        // Six are types Layout's own public members take or return: PdfConformance,
+        // PdfDocumentInfo,
+        // PdfRectangle, PdfPageLabelStyle, EmbeddedFontHandle and PdfImageXObject. PageSize (the A4
+        // value) and PngImageLoader (how an image is made) make values for those. A change to this
+        // list is a change to what a Layout-only program must reach for.
         var kernel = VellumReferences()
             .Where(r => r.Assembly == "VellumPdf.Kernel")
             .Select(r => r.Type)
@@ -431,7 +527,6 @@ public sealed class SampleManualTests : IClassFixture<SampleManualTests.Built>
             .ToArray();
         Assert.Equal(
             [
-                "VellumPdf.Document.IccProfiles",
                 "VellumPdf.Document.PageSize",
                 "VellumPdf.Document.PdfConformance",
                 "VellumPdf.Document.PdfDocumentInfo",

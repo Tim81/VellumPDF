@@ -6,7 +6,9 @@ namespace VellumPdf.Samples.Manual;
 /// <summary>The page margins of the manual, in points.</summary>
 public static class PageGeometry
 {
-    /// <summary>The margin on the binding side. With mirrored margins it is the left of a right-hand page.</summary>
+    /// <summary>
+    /// The margin on the binding side. With mirrored margins it is the left of a right-hand page.
+    /// </summary>
     public const double Inner = 84;
 
     /// <summary>The margin on the outer edge.</summary>

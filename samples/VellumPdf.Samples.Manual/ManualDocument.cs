@@ -22,7 +22,9 @@ public static class ManualDocument
     public const string ColophonLine =
         $"Typeset with VellumPdf. Sample text courtesy of the Celestium team ({ColophonAddress}).";
 
-    /// <summary>The issue date of the edition, used as the document date unless the caller passes another.</summary>
+    /// <summary>
+    /// The issue date of the edition, used as the document date unless the caller passes another.
+    /// </summary>
     public static readonly DateTimeOffset IssueDate = new(2026, 11, 26, 9, 0, 0, TimeSpan.Zero);
 
     /// <summary>The document ID of the edition, used unless the caller passes another.</summary>
@@ -53,7 +55,6 @@ public static class ManualDocument
         doc.Info.Author = "Aerolith Appliances (a fictitious company)";
         doc.Info.Subject = "Operating and maintenance instructions for the Aerolith AL-5 air purifier";
         doc.Info.Keywords = "air purifier, user manual, sample document, PDF/A-2u";
-        doc.SetPdfAOutputIntent(IccProfiles.Srgb, 3, "sRGB");
 
         var styles = ManualStyles.Create(doc);
         doc.Header = new RunningBand("{chapter}", styles.Header, HorizontalAlignment.Center) { ChapterToken = true };
@@ -71,7 +72,7 @@ public static class ManualDocument
 
     // The contents list comes before the chapters, so a first pass over a scratch document learns
     // the headings. One list of chapters then drives both the body and the contents.
-    private static List<(string Number, string Title, int Level)> CollectOutline()
+    private static List<(string Number, string Title, int Level, string? Language)> CollectOutline()
     {
         using var scratch = new LayoutDocument();
         var writer = new ManualWriter(scratch, ManualStyles.Create(scratch));

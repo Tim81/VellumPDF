@@ -14,7 +14,8 @@ using LayoutDocument = VellumPdf.Layout.Document;
 namespace VellumPdf.Samples.Manual;
 
 /// <summary>
-/// Adds the manual's building blocks to a <see cref="LayoutDocument"/>: numbered headings with anchors,
+/// Adds the manual's building blocks to a <see cref="LayoutDocument"/>: numbered headings with
+/// anchors,
 /// paragraphs written in a small inline markup, lists, tables, callouts and command blocks. Each
 /// method is a few lines of Layout API calls, so the chapters read as content.
 /// </summary>
@@ -27,10 +28,6 @@ public sealed partial class ManualWriter
 {
     /// <summary>The visible stand-in for a page number the Layout API cannot supply.</summary>
     public const string PagePlaceholder = "[p. ?]";
-
-    /// <summary>The width of the content box, in points. Mirrored margins swap the two sides.</summary>
-    public static double ContentWidth { get; } =
-        VellumPdf.Document.PageSize.A4.Width - PageGeometry.Inner - PageGeometry.Outer;
 
     private static readonly Regex Spaces = MyWhitespace();
 
@@ -49,11 +46,17 @@ public sealed partial class ManualWriter
         _s = styles;
     }
 
+    /// <summary>
+    /// The width of the content box, in points, read from the document's page size and margins.
+    /// Mirrored margins swap the two sides and leave the sum as it is.
+    /// </summary>
+    public double ContentWidth => _doc.PageSize.Width - _doc.Margins.Left - _doc.Margins.Right;
+
     /// <summary>The styles the writer draws with.</summary>
     public ManualStyles Styles => _s;
 
     /// <summary>The headings added so far, for the contents list.</summary>
-    public List<(string Number, string Title, int Level)> Outline { get; } = [];
+    public List<(string Number, string Title, int Level, string? Language)> Outline { get; } = [];
 
     /// <summary>Starts a chapter on the next right-hand page.</summary>
     /// <param name="title">The chapter title.</param>
@@ -68,7 +71,9 @@ public sealed partial class ManualWriter
 
     /// <summary>Starts an appendix.</summary>
     /// <param name="title">The appendix title.</param>
-    /// <param name="breakBefore">Where the appendix starts; the default is the next right-hand page.</param>
+    /// <param name="breakBefore">
+    /// Where the appendix starts; the default is the next right-hand page.
+    /// </param>
     public void Appendix(string title, PageBreakMode breakBefore = PageBreakMode.Recto)
     {
         var letter = (char)('A' + _appendix++);
@@ -106,7 +111,9 @@ public sealed partial class ManualWriter
     /// <summary>Adds a paragraph written in the inline markup.</summary>
     /// <param name="markup">The text.</param>
     /// <param name="language">A BCP 47 tag when the paragraph is not in English.</param>
-    /// <param name="keepWithNext">Whether the paragraph stays on a page with the element after it.</param>
+    /// <param name="keepWithNext">
+    /// Whether the paragraph stays on a page with the element after it.
+    /// </param>
     public void P(string markup, string? language = null, bool keepWithNext = false)
     {
         _doc.Add(new Paragraph(Runs(markup, _s.Body))
@@ -167,12 +174,27 @@ public sealed partial class ManualWriter
         _doc.Add(list);
     }
 
+    /// <summary>
+    /// Adds a small note that names a workaround the sample needed because the Layout API cannot
+    /// yet
+    /// do something. The note is on the page so that the gap shows to the reader of the sample.
+    /// </summary>
+    /// <param name="text">What is missing, and what the manual does instead.</param>
+    public void Placeholder(string text) =>
+        _doc.Add(new Paragraph($"Placeholder: {Collapse(text)}", _s.Small)
+        {
+            Margins = new EdgeInsets(4, 0, 0, 0),
+        });
+
     /// <summary>Adds a shaded box with a label, for a warning or a hint.</summary>
     /// <param name="label">A short label such as NOTE or CAUTION.</param>
     /// <param name="text">The text of the box, plain.</param>
     /// <param name="language">A BCP 47 tag when the text is not in English.</param>
     public void Callout(string label, string text, string? language = null)
     {
+        // Workaround: the Layout API has no shaded paragraph, so the box is a one-cell table. It is
+        // tagged as a table, and the label cannot be bold. The manual says so where it first uses
+        // one.
         var table = new TableElement
         {
             BorderWidth = 0,
@@ -204,7 +226,9 @@ public sealed partial class ManualWriter
     /// <summary>
     /// Adds a table whose first row is a header that repeats on every page the table covers.
     /// </summary>
-    /// <param name="widths">The column widths in points; they should sum to the content width.</param>
+    /// <param name="widths">
+    /// The relative column widths; they are scaled to fill the content width.
+    /// </param>
     /// <param name="header">The header cells.</param>
     /// <param name="rows">The body rows. A line feed in a cell is a line break.</param>
     /// <param name="codeColumn">The zero-based column drawn in monospace, or -1 for none.</param>
@@ -221,7 +245,10 @@ public sealed partial class ManualWriter
             Margins = new EdgeInsets(6, 0, 0, 0),
             Anchor = anchor,
         };
-        table.SetColumnWidths(widths);
+        // A table needs widths in points, and the API has no "fill the text width", so the
+        // proportions given here are scaled by hand.
+        var scale = ContentWidth / widths.Sum();
+        table.SetColumnWidths([.. widths.Select(w => w * scale)]);
         var head = new Row { IsHeader = true, Background = ManualStyles.Brand };
         table.Add(head);
         foreach (var h in header)
@@ -281,10 +308,12 @@ public sealed partial class ManualWriter
     /// <param name="right">The text at the right margin.</param>
     /// <param name="style">The style of both.</param>
     /// <param name="indent">The left margin of the line in points.</param>
-    public void LeaderLine(string left, string right, TextStyle style, double indent = 0)
+    /// <param name="language">A BCP 47 tag when the line is not in English.</param>
+    public void LeaderLine(string left, string right, TextStyle style, double indent = 0, string? language = null)
     {
         _doc.Add(new Paragraph($"{left}\t{right}", style)
         {
+            Language = language,
             TabStops = [new TabStop(ContentWidth - indent, TabAlignment.Right, TabLeader.Dots)],
             Margins = new EdgeInsets(2.5, 0, 0, indent),
         });
@@ -352,7 +381,9 @@ public sealed partial class ManualWriter
         return runs;
     }
 
-    /// <summary>Collapses runs of white space, so a wrapped source string reads as one line.</summary>
+    /// <summary>
+    /// Collapses runs of white space, so a wrapped source string reads as one line.
+    /// </summary>
     /// <param name="text">The text.</param>
     /// <returns>The text with every run of white space as one space.</returns>
     public static string Collapse(string text) => Spaces.Replace(text.Trim(), " ");
@@ -381,7 +412,7 @@ public sealed partial class ManualWriter
         PageBreakMode breakBefore, EdgeInsets margins, bool appendix)
     {
         var text = appendix ? $"{number}. {title}" : $"{number}  {title}";
-        Outline.Add((number, title, level));
+        Outline.Add((number, title, level, language));
         _doc.Add(new Heading(text, style)
         {
             Level = level,

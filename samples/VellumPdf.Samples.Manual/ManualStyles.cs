@@ -34,7 +34,6 @@ public sealed class ManualStyles
         var sans = Load(doc, "LiberationSans-Regular.ttf");
         var sansBold = Load(doc, "LiberationSans-Bold.ttf");
         var mono = Load(doc, "LiberationMono-Regular.ttf");
-        var monoBold = Load(doc, "LiberationMono-Bold.ttf");
 
         Body = new TextStyle { FontRef = serif, FontSize = 10, Leading = 13.5 };
         Bold = new TextStyle { FontRef = serifBold, FontSize = 10, Leading = 13.5 };
@@ -48,9 +47,7 @@ public sealed class ManualStyles
         TableHead = new TextStyle { FontRef = sansBold, FontSize = 9, Leading = 12, Color = new ColorRgb(1, 1, 1) };
         TableBody = new TextStyle { FontRef = sans, FontSize = 9, Leading = 12 };
         TableCode = new TextStyle { FontRef = mono, FontSize = 8.5, Leading = 12 };
-        Link = new TextStyle { FontRef = serif, FontSize = 10, Leading = 13.5, Color = LinkBlue, LinkUri = null };
         CodeBlock = new TextStyle { FontRef = mono, FontSize = 8.5, Leading = 11.5 };
-        CodeBold = new TextStyle { FontRef = monoBold, FontSize = 9, Leading = 13.5 };
         TitleName = new TextStyle { FontRef = sansBold, FontSize = 44, Leading = 50, Color = Brand };
         TitleKind = new TextStyle { FontRef = sans, FontSize = 20, Leading = 26, Color = Grey };
         TitleLine = new TextStyle { FontRef = sans, FontSize = 11, Leading = 16 };
@@ -67,9 +64,6 @@ public sealed class ManualStyles
 
     /// <summary>Monospace text inside a paragraph.</summary>
     public TextStyle Code { get; }
-
-    /// <summary>Bold monospace text.</summary>
-    public TextStyle CodeBold { get; }
 
     /// <summary>Small print, for notes and the colophon.</summary>
     public TextStyle Small { get; }
@@ -94,9 +88,6 @@ public sealed class ManualStyles
 
     /// <summary>A table body cell that holds a command or a code.</summary>
     public TextStyle TableCode { get; }
-
-    /// <summary>Body text styled as a link; the address is added per run.</summary>
-    public TextStyle Link { get; }
 
     /// <summary>A preformatted command block.</summary>
     public TextStyle CodeBlock { get; }
@@ -128,7 +119,9 @@ public sealed class ManualStyles
         return doc.UseTrueTypeFont(copy.ToArray());
     }
 
-    /// <summary>Returns <paramref name="style"/> with a different colour and a link address.</summary>
+    /// <summary>
+    /// Returns <paramref name="style"/> with a different colour and a link address.
+    /// </summary>
     /// <param name="style">The style to copy.</param>
     /// <param name="uri">The absolute link address.</param>
     /// <returns>The linked style.</returns>

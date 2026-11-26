@@ -13,7 +13,9 @@ public static class Safety
     /// <summary>The language tag of the chapter.</summary>
     public const string Dutch = "nl-NL";
 
-    /// <summary>The text of the first Dutch paragraph, which tests look for in the saved file.</summary>
+    /// <summary>
+    /// The text of the first Dutch paragraph, which tests look for in the saved file.
+    /// </summary>
     public const string FirstSentence =
         "Lees deze veiligheidsinstructies zorgvuldig voordat u de Aerolith AL-5 in gebruik neemt.";
 

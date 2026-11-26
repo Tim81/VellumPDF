@@ -35,9 +35,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   PDF/A-2u file: a title page, a colophon, a contents list, roman and decimal page labels, chapters
   on right-hand pages, bookmarks and named destinations, a running header and footer, tables whose
   header row repeats, command blocks with tabs, dot leaders, a fitted image and a chapter in Dutch
-  with its own language. Where the Layout API cannot yet do what a manual needs, such as links
-  inside the document or page numbers in a contents list, the manual shows a visible placeholder
-  instead. `SampleManualTests` in the Layout test project builds it and checks it with veraPDF,
+  with its own language. Where a page number belongs, which the Layout API cannot yet supply, the
+  manual shows a visible `[p. ?]`. The workarounds for bold text in table cells, a caption, note
+  boxes, font loading, heading numbers and spacing each have a placeholder note on the page.
+  `SampleManualTests` in the Layout test project builds the manual and checks it with veraPDF,
   qpdf and pdftotext, and fails if the compiled sample names `IRenderer`, `PdfCanvas` or
   `PdfDocument`. The sample assembly is left out of the coverage scope. There is no change to any
   package.

@@ -20,7 +20,9 @@ public static class DiagramImage
     /// </summary>
     public const int Height = 640;
 
-    /// <summary>The fill colour of each layer, top to bottom, used by the figure and its legend.</summary>
+    /// <summary>
+    /// The fill colour of each layer, top to bottom, used by the figure and its legend.
+    /// </summary>
     public static IReadOnlyList<(byte R, byte G, byte B)> LayerColours { get; } =
     [
         (60, 66, 74),

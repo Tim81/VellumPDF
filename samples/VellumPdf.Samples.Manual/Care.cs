@@ -3,7 +3,9 @@
 
 namespace VellumPdf.Samples.Manual;
 
-/// <summary>Chapter 6: the maintenance schedule, filter changes, sensor cleaning and storage.</summary>
+/// <summary>
+/// Chapter 6: the maintenance schedule, filter changes, sensor cleaning and storage.
+/// </summary>
 public static class Care
 {
     /// <summary>Adds the chapter.</summary>

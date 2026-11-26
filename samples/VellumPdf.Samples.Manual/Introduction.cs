@@ -3,7 +3,9 @@
 
 namespace VellumPdf.Samples.Manual;
 
-/// <summary>Chapter 1: what the manual covers, its conventions and the parts of the purifier.</summary>
+/// <summary>
+/// Chapter 1: what the manual covers, its conventions and the parts of the purifier.
+/// </summary>
 public static class Introduction
 {
     /// <summary>Adds the chapter.</summary>
@@ -33,6 +35,10 @@ public static class Introduction
         w.Callout("NOTE", """
             Everything in this manual is invented. There is no Aerolith company, no AL-5 purifier and
             no support line. The document exists to exercise a PDF library.
+            """);
+        w.Placeholder("""
+            Boxes like the NOTE above are one-cell tables, because the Layout API has no shaded
+            paragraph. A screen reader announces a table, and the label cannot be bold.
             """);
 
         w.Section("Conventions");
@@ -72,7 +78,7 @@ public static class Introduction
             blows it out of the round outlet on the top cover. A fan and a sensor module sit between
             the filters and the outlet. The legend below names the layers.
             """);
-        w.Sub("Legend to figure 1, overleaf");
+        w.Sub("Legend to figure 1, on the next page");
         w.Table(
             [38, 120, 301],
             ["Layer", "Part", "What it does"],
@@ -84,6 +90,10 @@ public static class Introduction
                 ["5", "Pre-filter", "A washable mesh that catches hair and coarse dust before it reaches the other filters."],
                 ["6", "Base", "Carries the unit and holds the mains inlet, the service port and the rubber feet."],
             ]);
+        w.Placeholder("""
+            Figure 1 has no caption. The image is scaled to fill a whole page, so nothing fits under it,
+            and the Layout API has no caption element that stays with a figure.
+            """);
         w.P("""
             Figure 1, on the next page, shows the unit with its layers pulled apart. The picture is scaled
             so that it fills a page exactly, and the numbers above are the layers from the top down.

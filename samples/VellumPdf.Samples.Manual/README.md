@@ -11,11 +11,15 @@ closed.
 From the repository root:
 
 ```shell
-dotnet run --project samples/VellumPdf.Samples.Manual -c Release -- manual.pdf
+dotnet run --project samples/VellumPdf.Samples.Manual -c Release -f net10.0 -- manual.pdf
 ```
 
 The argument is the output path. Without it the file is `aerolith-al5-manual.pdf` in the current
-directory. The document date and the file identifier are fixed, so two runs write the same bytes.
+directory. The `-f` is needed because the repository builds every project for net10.0 and net11.0
+(`Directory.Build.props`), and `dotnet run` refuses to pick one; `-f net11.0` works too. The sample
+keeps both targets because the Layout test project, which builds and checks it, runs on both. The
+document date and the file identifier are fixed, so two runs, in separate processes, write the same
+bytes.
 
 ## What the manual uses
 
@@ -37,8 +41,10 @@ directory. The document date and the file identifier are fixed, so two runs writ
 
 ## What it cannot do yet
 
-The manual shows `[p. ?]` wherever a page number belongs, and the contents and the index say so on the
-page. These are the needs the Layout API does not meet today:
+The manual shows `[p. ?]` wherever a page number belongs. The workarounds for bold text in table
+cells, the caption, the note boxes, the fonts, hand-typed heading numbers and spacing each have a
+placeholder note on the page where it first matters (the colophon page for the last three). The
+list below is not complete:
 
 - Links to another part of the document. A cross-reference is plain text (#299, #600).
 - A contents list or an index with page numbers (#294, #599).
@@ -46,8 +52,13 @@ page. These are the needs the Layout API does not meet today:
 - Numbered headings, which are typed by hand (#301).
 - A header or footer that differs on the title page, or a page count that skips the front matter
   (#286, #365).
-- A caption that stays with its figure (#295).
+- A caption that stays with its figure. A fitted image fills the page, so the figure has none (#295).
 - Named styles, so every element is given its style by hand (#292).
+- A shaded paragraph. The note boxes are one-cell tables, which a screen reader announces as tables.
+- Space after an element. A bottom margin adds none, so every gap is the top margin of the next
+  element.
+- The embedded fonts. The Standard14 package offers them to the Kernel's document only, so
+  `ManualStyles` reads its resources by name, a name the package does not document.
 
 The comments in the code say where each workaround sits.
 

@@ -3,7 +3,9 @@
 
 namespace VellumPdf.Samples.Manual;
 
-/// <summary>Chapter 5: Wi-Fi, the companion app, the service console and firmware updates.</summary>
+/// <summary>
+/// Chapter 5: Wi-Fi, the companion app, the service console and firmware updates.
+/// </summary>
 public static class Network
 {
     /// <summary>The anchor of the first console block, so a test can check it resolves.</summary>

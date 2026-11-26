@@ -3,7 +3,9 @@
 
 namespace VellumPdf.Samples.Manual;
 
-/// <summary>Chapter 3: choosing a place, fitting the filters, connecting power, first start.</summary>
+/// <summary>
+/// Chapter 3: choosing a place, fitting the filters, connecting power, first start.
+/// </summary>
 public static class Installation
 {
     /// <summary>Adds the chapter.</summary>

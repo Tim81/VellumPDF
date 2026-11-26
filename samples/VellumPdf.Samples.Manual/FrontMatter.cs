@@ -15,7 +15,7 @@ public static class FrontMatter
     /// <param name="s">The styles to draw with.</param>
     /// <param name="outline">The chapter and section headings of the body, in order.</param>
     public static void Write(
-        LayoutDocument doc, ManualStyles s, IReadOnlyList<(string Number, string Title, int Level)> outline)
+        LayoutDocument doc, ManualStyles s, IReadOnlyList<(string Number, string Title, int Level, string? Language)> outline)
     {
         TitlePage(doc, s);
         Colophon(doc, s);
@@ -72,10 +72,16 @@ public static class FrontMatter
             new TextRun(line[(at + ManualDocument.ColophonAddress.Length)..], s.Small),
         ])
         { Margins = new EdgeInsets(6, 0, 0, 0) });
+        doc.Add(new Paragraph(
+            "Placeholder: the fonts are read by name from resources of the Standard14 package, because no " +
+            "public Layout call returns them. Heading numbers are typed by hand. The gaps between " +
+            "elements, and the position of this page's text, are top margins, because a bottom margin " +
+            "adds no space.", s.Small)
+        { Margins = new EdgeInsets(14, 0, 0, 0) });
     }
 
     private static void Contents(
-        LayoutDocument doc, ManualStyles s, IReadOnlyList<(string Number, string Title, int Level)> outline)
+        LayoutDocument doc, ManualStyles s, IReadOnlyList<(string Number, string Title, int Level, string? Language)> outline)
     {
         doc.Add(new PageBreak { Recto = true });
         doc.Add(new Heading("Contents", s.Chapter)
@@ -93,14 +99,14 @@ public static class FrontMatter
         { KeepWithNext = true, Margins = new EdgeInsets(10, 0, 0, 0) });
 
         var w = new ManualWriter(doc, s);
-        foreach (var (number, title, level) in outline)
+        foreach (var (number, title, level, language) in outline)
         {
             var label = number.StartsWith("Appendix", StringComparison.Ordinal)
                 ? $"{number}. {title}" : $"{number}  {title}";
             if (level == 0)
-                w.LeaderLine(label, ManualWriter.PagePlaceholder, s.Bold, 0);
+                w.LeaderLine(label, ManualWriter.PagePlaceholder, s.Bold, 0, language);
             else
-                w.LeaderLine(label, ManualWriter.PagePlaceholder, s.Body, 18);
+                w.LeaderLine(label, ManualWriter.PagePlaceholder, s.Body, 18, language);
         }
     }
 }

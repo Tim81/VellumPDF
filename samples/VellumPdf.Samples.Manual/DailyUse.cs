@@ -3,7 +3,9 @@
 
 namespace VellumPdf.Samples.Manual;
 
-/// <summary>Chapter 4: the control panel, the modes, the timer, night mode and the child lock.</summary>
+/// <summary>
+/// Chapter 4: the control panel, the modes, the timer, night mode and the child lock.
+/// </summary>
 public static class DailyUse
 {
     /// <summary>Adds the chapter.</summary>
@@ -36,6 +38,10 @@ public static class DailyUse
                 ["**Lock**", "Short", "Does nothing while the lock is off. Shows the lock state."],
                 ["**Lock**", "Long", "Switches the child lock on or off."],
             ]);
+        w.Placeholder("""
+            The button names in this table should be bold, as they are in the text. A table cell holds
+            one string in one style, so they are plain.
+            """);
         w.Sub("The lamps");
         w.Table(
             [100, 110, 249],
