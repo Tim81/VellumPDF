@@ -128,6 +128,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - In a tagged document each drawn piece is one `P` structure element. Nothing in the character
     stream separates two lines. Documents without the element save to the same bytes as before.
 
+- **`Preformatted.KeepTogether` and `KeepWithNext`, a code block can stay on one page (#701).** The
+  members behave as they do on `Paragraph` and `Heading`. A block that would split below the top of
+  a page moves to the next page when it fits there, and `KeepWithNext` keeps the block's last piece
+  on the page the next element starts on.
+  - A block that does not fit an empty page, or already starts at the top of one, splits between
+    lines as before and the save lists `KeepTogetherRelaxed`, a warning. A `KeepWithNext` request the
+    pages cannot hold is dropped and listed as `KeepWithNextRelaxed`.
+  - Nothing is refused. A block with neither flag saves to the same bytes as before.
+
 - **`Preformatted.Anchor`, a code block can be a link target (#693).** The property has the name
   rule, the refusals and the named destination of `Paragraph.Anchor`: a name of 1 to 127
   characters from `A-Z a-z 0-9 . _ - :` is accepted, any other name throws `ArgumentException` from
