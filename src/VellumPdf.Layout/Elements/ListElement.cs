@@ -81,7 +81,7 @@ public enum ListStyle
 /// <see cref="Rendering.ListRenderer.Layout"/>. In the last three cases every list of the document
 /// is laid out that way, so without <see cref="Document.StrictDiagnostics"/> the document keeps
 /// the outcome it had while nothing ahead of the font, the element or the renderer moves; with
-/// it, the 207 each such list with an entry reports refuses a save that does not throw.</para>
+/// it, a <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/> report refuses the save.</para>
 /// <para><b>Attention</b>: an item whose text holds only white space is laid out at the leading of
 /// <see cref="TextStyle.Default"/>, as on <see cref="Paragraph"/>, while its marker is laid out in
 /// the item's own style, so the marker's line can be the one that does not fit where the item

@@ -304,8 +304,9 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     /// this once, from what was added, before it lays anything out, so the pass that counts pages
     /// for a header or footer and the pass that draws lay each list out the same way. The library
     /// cannot read where your renderer starts or what it lays out, and a list that moved ahead of
-    /// it can change whether the document saves. Such a list that has an entry reports
-    /// <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/> once and names this cause. <b>Do
+    /// it can change whether the document saves. A list the document places this way reports
+    /// <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/> as that code describes, naming
+    /// this cause. <b>Do
     /// not</b> rely on where a list lands in such a document: 3.0 lays a list out one way, whatever
     /// called it (#688).</para>
     /// <para>When the document calls this method, the exceptions it lists reach you from the
