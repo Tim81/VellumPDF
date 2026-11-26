@@ -1081,7 +1081,7 @@ public sealed class LayoutDiagnosticsTests
         var ex = Assert.Throws<InvalidOperationException>(() => doc.Save(new MemoryStream()));
 
         Assert.StartsWith("StrictDiagnostics refused the save: NullGrandchildText in List 1", ex.Message, StringComparison.Ordinal);
-        var item = Assert.Single(doc.Diagnostics);
+        var item = Assert.Single(doc.Diagnostics, d => d.Code == LayoutDiagnosticCode.NullGrandchildText);
         Assert.Equal(1, item.Count);
         Assert.Equal(1, item.ElementIndex);
     }

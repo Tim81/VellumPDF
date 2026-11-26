@@ -600,6 +600,147 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **A list indent that leaves an entry no text width kept the marker and discarded the text
+  (#476).** `ParagraphRenderer` drops a paragraph whose width is zero or less, while the marker's
+  own paragraph has no margin, so a flat list whose `Indent` reached the list's area width saved as
+  a column of markers. A nested child lost its text from half that width, because the child gutter
+  is twice the indent, and nothing reported it. An entry whose gutter would leave its text no width
+  now gets one, so the text is drawn: the width of its widest word, or all the room right of its
+  marker's inset when the word is wider. The content starts at the area's right edge less that
+  width, and it can overprint the marker, which is never moved.
+  - **Deliberate output change**, only where the text width was zero or less: a flat list with an
+    `Indent` at or above the area width (positive infinity included), and a nested child whose
+    gutter is at or above it, which is an indent of half the area width or more. The item text is
+    now in the content stream. These keep their output: a width that is positive but short of the
+    widest word, so that a word is broken a glyph a line; an entry with no word that measures
+    wider than zero (white space only, font size 0, Symbol and ZapfDingbats), whose text is still
+    discarded; an entry with a run that holds text and has a non-finite font size or colour
+    channel, whose text is still discarded and which still saves, because a width would have made
+    the layout read that style and refuse it; and every entry of a list that is laid out as it was
+    before the clamp, which the #685 entry below lists. A nested list whose indent reaches the
+    area width still throws `InvalidOperationException`, with the same message.
+  - The clamp applies to a list the document lays out itself. A list that a renderer of yours lays
+    out through the context it was given, through `LayoutContext.WithArea` or through the public
+    `LayoutContext` constructor is laid out as it was: no gutter is narrowed and no entry moves
+    (#685), so the list itself saves, or is refused for the continuation limit, with the bytes and
+    the message it had. A list builds its entries at its first layout and keeps them, whole and at
+    the width that layout used, as it did. Where that layout was not the document's own call in this
+    save (you laid the list out before the save, another document did, or a renderer of yours that
+    holds the list did), the document lays the list out as it was, with those entries, and it
+    reports nothing unless it lays every list out as it was (below). That holds for a list changed
+    since: an item or a child added after that layout is not laid out or drawn.
+    `ListRenderer.Layout`, `IRenderer.Layout` and the `LayoutContext` constructor and
+    `WithArea` say so, with a "Do not rely on" paragraph: 3.0 lays a list out one way.
+  - An entry whose marker has no room at the top of a page is still refused: the save throws the
+    same "An element is too tall" `InvalidOperationException`. That entry fits no page, so its list
+    is placed as it was before (#685 below). The page-continuation limit is refused with its own
+    message, which begins "A single element needed more than 50000 page continuations".
+  - A list whose layout, with clamped text or with moved entries (see #685 below), would pass the
+    50,000 page continuations one element may take is placed as it was before both, so a list that
+    saved still saves, and a list refused at that limit is still refused with the same message.
+    A list of 50,000 units or fewer, the sum over its entries of the larger of one and the entry's
+    wrapped lines, cannot reach the limit and is not probed. A larger one is laid out twice without
+    drawing, as it was and as it is now, and the new layout is kept only where neither reaches the
+    limit. The new `LayoutDiagnosticCode.ListIndentClampSkipped` (207, severity `Error`) reports
+    it, with the number of entries the clamp would have narrowed as `Count`, or 1 when it would
+    have narrowed none. The text of the entries the clamp would have narrowed is not drawn. The
+    message of a 207 names every cause that applied: the continuation limit, or any of a renderer
+    of yours, a font the document cannot draw, and an element after a list that comes near the
+    limit.
+  - A new `LayoutDiagnosticCode.ListIndentClamped` (203, severity `Error`) reports a clamped list
+    once, with the number of clamped entries as `Count`. `StrictDiagnostics` refuses it, and the
+    default saves. A list is reported when the document draws it from its first entry; a
+    `ListRenderer` you build to start at a later entry clamps and reports nothing.
+  - `ListElement.Indent` carries a "Do not pass" paragraph for an indent that leaves an entry's text
+    no width: 3.0 will refuse it.
+
+- **A list entry whose marker or text did not fit what was left of a page lost that part (#685).**
+  `ListRenderer` placed an entry when either its marker or its text was placed. An entry whose
+  marker fitted the rest of a page and whose text did not was drawn there with the text missing,
+  and one whose text fitted and whose marker did not was drawn with the marker missing, or with it
+  overprinting the line above; nothing reported either. An entry is now placed when both parts
+  are: otherwise it moves whole to the next page, as it already did when neither fitted, provided
+  a page of its own holds both. A marker that wrapped into more lines than the room left counts
+  as not placed. Text that has no width, which `ListElement.Indent` describes, is not a part that
+  did not fit.
+  - **Deliberate output change**, for a document with such an entry that is not at the top of a
+    page, and that holds no renderer of yours (below). The text that was missing is drawn, or the
+    same text is drawn at other positions. A moved entry also changes where a keep run ends and
+    what is drawn, so the `Count` or the items of an `UnembeddedFont` (601) report can change, and
+    a `KeepWithNextRelaxed` (801) or `KeepTogetherRelaxed` (802) report can appear or go.
+  - **A list that holds an entry no page holds is placed as it was before, whole.** An entry no
+    page holds is one whose marker has a line taller than a page, or whose text, at the width the
+    clamp of #476 would give it, has one. No entry of such a list is clamped or moved, so each is
+    where it fell and shows the lines that fit, and the new
+    `LayoutDiagnosticCode.ListEntryPartDropped` (208, severity `Error`) reports each of them, with
+    `Count` the number of such entries in the pieces drawn. `StrictDiagnostics` refuses it, and the
+    default saves. Other lists in the document keep both fixes.
+  - **Deliberate output change, text a list laid out as it was no longer shows after something
+    ahead of it moved.** A list laid out as it was before the clamp and the moving of entries
+    starts where the lists ahead of it, which keep both fixes, leave the cursor, and that can
+    differ from where it started. An entry it places at a page bottom then shows the lines its new
+    start allows, so a document can show fewer lines than before. It happens to a list that holds
+    an entry no page holds, which reports 208, and to a list the continuation limit sends back,
+    which reports 207. A document that holds a renderer of yours lays every list out as it was
+    (below), so no list ahead of one keeps the fixes.
+  - **Deliberate output change, a `ListRenderer` that serves a second document draws the placement
+    the first gave an entry.** A renderer reused for a second document keeps the entries it built
+    for the first (#476 above), and a paragraph draws the lines of its last layout when its layout
+    in the second document places nothing. 2.3.3 draws the first document's lines at that stale
+    position too, for an entry that fitted in the first document and does not in the second
+    (#691, which this change does not close). The first document now moves an entry that did not
+    fit what was left of a page, so the second draws the lines that placement gave it, where
+    2.3.3 drew only the part that fitted. A renderer you add to the document and a renderer
+    of yours also holds draws the first placement's lines at the second the same way, as 2.3.3
+    does.
+  - **A document that holds an entry in a font it cannot draw lays every list out as it was before
+    the clamp and the moving of entries.** A handle that another document returned, or a
+    `Standard14` value the enumeration does not name, makes the save throw where an entry's text or
+    marker is drawn, and 2.3.3 saved when that text fell where it did not fit and was dropped.
+    Clamping or moving an entry changes where everything after it falls, so a document could flip
+    from saving to throwing, or the reverse, without any list touching the entry. The rule is
+    therefore per document: when any list the document holds has such an entry, at any depth, no
+    list of the document is clamped or moved. Without `StrictDiagnostics` the save gives what it
+    gave before this change: the same bytes, or the same exception and message. With it, a 207
+    refuses the save. `ListIndentClampSkipped` (207) reports a list the document placed this way
+    and draws from its first entry, with the number of entries the clamp would have narrowed as
+    `Count`, or 1; its XML doc says which lists report nothing. `ListEntryPartDropped` (208)
+    reports an entry left with a part missing.
+  - **A document that holds a renderer of yours lays every list out as it was before the clamp
+    and the moving of entries.** That is any renderer that is not one of the library's own, added
+    with `Document.Add(IRenderer)` or `DocumentRenderer.Add(IRenderer)`, wherever it sits and
+    whether or not it holds a list. A `ListRenderer`, `ParagraphRenderer`, `TableRenderer` or
+    another renderer the library ships is its own, and so is the barcode renderer. The library
+    cannot read where such a renderer starts or what it lays out, and a list that moved ahead of it
+    can change whether the document saves, so the document decides once, from the elements added
+    to it and before it lays anything out. Every pass of one save, a header or footer's
+    page-counting pass included, therefore lays each list out the same way. Without
+    `StrictDiagnostics` these documents save as they did before this change: the same bytes, or
+    the same exception and message; with it, a 207 refuses the save. A renderer reused from a
+    first document that moved an entry still draws that placement (#691).
+    `ListIndentClampSkipped` (207) is reported as for the font (above), and names the renderer.
+    `ListRenderer.Layout` says so, with a "Do not rely on" sentence: 3.0 lays a list out one way.
+  - **A document with an element after a list that can need about as many page continuations as
+    the limit allows lays every list out as it was before the clamp and the moving of entries.**
+    An element that needs that many saves or is refused according to where it starts, and a moved
+    entry changes where, so a paragraph after such a list could be refused where 2.3.3 saved it,
+    or saved where 2.3.3 refused it. The document reads the element's size, and not its layout: a
+    paragraph, heading, table or list counts when its characters, with one for each table row and
+    each list item that holds none, come to 49,999 or more, and so does preformatted text, with
+    each tab counted as its `TabWidth` because a tab can become that many columns and lines. A
+    page break, an image, a separator and a chart never count. The same report applies as for the
+    font (above). A renderer of yours is not read for its size; it
+    makes the document lay every list out as it was (above).
+  - A list that a renderer of yours holds reports nothing: neither 207 nor 208, because the
+    document did not place it, and nor do its pieces, including a piece the document calls itself
+    when your renderer returns the list's own result. A list the document places over entries a
+    renderer of yours built first is held the same way, unless the document lays every list out as
+    it was (above), which reports it as any list the document places. The bytes are those of the
+    list laid out as it was.
+  - Moving entries adds pages, so the continuation bound now covers every list, not only a list
+    with a clamped entry, and a list that would pass the limit because of moved entries is placed
+    as it was before, with `ListIndentClampSkipped` (207).
+
 - **An element exactly as tall as the content area is placed at the top of a page (#549).** At the
   top of a page the document offered the height from the cursor to the bottom of the content area,
   `(Y + H) - Y`, while the retry after a `Nothing` offered the content area's own height `H`. The

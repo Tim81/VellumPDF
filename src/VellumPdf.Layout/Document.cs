@@ -113,6 +113,15 @@ public sealed class Document : IDisposable
     /// it lies beyond the width a custom renderer laid the paragraph out at),
     /// <see cref="LayoutDiagnosticCode.NullGrandchildText"/> and
     /// <see cref="LayoutDiagnosticCode.NullGrandchild"/> (a null below the second level of a list),
+    /// <see cref="LayoutDiagnosticCode.ListIndentClamped"/> (an indent that left list text no
+    /// width),
+    /// <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/> (a list laid out without that
+    /// clamp, and without moving entries to the next page, because that would have taken it past
+    /// the continuation limit, because the document holds a renderer of yours, an entry in a font
+    /// it cannot draw, or an element after a list that can need about as many continuations as the
+    /// limit allows),
+    /// <see cref="LayoutDiagnosticCode.ListEntryPartDropped"/> (a list entry placed with its marker
+    /// or its text not drawn),
     /// <see cref="LayoutDiagnosticCode.NotdefGlyph"/> (a character an embedded font has no glyph
     /// for, written as glyph 0), <see cref="LayoutDiagnosticCode.UnembeddedFont"/> (an element that
     /// selects a Standard 14 font under a conformance claim),
@@ -1164,6 +1173,10 @@ public sealed class Document : IDisposable
     /// never gets smaller reaches that limit; <see cref="IRenderer.Layout"/> has the rule. The save
     /// then throws <see cref="InvalidOperationException"/> naming the limit. Split a long element
     /// yourself.
+    /// <para>A <see cref="ListRenderer"/> that a renderer of yours lays out is laid out as it was
+    /// before the fixes of #476 and #685, whatever context your renderer passes it, and so is every
+    /// list of a document that holds a renderer of yours; see
+    /// <see cref="IRenderer.Layout"/>.</para>
     /// <para>A renderer you wrote yourself cannot ask for a page break. The library's own
     /// <see cref="ParagraphRenderer"/>, <see cref="TableRenderer"/>, <see cref="ListRenderer"/> and
     /// <see cref="LayoutImageRenderer"/> honour their element's <c>BreakBefore</c> when added here.

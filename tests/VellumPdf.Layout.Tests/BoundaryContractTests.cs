@@ -400,16 +400,15 @@ public sealed class BoundaryContractTests
     }
 
     /// <summary>
-    /// At positive infinity a flat list draws its marker and discards the item text (a behaviour
-    /// #476 intends to change): one show
-    /// operator in the content stream, and the item's own text nowhere in it. A default indent
-    /// draws both, which is what makes the first assertion discriminating rather than a count of
-    /// whatever happened to be emitted.
+    /// At positive infinity a flat list draws its marker and its item text: two show operators and
+    /// the item's own text in the content stream, the same as at a default indent. The text was
+    /// discarded before #476, which left one show operator, so the second assertion discriminates
+    /// the clamp from a document that merely saved.
     /// </summary>
     [Theory]
-    [InlineData(double.PositiveInfinity, 1, false)]
+    [InlineData(double.PositiveInfinity, 2, true)]
     [InlineData(20, 2, true)]
-    public void FlatListIndent_atPositiveInfinity_drawsTheMarkerAndDropsTheText(
+    public void FlatListIndent_atPositiveInfinity_drawsTheMarkerAndTheText(
         double indent, int showOperators, bool keepsText)
     {
         using var doc = new LayoutDocument();

@@ -143,16 +143,7 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
         if (area.Width <= 0)
             return LayoutResult.Nothing();
 
-        if (_lines is null)
-        {
-            // The document checks this before any layout for its own paragraphs; a renderer of
-            // yours that lays one out meets it here.
-            LayoutValidation.ValidateLeaderSizes(_para);
-            var stops = StopsWithin(_para, area.Width, out _tabStopsBeyond);
-            (_lines, _lineEnds) = WordWrap(_para.Runs, area.Width, out var nullStyleRuns, stops);
-            _nullStyleRuns = nullStyleRuns;
-            WrapCalls++;
-        }
+        EnsureWrapped(area.Width);
 
         // The line height is a property of the wrap, so it is taken once per wrap: every later
         // Layout on this renderer, and every piece a split hands on, reads the same _lines.
@@ -231,6 +222,45 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
             RunOwner = RunOwner,
         };
         return LayoutResult.Partial(_occupied, split, overflow);
+    }
+
+    // Where the last successful Layout left this renderer, which Draw reads when the Layout it
+    // makes for itself answers Nothing. A caller that lays the paragraph out only to measure it,
+    // and must not change what a later Draw does, reads this first and puts it back (ListRenderer,
+    // for the page of its own it lays each entry out on). Removed in 3.0 (#688) with that analysis.
+    internal (int EndLine, LayoutBox Occupied) Placement => (_endLine, _occupied);
+
+    internal void RestorePlacement((int EndLine, LayoutBox Occupied) placement) =>
+        (_endLine, _occupied) = placement;
+
+    // Wraps once, at the width of the first Layout call, and keeps the lines for every later call
+    // and for the pieces a split returns.
+    [System.Diagnostics.CodeAnalysis.MemberNotNull(nameof(_lines), nameof(_lineEnds))]
+    private void EnsureWrapped(double width)
+    {
+        if (_lines is not null && _lineEnds is not null) return;
+
+        // The document checks this before any layout for its own paragraphs; a renderer of
+        // yours that lays one out meets it here.
+        LayoutValidation.ValidateLeaderSizes(_para);
+        var stops = StopsWithin(_para, width, out _tabStopsBeyond);
+        (_lines, _lineEnds) = WordWrap(_para.Runs, width, out var nullStyleRuns, stops);
+        _nullStyleRuns = nullStyleRuns;
+        WrapCalls++;
+    }
+
+    /// <summary>
+    /// The number of lines <see cref="Layout"/> would wrap this paragraph into when it is offered a
+    /// box <paramref name="boxWidth"/> wide, wrapping it now when it has not been wrapped. Zero
+    /// where <see cref="Layout"/> returns Nothing for lack of width.
+    /// </summary>
+    internal int LineCountAt(double boxWidth)
+    {
+        // The subtraction Deflate makes, so the width is the one Layout would wrap at.
+        var width = boxWidth - _para.Margins.Left - _para.Margins.Right;
+        if (width <= 0) return 0;
+        EnsureWrapped(width);
+        return _lines.Count;
     }
 
     // Line height = max EffectiveLeading across every fragment in every line. _lineHeight is

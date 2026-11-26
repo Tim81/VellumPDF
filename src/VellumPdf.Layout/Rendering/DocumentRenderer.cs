@@ -433,6 +433,22 @@ public sealed class DocumentRenderer
     /// </summary>
     internal void RunLayout()
     {
+        // Every list this layout lays out reads the run, whatever context it is handed, and a
+        // layout that a renderer of a caller's starts from inside this one gets a run of its own.
+        // Removed in 3.0 (#688).
+        var run = ListLayoutRun.Begin(_pdf, out var outerRun);
+        try
+        {
+            RunLayoutWith(run);
+        }
+        finally
+        {
+            ListLayoutRun.End(outerRun);
+        }
+    }
+
+    private void RunLayoutWith(ListLayoutRun listRun)
+    {
         // A refusal belongs to the layout that raised it; a renderer reused for another layout starts clean.
         _deferredCanvasRefusal = null;
         MeasureRuns = 0;
@@ -494,6 +510,8 @@ public sealed class DocumentRenderer
         // Reports are collected only when something reads them: a dependent resolves against them
         // and the guard compares the drawing pass with them. Tests set RecordPlacements.
         _collect = dependents is not null || RecordPlacements || _navigation.HasAnchors || _navigation.HasBreakLabels;
+
+        ScanLists(listRun);
 
         int totalPages;
         if (dependents is not null)
@@ -776,6 +794,136 @@ public sealed class DocumentRenderer
         MirrorMargins && !IsRecto(pageIndex)
             ? new LayoutBox(_margins.Right, area.Y, area.Width, area.Height)
             : area;
+
+    // Decides, before anything is laid out, whether every list of the document is its twin
+    // (ListLayoutRun), and records which of the three document-wide rules said so. Every element
+    // the document holds itself is read here, and every list sits at the top level: no built-in
+    // renderer builds one. The decision is taken once, from what was added, so the measuring pass
+    // that counts pages and the pass that draws lay every list out the same way.
+    //
+    // The first rule is the renderer: a renderer the library does not ship reads where it starts
+    // and lays out whatever it holds, a list among it, through a context of its own making, and
+    // nothing here can read what it will do. Where the lists before it put it can decide whether
+    // the document saves, and a document whose passes disagreed about where a list fell would
+    // count pages the saved file does not have. A renderer of this library that is not in this
+    // assembly and holds no list does not count (IListFreeRenderer).
+    //
+    // The second rule is the font: a list that holds an entry the document cannot draw turns every
+    // list into its twin.
+    //
+    // The third rule is the limit: a built-in element after a list whose continuations can come
+    // near the limit starts where the lists before it put it, and the limit's verdict for it
+    // depends on where that is. 2.3.3 saved or refused it according to where the twin lists put
+    // it, so the lists are the twins. The bound is ContinuationBoundOf's, which holds for either
+    // placement, and an element whose bound is within the limit cannot reach it from any start.
+    // Each rule is tested whatever the others have found, so the causes the scan records do not
+    // depend on the order of the elements, and the 207 of a list names every cause the scan found.
+    // Removed in 3.0 (#688).
+    private void ScanLists(ListLayoutRun listRun)
+    {
+        var listBefore = false;
+        foreach (var renderer in _renderers)
+        {
+            if (renderer is ListRenderer list)
+            {
+                if (listBefore && ContinuationBoundOf(renderer) > ContinuationLimit)
+                    listRun.NoteNearTheLimit();
+                listBefore = true;
+                if (ListRenderer.HoldsUndrawableEntry(list.Element, listRun)) listRun.NoteUndrawable();
+            }
+            else if (renderer.GetType().Assembly != typeof(ListRenderer).Assembly)
+            {
+                if (renderer is not IListFreeRenderer) listRun.NoteCallerRenderer();
+            }
+            else if (listBefore && ContinuationBoundOf(renderer) > ContinuationLimit)
+            {
+                listRun.NoteNearTheLimit();
+            }
+        }
+    }
+
+    // An upper bound on the page continuations a built-in renderer's placement can take from any
+    // start, so that a bound within the limit says the element cannot reach it however far a list
+    // before it moved its start. Every Partial a renderer returns consumes at least one line, entry
+    // or row, a Nothing the loop retries can only come first, and the piece that ends adds one, so
+    // the continuations are at most 2 plus the lines, entries and rows. The count is capped as it
+    // is summed: a bound past the limit is all the caller asks. Elements that never return a
+    // Partial take at most a retry and a piece. A renderer built with a negative start, which the
+    // constructors ask callers not to pass, is the exception. A built-in renderer this does not
+    // name is taken to be near the limit.
+    //
+    // What a line holds, for each kind that wraps text, read from the renderer:
+    //  - A paragraph, and a heading, which wraps through one: no step rewrites the text. A hard
+    //    break ends a line and is a character, and a word wider than the line is cut at one scalar
+    //    at least per line, so the lines are at most the characters plus one. A tab stop only
+    //    places text; a line is committed only before a word or a break, which are characters.
+    //  - A list: each entry is its text's lines in a paragraph of that kind, and a marker that
+    //    wraps moves the entry whole, so an entry adds at most max(1, its characters).
+    //  - A table: a cell reads its line ends (#679) and wraps each line at spaces, cutting a word
+    //    at one scalar at least per line. A line end is a character and ends one line, so the
+    //    cell holds at most one line more than its characters. Any other control white-space
+    //    character reads as one space, and a cell read unbroken, as the table's twin reads every
+    //    cell, holds at most max(1, its characters) lines. A row is cut only where every cell
+    //    holds a line on a fresh page, so each piece after the first takes at least one line from
+    //    every cell that has lines left, and a cut row ends in at most one call more than its
+    //    characters. The first piece can leave the cell with the most lines untouched, when the
+    //    room left holds the shorter lines of the others. That happens in a call that also
+    //    finishes the row before it, which then needs no call of its own, or in the table's first
+    //    call, which the 2 covers. A row counts one more than the characters of its cells.
+    //  - Preformatted text rewrites the text before it wraps: PreformattedText.Expand replaces
+    //    each tab by 1 to TabWidth spaces, and that is the only rewrite. A line end is a
+    //    character and ends one line, and the wrap cuts an expanded line after at least one
+    //    cluster, which is at least one character. So the lines are at most 1 plus the
+    //    characters with a tab counted as TabWidth, which is what the count below is.
+    // Removed in 3.0 (#688).
+    internal long ContinuationBoundOf(IRenderer renderer)
+    {
+        var cap = (long)ContinuationLimit + 1;
+        long total = 2;
+        switch (renderer)
+        {
+            case ParagraphRenderer paragraph:
+                var runs = paragraph.Paragraph.Runs;
+                for (var i = 0; i < runs.Count && total <= cap; i++) total += runs[i].Text.Length;
+                return total;
+
+            case HeadingRenderer heading:
+                return total + heading.Element.Text.Length;
+
+            case PreformattedRenderer preformatted:
+                var pre = preformatted.Element;
+                return total + pre.Text.Length + (long)pre.Text.AsSpan().Count('\t') * (pre.TabWidth - 1);
+
+            case ListRenderer list:
+                var items = list.Element.Items;
+                for (var i = 0; i < items.Count && total <= cap; i++)
+                {
+                    total += Math.Max(1, items[i].Text.Length);
+                    if (items[i].Children is not { } children) continue;
+                    for (var c = 0; c < children.Count && total <= cap; c++)
+                        total += Math.Max(1, children[c].Text.Length);
+                }
+
+                return total;
+
+            case TableRenderer table:
+                var rows = table.Element.Rows;
+                for (var r = 0; r < rows.Count && total <= cap; r++)
+                {
+                    total++;
+                    var cells = rows[r].Cells;
+                    for (var c = 0; c < cells.Count && total <= cap; c++) total += cells[c].Content?.Length ?? 0;
+                }
+
+                return total;
+
+            case LayoutImageRenderer or LineSeparatorRenderer or PieChartRenderer or PageBreakRenderer:
+                return total;
+
+            default:
+                return long.MaxValue;
+        }
+    }
 
     // Only the renderers added to this document are searched, not ones a renderer holds inside
     // itself.

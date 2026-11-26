@@ -153,6 +153,36 @@ internal static class LayoutValidation
     }
 
     /// <summary>
+    /// True when <see cref="ValidateStyle"/> would accept every run of <paramref name="runs"/> that
+    /// holds text, answered without throwing. A run with a null style that holds text counts as
+    /// refused, because the wrap refuses it.
+    /// </summary>
+    /// <remarks>
+    /// For a caller that must know, before it lets text be laid out, whether the layout would raise
+    /// a refusal it has not raised so far. It reads the same two tests as
+    /// <see cref="ValidateStyle"/> (a finite font size, a finite colour channel) on the runs that
+    /// hold text. It is stricter than the walk: a run of only white space holds text and is read
+    /// here, although the wrap yields no fragment for it and the walk never reads its style. A
+    /// caller that tests with it keeps the layout it had for such a run, which is the safe side. A
+    /// run with no text at all is not read.
+    /// </remarks>
+    internal static bool AreRunStylesAccepted(IReadOnlyList<TextRun> runs)
+    {
+        foreach (var run in runs)
+        {
+            if (run.Text.Length == 0) continue;
+            if (run.Style is not { } style) return false;
+            if (!double.IsFinite(style.FontSize)
+                || !double.IsFinite(style.Color.R)
+                || !double.IsFinite(style.Color.G)
+                || !double.IsFinite(style.Color.B))
+                return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// The font-size half of <see cref="ValidateStyle"/>, for the callers that check a colour only
     /// where it is written: a running band and a table cell.
     /// </summary>

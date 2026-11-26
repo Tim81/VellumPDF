@@ -287,6 +287,13 @@ public sealed class ListItem
     internal IReadOnlyList<TextRun> ContentRuns(TextStyle inherited) =>
         _runs ?? [new TextRun(Text, inherited)];
 
+    /// <summary>
+    /// The runs the item was built from, or null for an item built from a string. It is the list
+    /// itself, not a copy, so a caller must not change it; it exists so that a walk over every
+    /// run allocates nothing. Removed in 3.0 (#688), with the check of what a list can draw.
+    /// </summary>
+    internal IReadOnlyList<TextRun>? OwnRuns => _runs;
+
     /// <summary>True when the constructor was given a null text.</summary>
     internal bool HasNullText { get; }
 
