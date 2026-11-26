@@ -10,12 +10,15 @@ using VellumPdf.TestSupport;
 namespace VellumPdf.Layout.Tests;
 
 /// <summary>
-/// <c>EmbedStandard14Font</c> on a Layout <see cref="Document"/>. Each face is checked against the
-/// Liberation file it must stand for: the document hands back one handle for equal bytes, so
-/// registering the file by hand and calling the extension must return the same instance.
+/// <c>Standard14Substitutes.GetFontProgram</c> feeding a Layout <see cref="Document"/>. Each face is
+/// checked against the Liberation file it must stand for, by bytes and through the document: it
+/// hands back one handle for equal bytes, so a wrong file for a style returns another handle.
 /// </summary>
 public sealed class Standard14EmbedTests
 {
+    private static EmbeddedFontHandle Embed(Document doc, Standard14 font) =>
+        doc.UseTrueTypeFont(Standard14Substitutes.GetFontProgram(font));
+
     public static TheoryData<Standard14, string> Faces => new()
     {
         { Standard14.Helvetica, "LiberationSans-Regular.ttf" },
@@ -39,15 +42,16 @@ public sealed class Standard14EmbedTests
         using var doc = new Document();
         var byFile = doc.UseTrueTypeFont(File.ReadAllBytes(Path.Combine(FontReportSupport.FontsDir, file)));
 
-        Assert.Same(byFile, doc.EmbedStandard14Font(font));
+        Assert.Equal(File.ReadAllBytes(Path.Combine(FontReportSupport.FontsDir, file)), Standard14Substitutes.GetFontProgram(font));
+        Assert.Same(byFile, Embed(doc, font));
     }
 
     [Fact]
     public void CalledTwice_returnsTheSameHandle_andOneSubsetIsEmbedded()
     {
         using var doc = new Document();
-        var first = doc.EmbedStandard14Font(Standard14.TimesRoman);
-        var second = doc.EmbedStandard14Font(Standard14.TimesRoman);
+        var first = Embed(doc, Standard14.TimesRoman);
+        var second = Embed(doc, Standard14.TimesRoman);
         Assert.Same(first, second);
 
         doc.Add(new Paragraph("Hello", new TextStyle { FontRef = first, FontSize = 12 }));
@@ -59,7 +63,7 @@ public sealed class Standard14EmbedTests
     public void TwoFaces_areTwoHandles()
     {
         using var doc = new Document();
-        Assert.NotSame(doc.EmbedStandard14Font(Standard14.TimesRoman), doc.EmbedStandard14Font(Standard14.TimesBold));
+        Assert.NotSame(Embed(doc, Standard14.TimesRoman), Embed(doc, Standard14.TimesBold));
     }
 
     [Fact]
@@ -79,21 +83,26 @@ public sealed class Standard14EmbedTests
     public void AFaceWithNoSubstitute_isRefusedAtTheCall(Standard14 font)
     {
         using var doc = new Document();
-        Assert.Throws<NotSupportedException>(() => doc.EmbedStandard14Font(font));
+        Assert.Throws<NotSupportedException>(() => Standard14Substitutes.GetFontProgram(font));
     }
 
     [Fact]
-    public void ANullDocument_isRefused()
+    public void EveryCallReturnsANewArray_soAChangeCannotReachTheNextCall()
     {
-        Document doc = null!;
-        Assert.Throws<ArgumentNullException>(() => doc.EmbedStandard14Font(Standard14.Helvetica));
+        var first = Standard14Substitutes.GetFontProgram(Standard14.Courier);
+        var expected = (byte[])first.Clone();
+        Assert.NotSame(first, Standard14Substitutes.GetFontProgram(Standard14.Courier));
+
+        Array.Fill(first, (byte)0);
+
+        Assert.Equal(expected, Standard14Substitutes.GetFontProgram(Standard14.Courier));
     }
 
     [Fact]
     public void LiberationSerifRegular_inPdfA2u_passesVeraPdf_andTheTextReadsBack()
     {
         using var doc = FontReportSupport.NewDocument(PdfConformance.PdfA2u);
-        var serif = doc.EmbedStandard14Font(Standard14.TimesRoman);
+        var serif = Embed(doc, Standard14.TimesRoman);
         doc.Add(new Paragraph("Embedded serif text", new TextStyle { FontRef = serif, FontSize = 12 }));
         var pdf = FontReportSupport.Save(doc);
 

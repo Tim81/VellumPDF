@@ -1,2 +1,3 @@
 #nullable enable
-static VellumPdf.Fonts.Standard14FontExtensions.EmbedStandard14Font(this VellumPdf.Layout.Document! doc, VellumPdf.Fonts.Standard14 font) -> VellumPdf.Fonts.EmbeddedFontHandle!
+static VellumPdf.Fonts.Standard14Substitutes.GetFontProgram(VellumPdf.Fonts.Standard14 font) -> byte[]!
+VellumPdf.Fonts.Standard14Substitutes

@@ -8,18 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- **`EmbedStandard14Font` for a Layout `Document` (#702).** `doc.EmbedStandard14Font(Standard14.TimesRoman)`
-  registers the bundled Liberation substitute and returns the handle for `TextStyle.FontRef`, so a
-  Layout program embeds a face without a `PdfDocument` and without the names of the package's
-  resources. The faces and refusals are those of the `PdfDocument` extension: Symbol,
-  ZapfDingbats and a value the enumeration does not name throw `NotSupportedException` at the
-  call, and a null document throws `ArgumentNullException`. The handle follows `UseTrueTypeFont`:
-  a second call for the same face, or registering the same file by hand, returns the handle the
-  document already holds, and the document embeds one subset. A document that does not call it
-  saves to the same bytes as before.
-  - **Attention.** `VellumPdf.Fonts.Standard14` now references `VellumPdf.Layout`, so installing
-    the package also installs Layout, as `VellumPdf.Barcodes` and `VellumPdf.Signing` already do.
-    The `PdfDocument` extension is unchanged.
+- **`Standard14Substitutes.GetFontProgram` returns a bundled Liberation font (#702).** A Layout
+  program had no way to embed one of the package's faces, because a Layout `Document` exposes no
+  `PdfDocument` for `EmbedStandard14Font` to extend, and the resource names were not public.
+  `doc.UseTrueTypeFont(Standard14Substitutes.GetFontProgram(Standard14.TimesRoman))` now
+  registers the face and returns the handle for `TextStyle.FontRef`. Each call returns a new
+  array. Symbol, ZapfDingbats and a value the enumeration does not name throw
+  `NotSupportedException` at the call, as `EmbedStandard14Font` does. Registering the same bytes
+  twice returns the handle the document already holds, so the document embeds one subset. A
+  document that does not call it saves to the same bytes as before.
 
 - **Keep with next, keep together, and a minimum of lines at a page break (#306).** A heading can
   stay on the page of the text after it, an element can move whole to the next page instead of
