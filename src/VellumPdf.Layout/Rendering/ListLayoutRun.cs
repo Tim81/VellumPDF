@@ -59,7 +59,26 @@ internal sealed class ListLayoutRun
     private volatile bool _nearTheLimit;
     private volatile bool _callerRenderer;
 
-    private ListLayoutRun(PdfDocument pdf) => Pdf = pdf;
+    // A number for each run, so that what a list builds in one save can be told from what another
+    // save built without holding the run, which holds its document. Zero is a layout with no run.
+    private static long s_lastSave;
+
+    private ListLayoutRun(PdfDocument pdf)
+    {
+        Pdf = pdf;
+        Save = Interlocked.Increment(ref s_lastSave);
+    }
+
+    /// <summary>
+    /// The number of this run, which names the save a list built its entries in.
+    /// </summary>
+    internal long Save { get; }
+
+    /// <summary>
+    /// The number of the run of the layout in progress, or zero outside one: a layout a caller
+    /// makes before any save, which is no save.
+    /// </summary>
+    internal static long CurrentSave => s_current.Value?.Save ?? 0;
 
     /// <summary>The run of the layout in progress, or null outside one.</summary>
     internal static ListLayoutRun? Current => s_current.Value;

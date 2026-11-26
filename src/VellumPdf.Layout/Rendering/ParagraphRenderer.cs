@@ -233,6 +233,11 @@ public sealed partial class ParagraphRenderer : IRenderer, IPageBreakSource, IKe
     internal void RestorePlacement((int EndLine, LayoutBox Occupied) placement) =>
         (_endLine, _occupied) = placement;
 
+    // Forgets where an earlier layout put the lines, so that Draw writes no line. A layout that
+    // answers Nothing leaves the placement of the last one that placed something, and a container
+    // that draws the paragraph after a layout of its own answered Nothing must not draw that (#691).
+    internal void ClearPlacement() => (_endLine, _occupied) = (0, default);
+
     // Wraps once, at the width of the first Layout call, and keeps the lines for every later call
     // and for the pieces a split returns.
     [System.Diagnostics.CodeAnalysis.MemberNotNull(nameof(_lines), nameof(_lineEnds))]

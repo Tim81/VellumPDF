@@ -149,26 +149,29 @@ public sealed class ListPlacementAdoptionTests
     }
 
     /// <summary>
-    /// A renderer that a caller laid out before the save keeps the entries that call built, as it
-    /// did on 2.3.3: the document does not build them again at its own width, and does not clamp
-    /// them. The list here has an indent no width is left beyond, so a clamp would give the text a
-    /// width and draw it.
+    /// A renderer that a caller laid out before the save builds its entries again for the save, so
+    /// the document clamps them as it clamps a new renderer's (#691). The list here has an indent no
+    /// width is left beyond, so the clamp gives the text a width and draws it.
     /// </summary>
     [Fact]
-    public void AListLaidOutBeforeTheSave_keepsTheEntriesThatCallBuilt()
+    public void AListLaidOutBeforeTheSave_isClampedAsAFreshListIs()
     {
-        var renderer = new ListRenderer(new ListElement(ListStyle.OrderedDecimal) { Indent = 1000 }
-            .Add(new ListItem("clamped text", H(10))));
-        renderer.Layout(new LayoutContext(new LayoutBox(0, 0, 200, 100)));
-        var pdf = new PdfDocument { Timestamp = Stamp, DocumentId = new byte[16] };
-        var documentRenderer = new DocumentRenderer(pdf, new PdfRectangle(0, 0, 200, 100), new EdgeInsets(10));
-        documentRenderer.Add(renderer);
+        byte[] Rendered(bool laidOutBefore, out Document doc)
+        {
+            var renderer = new ListRenderer(new ListElement(ListStyle.OrderedDecimal) { Indent = 1000 }
+                .Add(new ListItem("clamped text", H(10))));
+            if (laidOutBefore) renderer.Layout(new LayoutContext(new LayoutBox(0, 0, 200, 100)));
+            doc = Page(200, 100);
+            doc.Add(renderer);
+            return Save(doc);
+        }
 
-        using var ms = new MemoryStream();
-        documentRenderer.Render(ms);
+        var kept = Rendered(true, out var keptDoc);
+        var fresh = Rendered(false, out _);
 
-        Assert.DoesNotContain("clamped", string.Concat(Shows(ms.ToArray())), StringComparison.Ordinal);
-        Assert.DoesNotContain(documentRenderer.Diagnostics, d => d.Code == LayoutDiagnosticCode.ListIndentClamped);
+        Assert.Equal(Sha(fresh), Sha(kept));
+        Assert.Equal(["1.", "clamped", "text"], Shows(kept));
+        Assert.Contains(keptDoc.Diagnostics, d => d.Code == LayoutDiagnosticCode.ListIndentClamped);
     }
 
     // Thirty entries whose gutter leaves the text five points at a width of 25, so a layout at that
@@ -205,40 +208,36 @@ public sealed class ListPlacementAdoptionTests
     }
 
     /// <summary>
-    /// The entries a caller built at another width are the ones the save draws, whether the list is
-    /// added to the document or held by a renderer of the caller's, and whether or not another list
-    /// comes before it. Each row has the same document with the twin, which
-    /// holds those entries as 2.3.3 did, as its reference.
+    /// The entries a caller built at another width are not the ones the save draws: the save builds
+    /// its own at the page's width, whether the list is added to the document or held by a renderer
+    /// of the caller's, and whether or not another list comes before it. Each row has the same
+    /// document with a renderer nothing laid out before as its reference.
     /// </summary>
     [Theory]
     [InlineData(false, false)]
     [InlineData(false, true)]
     [InlineData(true, false)]
     [InlineData(true, true)]
-    public void AListLaidOutBeforeTheSaveAtAnotherWidth_isDrawnFromTheEntriesThatCallBuilt(bool held, bool afterAList)
+    public void AListLaidOutBeforeTheSaveAtAnotherWidth_isDrawnFromEntriesBuiltForTheSave(bool held, bool afterAList)
     {
-        Document Build(bool twin, bool laidOutBefore)
+        Document Build(bool laidOutBefore)
         {
             var doc = NarrowPage();
             if (afterAList) doc.Add(new ListElement().Add(new ListItem("first", H(10))));
             var renderer = new ListRenderer(NarrowList());
-            IRenderer added = twin ? renderer.Unclamped() : renderer;
-            if (laidOutBefore) added.Layout(new LayoutContext(new LayoutBox(0, 0, 25, 1000)));
-            doc.Add(held ? new Passes(added) : added);
+            if (laidOutBefore) renderer.Layout(new LayoutContext(new LayoutBox(0, 0, 25, 1000)));
+            doc.Add(held ? new Passes(renderer) : renderer);
             doc.Add(new Counts());
             return doc;
         }
 
-        var kept = Save(Build(twin: false, laidOutBefore: true));
-        var reference = Save(Build(twin: true, laidOutBefore: true));
-        var fresh = Save(Build(twin: false, laidOutBefore: false));
+        var kept = Save(Build(laidOutBefore: true));
+        var fresh = Save(Build(laidOutBefore: false));
 
-        // The call laid out the entries that fit its 1000 points, and each of those is wrapped at
-        // five points of text; the entries after them were wrapped when the document drew them.
-        Assert.Equal(Sha(reference), Sha(kept));
-        Assert.Contains("w", Shows(kept));
-        Assert.True(Shows(kept).Count(t => t == "word") < 30);
-        Assert.Equal(30, Shows(fresh).Count(t => t == "word"));
+        // The call laid its entries out at five points of text and wrapped each word to a letter a
+        // line. The save wraps them at its own width.
+        Assert.Equal(Sha(fresh), Sha(kept));
+        Assert.Equal(30, Shows(kept).Count(t => t == "word"));
     }
 
     // An indent that leaves the first document's 180-point area no text, so the clamp narrows it,
@@ -273,40 +272,32 @@ public sealed class ListPlacementAdoptionTests
         return Save(second);
     }
 
-    private static byte[] FreshSecondDocument(Func<ListElement> make)
+    private static byte[] FreshSecondDocument(Func<ListElement> make, bool held = false)
     {
         var second = Narrow(400);
-        second.Add(new ListRenderer(make()));
+        var renderer = new ListRenderer(make());
+        second.Add(held ? new Passes(renderer) : renderer);
         return Save(second);
     }
 
     /// <summary>
-    /// A renderer that served one document keeps the entries it built there, at the width of that
-    /// document, when it serves another, as 2.3.3 kept them, whether it was added to each
-    /// document or held by a renderer of a caller's in either. The reference is the twin, which
-    /// holds the entries as 2.3.3 built them, and a list built again at the second document's
-    /// width differs from it.
+    /// A renderer that served one document builds its entries again at the width of the next, whether
+    /// it was added to each document or held by a renderer of a caller's in either, and draws what
+    /// a new renderer draws there.
     /// </summary>
     [Theory]
     [InlineData("direct-direct", false)]
     [InlineData("held-direct", true)]
     [InlineData("direct-held", true)]
     [InlineData("direct-direct", true)]
-    public void AListRendererReusedForASecondDocument_keepsTheEntriesTheFirstBuilt(string shape, bool wraps)
+    public void AListRendererReusedForASecondDocument_drawsWhatAFreshRendererDraws(string shape, bool wraps)
     {
         Func<ListElement> make = wraps ? WrapsAtTheFirstWidth : ClampedAtTheFirstWidth;
 
-        var kept = SecondDocument(make, shape, twin: false);
+        var reused = SecondDocument(make, shape, twin: false);
 
-        Assert.Equal(Sha(SecondDocument(make, shape, twin: true)), Sha(kept));
-        if (wraps)
-            Assert.NotEqual(Sha(FreshSecondDocument(make)), Sha(kept));
-
-        // The clamp narrowed the first document's gutter to the widest word, which would have put
-        // the text on one line in the second. 2.3.3 kept the indent, so the text wraps at 130
-        // points.
-        else
-            Assert.DoesNotContain(ClampedText, Shows(kept));
+        Assert.Equal(Sha(FreshSecondDocument(make, shape.EndsWith("held", StringComparison.Ordinal))), Sha(reused));
+        Assert.Contains("reused", string.Concat(Shows(reused)), StringComparison.Ordinal);
     }
 
     // The twenty-seventh roman marker, "xxvii.", is wider than the indent, so the gutter widens to
@@ -330,9 +321,9 @@ public sealed class ListPlacementAdoptionTests
     }
 
     /// <summary>
-    /// The entries the second document keeps are built at the first document's width: a gutter the
-    /// first width left at the indent stays there, though the second width would widen it, for an
-    /// entry the clamp narrowed as for one it left alone.
+    /// The entries the second document draws are built at its own width: a gutter the first width
+    /// left at the indent is the marker's where the second width leaves the word room, for an entry
+    /// the clamp narrowed as for one it left alone.
     /// </summary>
     [Theory]
     [InlineData("direct-direct", false)]
@@ -341,14 +332,13 @@ public sealed class ListPlacementAdoptionTests
     [InlineData("direct-direct", true)]
     [InlineData("held-direct", true)]
     [InlineData("direct-held", true)]
-    public void AListRendererReusedForASecondDocument_keepsTheGutterTheFirstWidthGave(string shape, bool clamped)
+    public void AListRendererReusedForASecondDocument_getsTheGutterTheSecondWidthGives(string shape, bool clamped)
     {
         Func<ListElement> make = clamped ? ClampedGutterThatDependsOnTheWidth : GutterThatDependsOnTheWidth;
 
-        var kept = SecondDocument(make, shape, twin: false);
+        var reused = SecondDocument(make, shape, twin: false);
 
-        Assert.Equal(Sha(SecondDocument(make, shape, twin: true)), Sha(kept));
-        Assert.NotEqual(Sha(FreshSecondDocument(make)), Sha(kept));
+        Assert.Equal(Sha(FreshSecondDocument(make, shape.EndsWith("held", StringComparison.Ordinal))), Sha(reused));
     }
 
     private static ListElement TwoItems() => new ListElement(ListStyle.OrderedDecimal)
@@ -396,11 +386,10 @@ public sealed class ListPlacementAdoptionTests
     }
 
     /// <summary>
-    /// A renderer whose list changed after the first document keeps the entries that document built
-    /// and never reads the change, as 2.3.3 did: an added item, an added child, an item in a font
-    /// the document cannot draw and an item with a colour that cannot be written leave the second
-    /// document the one an unchanged list gives. The references are the twin, which keeps the
-    /// entries it built, and the unchanged list.
+    /// A renderer whose list changed after the first document is laid out from the list as it is: an
+    /// added item and an added child are drawn, and an item in a font the document cannot draw, an
+    /// item with a size or a colour that cannot be written, are refused, as they are for a new
+    /// renderer. The reference is the second document over a renderer nothing laid out before.
     /// </summary>
     [Theory]
     [InlineData("plain", false, false)]
@@ -414,36 +403,64 @@ public sealed class ListPlacementAdoptionTests
     [InlineData("nan", false, false)]
     [InlineData("nan", true, false)]
     [InlineData("nan", false, true)]
-    public void AListChangedBetweenTwoDocuments_isDrawnFromTheEntriesTheFirstBuilt(
+    public void AListChangedBetweenTwoDocuments_isDrawnFromTheItemsItHoldsNow(
         string kind, bool firstHeld, bool secondHeld)
     {
-        var kept = SecondDocumentAfterChange(TwoItems, kind, firstHeld, secondHeld, twin: false);
+        string Outcome(Func<byte[]> save)
+        {
+            try
+            {
+                return Sha(save());
+            }
+            catch (Exception ex)
+            {
+                return ex.GetType().Name + ": " + ex.Message;
+            }
+        }
 
-        Assert.Equal(["lead0", "1.", "one", "2.", "two"], Shows(kept));
-        Assert.Equal(Sha(SecondDocumentAfterChange(TwoItems, null, firstHeld, secondHeld, twin: false)), Sha(kept));
-        Assert.Equal(Sha(SecondDocumentAfterChange(TwoItems, kind, firstHeld, secondHeld, twin: true)), Sha(kept));
+        var list = TwoItems();
+        var renderer = new ListRenderer(list);
+        IRenderer Use(ListRenderer r, bool held) => held ? new Passes(r) : r;
+
+        var first = Page(200, 100, 1);
+        first.Add(Use(renderer, firstHeld));
+        Save(first);
+        Change(list, kind);
+        var second = Page(200, 100, 1);
+        second.Add(Use(renderer, secondHeld));
+        var fresh = Page(200, 100, 1);
+        fresh.Add(Use(new ListRenderer(list), secondHeld));
+
+        byte[]? bytes = null;
+        var expected = Outcome(() => Save(fresh));
+        Assert.Equal(expected, Outcome(() => bytes = Save(second)));
+
+        // The item that was added is read, where the entries of the first document held none.
+        if (kind is "plain" or "child") Assert.Contains(kind == "plain" ? "added" : "child", Shows(bytes!));
     }
 
     /// <summary>
-    /// An entry the first document's clamp narrowed is not an entry 2.3.3 built. The second
-    /// document lays it out as 2.3.3 built it in the first, from the text it had then and without
-    /// the clamp, and not from the list as it is now: a child added to the narrowed item moves
-    /// every entry after it, and an item added after it is not there.
+    /// An entry the first document's clamp narrowed is built again for the second, from the list as
+    /// it is then: a child added to the narrowed item moves every entry after it, and an item
+    /// added after it is drawn.
     /// </summary>
     [Theory]
     [InlineData("plain")]
     [InlineData("child")]
-    public void AListChangedAfterTheClampNarrowedAnEntry_keepsTheEntryAsTheFirstDocumentBuiltItWithoutTheClamp(string kind)
+    public void AListChangedAfterTheClampNarrowedAnEntry_isLaidOutFromTheListAsItIs(string kind)
     {
         ListElement Make() => ClampedAtTheFirstWidth().Add(new ListItem("second entry", H(10)));
 
         var kept = SecondDocumentAfterChange(Make, kind, false, false, twin: false, secondWidth: 400);
 
-        Assert.Equal(Sha(SecondDocumentAfterChange(Make, null, false, false, twin: false, secondWidth: 400)), Sha(kept));
-        Assert.Equal(Sha(SecondDocumentAfterChange(Make, kind, false, false, twin: true, secondWidth: 400)), Sha(kept));
-        Assert.DoesNotContain(ClampedText, Shows(kept));
-        Assert.DoesNotContain("added", Shows(kept));
-        Assert.DoesNotContain("child", Shows(kept));
+        var list = Make();
+        Change(list, kind);
+        var fresh = Page(400, 100, 1);
+        fresh.Add(new ListRenderer(list));
+
+        Assert.Equal(Sha(Save(fresh)), Sha(kept));
+        Assert.Contains(kind == "plain" ? "added" : "child", Shows(kept));
+        Assert.Contains("second entry", Shows(kept));
     }
 
     // A flat indent of 250 leaves the first document's 180-point area no text, so the clamp narrows
@@ -474,27 +491,26 @@ public sealed class ListPlacementAdoptionTests
     }
 
     /// <summary>
-    /// The second document lays out an entry the first document's clamp narrowed as an entry no
-    /// clamp touched. A marker that does not fit what is left of a page and text that does are
-    /// drawn as the twin draws them, the text without the marker, and the clamp's rule that the
-    /// text of an entry whose marker is refused is refused too does not apply to it.
+    /// An entry the first document's clamp narrowed is built for the second as a new renderer builds
+    /// it, so it is moved or placed as that renderer's entry is.
     /// </summary>
     [Fact]
-    public void AnEntryTheFirstDocumentsClampNarrowed_isNotHeldToTheClampsRuleInTheSecond()
+    public void AnEntryTheFirstDocumentsClampNarrowed_isBuiltAsANewRendererBuildsItInTheSecond()
     {
         var kept = SecondDocumentWithLeads(ClampedWithATallMarker, twin: false, leads: 5);
 
-        Assert.Equal(Sha(SecondDocumentWithLeads(ClampedWithATallMarker, twin: true, leads: 5)), Sha(kept));
-        Assert.Contains("small text", Shows(kept));
+        var fresh = Page(400, 100, 5);
+        fresh.Add(new ListRenderer(ClampedWithATallMarker()));
+
+        Assert.Equal(Sha(Save(fresh)), Sha(kept));
     }
 
     /// <summary>
-    /// The text the second document lays out for an entry the first document's clamp narrowed
-    /// carries the item's language into the structure tree, as the entry's text does where no clamp
-    /// narrowed it.
+    /// The text the second document lays out for an entry carries the item's language into the
+    /// structure tree, as the entry's text does in a first document.
     /// </summary>
     [Fact]
-    public void AnEntryTheFirstDocumentsClampNarrowed_keepsItsLanguageInTheSecond()
+    public void AReusedEntry_keepsItsLanguageInTheSecondDocument()
     {
         byte[] Second(bool twin, string? language)
         {
@@ -518,42 +534,54 @@ public sealed class ListPlacementAdoptionTests
 
     /// <summary>
     /// A reused list that the second document lays out as its twin because the document holds an
-    /// entry it cannot draw reports the entries the first document's clamp narrowed: they are the
-    /// entries the clamp would have narrowed, which the fallback reports as its count.
+    /// entry it cannot draw reports the entries the clamp would have narrowed in that document, as a
+    /// new renderer does.
     /// </summary>
     [Fact]
-    public void AReusedListInADocumentThatHoldsAnUndrawableEntry_reportsTheEntriesTheFirstClampNarrowed()
+    public void AReusedListInADocumentThatHoldsAnUndrawableEntry_reportsTheEntriesTheClampWouldNarrowInThatSave()
     {
-        var renderer = new ListRenderer(new ListElement(ListStyle.OrderedDecimal) { Indent = 250 }
+        ListElement Make() => new ListElement(ListStyle.OrderedDecimal) { Indent = 250 }
             .Add(new ListItem("first clamped entry", H(10)))
-            .Add(new ListItem("second clamped entry", H(10))));
+            .Add(new ListItem("second clamped entry", H(10)));
+
+        Document Second(ListRenderer renderer)
+        {
+            var second = Narrow(200);
+            second.Add(renderer);
+            second.Add(new ListElement(ListStyle.Unordered) { Indent = 1000 }
+                .Add(new ListItem([new TextRun("bad", new TextStyle { FontRef = new FontReference((Standard14)99), FontSize = 10 })])
+                { Style = H(10) }));
+            return second;
+        }
+
+        var reused = new ListRenderer(Make());
         var first = Narrow(200);
-        first.Add(renderer);
+        first.Add(reused);
         Save(first);
         Assert.Equal(2, first.Diagnostics.Single(d => d.Code == LayoutDiagnosticCode.ListIndentClamped).Count);
 
-        var second = Narrow(400);
-        second.Add(renderer);
-        second.Add(new ListElement(ListStyle.Unordered) { Indent = 1000 }
-            .Add(new ListItem([new TextRun("bad", new TextStyle { FontRef = new FontReference((Standard14)99), FontSize = 10 })])
-            { Style = H(10) }));
+        var second = Second(reused);
         Save(second);
+        var fresh = Second(new ListRenderer(Make()));
+        Save(fresh);
 
         var skipped = second.Diagnostics.Where(d => d.Code == LayoutDiagnosticCode.ListIndentClampSkipped).ToArray();
         Assert.Equal(2, skipped.Length);
         Assert.Equal(2, skipped[0].Count);
+        Assert.Equal(
+            fresh.Diagnostics.Select(d => (d.Code, d.Count, d.ElementIndex)).ToArray(),
+            second.Diagnostics.Select(d => (d.Code, d.Count, d.ElementIndex)).ToArray());
     }
 
     private static TextStyle Undefined() => new() { FontRef = new FontReference((Standard14)99), FontSize = 10 };
 
     /// <summary>
-    /// A list reused for a second document keeps an entry in a font only the first document
-    /// defines. The second document finds that in the entries it keeps, so every list of the
-    /// second document is laid out as its twin, as 2.3.3 laid them out: a later list that would
-    /// move an entry is not moved.
+    /// A list reused for a second document holds an entry in a font only the first document
+    /// defines. The second document finds that in the items the list holds, so every list of the
+    /// second document is laid out as its twin: a later list that would move an entry is not moved.
     /// </summary>
     [Fact]
-    public void AReusedListWhoseKeptEntryUsesTheFirstDocumentsFont_makesEveryListOfTheSecondDocumentItsTwin()
+    public void AReusedListWhoseItemUsesTheFirstDocumentsFont_makesEveryListOfTheSecondDocumentItsTwin()
     {
         byte[] Second(bool twinForTheSecondList)
         {
@@ -577,15 +605,15 @@ public sealed class ListPlacementAdoptionTests
     }
 
     /// <summary>
-    /// A child the first document's clamp narrowed keeps the gutter it has without the clamp, twice
-    /// the indent, in the second document, where that gutter leaves it text.
+    /// A child the first document's clamp narrowed gets the gutter the second document's width gives
+    /// it, twice the indent, where that gutter leaves it text, as it does in a new renderer.
     /// </summary>
     [Fact]
-    public void AChildTheFirstDocumentsClampNarrowed_keepsItsGutterInTheSecond()
+    public void AChildTheFirstDocumentsClampNarrowed_getsTheGutterTheSecondWidthGives()
     {
         var kept = SecondDocumentWithLeads(ClampedChild, twin: false, leads: 0);
 
-        Assert.Equal(Sha(SecondDocumentWithLeads(ClampedChild, twin: true, leads: 0)), Sha(kept));
+        Assert.Equal(Sha(FreshSecondDocument(ClampedChild)), Sha(kept));
     }
 
     // An entry whose text is 20 points in a 10-point style: it fits a page top, and not what is
@@ -596,37 +624,36 @@ public sealed class ListPlacementAdoptionTests
 
     /// <summary>
     /// A renderer added to a document and then held by a renderer of the caller's, in the same
-    /// document, lays the second placement out from the entries the first one built, as a list laid
-    /// out as it was before the fixes does. Here the second placement falls where the entry's text
-    /// does not fit, and the paragraph draws the lines of its last layout there: the entry's text
-    /// shows twice, once at each place. That is a stale placement the list had before the fixes
-    /// (#691), and this change leaves it as it was.
+    /// document, lays the second placement out from entries of its own, as a second renderer would.
+    /// The second placement falls where the entry's text does not fit, and draws the marker only:
+    /// the lines the first placement gave the text are not drawn there (#691).
     /// </summary>
     [Fact]
-    public void ARendererAddedAndThenHeldInOneDocument_laysTheHeldOneOutFromTheEntriesItBuilt()
+    public void ARendererAddedAndThenHeldInOneDocument_laysTheHeldOneOutFromEntriesOfItsOwn()
     {
-        Document Build(ListRenderer renderer)
+        Document Build(ListRenderer direct, ListRenderer held)
         {
             var doc = Page(200, 100);
-            doc.Add(renderer);
+            doc.Add(direct);
             doc.Add(new Paragraph("between0", H(10)) { Margins = EdgeInsets.Zero });
             doc.Add(new Paragraph("between1", H(10)) { Margins = EdgeInsets.Zero });
-            doc.Add(new Passes(renderer));
+            doc.Add(new Passes(held));
             return doc;
         }
 
-        var reused = Save(Build(new ListRenderer(TallTextEntry())));
+        var shared = new ListRenderer(TallTextEntry());
+        var reused = Save(Build(shared, shared));
 
-        Assert.Equal(Sha(Save(Build(new ListRenderer(TallTextEntry()).Unclamped()))), Sha(reused));
-        Assert.Equal(2, Shows(reused).Count(t => t == "dropped"));
+        Assert.Equal(Sha(Save(Build(new ListRenderer(TallTextEntry()), new ListRenderer(TallTextEntry())))), Sha(reused));
+        Assert.Equal(1, Shows(reused).Count(t => t == "dropped"));
     }
 
     /// <summary>
-    /// A list renderer reused for a second document reports nothing there, as one that a caller
-    /// laid out before the save: the document did not place the list the way it placed it first.
+    /// A list renderer reused for a second document reports what a new renderer reports there: the
+    /// clamp, where the second document's width leaves the text no room again.
     /// </summary>
     [Fact]
-    public void AListRendererReusedForASecondDocument_reportsNothingThere()
+    public void AListRendererReusedForASecondDocument_reportsWhatAFreshRendererReports()
     {
         var renderer = new ListRenderer(ClampedAtTheFirstWidth());
         var first = Narrow(200);
@@ -634,55 +661,17 @@ public sealed class ListPlacementAdoptionTests
         Save(first);
         Assert.Contains(LayoutDiagnosticCode.ListIndentClamped, Codes(first));
 
-        var second = Narrow(400);
+        var second = Narrow(200);
         second.Add(renderer);
         Save(second);
+        var fresh = Narrow(200);
+        fresh.Add(new ListRenderer(ClampedAtTheFirstWidth()));
+        Save(fresh);
 
-        Assert.DoesNotContain(second.Diagnostics, d => d.Code is LayoutDiagnosticCode.ListIndentClamped
-            or LayoutDiagnosticCode.ListIndentClampSkipped or LayoutDiagnosticCode.ListEntryPartDropped);
-    }
-
-    /// <summary>
-    /// A list changed after the first document that holds it saved, or after a caller laid it out
-    /// before the save, is not measured again for the second. The list lays out as its twin, which
-    /// holds the entries built before, as the save does. Measuring an item added since would add
-    /// its glyphs to the font subset, which a document that never reads that item must not hold.
-    /// </summary>
-    [Theory]
-    [InlineData(false, false)]
-    [InlineData(true, false)]
-    [InlineData(false, true)]
-    [InlineData(true, true)]
-    public void AListChangedAfterTheFirstDocument_addsNoGlyphToTheSecondDocumentsSubset(bool child, bool laidOut)
-    {
-        byte[] Second(bool twin, bool changed)
-        {
-            var first = new Document { PageSize = new PdfRectangle(0, 0, 300, 200), Margins = new EdgeInsets(10) };
-            var firstStyle = new TextStyle { FontRef = first.UseTrueTypeFont(FontReportSupport.DejaVuBytes), FontSize = 10 };
-            var list = new ListElement(ListStyle.OrderedDecimal)
-                .Add(new ListItem("abc", firstStyle))
-                .Add(new ListItem("abc", firstStyle));
-            var renderer = new ListRenderer(list);
-            IRenderer Use() => twin ? renderer.Unclamped() : renderer;
-            first.Add(Use());
-            if (laidOut) Use().Layout(new LayoutContext(new LayoutBox(10, 10, 280, 180)));
-            else Save(first);
-
-            if (changed && child) list.Items[0].AddChild(new ListItem("QJKXYZ", firstStyle));
-            else if (changed) list.Add(new ListItem("QJKXYZ", firstStyle));
-
-            var second = new Document { PageSize = new PdfRectangle(0, 0, 300, 200), Margins = new EdgeInsets(10) };
-            var secondStyle = new TextStyle { FontRef = second.UseTrueTypeFont(FontReportSupport.DejaVuBytes), FontSize = 10 };
-            second.Add(Use());
-            second.Add(new Counts());
-            second.Add(new Paragraph("after", secondStyle));
-            return Save(second);
-        }
-
-        var kept = Second(twin: false, changed: true);
-
-        Assert.Equal(Sha(Second(twin: true, changed: true)), Sha(kept));
-        Assert.Equal(Sha(Second(twin: false, changed: false)), Sha(kept));
+        Assert.Contains(LayoutDiagnosticCode.ListIndentClamped, Codes(second));
+        Assert.Equal(
+            fresh.Diagnostics.Select(d => (d.Code, d.Count)).ToArray(),
+            second.Diagnostics.Select(d => (d.Code, d.Count)).ToArray());
     }
 
     /// <summary>A caller's renderer that takes no room and draws nothing.</summary>
@@ -698,10 +687,9 @@ public sealed class ListPlacementAdoptionTests
 
     /// <summary>
     /// A renderer of the caller's after a list makes the second document lay every list out as its
-    /// twin, a reused renderer's among them, and the entries of that renderer are the ones the
-    /// first document's save, or a layout the caller made before it, built. A renderer that takes
-    /// no room is the whole of the difference between the two documents, so the document that
-    /// holds it equals the one whose lists are all replaced by their twins.
+    /// twin, a reused renderer's among them, from the items the list holds in that save. A renderer
+    /// that takes no room is the whole of the difference between the two documents, so the document
+    /// that holds it equals the one whose lists are all replaced by their twins.
     /// </summary>
     [Theory]
     [InlineData("tall text", 60, 4, 1, false)]
