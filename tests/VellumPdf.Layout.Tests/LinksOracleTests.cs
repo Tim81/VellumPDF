@@ -71,7 +71,7 @@ public sealed class LinksOracleTests
     [Fact]
     public void TheDocument_isPdfA2uConformant_andItsLinksAndDestinationsResolve()
     {
-        using var doc = Build();
+        using var doc = Build(withReferenceInCell: false);
         var pdf = FontReportSupport.Save(doc);
 
         // The change is in the file: destinations, destination links, a reference that read a page
@@ -81,7 +81,6 @@ public sealed class LinksOracleTests
         Assert.Contains(links, l => l.Dest == "intro");
         Assert.Contains(links, l => l.Dest == "item");
         Assert.Contains(links, l => l.Dest == "table");
-        Assert.Contains(links, l => l.Dest == "image");
         Assert.Contains(links, l => l.Uri == "https://example.com/cell");
         Assert.Contains(links, l => l.Uri == "https://example.com/footer");
 

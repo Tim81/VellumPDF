@@ -109,7 +109,9 @@ public sealed class TextRun(string Text, TextStyle Style)
     /// always a link to the anchor, drawn in <paramref name="style"/> with the link added; the
     /// style must not set <see cref="TextStyle.LinkUri"/> or <see cref="TextStyle.LinkAnchor"/>.
     /// <see cref="Text"/> is empty, so the label is in no <c>Paragraph.Text</c>, outline entry,
-    /// bookmark title or <c>{chapter}</c>. The same instance in two places prints one label.</para>
+    /// bookmark title or <c>{chapter}</c>. The same instance in two places prints one label. A
+    /// reference in an item below the second level of a list is ignored, as the item is, because
+    /// the layout neither lays it out nor draws it.</para>
     /// <para>A document that holds one lays its content out with the pagination loop. A renderer of
     /// yours that answers differently on the later call makes the save throw
     /// <see cref="InvalidOperationException"/> naming a change of pagination, and after any layout

@@ -1707,10 +1707,9 @@ public sealed class Document : IDisposable
     /// add, a link a renderer of yours registers for a name no element holds, and pagination that
     /// does not settle in five layout passes or returns to a label of an earlier pass. In a document
     /// that holds a page reference the drawing pass is also compared with the last measuring run,
-    /// and a renderer that answers differently the later time, or a <see cref="Header"/> or
-    /// <see cref="Footer"/> changed while it renders, makes the save throw naming a change of
-    /// pagination. <b>Do not pass</b> such a renderer to a document that holds a page reference; 3.0
-    /// lays the measuring and the drawing pass out alike.</para>
+    /// and a renderer that answers differently the later time makes the save throw naming a change
+    /// of pagination. <b>Do not pass</b> such a renderer to a document that holds a page reference;
+    /// 3.0 lays the measuring and the drawing pass out alike.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="destination"/> is <see langword="null"/>. This is checked before the layout
@@ -1858,10 +1857,9 @@ public sealed class Document : IDisposable
     /// add, a link a renderer of yours registers for a name no element holds, and pagination that
     /// does not settle in five layout passes or returns to a label of an earlier pass. In a document
     /// that holds a page reference the drawing pass is also compared with the last measuring run,
-    /// and a renderer that answers differently the later time, or a <see cref="Header"/> or
-    /// <see cref="Footer"/> changed while it renders, makes the save throw naming a change of
-    /// pagination. <b>Do not pass</b> such a renderer to a document that holds a page reference; 3.0
-    /// lays the measuring and the drawing pass out alike.</para>
+    /// and a renderer that answers differently the later time makes the save throw naming a change
+    /// of pagination. <b>Do not pass</b> such a renderer to a document that holds a page reference;
+    /// 3.0 lays the measuring and the drawing pass out alike.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="path"/> is <see langword="null"/>. A null that an element or a written Kernel
@@ -1996,10 +1994,9 @@ public sealed class Document : IDisposable
     /// add, a link a renderer of yours registers for a name no element holds, and pagination that
     /// does not settle in five layout passes or returns to a label of an earlier pass. In a document
     /// that holds a page reference the drawing pass is also compared with the last measuring run,
-    /// and a renderer that answers differently the later time, or a <see cref="Header"/> or
-    /// <see cref="Footer"/> changed while it renders, makes the save throw naming a change of
-    /// pagination. <b>Do not pass</b> such a renderer to a document that holds a page reference; 3.0
-    /// lays the measuring and the drawing pass out alike.</para>
+    /// and a renderer that answers differently the later time makes the save throw naming a change
+    /// of pagination. <b>Do not pass</b> such a renderer to a document that holds a page reference;
+    /// 3.0 lays the measuring and the drawing pass out alike.</para>
     /// </remarks>
     /// <inheritdoc cref="Save(System.IO.Stream)" path="/exception[@cref='T:System.ArgumentNullException' or @cref='T:System.InvalidOperationException' or @cref='T:System.IO.IOException' or @cref='T:System.ArgumentOutOfRangeException' or @cref='T:System.NullReferenceException' or @cref='T:System.IndexOutOfRangeException' or @cref='T:System.IO.InvalidDataException' or @cref='T:System.OverflowException' or @cref='T:System.OutOfMemoryException']"/>
     /// <exception cref="NotSupportedException">
@@ -2085,10 +2082,9 @@ public sealed class Document : IDisposable
     /// add, a link a renderer of yours registers for a name no element holds, and pagination that
     /// does not settle in five layout passes or returns to a label of an earlier pass. In a document
     /// that holds a page reference the drawing pass is also compared with the last measuring run,
-    /// and a renderer that answers differently the later time, or a <see cref="Header"/> or
-    /// <see cref="Footer"/> changed while it renders, makes the save throw naming a change of
-    /// pagination. <b>Do not pass</b> such a renderer to a document that holds a page reference; 3.0
-    /// lays the measuring and the drawing pass out alike.</para>
+    /// and a renderer that answers differently the later time makes the save throw naming a change
+    /// of pagination. <b>Do not pass</b> such a renderer to a document that holds a page reference;
+    /// 3.0 lays the measuring and the drawing pass out alike.</para>
     /// </remarks>
     /// <inheritdoc cref="Save(string)" path="/exception[@cref='T:System.ArgumentNullException' or @cref='T:System.IO.DirectoryNotFoundException' or @cref='T:System.UnauthorizedAccessException' or @cref='T:System.IO.IOException' or @cref='T:System.InvalidOperationException']"/>
     /// <inheritdoc cref="Save(System.IO.Stream)" path="/exception[@cref='T:System.ObjectDisposedException' or @cref='T:System.ArgumentOutOfRangeException' or @cref='T:System.NotSupportedException' or @cref='T:System.NullReferenceException' or @cref='T:System.IndexOutOfRangeException' or @cref='T:System.IO.InvalidDataException' or @cref='T:System.OverflowException' or @cref='T:System.OutOfMemoryException']"/>

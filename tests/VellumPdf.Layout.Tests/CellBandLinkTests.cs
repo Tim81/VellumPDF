@@ -327,6 +327,22 @@ public sealed class CellBandLinkTests
         Assert.Equal("key", ex.ParamName);
     }
 
+    [Fact]
+    public void TheGuardOfTheContext_dropsARectangleThatWouldBeWrittenNonFinite_andWritesOneThatWouldNot()
+    {
+        var (pdf, page, canvas, context) = Surface();
+        var ctx = new DrawContext(canvas, new LayoutBox(0, 0, 300, 400), context, pdf, page);
+
+        // x plus width overflows, so the annotation would write infinity, which the save refuses.
+        Assert.False(ctx.TryAddLinkAnnotation(new LayoutBox(double.MaxValue, 0, double.MaxValue, 10), Uri, null, LinkOwner.Cell));
+        Assert.False(ctx.TryAddLinkAnnotation(new LayoutBox(double.NaN, 0, 10, 10), Uri, null, LinkOwner.Band));
+        Assert.True(ctx.TryAddLinkAnnotation(new LayoutBox(10, 10, 50, 10), Uri, null, LinkOwner.Cell));
+
+        using var ms = new MemoryStream();
+        pdf.Save(ms);
+        Assert.Single(Links(ms.ToArray()));
+    }
+
     [Theory]
     [InlineData(double.MaxValue, 1e308)]
     [InlineData(1e296, 1e303)]

@@ -450,7 +450,7 @@ public sealed class Cell
         ArgumentNullException.ThrowIfNull(runs);
         var copy = TextRunList.Copy(runs, nameof(runs), TextStyle.Default);
         for (var i = 0; i < copy.Count; i++)
-            if (copy[i].Text.Length > 0)
+            if (copy[i].HoldsText)
                 LayoutValidation.ValidateRunColor(copy[i].Style.Color, i, nameof(runs));
         Runs = copy.AsReadOnly();
         Content = TextRunList.Concat(copy);
