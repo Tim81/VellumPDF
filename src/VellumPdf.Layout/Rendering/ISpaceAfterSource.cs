@@ -10,12 +10,12 @@ namespace VellumPdf.Layout.Rendering;
 /// the element the caller added.
 /// </summary>
 /// <remarks>
-/// Implement it explicitly. The built-in renderers are public classes, so an implicit
-/// implementation would be a new public member. 3.0 reads the bottom margin instead and removes
-/// this interface with <c>SpaceAfter</c> (#704).
+/// Implement it explicitly. Six of the renderers that implement it are public classes, and an
+/// implicit implementation would give them a new public member. 3.0 reads the bottom margin
+/// instead and removes this interface with <c>SpaceAfter</c> (#704).
 /// </remarks>
 internal interface ISpaceAfterSource
 {
-    /// <summary>The gap in points: finite and not negative, as the element's accessor guarantees.</summary>
+    /// <summary>The gap in points, finite and not below zero.</summary>
     double SpaceAfter { get; }
 }

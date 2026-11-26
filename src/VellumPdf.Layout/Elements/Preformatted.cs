@@ -139,6 +139,7 @@ public sealed class Preformatted
     /// throws
     /// <see cref="ArgumentOutOfRangeException"/>. Margins that leave the content box no wider than
     /// zero, or shorter than one line, are refused by the save before any layout; see the type.
+    /// The bottom edge adds no space before the next element; <see cref="SpaceAfter"/> adds that.
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// Raised from this <c>init</c> accessor when an edge is <c>NaN</c>, infinite or negative.
@@ -418,13 +419,13 @@ public sealed class Preformatted
     /// default, 0, leaves none.
     /// </summary>
     /// <remarks>
-    /// <b>A value that is not finite or is negative is refused.</b> This <c>init</c> accessor
-    /// throws <see cref="ArgumentOutOfRangeException"/>, so the error names the line that wrote the
-    /// value. The rule, what it does at a page break and under the keep requests, and where it is
-    /// read are those of <see cref="Paragraph.SpaceAfter"/>.
+    /// <b>A value that is not finite or is below zero is refused.</b> This <c>init</c> accessor
+    /// throws <see cref="ArgumentOutOfRangeException"/>, so the exception is raised by the
+    /// statement that set the value. The rule, the keep requests, where the gap is read and its
+    /// removal in 3.0 are those of <see cref="Paragraph.SpaceAfter"/>.
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// Raised from this <c>init</c> accessor when the value is <c>NaN</c>, infinite or negative.
+    /// Raised from this <c>init</c> accessor when the value is <c>NaN</c>, infinite or below zero.
     /// </exception>
     public double SpaceAfter
     {

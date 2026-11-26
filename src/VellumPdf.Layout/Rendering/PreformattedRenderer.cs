@@ -69,8 +69,7 @@ internal sealed class PreformattedRenderer : IRenderer, IPageBreakSource, IPlace
 
     PageBreakMode IPageBreakSource.BreakBefore => _element.BreakBefore;
 
-    // Explicit, because a public renderer would otherwise gain a public member. The gap belongs to
-    // the element, so a renderer added through Document.Add(IRenderer) honours it as well.
+    // Explicit, to match the public renderers.
     double ISpaceAfterSource.SpaceAfter => _element.SpaceAfter;
 
     bool IKeepSource.KeepWithNext => _element.KeepWithNext;

@@ -36,8 +36,7 @@ internal sealed class HeadingRenderer : IRenderer, IPlacementSource, IPageBreakS
 
     PageBreakMode IPageBreakSource.BreakBefore => _heading.BreakBefore;
 
-    // Explicit, because a public renderer would otherwise gain a public member. The gap belongs to
-    // the element, so a renderer added through Document.Add(IRenderer) honours it as well.
+    // Explicit, to match the public renderers.
     double ISpaceAfterSource.SpaceAfter => _heading.SpaceAfter;
 
     bool IKeepSource.KeepWithNext => _heading.KeepWithNext;

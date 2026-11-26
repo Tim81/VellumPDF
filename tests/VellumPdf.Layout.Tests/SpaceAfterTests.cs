@@ -307,17 +307,23 @@ public sealed class SpaceAfterTests
         Assert.Equal(TopY(pages, "f1"), next.Y, 4);
     }
 
-    [Fact]
-    public void AGapThatFitsExactlyInWhatIsLeft_leavesTheNextElementNoRoom_andItGoesToTheNextPage()
+    // A 150 pt rule ends 150 pt down a 160 pt area, so exactly 10 pt are left (170 and 180 are
+    // exact in a double). An element with no height is the only one that can tell a gap that
+    // takes all of that from one that takes more: anything taller starts the next page either way.
+    private static byte[] RuleThenNothing(double gap)
     {
-        // Nine lines end 129.6 pt down, which leaves 30.4. A gap of 30.4 takes all of it.
         using var doc = NewDoc();
-        doc.Add(Lines("f", 9, 30.4));
-        doc.Add(new Paragraph("Next", Body));
-        var pages = PageStreams(Save(doc));
+        doc.Add(new LineSeparator { LineWidth = 150, Margins = EdgeInsets.Zero, SpaceAfter = gap });
+        doc.Add(new LineSeparator { LineWidth = 0, Margins = EdgeInsets.Zero });
+        return Save(doc);
+    }
 
-        Assert.Equal(2, pages.Count);
-        Assert.Equal(TopY(pages, "f1"), Find(pages, "Next").Y, 4);
+    [Fact]
+    public void AGapEqualToWhatIsLeft_fits_andAGapOneStepLarger_doesNot()
+    {
+        Assert.Single(PageStreams(RuleThenNothing(10)));
+        Assert.Single(PageStreams(RuleThenNothing(double.BitDecrement(10))));
+        Assert.Equal(2, PageStreams(RuleThenNothing(double.BitIncrement(10))).Count);
     }
 
     [Fact]
@@ -560,6 +566,64 @@ public sealed class SpaceAfterTests
         Assert.Equal(2, Find(gap, "k1").Page);
         Assert.Equal(2, Find(gap, "k5").Page);
         Assert.Equal(TopY(gap, "f1"), Find(gap, "k1").Y, 4);
+    }
+
+    [Fact]
+    public void WithABand_aGapOnTheLastElement_addsNoSpaceAndNoPage()
+    {
+        byte[] Build(double space)
+        {
+            using var doc = NewDoc();
+            doc.Footer = new RunningBand("{page}/{pages}");
+            doc.Add(Lines("p", 1));
+            doc.Add(Lines("q", 1, space));
+            return Save(doc);
+        }
+
+        var plain = Build(0);
+        foreach (var space in new[] { 30, 1000, 1e6 })
+        {
+            var gapped = Build(space);
+            Assert.Equal(NormalisedSha256(plain), NormalisedSha256(gapped));
+            var pages = PageStreams(gapped);
+            Assert.Single(pages);
+            Assert.Contains(TextPlacements(pages[0]), t => t.Text == "1/1");
+        }
+    }
+
+    [Fact]
+    public void AGapBeforeAKeepRunThatMoves_isDropped_andTheRunStartsThePage()
+    {
+        // The first line and its gap end 134.4 pt down, the kept line ends at 148.8, and the three
+        // lines that must stay whole do not fit below it, so the run moves. The gap that was
+        // spent in testing the run from this page must not be spent again on the next one.
+        using var doc = NewDoc();
+        doc.Add(Lines("a", 1, 120));
+        doc.Add(Lines("k", 1, keepWithNext: true));
+        doc.Add(Lines("c", 3, keepTogether: true));
+        var pages = PageStreams(Save(doc));
+
+        Assert.Equal(2, Find(pages, "k1").Page);
+        Assert.Equal(TopY(pages, "a1"), Find(pages, "k1").Y, 4);
+        Assert.Equal(2, Find(pages, "c1").Page);
+        Assert.Empty(doc.Diagnostics);
+    }
+
+    [Fact]
+    public void ATestOfAKeepRun_leavesNoGapBehindForTheElementThatStartsIt()
+    {
+        // The run is k and c. Testing it places c, whose own gap is 30; the gap before k is 0,
+        // so k must sit directly below a, and c directly below k.
+        using var doc = NewDoc();
+        doc.Add(Lines("a", 1));
+        doc.Add(Lines("k", 1, keepWithNext: true));
+        doc.Add(Lines("c", 1, 30));
+        doc.Add(Lines("d", 1));
+        var pages = PageStreams(Save(doc));
+
+        Assert.Equal(14.4, Find(pages, "a1").Y - Find(pages, "k1").Y, 4);
+        Assert.Equal(14.4, Find(pages, "k1").Y - Find(pages, "c1").Y, 4);
+        Assert.Equal(14.4 + 30, Find(pages, "c1").Y - Find(pages, "d1").Y, 4);
     }
 
     // ── Where it is read ─────────────────────────────────────────────────────

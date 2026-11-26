@@ -1188,6 +1188,9 @@ public sealed class Document : IDisposable
     /// named destination as if the element had been added directly. A custom renderer has no
     /// anchor, and cannot start a page-label range: put a <see cref="PageBreak"/> with a
     /// <see cref="PageBreak.PageLabel"/> before it.</para>
+    /// <para>A renderer you wrote yourself has no gap after it either, and an element it holds has
+    /// none; the library's renderers named above read their element's <c>SpaceAfter</c>. See
+    /// <see cref="Paragraph.SpaceAfter"/>.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="renderer"/> is <see langword="null"/>.

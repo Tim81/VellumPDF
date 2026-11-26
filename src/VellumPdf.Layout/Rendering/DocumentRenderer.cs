@@ -1592,8 +1592,8 @@ public sealed class DocumentRenderer
     }
 
     // Moves the cursor down by the gap the element before asked for, or to the top of the next page
-    // when the gap does not fit in what is left of this one. The test subtracts, so that a gap near
-    // double.MaxValue cannot overflow it.
+    // when the gap does not fit in what is left of this one. The test subtracts, so that it never
+    // forms a sum larger than the page.
     private void SpendPendingSpace(int totalPages)
     {
         var space = _pendingSpace;
