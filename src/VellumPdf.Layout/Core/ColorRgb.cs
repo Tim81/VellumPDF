@@ -17,10 +17,11 @@ namespace VellumPdf.Layout.Core;
 /// written is not refused; see <c>Document</c>.
 /// <para>A finite channel outside 0 to 1 is <b>not</b> refused, except in a row background passed
 /// to <see cref="Elements.Table.TableElement.Add(Elements.Table.Row)"/> and in the text colour of a
-/// <see cref="Elements.Preformatted"/>, whose constructor refuses it. Elsewhere it is written
-/// as given after rounding to five decimals, so (5, 0, -1) is written as <c>5 0 -1 rg</c>.
-/// ISO 32000-2, 8.6.4.3, says each DeviceRGB component "shall" be a number from 0.0 to 1.0, so
-/// that output is not conforming even though it parses and renders.</para>
+/// <see cref="Elements.Preformatted"/>, whose constructor refuses it, and in a run that holds text
+/// in a table cell built from runs, whose constructor refuses it too, as it refuses a non-finite
+/// one. Elsewhere it is written as given after rounding to five decimals, so (5, 0, -1) is written
+/// as <c>5 0 -1 rg</c>. ISO 32000-2, 8.6.4.3, says each DeviceRGB component "shall" be a number
+/// from 0.0 to 1.0, so that output is not conforming even though it parses and renders.</para>
 /// <para><b>Attention</b>: keep each channel within 0 to 1. 3.0 may refuse a channel outside
 /// that range.</para>
 /// </remarks>

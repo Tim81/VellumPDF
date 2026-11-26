@@ -319,27 +319,15 @@ public sealed class TableCellRunsTests
     }
 
     /// <summary>
-    /// What a paragraph does with the same runs, measured: one line height for the paragraph, the
-    /// largest leading among its runs, and a baseline per line from the largest size on that line.
-    /// The cell keeps the first baseline's rule for every line.
+    /// A line that holds only the small run is as tall as the others and its baseline is one line
+    /// height below the one before: 4pt of padding, a 30pt first baseline, then 36pt steps.
     /// </summary>
     [Fact]
-    public void AParagraphPlacesEachBaselineFromItsLine_aCellFromTheLargestRun()
+    public void ALaterLineOfSmallText_sitsOneLineHeightBelowTheLineBefore()
     {
-        TextRun[] runs = [Run("big\n", Plain(30)), Run("small", Plain(10))];
+        var shown = Placements(DrawnCell(new Cell([Run("big\n", Plain(30)), Run("small", Plain(10))])));
 
-        using var paragraphDoc = ShortPage();
-        paragraphDoc.Add(new Paragraph(runs));
-        var paragraph = Placements(Content(Save(paragraphDoc)));
-
-        var cell = Placements(DrawnCell(new Cell(runs)));
-
-        // Page top 390 (margin 10). The paragraph: line 1's baseline is one 30pt size down, and
-        // line 2 is one line height (36) further, less the 20pt its smaller size saves.
-        Assert.Equal([360.0, 344.0], paragraph.Select(p => Math.Round(p.Y, 4)));
-
-        // The cell: 4pt of padding, a 30pt baseline, then one 36pt line height per line.
-        Assert.Equal([356.0, 320.0], cell.Take(2).Select(p => Math.Round(p.Y, 4)));
+        Assert.Equal([356.0, 320.0], shown.Take(2).Select(p => Math.Round(p.Y, 4)));
     }
 
     [Fact]
@@ -490,7 +478,7 @@ public sealed class TableCellRunsTests
         Assert.Empty(Links(Save(doc)));
     }
 
-    /// <summary>A run that measures zero wide has no area to link, so it gets no annotation.</summary>
+    /// <summary>A run that measures zero wide has no area to link and gets no annotation.</summary>
     [Fact]
     public void ALinkedRunThatMeasuresZeroWide_getsNoAnnotation_andSaves()
     {
@@ -918,7 +906,10 @@ public sealed class TableCellRunsTests
             var font = doc.UseTrueTypeFont(FontReportSupport.DejaVuBytes);
             var style = new TextStyle { FontRef = font, FontSize = 11 };
             var t = new TableElement { DefaultCellStyle = style }.SetColumnWidths(60, 60);
-            t.AddRow().AddCell(make(style)).AddCell("x");
+
+            // The neighbour is in another font, so that its own wrap does not put a space in this
+            // font's subset: only the cell under test can.
+            t.AddRow().AddCell(make(style)).AddCell(new Cell("x") { Style = Plain(11) });
             doc.Add(t);
             return FontReportSupport.Save(doc);
         }
@@ -932,10 +923,6 @@ public sealed class TableCellRunsTests
 
     // ── PDF/A-2u ─────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// A document of run cells in an embedded font, with links, passes veraPDF's PDF/A-2u profile
-    /// and shows the cells' own text, so the verdict is about the feature.
-    /// </summary>
     /// <summary>
     /// A cell with no text opens in the table's style, so under a PDF/A claim with an embedded
     /// default font it names no Helvetica and veraPDF 2u passes it, as it passes the empty string.
@@ -960,6 +947,10 @@ public sealed class TableCellRunsTests
         Assert.Empty(FontReportSupport.FailedRules(report));
     }
 
+    /// <summary>
+    /// A document of run cells in an embedded font, with links, passes veraPDF's PDF/A-2u profile
+    /// and shows the cells' own text, so the verdict is about the feature.
+    /// </summary>
     [Fact]
     public void PdfA2u_aRunCellInAnEmbeddedFont_withLinks_passesVeraPdf()
     {

@@ -328,45 +328,43 @@ public sealed class Cell
     }
 
     /// <summary>Creates a cell from a sequence of runs, each with its own style.</summary>
-    /// <remarks>
-    /// <b>A null sequence, a null run and a run with a null style are refused here.</b> The first
-    /// two throw <see cref="ArgumentNullException"/> and the third <see cref="ArgumentException"/>;
-    /// <c>ParamName</c> is <c>runs</c> and the message of the last two names the index of the run.
-    /// <see cref="TextRun"/> stores a null style, and a paragraph saves one on a run that draws no
-    /// text; this constructor refuses it whatever the run's text, so an empty run needs a style
-    /// too. An empty sequence is accepted and builds a cell with one empty run in
-    /// <see cref="TextStyle.Default"/>, which draws no text. The sequence is copied. A
-    /// <see langword="null"/> literal binds to the string constructor, not to this one.
+    /// <remarks> <b>A null sequence, a null run and a run with a null style are refused here.</b>
+    /// The first two throw <see cref="ArgumentNullException"/> and the third <see
+    /// cref="ArgumentException"/>; <c>ParamName</c> is <c>runs</c> and the message of the last two
+    /// names the index of the run. <see cref="TextRun"/> stores a null style; this constructor
+    /// refuses it whatever the run's text, so an empty run needs a style too. An empty sequence is
+    /// accepted and builds a cell with one empty run in <see cref="TextStyle.Default"/>, which
+    /// draws no text. The sequence is copied. A <see langword="null"/> literal binds to the string
+    /// constructor, not to this one.
     /// <para>The text of every run is read as one string, by the rules <see cref="Content"/> gives:
     /// a carriage return and line feed pair, a lone carriage return and a lone line feed each end a
     /// line, any other white-space control character is a space, and a space is the only break
     /// point between words. A run boundary inside a word draws no space, so a run <c>astro</c>
     /// followed by a run <c>logie</c> is one word, and the word is measured in pieces, each in the
     /// style of its run. A space is measured in the style of the run that holds it. Adjacent runs
-    /// that share one <see cref="TextStyle"/> instance are one piece of text, drawn in one show
-    /// operator, so a cell of such runs is the string cell of the text they hold in that style,
-    /// except that the run cell links the text when that style has a
+    /// that share one <see cref="TextStyle"/> instance and hold text are one piece of text, drawn
+    /// in one show operator, so a cell of such runs draws the string cell of the text they hold in
+    /// that style, except that the run cell links the text when that style has a
     /// <see cref="TextStyle.LinkUri"/> and the string cell drops the link.</para>
-    /// <para>Every line of the cell is as tall as the largest
-    /// <see cref="TextStyle.EffectiveLeading"/> among the runs that hold text, and the first
-    /// baseline lies one largest font size of those runs below the top of the cell's content,
-    /// padding included. Every later baseline is one line height below the one before it, so a
-    /// line that holds only small text is as tall as its neighbours and sits as low as they do. A
-    /// <see cref="Paragraph"/> also uses one line height,
-    /// the largest leading among its runs, but places each line's baseline from the largest size
-    /// on that line.</para>
+    /// <para>Every line of the cell is as tall as the largest <see
+    /// cref="TextStyle.EffectiveLeading"/> among the runs that hold text, and the first baseline
+    /// lies one largest font size of those runs below the top of the cell's content, padding
+    /// included. Every later baseline is one line height below the one before it, so a line that
+    /// holds only small text is as tall as its neighbours and sits as low as they do. A run that
+    /// holds only a line end or white space counts, as any run that holds text does.</para>
     /// <para>A run is a link through its own <see cref="TextStyle.LinkUri"/>. The annotation covers
     /// the width the run's text is drawn at on each line it is on, as tall as the line, and is cut
-    /// to the cell's box. A run that draws no glyph gets none. <b>The links of a cell are not
-    /// tagged</b>, whatever the document's conformance, as in a paragraph, and no exception reports
-    /// it. A <see cref="TextStyle.LinkUri"/> on <see cref="Style"/> is still ignored (#475).</para>
+    /// to the cell's box. A run that draws no glyph, or whose text measures zero wide, as Symbol
+    /// text does, gets none. <b>The links of a cell are not tagged</b>, whatever the document's
+    /// conformance, and no exception reports it. A <see cref="TextStyle.LinkUri"/> on
+    /// <see cref="Style"/> is still ignored (#475).</para>
     /// <para><b>A run that holds text is refused when its colour has a channel that is not finite
     /// or lies outside 0 to 1.</b> The constructor throws
     /// <see cref="ArgumentOutOfRangeException"/>, because ISO 32000-2:2020, 8.6.4.3 says each
     /// DeviceRGB component is a number from 0.0 to 1.0. A run counts as holding text when its text
     /// is not empty, white space and line ends included, whether or not anything of it is drawn.
-    /// The same style on a run of a <see cref="Paragraph"/> is written as given. A font size that is not finite is refused at the save, from the style
-    /// of every run that holds text. The style of a run with no text is not read. When no run holds
+    /// A font size that is not finite is refused at the save, from the style of every run that
+    /// holds text. The style of a run with no text is not read. When no run holds
     /// text the cell reads <see cref="Style"/> or the table's default as the string cell does, so
     /// in a PDF/A or PDF/UA document set a style with an embedded font there; a run's own style
     /// does not reach it.</para>
