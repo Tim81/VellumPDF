@@ -334,7 +334,7 @@ public sealed class TableCellRunsTests
 
         var cell = Placements(DrawnCell(new Cell(runs)));
 
-        // Page top 390 (margin 10). The paragraph: the baseline of line 1 is one 30pt size down, and
+        // Page top 390 (margin 10). The paragraph: line 1's baseline is one 30pt size down, and
         // line 2 is one line height (36) further, less the 20pt its smaller size saves.
         Assert.Equal([360.0, 344.0], paragraph.Select(p => Math.Round(p.Y, 4)));
 
@@ -365,7 +365,7 @@ public sealed class TableCellRunsTests
 
         Assert.Equal([.. lines.Where(l => l.Length > 0), "x"], shown.Select(p => p.Text));
 
-        // A blank line is one leading tall, so the baselines of the lines differ by lines.Length - 1.
+        // A blank line is one leading tall, so the baselines differ by lines.Length - 1.
         var baselines = shown.Take(shown.Count - 1).Select(p => Math.Round(p.Y, 4)).Distinct().ToList();
         Assert.Equal(lines.Where(l => l.Length > 0).Count(), baselines.Count);
         Assert.Equal(374.0 - (lines.Length - 1) * 14.4, baselines.Min(), 4);
@@ -418,7 +418,7 @@ public sealed class TableCellRunsTests
         var x2 = 16.0 + Width(Helv, "one ");
         var x3 = x2 + Width(Helv, "two") + Width(Helv, " and ");
 
-        // The rectangle is the width of the run's text and one leading tall, from the top of the line.
+        // The rectangle is the run's text wide and one leading tall, from the top of the line.
         Assert.Equal(x2, two.X0, 3);
         Assert.Equal(x2 + Width(Helv, "two"), two.X1, 3);
         Assert.Equal(400 - 14 - 14.4, two.Y0, 3);
@@ -490,7 +490,7 @@ public sealed class TableCellRunsTests
         Assert.Empty(Links(Save(doc)));
     }
 
-    /// <summary>A run in a font that measures zero wide has no area to link, so it gets no annotation.</summary>
+    /// <summary>A run that measures zero wide has no area to link, so it gets no annotation.</summary>
     [Fact]
     public void ALinkedRunThatMeasuresZeroWide_getsNoAnnotation_andSaves()
     {
