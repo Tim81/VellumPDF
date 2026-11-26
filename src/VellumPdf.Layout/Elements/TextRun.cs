@@ -21,7 +21,7 @@ namespace VellumPdf.Layout.Elements;
 /// cref="Document.StrictDiagnostics"/> refuses them.</para>
 /// Refusals on size, leading, font and
 /// text colour are on <see cref="TextStyle"/> and are raised from the save. A table cell built from
-/// runs checks its runs' colours in its constructor; see the constructor of <see
+/// runs has its own colour check in its constructor; see the constructor of <see
 /// cref="VellumPdf.Layout.Elements.Table.Cell"/> that takes runs. A space is drawn between this run
 /// and the next only where the text has a space, tab, line break or other white-space character,
 /// except the no-break spaces, at the boundary. Without one, the two runs hold one word; see <see
@@ -42,7 +42,7 @@ namespace VellumPdf.Layout.Elements;
 /// Raised from <see
 /// cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not from the constructor,
 /// when the style's size or leading is refused, or a channel of its text colour is not finite. A
-/// table cell built from runs checks its runs' colours in its constructor; see the constructor of
+/// table cell built from runs has its own colour check in its constructor; see the constructor of
 /// <see cref="VellumPdf.Layout.Elements.Table.Cell"/> that takes runs. See <see
 /// cref="TextStyle.FontSize"/>, <see cref="TextStyle.Leading"/> and <see cref="TextStyle.Color"/>.
 /// It is also raised, with <see cref="Document.StrictDiagnostics"/> set, when the run has a null

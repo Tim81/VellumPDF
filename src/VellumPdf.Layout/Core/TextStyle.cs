@@ -244,14 +244,14 @@ public sealed class TextStyle
     /// and an empty template writes no colour. <b>Do not pass</b> a non-finite channel: 3.0 refuses
     /// it. A <see cref="VellumPdf.Layout.Elements.Preformatted"/> refuses a channel that is not a
     /// number from 0 to 1 from its constructor, with <see cref="ArgumentException"/>. A table cell
-    /// built from runs checks its runs' colours in its constructor; see the constructor of
+    /// built from runs has its own colour check in its constructor; see the constructor of
     /// <see cref="VellumPdf.Layout.Elements.Table.Cell"/> that takes runs.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from a save, when a channel is <c>NaN</c> or infinite on a paragraph run, heading, list
     /// item or table cell style that draws text. The message names the element and the channel. A
-    /// finite channel outside 0 to 1 is not refused there. A table cell built from runs checks its
-    /// runs' colours in its constructor; see the constructor of
+    /// finite channel outside 0 to 1 is not refused there. A table cell built from runs has its
+    /// own colour check in its constructor; see the constructor of
     /// <see cref="VellumPdf.Layout.Elements.Table.Cell"/> that takes runs.
     /// </exception>
     /// <exception cref="ArgumentException">
