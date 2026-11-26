@@ -22,12 +22,15 @@ public static class Standard14FontExtensions
     /// <param name="doc">The document to register the font with.</param>
     /// <param name="font">
     /// The standard-14 font to substitute. The Helvetica, Times and Courier families are supported;
-    /// <see cref="Standard14.Symbol"/> and <see cref="Standard14.ZapfDingbats"/> are not, because the
-    /// Liberation set does not cover them. A number the enumeration does not name is refused too.
+    /// <see cref="Standard14.Symbol"/> and <see cref="Standard14.ZapfDingbats"/> are not, because
+    /// the Liberation set does not cover them. A number the enumeration does not name is refused
+    /// too.
     /// </param>
     /// <returns>A handle to the embedded substitute font.</returns>
     /// <exception cref="System.ArgumentNullException"><paramref name="doc"/> is null.</exception>
-    /// <exception cref="System.NotSupportedException"><paramref name="font"/> is Symbol, ZapfDingbats or a value the enumeration does not name.</exception>
+    /// <exception cref="System.NotSupportedException">
+    /// <paramref name="font"/> is Symbol, ZapfDingbats or a value the enumeration does not name.
+    /// </exception>
     public static EmbeddedFontHandle EmbedStandard14Font(this PdfDocument doc, Standard14 font)
     {
         ArgumentNullException.ThrowIfNull(doc);
@@ -49,12 +52,12 @@ public static class Standard14FontExtensions
         Standard14.CourierBold => "LiberationMono-Bold.ttf",
         Standard14.CourierOblique => "LiberationMono-Italic.ttf",
         Standard14.CourierBoldOblique => "LiberationMono-BoldItalic.ttf",
-        _ => throw new NotSupportedException(
-            (Enum.IsDefined(font)
-                ? $"No embeddable substitute is bundled for the {font} standard-14 font"
-                : $"No embeddable substitute is bundled for {(int)font}, which is not a Standard14 value")
-            + "; the Liberation set covers only the Helvetica, Times and Courier families. "
-            + "Register your own embeddable font with UseTrueTypeFont."),
+        _ => throw new NotSupportedException(Enum.IsDefined(font)
+            ? $"No embeddable substitute is bundled for the {font} standard-14 font; the Liberation "
+                + "set covers only the Helvetica, Times and Courier families. Register your own "
+                + "embeddable font with UseTrueTypeFont."
+            : $"No embeddable substitute is bundled for {(int)font}, which is not a Standard14 "
+                + "value; pass one of the Helvetica, Times or Courier faces."),
     };
 
     internal static byte[] LoadFont(string logicalName)
