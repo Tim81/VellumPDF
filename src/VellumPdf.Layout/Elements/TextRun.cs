@@ -22,10 +22,9 @@ namespace VellumPdf.Layout.Elements;
 /// Refusals on size, leading, font and text colour are on <see cref="TextStyle"/> and are raised
 /// from the save, except for the colour check that the constructor of <see
 /// cref="VellumPdf.Layout.Elements.Table.Cell"/> that takes runs makes itself; see that
-/// constructor. A space is drawn between this run
-/// and the next only where the text has a space, tab, line break or other white-space character,
-/// except the no-break spaces, at the boundary. Without one, the two runs hold one word; see <see
-/// cref="Paragraph"/>.
+/// constructor. A space is drawn between this run and the next only where the text has a space,
+/// tab, line break or other white-space character, except the no-break spaces, at the boundary.
+/// Without one, the two runs hold one word; see <see cref="Paragraph"/>.
 /// </remarks>
 /// <exception cref="ArgumentNullException">
 /// The text is <see langword="null"/>. <c>ParamName</c> is <c>Text</c>, the name of the

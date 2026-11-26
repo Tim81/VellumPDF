@@ -66,6 +66,10 @@ public sealed class Row
     /// save, and a finite channel outside 0 to 1 is written as given. <b>Do not</b> add rows that
     /// way.</para>
     /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Raised from <see cref="TableElement.Add(Row)"/>, not from this accessor, for a channel that
+    /// method refuses; see it.
+    /// </exception>
     public ColorRgb? Background { get; init; }
 
     /// <summary>Adds a cell to the row. Returns this row.</summary>
