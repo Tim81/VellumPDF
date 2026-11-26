@@ -292,7 +292,9 @@ public sealed class ListCallerRendererRuleTests
             StringComparison.Ordinal);
     }
 
-    /// <summary>A document with no list has nothing to report, whatever renderer it holds.</summary>
+    /// <summary>
+    /// A document with no list has nothing to report, whatever renderer it holds.
+    /// </summary>
     [Fact]
     public void ADocumentWithoutAList_reportsNothingForARenderer()
     {
