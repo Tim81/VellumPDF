@@ -323,6 +323,9 @@ public sealed class Heading
     /// </remarks>
     public IReadOnlyList<TextRun> Runs => _runs.AsReadOnly();
 
+    /// <summary>The runs the heading holds, without the copy <see cref="Runs"/> makes.</summary>
+    internal IReadOnlyList<TextRun> BackingRuns => _runs;
+
     private readonly List<TextRun> _runs;
 
     private static TextStyle DefaultStyle() => new() { FontSize = 14 };

@@ -110,8 +110,21 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     // A renderer that carries the decision to the next page reuses it, with the grid and the
     // heights it was made with, when it lays out at the same width and heights; Layout says what
     // that leaves out. The boxes' x is left out of the key: the decision never reads it, and
-    // mirrored margins move it on every other page.
-    private (double Width, double Top0, double Bottom0, double Top1, double Bottom1)? _decidedFor;
+    // mirrored margins move it on every other page. A table that holds a page reference adds the
+    // epoch of the labels, so the grid resolved for one label is not reused for the next.
+    private (double Width, double Top0, double Bottom0, double Top1, double Bottom1, long Labels)? _decidedFor;
+
+    // Whether a cell of the table is a run cell that holds a page reference, found once: the rows
+    // are not changed once the table is laid out.
+    private bool? _holdsReferences;
+
+    // The epoch of the page-reference labels while this table holds a reference, else 0, so a table
+    // without one has the key it always had.
+    private long LabelsEpoch()
+    {
+        _holdsReferences ??= _table.Rows.Any(r => r.Cells.Any(c => c.HoldsReferences));
+        return _holdsReferences.Value && ListLayoutRun.Current?.References is { } table ? table.Epoch : 0;
+    }
 
     /// <summary>The lines each cell of one row wraps into, at one table width.</summary>
     private sealed class RowLines(int row, double width, List<string>?[] cells)
@@ -322,8 +335,8 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             // A decision made for this width and these boxes by the renderer that handed the table
             // over stands: the cells it read unbroken are the cells this layout reads unbroken.
             var key = fresh is { Length: 2 }
-                ? (area.Width, fresh[0].Y, fresh[0].Bottom, fresh[1].Y, fresh[1].Bottom)
-                : ((double, double, double, double, double)?)null;
+                ? (area.Width, fresh[0].Y, fresh[0].Bottom, fresh[1].Y, fresh[1].Bottom, LabelsEpoch())
+                : ((double, double, double, double, double, long)?)null;
             var decided = key is not null && _decidedFor is { } was && was.Equals(key.Value);
             if (!decided)
             {
@@ -638,7 +651,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     {
         ref var entry = ref cache.Of(at.Row, at.Cell, at.CellCount, honourBreaks);
         var probe = TableMeasureProbe.Current;
-        var text = cell.Content;
+        var text = cell.LaidOutContent;
 
         // A cell of runs is counted by its own wrap, which finds the same interval of widths as the
         // string's, so the cache answers it as it answers a string.
@@ -818,7 +831,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         {
             var cells = rows[r].Cells;
             for (var c = 0; c < cells.Count; c++)
-                if (HonoursBreaks(r, c) && LayoutText.HasControlSpace(cells[c].Content)) return true;
+                if (HonoursBreaks(r, c) && LayoutText.HasControlSpace(cells[c].LaidOutContent)) return true;
         }
         return false;
     }
@@ -844,7 +857,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     {
         foreach (var row in rows)
             foreach (var cell in row.Cells)
-                if (LayoutText.HasControlSpace(cell.Content)) return true;
+                if (LayoutText.HasControlSpace(cell.LaidOutContent)) return true;
         return false;
     }
 
@@ -976,7 +989,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
                 for (var c = 0; c < cells.Count; c++)
                 {
                     var span = cells[c].ColSpan;
-                    if (HonoursBreaks(r, c) && LayoutText.HasLineBreak(cells[c].Content) && (found ??= []).Add((r, c)))
+                    if (HonoursBreaks(r, c) && LayoutText.HasLineBreak(cells[c].LaidOutContent) && (found ??= []).Add((r, c)))
                     {
                         added = true;
                         Note(r, c, col, span);
@@ -1017,7 +1030,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
                 for (var c = 0; c < cells.Count && col < reach.Length; c++)
                 {
                     var span = cells[c].ColSpan;
-                    if (HonoursBreaks(r, c) && LayoutText.HasControlSpace(cells[c].Content) && (inside || SharesAutoColumn(col, span, reach))
+                    if (HonoursBreaks(r, c) && LayoutText.HasControlSpace(cells[c].LaidOutContent) && (inside || SharesAutoColumn(col, span, reach))
                         && (found ??= []).Add((r, c)))
                     {
                         added = true;
@@ -1171,7 +1184,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             for (var c = 0; c < cells.Count && col < _colWidths.Length; c++)
             {
                 var span = cells[c].ColSpan;
-                if (HonoursBreaks(r, c) && LayoutText.HasControlSpace(cells[c].Content) && TouchesAutoColumn(col, span))
+                if (HonoursBreaks(r, c) && LayoutText.HasControlSpace(cells[c].LaidOutContent) && TouchesAutoColumn(col, span))
                     (found ??= []).Add((r, c));
                 col += span;
             }
@@ -1889,6 +1902,38 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         return span;
     }
 
+    // The link of a string cell's style over one drawn line, cut to the cell like a run's. Where the
+    // document has no page to put it on, or the rectangle would be written with a value that is not
+    // finite, nothing is written and nothing is reported. Under a PDF/UA-1 claim a URI link is not
+    // written, because it would be untagged, and the drop is reported. Both are removed in 3.0
+    // (#688), which refuses what they drop where the cell is built.
+    private static void LinkCellLine(
+        DrawContext ctx, TextStyle style, double x, double width, double lineTop, double lineHeight,
+        double cellX, double cellY, double colW, double h)
+    {
+        if (style.LinkUri is null && style.LinkAnchor is null) return;
+
+        var left = Math.Max(x, cellX);
+        var right = Math.Min(x + width, cellX + colW);
+        var top = Math.Max(lineTop, cellY);
+        var bottom = Math.Min(lineTop + lineHeight, cellY + h);
+        if (!(right > left) || !(bottom > top)) return;
+
+        if (style.LinkAnchor is null && ctx.Conformance == VellumPdf.Document.PdfConformance.PdfUA1)
+        {
+            ctx.Diagnostics?.Report(
+                LayoutDiagnosticCode.LinkNotWritten, 0, LinkNotWrittenMessage, 1, perElement: true);
+            return;
+        }
+
+        ctx.TryAddLinkAnnotation(
+            new LayoutBox(left, top, right - left, bottom - top), style.LinkUri, style.LinkAnchor, LinkOwner.Cell);
+    }
+
+    internal const string LinkNotWrittenMessage =
+        "A link in the style of a table cell or running band was not written, because the document claims " +
+        "PDF/UA-1 and the link would be untagged.";
+
     private static bool SameColor(ColorRgb a, ColorRgb b) => a.R == b.R && a.G == b.G && a.B == b.B;
 
     private void DrawCell(DrawContext ctx, Cell cell, Row row, int colIdx,
@@ -1953,7 +1998,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         // control character loses anything by it, which is the separation its words had.
         // A twin reports it only where the document chose the twin (#688); one a caller holds is
         // the table as it was before breaks were honoured, which reports nothing.
-        var holdsControlSpace = LayoutText.HasControlSpace(cell.Content);
+        var holdsControlSpace = LayoutText.HasControlSpace(cell.LaidOutContent);
         if ((!_readsUnbrokenForTheLimit || _placedAsTwin)
             && !HonoursBreaks(rowIndex, cellIndex) && holdsControlSpace
             && (slice is null || slice.First[cellIndex] == 0))
@@ -2047,6 +2092,12 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             {
                 canvas.SetTextMatrix(1, 0, 0, 1, innerBox.X + txOffset, pdfTextY);
                 TextEmitter.Show(canvas, openStyle, line);
+
+                // A string cell is a link through its own style, over the line it drew. A cell built
+                // from runs links through its runs, so its style's link is not drawn here.
+                if (runLines is null && line.Length > 0)
+                    LinkCellLine(ctx, cs, innerBox.X + txOffset, lineW, innerBox.Y + lineIdx * lineHeight, lineHeight,
+                        cellX, cellY, colW, h);
                 continue;
             }
 
@@ -2068,7 +2119,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
                 TextEmitter.Show(canvas, fragment.Style, fragment.Text);
 
                 var fragmentW = fragment.Style.FontRef.MeasureString(fragment.Text, fragment.Style.FontSize);
-                if (fragment.Style.LinkUri is { } uri)
+                if (fragment.Style.LinkUri is not null || fragment.Style.LinkAnchor is not null)
                 {
                     var left = Math.Max(x, cellX);
                     var right = Math.Min(x + fragmentW, cellX + colW);
@@ -2078,7 +2129,13 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
                     // A box with no area is skipped; a NaN edge is not, so the save refuses it as
                     // it refuses any non-finite link rectangle.
                     if (!(right <= left) && !(bottom <= top))
-                        ctx.AddUriLinkAnnotation(new LayoutBox(left, top, right - left, bottom - top), uri);
+                    {
+                        var box = new LayoutBox(left, top, right - left, bottom - top);
+                        if (fragment.Style.LinkUri is { } uri)
+                            ctx.AddUriLinkAnnotation(box, uri);
+                        else
+                            ctx.AddAnchorLinkAnnotation(box, fragment.Style.LinkAnchor!);
+                    }
                 }
                 x += fragmentW;
             }
@@ -2164,13 +2221,13 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     private static List<string> WrapCell(Cell cell, TextStyle style, double maxWidth, bool honourBreaks) =>
         cell.RunText is { } runText
             ? runText.Lines(maxWidth, honourBreaks)
-            : WordWrapLines(cell.Content, style, maxWidth, honourBreaks);
+            : WordWrapLines(cell.LaidOutContent, style, maxWidth, honourBreaks);
 
     /// <summary>The number of lines <see cref="WrapCell"/> returns.</summary>
     private static int CellLineCount(Cell cell, TextStyle style, double maxWidth, bool honourBreaks) =>
         cell.RunText is { } runText
             ? runText.CountLines(maxWidth, honourBreaks)
-            : WordWrapCount(cell.Content, style, maxWidth, honourBreaks);
+            : WordWrapCount(cell.LaidOutContent, style, maxWidth, honourBreaks);
 
     /// <summary>
     /// The height of one line of the cell: its style's, or for a cell of runs the largest of the

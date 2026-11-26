@@ -165,3 +165,7 @@ VellumPdf.Layout.Elements.LayoutImage.FitToPage.get -> bool
 VellumPdf.Layout.Elements.LayoutImage.FitToPage.init -> void
 VellumPdf.Layout.Elements.Table.Cell.Cell(System.Collections.Generic.IEnumerable<VellumPdf.Layout.Elements.TextRun!>! runs) -> void
 VellumPdf.Layout.Elements.Table.Cell.Runs.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Layout.Elements.TextRun!>?
+VellumPdf.Layout.Core.TextStyle.LinkAnchor.get -> string?
+VellumPdf.Layout.Core.TextStyle.LinkAnchor.init -> void
+static VellumPdf.Layout.Elements.TextRun.PageReference(string! anchor, VellumPdf.Layout.Core.TextStyle! style) -> VellumPdf.Layout.Elements.TextRun!
+VellumPdf.Layout.LayoutDiagnosticCode.LinkNotWritten = 701 -> VellumPdf.Layout.LayoutDiagnosticCode

@@ -90,4 +90,67 @@ public sealed class TextRun(string Text, TextStyle Style)
     /// <c>Style</c>. A run with empty or white-space-only text saves.
     /// </exception>
     public TextStyle Style { get; } = Style;
+
+    /// <summary>
+    /// A run that prints the page label of the page where the element whose <c>Anchor</c> is
+    /// <paramref name="anchor"/> starts, as <c>{page}</c> prints it in a running band, and links to
+    /// that element.
+    /// </summary>
+    /// <remarks>
+    /// <b>A name no element holds is refused.</b> <see cref="Document.Save(System.IO.Stream)"/>
+    /// throws <see cref="InvalidOperationException"/> naming the anchor before any layout runs, so
+    /// the document can still be saved once the name is fixed. The same save refuses the run for
+    /// the reasons <see cref="TextStyle.LinkAnchor"/> gives (a PDF/UA-1 claim, a style that also
+    /// links elsewhere), and after the layout it refuses a label that is empty or only white space,
+    /// which prints nothing.
+    /// <para>The label is the page's number, or its range's prefix and numeral once the document
+    /// defines a page-label range. A forward reference is resolved by laying the document out until
+    /// the labels stop changing, up to five times, so the caller runs no second pass. The run is
+    /// always a link to the anchor, drawn in <paramref name="style"/> with the link added; the
+    /// style must not set <see cref="TextStyle.LinkUri"/> or <see cref="TextStyle.LinkAnchor"/>.
+    /// <see cref="Text"/> is empty, so the label is in no <c>Paragraph.Text</c>, outline entry,
+    /// bookmark title or <c>{chapter}</c>. The same instance in two places prints one label.</para>
+    /// <para>A document that holds one lays its content out with the pagination loop. A renderer of
+    /// yours that answers differently on the later call makes the save throw
+    /// <see cref="InvalidOperationException"/> naming a change of pagination, and after any layout
+    /// refusal the document cannot be saved again. <b>Do not pass</b> a reference to a renderer you
+    /// lay out yourself, to one document at the same time as another, or a style whose font cannot
+    /// draw the label; a later major version refuses the first two.</para>
+    /// </remarks>
+    /// <param name="anchor">The anchor to print the page of.</param>
+    /// <param name="style">The style of the label.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="anchor"/> or <paramref name="style"/>
+    /// is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="anchor"/> is empty, longer than 127
+    /// characters, or holds a character outside <c>A-Z a-z 0-9 . _ - :</c>.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not
+    /// from this method, for the refusals above and for pagination that does not settle.
+    /// </exception>
+    public static TextRun PageReference(string anchor, TextStyle style)
+    {
+        ArgumentNullException.ThrowIfNull(anchor);
+        ArgumentNullException.ThrowIfNull(style);
+        VellumPdf.Document.DestinationName.Validate(anchor, nameof(anchor));
+        return new TextRun(string.Empty, style) { ReferenceAnchor = anchor };
+    }
+
+    /// <summary>The anchor a page reference names, or null for any other run.</summary>
+    internal string? ReferenceAnchor { get; private init; }
+
+    internal bool IsReference => ReferenceAnchor is not null;
+
+    /// <summary>
+    /// Whether the run draws text: a run with characters, or a reference, whose label is not known
+    /// until the pagination is.
+    /// </summary>
+    internal bool HoldsText => Text.Length > 0 || ReferenceAnchor is not null;
+
+    private TextStyle? _linkedStyle;
+
+    /// <summary>
+    /// The style a reference's label is drawn in: <see cref="Style"/> with the link added. One
+    /// instance per reference, so its label never joins a run of another style instance.
+    /// </summary>
+    internal TextStyle LinkedStyle => _linkedStyle ??= Style.WithLinkAnchor(ReferenceAnchor!);
 }

@@ -125,6 +125,8 @@ public sealed class Document : IDisposable
     /// <see cref="LayoutDiagnosticCode.NotdefGlyph"/> (a character an embedded font has no glyph
     /// for, written as glyph 0), <see cref="LayoutDiagnosticCode.UnembeddedFont"/> (an element that
     /// selects a Standard 14 font under a conformance claim),
+    /// <see cref="LayoutDiagnosticCode.LinkNotWritten"/> (a link in the style of a table cell or a
+    /// running band that a PDF/UA-1 claim left unwritten),
     /// <see cref="LayoutDiagnosticCode.BandTruncated"/> (mirroring <see cref="BandTruncations"/>),
     /// <see cref="LayoutDiagnosticCode.PreformattedLineWrapped"/> (a preformatted line split with
     /// a marker; a warning, which <see cref="StrictDiagnostics"/> saves),

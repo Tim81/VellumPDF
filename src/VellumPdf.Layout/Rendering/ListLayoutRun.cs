@@ -86,6 +86,20 @@ internal sealed class ListLayoutRun
     internal PdfDocument Pdf { get; }
 
     /// <summary>
+    /// The anchors the elements of the layout hold, once the layout has walked them, or null before
+    /// and for a run that no layout started. A link to an anchor is checked against it where it is
+    /// registered.
+    /// </summary>
+    internal NavigationPlan? Navigation { get; set; }
+
+    /// <summary>
+    /// The page references of the layout and the label each holds, or null while none was found or
+    /// read. Created on the first read of a reference the walk did not find, so a renderer of the
+    /// caller's that holds one is seen.
+    /// </summary>
+    internal PageReferenceTable? References { get; set; }
+
+    /// <summary>
     /// True once the document was found to hold a renderer that is not one of the library's own,
     /// a list entry it cannot draw, or an element after a list that can need about as many
     /// continuations as the limit allows. It never goes back: every list of the document is then

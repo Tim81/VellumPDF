@@ -327,6 +327,60 @@ public sealed class TextStyle
     /// </exception>
     public string? LinkUri { get; init; }
 
+    /// <summary>
+    /// When non-null, text in this style links to the anchor of that name: the page and position of
+    /// the element whose <c>Anchor</c> property holds the name.
+    /// </summary>
+    /// <remarks>
+    /// <b>A name no element holds is refused.</b> <see cref="Document.Save(System.IO.Stream)"/>
+    /// throws <see cref="InvalidOperationException"/> naming the anchor and the style's site before
+    /// any layout runs, so the document can still be saved once the name is fixed. An anchor whose
+    /// element the layout does not draw is refused after the layout, and the document cannot be saved
+    /// again. The kernel's own message for a link to a missing destination says the document can
+    /// still be saved, and that does not hold for a <see cref="Document"/> whose layout ran.
+    /// <para>The link is written as a named destination, <c>/Dest (name)</c>, and not as a GoTo
+    /// action, because ISO 32000-1, 12.6.4.2 prefers the direct form. It covers the text the way a
+    /// <see cref="LinkUri"/> does, in a paragraph, a heading, a list item (the marker included), a
+    /// table cell given this style through a string, a run of a cell built from runs, and a running
+    /// band.</para>
+    /// <para><b>A style that sets both this and <see cref="LinkUri"/> is refused</b>, with
+    /// <see cref="InvalidOperationException"/> from the save, because a link has one target. So is
+    /// any style with this set in a document whose <c>Conformance</c> is PDF/UA-1, which needs a
+    /// Link structure element the library does not write for it; PDF/A-2a and PDF/A-2u accept the
+    /// link. <see cref="VellumPdf.Layout.Elements.Preformatted"/> refuses a style with this set from
+    /// its constructor, with <see cref="ArgumentException"/>.</para>
+    /// <para>The name is held as written; see the <c>Anchor</c> property of the element for what a
+    /// name may contain. A name is not checked here.</para>
+    /// <para>A cell given this style through <see cref="VellumPdf.Layout.Elements.Table.Cell.Style"/>
+    /// or <see cref="VellumPdf.Layout.Elements.Table.TableElement.DefaultCellStyle"/> links a string
+    /// cell only; a cell built from runs links the runs whose style sets it. <b>Do not pass</b> a
+    /// link whose text is drawn in a document that saves more than once: a layout that ran cannot be
+    /// laid out again.</para>
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Raised from the save, not from this property, for the refusals above.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Raised from the constructor of <see cref="VellumPdf.Layout.Elements.Preformatted"/>, not from
+    /// this property, and from the save when linked text is placed at a non-finite position; see
+    /// <see cref="LinkUri"/>.
+    /// </exception>
+    public string? LinkAnchor { get; init; }
+
+    /// <summary>
+    /// A copy of this style that links to <paramref name="anchor"/>. It copies every public
+    /// property that can be set, and clears <see cref="LinkUri"/>, which a link to an anchor
+    /// replaces.
+    /// </summary>
+    internal TextStyle WithLinkAnchor(string anchor) => new()
+    {
+        FontRef = FontRef,
+        FontSize = FontSize,
+        Leading = Leading,
+        Color = Color,
+        LinkAnchor = anchor,
+    };
+
     /// <summary>Measures a string using whichever font this style references.</summary>
     /// <remarks>
     /// A null string throws <see cref="NullReferenceException"/> from the font metrics, not

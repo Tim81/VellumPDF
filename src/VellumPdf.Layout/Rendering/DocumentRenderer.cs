@@ -496,7 +496,15 @@ public sealed class DocumentRenderer
 
         // What the elements alone decide about anchors and label ranges is refused here too, so the
         // document stays saveable: a repeated anchor, and a labelled break with nothing after it.
-        _navigation = NavigationPlan.Build(_renderers);
+        // The same walk reads every link to an anchor and every page reference, so a name no element
+        // holds, and a link under a PDF/UA-1 claim, are refused here too.
+        _navigation = NavigationPlan.Build(_renderers, _pdf.Conformance, Header, Footer);
+        listRun.Navigation = _navigation;
+        if (_navigation.References is { } references)
+        {
+            references.LabelBound = LongestLabelPrefix() + PageReferenceTable.NumeralBound;
+            listRun.References = references;
+        }
 
         // From here the renderers measure and cache; see Document.MarkFailedIfLaidOut.
         HasStartedLayout = true;
@@ -539,6 +547,9 @@ public sealed class DocumentRenderer
         // An anchor whose element the drawing pass never reported leaves no destination, and the
         // caller was promised one.
         if (_navigation.HasAnchors) _navigation.RefuseUnplaced();
+
+        // A reference a renderer of the caller's held was never resolved against the pagination.
+        listRun.References?.RefuseUnresolved();
         ReportBandTruncations();
 
         if (_deferredCanvasRefusal is not null)
@@ -546,6 +557,22 @@ public sealed class DocumentRenderer
     }
 
     // ── Private ──────────────────────────────────────────────────────────────
+
+    // The longest prefix any label range of the document can give a page, which with a numeral is
+    // the most a page reference can print. The ranges are known before any layout runs.
+    private int LongestLabelPrefix()
+    {
+        var longest = DocumentPageLabel?.Prefix?.Length ?? 0;
+        foreach (var renderer in _renderers)
+            if (renderer is PageBreakRenderer { PageBreak.PageLabel: { } range })
+                longest = Math.Max(longest, range.Prefix?.Length ?? 0);
+        return longest;
+    }
+
+    // What a reference can add to the bound on the continuations an element needs: the most its
+    // label can hold, which the walk set from the ranges of the document. Zero for a layout with no
+    // reference.
+    private static long ReferenceBound => ListLayoutRun.Current?.References?.LabelBound ?? 0;
 
     private static LayoutElementKind KindOf(IRenderer renderer) => renderer switch
     {
@@ -669,6 +696,9 @@ public sealed class DocumentRenderer
     /// <summary>Measuring runs of the last <see cref="RunLayout"/>, read by tests.</summary>
     internal int MeasureRuns { get; private set; }
 
+    /// <summary>The page references of the last <see cref="RunLayout"/>, or null when it found none. Read by tests.</summary>
+    internal PageReferenceTable? ReferenceTable => _navigation.References;
+
     /// <summary>
     /// <see cref="IRenderer.Layout"/> calls the placement loop made in the last
     /// <see cref="RunLayout"/>, both passes together. Read by tests.
@@ -679,13 +709,13 @@ public sealed class DocumentRenderer
     /// The plan of the last measuring run, or null when none ran. Built on each read.
     /// </summary>
     internal PaginationPlan? MeasurePlan =>
-        _measureSink is null ? null : new PaginationPlan(_measureSink.Placements, _measurePages, DocumentPageLabel);
+        _measureSink is null ? null : new PaginationPlan(_measureSink.Placements, _measurePages, DocumentPageLabel, _pagesBefore);
 
     /// <summary>
     /// The plan the drawing pass reported, or null before it ran. Built on each read.
     /// </summary>
     internal PaginationPlan? DrawPlan =>
-        _drawSink is null ? null : new PaginationPlan(_drawSink.Placements, _drawPages, DocumentPageLabel);
+        _drawSink is null ? null : new PaginationPlan(_drawSink.Placements, _drawPages, DocumentPageLabel, _pagesBefore);
 
     // The pass the loop is in. A measuring pass creates no page and keeps its own cursor, so a
     // page a failed drawing pass left open is not disturbed by it.
@@ -885,11 +915,13 @@ public sealed class DocumentRenderer
         {
             case ParagraphRenderer paragraph:
                 var runs = paragraph.Paragraph.Runs;
-                for (var i = 0; i < runs.Count && total <= cap; i++) total += runs[i].Text.Length;
+                for (var i = 0; i < runs.Count && total <= cap; i++)
+                    total += runs[i].Text.Length + (runs[i].IsReference ? ReferenceBound : 0);
                 return total;
 
             case HeadingRenderer heading:
-                return total + heading.Element.Text.Length;
+                return total + heading.Element.Text.Length
+                    + PageReferences.Count(heading.Element.BackingRuns) * ReferenceBound;
 
             case PreformattedRenderer preformatted:
                 var pre = preformatted.Element;
@@ -899,10 +931,10 @@ public sealed class DocumentRenderer
                 var items = list.Element.Items;
                 for (var i = 0; i < items.Count && total <= cap; i++)
                 {
-                    total += Math.Max(1, items[i].Text.Length);
+                    total += Math.Max(1, items[i].Text.Length + PageReferences.Count(items[i].OwnRuns) * ReferenceBound);
                     if (items[i].Children is not { } children) continue;
                     for (var c = 0; c < children.Count && total <= cap; c++)
-                        total += Math.Max(1, children[c].Text.Length);
+                        total += Math.Max(1, children[c].Text.Length + PageReferences.Count(children[c].OwnRuns) * ReferenceBound);
                 }
 
                 return total;
@@ -913,7 +945,9 @@ public sealed class DocumentRenderer
                 {
                     total++;
                     var cells = rows[r].Cells;
-                    for (var c = 0; c < cells.Count && total <= cap; c++) total += cells[c].Content?.Length ?? 0;
+                    for (var c = 0; c < cells.Count && total <= cap; c++)
+                        total += (cells[c].Content?.Length ?? 0)
+                            + (cells[c].HoldsReferences ? PageReferences.Count(cells[c].Runs) * ReferenceBound : 0);
                 }
 
                 return total;
@@ -931,6 +965,9 @@ public sealed class DocumentRenderer
     private List<IPlanDependent>? FindPlanDependents()
     {
         List<IPlanDependent>? found = null;
+
+        // Once the document holds a page reference, the table of them is the first plan dependent.
+        if (_navigation.References is { } references) (found ??= []).Add(references);
         foreach (var renderer in _renderers)
             if (renderer is IPlanDependent dependent)
                 (found ??= []).Add(dependent);
@@ -1036,6 +1073,7 @@ public sealed class DocumentRenderer
 
         var plan = PaginationPlan.Placeholder;
         var previousPages = -1;
+        var references = dependents.OfType<PageReferenceTable>().FirstOrDefault();
         for (var run = 1; run <= MaxMeasureRuns; run++)
         {
             var anyChanged = false;
@@ -1051,18 +1089,32 @@ public sealed class DocumentRenderer
             // (#688).
             if (anyChanged) _continuationVerdicts = null;
 
+            // The layout is a function of the references' strings, so a vector that equals one two
+            // or more runs back is a cycle, and the loop would only go round it until the cap. The
+            // vector is compared string by string, never joined.
+            if (references is not null && references.RepeatedRun() >= 0)
+                throw new InvalidOperationException(references.DescribeUnstable(
+                    "a label returns to the value it had in an earlier layout pass"));
+
             var pages = RunPass(measure: true, totalPages: 0);
             pageCounts.Add(pages);
 
             // Run 1 has no earlier run to equal. From run 2, a run that resolved nothing new laid
             // out the same strings as the run before it, so its plan is that run's plan.
             if (run >= 2 && !anyChanged && pages == previousPages)
+            {
+                // A label that prints nothing is refused once the labels have settled.
+                references?.RefuseBlankLabels();
                 return pages;
+            }
 
-            plan = new PaginationPlan(_measureSink!.Placements, pages, DocumentPageLabel);
+            plan = new PaginationPlan(_measureSink!.Placements, pages, DocumentPageLabel, _pagesBefore);
             previousPages = pages;
         }
 
+        if (references is not null && changedLast[dependents.IndexOf(references)])
+            throw new InvalidOperationException(references.DescribeUnstable(
+                $"the labels were still changing after {MaxMeasureRuns.ToString(System.Globalization.CultureInfo.InvariantCulture)} layout passes"));
         throw PaginationDidNotSettle(dependents, history, changedLast, pageCounts);
     }
 
@@ -1907,6 +1959,20 @@ public sealed class DocumentRenderer
         TextEmitter.Show(canvas, style, drawn);
         canvas.EndText();
         if (ctx.Tagged) canvas.EndMarkedContent();
+
+        // A link in the band's style covers the text as drawn, over the height of the band: one
+        // annotation per page. Nothing is written for a context with no page or a rectangle that
+        // would be written with a value that is not finite, and nothing is reported for either.
+        // Under a PDF/UA-1 claim a URI link is not written, because it would be untagged, and the
+        // drop is reported once per band kind with the pages as its count. Removed in 3.0 (#688).
+        if (textWidth > 0 && (style.LinkUri is not null || style.LinkAnchor is not null))
+        {
+            if (style.LinkAnchor is null && ctx.Conformance == PdfConformance.PdfUA1)
+                _sink.Report(LayoutDiagnosticCode.LinkNotWritten, 0, TableRenderer.LinkNotWrittenMessage, 1, perElement: true);
+            else
+                ctx.TryAddLinkAnnotation(
+                    new LayoutBox(x, bandY, textWidth, bandHeight), style.LinkUri, style.LinkAnchor, LinkOwner.Band);
+        }
     }
 
     /// <summary>

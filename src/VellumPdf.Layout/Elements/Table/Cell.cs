@@ -3,6 +3,7 @@
 
 using System.Runtime.CompilerServices;
 using VellumPdf.Layout.Core;
+using VellumPdf.Layout.Rendering;
 using VellumPdf.Layout.Rendering.Table;
 
 namespace VellumPdf.Layout.Elements.Table;
@@ -305,7 +306,31 @@ public sealed class Cell
     /// </remarks>
     public IReadOnlyList<TextRun>? Runs { get; }
 
-    internal CellRunText? RunText { get; }
+    private readonly CellRunText? _runText;
+
+    // Set by the constructor that takes runs, when one of them is a page reference.
+    private readonly TextRun? _firstReference;
+
+    /// <summary>Whether a run of the cell is a page reference, whose label is not known until the pagination is.</summary>
+    internal bool HoldsReferences => _firstReference is not null;
+
+    /// <summary>
+    /// What the layout wraps, measures and draws: the runs with each reference replaced by its
+    /// label. For a cell with no reference, the runs as the constructor read them.
+    /// </summary>
+    internal CellRunText? RunText =>
+        _firstReference is { } first
+            ? PageReferences.CurrentTable(first.ReferenceAnchor!).ViewOf(this).RunText
+            : _runText;
+
+    /// <summary>
+    /// The text the layout reads where it reads <see cref="Content"/>: the same string, with each
+    /// reference's label in it.
+    /// </summary>
+    internal string LaidOutContent =>
+        _firstReference is { } first
+            ? PageReferences.CurrentTable(first.ReferenceAnchor!).ViewOf(this).Content
+            : Content;
 
     /// <summary>Creates a cell with the given text content.</summary>
     /// <remarks>
@@ -416,6 +441,7 @@ public sealed class Cell
                 LayoutValidation.ValidateRunColor(copy[i].Style.Color, i, nameof(runs));
         Runs = copy.AsReadOnly();
         Content = TextRunList.Concat(copy);
-        RunText = new CellRunText(copy);
+        _runText = new CellRunText(copy);
+        _firstReference = copy.Find(static r => r.IsReference);
     }
 }

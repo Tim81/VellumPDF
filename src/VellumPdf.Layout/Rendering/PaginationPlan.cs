@@ -14,7 +14,9 @@ namespace VellumPdf.Layout.Rendering;
 internal sealed class PaginationPlan
 {
     private readonly Dictionary<object, (int PageIndex, double Y)>? _targets;
+    private Dictionary<string, int>? _anchors;
     private readonly PageLabelMap? _labels;
+    private readonly int _pagesBefore;
 
     /// <summary>
     /// What the first measuring run resolves against: every target is on the first page, at y 0. A
@@ -28,10 +30,16 @@ internal sealed class PaginationPlan
     /// </param>
     /// <param name="pageCount">The pages the run counted.</param>
     /// <param name="documentLabel">The range that starts at the first page, or null.</param>
+    /// <param name="pagesBefore">
+    /// The pages the kernel document held before the layout, which a decimal label counts as
+    /// <c>{page}</c> does.
+    /// </param>
     internal PaginationPlan(
-        IReadOnlyList<Placement>? placements, int pageCount, Elements.PageLabelRange? documentLabel = null)
+        IReadOnlyList<Placement>? placements, int pageCount, Elements.PageLabelRange? documentLabel = null,
+        int pagesBefore = 0)
     {
         PageCount = pageCount;
+        _pagesBefore = pagesBefore;
         Placements = placements ?? [];
         if (placements is null)
             return;
@@ -44,19 +52,21 @@ internal sealed class PaginationPlan
             // so the labels follow the pages the run laid out.
             if (p.Renderer is PageBreakRenderer { PageBreak.PageLabel: { } range })
             {
-                _labels ??= StartLabels(documentLabel);
-                _labels.Add(p.PageIndex, range);
+                _labels ??= StartLabels(documentLabel, pagesBefore);
+                _labels.Add(pagesBefore + p.PageIndex, range);
             }
         }
 
         if (_labels is null && documentLabel is not null)
-            _labels = StartLabels(documentLabel);
+            _labels = StartLabels(documentLabel, pagesBefore);
     }
 
-    private static PageLabelMap StartLabels(Elements.PageLabelRange? documentLabel)
+    // Ranges are kept by kernel page index, as the drawing pass keeps them, so a label read here is
+    // the label {page} prints on that page.
+    private static PageLabelMap StartLabels(Elements.PageLabelRange? documentLabel, int pagesBefore)
     {
         var labels = new PageLabelMap();
-        if (documentLabel is not null) labels.Add(0, documentLabel);
+        if (documentLabel is not null) labels.Add(pagesBefore, documentLabel);
         return labels;
     }
 
@@ -92,16 +102,41 @@ internal sealed class PaginationPlan
     }
 
     /// <summary>
+    /// The page index of the first placement that holds the anchor <paramref name="name"/>. The
+    /// placeholder answers true with 0 for every name; any other plan answers false for a name
+    /// nothing reported.
+    /// </summary>
+    internal bool TryGetAnchorPage(string name, out int pageIndex)
+    {
+        if (_targets is null)
+        {
+            pageIndex = 0;
+            return true;
+        }
+
+        if (_anchors is null)
+        {
+            _anchors = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (var p in Placements)
+                if (p.Anchor is { } anchor)
+                    _anchors.TryAdd(anchor, p.PageIndex);
+        }
+
+        return _anchors.TryGetValue(name, out pageIndex);
+    }
+
+    /// <summary>
     /// The label of the page, as a viewer shows it: the decimal number when the document defines no
     /// range, otherwise the page's range's prefix and numeral. Indices are relative to the first
-    /// page of the layout, like every other index in the plan.
+    /// page of the layout, like every other index in the plan, and a decimal label adds the pages
+    /// the kernel document held before the layout, as <c>{page}</c> does.
     /// </summary>
     /// <exception cref="InvalidOperationException">The label would be longer than 32,767
     /// characters.</exception>
     internal string LabelOf(int pageIndex) =>
         _labels is null
-            ? (pageIndex + 1).ToString(CultureInfo.InvariantCulture)
-            : _labels.LabelOf(pageIndex);
+            ? (_pagesBefore + pageIndex + 1).ToString(CultureInfo.InvariantCulture)
+            : _labels.LabelOf(_pagesBefore + pageIndex);
 }
 
 /// <summary>

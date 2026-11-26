@@ -275,8 +275,9 @@ public sealed class Preformatted
     /// that is not a number from 0 to 1, the range ISO 32000-2:2020, 8.6.8 gives each <c>rg</c> and
     /// <c>RG</c> operand; a <see cref="TextStyle.FontRef"/> that is a <see cref="Standard14"/>
     /// value the enumeration does not name, or Symbol or ZapfDingbats, which have no
-    /// WinAnsiEncoding glyphs and measure as zero wide; and a <see cref="TextStyle.LinkUri"/>,
-    /// because a link on a block that is not drawn as text runs would be dropped without a word.
+    /// WinAnsiEncoding glyphs and measure as zero wide; and a <see cref="TextStyle.LinkUri"/> or a
+    /// <see cref="TextStyle.LinkAnchor"/>, because a link on a block that is not drawn as text runs
+    /// would be dropped without a word.
     /// <para><b>The 1e30 ceiling on the font size is there for ISO 32000-1, Annex C, Table C.1.</b>
     /// It gives a real number a magnitude of at most 3.403 × 10^38, and PDF/A-2, 6.1.13 applies the
     /// limit. The block writes the size in <c>Tf</c> and in each baseline, and writes the marker's
@@ -399,6 +400,8 @@ public sealed class Preformatted
 
         if (style.LinkUri is not null)
             throw Refused("The style has a LinkUri. A preformatted block does not draw links, so it would be dropped.");
+        if (style.LinkAnchor is not null)
+            throw Refused("The style has a LinkAnchor. A preformatted block does not draw links, so it would be dropped.");
 
         static bool IsUnit(double channel) => channel is >= 0 and <= 1;
     }
