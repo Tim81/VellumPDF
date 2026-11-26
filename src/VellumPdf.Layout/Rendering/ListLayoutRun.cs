@@ -75,7 +75,7 @@ internal sealed class ListLayoutRun
     /// </summary>
     internal bool AllAsTwin => _allAsTwin;
 
-    /// <summary>Whether the scan found a list that holds an entry the document cannot draw.</summary>
+    /// <summary>Whether the scan found a list with an entry the document cannot draw.</summary>
     internal bool FoundUndrawable => _undrawable;
 
     /// <summary>
@@ -105,21 +105,13 @@ internal sealed class ListLayoutRun
     internal static void End(ListLayoutRun? previous) => s_current.Value = previous;
 
     /// <summary>
-    /// Records that a list the document holds holds an entry the document cannot draw. The scan
-    /// calls it, so the 207 of a list names the font.
+    /// Records that a list the document holds holds an entry the document cannot draw.
     /// </summary>
     internal void NoteUndrawable()
     {
         _undrawable = true;
         _allAsTwin = true;
     }
-
-    /// <summary>
-    /// Records the same fact when a list finds it while it lays out, which the scan did not read:
-    /// a list laid out over entries an earlier layout built. It turns every list into its twin from
-    /// then on and does not add a cause to the message of a list the scan already named.
-    /// </summary>
-    internal void NoteUndrawableWhileLayingOut() => _allAsTwin = true;
 
     /// <summary>
     /// Records that an element after a list can need about as many continuations as the limit

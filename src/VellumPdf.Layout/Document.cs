@@ -1175,7 +1175,8 @@ public sealed class Document : IDisposable
     /// yourself.
     /// <para>A <see cref="ListRenderer"/> that a renderer of yours lays out is laid out as it was
     /// before the fixes of #476 and #685, whatever context your renderer passes it, and so is every
-    /// list of a document that holds a renderer of yours; see <see cref="IRenderer.Layout"/>.</para>
+    /// list of a document that holds a renderer of yours; see
+    /// <see cref="IRenderer.Layout"/>.</para>
     /// <para>A renderer you wrote yourself cannot ask for a page break. The library's own
     /// <see cref="ParagraphRenderer"/>, <see cref="TableRenderer"/>, <see cref="ListRenderer"/> and
     /// <see cref="LayoutImageRenderer"/> honour their element's <c>BreakBefore</c> when added here.

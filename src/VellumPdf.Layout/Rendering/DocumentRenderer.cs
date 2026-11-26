@@ -796,17 +796,17 @@ public sealed class DocumentRenderer
             : area;
 
     // Decides, before anything is laid out, whether every list of the document is its twin
-    // (ListLayoutRun), and records which of the three document-wide rules said so. Every element the
-    // document holds itself is read here, and every list sits at the top level: no built-in
+    // (ListLayoutRun), and records which of the three document-wide rules said so. Every element
+    // the document holds itself is read here, and every list sits at the top level: no built-in
     // renderer builds one. The decision is taken once, from what was added, so the measuring pass
     // that counts pages and the pass that draws lay every list out the same way.
     //
     // The first rule is the renderer: a renderer the library does not ship reads where it starts
     // and lays out whatever it holds, a list among it, through a context of its own making, and
-    // nothing here can read what it will do. Where the lists before it put it can decide whether the
-    // document saves, and a document whose passes disagreed about where a list fell would count
-    // pages the saved file does not have. A renderer of this library that is not in this assembly
-    // and holds no list does not count (IListFreeRenderer).
+    // nothing here can read what it will do. Where the lists before it put it can decide whether
+    // the document saves, and a document whose passes disagreed about where a list fell would
+    // count pages the saved file does not have. A renderer of this library that is not in this
+    // assembly and holds no list does not count (IListFreeRenderer).
     //
     // The second rule is the font: a list that holds an entry the document cannot draw turns every
     // list into its twin.

@@ -707,9 +707,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     from saving to throwing, or the reverse, without any list touching the entry. The rule is
     therefore per document: when any list the document holds has such an entry, at any depth, no
     list of the document is clamped or moved, and the save gives what 2.3.3 gave: the same bytes,
-    or the same exception and message. `ListIndentClampSkipped` (207) reports each list the document placed this way, with the number
-    of entries the clamp would have narrowed as `Count`, or 1, and `ListEntryPartDropped` (208)
-    reports an entry left with a part missing.
+    or the same exception and message. `ListIndentClampSkipped` (207) reports each list the document
+    placed this way, with the number of entries the clamp would have narrowed as `Count`, or 1, and
+    `ListEntryPartDropped` (208) reports an entry left with a part missing.
   - **A document that holds a renderer of yours lays every list out as it was before the clamp
     and the moving of entries.** That is any renderer that is not one of the library's own, added
     with `Document.Add(IRenderer)` or `DocumentRenderer.Add(IRenderer)`, wherever it sits and

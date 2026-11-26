@@ -299,8 +299,8 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     /// <para><b>A document that holds a renderer of yours lays every list out as it was before the
     /// fixes.</b> That is any renderer that is not one of this library's own, added with
     /// <see cref="Document.Add(IRenderer)"/>, wherever it sits and whether or not it holds a list.
-    /// A <see cref="ListRenderer"/>, a <see cref="ParagraphRenderer"/> or another renderer
-    /// this library ships is the library's own, and so is the barcode renderer. The document decides
+    /// A <see cref="ListRenderer"/>, a <see cref="ParagraphRenderer"/> or another renderer this
+    /// library ships is the library's own, and so is the barcode renderer. The document decides
     /// this once, from what was added, before it lays anything out, so the pass that counts pages
     /// for a header or footer and the pass that draws lay each list out the same way. The library
     /// cannot read where your renderer starts or what it lays out, and a list that moved ahead of
@@ -354,18 +354,10 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     }
 
     private static TwinPlacement AllListsFor(ListLayoutRun run) =>
-        (TwinPlacement)((byte)TwinPlacement.AllLists | CausesOf(run));
-
-    // The causes the scan of the document read. A document that no scan flagged and that turned
-    // into its twins while it laid out, because the entries an earlier layout built hold a font it
-    // cannot draw, names the font.
-    private static byte CausesOf(ListLayoutRun run)
-    {
-        var causes = (byte)((run.FoundUndrawable ? AllListsFont : 0)
+        (TwinPlacement)((byte)TwinPlacement.AllLists
+            | (run.FoundUndrawable ? AllListsFont : 0)
             | (run.FoundNearTheLimit ? AllListsNearLimit : 0)
             | (run.FoundCallerRenderer ? AllListsRenderer : 0));
-        return causes == 0 ? AllListsFont : causes;
-    }
 
     // The 207 of a list the document-wide rule turned into its twin names every cause that applied.
     private static string AllListsMessage(TwinPlacement placement)
@@ -374,7 +366,8 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
         var bits = (byte)placement & ~(byte)TwinPlacement.AllLists;
         if ((bits & AllListsFont) != 0) causes.Add("a list entry in a font it cannot draw");
         if ((bits & AllListsNearLimit) != 0)
-            causes.Add("an element after a list that can need about as many page continuations as one element may use");
+            causes.Add(
+                "an element after a list that can need about as many page continuations as one element may use");
         if ((bits & AllListsRenderer) != 0) causes.Add("a renderer of yours");
         var named = causes.Count == 1
             ? causes[0]
@@ -444,13 +437,13 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             {
                 // 2.3.3 never reads the list again once it has built its entries, so a list that
                 // was changed since has none of its new items here, whatever it holds now.
-                _items = AdoptEarlier(earlier, run);
+                _items = AdoptEarlier(earlier);
                 _earlier = null;
             }
             else
             {
                 _builtForCaller = _unclamped && !IsCalledByDocument(context);
-                _items = BuildItems(area.Width, run);
+                _items = BuildItems(area.Width);
             }
         }
 
@@ -1083,7 +1076,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     // built. It built that entry's text with the gutter the entry has without the clamp, at the
     // width the earlier layout used, and so does this, from the text and the gutter the entry
     // recorded. The marker is the same either way. Removed in 3.0 (#688), with the twin.
-    private List<Entry> AdoptEarlier(List<Entry> earlier, ListLayoutRun? run)
+    private List<Entry> AdoptEarlier(List<Entry> earlier)
     {
         var items = new List<Entry>(earlier.Count);
         for (var i = 0; i < earlier.Count; i++)
@@ -1092,7 +1085,6 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             // The entries here are the list's own, so Clamped says the clamp would narrow the
             // entry, which is what the twin counts.
             if (entry.Clamped) _clampSkipped++;
-            if (!CanDrawEntry(run, entry.Marker, entry.Content)) run?.NoteUndrawableWhileLayingOut();
             items.Add(entry.Clamped ? entry with { Content = WithoutClamp(entry), Clamped = false } : entry);
         }
 
@@ -1113,22 +1105,6 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
         };
     }
 
-    // The same question for an entry already built: its marker is set in the style the entry
-    // inherits and each run of its text that holds any is read, which is what the other overload
-    // reads from the item.
-    internal static bool CanDrawEntry(ListLayoutRun? run, ParagraphRenderer marker, ParagraphRenderer content)
-    {
-        if (!ListLayoutRun.CanDraw(run, marker.Paragraph.Runs[0].Style)) return false;
-        var runs = content.Paragraph.Runs;
-        for (var i = 0; i < runs.Count; i++)
-        {
-            if (runs[i].Text.Length == 0) continue;
-            if (!ListLayoutRun.CanDraw(run, runs[i].Style)) return false;
-        }
-
-        return true;
-    }
-
     /// <summary>
     /// The times this thread built the entries of a list, which a test reads to see that a piece of
     /// a list does not build them again. Removed in 3.0 (#688), with the twin.
@@ -1136,7 +1112,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     [ThreadStatic]
     internal static int BuildCalls;
 
-    private List<Entry> BuildItems(double areaWidth, ListLayoutRun? run)
+    private List<Entry> BuildItems(double areaWidth)
     {
         BuildCalls++;
         var result = new List<Entry>();
@@ -1192,7 +1168,6 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             // The twin asks the same question and only counts the answer, which is what it reports
             // when the document chose it. The gutter test comes first because it is the one that
             // fails for almost every entry.
-            if (!CanDrawEntry(run, itemStyle, item)) run?.NoteUndrawableWhileLayingOut();
             var unclampedGutter = gutter;
             var wouldClamp = TryClampGutter(areaWidth, gutter, 0, widest, out var clampedGutter)
                 && LayoutValidation.AreRunStylesAccepted(contentRuns);
@@ -1266,7 +1241,6 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
 
                     // The child's marker starts at `indent`, so that is the leftmost the clamped
                     // content may start.
-                    if (!CanDrawEntry(run, childStyle, child)) run?.NoteUndrawableWhileLayingOut();
                     var unclampedChildGutter = childGutter;
                     var childWouldClamp = TryClampGutter(
                             areaWidth, childGutter, indent, childWidest, out var clampedChildGutter)

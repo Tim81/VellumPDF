@@ -216,8 +216,9 @@ public enum LayoutDiagnosticCode
     /// it read there: the continuation limit for the list, or any of the font, the element near
     /// the limit and the renderer of yours. Strict mode refuses this code. It is reported once for
     /// each list the document placed this way and draws from its first entry; a list that a
-    /// renderer of yours holds is laid out as before and reports nothing. A list the document places itself over entries a renderer of yours built
-    /// first is reported when the document lays every list out as it was. <b>Do not pass</b> an
+    /// renderer of yours holds is laid out as before and reports nothing. A list the document
+    /// places itself over entries a renderer of yours built first is reported when the document
+    /// lays every list out as it was. <b>Do not pass</b> an
     /// indent that leaves an entry's text no width, or a font the document cannot draw: 3.0 will
     /// refuse both. See <see cref="Elements.ListElement"/>.
     /// </remarks>

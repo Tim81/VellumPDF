@@ -577,32 +577,6 @@ public sealed class ListPlacementAdoptionTests
     }
 
     /// <summary>
-    /// What an entry already built can draw is read from its two paragraphs: its marker's style,
-    /// and each run of its text that holds any. A run with no text is not read.
-    /// </summary>
-    [Fact]
-    public void WhatAnEntryAlreadyBuiltCanDraw_isReadFromItsMarkerAndItsRunsThatHoldText()
-    {
-        ParagraphRenderer Para(params TextRun[] runs) => new(new Paragraph(runs));
-        var ok = H(10);
-        var run = ListLayoutRun.Begin(new PdfDocument(), out var previous);
-        try
-        {
-            Assert.True(ListRenderer.CanDrawEntry(run, Para(new TextRun("1.", ok)), Para(new TextRun("text", ok))));
-            Assert.False(ListRenderer.CanDrawEntry(run, Para(new TextRun("1.", Undefined())), Para(new TextRun("text", ok))));
-            Assert.False(ListRenderer.CanDrawEntry(run, Para(new TextRun("1.", ok)), Para(new TextRun("text", Undefined()))));
-            Assert.False(ListRenderer.CanDrawEntry(
-                run, Para(new TextRun("1.", ok)), Para(new TextRun("a", ok), new TextRun("b", Undefined()))));
-            Assert.True(ListRenderer.CanDrawEntry(
-                run, Para(new TextRun("1.", ok)), Para(new TextRun("a", ok), new TextRun(string.Empty, Undefined()))));
-        }
-        finally
-        {
-            ListLayoutRun.End(previous);
-        }
-    }
-
-    /// <summary>
     /// A child the first document's clamp narrowed keeps the gutter it has without the clamp, twice
     /// the indent, in the second document, where that gutter leaves it text.
     /// </summary>
