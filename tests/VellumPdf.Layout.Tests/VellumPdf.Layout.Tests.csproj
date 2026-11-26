@@ -14,6 +14,8 @@
     <ProjectReference Include="..\..\src\VellumPdf.Signing\VellumPdf.Signing.csproj" />
     <ProjectReference Include="..\..\src\VellumPdf.Fonts.Standard14\VellumPdf.Fonts.Standard14.csproj" />
     <ProjectReference Include="..\VellumPdf.TestSupport\VellumPdf.TestSupport.csproj" />
+    <!-- The sample manual, built and checked by SampleManualTests. -->
+    <ProjectReference Include="..\..\samples\VellumPdf.Samples.Manual\VellumPdf.Samples.Manual.csproj" />
   </ItemGroup>
 
   <ItemGroup>
