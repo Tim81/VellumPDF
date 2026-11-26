@@ -687,8 +687,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     generated documents without `StrictDiagnostics`, 26 lose text in a document with no renderer
     of yours, each reporting 208. A document that holds a renderer of yours lays every list out
     as it was (below), so no list ahead of one keeps the fixes. With the continuation limit set
-    to 300 entries and 3,000 documents of 100 to 330 entries a list, 134 report 207 and 2 of those
-    lose text.
+    to 300 entries, 902 of 3,000 documents of 100 to 330 entries a list report 207 and none loses
+    text.
   - **Deliberate output change, a `ListRenderer` that serves a second document draws the placement
     the first gave an entry.** A renderer reused for a second document keeps the entries it built
     for the first (#476 above), and a paragraph draws the lines of its last layout when its layout
@@ -719,7 +719,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     can change whether the document saves, so the document decides once, from the elements added
     to it and before it lays anything out. A header or footer's page-counting pass and the pass
     that draws therefore lay each list out the same way, and `{pages}` is the number of pages in
-    the file. These documents save as on 2.3.3: the same bytes, or the same exception and message.
+    the file. These documents save as on 2.3.3: the same bytes, or the same exception and message. A
+    renderer reused from a first document that moved an entry still draws that placement (#691).
     `ListIndentClampSkipped` (207) reports each list the document places this way and names the
     renderer. `IRenderer.Layout` and `ListRenderer.Layout` say so, with a "Do not rely on"
     paragraph: 3.0 lays a list out one way.
