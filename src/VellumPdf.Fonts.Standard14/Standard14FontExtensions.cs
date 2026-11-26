@@ -22,12 +22,12 @@ public static class Standard14FontExtensions
     /// <param name="doc">The document to register the font with.</param>
     /// <param name="font">
     /// The standard-14 font to substitute. The Helvetica, Times and Courier families are supported;
-    /// <see cref="Standard14.Symbol"/> and <see cref="Standard14.ZapfDingbats"/> are not — the
-    /// Liberation set does not cover them.
+    /// <see cref="Standard14.Symbol"/> and <see cref="Standard14.ZapfDingbats"/> are not, because the
+    /// Liberation set does not cover them. A number the enumeration does not name is refused too.
     /// </param>
     /// <returns>A handle to the embedded substitute font.</returns>
     /// <exception cref="System.ArgumentNullException"><paramref name="doc"/> is null.</exception>
-    /// <exception cref="System.NotSupportedException"><paramref name="font"/> is Symbol or ZapfDingbats.</exception>
+    /// <exception cref="System.NotSupportedException"><paramref name="font"/> is Symbol, ZapfDingbats or a value the enumeration does not name.</exception>
     public static EmbeddedFontHandle EmbedStandard14Font(this PdfDocument doc, Standard14 font)
     {
         ArgumentNullException.ThrowIfNull(doc);
@@ -50,9 +50,11 @@ public static class Standard14FontExtensions
         Standard14.CourierOblique => "LiberationMono-Italic.ttf",
         Standard14.CourierBoldOblique => "LiberationMono-BoldItalic.ttf",
         _ => throw new NotSupportedException(
-            $"No embeddable substitute is bundled for the {font} standard-14 font; the Liberation set "
-            + "covers only the Helvetica, Times and Courier families. Supply your own embeddable font "
-            + "via PdfDocument.UseTrueTypeFont for Symbol/ZapfDingbats."),
+            (Enum.IsDefined(font)
+                ? $"No embeddable substitute is bundled for the {font} standard-14 font"
+                : $"No embeddable substitute is bundled for {(int)font}, which is not a Standard14 value")
+            + "; the Liberation set covers only the Helvetica, Times and Courier families. "
+            + "Register your own embeddable font with UseTrueTypeFont."),
     };
 
     internal static byte[] LoadFont(string logicalName)
@@ -60,8 +62,8 @@ public static class Standard14FontExtensions
         var asm = typeof(Standard14FontExtensions).Assembly;
         using var s = asm.GetManifestResourceStream(logicalName)
             ?? throw new InvalidOperationException($"Bundled font resource '{logicalName}' is missing.");
-        using var ms = new MemoryStream();
-        s.CopyTo(ms);
-        return ms.ToArray();
+        var bytes = new byte[s.Length];
+        s.ReadExactly(bytes);
+        return bytes;
     }
 }

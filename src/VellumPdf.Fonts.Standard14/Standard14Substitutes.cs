@@ -5,7 +5,8 @@ namespace VellumPdf.Fonts;
 
 /// <summary>
 /// The bundled Liberation font programs, for code that registers a font itself. A Layout
-/// <c>Document</c> embeds one with <c>doc.UseTrueTypeFont(Standard14Substitutes.GetFontProgram(font))</c>.
+/// <c>Document</c> embeds one with
+/// <c>doc.UseTrueTypeFont(Standard14Substitutes.GetFontProgram(font))</c>.
 /// </summary>
 public static class Standard14Substitutes
 {
@@ -20,10 +21,11 @@ public static class Standard14Substitutes
     /// faces throws <see cref="System.NotSupportedException"/>. That covers
     /// <see cref="Standard14.Symbol"/>, <see cref="Standard14.ZapfDingbats"/> and a number the
     /// enumeration does not name. The Liberation set has no symbol face.</para>
-    /// <para>Every call returns a new array, copied from the embedded resource, so a caller that
-    /// changes the bytes cannot alter what the next call returns. Two calls for the same face
+    /// <para>Every call reads the font from the embedded resource into a new array, so a caller
+    /// that changes the bytes cannot alter what the next call returns. Two calls for the same face
     /// return equal bytes, and a document that registers equal bytes twice gets the same handle
-    /// back, so calling this more than once costs a copy, not a second embedded subset.</para>
+    /// back, so calling this more than once costs one more read of the font, not a second embedded
+    /// subset.</para>
     /// <para><b>Do not</b> expect a <see cref="Standard14"/> face in a text style to use this
     /// font. A style whose font is a <see cref="Standard14"/> value stays unembedded. Register
     /// the bytes and set the style's <c>FontRef</c> to the handle.</para>

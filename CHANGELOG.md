@@ -9,8 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - **`Standard14Substitutes.GetFontProgram` returns a bundled Liberation font (#702).** A Layout
-  program had no way to embed one of the package's faces, because a Layout `Document` exposes no
-  `PdfDocument` for `EmbedStandard14Font` to extend, and the resource names were not public.
+  program could reach the package's faces only by reading its embedded resources by file name,
+  which are not public API, because a Layout `Document` exposes no `PdfDocument` for
+  `EmbedStandard14Font` to extend.
   `doc.UseTrueTypeFont(Standard14Substitutes.GetFontProgram(Standard14.TimesRoman))` now
   registers the face and returns the handle for `TextStyle.FontRef`. Each call returns a new
   array. Symbol, ZapfDingbats and a value the enumeration does not name throw

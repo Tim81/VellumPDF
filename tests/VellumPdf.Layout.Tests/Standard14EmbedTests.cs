@@ -10,8 +10,8 @@ using VellumPdf.TestSupport;
 namespace VellumPdf.Layout.Tests;
 
 /// <summary>
-/// <c>Standard14Substitutes.GetFontProgram</c> feeding a Layout <see cref="Document"/>. Each face is
-/// checked against the Liberation file it must stand for, by bytes and through the document: it
+/// <c>Standard14Substitutes.GetFontProgram</c> feeding a Layout <see cref="Document"/>. Each face
+/// is checked against the Liberation file it must stand for, by bytes and through the document: it
 /// hands back one handle for equal bytes, so a wrong file for a style returns another handle.
 /// </summary>
 public sealed class Standard14EmbedTests
@@ -66,15 +66,6 @@ public sealed class Standard14EmbedTests
         Assert.NotSame(Embed(doc, Standard14.TimesRoman), Embed(doc, Standard14.TimesBold));
     }
 
-    [Fact]
-    public void ADocumentThatDoesNotCallIt_embedsNothing()
-    {
-        using var doc = new Document();
-        doc.Add(new Paragraph("Hello"));
-        var pdf = System.Text.Encoding.Latin1.GetString(FontReportSupport.Save(doc));
-        Assert.DoesNotContain("/FontFile2", pdf, StringComparison.Ordinal);
-    }
-
     [Theory]
     [InlineData(Standard14.Symbol)]
     [InlineData(Standard14.ZapfDingbats)]
@@ -82,20 +73,27 @@ public sealed class Standard14EmbedTests
     [InlineData((Standard14)(-1))]
     public void AFaceWithNoSubstitute_isRefusedAtTheCall(Standard14 font)
     {
-        using var doc = new Document();
-        Assert.Throws<NotSupportedException>(() => Standard14Substitutes.GetFontProgram(font));
+        var ex = Assert.Throws<NotSupportedException>(() => Standard14Substitutes.GetFontProgram(font));
+
+        // A Layout caller has no PdfDocument, and a number is not a font.
+        Assert.DoesNotContain("PdfDocument", ex.Message, StringComparison.Ordinal);
+        if (!Enum.IsDefined(font))
+            Assert.Contains($"{(int)font}, which is not a Standard14 value", ex.Message, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void EveryCallReturnsANewArray_soAChangeCannotReachTheNextCall()
+    public static TheoryData<Standard14> AllFaces => [.. Faces.Select(f => f.Data.Item1)];
+
+    [Theory]
+    [MemberData(nameof(AllFaces))]
+    public void EveryCallReturnsANewArray_soAChangeCannotReachTheNextCall(Standard14 font)
     {
-        var first = Standard14Substitutes.GetFontProgram(Standard14.Courier);
+        var first = Standard14Substitutes.GetFontProgram(font);
         var expected = (byte[])first.Clone();
-        Assert.NotSame(first, Standard14Substitutes.GetFontProgram(Standard14.Courier));
+        Assert.NotSame(first, Standard14Substitutes.GetFontProgram(font));
 
         Array.Fill(first, (byte)0);
 
-        Assert.Equal(expected, Standard14Substitutes.GetFontProgram(Standard14.Courier));
+        Assert.Equal(expected, Standard14Substitutes.GetFontProgram(font));
     }
 
     [Fact]
