@@ -32,11 +32,9 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     // everything that exists for them are 2.x compatibility devices, removed in 3.0 (#688), which
     // lays a list out one way.
     //
-    // Which entries a layout reads is one rule for the list and for its twins (#691): the entries
-    // are built from the items the list holds in the save in progress, once for each kind of
-    // call, and are never taken from another save or another kind of call. The kinds are the
-    // document's own calls, which lay out the list or the twin Unclamped returns, and the calls a
-    // renderer of the caller's makes, which lay out the held twin.
+    // Which entries a layout reads is the rule on Layout (#691), for the list and for its twins.
+    // The document's own calls lay out the list or the twin Unclamped returns, and the calls a
+    // renderer of the caller's makes lay out the held twin.
     /// <summary>
     /// The list laid out as it was before the clamp and the moving of entries: no gutter is
     /// narrowed, so an entry whose text has no width keeps its marker and loses its text, and no
@@ -281,7 +279,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     /// <see cref="LayoutContext"/> constructor, one from <see cref="LayoutContext.WithArea"/>, and
     /// the one a renderer of yours passes on or makes when it lays a <see cref="ListRenderer"/> out
     /// from its own <see cref="IRenderer.Layout"/>. It keeps the verdict of the page-continuation
-    /// limit on such a list: 2.3.3 saved it or refused it, and it does so again. A list that holds
+    /// limit on the entries it reads, which the rule below names. A list that holds
     /// an entry no page holds is laid out that way too, so is a list the document would otherwise
     /// take past that limit, and so is every list of a document that holds a renderer of yours, a
     /// font it cannot draw, or an element after a list that can need about as many continuations
@@ -291,20 +289,22 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     /// reports neither: the document did not place it. That holds for the pieces of the list too,
     /// when your renderer returns the list's own result and the document calls a piece
     /// itself.</para>
-    /// <para><b>A list is laid out from the items it holds in the save that lays it out.</b> The
-    /// document builds a list's entries once for a save, from the items the list holds then, at the
-    /// width of the list's first layout in that save, and every later layout in that save uses
-    /// them: the measuring pass, the drawing pass, the pieces of a split and a second placement of
-    /// the same renderer. Another call to <c>Save</c>, on this document or another, builds them
-    /// again, so a renderer you reuse draws what a new renderer for the same list draws. An item or
-    /// a child added since is laid out and drawn, text that wraps differently at the new width
-    /// wraps there, and an item that a new renderer's save refuses, such as one with a null text or
-    /// a size or colour the layout refuses, makes this save throw as well. A layout a renderer of
-    /// yours makes through a context the document did not build for the list is another kind of
-    /// call. It builds entries of its own, at the width it passes, which the document's calls never
-    /// read, and a layout made outside any save builds entries that no save reads. A child whose
-    /// layout for a placement answers <see cref="LayoutResult.Outcome.Nothing"/> draws nothing
-    /// there.</para>
+    /// <para><b>A list is laid out from the items it holds in the save that lays it out, except a
+    /// piece a split returned, which keeps the entries of the layout that made it.</b> The entries
+    /// are built for a save and for each kind of call, from the items the list holds then, at the
+    /// width of the first layout of that kind in that save, and every later layout of that kind in
+    /// the save uses them: the measuring pass, the drawing pass and a second placement of the same
+    /// renderer. The kinds are the document's own calls, and the calls a renderer of yours makes
+    /// through a context the document did not build for the list. Another call to <c>Save</c>, on
+    /// this document or another, builds them again, so a renderer you reuse draws what a new
+    /// renderer for the same list draws: an item or a child added since is laid out and drawn, text
+    /// that wraps differently at the new width wraps there, and an item that a new renderer's save
+    /// refuses, such as one with a null text or a size or colour the layout refuses, makes this
+    /// save throw as well. A layout made outside any save builds entries that no save reads. A
+    /// piece reads the entries of the layout that made it, whichever save lays it out, so an item
+    /// added since is not in it. <b>Do not</b> keep a piece across saves or add one to a document
+    /// after the list changed: 3.0 lays a list out one way (#688). A child whose layout for a
+    /// placement answers <see cref="LayoutResult.Outcome.Nothing"/> draws nothing there.</para>
     /// <para><b>A document that holds a renderer of yours lays every list out as it was before the
     /// fixes.</b> That is any renderer that is not one of this library's own, added with
     /// <see cref="Document.Add(IRenderer)"/>, wherever it sits and whether or not it holds a list.

@@ -338,9 +338,8 @@ public sealed class ListElement
 
     /// <summary>Appends an item to the list and returns this instance for chaining.</summary>
     /// <remarks>
-    /// A null <paramref name="item"/> is refused here. An item added after a save is laid out by
-    /// the next save of a <see cref="Rendering.ListRenderer"/> that holds this list, and a save that
-    /// refuses the item throws from that save, not from this call; see
+    /// A null <paramref name="item"/> is refused here. A save that refuses an item added later
+    /// throws from that save, not from this call. Which saves read the item is on
     /// <see cref="Rendering.ListRenderer.Layout"/>.
     /// </remarks>
     /// <exception cref="ArgumentNullException">

@@ -75,8 +75,7 @@ internal sealed class ListLayoutRun
     internal long Save { get; }
 
     /// <summary>
-    /// The number of the run of the layout in progress, or zero outside one: a layout a caller
-    /// makes before any save, which is no save.
+    /// The number of the run of the layout in progress, or zero outside any save.
     /// </summary>
     internal static long CurrentSave => s_current.Value?.Save ?? 0;
 

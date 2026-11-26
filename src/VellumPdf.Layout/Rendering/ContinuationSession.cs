@@ -100,9 +100,9 @@ internal sealed class ContinuationSession
     internal IRenderer? Called { get; set; }
 
     /// <summary>
-    /// The number of the save the document made the call in (<see cref="ListLayoutRun.Save"/>), which
-    /// tells a context the document built in this save from one a renderer of a caller's kept from an
-    /// earlier save. A list reads it to know whose call it is answering (#691).
+    /// The number of the save the document made the call in (<see cref="ListLayoutRun.Save"/>),
+    /// which tells a context the document built in this save from one a renderer of a caller's
+    /// kept from an earlier save. A list reads it to know whose call it is answering (#691).
     /// </summary>
     internal long Save { get; set; }
 

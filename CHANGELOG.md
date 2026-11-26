@@ -730,49 +730,44 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   yours before the save, a renderer of yours that held the list. A paragraph that answers `Nothing`
   keeps where its last layout put its lines, and its `Draw` reads that. A renderer reused for a
   second document therefore drew an entry's lines from the first document at a place where its
-  layout in the second placed nothing, and an item added since was never laid out. The entries
-  are now built from the items the list holds when a save first lays it out, at the width of that
-  layout, once for the document's own calls and once for the calls a renderer of yours makes.
-  Another save, or the other kind of call, never reads them. `ListRenderer.Layout` states the
-  rule; `ListElement`, `IRenderer.Layout` and `LayoutDiagnosticCode` point to it.
+  layout in the second placed nothing, and an item added since was never laid out. The entries are
+  now built for each save and each kind of call, from the items the list holds then. The kinds are
+  the document's own calls and the calls a renderer of yours makes. A piece a split returned is the
+  one exception: it keeps the entries of the layout that made it. `ListRenderer.Layout` states the
+  rule, and `IRenderer.Layout`, `ListElement` and `LayoutDiagnosticCode` point to it.
   - **Deliberate output change.** A renderer reused for another save, laid out by you before the
     save, or holding a list that changed since draws what a new renderer for the same list draws:
     the item or child added since, the width of this save, the clamp and the moved entries of
-    #476 and #685, and the reports of 203, 207 and 208 that go with them. Within one save, a
-    renderer that the document places and a renderer of yours also holds reads two sets of
-    entries, each at its first width, where 2.3.3 read one.
-    Measured against 2.3.3 plus #682 on generated documents: 57,094 of 103,200 documents of a
-    matrix of earlier layouts, changes and callers' renderers draw other bytes, 11,018 are
-    identical and 2,064 are refused by both; a document that places one list for one kind of
-    call, with no earlier layout and no change, differs in 139 of 110,000 generated documents
-    and only where a paragraph answers `Nothing` (below).
+    #476 and #685, and the reports of 203, 207 and 208 that go with them. A renderer that the
+    document places and a renderer of yours also holds reads two sets of entries, each at its first
+    width, where 2.3.3 read one.
   - **Deliberate refusal change.** A reused renderer is refused for what its list holds now, as a
     new one is: an item added since with a null text or child, or a size or colour the layout
-    refuses, makes the save throw, where 2.3.3 saved without ever reading it. With
-    `StrictDiagnostics` a reused list is refused for 207 and 208 as a new one is.
-    Of the 103,200 matrix documents, 33,024 save on 2.3.3 plus #682 and are refused now: 24,768
-    after an item in a `Standard14` value the enumeration does not name was added
-    (`IndexOutOfRangeException` where the text is drawn) and 8,256 after a child was added to an
-    item of a list whose clamp left it no width ("An element is too tall to fit on a single page"),
-    and a new renderer for the same list is refused the same way in every one of them.
+    refuses, makes the save throw, where 2.3.3 saved without ever reading it. So does an item in a
+    `Standard14` value the enumeration does not name, and a child added to an item of a list whose
+    indent leaves its text no width ("An element is too tall to fit on a single page", which a new
+    list of that shape is refused with on 2.3.3 too). With `StrictDiagnostics` a reused list is
+    refused for 207 and 208 as a new one is.
   - **A save that was refused now saves.** An item with an `Anchor` added since was never in the
-    entries, so the save threw "never placed". The anchor is placed now.
-    A document with an item in a `Standard14` value the enumeration does not name, or in a font
-    handle another document returned, was refused with `IndexOutOfRangeException` when a paragraph
-    that placed nothing drew an earlier layout's lines in that font. It saves now, and the file
-    writes no font resource for that value. 3.0 refuses such a value where it is set (#696).
+    entries, so the save threw "never placed". The anchor is placed now. A document with an item in
+    a `Standard14` value the enumeration does not name was refused with `IndexOutOfRangeException`
+    when a paragraph that placed nothing drew an earlier layout's lines in that font. It saves now,
+    and the file writes no font resource for that value. 3.0 refuses such a value where it is set
+    (#696). A font handle another document returned is not in this class: drawing its text still
+    throws `ArgumentException`.
   - A context that a renderer of yours kept from an earlier save is a renderer's call in the next
     one, not the document's: the list reads the entries of the renderer's kind.
   - **A child whose layout answers `Nothing` draws nothing.** `ListRenderer.Draw` lays each
     marker and text out again, and a paragraph that places nothing there no longer draws the
-    lines of an earlier layout. A table, a paragraph or a wrapper of yours that a renderer reuses
-    drew the same bytes as a new one in the rows measured (7 shapes, 120 documents each). Across
-    110,000 generated documents of one list, 139 draw other bytes and 9 are no longer refused;
-    with this rule left out of the build all 110,000 equal 2.3.3 plus #682.
-  - Residual cost: a list that is placed as its twin after the list built its entries, because an
-    entry fits no page or the continuation limit chose the twin, builds its entries twice in that
-    save. A list of 20,001 entries with one entry no page holds allocated 247 MB and now allocates
-    294 MB, in about the same time (net10.0, Release, 4 repetitions).
+    lines of an earlier layout, in the same save as well as in a later one. That removes lines a
+    document drew at a place where the layout placed nothing, and the substitution reports (601)
+    of those lines. A paragraph, a table or a wrapper of yours that a renderer reuses drew the same
+    bytes as a new one in the cases measured.
+  - Residual cost: a list is built once for each save and each kind of call, so a list that the
+    document places and a renderer of yours also holds, a renderer reused for several saves, and a
+    list placed as its twin after the list built its entries (an entry fits no page, or the
+    continuation limit chose the twin) each build its entries more than once. The cost is linear
+    in the builds and has no other effect on the output.
 
 - **An element exactly as tall as the content area is placed at the top of a page (#549).** At the
   top of a page the document offered the height from the cursor to the bottom of the content area,

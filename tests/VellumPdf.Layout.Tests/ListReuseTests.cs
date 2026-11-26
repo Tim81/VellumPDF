@@ -712,6 +712,92 @@ public sealed class ListReuseTests
         Assert.Equal(Outcome(Second(new ListRenderer(list), 120)), Outcome(Second(reused, 120)));
     }
 
+    // Twelve one-line entries, of which a page of the document here holds seven or eight.
+    private static ListElement TwelveEntries()
+    {
+        var list = new ListElement(ListStyle.Unordered);
+        for (var i = 1; i <= 12; i++) list.Add(new ListItem("e" + i, H(10)));
+        return list;
+    }
+
+    /// <summary>
+    /// A piece a split returned keeps the entries of the layout that made it, whichever save lays it
+    /// out: a piece made by a layout outside any save, added to a document after an item was added
+    /// to the list, draws the entries of that layout and not the new item.
+    /// </summary>
+    [Fact]
+    public void APieceOfALayoutMadeOutsideAnySave_keepsItsEntriesAfterTheListChanged()
+    {
+        var list = TwelveEntries();
+        var result = new ListRenderer(list).Layout(new LayoutContext(new LayoutBox(10, 10, 180, 40)));
+        var piece = result.OverflowRenderer!;
+        list.Add(new ListItem("ADDED", H(10)));
+
+        var doc = Page(200, 100, 0);
+        doc.Add(piece);
+        var shown = Shows(Save(doc));
+
+        Assert.Contains("e12", shown);
+        Assert.DoesNotContain("ADDED", shown);
+        Assert.DoesNotContain("e1", shown);
+    }
+
+    // Keeps the overflow piece of the list's first layout and draws nothing.
+    private sealed class KeepsOverflow(IRenderer inner) : IRenderer
+    {
+        internal IRenderer? Piece { get; private set; }
+
+        public LayoutResult Layout(LayoutContext context)
+        {
+            Piece = inner.Layout(context).OverflowRenderer;
+            return LayoutResult.Full(context.Area.WithHeight(1));
+        }
+
+        public void Draw(DrawContext ctx)
+        {
+        }
+    }
+
+    // Lays out and draws the piece another renderer kept.
+    private sealed class ReplaysPiece(KeepsOverflow keeper) : IRenderer
+    {
+        public LayoutResult Layout(LayoutContext context)
+        {
+            var result = keeper.Piece!.Layout(context);
+            return result.Status == LayoutResult.Outcome.Full
+                ? LayoutResult.Full(context.Area.WithHeight(result.OccupiedArea!.Value.Height))
+                : LayoutResult.Nothing();
+        }
+
+        public void Draw(DrawContext ctx) => keeper.Piece!.Draw(ctx);
+    }
+
+    /// <summary>
+    /// A renderer of the caller's that keeps a piece from one save and lays it out in the next, after
+    /// an item was added, draws the entries of the first save. A new renderer draws the added item.
+    /// </summary>
+    [Fact]
+    public void APieceACallerKeepsAcrossSaves_keepsTheEntriesOfTheSaveThatMadeIt()
+    {
+        var list = TwelveEntries();
+        var keeper = new KeepsOverflow(new ListRenderer(list));
+        var first = Page(200, 60, 0);
+        first.Add(keeper);
+        Save(first);
+        list.Add(new ListItem("ADDED", H(10)));
+
+        var second = Page(200, 400, 0);
+        second.Add(new ReplaysPiece(keeper));
+        var kept = Shows(Save(second));
+
+        var fresh = Page(200, 400, 0);
+        fresh.Add(new ListRenderer(list));
+
+        Assert.Contains("e12", kept);
+        Assert.DoesNotContain("ADDED", kept);
+        Assert.Contains("ADDED", Shows(Save(fresh)));
+    }
+
     // ── Per-save state ───────────────────────────────────────────────────────
 
     /// <summary>
