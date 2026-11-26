@@ -757,9 +757,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     and a new renderer for the same list is refused the same way in every one of them.
   - **A save that was refused now saves.** An item with an `Anchor` added since was never in the
     entries, so the save threw "never placed". The anchor is placed now.
-    In 9 of 110,000 generated documents of one list each, 2.3.3 plus #682 threw
-    `IndexOutOfRangeException` for an undefined `Standard14` value because a paragraph that
-    placed nothing drew an earlier layout's lines, and the save now succeeds.
+    A document with an item in a `Standard14` value the enumeration does not name, or in a font
+    handle another document returned, was refused with `IndexOutOfRangeException` when a paragraph
+    that placed nothing drew an earlier layout's lines in that font. It saves now, and the file
+    writes no font resource for that value. 3.0 refuses such a value where it is set (#696).
   - A context that a renderer of yours kept from an earlier save is a renderer's call in the next
     one, not the document's: the list reads the entries of the renderer's kind.
   - **A child whose layout answers `Nothing` draws nothing.** `ListRenderer.Draw` lays each
