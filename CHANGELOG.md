@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`Standard14Substitutes.GetFontProgram` returns a bundled Liberation font (#702).** A Layout
+  `Document` exposes no `PdfDocument` for `EmbedStandard14Font` to extend, so a program built on
+  one could not call it.
+  `doc.UseTrueTypeFont(Standard14Substitutes.GetFontProgram(Standard14.TimesRoman))` now
+  registers the face and returns the handle for `TextStyle.FontRef`. Each call returns a new
+  array. Symbol, ZapfDingbats and a value the enumeration does not name throw
+  `NotSupportedException` at the call, as `EmbedStandard14Font` does. Registering the same bytes
+  twice returns the handle the document already holds, so the document embeds one subset. A
+  document that does not call it saves to the same bytes as before.
+
 - **Keep with next, keep together, and a minimum of lines at a page break (#306).** A heading can
   stay on the page of the text after it, an element can move whole to the next page instead of
   splitting, and a paragraph can keep a number of lines on each side of a break. All of it is opt-in:
