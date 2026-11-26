@@ -183,12 +183,13 @@ public sealed class Preformatted
     /// <remarks>
     /// <b>Nothing is refused, and a request the pages cannot hold is dropped and reported, not
     /// thrown.</b> The group, the order in which requests are dropped, the diagnostic and the extra
-    /// layout are those of <see cref="Paragraph.KeepWithNext"/>. A block that splits keeps only its
-    /// last piece with the element after it, so a line of a split block is never held by this
-    /// flag; set <see cref="KeepTogether"/> as well to keep every line on one page.
+    /// layout are those of <see cref="Paragraph.KeepWithNext"/>, and the block behaves as a
+    /// paragraph does under it. The flag does not stop the block splitting; set
+    /// <see cref="KeepTogether"/> as well to keep a block that fits on one page on one page.
     /// <para>The flag is read from a block added with <see cref="Document.Add(Preformatted)"/>; its
     /// renderer is internal, so there is no other route. It is ignored on the overflow of a split
-    /// block. A <see cref="BreakBefore"/> on the element after the block ends the group.</para>
+    /// block. A <see cref="PageBreak"/>, or an element after the block whose <c>BreakBefore</c> is
+    /// set, ends the group.</para>
     /// </remarks>
     public bool KeepWithNext { get; init; }
 

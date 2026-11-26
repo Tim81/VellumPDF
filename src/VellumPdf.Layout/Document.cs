@@ -1071,7 +1071,8 @@ public sealed class Document : IDisposable
     /// under a <see cref="Conformance"/> claim. A refusal of that kind is raised before any layout,
     /// so the document stays saveable once you have changed what the message names. The block is
     /// listed in <see cref="Diagnostics"/> as <see cref="LayoutElementKind.Preformatted"/> when a
-    /// line is wrapped.
+    /// line is wrapped, or when a <see cref="Preformatted.KeepTogether"/> or
+    /// <see cref="Preformatted.KeepWithNext"/> request is relaxed.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="preformatted"/> is <see langword="null"/>.

@@ -170,23 +170,25 @@ public sealed class PreformattedKeepTests
     }
 
     [Fact]
-    public void KeepTogether_isReadFromTheTopLevelBlockOnly_theOverflowIsNotMovedOrReportedAgain()
+    public void KeepTogether_ofABlockThatSplitsOnTheNextPage_isReportedOnceForTheWholeBlock()
     {
-        // Eleven filler lines leave 1.6 pt, so nothing of the block fits: it goes to page 2, is too
-        // tall for it, and splits there. The overflow on page 3 is not moved again and not
-        // reported a second time.
+        // Eleven filler lines leave 1.6 pt, so nothing of the block fits: it goes to page 2, is
+        // taller than a page and splits there. The overflow pieces on pages 3 and 4 are not offered
+        // to the rule, so the one report counts once and names page 2.
         using var doc = NewDoc();
         doc.Add(Filler(11));
-        doc.Add(new Preformatted(Seq("p", 20)) { KeepTogether = true });
+        doc.Add(new Preformatted(Seq("p", 30)) { KeepTogether = true });
         var pages = Pages(doc);
 
-        Assert.Equal(3, pages.Length);
+        Assert.Equal(4, pages.Length);
         Assert.Equal(Words("f", 1, 11), pages[0]);
         Assert.Equal(Words("p", 1, 13), pages[1]);
-        Assert.Equal(Words("p", 14, 20), pages[2]);
+        Assert.Equal(Words("p", 14, 26), pages[2]);
+        Assert.Equal(Words("p", 27, 30), pages[3]);
         Assert.Equal(
             [(LayoutDiagnosticCode.KeepTogetherRelaxed, LayoutElementKind.Preformatted, 1, 2)],
             Keep(doc));
+        Assert.Equal(1, Assert.Single(doc.Diagnostics).Count);
     }
 
     [Fact]
@@ -212,28 +214,57 @@ public sealed class PreformattedKeepTests
         Assert.Empty(doc.Diagnostics);
     }
 
+    // The element after the block is a two-line paragraph that must stay whole, so a block whose
+    // last piece leaves less than 28.8 pt cannot hold it and the run has to move.
+    private static Paragraph After() => new(Seq("n", 2), Body) { KeepTogether = true };
+
     [Theory]
-    [InlineData(1)]
-    [InlineData(2)]
-    [InlineData(5)]
-    public void KeepWithNext_behavesAsAParagraphOfTheSameLinesDoes(int lines)
+    [InlineData(10, 1)]
+    [InlineData(4, 8)]
+    [InlineData(4, 20)]
+    public void KeepWithNext_behavesAsAParagraphOfTheSameLinesDoes(int filler, int lines)
     {
-        // The same text in the same font and leading, once as a paragraph and once as a block.
+        // The same text in the same font and leading, once as a paragraph and once as a block, and
+        // once more without the flag to show that the flag changes where the block falls.
         var style = new TextStyle { Font = Standard14.Courier, FontSize = 10 };
         using var asParagraph = NewDoc();
-        asParagraph.Add(Filler(10));
+        asParagraph.Add(Filler(filler));
         asParagraph.Add(new Paragraph(Seq("p", lines), style) { KeepWithNext = true });
-        asParagraph.Add(new Paragraph("next", Body));
+        asParagraph.Add(After());
 
         using var asBlock = NewDoc();
-        asBlock.Add(Filler(10));
+        asBlock.Add(Filler(filler));
         asBlock.Add(new Preformatted(Seq("p", lines)) { KeepWithNext = true });
-        asBlock.Add(new Paragraph("next", Body));
+        asBlock.Add(After());
 
-        Assert.Equal(Pages(asParagraph), Pages(asBlock));
+        using var withoutFlag = NewDoc();
+        withoutFlag.Add(Filler(filler));
+        withoutFlag.Add(new Preformatted(Seq("p", lines)));
+        withoutFlag.Add(After());
+
+        var pages = Pages(asBlock);
+        Assert.Equal(Pages(asParagraph), pages);
+        Assert.NotEqual(Pages(withoutFlag), pages);
         Assert.Equal(
             asParagraph.Diagnostics.Select(d => (d.Code, d.PageNumber)),
             asBlock.Diagnostics.Select(d => (d.Code, d.PageNumber)));
+    }
+
+    [Fact]
+    public void KeepWithNext_ofASplitBlockWhoseRunDoesNotHold_movesTheWholeRunToTheNextPage()
+    {
+        // As it stands the block ends on page 2 with 16 pt free, too little for the 28.8 pt
+        // paragraph, which would start page 3. The run moves whole and holds from page 2.
+        using var doc = NewDoc();
+        doc.Add(Filler(4));
+        doc.Add(new Preformatted(Seq("p", 20)) { KeepWithNext = true });
+        doc.Add(After());
+        var pages = Pages(doc);
+
+        Assert.Equal(Words("f", 1, 4), pages[0]);
+        Assert.Equal(Words("p", 1, 13), pages[1]);
+        Assert.Equal([.. Words("p", 14, 20), "n1", "n2"], pages[2]);
+        Assert.Empty(doc.Diagnostics);
     }
 
     [Fact]
@@ -286,7 +317,8 @@ public sealed class PreformattedKeepTests
     [Fact]
     public void KeepTogetherAndKeepWithNext_together_moveTheBlockWholeWithTheNextElement()
     {
-        // 8 x 14.4 = 115.2, so 44.8 pt are left: the three lines (36) fit, the paragraph (14.4) does not.
+        // 8 x 14.4 = 115.2, so 44.8 pt are left: the three lines (36) fit, the paragraph (14.4)
+        // does not.
         using var doc = NewDoc();
         doc.Add(Filler(8));
         doc.Add(new Preformatted(Seq("p", 3)) { KeepTogether = true, KeepWithNext = true });
