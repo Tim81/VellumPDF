@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using VellumPdf.Document;
+using LayoutDocument = VellumPdf.Layout.Document;
 
 namespace VellumPdf.Fonts;
 
@@ -29,6 +30,41 @@ public static class Standard14FontExtensions
     /// <exception cref="System.ArgumentNullException"><paramref name="doc"/> is null.</exception>
     /// <exception cref="System.NotSupportedException"><paramref name="font"/> is Symbol or ZapfDingbats.</exception>
     public static EmbeddedFontHandle EmbedStandard14Font(this PdfDocument doc, Standard14 font)
+    {
+        ArgumentNullException.ThrowIfNull(doc);
+        var bytes = LoadFont(ResourceNameFor(font));
+        return doc.UseTrueTypeFont(bytes);
+    }
+
+    /// <summary>
+    /// Registers the bundled Liberation substitute for <paramref name="font"/> with a Layout
+    /// document and returns a handle for <see cref="VellumPdf.Layout.Core.TextStyle.FontRef"/>. The
+    /// font is embedded, so text set in it satisfies PDF/A's font-embedding rule.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>A value this package has no face for is refused at this call.</b> A
+    /// <see cref="Standard14"/> value that is not one of the twelve Helvetica, Times and Courier
+    /// faces, which covers <see cref="Standard14.Symbol"/>, <see cref="Standard14.ZapfDingbats"/>
+    /// and a number the enumeration does not name, throws <see cref="System.NotSupportedException"/>.
+    /// The Liberation set has no symbol face.</para>
+    /// <para>The call registers the same bytes as
+    /// <see cref="VellumPdf.Layout.Document.UseTrueTypeFont"/> would for the Liberation file, so
+    /// it follows that method's rules. Calling it again for the same <paramref name="font"/>, or
+    /// registering the same file through <c>UseTrueTypeFont</c>, returns the handle already
+    /// issued, and the document embeds one subset.</para>
+    /// <para><b>Do not</b> select a <see cref="Standard14"/> face for text and expect this call
+    /// to follow it. A <see cref="VellumPdf.Layout.Core.TextStyle"/> whose <c>Font</c> is a
+    /// <see cref="Standard14"/> value stays unembedded. Set <c>FontRef</c> to the returned
+    /// handle.</para>
+    /// </remarks>
+    /// <param name="doc">The Layout document to register the font with.</param>
+    /// <param name="font">The standard-14 font to substitute.</param>
+    /// <returns>A handle to the embedded substitute font.</returns>
+    /// <exception cref="System.ArgumentNullException"><paramref name="doc"/> is null.</exception>
+    /// <exception cref="System.NotSupportedException">
+    /// <paramref name="font"/> is Symbol, ZapfDingbats or a value the enumeration does not name.
+    /// </exception>
+    public static EmbeddedFontHandle EmbedStandard14Font(this LayoutDocument doc, Standard14 font)
     {
         ArgumentNullException.ThrowIfNull(doc);
         var bytes = LoadFont(ResourceNameFor(font));
