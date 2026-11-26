@@ -192,9 +192,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `Cell.Content` is their text joined.
   - The runs are read as one string. Line ends, other white-space control characters and the
     break points between words are those of a string cell, and a run boundary inside a word draws
-    no space. A cell of runs that share one `TextStyle` instance is the string cell of the same
-    text and style, and saves to its bytes, unless that style has a `LinkUri`: the run cell links
-    the text and the string cell drops the link.
+    no space. A cell of runs that share one `TextStyle` instance draws the text, positions and
+    operators of the string cell of the same text and style, unless that style has a `LinkUri`:
+    the run cell links the text and the string cell drops the link.
   - Each line is as tall as the largest leading among the runs that hold text, and the first
     baseline lies one largest font size of those runs below the top of the cell's content,
     padding included. A paragraph also has one line height, but places each line's baseline from
