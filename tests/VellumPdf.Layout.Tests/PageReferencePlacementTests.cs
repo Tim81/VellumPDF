@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using VellumPdf.Document;
+using VellumPdf.Fonts;
 using VellumPdf.Layout.Core;
 using VellumPdf.Layout.Elements;
 using VellumPdf.Layout.Elements.Table;
@@ -179,5 +180,71 @@ public sealed class PageReferencePlacementTests
 
         Assert.Equal(1, Shown(pdf).Count(t => t.Trim().Length > 0 && char.IsDigit(t.Trim()[0]) && t.Trim().Length <= 2 && !t.Trim().StartsWith('w')));
         Assert.Single(Links(pdf), l => l.Dest == "t");
+    }
+
+    // ── A wrap made again leaves no placement of the earlier wrap ────────────
+
+    private static PaginationPlan PlanWithAnchorOnPage(int pageIndex) => new(
+        [new Placement(new object(), pageIndex, 0, new PageBreakRenderer(new PageBreak()), new LayoutBox(0, 0, 0, 0), "t")],
+        pageIndex + 1,
+        new PageLabelRange(PdfPageLabelStyle.Decimal, null, 9));
+
+    [Fact]
+    public void AWrapMadeAgainForANarrowerLabel_leavesNoPlacementOfTheWiderOne_forADrawAfterANothing()
+    {
+        var pdf = new PdfDocument();
+        var run = ListLayoutRun.Begin(pdf, out var previous);
+        try
+        {
+            var reference = TextRun.PageReference("t", Fresh(10));
+            var table = new PageReferenceTable();
+            table.Add(reference, new ElementSite(LayoutElementKind.Paragraph, 0));
+            run.References = table;
+
+            // "ab 9" fits 22pt on one line and "ab 10" does not, so the label "10" wraps to two lines.
+            var renderer = new ParagraphRenderer(new Paragraph([new TextRun("ab ", Fresh(10)), reference]));
+            var box = new LayoutBox(0, 0, 22, 100);
+
+            table.Resolve(PlanWithAnchorOnPage(1));
+            Assert.Equal(2, renderer.LineCountAt(22));
+            Assert.Equal(LayoutResult.Outcome.Full, renderer.Layout(new LayoutContext(box)).Status);
+
+            table.Resolve(PlanWithAnchorOnPage(0));
+            Assert.Equal(1, renderer.LineCountAt(22));
+            Assert.Equal(2, renderer.WrapCalls);
+
+            // A layout that answers Nothing, then a draw: the lines of the wrap that was replaced are
+            // not drawn, and the renderer does not index past the lines it holds now.
+            Assert.Equal(LayoutResult.Outcome.Nothing, renderer.Layout(new LayoutContext(new LayoutBox(0, 0, 22, 0.5))).Status);
+            var page = pdf.AddPage(new PdfRectangle(0, 0, 100, 100));
+            renderer.Draw(new DrawContext(new VellumPdf.Canvas.PdfCanvas(page), new LayoutBox(0, 0, 100, 100), new RendererContext(page, pdf), pdf, page));
+        }
+        finally
+        {
+            ListLayoutRun.End(previous);
+        }
+    }
+
+    [Fact]
+    public void AListEntryWhoseReferenceIsInAFontTheDocumentCannotDraw_isUndrawable_asTheLiteralLabelIs()
+    {
+        var pdf = new PdfDocument();
+        var run = ListLayoutRun.Begin(pdf, out var previous);
+        try
+        {
+            var undefined = new TextStyle { FontRef = new FontReference((VellumPdf.Fonts.Standard14)999), FontSize = 12 };
+            foreach (var text in new[] { TextRun.PageReference("t", undefined), new TextRun("1", undefined) })
+            {
+                var list = new ListElement().Add(new ListItem([new TextRun("see ", Fresh()), text]));
+                Assert.True(ListRenderer.HoldsUndrawableEntry(list, run));
+            }
+
+            var drawable = new ListElement().Add(new ListItem([new TextRun("see ", Fresh()), TextRun.PageReference("t", Fresh())]));
+            Assert.False(ListRenderer.HoldsUndrawableEntry(drawable, run));
+        }
+        finally
+        {
+            ListLayoutRun.End(previous);
+        }
     }
 }

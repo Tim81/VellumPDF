@@ -28,8 +28,9 @@ public sealed class PageReferenceLimitTests
         .Add(new ListItem([new TextRun("mover", H(40))]) { Style = H(10) });
 
     // What a save of the document gives, as the text it draws or the refusal, and the label the
-    // reference settled on. With a literal, that text stands where the reference was.
-    private static (string Verdict, string Label) Outcome(int words, string? literal, int firstNumber)
+    // reference settled on. With a literal, that text stands where the reference was. The last word
+    // of the paragraph is <extra> characters of W, so its length moves the bound by one.
+    private static (string Verdict, string Label) Outcome(int words, int extra, string? literal, int firstNumber)
     {
         var pdf = new PdfDocument { Timestamp = new DateTimeOffset(2026, 1, 2, 3, 4, 5, TimeSpan.Zero), DocumentId = new byte[16] };
         var renderer = new DocumentRenderer(pdf, new PdfRectangle(0, 0, 200, 80), new EdgeInsets(10))
@@ -39,7 +40,7 @@ public sealed class PageReferenceLimitTests
         };
         renderer.Add(new ParagraphRenderer(new Paragraph("lead", H(10)) { Margins = EdgeInsets.Zero }));
         renderer.Add(new ListRenderer(Mover()));
-        var text = string.Join(" ", Enumerable.Repeat("WWWWW", words)) + " ";
+        var text = string.Join(" ", Enumerable.Repeat("WWWWW", words)) + " " + new string('W', extra) + " ";
         renderer.Add(new ParagraphRenderer(new Paragraph(
             [new TextRun(text, H(20)), literal is null ? TextRun.PageReference("t", H(20)) : new TextRun(literal, H(20))])
         { Margins = EdgeInsets.Zero }));
@@ -61,8 +62,9 @@ public sealed class PageReferenceLimitTests
         return (verdict, renderer.ReferenceTable?.States[^1][0] ?? literal ?? "");
     }
 
-    // The characters of the paragraph, label included, that the literal document's scan counts.
-    private static int Bound(int words, int labelLength) => 2 + (words * 5) + words + labelLength;
+    // The characters of the paragraph, label included, that the literal document's scan counts:
+    // two for the placement, the words with their spaces, the cut word and its space, the label.
+    private static int Bound(int words, int extra, int labelLength) => 2 + (words * 6) + extra + 1 + labelLength;
 
     [Theory]
     [InlineData(9)]
@@ -71,13 +73,25 @@ public sealed class PageReferenceLimitTests
     {
         var mismatches = new List<int>();
         var matches = 0;
-        for (var words = 4; words <= 16; words++)
+        var matchedJustOverTheLimit = false;
+        for (var words = 5; words <= 10; words++)
         {
-            var reference = Outcome(words, null, first);
-            var literal = Outcome(words, reference.Label, first);
-            Assert.Equal(reference.Label, literal.Label);
-            if (literal.Verdict == reference.Verdict) matches++;
-            else mismatches.Add(Bound(words, reference.Label.Length));
+            for (var extra = 0; extra <= 5; extra++)
+            {
+                var reference = Outcome(words, extra, null, first);
+                var literal = Outcome(words, extra, reference.Label, first);
+                Assert.Equal(reference.Label, literal.Label);
+                var bound = Bound(words, extra, reference.Label.Length);
+                if (literal.Verdict == reference.Verdict)
+                {
+                    matches++;
+                    matchedJustOverTheLimit |= bound is > Limit and <= Limit + 2;
+                }
+                else
+                {
+                    mismatches.Add(bound);
+                }
+            }
         }
 
         // Where the two differ, the literal document's bound is within the allowance of the limit,
@@ -85,7 +99,10 @@ public sealed class PageReferenceLimitTests
         foreach (var bound in mismatches)
             Assert.InRange(bound, Limit - PageReferenceTable.NumeralBound, Limit);
 
-        Assert.True(matches >= 8, $"{matches} of 13 lengths matched; the literal bounds that differ are {string.Join(",", mismatches)}");
+        // A bound that falls just past the limit gives the twin in both documents, which is what a
+        // reference whose label was not counted at all would not.
+        Assert.True(matchedJustOverTheLimit, "no length put the literal bound just past the limit and matched");
+        Assert.True(matches >= 12, $"{matches} of 36 lengths matched; the literal bounds that differ are {string.Join(",", mismatches)}");
     }
 
     [Fact]
