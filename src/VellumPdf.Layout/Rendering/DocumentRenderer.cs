@@ -1100,7 +1100,7 @@ public sealed class DocumentRenderer
             if (anyChanged) _continuationVerdicts = null;
 
             // The layout is a function of the references' strings, so a vector that equals one two
-            // or more runs back is a cycle, and the loop would only go round it until the cap. The
+            // or more runs back is a cycle, and the loop would only repeat it until the cap. The
             // vector is compared string by string, never joined.
             if (references is not null && references.RepeatedRun() >= 0)
                 throw new InvalidOperationException(references.DescribeUnstable(

@@ -116,8 +116,8 @@ public sealed class TextRun(string Text, TextStyle Style)
     /// yours that answers differently on the later call makes the save throw
     /// <see cref="InvalidOperationException"/> naming a change of pagination, and after any layout
     /// refusal the document cannot be saved again. <b>Do not pass</b> a reference to a renderer you
-    /// lay out yourself, to one document at the same time as another, or a style whose font cannot
-    /// draw the label; a later major version refuses the first two.</para>
+    /// lay out yourself, or one renderer that holds a reference to two documents at the same
+    /// time: a renderer keeps the wrap it made from the labels it read.</para>
     /// </remarks>
     /// <param name="anchor">The anchor to print the page of.</param>
     /// <param name="style">The style of the label.</param>

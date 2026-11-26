@@ -374,9 +374,7 @@ public sealed class TextStyle
     /// name may contain. A name is not checked here.</para>
     /// <para>A cell given this style through <see cref="VellumPdf.Layout.Elements.Table.Cell.Style"/>
     /// or <see cref="VellumPdf.Layout.Elements.Table.TableElement.DefaultCellStyle"/> links a string
-    /// cell only; a cell built from runs links the runs whose style sets it. <b>Do not pass</b> a
-    /// link whose text is drawn in a document that saves more than once: a layout that ran cannot be
-    /// laid out again.</para>
+    /// cell only; a cell built from runs links the runs whose style sets it.</para>
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from the save, not from this property, for the refusals above.
