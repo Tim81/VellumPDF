@@ -223,10 +223,11 @@ public enum LayoutDiagnosticCode
     /// narrowed or the new layout would have moved, and an entry in a font the document cannot
     /// draw, which the new layout leaves as it was as well. A list a renderer of yours holds is
     /// laid out as before and reports nothing, because the document did not place it, and neither
-    /// does a <see cref="Rendering.ListRenderer"/> built to start at a later entry. A list that
-    /// holds an entry no page holds is also placed where each entry falls by the new layout, and
-    /// the twin does not look for such an entry, so it counts that list's entries as it counts any
-    /// other's; <see cref="ListEntryPartDropped"/> reports the entry.</para>
+    /// does a <see cref="Rendering.ListRenderer"/> built to start at a later entry, so such a list
+    /// can save under strict mode although it differs from the new layout. A list that holds an
+    /// entry no page holds is also placed where each entry falls by the new layout, and the twin
+    /// does not look for such an entry, so it counts that list's entries as it counts any other's;
+    /// <see cref="ListEntryPartDropped"/> reports the entry.</para>
     /// <para>A moved entry is counted by the piece of the list that starts it, in the layout the
     /// list was given, so the count of a list that runs over several pages adds up its pieces and
     /// the page is that of the first piece that reports. The count can differ from the number of

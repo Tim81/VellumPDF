@@ -330,6 +330,60 @@ public sealed class ListSkippedReportTests
         Assert.Contains(doc.Diagnostics, d => d.Code == LayoutDiagnosticCode.ListEntryPartDropped);
     }
 
+    /// <summary>
+    /// An entry the clamp would have narrowed whose marker wraps into two lines, only one of which
+    /// fits at the page end, is counted once: as a clamp. Its marker is not placed whole, which
+    /// <c>PartUnplaced</c> reads without looking at the text, so the move count must skip it.
+    /// </summary>
+    [Theory]
+    [InlineData(100.0, 2, 208)]
+    [InlineData(105.0, 2, 0)]
+    public void AClampedEntryWhoseMarkerIsCutAtThePageEnd_isCountedOnce(double contentHeight, int count, int dropped)
+    {
+        var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, 45, contentHeight + 20),
+            Margins = new EdgeInsets(10),
+        };
+        var list = new ListElement(ListStyle.OrderedDecimal) { Indent = 1000 };
+        list.Add(new ListItem([new TextRun("a", H(5))]) { Style = H(5) });
+        list.Add(new ListItem([new TextRun("a", H(5))]) { Style = H(40) });
+        doc.Add(list);
+        doc.Add(new Opaque());
+
+        Save(doc);
+
+        var item = Assert.Single(Skipped(doc));
+        Assert.Equal(count, item.Count);
+        Assert.Equal(1, item.PageNumber);
+        Assert.Equal(dropped != 0, doc.Diagnostics.Any(d => d.Code == LayoutDiagnosticCode.ListEntryPartDropped));
+    }
+
+    /// <summary>
+    /// A document with a renderer of yours that holds a list built to start at a later entry is
+    /// refused under strict mode for the part of an entry that list drops (208), with no 207 on any
+    /// list. Without the renderer the same list saves under strict mode.
+    /// </summary>
+    [Fact]
+    public void AStrictSaveIsRefusedFor208_whenARendererOfYoursHoldsAListBuiltToStartLater()
+    {
+        Document Build(bool withRenderer)
+        {
+            var doc = Page(header: false);
+            doc.StrictDiagnostics = true;
+            doc.Add(new ListRenderer(Staggered(9), startItem: 2));
+            if (withRenderer) doc.Add(new Opaque());
+            return doc;
+        }
+
+        Save(Build(withRenderer: false));
+        var refused = Build(withRenderer: true);
+        var ex = Assert.Throws<InvalidOperationException>(() => Save(refused));
+
+        Assert.StartsWith("StrictDiagnostics refused the save: ListEntryPartDropped", ex.Message, StringComparison.Ordinal);
+        Assert.Empty(Skipped(refused));
+    }
+
     // ── Both ─────────────────────────────────────────────────────────────────
 
     /// <summary>

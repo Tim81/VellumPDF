@@ -65,9 +65,16 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
 
     // One entry of the flattened list: the marker and the text paragraph of an item or a child.
     // Clamped is set when BuildItems narrowed the gutter. MarkerStyle is the style the entry's
-    // marker is set in, which CanDrawEntry reads together with the entry's runs.
+    // marker is set in, which CanDrawEntry reads together with the entry's runs. ClampCounted is
+    // set on the twin for an entry BuildItems counted in ClampSkipped, so that an entry whose
+    // marker is also cut at a page end is not counted a second time as a move.
     private readonly record struct Entry(
-        ParagraphRenderer Marker, ParagraphRenderer Content, ListItem Item, bool Clamped, TextStyle MarkerStyle);
+        ParagraphRenderer Marker,
+        ParagraphRenderer Content,
+        ListItem Item,
+        bool Clamped,
+        TextStyle MarkerStyle,
+        bool ClampCounted = false);
 
     // One build of the entries, with every count and verdict that is read from them. A layout that
     // finds the entries built in another save replaces the whole object, and never changes the
@@ -565,12 +572,13 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             // The twin places where it falls an entry the new layout moves. It is counted in the
             // piece the entry begins in. A page top moves nothing, and an entry whose marker and
             // text are both Nothing splits the list before it in both layouts, which PartUnplaced
-            // reads as placed. An entry whose gutter the clamp would have narrowed has a text of
-            // no width here, which PartUnplaced reads as discarded and not unplaced, so it is
-            // counted as a clamp and never as a move as well. An entry the document cannot draw
-            // is not moved by the new layout either, so the twin gives nothing up for it.
-            if (countsMoves
-                && !(i == _startItem && _partialContentOverrideAtStart is not null)
+            // reads as placed. An entry the clamp would have narrowed is counted as a clamp and
+            // never as a move as well: its text has no width here, but PartUnplaced also reads a
+            // marker that is cut at the page end, without looking at the text. An entry the
+            // document cannot draw is not moved by the new layout either, so the twin gives
+            // nothing up for it. A continuation piece is laid out at a page top, so the page-top
+            // term covers it and it needs no term of its own.
+            if (countsMoves && !entry.ClampCounted
                 && !(i == _startItem && context.AtPageTop)
                 && PartUnplaced(markerResult, contentResult, contentRenderer, area.Width)
                 && CanDrawEntry(ListLayoutRun.Current, entry.MarkerStyle, entry.Item))
@@ -1219,6 +1227,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             var wouldClamp = TryClampGutter(areaWidth, gutter, 0, widest, out var clampedGutter)
                 && LayoutValidation.AreRunStylesAccepted(contentRuns);
             var clamped = !_unclamped && wouldClamp;
+            var clampCounted = false;
             if (clamped)
             {
                 gutter = clampedGutter;
@@ -1229,6 +1238,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                 // An entry the document cannot draw is not clamped by the new layout either, so
                 // the twin gives nothing up for it.
                 clampSkipped++;
+                clampCounted = true;
             }
 
             // Marker paragraph: sits in the gutter (left portion of the line).
@@ -1247,7 +1257,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             };
             var contentRenderer = new ParagraphRenderer(contentPara) { ElementLanguage = item.Language, RunOwner = "A list item" };
 
-            result.Add(new Entry(markerRenderer, contentRenderer, item, clamped, itemStyle));
+            result.Add(new Entry(markerRenderer, contentRenderer, item, clamped, itemStyle, clampCounted));
 
             // A null child of a top-level item is refused here, where the position is known. The
             // same null on a grandchild is counted when the list is drawn instead, because
@@ -1294,6 +1304,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                             areaWidth, childGutter, indent, childWidest, out var clampedChildGutter)
                         && LayoutValidation.AreRunStylesAccepted(childRuns);
                     var childClamped = !_unclamped && childWouldClamp;
+                    var childClampCounted = false;
                     if (childClamped)
                     {
                         childGutter = clampedChildGutter;
@@ -1302,6 +1313,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                     else if (childWouldClamp && CanDrawEntry(ListLayoutRun.Current, childStyle, child))
                     {
                         clampSkipped++;
+                        childClampCounted = true;
                     }
 
                     var childMarkerPara = new Paragraph(childMarker, childStyle)
@@ -1318,7 +1330,8 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
                         new ParagraphRenderer(childContentPara) { ElementLanguage = child.Language, RunOwner = "A list item" },
                         child,
                         childClamped,
-                        childStyle));
+                        childStyle,
+                        childClampCounted));
                 }
             }
         }

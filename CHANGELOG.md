@@ -791,8 +791,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     from saving to throwing, or the reverse, without any list touching the entry. The rule is
     therefore per document: when any list the document holds has such an entry, at any depth, no
     list of the document is clamped or moved. The save gives what it gave before this change: the
-    same bytes, or the same exception and message. `StrictDiagnostics` refuses it only for a list
-    that reports 207. `ListIndentClampSkipped` (207) reports a list the document placed this way
+    same bytes, or the same exception and message. `StrictDiagnostics` refuses it where a list
+    reports 207 or 208. `ListIndentClampSkipped` (207) reports a list the document placed this way
     that left an entry as it was that the clamp or the moving would have changed, as that code
     describes; an entry in a font the document cannot draw is not one of them, so a document whose
     lists lose nothing saves under strict mode. `ListEntryPartDropped` (208) reports an entry left
@@ -807,7 +807,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     to it and before it lays anything out. Every pass of one save, a header or footer's
     page-counting pass included, therefore lays each list out the same way. These documents save
     as they did before this change: the same bytes, or the same exception and message.
-    `StrictDiagnostics` refuses one only for a list that reports 207.
+    `StrictDiagnostics` refuses one where a list reports 207 or 208.
     `ListIndentClampSkipped` (207) is reported as for the font (above), and names the renderer.
     `ListRenderer.Layout` says so, with a "Do not rely on" sentence: 3.0 lays a list out one way.
   - **A document with an element after a list that can need about as many page continuations as
