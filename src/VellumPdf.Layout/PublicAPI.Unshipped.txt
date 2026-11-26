@@ -97,6 +97,10 @@ VellumPdf.Layout.Elements.Preformatted.Anchor.get -> string?
 VellumPdf.Layout.Elements.Preformatted.Anchor.init -> void
 VellumPdf.Layout.Elements.Preformatted.BreakBefore.get -> VellumPdf.Layout.Core.PageBreakMode
 VellumPdf.Layout.Elements.Preformatted.BreakBefore.init -> void
+VellumPdf.Layout.Elements.Preformatted.KeepTogether.get -> bool
+VellumPdf.Layout.Elements.Preformatted.KeepTogether.init -> void
+VellumPdf.Layout.Elements.Preformatted.KeepWithNext.get -> bool
+VellumPdf.Layout.Elements.Preformatted.KeepWithNext.init -> void
 VellumPdf.Layout.Elements.Preformatted.Margins.get -> VellumPdf.Layout.Core.EdgeInsets
 VellumPdf.Layout.Elements.Preformatted.Margins.init -> void
 VellumPdf.Layout.Elements.Preformatted.Preformatted(string! text, VellumPdf.Layout.Core.TextStyle? style = null) -> void

@@ -177,6 +177,42 @@ public sealed class Preformatted
     }
 
     /// <summary>
+    /// Whether the block stays on the page the next element starts on. The default,
+    /// <see langword="false"/>, places the block without looking at what follows.
+    /// </summary>
+    /// <remarks>
+    /// <b>Nothing is refused, and a request the pages cannot hold is dropped and reported, not
+    /// thrown.</b> The group, the order in which requests are dropped, the diagnostic and the extra
+    /// layout are those of <see cref="Paragraph.KeepWithNext"/>, and the block behaves as a
+    /// paragraph does under it. The flag does not stop the block splitting; set
+    /// <see cref="KeepTogether"/> as well to keep the block whole when it fits on a page.
+    /// <para>The flag is read from a block added with <see cref="Document.Add(Preformatted)"/>; its
+    /// renderer is internal, so there is no other route. It is ignored on the overflow of a split
+    /// block. A <see cref="PageBreak"/>, or an element after the block whose <c>BreakBefore</c> is
+    /// set, ends the group.</para>
+    /// </remarks>
+    public bool KeepWithNext { get; init; }
+
+    /// <summary>
+    /// Whether the block moves whole to the next page instead of splitting across two, when it
+    /// fits there. The default, <see langword="false"/>, splits it between lines wherever the page
+    /// ends.
+    /// </summary>
+    /// <remarks>
+    /// <b>Nothing is refused, and a block that cannot be kept whole is split and reported.</b> A
+    /// block that would split below the top of a page moves to the top of the next one when it
+    /// fits on an empty page. When it does not fit on an empty page, or already starts at the top
+    /// of one, it splits as it would without this flag, and the save lists
+    /// <see cref="LayoutDiagnosticCode.KeepTogetherRelaxed"/>, a warning, against it. A block has
+    /// no line counts, so one that splits is cut between the lines where the page ends. A line
+    /// that wraps counts as the lines it wraps into.
+    /// <para>The flag is read from a block added with <see cref="Document.Add(Preformatted)"/>, and
+    /// ignored on the overflow of a split block. The extra layout it costs is that of
+    /// <see cref="Paragraph.KeepTogether"/>.</para>
+    /// </remarks>
+    public bool KeepTogether { get; init; }
+
+    /// <summary>
     /// A name that a link or an outside reference can jump to: the save adds a named destination at
     /// the first line of this block. <see langword="null"/>, the default, adds none.
     /// </summary>
