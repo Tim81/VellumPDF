@@ -166,8 +166,8 @@ public sealed class ListCallerRendererRuleTests
     }
 
     /// <summary>
-    /// A renderer this library ships, added through <c>Add(IRenderer)</c>, is the library's own: the
-    /// lists are laid out the new way and nothing is reported as skipped.
+    /// A renderer this library ships, added through <c>Add(IRenderer)</c>, is the library's own:
+    /// the lists are laid out the new way and nothing is reported as skipped.
     /// </summary>
     [Theory]
     [InlineData("paragraph")]
@@ -220,10 +220,14 @@ public sealed class ListCallerRendererRuleTests
     }
 
     /// <summary>
-    /// The 207 of a list the rule turned into its twin names every cause the document read: the
-    /// renderer, alone or with the font, the element near the limit, or both.
+    /// The 207 of a list the rule turned into its twin names every cause the document read, and
+    /// only those: the renderer, alone or with the font, the element near the limit, or both. The
+    /// rows without a renderer of the caller's expect its cause to be absent.
     /// </summary>
     [Theory]
+    [InlineData("font", false, true, false)]
+    [InlineData("near", false, false, true)]
+    [InlineData("font, near", false, true, true)]
     [InlineData("renderer", true, false, false)]
     [InlineData("renderer, font", true, true, false)]
     [InlineData("renderer, near", true, false, true)]
@@ -281,9 +285,9 @@ public sealed class ListCallerRendererRuleTests
         Save(doc);
 
         Assert.StartsWith(
-            "The document holds a list entry in a font it cannot draw, an element after a list that can need "
-            + "about as many page continuations as one element may use and a renderer of yours, so this list "
-            + "was laid out as it was before",
+            "The document holds a list entry in a font it cannot draw, an element after a list "
+            + "that can need about as many page continuations as one element may use and a renderer of "
+            + "yours, so this list was laid out as it was before",
             Skipped(doc)[0],
             StringComparison.Ordinal);
     }

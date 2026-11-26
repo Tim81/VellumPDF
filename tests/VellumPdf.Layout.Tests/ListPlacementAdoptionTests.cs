@@ -192,7 +192,7 @@ public sealed class ListPlacementAdoptionTests
     }
 
     /// <summary>
-    /// A caller's renderer after the list, which makes the document lay out once more.
+    /// A caller's renderer after the list, which makes the document lay every list out as it was.
     /// </summary>
     private sealed class Counts : IRenderer
     {
@@ -206,8 +206,8 @@ public sealed class ListPlacementAdoptionTests
 
     /// <summary>
     /// The entries a caller built at another width are the ones the save draws, whether the list is
-    /// added to the document or held by a renderer of the caller's, and whether or not the document
-    /// lays out once more before it draws. Each row has the same document with the twin, which
+    /// added to the document or held by a renderer of the caller's, and whether or not a caller's
+    /// renderer follows the list. Each row has the same document with the twin, which
     /// holds those entries as 2.3.3 did, as its reference.
     /// </summary>
     [Theory]

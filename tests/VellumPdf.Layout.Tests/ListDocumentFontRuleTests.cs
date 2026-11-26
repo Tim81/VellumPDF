@@ -297,7 +297,7 @@ public sealed class ListDocumentFontRuleTests
     [InlineData("foreign", 1, true)]
     [InlineData("undefined", 4, false)]
     [InlineData("foreign", 5, false)]
-    public void AHeldListThatSavesWithItsTextDropped_turnsTheListsAfterItIntoTheirTwins(string kind, int how, bool header)
+    public void ARendererOfTheCallers_turnsTheListsAfterAHeldListIntoTheirTwins(string kind, int how, bool header)
     {
         var twin = Outcome(BadListFirst(kind, how, header, twin: true));
 
@@ -465,7 +465,7 @@ public sealed class ListDocumentFontRuleTests
         Assert.Equal([LayoutDiagnosticCode.ListEntryPartDropped], Codes(doc));
     }
 
-    // ── The passes ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
+    // ── The passes ──────────────────────────────────────────────────────────────────────
 
     private static (DocumentRenderer Renderer, byte[] Bytes) Render(
         Action<DocumentRenderer> add, bool header = false, PdfDocument? pdf = null)

@@ -376,7 +376,7 @@ public sealed class ListEarlierLayoutTests
     [InlineData("deferredMid")]
     [InlineData("addPiece")]
     [InlineData("addPieceMid")]
-    public void ThePiecesOfAHeldList_reportNothingWhenTheDocumentCallsThemItself(string shape)
+    public void ThePiecesOfAHeldList_reportNothingUnlessTheDocumentPlacesThem(string shape)
     {
         var deferred = shape.StartsWith("deferred", StringComparison.Ordinal)
             || shape.StartsWith("addPiece", StringComparison.Ordinal);

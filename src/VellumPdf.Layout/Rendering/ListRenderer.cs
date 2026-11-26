@@ -304,8 +304,8 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     /// this once, from what was added, before it lays anything out, so the pass that counts pages
     /// for a header or footer and the pass that draws lay each list out the same way. The library
     /// cannot read where your renderer starts or what it lays out, and a list that moved ahead of
-    /// it can change whether the document saves. A list the document places this way reports
-    /// <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/> and names this cause. <b>Do
+    /// it can change whether the document saves. Such a list that has an entry reports
+    /// <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/> once and names this cause. <b>Do
     /// not</b> rely on where a list lands in such a document: 3.0 lays a list out one way, whatever
     /// called it (#688).</para>
     /// <para>When the document calls this method, the exceptions it lists reach you from the
@@ -334,9 +334,9 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     {
         // Removed in 3.0 (#688), which lays a list out one way under every context. A context the
         // document did not address to this instance gets the twin, which is what the list was
-        // before the fixes, and so does every list once the document holds an entry it cannot
-        // draw. The pieces a split of the twin returns are twins, so the rest of the placement is
-        // as well.
+        // before the fixes, and so does every list once the document's scan found a cause
+        // (ListLayoutRun). The pieces a split of the twin returns are twins, so the rest of the
+        // placement is as well.
         if (!_unclamped)
         {
             var run = ListLayoutRun.Current;
