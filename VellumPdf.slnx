@@ -9,6 +9,9 @@
     <Project Path="src/VellumPdf.Reader/VellumPdf.Reader.csproj" />
     <Project Path="src/VellumPdf.Signing/VellumPdf.Signing.csproj" />
   </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/VellumPdf.Samples.Manual/VellumPdf.Samples.Manual.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/VellumPdf.Barcodes.Tests/VellumPdf.Barcodes.Tests.csproj" />
     <Project Path="tests/VellumPdf.Cli.Tests/VellumPdf.Cli.Tests.csproj" />

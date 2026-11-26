@@ -30,6 +30,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   twice returns the handle the document already holds, so the document embeds one subset. A
   document that does not call it saves to the same bytes as before.
 
+- **A sample manual built with the Layout API alone.** `samples/VellumPdf.Samples.Manual` is a console
+  project, in the solution and never packed, that writes the user manual of a made-up product as a
+  PDF/A-2u file: a title page, a colophon, a contents list, roman and decimal page labels, chapters
+  on right-hand pages, bookmarks and named destinations, a running header and footer, tables whose
+  header row repeats, command blocks with tabs, dot leaders, a fitted image and a chapter in Dutch
+  with its own language. Where the Layout API cannot yet do what a manual needs, such as links
+  inside the document or page numbers in a contents list, the manual shows a visible placeholder
+  instead. `SampleManualTests` in the Layout test project builds it and checks it with veraPDF,
+  qpdf and pdftotext, and fails if the compiled sample names `IRenderer`, `PdfCanvas` or
+  `PdfDocument`. The sample assembly is left out of the coverage scope. There is no change to any
+  package.
+
 - **Keep with next, keep together, and a minimum of lines at a page break (#306).** A heading can
   stay on the page of the text after it, an element can move whole to the next page instead of
   splitting, and a paragraph can keep a number of lines on each side of a break. All of it is opt-in:
