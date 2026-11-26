@@ -56,6 +56,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     // The twin for a call the document did not make, which a renderer of the caller's holds. It is
     // a separate instance so that its entries and its placement are the ones a list that the
     // document never called would have, and so that nothing the document placed reaches it.
+    // Removed in 3.0 (#688), with the twin.
     private ListRenderer HeldTwin() =>
         _heldTwin ??= new ListRenderer(_list, _startItem, _partialContentOverrideAtStart) { _unclamped = true };
 
