@@ -17,9 +17,9 @@ namespace VellumPdf.Layout.Core;
 /// <see cref="VellumPdf.Canvas.PdfCanvas"/> refuses it for any caller, and a paragraph run, the
 /// style of a table cell or a line separator names the element first. A colour that is not
 /// written is not refused; see <c>Document</c>.
-/// <para>A finite channel outside 0 to 1 is <b>not</b> refused, except by the members named above.
-/// Elsewhere it is written as given after rounding to five decimals,
-/// so (5, 0, -1) is written as <c>5 0 -1 rg</c>. ISO 32000-2, 8.6.4.3, says each DeviceRGB
+/// <para>A finite channel outside 0 to 1 is <b>not</b> refused, except by the three checks made
+/// before anything is drawn. Elsewhere it is written as given after rounding to five decimals, so
+/// (5, 0, -1) is written as <c>5 0 -1 rg</c>. ISO 32000-2, 8.6.4.3, says each DeviceRGB
 /// component "shall" be a number from 0.0 to 1.0, so that output is not conforming even though it
 /// parses and renders.</para>
 /// <para><b>Attention</b>: keep each channel within 0 to 1. 3.0 may refuse a channel outside

@@ -256,7 +256,13 @@ public sealed class TextStyle
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from a save, when a channel is <c>NaN</c> or infinite on a running band that is drawn.
-    /// The message says PDF does not support NaN or Infinity as a real number.
+    /// The message says PDF does not support NaN or Infinity as a real number. It is also raised
+    /// from the constructor of <see cref="VellumPdf.Layout.Elements.Preformatted"/>, for a channel
+    /// that is not a number from 0 to 1.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Raised from the constructor of <see cref="VellumPdf.Layout.Elements.Table.Cell"/> that takes
+    /// runs, not from this accessor, for the runs that constructor checks; see it.
     /// </exception>
     public ColorRgb Color { get; init; } = ColorRgb.Black;
 

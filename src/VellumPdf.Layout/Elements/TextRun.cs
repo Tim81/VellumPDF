@@ -19,10 +19,10 @@ namespace VellumPdf.Layout.Elements;
 /// constructor, whatever the text. The saved cases are reported as <see
 /// cref="LayoutDiagnosticCode.NullTextRunStyle"/> in <see cref="Document.Diagnostics"/>, and <see
 /// cref="Document.StrictDiagnostics"/> refuses them.</para>
-/// Refusals on size, leading, font and
-/// text colour are on <see cref="TextStyle"/> and are raised from the save. A table cell built from
-/// runs has its own colour check in its constructor; see the constructor of <see
-/// cref="VellumPdf.Layout.Elements.Table.Cell"/> that takes runs. A space is drawn between this run
+/// Refusals on size, leading, font and text colour are on <see cref="TextStyle"/> and are raised
+/// from the save, except for the colour check that the constructor of <see
+/// cref="VellumPdf.Layout.Elements.Table.Cell"/> that takes runs makes itself; see that
+/// constructor. A space is drawn between this run
 /// and the next only where the text has a space, tab, line break or other white-space character,
 /// except the no-break spaces, at the boundary. Without one, the two runs hold one word; see <see
 /// cref="Paragraph"/>.
@@ -49,6 +49,10 @@ namespace VellumPdf.Layout.Elements;
 /// style and yields no word; see <see cref="LayoutDiagnosticCode.NullTextRunStyle"/>. Text in this
 /// run that its font cannot encode makes a strict save throw the same way; see <see
 /// cref="TextStyle.FontRef"/>.
+/// </exception>
+/// <exception cref="ArgumentOutOfRangeException">
+/// Raised from the constructor of <see cref="VellumPdf.Layout.Elements.Table.Cell"/> that takes
+/// runs, not from this constructor, for the runs that constructor checks; see it.
 /// </exception>
 /// <exception cref="IndexOutOfRangeException">
 /// Raised from <see cref="Document.Save(System.IO.Stream)"/> and the other save overloads, not from
