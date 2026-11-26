@@ -354,10 +354,18 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     }
 
     private static TwinPlacement AllListsFor(ListLayoutRun run) =>
-        (TwinPlacement)((byte)TwinPlacement.AllLists
-            | (run.FoundUndrawable ? AllListsFont : 0)
+        (TwinPlacement)((byte)TwinPlacement.AllLists | CausesOf(run));
+
+    // The causes the scan of the document read. A document that no scan flagged and that turned
+    // into its twins while it laid out, because the entries an earlier layout built hold a font it
+    // cannot draw, names the font.
+    private static byte CausesOf(ListLayoutRun run)
+    {
+        var causes = (byte)((run.FoundUndrawable ? AllListsFont : 0)
             | (run.FoundNearTheLimit ? AllListsNearLimit : 0)
             | (run.FoundCallerRenderer ? AllListsRenderer : 0));
+        return causes == 0 ? AllListsFont : causes;
+    }
 
     // The 207 of a list the document-wide rule turned into its twin names every cause that applied.
     private static string AllListsMessage(TwinPlacement placement)
@@ -1084,7 +1092,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             // The entries here are the list's own, so Clamped says the clamp would narrow the
             // entry, which is what the twin counts.
             if (entry.Clamped) _clampSkipped++;
-            if (!CanDrawEntry(run, entry.Marker, entry.Content)) run?.NoteUndrawable();
+            if (!CanDrawEntry(run, entry.Marker, entry.Content)) run?.NoteUndrawableWhileLayingOut();
             items.Add(entry.Clamped ? entry with { Content = WithoutClamp(entry), Clamped = false } : entry);
         }
 
@@ -1184,7 +1192,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
             // The twin asks the same question and only counts the answer, which is what it reports
             // when the document chose it. The gutter test comes first because it is the one that
             // fails for almost every entry.
-            if (!CanDrawEntry(run, itemStyle, item)) run?.NoteUndrawable();
+            if (!CanDrawEntry(run, itemStyle, item)) run?.NoteUndrawableWhileLayingOut();
             var unclampedGutter = gutter;
             var wouldClamp = TryClampGutter(areaWidth, gutter, 0, widest, out var clampedGutter)
                 && LayoutValidation.AreRunStylesAccepted(contentRuns);
@@ -1258,7 +1266,7 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
 
                     // The child's marker starts at `indent`, so that is the leftmost the clamped
                     // content may start.
-                    if (!CanDrawEntry(run, childStyle, child)) run?.NoteUndrawable();
+                    if (!CanDrawEntry(run, childStyle, child)) run?.NoteUndrawableWhileLayingOut();
                     var unclampedChildGutter = childGutter;
                     var childWouldClamp = TryClampGutter(
                             areaWidth, childGutter, indent, childWidest, out var clampedChildGutter)

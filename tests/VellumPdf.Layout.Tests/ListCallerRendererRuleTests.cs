@@ -249,6 +249,27 @@ public sealed class ListCallerRendererRuleTests
         Assert.Equal(namesNear, first.Contains("element after a list", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// The causes named are the ones the scan of the elements read, so a font in a list that a
+    /// renderer of the caller's lays out is not named by the lists placed after it and not by the
+    /// ones before it: every list of the document says the same.
+    /// </summary>
+    [Fact]
+    public void AFontInAListARendererLaysOut_isNotNamedByAnyList()
+    {
+        var doc = Page(footer: false);
+        doc.Add(new ListRenderer(Clamp()));
+        doc.Add(new LaysOutFromDraw(new ListRenderer(Undrawable())));
+        doc.Add(new ListRenderer(Clamp()));
+        Save(doc);
+
+        var messages = Skipped(doc);
+        Assert.Equal(2, messages.Length);
+        Assert.Equal(messages[0], messages[1]);
+        Assert.Contains(RendererCause, messages[0], StringComparison.Ordinal);
+        Assert.DoesNotContain("font it cannot draw", messages[0], StringComparison.Ordinal);
+    }
+
     [Fact]
     public void TheMessageOfAllThreeCauses_readsAsOneSentence()
     {
