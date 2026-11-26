@@ -2051,8 +2051,8 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             }
 
             // A fragment is placed by its own text matrix, one after the other along the line, and
-            // the link of a run covers the width its text is drawn at on this line (#659 draws a
-            // paragraph's the same way), as tall as the line and cut to the cell.
+            // the link of a run covers the width its text is drawn at on this line, as tall as the
+            // line and cut to the cell.
             var x = innerBox.X + txOffset;
             var lineTop = innerBox.Y + lineIdx * lineHeight;
             foreach (var fragment in fragments)

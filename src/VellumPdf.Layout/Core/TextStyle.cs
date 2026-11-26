@@ -235,23 +235,24 @@ public sealed class TextStyle
     public double Leading { get; init; } = 0;  // 0 = auto (font-size * 1.2)
 
     /// <summary>The text colour. Defaults to <see cref="ColorRgb.Black"/>.</summary>
-    /// <remarks> Stored as given. Channels are not clamped. A channel that is not finite is refused
+    /// <remarks>
+    /// Stored as given. Channels are not clamped. A channel that is not finite is refused
     /// where it is written; see <see cref="Document"/> and <see cref="ColorRgb"/>. In a paragraph
     /// run, a heading, a list item or a table cell's own style that draws text, the element's own
     /// check names it. On a running band, and on a band that draws nothing, <see
     /// cref="VellumPdf.Canvas.PdfCanvas"/> decides: it refuses the value when the band is drawn,
     /// and an empty template writes no colour. <b>Do not pass</b> a non-finite channel: 3.0 refuses
     /// it. A <see cref="VellumPdf.Layout.Elements.Preformatted"/> refuses a channel that is not a
-    /// number from 0 to 1 from its constructor, with <see cref="ArgumentException"/>. So does a run
-    /// that holds text in a table cell built from runs, with <see
-    /// cref="ArgumentOutOfRangeException"/> from the cell's constructor; see <see
-    /// cref="VellumPdf.Layout.Elements.Table.Cell"/>.
+    /// number from 0 to 1 from its constructor, with <see cref="ArgumentException"/>. A table cell
+    /// built from runs checks its runs' colours in its constructor; see the constructor of
+    /// <see cref="VellumPdf.Layout.Elements.Table.Cell"/> that takes runs.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Raised from a save, when a channel is <c>NaN</c> or infinite on a paragraph run, heading, list
     /// item or table cell style that draws text. The message names the element and the channel. A
-    /// finite channel outside 0 to 1 is not refused there. A run of a table cell built from runs
-    /// is not refused here but by the cell's constructor, for both.
+    /// finite channel outside 0 to 1 is not refused there. A table cell built from runs checks its
+    /// runs' colours in its constructor; see the constructor of
+    /// <see cref="VellumPdf.Layout.Elements.Table.Cell"/> that takes runs.
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Raised from a save, when a channel is <c>NaN</c> or infinite on a running band that is drawn.
@@ -278,7 +279,8 @@ public sealed class TextStyle
     /// to this URI, except in running bands and as the style of a table cell. Use a full URI string
     /// (e.g. "https://example.com").
     /// </summary>
-    /// <remarks> <b>Attention</b>: the string is not validated. Empty and <c>not a uri</c> are
+    /// <remarks>
+    /// <b>Attention</b>: the string is not validated. Empty and <c>not a uri</c> are
     /// written into a <c>/URI</c> action as given, and so is an absolute URI of any scheme, such as
     /// <c>javascript:alert(1)</c>. Non-ASCII characters are percent-encoded as UTF-8, and an
     /// unpaired surrogate becomes U+FFFD first. Running bands silently drop the link (#475), and so

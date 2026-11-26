@@ -328,7 +328,8 @@ public sealed class Cell
     }
 
     /// <summary>Creates a cell from a sequence of runs, each with its own style.</summary>
-    /// <remarks> <b>A null sequence, a null run and a run with a null style are refused here.</b>
+    /// <remarks>
+    /// <b>A null sequence, a null run and a run with a null style are refused here.</b>
     /// The first two throw <see cref="ArgumentNullException"/> and the third <see
     /// cref="ArgumentException"/>; <c>ParamName</c> is <c>runs</c> and the message of the last two
     /// names the index of the run. <see cref="TextRun"/> stores a null style; this constructor
