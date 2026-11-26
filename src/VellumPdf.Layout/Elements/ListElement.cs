@@ -56,7 +56,8 @@ public enum ListStyle
 /// item stays where it falls, with the part that fits drawn and the other part not.
 /// <see cref="LayoutDiagnosticCode.ListEntryPartDropped"/> reports each such item the document
 /// placed, and <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/> reports the list in the
-/// last four cases. A list a renderer of yours holds reports neither, nor do its pieces. First, a
+/// last four cases when it left an entry as it was that the new layout would have changed, as that
+/// code describes. A list a renderer of yours holds reports neither, nor do its pieces. First, a
 /// renderer of yours lays the list out, whatever context it passes on; see
 /// <see cref="Rendering.ListRenderer.Layout"/>, which also says which items a layout of a
 /// reused renderer reads. Second, no page holds one of its items,
@@ -78,9 +79,10 @@ public enum ListStyle
 /// chart never count, and neither does an element a renderer of yours holds. Sixth, the document
 /// holds a renderer that is not one of this library's own, wherever it sits; see
 /// <see cref="Rendering.ListRenderer.Layout"/>. In the last three cases every list of the document
-/// is laid out that way, so without <see cref="Document.StrictDiagnostics"/> the document keeps
-/// the outcome it had while nothing ahead of the font, the element or the renderer moves; with
-/// it, a <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/> report refuses the save.</para>
+/// is laid out that way, so the document keeps the outcome it had while nothing ahead of the font,
+/// the element or the renderer moves. With <see cref="Document.StrictDiagnostics"/> the save is
+/// refused only for a list that <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/> reports,
+/// and a document whose lists lose nothing saves.</para>
 /// <para><b>Attention</b>: an item whose text holds only white space is laid out at the leading of
 /// <see cref="TextStyle.Default"/>, as on <see cref="Paragraph"/>, while its marker is laid out in
 /// the item's own style, so the marker's line can be the one that does not fit where the item
@@ -150,8 +152,9 @@ public sealed class ListElement
     /// moving of entries, and as it is now. It is placed the new way only when neither reaches the
     /// limit. Otherwise it is placed as it was before both: no gutter is narrowed, an entry the
     /// clamp would have changed keeps its marker and loses its text, no entry moves, and
-    /// <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/> reports it. That list then saves,
-    /// or throws the limit's <see cref="InvalidOperationException"/>, as a list with no clamp does.
+    /// <see cref="LayoutDiagnosticCode.ListIndentClampSkipped"/> reports it when that left an entry
+    /// as it was that the clamp or the moving would have changed. That list then saves, or throws
+    /// the limit's <see cref="InvalidOperationException"/>, as a list with no clamp does.
     /// </para>
     /// <para>Do <b>not</b> pass a negative value. It can carry content left of the margin and off
     /// the page, and a finite negative value is not reported. 3.0 will reject it.</para>
