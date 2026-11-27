@@ -17,7 +17,7 @@ namespace VellumPdf.Layout.Rendering;
 /// <remarks>
 /// Grandchildren are ignored; see <see cref="ListItem.Children"/>.
 /// </remarks>
-public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPlacementSource, IContinuationTwin
+public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPlacementSource, IContinuationTwin, ISpaceAfterSource
 {
     private readonly ListElement _list;
 
@@ -223,6 +223,10 @@ public sealed class ListRenderer : IRenderer, IPageBreakSource, IKeepSource, IPl
     // The mode belongs to the element, so a renderer added through Document.Add(IRenderer) honours
     // it as well.
     PageBreakMode IPageBreakSource.BreakBefore => _list.BreakBefore;
+
+    // Explicit, because a public renderer would otherwise gain a public member. The gap belongs to
+    // the element, so a renderer added through Document.Add(IRenderer) honours it as well.
+    double ISpaceAfterSource.SpaceAfter => _list.SpaceAfter;
 
     bool IKeepSource.KeepWithNext => _list.KeepWithNext;
 
