@@ -392,33 +392,43 @@ internal sealed class CffFont
         return Data.Slice(absStart, entryLen);
     }
 
-    // A parsed INDEX offset array, never changed after it is built. Parsing is the cost the
+    // A parsed INDEX offset array, never written after it is built. Parsing is the cost the
     // subsetter would otherwise pay again for every glyph and subroutine it reads.
     private sealed record IndexOffsets(int Position, int Count, uint[] Offsets, int DataBase);
 
-    // The INDEXes parsed so far, at most the CharStrings, Global Subr and Local Subr INDEXes. The
-    // array is replaced whole and never edited, so a reader on another thread sees either the old
-    // list or the new one. Two threads that parse the same INDEX at once each build the same table
-    // and one replaces the other's list; the cost is one extra parse, never a wrong answer. Keyed
-    // by the INDEX position within Data. Data is read-only for the life of the font: a caller that
-    // changes the bytes behind it after the first read gets the offsets of the bytes it had then.
+    // The INDEXes parsed so far for this parsed font: the CharStrings, Global Subr and Local Subr
+    // INDEXes, so at most three entries, each position once. The array is replaced whole through
+    // a compare-and-swap and never edited, so a reader on another thread sees a complete list.
+    // Two threads that miss on the same INDEX each parse it and one wins; the other's result is
+    // dropped. Today no instance is shared: every save parses its own copy of the font program,
+    // so this guards against a later caller that shares one, and costs one atomic read per call.
+    // The cache is keyed by position within Data, so Data must not change after the first read.
     private IndexOffsets[] _parsedIndexes = [];
 
     private (int count, uint[] offsets, int dataBase) GetIndexOffsets(int position)
     {
-        foreach (var known in Volatile.Read(ref _parsedIndexes))
+        var parsed = default(IndexOffsets);
+        while (true)
         {
-            if (known.Position == position)
-                return (known.Count, known.Offsets, known.DataBase);
-        }
+            var current = Volatile.Read(ref _parsedIndexes);
+            foreach (var known in current)
+            {
+                if (known.Position == position)
+                    return (known.Count, known.Offsets, known.DataBase);
+            }
 
-        var (count, offsets, dataBase) = ReadIndexOffsets(Data.Span, position, Data.Length);
-        var current = Volatile.Read(ref _parsedIndexes);
-        var next = new IndexOffsets[current.Length + 1];
-        current.CopyTo(next, 0);
-        next[^1] = new IndexOffsets(position, count, offsets, dataBase);
-        Volatile.Write(ref _parsedIndexes, next);
-        return (count, offsets, dataBase);
+            if (parsed is null)
+            {
+                var (count, offsets, dataBase) = ReadIndexOffsets(Data.Span, position, Data.Length);
+                parsed = new IndexOffsets(position, count, offsets, dataBase);
+            }
+
+            var next = new IndexOffsets[current.Length + 1];
+            current.CopyTo(next, 0);
+            next[^1] = parsed;
+            if (ReferenceEquals(Interlocked.CompareExchange(ref _parsedIndexes, next, current), current))
+                return (parsed.Count, parsed.Offsets, parsed.DataBase);
+        }
     }
 
     /// <summary>

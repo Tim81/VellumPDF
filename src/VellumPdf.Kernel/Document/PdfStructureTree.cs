@@ -162,6 +162,7 @@ internal sealed class PdfStructureTree
         out Dictionary<PdfPage, int> pageStructParents)
     {
         pageStructParents = [];
+        _walkSteps = 0;
 
         // Collect distinct pages in insertion order and assign StructParents integers.
         var pageOrder = new List<PdfPage>();
@@ -184,7 +185,8 @@ internal sealed class PdfStructureTree
 
         // The first-leaf page of every element, computed once here (CollectPages has already
         // refused a cycle) and dropped with this call.
-        var firstLeafPages = FirstLeafPages(_documentRoot, out _);
+        var firstLeafPages = FirstLeafPages(_documentRoot, out var firstLeafSteps);
+        _walkSteps += firstLeafSteps;
 
         // Reserve StructTreeRoot ref
         var structTreeRootRef = registry.Reserve();
@@ -401,25 +403,27 @@ internal sealed class PdfStructureTree
                 "The structure tree contains a cycle: an element is its own ancestor, so the tree cannot be walked.");
     }
 
-    // Elements entered by every walk on this thread. Read by the tests that assert a save does not
-    // walk the tree once per page; one increment per element, per thread, so concurrent saves do
-    // not share it.
-    [ThreadStatic]
-    internal static long ElementVisits;
+    // Work the walks of the last Build call did: one for each element a pre-order walk entered, and
+    // FirstLeafPages' own steps. The tests read it to assert that a save does not walk the tree once
+    // per page. It belongs to the tree, so saves of other documents do not share it, and Build
+    // resets it on entry.
+    private long _walkSteps;
+
+    internal long LastBuildSteps => _walkSteps;
 
     // Pre-order walk. visit(node, parent) runs on entry, in the order a recursive walk would enter
     // nodes; the root is visited first with a null parent. The visit runs before the node is read,
     // so a walk that must refuse a null child does it there. With guard set, the nodes on the
     // current path are kept and an element met twice on one path raises; a node leaves the path
     // when its children are done.
-    private static void PreOrder(PdfStructElem root, bool guard, Action<PdfStructElem, PdfStructElem?> visit)
+    private void PreOrder(PdfStructElem root, bool guard, Action<PdfStructElem, PdfStructElem?> visit)
     {
         var path = guard ? new HashSet<PdfStructElem>(ReferenceEqualityComparer.Instance) : null;
         var stack = new List<(PdfStructElem Node, int Next)>();
 
         void Enter(PdfStructElem node, PdfStructElem? parent)
         {
-            ElementVisits++;
+            _walkSteps++;
             visit(node, parent);
             if (path is not null)
                 EnterElement(path, node);
@@ -443,14 +447,14 @@ internal sealed class PdfStructureTree
         }
     }
 
-    private static void CollectElems(PdfStructElem parent, List<PdfStructElem> list)
+    private void CollectElems(PdfStructElem parent, List<PdfStructElem> list)
         => PreOrder(parent, guard: true, (node, p) =>
         {
             if (p is not null)
                 list.Add(node);
         });
 
-    private static void CollectPages(
+    private void CollectPages(
         PdfStructElem root,
         List<PdfPage> pageOrder,
         Dictionary<PdfPage, int> pageStructParents)
@@ -469,7 +473,7 @@ internal sealed class PdfStructureTree
     // list of its page, in the order the walk enters them. A walk per page would visit every
     // element once per page. pageStructParents maps each page CollectPages found to its index in
     // the page order, and every element with a page is under that walk, so the lookup cannot miss.
-    private static List<PdfStructElem>[] CollectLeavesByPage(
+    private List<PdfStructElem>[] CollectLeavesByPage(
         PdfStructElem root,
         int pageCount,
         Dictionary<PdfPage, int> pageStructParents)
@@ -491,7 +495,7 @@ internal sealed class PdfStructureTree
     // Where an element is reached twice the last parent wins, as before; no saved file can show it,
     // because an element reached twice is refused (a duplicate MCID, or a reserved object that is
     // never assigned).
-    private static void BuildParentMap(PdfStructElem parent, Dictionary<PdfStructElem, PdfStructElem> map)
+    private void BuildParentMap(PdfStructElem parent, Dictionary<PdfStructElem, PdfStructElem> map)
         => PreOrder(parent, guard: false, (node, p) =>
         {
             if (p is not null)
@@ -553,6 +557,6 @@ internal sealed class PdfStructureTree
 
     private static bool IsLeaf(PdfStructElem element) => element.Page is not null && element.Mcid >= 0;
 
-    private static void CollectStructTypes(PdfStructElem elem, HashSet<string> types)
+    private void CollectStructTypes(PdfStructElem elem, HashSet<string> types)
         => PreOrder(elem, guard: false, (node, _) => types.Add(node.StructType));
 }

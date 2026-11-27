@@ -8,7 +8,7 @@ using VellumPdf.Fonts.Sfnt;
 namespace VellumPdf.Kernel.Tests;
 
 /// <summary>
-/// A font's INDEX offsets are read once, not once per glyph and per subroutine. The allocation
+/// A parsed font reads each INDEX's offsets once, not once per glyph and per subroutine. The allocation
 /// assertions compare what a subset costs per kept glyph against the size of the font's own offset
 /// arrays, so they hold on any machine and under any load.
 /// </summary>
@@ -84,6 +84,77 @@ public sealed class CffIndexCacheTests(ITestOutputHelper output)
         }
     }
 
+    // A CFF with a CharStrings, a Global Subr and a Local Subr INDEX of three entries each and
+    // different bytes in every entry, laid out by hand so no installed font is needed. Equal counts
+    // are what make an offset array kept under the wrong key answer with another INDEX's bytes.
+    private static byte[] SyntheticCff()
+    {
+        static byte[] Index(params byte[][] entries)
+        {
+            if (entries.Length == 0)
+                return [0, 0]; // an empty INDEX is its count alone
+
+            var o = new List<byte> { (byte)(entries.Length >> 8), (byte)entries.Length, 1 };
+            var at = 1;
+            o.Add((byte)at);
+            foreach (var e in entries)
+            {
+                at += e.Length;
+                o.Add((byte)at);
+            }
+
+            foreach (var e in entries)
+                o.AddRange(e);
+            return [.. o];
+        }
+
+        static byte[] Int5(int v) => [29, (byte)(v >> 24), (byte)(v >> 16), (byte)(v >> 8), (byte)v];
+
+        byte[] header = [1, 0, 4, 1];
+        var name = Index("Syn"u8.ToArray());
+        const int topDictLength = 5 + 1 + 5 + 5 + 1; // CharStrings, then Private size and offset
+        var topDictIndexLength = 2 + 1 + 2 + topDictLength;
+        var strings = Index();
+        var global = Index([0x11, 0x0B], [0x12, 0x13, 0x0B], [0x14, 0x0B]);
+        var charStrings = Index([0x0E], [0x15, 0x0E], [0x16, 0x17, 0x0E]);
+        var privateDict = new byte[] { 29, 0, 0, 0, 6, 19 }; // Subrs: the INDEX follows the dictionary
+        var local = Index([0x21, 0x0B], [0x22, 0x0B], [0x23, 0x24, 0x0B]);
+
+        var charStringsAt = header.Length + name.Length + topDictIndexLength + strings.Length + global.Length;
+        var privateAt = charStringsAt + charStrings.Length;
+        var topDict = Int5(charStringsAt).Append((byte)17)
+            .Concat(Int5(privateDict.Length)).Concat(Int5(privateAt)).Append((byte)18).ToArray();
+        Assert.Equal(topDictLength, topDict.Length);
+        var topDictIndex = Index(topDict);
+
+        return [.. header, .. name, .. topDictIndex, .. strings, .. global, .. charStrings, .. privateDict, .. local];
+    }
+
+    [Fact]
+    public void IndexesOfEqualCount_keepTheirOwnOffsets()
+    {
+        var table = SyntheticCff();
+        var font = CffFont.Parse(table);
+        Assert.Equal(3, font.NumGlyphs);
+        Assert.Equal(3, font.GlobalSubrCount);
+        Assert.Equal(3, font.LocalSubrCount);
+
+        // Interleaved, twice over, so each INDEX is asked for after the other two have been cached.
+        for (var round = 0; round < 2; round++)
+        {
+            for (var i = 0; i < 3; i++)
+            {
+                Assert.Equal(Uncached(table, font.CharStringsIndexOffset, i), font.GetCharstring(i).ToArray());
+                Assert.Equal(Uncached(table, font.GlobalSubrIndexOffset, i), font.GetGlobalSubr(i).ToArray());
+                Assert.Equal(Uncached(table, font.LocalSubrIndexOffset, i), font.GetLocalSubr(i).ToArray());
+            }
+        }
+
+        // The three INDEXes really differ, or the comparison above could not tell them apart.
+        Assert.NotEqual(font.GetGlobalSubr(1).ToArray(), font.GetLocalSubr(1).ToArray());
+        Assert.NotEqual(font.GetCharstring(1).ToArray(), font.GetGlobalSubr(1).ToArray());
+    }
+
     [Fact]
     public void Subsets_ofOneFontAtOnce_matchSubsetsOfFreshFonts()
     {
@@ -92,7 +163,8 @@ public sealed class CffIndexCacheTests(ITestOutputHelper output)
         int[] sizes = [1, 50, 400, shared.NumGlyphs];
         var expected = sizes.Select(n => CffSubsetter.Subset(CffFont.Parse(table), FirstGlyphs(n))).ToArray();
 
-        // Eight threads subset the same font object, as two documents saving one shared font would.
+        // No caller shares a parsed font today (each save parses its own copy). Eight threads
+        // subset one object anyway, so a later caller that shares one finds the cache sound.
         var results = new byte[8][][];
         Parallel.For(0, 8, new ParallelOptions { MaxDegreeOfParallelism = 8 }, t =>
         {
