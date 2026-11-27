@@ -297,6 +297,9 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         // document called, in a placement it has not decided for the twin. Under any other context
         // (a caller's renderer that forwards here, WithArea, the public constructor) the table is
         // laid out as it was before breaks were honoured, by its twin. Removed in 3.0 (#688).
+        // The twin also cuts a word wider than its column at the glyph, as it was cut before places
+        // after a solidus or hyphen were used (#594). Removed in 3.0 (#688).
+        using var cutAtGlyphs = LongWordBreaks.CutAtGlyphs(_readsUnbrokenForTheLimit);
         var mode = context.ModeFor(this);
         _laidOutBy = null;
         if (mode == ContinuationMode.Twin && !_readsUnbrokenForTheLimit)
@@ -1687,6 +1690,9 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
             twin.Draw(ctx);
             return;
         }
+
+        // The lines are wrapped again here, in the mode the layout used. Removed in 3.0 (#688).
+        using var cutAtGlyphs = LongWordBreaks.CutAtGlyphs(_readsUnbrokenForTheLimit);
 
         // Layout already deflated context.Area by _table.Margins and stored the result in
         // _occupied; deflating again here took the table's own margin out of the box twice. The

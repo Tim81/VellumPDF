@@ -55,7 +55,11 @@ public interface IRenderer
     /// <see cref="VellumPdf.Layout.Rendering.Table.TableRenderer"/> reads the breaks of its
     /// cells only when the document called it, so one that your <see cref="Layout"/> forwards to
     /// reads every cell unbroken (#679); see
-    /// <see cref="VellumPdf.Layout.Elements.Table.Cell.Content"/>. Your <see cref="Draw"/> must
+    /// <see cref="VellumPdf.Layout.Elements.Table.Cell.Content"/>. A
+    /// <see cref="VellumPdf.Layout.Rendering.ParagraphRenderer"/> that your renderer lays out wraps
+    /// its text as 2.3.3 did: a word that continues over a run boundary is two words, U+202F and
+    /// U+2007 are spaces, and a word wider than the line is cut at the glyph, never after a
+    /// solidus, reverse solidus or hyphen-minus (#562, #590, #594). Your <see cref="Draw"/> must
     /// forward to the same renderer.</para>
     /// <para><b>A <see cref="VellumPdf.Layout.Rendering.ListRenderer"/> that your renderer lays out
     /// is laid out as it was before the fixes of #476 and #685.</b> Through the context you were

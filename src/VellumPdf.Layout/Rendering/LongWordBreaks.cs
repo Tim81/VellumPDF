@@ -46,6 +46,43 @@ internal static class LongWordBreaks
     private const byte Preferred = 1;
     private const byte Forbidden = 2;
 
+    // How many times a cut was made at a place and not at the glyph, on this thread, so that a
+    // wrap can tell that its lines are not the ones a cut at the glyph gives. Read by the
+    // paragraph, which compares it before and after a wrap. Removed in 3.0 (#688) with the twin.
+    [ThreadStatic]
+    private static int s_placeCuts;
+
+    internal static int PlaceCuts => s_placeCuts;
+
+    // True while a table's twin lays out or draws: a word is then cut at the glyph, as it was
+    // before places were used. Removed in 3.0 (#688) with the twin.
+    [ThreadStatic]
+    private static bool s_glyphOnly;
+
+    /// <summary>
+    /// Makes every cut on this thread a cut at the glyph until the returned scope is disposed, as
+    /// the table's twin lays out and draws, which keeps the verdict of the continuation limit.
+    /// </summary>
+    internal static GlyphOnlyScope CutAtGlyphs(bool on) => new(on);
+
+    internal readonly struct GlyphOnlyScope : IDisposable
+    {
+        private readonly bool _previous;
+        private readonly bool _on;
+
+        internal GlyphOnlyScope(bool on)
+        {
+            _on = on;
+            _previous = s_glyphOnly;
+            if (on) s_glyphOnly = true;
+        }
+
+        public void Dispose()
+        {
+            if (_on) s_glyphOnly = _previous;
+        }
+    }
+
     /// <summary>
     /// The characters of one word and the width of each, with the cut decision made from them. The
     /// buffers are rented, so a word of any length is measured and walked without a string or an
@@ -103,7 +140,7 @@ internal static class LongWordBreaks
         {
             if (Count == 0) return 0;
 
-            var tiers = Analyse();
+            var tiers = s_glyphOnly ? default : Analyse();
             var lines = 1;
             var start = 0;
             starts?.Add(0);
@@ -127,7 +164,9 @@ internal static class LongWordBreaks
 
                 if (overflowAt < 0) return lines;
 
-                start = LineEnd(tiers, start, overflowAt);
+                var cut = LineEnd(tiers, start, overflowAt);
+                if (cut != overflowAt) s_placeCuts++;
+                start = cut;
                 starts?.Add(start);
                 lines++;
             }
