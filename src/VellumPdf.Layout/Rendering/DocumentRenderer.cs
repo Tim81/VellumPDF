@@ -500,6 +500,10 @@ public sealed class DocumentRenderer
                     paragraphRenderer.Paragraph, contentArea.Deflate(paragraphRenderer.Paragraph.Margins).Width);
                 LayoutValidation.ValidateLeaderSizes(paragraphRenderer.Paragraph);
             }
+            else if (renderer is NoteBlockRenderer noteBlock)
+            {
+                noteBlock.Validate(contentArea);
+            }
         }
 
         // What the elements alone decide about anchors and label ranges is refused here too, so the
@@ -592,6 +596,7 @@ public sealed class DocumentRenderer
         LineSeparatorRenderer => LayoutElementKind.LineSeparator,
         PieChartRenderer => LayoutElementKind.PieChart,
         PreformattedRenderer => LayoutElementKind.Preformatted,
+        NoteBlockRenderer => LayoutElementKind.NoteBlock,
         _ => LayoutElementKind.Custom,
     };
 
@@ -940,6 +945,20 @@ public sealed class DocumentRenderer
             case PreformattedRenderer preformatted:
                 var pre = preformatted.Element;
                 return total + pre.Text.Length + (long)pre.Text.AsSpan().Count('\t') * (pre.TabWidth - 1);
+
+            case NoteBlockRenderer noteBlock:
+                // Each paragraph adds at most its characters plus one line, and every piece the
+                // block returns places at least one line of one of them.
+                var held = noteBlock.Element.Paragraphs;
+                for (var i = 0; i < held.Count && total <= cap; i++)
+                {
+                    total++;
+                    var heldRuns = held[i].Runs;
+                    for (var r = 0; r < heldRuns.Count && total <= cap; r++)
+                        total += heldRuns[r].Text.Length + (heldRuns[r].IsReference ? ReferenceBound : 0);
+                }
+
+                return total;
 
             case ListRenderer list:
                 var items = list.Element.Items;

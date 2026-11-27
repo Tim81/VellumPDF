@@ -52,6 +52,7 @@ walkthrough this table summarizes.
 | Tables: rows, columns, row spanning, borders | ✅ Supported | — |
 | Lists: ordered (decimal/alpha/roman), unordered, nested | ✅ Supported | — |
 | Preformatted text: spaces and tabs kept, wrap marked | ✅ Supported | — |
+| Note block: a fill, a border and padding around paragraphs, split across pages, tagged Div | ✅ Supported | — |
 | Keep with next, keep together, and a minimum of lines at a page break; a request the pages cannot hold is reported | ✅ Supported | — |
 | Headers and footers with page-number templates | ✅ Supported | — |
 | Images: JPEG, PNG (incl. interlaced and 16-bit), CCITT G4, TIFF-LZW | ✅ Supported | — |

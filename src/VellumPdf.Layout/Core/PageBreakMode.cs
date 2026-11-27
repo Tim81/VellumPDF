@@ -14,7 +14,8 @@ namespace VellumPdf.Layout.Core;
 /// <para>The mode is read when the document places a top-level element: a
 /// <see cref="Elements.Paragraph"/>, <see cref="Elements.Heading"/>,
 /// <see cref="Elements.Table.TableElement"/>, <see cref="Elements.ListElement"/>,
-/// <see cref="Elements.Preformatted"/> or <see cref="Elements.LayoutImage"/> added with its own
+/// <see cref="Elements.Preformatted"/>, <see cref="Elements.NoteBlock"/> or
+/// <see cref="Elements.LayoutImage"/> added with its own
 /// <c>Document.Add</c> overload, or the public renderer of a paragraph, table, list or image added
 /// with
 /// <see cref="Document.Add(IRenderer)"/> or

@@ -185,6 +185,32 @@ VellumPdf.Layout.Elements.LineSeparator.SpaceAfter.get -> double
 VellumPdf.Layout.Elements.LineSeparator.SpaceAfter.init -> void
 VellumPdf.Layout.Elements.PieChart.SpaceAfter.get -> double
 VellumPdf.Layout.Elements.PieChart.SpaceAfter.init -> void
+VellumPdf.Layout.Document.Add(VellumPdf.Layout.Elements.NoteBlock! block) -> VellumPdf.Layout.Document!
+VellumPdf.Layout.LayoutElementKind.NoteBlock = 12 -> VellumPdf.Layout.LayoutElementKind
+VellumPdf.Layout.Elements.NoteBlock
+VellumPdf.Layout.Elements.NoteBlock.Add(string! text, VellumPdf.Layout.Core.TextStyle? style = null) -> VellumPdf.Layout.Elements.NoteBlock!
+VellumPdf.Layout.Elements.NoteBlock.Add(VellumPdf.Layout.Elements.Paragraph! paragraph) -> VellumPdf.Layout.Elements.NoteBlock!
+VellumPdf.Layout.Elements.NoteBlock.Anchor.get -> string?
+VellumPdf.Layout.Elements.NoteBlock.Anchor.init -> void
+VellumPdf.Layout.Elements.NoteBlock.Background.get -> VellumPdf.Layout.Core.ColorRgb?
+VellumPdf.Layout.Elements.NoteBlock.Background.init -> void
+VellumPdf.Layout.Elements.NoteBlock.BorderColor.get -> VellumPdf.Layout.Core.ColorRgb
+VellumPdf.Layout.Elements.NoteBlock.BorderColor.init -> void
+VellumPdf.Layout.Elements.NoteBlock.BorderWidth.get -> double
+VellumPdf.Layout.Elements.NoteBlock.BorderWidth.init -> void
+VellumPdf.Layout.Elements.NoteBlock.BreakBefore.get -> VellumPdf.Layout.Core.PageBreakMode
+VellumPdf.Layout.Elements.NoteBlock.BreakBefore.init -> void
+VellumPdf.Layout.Elements.NoteBlock.KeepTogether.get -> bool
+VellumPdf.Layout.Elements.NoteBlock.KeepTogether.init -> void
+VellumPdf.Layout.Elements.NoteBlock.KeepWithNext.get -> bool
+VellumPdf.Layout.Elements.NoteBlock.KeepWithNext.init -> void
+VellumPdf.Layout.Elements.NoteBlock.NoteBlock() -> void
+VellumPdf.Layout.Elements.NoteBlock.NoteBlock(System.Collections.Generic.IEnumerable<VellumPdf.Layout.Elements.Paragraph!>! paragraphs) -> void
+VellumPdf.Layout.Elements.NoteBlock.Padding.get -> VellumPdf.Layout.Core.EdgeInsets
+VellumPdf.Layout.Elements.NoteBlock.Padding.init -> void
+VellumPdf.Layout.Elements.NoteBlock.Paragraphs.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Layout.Elements.Paragraph!>!
+VellumPdf.Layout.Elements.NoteBlock.SpaceAfter.get -> double
+VellumPdf.Layout.Elements.NoteBlock.SpaceAfter.init -> void
 static VellumPdf.Layout.Elements.LayoutImage.FromBytes(byte[]! data) -> VellumPdf.Layout.Elements.LayoutImage!
 static VellumPdf.Layout.Elements.LayoutImage.FromBytes(byte[]! data, VellumPdf.Images.ImageLoadOptions! options) -> VellumPdf.Layout.Elements.LayoutImage!
 static VellumPdf.Layout.Elements.LayoutImage.FromBytes(byte[]! data, VellumPdf.Images.GifLoadOptions! options) -> VellumPdf.Layout.Elements.LayoutImage!

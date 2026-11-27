@@ -8,6 +8,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`NoteBlock` sets paragraphs apart with a background, a border and padding (#703).** A note, a
+  warning or a tip no longer has to be a one-cell table that the structure tree calls a table. A
+  `NoteBlock` holds paragraphs, so a bold lead-in run, a link and a page reference work in it as
+  they do in a paragraph, and `Document.Add(NoteBlock)` places it. `Background`, `BorderColor`,
+  `BorderWidth` and `Padding` draw the box, inside the content width, with the text starting at
+  the left edge plus the border plus the left padding. A block that splits across pages holds a
+  whole box on every page it reaches: the background, all four borders and the top and bottom
+  padding. The paragraphs are laid out line by line in the page's room less those insets and split
+  wherever it ends, so a tall padding leaves little room on each page. The save refuses a block as
+  too tall only when an empty page cannot hold the two insets plus one line of the tallest line
+  the block holds, or when the border and padding leave no width. `BreakBefore`, `KeepWithNext`,
+  `KeepTogether`, `Anchor` and `SpaceAfter` read as on the other elements. A paragraph inside
+  keeps its own `SpaceAfter`, which spaces the paragraphs, its anchor and its language. It sets no
+  page break, keep request, line count or margin, and the block's padding does the indenting: a
+  paragraph that sets one of them is refused when it is added, with an `ArgumentException` naming
+  the property. A paragraph with no text is a blank line. In a tagged document the block is one
+  `Div` structure element in every file, with the paragraphs as its children; the background and
+  border are an artifact. It is never tagged as a table or as `Note`. A negative or non-finite
+  `BorderWidth` or padding edge, and a colour channel that is not a finite number from 0 to 1,
+  throw `ArgumentOutOfRangeException` from the setter, and a null paragraph throws
+  `ArgumentNullException`. A block with no paragraph is refused by the save before any layout.
+  Lists, tables, headings and preformatted text cannot be added to a block. A document that does
+  not use the block saves to the same bytes as before.
+
 - **`LayoutImage.FromBytes`, `FromFile` and `FromStream` load an image from its signature (#291).**
   A caller adds a picture without naming a Kernel type or knowing its format. The factories read
   the format from the first bytes (PNG, JPEG, TIFF, BMP, GIF, JBIG2 with its file header, and
