@@ -1336,6 +1336,80 @@ public sealed class ConformanceAuditG5Tests
         }
     }
 
+    // ── The 19005-2 rows read in full on NEN (2026-11-27): 6.6.3, 6.6.5, 6.7.4 ─────────────────
+
+    [Fact]
+    public void Iso19005_2_6_6_3_ProducerIsInInfoOnlyWhenSetAndTheXmpAlwaysNamesOne()
+    {
+        // Table 7 pairs Info/Producer with pdf:Producer. A writer should keep a pair that exists equal; an
+        // Info key that is absent has nothing to disagree with.
+        using var unset = new PdfDocument { Conformance = PdfConformance.PdfA2b, Timestamp = Pinned, DocumentId = PinnedId };
+        unset.AddPage();
+        var a = Scan.Parse(Save(unset));
+        Assert.False(a.Info!.Has("Producer"));
+        Assert.Equal("VellumPdf", Description(a.MetadataXml).Element(PdfNs + "Producer")!.Value);
+
+        using var set = new PdfDocument { Conformance = PdfConformance.PdfA2b, Timestamp = Pinned, DocumentId = PinnedId };
+        set.Info.Producer = "Audit producer";
+        set.AddPage();
+        var b = Scan.Parse(Save(set));
+        Assert.Equal("Audit producer", Decode((Scan.PStr)b.Info!["Producer"]!));
+        Assert.Equal("Audit producer", Description(b.MetadataXml).Element(PdfNs + "Producer")!.Value);
+    }
+
+    [Theory]
+    [MemberData(nameof(DeliveredFixtures))]
+    public void Iso19005_2_6_6_5_NoSavePathWritesXmpHistoryOrIdentifiers(PdfConformance claim, FixturePath path)
+    {
+        // 6.6.5 says the changing half of /ID shall change if an xmpMM:History entry is added. No path adds one:
+        // the packet has no xmpMM namespace, no History, no InstanceID and no DocumentID, and the two /ID
+        // strings are equal (a file written once).
+        var p = Parsed(claim, path);
+        var text = Packet(p);
+        Assert.DoesNotContain("xmpMM", text);
+        Assert.DoesNotContain("History", text);
+        Assert.DoesNotContain("InstanceID", text);
+        Assert.DoesNotContain("DocumentID", text);
+        var id = (List<object?>)p.Trailer["ID"]!;
+        Assert.Equal(((Scan.PStr)id[0]!).Bytes, ((Scan.PStr)id[1]!).Bytes);
+    }
+
+    [Fact]
+    public void Iso19005_2_6_7_4_StructureElementLangIsALanguageIdentifierUnderPdfA2a()
+    {
+        var doc = new LayoutDocument { Conformance = PdfConformance.PdfA2a, Timestamp = Pinned, DocumentId = PinnedId, Language = "en-US" };
+        doc.Info.Title = "G5 audit";
+        var style = new TextStyle { FontRef = doc.UseTrueTypeFont(DejaVu), FontSize = 11 };
+        doc.Add(new Paragraph("Bonjour", style) { Language = "fr-CA" });
+        var p = Scan.Parse(Save(doc));
+
+        // The construct: a structure element with its own /Lang, besides the catalog's.
+        var tags = p.Objects.Where(o => o.Dict?.Name("Type") == "StructElem" && o.Dict.Has("Lang"))
+            .Select(o => Decode((Scan.PStr)o.Dict!["Lang"]!)).ToList();
+        Assert.Contains("fr-CA", tags);
+
+        // 6.7.4: every /Lang, in the catalog and on elements, is a language identifier (the pattern of
+        // ISO 32000-1, 14.9.2.1, as veraPDF 7.2-29 reads it).
+        tags.Add(Decode((Scan.PStr)p.Catalog["Lang"]!));
+        Assert.All(tags, t => Assert.Matches(@"^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*$", t));
+    }
+
+    [Fact(Skip = "Gap #614 (refusal in 3.0): Document.Language is not validated as BCP 47, so a tag such as 'not a tag' is written to the catalog /Lang under PDF/A-2a, where 6.7.4 makes a malformed value a shall; the member's documentation says so.")]
+    public void Iso19005_2_6_7_4_LanguageThatIsNotATagIsNotWrittenUnderPdfA2a()
+    {
+        using var doc = new PdfDocument { Language = "not a tag", Conformance = PdfConformance.PdfA2a, Timestamp = Pinned, DocumentId = PinnedId };
+        doc.AddPage();
+        try
+        {
+            var p = Scan.Parse(Save(doc));
+            Assert.Matches(@"^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*$", Decode((Scan.PStr)p.Catalog["Lang"]!));
+        }
+        catch (ArgumentException)
+        {
+            // A refusal meets the clause too.
+        }
+    }
+
     // ── The catalog the Save and the signing path share (#635, #626) ───────────────────────────
 
     [Theory]

@@ -78,14 +78,14 @@ claims), qpdf and poppler.
 
 Audited at origin/main bbf317b, 68 commits after v2.3.3. Fixtures are saved in the test with the fonts in the tree, under no claim and under PDF/A-2b, 2u, 2a and PDF/UA-1, through six paths: the Layout document, the Kernel document, object streams, linearization, the unsigned placeholder of the signing path, and the signed file. `AuditScanner` reads the saved bytes without the library's Reader. veraPDF 1.30.4 and qpdf 12.4.2 run on every claimed fixture, and the unsigned placeholder is the one file no validator is run on, because its /ByteRange holds ten nines until the signature patches it.
 
-101 rows: 71 compliant, 18 gap, 11 not applicable, 1 human-only.
+102 rows: 73 compliant, 18 gap, 11 not applicable, 0 human-only.
 
 Feature key: SAVE is Save and SaveAsync on the Kernel and Layout documents; OBJ is UseObjectStreams; LIN is Linearize; SIGN is PrepareForSigning and Sign, which share the catalog builder with Save; ID is Timestamp and DocumentId; NUM is reals outside int32; EMPTY is the empty zlib stream; STR is literal-string line ends, Lang and signature text strings; TREE is the name and number tree writers; RECOV is the Reader's recovery bounds.
 
 | Standard and clause | Requirement | Feature | Verdict | Test |
 |---|---|---|---|---|
 | ISO 19005-2 5 | Level B leaves out the Unicode map and structure rules, U leaves out structure, A needs everything; the header version is not a criterion. | SAVE, OBJ, LIN, SIGN | compliant | `Iso19005_2_6_6_2_3_1_And_6_6_4_PropertiesArePredefinedAndPdfaidNamesPartTwoAndTheLevel` |
-| ISO 19005-2 6.1.1 | Data the standards do not describe is not used to render. | SAVE, OBJ, LIN, SIGN | human-only | none |
+| ISO 19005-2 6.1.1 | A reader ignores data the standards do not describe and never renders from it; the clause binds no writer beyond the rest of clause 6. | - | not applicable | none |
 | ISO 19005-2 6.1.2 | The header is %PDF-1.n at byte 0, n from 0 to 7, then one EOL. | SAVE, OBJ, LIN, SIGN | compliant | `Iso19005_2_6_1_2_HeaderIsPdfVersionAtByteZeroThenFourHighBytes` |
 | ISO 19005-2 6.1.2 | A comment of at least four bytes above 127 follows the header line. | SAVE, OBJ, LIN, SIGN | compliant | `Iso19005_2_6_1_2_HeaderIsPdfVersionAtByteZeroThenFourHighBytes` |
 | ISO 19005-2 6.1.3 | The trailer has an /ID of file identifiers. | SAVE, OBJ, LIN, SIGN, ID | compliant | `Iso19005_2_6_1_3_TrailerHoldsIdAndNoEncryptAndNothingFollowsEof` |
@@ -97,7 +97,7 @@ Feature key: SAVE is Save and SaveAsync on the Kernel and Layout documents; OBJ 
 | ISO 19005-2 6.1.7.1 | stream is followed by LF or CRLF, endstream by an EOL, and /Length is the exact byte count. | SAVE, OBJ, LIN, SIGN, EMPTY | compliant | `Iso19005_2_6_1_7_1_StreamKeywordLengthAndEndstreamFollowTheSyntax` |
 | ISO 19005-2 6.1.7.1 | A stream dictionary has no F, FFilter or FDecodeParms. | SAVE, OBJ, LIN, SIGN | compliant | `Iso19005_2_6_1_7_1_StreamKeywordLengthAndEndstreamFollowTheSyntax` |
 | ISO 19005-2 6.1.7.2 | Only the standard filters except LZWDecode; Crypt only as Identity; no other filter. | SAVE, OBJ, LIN, SIGN | compliant | `Iso19005_2_6_1_7_2_OnlyFlateDecodeIsUsed` |
-| ISO 19005-2 6.1.7.2 | The remaining conditions on Crypt filters (not in the notes). | - | not applicable | none |
+| ISO 19005-2 6.1.7.2 | Crypt only when its decode parameters name Identity; no filter outside Table 6. No writer path emits LZW, Crypt or an unlisted filter (searched Kernel, Layout, Signing, Barcodes and Fonts.Standard14 for the filter names; only the Reader and Conformance mention them). | SAVE, OBJ, LIN, SIGN | compliant | `Iso19005_2_6_1_7_2_OnlyFlateDecodeIsUsed` |
 | ISO 19005-2 6.1.8 | Font names, colourant names and structure type names are valid UTF-8 after # expansion. | SAVE (font names), SIGN | gap #740 | `Iso19005_2_6_1_8_And_6_1_13_NamesAreUtf8AndAtMost127BytesUnderAPdfAClaim` |
 | ISO 19005-2 6.1.9 | Object, generation and obj are separated by one space, and obj and endobj are surrounded by EOLs. | SAVE, OBJ, LIN, SIGN | compliant | `Iso19005_2_6_1_9_ObjectKeywordsAreSeparatedByOneSpaceAndSurroundedByEols` |
 | ISO 19005-2 6.1.10 | An inline image's /F is not LZW, Crypt or outside Table 6. | - | not applicable | none |
@@ -121,12 +121,13 @@ Feature key: SAVE is Save and SaveAsync on the Kernel and Layout documents; OBJ 
 | ISO 19005-2 6.6.2.2 | Suggested prefixes dc, pdf, xmp, xmpMM. | SAVE | compliant | `Iso19005_2_6_6_2_3_1_And_6_6_4_PropertiesArePredefinedAndPdfaidNamesPartTwoAndTheLevel` |
 | ISO 19005-2 6.6.2.3.1 | Every property is in a predefined schema or a described extension schema. | SAVE, OBJ, LIN, SIGN | compliant | `Iso19005_2_6_6_2_3_1_And_6_6_4_PropertiesArePredefinedAndPdfaidNamesPartTwoAndTheLevel` |
 | ISO 19005-2 6.6.2.3.2-3 | Extension schemas use the container and carry every field of Tables 2 to 6. | - | not applicable | `Iso19005_2_6_6_2_3_1_And_6_6_4_PropertiesArePredefinedAndPdfaidNamesPartTwoAndTheLevel` |
-| ISO 19005-2 6.6.3 | Info entries agree with their XMP properties (Table 7); a writer should keep them consistent. | SAVE | compliant | `Iso19005_2_6_6_3_InfoEntriesAndXmpPropertiesCarryTheSameText` |
+| ISO 19005-2 6.6.3 | A writer should keep Info consistent with the XMP per Table 7 (Title, Author, Subject, Keywords, Creator, Producer and the two dates); the library writes no Info date, and an unset Producer is absent from Info while the XMP names VellumPdf. | SAVE | compliant | `Iso19005_2_6_6_3_InfoEntriesAndXmpPropertiesCarryTheSameText, Iso19005_2_6_6_3_ProducerIsInInfoOnlyWhenSetAndTheXmpAlwaysNamesOne` |
 | ISO 19005-2 6.6.4 | pdfaid:part is 2 and pdfaid:conformance is A, B or U; the prefix is pdfaid; amd and corr only when used. | SAVE, OBJ, LIN, SIGN | compliant | `Iso19005_2_6_6_2_3_1_And_6_6_4_PropertiesArePredefinedAndPdfaidNamesPartTwoAndTheLevel` |
-| ISO 19005-2 6.6.5 | Identifying properties are recommended; adding xmpMM:History changes the changing half of /ID. | - | not applicable | none |
-| ISO 19005-2 6.6.6 | A History entry has action, parameters and when. | - | not applicable | none |
+| ISO 19005-2 6.6.5 | Identifiers should be present; if an xmpMM:History entry is added the changing half of /ID shall change. No path writes History or any xmpMM property, and the two /ID strings are equal. | SAVE, OBJ, LIN, SIGN, ID | not applicable | `Iso19005_2_6_6_5_NoSavePathWritesXmpHistoryOrIdentifiers` |
+| ISO 19005-2 6.6.6 | A History entry has action, parameters and when; none is written. | - | not applicable | `Iso19005_2_6_6_5_NoSavePathWritesXmpHistoryOrIdentifiers` |
 | ISO 19005-2 6.7.4 | The catalog /Lang should hold the default language as a language identifier. | SAVE, STR | compliant | `Iso19005_2_6_7_4_And_Iso14289_1_7_2_CatalogLangIsALanguageTagMatchedByXmpAndByItsTrim` |
-| ISO 19005-2 6.7.4 | A /Lang that is not a language identifier is refused (the writer does not validate it). | SAVE | gap #614 | `Iso14289_1_7_2_LanguageThatIsNotATagIsNotWrittenUnderPdfUA1` |
+| ISO 19005-2 6.7.4 | A /Lang that is not a language identifier is refused (the writer does not validate it); a shall under level A. | SAVE | gap #614 | `Iso19005_2_6_7_4_LanguageThatIsNotATagIsNotWrittenUnderPdfA2a, Iso14289_1_7_2_LanguageThatIsNotATagIsNotWrittenUnderPdfUA1` |
+| ISO 19005-2 6.7.4 | A structure element /Lang is a language identifier too (Layout writes one from Paragraph.Language). | SAVE (Layout, tagged) | compliant | `Iso19005_2_6_7_4_StructureElementLangIsALanguageIdentifierUnderPdfA2a` |
 | ISO 19005-2 6.11 | The catalog has no Requirements key. | SAVE, OBJ, LIN, SIGN | compliant | `Iso19005_2_6_1_12_And_6_11_CatalogHasNoPermsAndNoRequirements` |
 | ISO 32000-1 7.2 | Lexical conventions: white space, delimiters, regular characters, comments. | SAVE, OBJ, LIN, SIGN | compliant | `Oracles_QpdfAcceptsEveryFixtureUnderEveryClaim` |
 | ISO 32000-1 7.3.2 | Boolean objects are the keywords true and false. | SAVE, SIGN | compliant | `Iso14289_1_7_1_PdfUA1WritesDcTitleAndDisplayDocTitleAndNoSuspects` |
@@ -190,10 +191,6 @@ Feature key: SAVE is Save and SaveAsync on the Kernel and Layout documents; OBJ 
 
 ISO 19005-2 clauses the maintainer's reading did not complete, and what each would decide:
 
-- 6.1.1: No oracle rule; the text says data not described may not be used to render. Needs the full sentence to decide whether anything the writer emits (for example the signature placeholder's sentinel comment) counts.
-- 6.1.7.2: The notes say 'read the rest' for the Crypt filter conditions; the writer has no Crypt filter, so the row is not applicable here, but the exact conditions are not in the notes.
-- 6.6.3: The notes call the Info-to-XMP crosswalk 'read Table', and one note gives it as 'should'. If the 2011 text makes any consistency a 'shall', the Producer row (Info without Producer against an XMP pdf:Producer of VellumPdf) needs a second look.
-- 6.6.5: The notes say 'read' for how the changing half of /ID is handled when xmpMM:History is added; the writer adds no History, and the text is not in the notes.
-- 6.7.4: The language-escape sentence for UTF-16 text strings is marked 'read' in the notes; the writer never writes an escape.
+None left in G5. The rows the first reading left open (6.1.1, 6.1.7.2, 6.6.3, 6.6.5, 6.6.6, 6.7.4) were read in full on 2026-11-27 and are rows A02, A14, A38, A40 to A43 and A45 above.
 
 ## G6 Forms
