@@ -125,7 +125,7 @@ public sealed class AnchorLinkTests
             var table = new TableElement { DefaultCellStyle = s }.SetColumnWidths(100);
             table.AddRow().AddCell("x");
             d.Add(table);
-        }, "row 0, cell 0");
+        }, "Table 0");
         Check((d, s) => d.SetHeader("x", s), "Header band");
         Check((d, s) => d.SetFooter("x", s), "Footer band");
     }
@@ -257,7 +257,7 @@ public sealed class AnchorLinkTests
         AddTarget(doc);
 
         var ex = Assert.Throws<InvalidOperationException>(() => Save(doc));
-        Assert.Contains("row 0, cell 0", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("Table 0", ex.Message, StringComparison.Ordinal);
         Assert.Contains("can be saved", ex.Message, StringComparison.Ordinal);
 
         doc.Conformance = PdfConformance.PdfA2u;

@@ -49,8 +49,8 @@ public sealed class CellBandLinkTests
             Assert.Equal(lines[i].X, links[i].X0, 3);
             Assert.Equal(lines[i].X + Width(lines[i].Text), links[i].X1, 3);
 
-            // The line box is as tall as the leading, and its top is one font size above the
-            // baseline.
+            // The line box is as tall as the leading, and its top is one font size above
+            // the baseline.
             Assert.Equal(lines[i].Y + 12, links[i].Y1, 3);
             Assert.Equal(lines[i].Y + 12 - 14.4, links[i].Y0, 3);
         }

@@ -95,8 +95,8 @@ public sealed class PageReferenceCostTests
     {
         // Time and allocation for a large run cell are measured by the author of a change and
         // reported with it; this pins the shape that makes them grow with the characters and the
-        // measuring runs, and nothing else: a run cell's wrap is not repeated for an unchanged
-        // label.
+        // measuring runs, and nothing else: a run cell's wrap is not repeated for an
+        // unchanged label.
         using var doc = ShortPage();
         var table = new TableElement { DefaultCellStyle = S }.SetColumnWidths(250);
         var words = string.Join(" ", Enumerable.Range(0, 2000).Select(i => "w" + i));

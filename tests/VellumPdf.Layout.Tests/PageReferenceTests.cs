@@ -63,8 +63,8 @@ public sealed class PageReferenceTests
         using var literal = ForwardTo(12, label: "12");
 
         // The one difference is the link the reference is. The literal label is a run of its own
-        // style instance, as the reference's label is, so both draw it in a show operator of its
-        // own.
+        // style instance, as the reference's label is, so both draw it in a show operator of
+        // its own.
         var a = ContentStreamReadback.TextPlacements(Content(Save(reference)));
         var b = ContentStreamReadback.TextPlacements(Content(Save(literal)));
         Assert.Equal(b, a);
@@ -199,8 +199,8 @@ public sealed class PageReferenceTests
         Assert.Contains("'t'", ex.Message, StringComparison.Ordinal);
         Assert.Contains("Paragraph 0", ex.Message, StringComparison.Ordinal);
 
-        // The message says what happened and not what to do next; a second save of a Document says
-        // that.
+        // The message says what happened and not what to do next; a second save of a Document
+        // says that.
         Assert.EndsWith("'viii'.", ex.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("saved again", ex.Message, StringComparison.Ordinal);
     }
