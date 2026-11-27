@@ -8,6 +8,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`LayoutImage.FromBytes`, `FromFile` and `FromStream` load an image from its signature (#291).**
+  A caller adds a picture without naming a Kernel type or knowing its format. The factories read
+  the format from the first bytes (PNG, JPEG, TIFF, BMP, GIF, JBIG2 with its file header, and
+  JPEG 2000 as a JP2 file or a bare codestream) and call the loader a caller would have called, so
+  the document saves to the same bytes as one built with that loader. A JPEG is passed through as
+  `/DCTDecode`. CCITT data and JBIG2 in its embedded form have no signature and still go through
+  `CcittImageLoader` and `Jbig2ImageLoader`. Each factory also takes `ImageLoadOptions` or
+  `GifLoadOptions`, which go to the loader as an explicit call would pass them; what a loader does
+  with each member is that loader's behaviour (#732 tracks the loaders that do not document it
+  yet). Options for a loader that takes none (any
+  `ImageLoadOptions` other than the default for JPEG, BMP and GIF, and any `GifLoadOptions` other
+  than the default for every other format) are refused with `ArgumentException`, and a member
+  that is not a defined enumeration value is refused with `ArgumentOutOfRangeException`. Empty
+  data and data with an unknown signature are refused at the call, and the message for an unknown
+  signature names the first bytes in hex. What a loader refuses keeps its exception type and
+  message. A stream is read from its current position to its end, need not be seekable, and is
+  left open; a stream or file over a fixed bound is refused with `InvalidDataException`, and
+  `FromBytes` has no bound. A TIFF can still make its loader allocate far more than the file
+  holds (#534), and the factories reach the same code.
 - **`SpaceAfter` sets the gap after a block element (#700).** `Paragraph`, `Heading`,
   `ListElement`, `Preformatted`, `TableElement`, `LayoutImage`, `LineSeparator` and `PieChart` take
   a `SpaceAfter` in points, so a caller sets the gap between two elements once, on the first,
