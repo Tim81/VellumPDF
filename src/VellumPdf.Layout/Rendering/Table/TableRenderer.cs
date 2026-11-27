@@ -97,11 +97,6 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
     // built, reports nothing, as the table did before breaks were honoured. Removed in 3.0 (#688).
     private bool _placedAsTwin;
 
-    // True when the last Layout cut words at the glyph, which the twin does where the document chose
-    // or probed it. Draw wraps the lines again and has to cut where the layout did. Removed in 3.0
-    // (#688).
-    private bool _cutsAtGlyphs;
-
     // What the decision under way has measured of each cell; null outside it.
     private TableMeasureCache? _measured;
 
@@ -303,12 +298,11 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         // (a caller's renderer that forwards here, WithArea, the public constructor) the table is
         // laid out as it was before breaks were honoured, by its twin. Removed in 3.0 (#688).
         // A word wider than its column is cut after a solidus or hyphen (#594) only in the table the
-        // document laid out itself, which its limit decision can probe. The twin, the one the
-        // decision chose or is measuring, and a table that a renderer of the caller's forwards to
-        // cut at the glyph, as main does. Removed in 3.0 (#688).
-        _cutsAtGlyphs = _readsUnbrokenForTheLimit
-            || !(context.Session is { } placeSession && ReferenceEquals(placeSession.Called, this));
-        using var cutAtGlyphs = LongWordBreaks.CutAtGlyphs(_cutsAtGlyphs);
+        // document laid out itself, which its limit decision can probe. A table laid out under a
+        // context that does not address it goes to the twin below, and the twin, whether the decision
+        // chose it, is measuring it or a renderer of the caller's forwards to it, cuts at the glyph,
+        // as main does. Removed in 3.0 (#688).
+        using var cutAtGlyphs = LongWordBreaks.CutAtGlyphs(_readsUnbrokenForTheLimit);
         var mode = context.ModeFor(this);
         _laidOutBy = null;
         if (mode == ContinuationMode.Twin && !_readsUnbrokenForTheLimit)
@@ -587,7 +581,6 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         next._allUnbroken = _allUnbroken;
         next._readsUnbrokenForTheLimit = _readsUnbrokenForTheLimit;
         next._placedAsTwin = _placedAsTwin;
-        next._cutsAtGlyphs = _cutsAtGlyphs;
         next._reportBound = _reportBound;
         next._decidedFor = _decidedFor;
         return next;
@@ -1702,7 +1695,7 @@ public sealed class TableRenderer : IRenderer, IPageBreakSource, IKeepSource, IP
         }
 
         // The lines are wrapped again here, in the mode the layout used. Removed in 3.0 (#688).
-        using var cutAtGlyphs = LongWordBreaks.CutAtGlyphs(_cutsAtGlyphs);
+        using var cutAtGlyphs = LongWordBreaks.CutAtGlyphs(_readsUnbrokenForTheLimit);
 
         // Layout already deflated context.Area by _table.Margins and stored the result in
         // _occupied; deflating again here took the table's own margin out of the box twice. The

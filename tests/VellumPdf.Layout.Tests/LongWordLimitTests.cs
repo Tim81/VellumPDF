@@ -334,6 +334,9 @@ public sealed class LongWordLimitTests
 
         Assert.Null(o.Error);
         Assert.Equal(pagesOfMain, o.Pages);
+
+        // The limit decision is not asked about a renderer a caller built with a start line.
+        if (path is UnseenPath.StartLineAddedDirectly) Assert.Equal(0, o.Probes);
     }
 
     // A list laid out as its twin for a reason other than the limit lays its entries out as main
